@@ -1,0 +1,446 @@
+sampler design (sdalign.py); inputs rep62r0-diag.tgz, rep61c-diag-ld.tgz, rep61a-diag-ld.tgz, rep60a-diag-ld.tgz, rep60b-diag-ld.tgz
+pairing check: windows whose paired [DIAG] tick lies > 60 ms from the [SLAW] close: 0
+
+== A. Retransmits against the window minimum, per arm (LATE windows; 'retx' = the [DIAG] retx= delta in the same tick > 0) ==
+  base = share of windows with a retransmit; low10 = share among the row's lowest-decile tmin windows; crit = crfollow's floor criterion
+  (tmin < row median tp50 - 4 ms): its share of windows and their retx share; dT = median tmin of no-retx windows - of retx windows (ms);
+  g8 = share of 8-window groups (2 s) whose lowest window carries a retransmit (no association: = base); ancf = [SLAW]'s anchor-bind count
+  (windows where m-hat > l-hat + b-hat0+, of those with the law's inputs; the bind fraction of R6.2's min(m-hat, .)) at the last LATE window
+  m = LATE median m-hat; tmin = median native tmin; G8 = median 8-window group minimum (ms)
+  s62 J0 D12    s42 r3: n 309 base 0.33 (no-retx n 206) | low10 0.93 (n 30) | crit 0.32 retx 0.87 | dT 3.77 | g8 0.84 (n 38) | m 41.33 tmin 44.60 G8 41.45 nk 60 ancf 0/364
+  s62 J0 G12    s42 r1: n 305 base 0.31 (no-retx n 209) | low10 0.87 (n 30) | crit 0.31 retx 0.84 | dT 3.06 | g8 0.84 (n 38) | m 41.33 tmin 44.53 G8 41.45 nk 60 ancf 0/362
+  s62 J0 G12    s7  r2: n 303 base 0.28 (no-retx n 219) | low10 0.83 (n 30) | crit 0.29 retx 0.84 | dT 4.15 | g8 0.81 (n 37) | m 41.26 tmin 44.78 G8 41.54 nk 60 ancf 0/358
+  s62 J0 G80    s42 r1: n 162 base 0.90 (no-retx n  16) | low10 1.00 (n 16) | crit 0.65 retx 1.00 | dT 2.22 | g8 1.00 (n 20) | m 41.08 tmin 42.34 G8 41.18 nk 395 ancf 0/214
+  s62 J0 G128   s42 r1: n 148 base 0.96 (no-retx n   6) | low10 1.00 (n 14) | crit 0.93 retx 0.98 | dT 7.58 | g8 1.00 (n 18) | m 41.26 tmin 54.68 G8 44.43 nk 480 ancf 0/200
+  s62 J0 G512   s42 r1: n 155 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.79 retx 1.00 | dT None | g8 1.00 (n 19) | m 211.20 tmin 245.01 G8 228.93 nk 482 ancf 0/207
+  s62 J0 G512   s7  r2: n 155 base 0.99 (no-retx n   2) | low10 1.00 (n 15) | crit 0.76 retx 0.98 | dT 3.51 | g8 1.00 (n 19) | m 216.85 tmin 242.66 G8 226.94 nk 482 ancf 0/207
+  61c J5 G12    s42 r1: n 170 base 0.32 (no-retx n 115) | low10 0.59 (n 17) | crit 0.78 retx 0.35 | dT 1.71 | g8 0.57 (n 21) | m 34.27 tmin 42.88 G8 37.27 nk 60 ancf 0/225
+  61c J5 G12    s42 r3: n 167 base 0.35 (no-retx n 108) | low10 1.00 (n 16) | crit 0.78 retx 0.38 | dT 1.78 | g8 0.60 (n 20) | m 34.05 tmin 42.74 G8 38.78 nk 60 ancf 0/222
+  61c J5 G12    s42 r5: n 170 base 0.31 (no-retx n 118) | low10 0.78 (n 18) | crit 0.75 retx 0.35 | dT 3.0 | g8 0.62 (n 21) | m 35.11 tmin 42.37 G8 37.99 nk 60 ancf 0/223
+  61c J5 G12    s7  r2: n 167 base 0.29 (no-retx n 119) | low10 0.62 (n 16) | crit 0.73 retx 0.35 | dT 2.48 | g8 0.50 (n 20) | m 35.28 tmin 42.76 G8 38.00 nk 60 ancf 0/219
+  61c J5 G12    s7  r4: n 167 base 0.29 (no-retx n 118) | low10 0.81 (n 16) | crit 0.75 retx 0.34 | dT 2.63 | g8 0.65 (n 20) | m 33.96 tmin 42.74 G8 38.21 nk 60 ancf 24/222
+  61c J5 G12    s7  r6: n 165 base 0.32 (no-retx n 113) | low10 0.69 (n 16) | crit 0.71 retx 0.38 | dT 2.8 | g8 0.55 (n 20) | m 33.60 tmin 42.89 G8 37.72 nk 60 ancf 0/218
+  61c J5 G16    s42 r1: n 172 base 0.40 (no-retx n 103) | low10 0.82 (n 17) | crit 0.77 retx 0.42 | dT 0.98 | g8 0.57 (n 21) | m 33.05 tmin 42.46 G8 38.26 nk 80 ancf 0/226
+  61c J5 G16    s42 r3: n 175 base 0.35 (no-retx n 114) | low10 0.71 (n 17) | crit 0.84 retx 0.35 | dT 0.58 | g8 0.52 (n 21) | m 35.65 tmin 42.28 G8 38.85 nk 80 ancf 0/230
+  61c J5 G16    s42 r5: n 172 base 0.40 (no-retx n 104) | low10 0.71 (n 17) | crit 0.90 retx 0.42 | dT 1.01 | g8 0.76 (n 21) | m 35.88 tmin 41.49 G8 37.28 nk 80 ancf 0/225
+  61c J5 G16    s7  r2: n 167 base 0.27 (no-retx n 122) | low10 0.62 (n 16) | crit 0.86 retx 0.27 | dT 1.26 | g8 0.35 (n 20) | m 36.28 tmin 41.88 G8 38.20 nk 80 ancf 0/221
+  61c J5 G16    s7  r4: n 170 base 0.31 (no-retx n 118) | low10 0.65 (n 17) | crit 0.84 retx 0.32 | dT 1.18 | g8 0.48 (n 21) | m 34.84 tmin 42.27 G8 38.41 nk 80 ancf 83/224
+  61c J5 G16    s7  r6: n 170 base 0.29 (no-retx n 121) | low10 0.65 (n 17) | crit 0.85 retx 0.29 | dT 0.7 | g8 0.33 (n 21) | m 33.38 tmin 42.01 G8 39.33 nk 80 ancf 0/224
+  61c J5 G24    s42 r1: n 174 base 0.44 (no-retx n  97) | low10 0.71 (n 17) | crit 0.93 retx 0.46 | dT 1.05 | g8 0.52 (n 21) | m 35.62 tmin 42.53 G8 38.39 nk 120 ancf 0/228
+  61c J5 G24    s42 r3: n 174 base 0.46 (no-retx n  94) | low10 0.71 (n 17) | crit 0.91 retx 0.47 | dT 0.98 | g8 0.62 (n 21) | m 37.48 tmin 42.18 G8 39.24 nk 120 ancf 0/227
+  61c J5 G24    s42 r5: n 178 base 0.51 (no-retx n  88) | low10 0.82 (n 17) | crit 0.87 retx 0.51 | dT 0.76 | g8 0.77 (n 22) | m 34.05 tmin 42.36 G8 37.70 nk 114 ancf 0/231
+  61c J5 G24    s7  r2: n 173 base 0.36 (no-retx n 110) | low10 0.65 (n 17) | crit 0.92 retx 0.38 | dT 0.87 | g8 0.67 (n 21) | m 35.44 tmin 41.78 G8 38.82 nk 120 ancf 0/226
+  61c J5 G24    s7  r4: n 175 base 0.41 (no-retx n 103) | low10 0.76 (n 17) | crit 0.91 retx 0.39 | dT 0.07 | g8 0.67 (n 21) | m 35.69 tmin 42.07 G8 38.35 nk 120 ancf 51/227
+  61c J5 G24    s7  r6: n 171 base 0.37 (no-retx n 108) | low10 0.47 (n 17) | crit 0.91 retx 0.39 | dT 0.87 | g8 0.48 (n 21) | m 35.37 tmin 42.66 G8 39.70 nk 120 ancf 0/223
+  61c J5 G80    s42 r1: n 183 base 0.80 (no-retx n  37) | low10 0.94 (n 18) | crit 0.99 retx 0.80 | dT 1.54 | g8 0.95 (n 22) | m 38.24 tmin 43.06 G8 39.52 nk 362 ancf 0/235
+  61c J5 G80    s42 r3: n 183 base 0.79 (no-retx n  38) | low10 0.94 (n 18) | crit 1.00 retx 0.79 | dT 1.18 | g8 0.95 (n 22) | m 39.08 tmin 42.89 G8 39.86 nk 359 ancf 0/235
+  61c J5 G80    s42 r5: n 184 base 0.81 (no-retx n  35) | low10 0.83 (n 18) | crit 0.99 retx 0.81 | dT 0.25 | g8 0.83 (n 23) | m 37.11 tmin 43.13 G8 39.58 nk 358 ancf 0/236
+  61c J5 G80    s7  r2: n 180 base 0.78 (no-retx n  40) | low10 0.94 (n 18) | crit 1.00 retx 0.78 | dT 0.89 | g8 0.86 (n 22) | m 37.20 tmin 42.73 G8 39.80 nk 368 ancf 0/232
+  61c J5 G80    s7  r4: n 179 base 0.74 (no-retx n  47) | low10 0.65 (n 17) | crit 0.99 retx 0.74 | dT 0.16 | g8 0.68 (n 22) | m 39.63 tmin 43.47 G8 40.89 nk 365 ancf 0/231
+  61c J5 G80    s7  r6: n 180 base 0.72 (no-retx n  51) | low10 0.94 (n 18) | crit 1.00 retx 0.72 | dT 0.62 | g8 0.82 (n 22) | m 37.66 tmin 43.23 G8 40.39 nk 366 ancf 20/232
+  61c J5 G100   s42 r1: n 178 base 0.84 (no-retx n  29) | low10 1.00 (n 17) | crit 1.00 retx 0.84 | dT 1.9 | g8 1.00 (n 22) | m 39.11 tmin 44.66 G8 41.26 nk 438 ancf 0/230
+  61c J5 G100   s42 r3: n 178 base 0.81 (no-retx n  33) | low10 1.00 (n 17) | crit 1.00 retx 0.81 | dT 1.85 | g8 1.00 (n 22) | m 38.85 tmin 44.95 G8 41.72 nk 438 ancf 0/230
+  61c J5 G100   s42 r5: n 181 base 0.89 (no-retx n  20) | low10 1.00 (n 18) | crit 1.00 retx 0.89 | dT 1.48 | g8 0.95 (n 22) | m 38.76 tmin 45.23 G8 41.66 nk 437 ancf 0/233
+  61c J5 G100   s7  r2: n 178 base 0.83 (no-retx n  30) | low10 0.94 (n 17) | crit 0.99 retx 0.83 | dT 1.13 | g8 0.95 (n 22) | m 38.62 tmin 45.09 G8 42.10 nk 438 ancf 0/230
+  61c J5 G100   s7  r4: n 176 base 0.76 (no-retx n  43) | low10 1.00 (n 17) | crit 1.00 retx 0.76 | dT 1.85 | g8 0.95 (n 22) | m 39.42 tmin 44.98 G8 41.30 nk 442 ancf 15/228
+  61c J5 G100   s7  r6: n 175 base 0.78 (no-retx n  38) | low10 1.00 (n 17) | crit 1.00 retx 0.78 | dT 1.51 | g8 0.95 (n 21) | m 39.31 tmin 44.93 G8 41.41 nk 445 ancf 0/227
+  61c J5 G108   s42 r1: n 168 base 0.85 (no-retx n  26) | low10 1.00 (n 16) | crit 1.00 retx 0.85 | dT 3.64 | g8 1.00 (n 21) | m 40.36 tmin 45.93 G8 42.47 nk 462 ancf 0/220
+  61c J5 G108   s42 r3: n 170 base 0.88 (no-retx n  21) | low10 1.00 (n 17) | crit 1.00 retx 0.88 | dT 2.9 | g8 1.00 (n 21) | m 40.31 tmin 45.99 G8 41.85 nk 462 ancf 0/222
+  61c J5 G108   s42 r5: n 168 base 0.82 (no-retx n  31) | low10 1.00 (n 16) | crit 0.99 retx 0.82 | dT 3.89 | g8 1.00 (n 21) | m 38.41 tmin 45.69 G8 41.73 nk 460 ancf 0/220
+  61c J5 G108   s7  r2: n 166 base 0.78 (no-retx n  36) | low10 1.00 (n 16) | crit 1.00 retx 0.78 | dT 3.08 | g8 0.95 (n 20) | m 39.61 tmin 46.38 G8 42.62 nk 463 ancf 0/218
+  61c J5 G108   s7  r4: n 165 base 0.75 (no-retx n  42) | low10 0.94 (n 16) | crit 1.00 retx 0.75 | dT 3.72 | g8 0.90 (n 20) | m 40.31 tmin 45.81 G8 43.24 nk 465 ancf 0/217
+  61c J5 G108   s7  r6: n 167 base 0.83 (no-retx n  29) | low10 1.00 (n 16) | crit 1.00 retx 0.83 | dT 4.17 | g8 1.00 (n 20) | m 40.95 tmin 46.13 G8 43.14 nk 461 ancf 0/219
+  61c J5 G120   s42 r1: n 159 base 0.97 (no-retx n   4) | low10 1.00 (n 15) | crit 0.99 retx 0.97 | dT 6.6 | g8 1.00 (n 19) | m 40.84 tmin 48.57 G8 44.33 nk 477 ancf 0/211
+  61c J5 G120   s42 r3: n 158 base 0.97 (no-retx n   5) | low10 1.00 (n 15) | crit 0.97 retx 0.99 | dT 7.68 | g8 1.00 (n 19) | m 40.34 tmin 49.24 G8 43.91 nk 478 ancf 0/210
+  61c J5 G120   s42 r5: n 157 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.97 retx 1.00 | dT 7.8 | g8 1.00 (n 19) | m 42.51 tmin 49.19 G8 44.38 nk 478 ancf 0/209
+  61c J5 G120   s7  r2: n 157 base 0.94 (no-retx n   9) | low10 1.00 (n 15) | crit 0.98 retx 0.96 | dT 4.95 | g8 1.00 (n 19) | m 40.27 tmin 49.57 G8 43.05 nk 478 ancf 0/209
+  61c J5 G120   s7  r4: n 158 base 0.94 (no-retx n  10) | low10 1.00 (n 15) | crit 0.96 retx 0.96 | dT 6.93 | g8 1.00 (n 19) | m 40.88 tmin 49.22 G8 43.26 nk 478 ancf 0/210
+  61c J5 G120   s7  r6: n 157 base 0.97 (no-retx n   5) | low10 1.00 (n 15) | crit 0.98 retx 0.97 | dT 6.15 | g8 1.00 (n 19) | m 43.09 tmin 49.31 G8 44.08 nk 478 ancf 0/209
+  61c J5 G152   s42 r1: n 157 base 0.93 (no-retx n  11) | low10 1.00 (n 15) | crit 0.93 retx 0.98 | dT 8.29 | g8 1.00 (n 19) | m 46.43 tmin 64.51 G8 54.98 nk 481 ancf 0/209
+  61c J5 G152   s42 r3: n 155 base 0.86 (no-retx n  22) | low10 1.00 (n 15) | crit 0.96 retx 0.89 | dT 9.74 | g8 1.00 (n 19) | m 43.89 tmin 62.49 G8 48.40 nk 481 ancf 0/207
+  61c J5 G152   s42 r5: n 156 base 0.90 (no-retx n  16) | low10 1.00 (n 15) | crit 0.94 retx 0.94 | dT 8.91 | g8 1.00 (n 19) | m 48.10 tmin 63.40 G8 51.80 nk 482 ancf 0/208
+  61c J5 G152   s7  r2: n 154 base 0.75 (no-retx n  38) | low10 1.00 (n 15) | crit 0.92 retx 0.82 | dT 8.72 | g8 1.00 (n 19) | m 43.24 tmin 63.59 G8 50.19 nk 483 ancf 0/206
+  61c J5 G152   s7  r4: n 156 base 0.86 (no-retx n  22) | low10 1.00 (n 15) | crit 0.97 retx 0.87 | dT 7.57 | g8 1.00 (n 19) | m 44.43 tmin 64.62 G8 51.23 nk 481 ancf 0/208
+  61c J5 G152   s7  r6: n 154 base 0.87 (no-retx n  20) | low10 1.00 (n 15) | crit 0.95 retx 0.90 | dT 8.57 | g8 1.00 (n 19) | m 45.06 tmin 62.68 G8 47.44 nk 482 ancf 0/206
+  61c J5 G512   s42 r1: n 155 base 0.96 (no-retx n   6) | low10 1.00 (n 15) | crit 0.83 retx 0.97 | dT 1.71 | g8 1.00 (n 19) | m 212.67 tmin 242.67 G8 227.53 nk 482 ancf 0/207
+  61c J5 G512   s42 r3: n 157 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.79 retx 1.00 | dT 12.35 | g8 1.00 (n 19) | m 214.91 tmin 242.20 G8 227.74 nk 481 ancf 0/209
+  61c J5 G512   s42 r5: n 155 base 0.97 (no-retx n   5) | low10 1.00 (n 15) | crit 0.79 retx 0.98 | dT 8.11 | g8 1.00 (n 19) | m 215.38 tmin 243.04 G8 226.79 nk 481 ancf 0/207
+  61c J5 G512   s7  r2: n 155 base 0.99 (no-retx n   2) | low10 1.00 (n 15) | crit 0.90 retx 1.00 | dT 12.92 | g8 1.00 (n 19) | m 207.39 tmin 245.01 G8 225.94 nk 481 ancf 0/207
+  61c J5 G512   s7  r4: n 156 base 0.97 (no-retx n   4) | low10 1.00 (n 15) | crit 0.80 retx 0.99 | dT 11.76 | g8 1.00 (n 19) | m 189.93 tmin 243.89 G8 224.24 nk 482 ancf 0/208
+  61c J5 G512   s7  r6: n 155 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.83 retx 0.99 | dT 3.62 | g8 1.00 (n 19) | m 215.16 tmin 243.31 G8 225.57 nk 481 ancf 0/207
+  61a J5 G12    s42 r1: n 168 base 0.34 (no-retx n 111) | low10 0.56 (n 16) | crit 0.80 retx 0.37 | dT 1.92 | g8 0.52 (n 21) | m 36.46 tmin 42.04 G8 37.98 nk 60 ancf 0/221
+  61a J5 G12    s42 r3: n 170 base 0.35 (no-retx n 110) | low10 0.82 (n 17) | crit 0.74 retx 0.39 | dT 1.48 | g8 0.76 (n 21) | m 33.28 tmin 42.72 G8 37.58 nk 60 ancf 0/223
+  61a J5 G12    s42 r5: n 165 base 0.35 (no-retx n 108) | low10 0.56 (n 16) | crit 0.86 retx 0.35 | dT 1.75 | g8 0.50 (n 20) | m 35.06 tmin 40.88 G8 37.06 nk 60 ancf 0/222
+  61a J5 G12    s7  r2: n 166 base 0.27 (no-retx n 122) | low10 0.81 (n 16) | crit 0.74 retx 0.34 | dT 2.75 | g8 0.70 (n 20) | m 35.35 tmin 42.34 G8 37.74 nk 60 ancf 0/218
+  61a J5 G12    s7  r4: n 165 base 0.32 (no-retx n 112) | low10 0.69 (n 16) | crit 0.78 retx 0.34 | dT 1.88 | g8 0.45 (n 20) | m 36.70 tmin 42.61 G8 37.66 nk 60 ancf 0/217
+  61a J5 G12    s7  r6: n 167 base 0.30 (no-retx n 117) | low10 0.81 (n 16) | crit 0.77 retx 0.33 | dT 3.28 | g8 0.70 (n 20) | m 35.30 tmin 42.38 G8 37.35 nk 60 ancf 0/221
+  61a J5 G16    s42 r1: n 172 base 0.36 (no-retx n 110) | low10 0.82 (n 17) | crit 0.90 retx 0.37 | dT 1.42 | g8 0.71 (n 21) | m 35.33 tmin 41.93 G8 37.84 nk 80 ancf 0/225
+  61a J5 G16    s42 r3: n 168 base 0.32 (no-retx n 114) | low10 0.56 (n 16) | crit 0.82 retx 0.34 | dT 1.31 | g8 0.48 (n 21) | m 34.00 tmin 41.77 G8 36.77 nk 80 ancf 0/223
+  61a J5 G16    s42 r5: n 174 base 0.38 (no-retx n 108) | low10 0.65 (n 17) | crit 0.83 retx 0.40 | dT 2.37 | g8 0.62 (n 21) | m 34.33 tmin 41.93 G8 37.61 nk 80 ancf 0/227
+  61a J5 G16    s7  r2: n 169 base 0.30 (no-retx n 119) | low10 0.56 (n 16) | crit 0.83 retx 0.30 | dT 1.09 | g8 0.48 (n 21) | m 34.90 tmin 41.89 G8 37.74 nk 80 ancf 0/223
+  61a J5 G16    s7  r4: n 167 base 0.34 (no-retx n 111) | low10 0.56 (n 16) | crit 0.90 retx 0.33 | dT 0.5 | g8 0.65 (n 20) | m 34.64 tmin 41.11 G8 36.20 nk 80 ancf 0/221
+  61a J5 G16    s7  r6: n 170 base 0.28 (no-retx n 122) | low10 0.47 (n 17) | crit 0.91 retx 0.30 | dT 0.49 | g8 0.38 (n 21) | m 33.67 tmin 41.67 G8 38.51 nk 80 ancf 0/223
+  61a J5 G24    s42 r1: n 174 base 0.48 (no-retx n  91) | low10 0.88 (n 17) | crit 0.93 retx 0.48 | dT 0.71 | g8 0.67 (n 21) | m 34.57 tmin 41.74 G8 37.97 nk 118 ancf 52/228
+  61a J5 G24    s42 r3: n 175 base 0.45 (no-retx n  96) | low10 0.59 (n 17) | crit 0.94 retx 0.45 | dT 0.95 | g8 0.52 (n 21) | m 36.16 tmin 41.96 G8 38.44 nk 119 ancf 0/228
+  61a J5 G24    s42 r5: n 174 base 0.49 (no-retx n  89) | low10 0.76 (n 17) | crit 0.93 retx 0.48 | dT -0.57 | g8 0.67 (n 21) | m 34.57 tmin 41.94 G8 37.52 nk 120 ancf 0/227
+  61a J5 G24    s7  r2: n 175 base 0.45 (no-retx n  96) | low10 0.76 (n 17) | crit 0.91 retx 0.46 | dT 0.34 | g8 0.57 (n 21) | m 36.18 tmin 41.67 G8 38.43 nk 120 ancf 0/228
+  61a J5 G24    s7  r4: n 168 base 0.35 (no-retx n 109) | low10 0.56 (n 16) | crit 0.92 retx 0.35 | dT 0.93 | g8 0.43 (n 21) | m 36.94 tmin 41.96 G8 38.82 nk 120 ancf 0/222
+  61a J5 G24    s7  r6: n 170 base 0.35 (no-retx n 110) | low10 0.65 (n 17) | crit 0.90 retx 0.35 | dT 0.5 | g8 0.62 (n 21) | m 36.70 tmin 41.76 G8 38.84 nk 120 ancf 0/222
+  61a J5 G92    s42 r1: n 185 base 0.85 (no-retx n  27) | low10 1.00 (n 18) | crit 1.00 retx 0.85 | dT 1.84 | g8 1.00 (n 23) | m 38.54 tmin 43.71 G8 40.51 nk 410 ancf 0/237
+  61a J5 G92    s42 r3: n 183 base 0.84 (no-retx n  30) | low10 1.00 (n 18) | crit 0.99 retx 0.84 | dT 1.07 | g8 1.00 (n 22) | m 38.97 tmin 43.60 G8 41.13 nk 408 ancf 0/235
+  61a J5 G92    s42 r5: n 186 base 0.83 (no-retx n  32) | low10 1.00 (n 18) | crit 1.00 retx 0.83 | dT 1.04 | g8 0.96 (n 23) | m 38.91 tmin 43.91 G8 40.98 nk 409 ancf 0/238
+  61a J5 G92    s7  r2: n 181 base 0.76 (no-retx n  43) | low10 0.94 (n 18) | crit 1.00 retx 0.76 | dT 0.65 | g8 0.91 (n 22) | m 38.05 tmin 43.87 G8 41.09 nk 414 ancf 73/233
+  61a J5 G92    s7  r4: n 182 base 0.76 (no-retx n  43) | low10 0.94 (n 18) | crit 1.00 retx 0.76 | dT 1.8 | g8 0.91 (n 22) | m 37.38 tmin 43.64 G8 40.55 nk 414 ancf 0/234
+  61a J5 G92    s7  r6: n 181 base 0.73 (no-retx n  48) | low10 0.94 (n 18) | crit 1.00 retx 0.73 | dT 1.16 | g8 0.91 (n 22) | m 38.44 tmin 43.99 G8 40.61 nk 415 ancf 0/233
+  61a J5 G104   s42 r1: n 164 base 0.88 (no-retx n  19) | low10 1.00 (n 16) | crit 1.00 retx 0.88 | dT 1.58 | g8 1.00 (n 20) | m 38.98 tmin 45.64 G8 41.11 nk 449 ancf 0/216
+  61a J5 G104   s42 r3: n 164 base 0.90 (no-retx n  16) | low10 1.00 (n 16) | crit 1.00 retx 0.90 | dT 2.92 | g8 1.00 (n 20) | m 40.10 tmin 45.25 G8 42.20 nk 450 ancf 0/216
+  61a J5 G104   s42 r5: n 162 base 0.89 (no-retx n  18) | low10 1.00 (n 16) | crit 1.00 retx 0.89 | dT 2.9 | g8 1.00 (n 20) | m 39.05 tmin 45.42 G8 42.04 nk 452 ancf 0/214
+  61a J5 G104   s7  r2: n 161 base 0.86 (no-retx n  22) | low10 1.00 (n 16) | crit 1.00 retx 0.86 | dT 2.37 | g8 0.95 (n 20) | m 40.29 tmin 45.66 G8 41.55 nk 451 ancf 15/213
+  61a J5 G104   s7  r4: n 161 base 0.88 (no-retx n  19) | low10 1.00 (n 16) | crit 1.00 retx 0.88 | dT 2.37 | g8 0.95 (n 20) | m 36.99 tmin 45.33 G8 41.23 nk 455 ancf 12/213
+  61a J5 G104   s7  r6: n 161 base 0.88 (no-retx n  19) | low10 1.00 (n 16) | crit 1.00 retx 0.88 | dT 2.93 | g8 1.00 (n 20) | m 40.04 tmin 45.45 G8 42.22 nk 455 ancf 103/213
+  61a J5 G112   s42 r1: n 165 base 0.94 (no-retx n  10) | low10 1.00 (n 16) | crit 0.99 retx 0.95 | dT 5.4 | g8 1.00 (n 20) | m 40.60 tmin 46.70 G8 43.01 nk 469 ancf 0/217
+  61a J5 G112   s42 r3: n 164 base 0.86 (no-retx n  23) | low10 1.00 (n 16) | crit 0.99 retx 0.87 | dT 4.56 | g8 1.00 (n 20) | m 40.15 tmin 46.85 G8 42.83 nk 469 ancf 0/216
+  61a J5 G112   s42 r5: n 163 base 0.85 (no-retx n  25) | low10 1.00 (n 16) | crit 0.98 retx 0.86 | dT 4.84 | g8 1.00 (n 20) | m 40.30 tmin 46.67 G8 42.86 nk 467 ancf 0/215
+  61a J5 G112   s7  r2: n 163 base 0.91 (no-retx n  15) | low10 1.00 (n 16) | crit 0.98 retx 0.93 | dT 4.87 | g8 1.00 (n 20) | m 41.69 tmin 46.56 G8 43.04 nk 468 ancf 0/215
+  61a J5 G112   s7  r4: n 161 base 0.81 (no-retx n  30) | low10 1.00 (n 16) | crit 1.00 retx 0.81 | dT 4.39 | g8 1.00 (n 20) | m 40.55 tmin 47.06 G8 42.83 nk 472 ancf 0/213
+  61a J5 G112   s7  r6: n 163 base 0.88 (no-retx n  19) | low10 1.00 (n 16) | crit 0.99 retx 0.88 | dT 4.66 | g8 1.00 (n 20) | m 40.45 tmin 46.89 G8 42.69 nk 468 ancf 0/215
+  61a J5 G124   s42 r1: n 156 base 0.94 (no-retx n   9) | low10 1.00 (n 15) | crit 0.99 retx 0.95 | dT 5.1 | g8 1.00 (n 19) | m 43.58 tmin 50.45 G8 44.73 nk 480 ancf 0/208
+  61a J5 G124   s42 r3: n 158 base 0.97 (no-retx n   4) | low10 1.00 (n 15) | crit 0.99 retx 0.98 | dT 6.78 | g8 1.00 (n 19) | m 39.72 tmin 50.38 G8 45.12 nk 479 ancf 0/210
+  61a J5 G124   s42 r5: n 157 base 0.96 (no-retx n   6) | low10 1.00 (n 15) | crit 0.99 retx 0.96 | dT 6.93 | g8 1.00 (n 19) | m 41.71 tmin 50.57 G8 44.82 nk 479 ancf 0/209
+  61a J5 G124   s7  r2: n 157 base 0.93 (no-retx n  11) | low10 1.00 (n 15) | crit 0.99 retx 0.93 | dT 6.36 | g8 1.00 (n 19) | m 41.75 tmin 49.72 G8 44.21 nk 479 ancf 0/209
+  61a J5 G124   s7  r4: n 158 base 0.96 (no-retx n   7) | low10 1.00 (n 15) | crit 0.98 retx 0.97 | dT 7.68 | g8 1.00 (n 19) | m 42.17 tmin 50.56 G8 44.18 nk 478 ancf 0/210
+  61a J5 G124   s7  r6: n 157 base 0.93 (no-retx n  11) | low10 1.00 (n 15) | crit 0.98 retx 0.95 | dT 6.95 | g8 1.00 (n 19) | m 43.06 tmin 50.78 G8 45.10 nk 479 ancf 0/209
+  61a J5 G2048  s42 r1: n 156 base 0.97 (no-retx n   5) | low10 0.93 (n 15) | crit 0.70 retx 0.97 | dT 0.77 | g8 1.00 (n 19) | m 971.58 tmin 1020.95 G8 996.78 nk 482 ancf 168/208
+  61a J5 G2048  s42 r3: n 156 base 0.97 (no-retx n   4) | low10 1.00 (n 15) | crit 0.69 retx 0.97 | dT -9.75 | g8 1.00 (n 19) | m 971.89 tmin 1022.73 G8 1002.49 nk 482 ancf 169/208
+  61a J5 G2048  s42 r5: n 157 base 0.96 (no-retx n   6) | low10 1.00 (n 15) | crit 0.69 retx 0.96 | dT 0.91 | g8 1.00 (n 19) | m 970.28 tmin 1023.67 G8 1002.32 nk 481 ancf 165/209
+  61a J5 G2048  s7  r2: n 155 base 0.94 (no-retx n  10) | low10 1.00 (n 15) | crit 0.65 retx 0.97 | dT 15.62 | g8 0.95 (n 19) | m 965.70 tmin 1020.23 G8 992.90 nk 482 ancf 158/207
+  61a J5 G2048  s7  r4: n 155 base 0.94 (no-retx n  10) | low10 0.93 (n 15) | crit 0.68 retx 0.95 | dT 14.06 | g8 1.00 (n 19) | m 971.00 tmin 1018.41 G8 991.22 nk 482 ancf 157/207
+  61a J5 G2048  s7  r6: n 156 base 0.95 (no-retx n   8) | low10 1.00 (n 15) | crit 0.71 retx 0.97 | dT 17.97 | g8 1.00 (n 19) | m 969.49 tmin 1015.84 G8 992.25 nk 482 ancf 154/208
+  c2 s60 G16    s42 r1: n 258 base 0.55 (no-retx n 117) | low10 0.56 (n 25) | crit 0.85 retx 0.56 | dT -0.02 | g8 0.62 (n 32) | m 5.93 tmin 8.71 G8 7.06 nk 280 ancf 0/310
+  c2 s60 G16    s42 r3: n 255 base 0.55 (no-retx n 114) | low10 0.60 (n 25) | crit 0.80 retx 0.52 | dT -0.02 | g8 0.74 (n 31) | m 6.82 tmin 8.76 G8 7.27 nk 282 ancf 0/307
+  c2 s60 G16    s42 r5: n 254 base 0.49 (no-retx n 129) | low10 0.64 (n 25) | crit 0.80 retx 0.50 | dT 0.26 | g8 0.61 (n 31) | m 6.37 tmin 8.68 G8 7.14 nk 282 ancf 0/306
+  c2 s60 G16    s7  r2: n 258 base 0.52 (no-retx n 125) | low10 0.68 (n 25) | crit 0.84 retx 0.52 | dT 0.08 | g8 0.69 (n 32) | m 6.14 tmin 8.59 G8 7.04 nk 282 ancf 28/310
+  c2 s60 G16    s7  r4: n 256 base 0.52 (no-retx n 122) | low10 0.76 (n 25) | crit 0.86 retx 0.54 | dT 0.19 | g8 0.69 (n 32) | m 6.34 tmin 8.61 G8 7.09 nk 278 ancf 0/308
+  c2 s60 G16    s7  r6: n 251 base 0.47 (no-retx n 134) | low10 0.64 (n 25) | crit 0.80 retx 0.46 | dT 0.18 | g8 0.55 (n 31) | m 6.71 tmin 8.68 G8 7.18 nk 284 ancf 0/303
+  c2 s60 G32    s42 r1: n 265 base 0.68 (no-retx n  85) | low10 0.92 (n 26) | crit 0.94 retx 0.67 | dT -0.02 | g8 0.88 (n 33) | m 6.62 tmin 8.90 G8 7.29 nk 536 ancf 0/317
+  c2 s60 G32    s42 r3: n 264 base 0.70 (no-retx n  80) | low10 0.77 (n 26) | crit 0.91 retx 0.69 | dT -0.02 | g8 0.73 (n 33) | m 6.58 tmin 8.79 G8 6.99 nk 538 ancf 0/316
+  c2 s60 G32    s42 r5: n 269 base 0.72 (no-retx n  76) | low10 0.69 (n 26) | crit 0.95 retx 0.72 | dT -0.1 | g8 0.79 (n 33) | m 6.57 tmin 8.99 G8 7.22 nk 535 ancf 0/321
+  c2 s60 G32    s7  r2: n 262 base 0.66 (no-retx n  90) | low10 0.81 (n 26) | crit 0.91 retx 0.67 | dT 0.21 | g8 0.81 (n 32) | m 6.18 tmin 8.73 G8 7.40 nk 542 ancf 0/314
+  c2 s60 G32    s7  r4: n 265 base 0.66 (no-retx n  89) | low10 0.65 (n 26) | crit 0.90 retx 0.67 | dT 0.02 | g8 0.64 (n 33) | m 6.76 tmin 9.04 G8 7.47 nk 537 ancf 85/317
+  c2 s60 G32    s7  r6: n 266 base 0.73 (no-retx n  73) | low10 0.92 (n 26) | crit 0.91 retx 0.72 | dT -0.07 | g8 0.82 (n 33) | m 6.88 tmin 9.01 G8 7.54 nk 530 ancf 0/318
+  c2 s60 G48    s42 r1: n 267 base 0.76 (no-retx n  64) | low10 0.85 (n 26) | crit 0.97 retx 0.76 | dT 0.04 | g8 0.79 (n 33) | m 7.05 tmin 9.05 G8 7.71 nk 790 ancf 3/319
+  c2 s60 G48    s42 r3: n 270 base 0.76 (no-retx n  65) | low10 0.89 (n 27) | crit 0.98 retx 0.76 | dT 0.0 | g8 0.88 (n 33) | m 6.99 tmin 8.96 G8 7.55 nk 791 ancf 11/322
+  c2 s60 G48    s42 r5: n 271 base 0.81 (no-retx n  51) | low10 0.67 (n 27) | crit 0.97 retx 0.81 | dT -0.08 | g8 0.70 (n 33) | m 6.58 tmin 8.99 G8 7.49 nk 786 ancf 0/323
+  c2 s60 G48    s7  r2: n 270 base 0.78 (no-retx n  59) | low10 0.74 (n 27) | crit 0.95 retx 0.78 | dT 0.22 | g8 0.88 (n 33) | m 6.73 tmin 9.02 G8 7.71 nk 784 ancf 0/322
+  c2 s60 G48    s7  r4: n 273 base 0.79 (no-retx n  58) | low10 0.89 (n 27) | crit 0.98 retx 0.79 | dT 0.46 | g8 0.85 (n 34) | m 6.55 tmin 9.12 G8 7.83 nk 778 ancf 0/325
+  c2 s60 G48    s7  r6: n 271 base 0.78 (no-retx n  60) | low10 0.81 (n 27) | crit 0.97 retx 0.78 | dT 0.01 | g8 0.79 (n 33) | m 6.68 tmin 9.05 G8 7.53 nk 786 ancf 0/323
+  c2 s60 G160   s42 r1: n 169 base 0.99 (no-retx n   1) | low10 1.00 (n 16) | crit 0.75 retx 0.99 | dT 0.33 | g8 1.00 (n 21) | m 9.43 tmin 12.38 G8 11.06 nk 2244 ancf 64/221
+  c2 s60 G160   s42 r3: n 168 base 0.99 (no-retx n   1) | low10 1.00 (n 16) | crit 0.71 retx 1.00 | dT 1.28 | g8 1.00 (n 21) | m 9.96 tmin 12.31 G8 11.02 nk 2243 ancf 0/220
+  c2 s60 G160   s42 r5: n 168 base 1.00 (no-retx n   0) | low10 1.00 (n 16) | crit 0.74 retx 1.00 | dT None | g8 1.00 (n 21) | m 10.12 tmin 12.43 G8 11.08 nk 2256 ancf 0/220
+  c2 s60 G160   s7  r2: n 168 base 0.99 (no-retx n   2) | low10 1.00 (n 16) | crit 0.76 retx 1.00 | dT 0.99 | g8 1.00 (n 21) | m 9.84 tmin 12.31 G8 11.01 nk 2247 ancf 21/220
+  c2 s60 G160   s7  r4: n 169 base 1.00 (no-retx n   0) | low10 1.00 (n 16) | crit 0.71 retx 1.00 | dT None | g8 1.00 (n 21) | m 10.07 tmin 12.30 G8 10.99 nk 2251 ancf 0/221
+  c2 s60 G160   s7  r6: n 170 base 0.99 (no-retx n   2) | low10 1.00 (n 17) | crit 0.74 retx 0.99 | dT 0.44 | g8 1.00 (n 21) | m 10.06 tmin 12.34 G8 10.48 nk 2231 ancf 0/222
+  c2 s60 G176   s42 r1: n 159 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.81 retx 1.00 | dT 1.53 | g8 1.00 (n 19) | m 10.31 tmin 13.13 G8 11.79 nk 2345 ancf 0/211
+  c2 s60 G176   s42 r3: n 159 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.85 retx 1.00 | dT 1.73 | g8 1.00 (n 19) | m 10.68 tmin 13.07 G8 11.94 nk 2347 ancf 0/211
+  c2 s60 G176   s42 r5: n 159 base 0.99 (no-retx n   2) | low10 1.00 (n 15) | crit 0.80 retx 1.00 | dT 1.44 | g8 1.00 (n 19) | m 10.90 tmin 13.13 G8 11.60 nk 2336 ancf 0/211
+  c2 s60 G176   s7  r2: n 159 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.84 retx 1.00 | dT None | g8 1.00 (n 19) | m 10.46 tmin 13.10 G8 11.95 nk 2345 ancf 0/211
+  c2 s60 G176   s7  r4: n 160 base 0.99 (no-retx n   1) | low10 1.00 (n 16) | crit 0.84 retx 0.99 | dT -0.06 | g8 1.00 (n 20) | m 10.89 tmin 13.02 G8 11.80 nk 2340 ancf 0/212
+  c2 s60 G176   s7  r6: n 160 base 0.98 (no-retx n   3) | low10 1.00 (n 16) | crit 0.82 retx 0.98 | dT 0.67 | g8 1.00 (n 20) | m 11.13 tmin 13.09 G8 11.62 nk 2335 ancf 0/212
+  c2 s60 G192   s42 r1: n 155 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.86 retx 0.99 | dT 0.51 | g8 1.00 (n 19) | m 10.92 tmin 13.90 G8 11.93 nk 2390 ancf 0/207
+  c2 s60 G192   s42 r3: n 154 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.91 retx 1.00 | dT 1.9 | g8 1.00 (n 19) | m 11.92 tmin 14.06 G8 12.57 nk 2392 ancf 0/206
+  c2 s60 G192   s42 r5: n 155 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.87 retx 0.99 | dT 1.02 | g8 1.00 (n 19) | m 11.58 tmin 14.01 G8 12.17 nk 2392 ancf 0/207
+  c2 s60 G192   s7  r2: n 154 base 0.98 (no-retx n   3) | low10 1.00 (n 15) | crit 0.82 retx 0.99 | dT 1.77 | g8 1.00 (n 19) | m 11.95 tmin 14.04 G8 12.37 nk 2395 ancf 0/206
+  c2 s60 G192   s7  r4: n 155 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.92 retx 1.00 | dT 2.31 | g8 1.00 (n 19) | m 11.71 tmin 13.86 G8 12.54 nk 2390 ancf 0/207
+  c2 s60 G192   s7  r6: n 155 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.90 retx 1.00 | dT None | g8 1.00 (n 19) | m 11.06 tmin 14.12 G8 12.49 nk 2391 ancf 0/207
+  c2 s60 G256   s42 r1: n 153 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.91 retx 1.00 | dT 1.43 | g8 1.00 (n 19) | m 15.52 tmin 20.17 G8 17.65 nk 2413 ancf 0/205
+  c2 s60 G256   s42 r3: n 153 base 0.98 (no-retx n   3) | low10 1.00 (n 15) | crit 0.86 retx 1.00 | dT 2.24 | g8 1.00 (n 19) | m 14.85 tmin 19.89 G8 17.25 nk 2411 ancf 0/205
+  c2 s60 G256   s42 r5: n 153 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.91 retx 0.99 | dT 0.54 | g8 1.00 (n 19) | m 14.71 tmin 19.76 G8 16.95 nk 2411 ancf 0/205
+  c2 s60 G256   s7  r2: n 153 base 0.99 (no-retx n   2) | low10 1.00 (n 15) | crit 0.89 retx 0.99 | dT 2.37 | g8 1.00 (n 19) | m 15.01 tmin 19.73 G8 17.27 nk 2411 ancf 0/205
+  c2 s60 G256   s7  r4: n 152 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.89 retx 0.99 | dT -0.26 | g8 1.00 (n 19) | m 14.46 tmin 19.62 G8 16.41 nk 2411 ancf 0/204
+  c2 s60 G256   s7  r6: n 152 base 0.99 (no-retx n   1) | low10 1.00 (n 15) | crit 0.90 retx 0.99 | dT 1.54 | g8 1.00 (n 19) | m 15.40 tmin 19.75 G8 16.47 nk 2412 ancf 0/204
+  c2 s60 G2048  s42 r1: n 152 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.88 retx 1.00 | dT None | g8 1.00 (n 19) | m 189.51 tmin 200.82 G8 194.89 nk 2407 ancf 164/204
+  c2 s60 G2048  s42 r3: n 154 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.81 retx 1.00 | dT None | g8 1.00 (n 19) | m 190.26 tmin 200.81 G8 193.95 nk 2408 ancf 134/206
+  c2 s60 G2048  s42 r5: n 153 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.88 retx 1.00 | dT None | g8 1.00 (n 19) | m 190.06 tmin 200.75 G8 194.89 nk 2409 ancf 132/205
+  c2 s60 G2048  s7  r2: n 153 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.88 retx 1.00 | dT None | g8 1.00 (n 19) | m 191.12 tmin 200.03 G8 194.85 nk 2408 ancf 158/205
+  c2 s60 G2048  s7  r4: n 153 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.79 retx 1.00 | dT None | g8 1.00 (n 19) | m 191.53 tmin 200.25 G8 195.62 nk 2407 ancf 132/205
+  c2 s60 G2048  s7  r6: n 153 base 1.00 (no-retx n   0) | low10 1.00 (n 15) | crit 0.85 retx 1.00 | dT None | g8 1.00 (n 19) | m 189.13 tmin 200.04 G8 195.69 nk 2408 ancf 132/205
+  c1s s60 G64    s42 r1: n 105 base 0.35 (no-retx n  68) | low10 0.30 (n 10) | crit 0.00 retx nan | dT 0.01 | g8 0.23 (n 13) | m 2.27 tmin 2.38 G8 2.30 nk 5194 ancf 0/157
+  c1s s60 G64    s42 r3: n 103 base 0.34 (no-retx n  68) | low10 0.10 (n 10) | crit 0.00 retx nan | dT -0.02 | g8 0.33 (n 12) | m 2.26 tmin 2.40 G8 2.30 nk 5197 ancf 19/155
+  c1s s60 G64    s42 r5: n  98 base 0.34 (no-retx n  65) | low10 0.33 (n 9) | crit 0.00 retx nan | dT 0.0 | g8 0.50 (n 12) | m 2.26 tmin 2.37 G8 2.29 nk 5351 ancf 0/150
+  c1s s60 G64    s7  r2: n  99 base 0.36 (no-retx n  63) | low10 0.22 (n 9) | crit 0.00 retx nan | dT -0.02 | g8 0.25 (n 12) | m 2.26 tmin 2.34 G8 2.28 nk 5446 ancf 0/151
+  c1s s60 G64    s7  r4: n 171 base 0.16 (no-retx n 144) | low10 0.11 (n 18) | crit 0.00 retx nan | dT -0.02 | g8 0.14 (n 21) | m 2.38 tmin 2.50 G8 2.40 nk 3308 ancf 0/223
+  c1s s60 G64    s7  r6: n 123 base 0.24 (no-retx n  94) | low10 0.31 (n 13) | crit 0.00 retx nan | dT 0.0 | g8 0.27 (n 15) | m 2.29 tmin 2.42 G8 2.33 nk 4122 ancf 0/175
+  c1s s60 G128   s42 r1: n  80 base 0.53 (no-retx n  38) | low10 0.50 (n 8) | crit 0.00 retx nan | dT -0.01 | g8 0.70 (n 10) | m 2.29 tmin 2.43 G8 2.36 nk 9138 ancf 0/132
+  c1s s60 G128   s42 r3: n  77 base 0.53 (no-retx n  36) | low10 0.71 (n 7) | crit 0.00 retx nan | dT 0.03 | g8 0.67 (n 9) | m 2.27 tmin 2.40 G8 2.33 nk 9467 ancf 0/129
+  c1s s60 G128   s42 r5: n  78 base 0.53 (no-retx n  37) | low10 0.57 (n 7) | crit 0.00 retx nan | dT -0.01 | g8 0.33 (n 9) | m 2.30 tmin 2.42 G8 2.36 nk 9161 ancf 0/130
+  c1s s60 G128   s7  r2: n  84 base 0.43 (no-retx n  48) | low10 0.50 (n 8) | crit 0.00 retx nan | dT 0.07 | g8 0.50 (n 10) | m 2.29 tmin 2.43 G8 2.32 nk 9058 ancf 0/136
+  c1s s60 G128   s7  r4: n  81 base 0.54 (no-retx n  37) | low10 0.62 (n 8) | crit 0.00 retx nan | dT 0.03 | g8 0.70 (n 10) | m 2.29 tmin 2.43 G8 2.34 nk 9080 ancf 0/133
+  c1s s60 G128   s7  r6: n  82 base 0.52 (no-retx n  39) | low10 0.50 (n 8) | crit 0.00 retx nan | dT 0.0 | g8 0.40 (n 10) | m 2.30 tmin 2.43 G8 2.34 nk 9151 ancf 0/134
+  c1s s60 G192   s42 r1: n  82 base 0.65 (no-retx n  29) | low10 0.62 (n 8) | crit 0.00 retx nan | dT 0.02 | g8 0.70 (n 10) | m 2.36 tmin 2.54 G8 2.43 nk 11808 ancf 0/134
+  c1s s60 G192   s42 r3: n  74 base 0.59 (no-retx n  30) | low10 0.71 (n 7) | crit 0.00 retx nan | dT 0.0 | g8 0.67 (n 9) | m 2.32 tmin 2.50 G8 2.42 nk 12724 ancf 0/126
+  c1s s60 G192   s42 r5: n  76 base 0.58 (no-retx n  32) | low10 0.71 (n 7) | crit 0.00 retx nan | dT 0.01 | g8 0.56 (n 9) | m 2.31 tmin 2.49 G8 2.41 nk 12535 ancf 0/128
+  c1s s60 G192   s7  r2: n  81 base 0.59 (no-retx n  33) | low10 0.88 (n 8) | crit 0.00 retx nan | dT -0.01 | g8 0.50 (n 10) | m 2.31 tmin 2.55 G8 2.45 nk 11859 ancf 0/133
+  c1s s60 G192   s7  r4: n 221 base 0.31 (no-retx n 152) | low10 0.41 (n 22) | crit 0.40 retx 0.44 | dT 0.96 | g8 0.33 (n 27) | m 2.73 tmin 4.22 G8 2.89 nk 5980 ancf 0/273
+  c1s s60 G192   s7  r6: n  80 base 0.62 (no-retx n  30) | low10 0.62 (n 8) | crit 0.00 retx nan | dT -0.01 | g8 0.60 (n 10) | m 2.29 tmin 2.52 G8 2.42 nk 12008 ancf 0/132
+  c1s s60 G2048  s42 r1: n 152 base 0.67 (no-retx n  50) | low10 0.87 (n 15) | crit 0.72 retx 0.79 | dT 17.03 | g8 0.74 (n 19) | m 3.34 tmin 7.72 G8 3.74 nk 21476 ancf 0/204
+  c1s s60 G2048  s42 r3: n 128 base 0.80 (no-retx n  26) | low10 1.00 (n 12) | crit 0.99 retx 0.80 | dT -0.22 | g8 0.81 (n 16) | m 3.51 tmin 5.16 G8 3.86 nk 23038 ancf 0/180
+  c1s s60 G2048  s42 r5: n 664 base 0.98 (no-retx n  12) | low10 0.91 (n 66) | crit 0.86 retx 0.98 | dT -12.76 | g8 0.96 (n 83) | m 63.57 tmin 90.05 G8 76.43 nk 4876 ancf 651/716
+  c1s s60 G2048  s42 r7: n 124 base 0.73 (no-retx n  34) | low10 1.00 (n 12) | crit 1.00 retx 0.73 | dT 0.98 | g8 0.87 (n 15) | m 3.50 tmin 5.49 G8 3.79 nk 23494 ancf 0/176
+  c1s s60 G2048  s42 r9: n 266 base 0.50 (no-retx n 132) | low10 0.81 (n 26) | crit 0.58 retx 0.61 | dT 19.82 | g8 0.61 (n 33) | m 18.58 tmin 42.68 G8 26.32 nk 10028 ancf 181/318
+  c1s s60 G2048  s42 r11: n 261 base 0.54 (no-retx n 120) | low10 0.88 (n 26) | crit 0.89 retx 0.57 | dT 9.14 | g8 0.78 (n 32) | m 21.66 tmin 40.79 G8 28.54 nk 9221 ancf 181/313
+  c1s s60 G2048  s7  r2: n 127 base 0.82 (no-retx n  23) | low10 0.92 (n 12) | crit 1.00 retx 0.82 | dT 0.61 | g8 1.00 (n 15) | m 3.45 tmin 5.19 G8 3.90 nk 22995 ancf 0/179
+  c1s s60 G2048  s7  r4: n 124 base 0.80 (no-retx n  25) | low10 0.92 (n 12) | crit 1.00 retx 0.80 | dT 0.43 | g8 0.80 (n 15) | m 3.54 tmin 5.08 G8 3.76 nk 23416 ancf 0/176
+  c1s s60 G2048  s7  r6: n 133 base 0.78 (no-retx n  29) | low10 0.69 (n 13) | crit 0.95 retx 0.81 | dT 0.58 | g8 0.75 (n 16) | m 3.44 tmin 6.15 G8 4.00 nk 22318 ancf 0/185
+  c1s s60 G2048  s7  r8: n 361 base 0.49 (no-retx n 185) | low10 0.81 (n 36) | crit 0.86 retx 0.52 | dT 5.87 | g8 0.56 (n 45) | m 39.10 tmin 63.12 G8 48.73 nk 6597 ancf 286/413
+  c1s s60 G2048  s7  r10: n 133 base 0.79 (no-retx n  28) | low10 0.92 (n 13) | crit 0.99 retx 0.79 | dT 1.43 | g8 0.88 (n 16) | m 3.70 tmin 6.98 G8 4.20 nk 22575 ancf 0/185
+  c1s s60 G2048  s7  r12: n 178 base 0.74 (no-retx n  46) | low10 0.71 (n 17) | crit 0.94 retx 0.75 | dT 2.2 | g8 0.86 (n 22) | m 12.80 tmin 20.08 G8 15.68 nk 15008 ancf 98/230
+
+  A2. Per arm: rows with dT > 0 (a sign tally; 6/6 has p = 1/64 under no association), and the dose: median of (tmin - the row's median tmin), ms,
+      pooled over the arm's rows, by the tick's retransmit delta (windows in the class, their median nk: a class with more samples reads lower by count alone)
+    s62 J0 W12    dT > 0 on 3/3 rows | retx 0: +0.89 (634, nk 60) | retx 1-2: -2.47 (106, nk 48) | retx 3-5: -1.71 (9, nk 60) | retx 6+: -3.11 (168, nk 42)
+      the same for the window p50: retx 0: -0.02 | retx 1-2: +0.01 | retx 3-5: -0.04 | retx 6+: +0.11
+    s62 J0 W80    dT > 0 on 1/1 rows | retx 0: +2.12 (16, nk 426) | retx 1-2: +0.09 (10, nk 422) | retx 3-5: +0.65 (10, nk 414) | retx 6+: -0.28 (126, nk 388)
+      the same for the window p50: retx 0: -0.07 | retx 1-2: -0.14 | retx 3-5: -0.01 | retx 6+: +0.01
+    s62 J0 W128   dT > 0 on 1/1 rows | retx 0: +7.31 (6, nk 481) | retx 1-2: +7.40 (3, nk 484) | retx 3-5: +4.78 (8, nk 479) | retx 6+: -0.57 (131, nk 480)
+      the same for the window p50: retx 0: +2.15 | retx 1-2: +2.40 | retx 3-5: +1.88 | retx 6+: -0.43
+    s62 J0 W512   dT > 0 on 1/1 rows | retx 0: +3.35 (2, nk 482) | retx 1-2: +6.75 (24, nk 480) | retx 3-5: +12.29 (17, nk 481) | retx 6+: -1.58 (267, nk 482)
+      the same for the window p50: retx 0: -0.08 | retx 1-2: +5.49 | retx 3-5: +9.77 | retx 6+: -1.15
+    61c J5 W12    dT > 0 on 6/6 rows | retx 0: +0.50 (691, nk 60) | retx 1-2: -0.47 (119, nk 48) | retx 3-5: -0.47 (11, nk 50) | retx 6+: -2.36 (185, nk 42)
+      the same for the window p50: retx 0: +0.00 | retx 1-2: +0.00 | retx 3-5: -0.82 | retx 6+: +0.14
+    61c J5 W16    dT > 0 on 6/6 rows | retx 0: +0.21 (682, nk 80) | retx 1-2: -0.58 (69, nk 54) | retx 3-5: -1.17 (23, nk 82) | retx 6+: -0.79 (252, nk 60)
+      the same for the window p50: retx 0: +0.04 | retx 1-2: +0.58 | retx 3-5: -0.53 | retx 6+: -0.24
+    61c J5 W24    dT > 0 on 6/6 rows | retx 0: +0.32 (600, nk 120) | retx 1-2: +0.19 (60, nk 102) | retx 3-5: -0.04 (55, nk 110) | retx 6+: -0.65 (330, nk 95)
+      the same for the window p50: retx 0: -0.15 | retx 1-2: +1.21 | retx 3-5: +0.33 | retx 6+: +0.08
+    61c J5 W80    dT > 0 on 6/6 rows | retx 0: +0.55 (248, nk 388) | retx 1-2: +0.04 (37, nk 379) | retx 3-5: -0.29 (33, nk 372) | retx 6+: -0.19 (771, nk 352)
+      the same for the window p50: retx 0: -0.12 | retx 1-2: -0.06 | retx 3-5: -0.02 | retx 6+: +0.06
+    61c J5 W100   dT > 0 on 6/6 rows | retx 0: +1.21 (193, nk 467) | retx 1-2: +1.10 (30, nk 463) | retx 3-5: +1.08 (19, nk 457) | retx 6+: -0.48 (824, nk 432)
+      the same for the window p50: retx 0: +0.06 | retx 1-2: +0.01 | retx 3-5: +0.00 | retx 6+: -0.01
+    61c J5 W108   dT > 0 on 6/6 rows | retx 0: +3.06 (185, nk 481) | retx 1-2: +1.00 (25, nk 477) | retx 3-5: +1.48 (27, nk 479) | retx 6+: -0.67 (767, nk 454)
+      the same for the window p50: retx 0: +0.63 | retx 1-2: +0.48 | retx 3-5: +0.15 | retx 6+: -0.29
+    61c J5 W120   dT > 0 on 6/6 rows | retx 0: +6.35 (34, nk 480) | retx 1-2: +5.39 (27, nk 484) | retx 3-5: +4.91 (57, nk 482) | retx 6+: -0.59 (828, nk 477)
+      the same for the window p50: retx 0: +2.32 | retx 1-2: +1.59 | retx 3-5: +1.55 | retx 6+: -0.26
+    61c J5 W152   dT > 0 on 6/6 rows | retx 0: +7.36 (129, nk 481) | retx 1-2: +5.12 (30, nk 482) | retx 3-5: +5.39 (42, nk 482) | retx 6+: -2.07 (731, nk 481)
+      the same for the window p50: retx 0: +2.82 | retx 1-2: +1.94 | retx 3-5: +2.11 | retx 6+: -0.85
+    61c J5 W512   dT > 0 on 6/6 rows | retx 0: +9.90 (19, nk 479) | retx 1-2: +9.71 (34, nk 482) | retx 3-5: +10.77 (62, nk 481) | retx 6+: -1.77 (818, nk 481)
+      the same for the window p50: retx 0: +6.20 | retx 1-2: +5.74 | retx 3-5: +6.96 | retx 6+: -0.94
+    61a J5 W12    dT > 0 on 6/6 rows | retx 0: +0.41 (680, nk 60) | retx 1-2: +0.24 (117, nk 48) | retx 3-5: -0.66 (23, nk 54) | retx 6+: -2.29 (181, nk 42)
+      the same for the window p50: retx 0: -0.03 | retx 1-2: +0.15 | retx 3-5: -0.46 | retx 6+: +0.14
+    61a J5 W16    dT > 0 on 6/6 rows | retx 0: +0.32 (684, nk 80) | retx 1-2: -0.06 (71, nk 48) | retx 3-5: -1.05 (31, nk 79) | retx 6+: -0.89 (234, nk 61)
+      the same for the window p50: retx 0: -0.15 | retx 1-2: +0.32 | retx 3-5: +0.09 | retx 6+: +0.26
+    61a J5 W24    dT > 0 on 5/6 rows | retx 0: +0.21 (591, nk 120) | retx 1-2: +0.02 (50, nk 100) | retx 3-5: +0.76 (65, nk 111) | retx 6+: -0.57 (330, nk 97)
+      the same for the window p50: retx 0: -0.21 | retx 1-2: +0.45 | retx 3-5: +0.54 | retx 6+: +0.30
+    61a J5 W92    dT > 0 on 6/6 rows | retx 0: +0.94 (223, nk 439) | retx 1-2: +0.71 (36, nk 428) | retx 3-5: +0.60 (20, nk 420) | retx 6+: -0.31 (819, nk 403)
+      the same for the window p50: retx 0: -0.03 | retx 1-2: +0.01 | retx 3-5: +0.20 | retx 6+: +0.01
+    61a J5 W104   dT > 0 on 6/6 rows | retx 0: +2.30 (113, nk 479) | retx 1-2: +1.05 (24, nk 470) | retx 3-5: +1.41 (38, nk 472) | retx 6+: -0.37 (798, nk 446)
+      the same for the window p50: retx 0: +0.04 | retx 1-2: -0.14 | retx 3-5: -0.01 | retx 6+: -0.00
+    61a J5 W112   dT > 0 on 6/6 rows | retx 0: +4.16 (122, nk 480) | retx 1-2: +3.01 (34, nk 479) | retx 3-5: +2.84 (29, nk 483) | retx 6+: -0.57 (794, nk 463)
+      the same for the window p50: retx 0: +1.29 | retx 1-2: +0.55 | retx 3-5: +0.43 | retx 6+: -0.33
+    61a J5 W124   dT > 0 on 6/6 rows | retx 0: +6.55 (48, nk 481) | retx 1-2: +4.97 (27, nk 478) | retx 3-5: +5.54 (49, nk 481) | retx 6+: -0.66 (819, nk 479)
+      the same for the window p50: retx 0: +2.23 | retx 1-2: +1.51 | retx 3-5: +1.33 | retx 6+: -0.37
+    61a J5 W2048  dT > 0 on 5/6 rows | retx 0: +12.49 (43, nk 482) | retx 1-2: +7.48 (20, nk 484) | retx 3-5: +5.52 (33, nk 483) | retx 6+: -1.09 (839, nk 482)
+      the same for the window p50: retx 0: +6.20 | retx 1-2: +20.18 | retx 3-5: +5.61 | retx 6+: -1.11
+    c2 s60 W16    dT > 0 on 4/6 rows | retx 0: +0.07 (741, nk 294) | retx 1-2: -0.25 (74, nk 268) | retx 3-5: +0.00 (33, nk 276) | retx 6+: -0.03 (684, nk 254)
+      the same for the window p50: retx 0: -0.09 | retx 1-2: -0.15 | retx 3-5: +0.08 | retx 6+: +0.13
+    c2 s60 W32    dT > 0 on 2/6 rows | retx 0: -0.01 (493, nk 564) | retx 1-2: +0.24 (83, nk 549) | retx 3-5: +0.09 (47, nk 546) | retx 6+: -0.02 (968, nk 514)
+      the same for the window p50: retx 0: -0.06 | retx 1-2: -0.11 | retx 3-5: -0.13 | retx 6+: +0.06
+    c2 s60 W48    dT > 0 on 5/6 rows | retx 0: +0.06 (357, nk 830) | retx 1-2: -0.53 (18, nk 813) | retx 3-5: -0.01 (13, nk 807) | retx 6+: -0.01 (1234, nk 770)
+      the same for the window p50: retx 0: -0.07 | retx 1-2: +0.12 | retx 3-5: -0.02 | retx 6+: +0.02
+    c2 s60 W160   dT > 0 on 4/4 rows | retx 0: +0.72 (6, nk 2370) | retx 1-2: +1.12 (3, nk 2369) | retx 3-5: +0.23 (3, nk 2368) | retx 6+: -0.01 (1000, nk 2244)
+      the same for the window p50: retx 0: +0.01 | retx 1-2: +0.02 | retx 3-5: -0.16 | retx 6+: +0.00
+    c2 s60 W176   dT > 0 on 4/5 rows | retx 0: +1.18 (8, nk 2409) | retx 1-2: +1.23 (2, nk 2404) | retx 3-5: +nan (0, nk nan) | retx 6+: -0.00 (946, nk 2341)
+      the same for the window p50: retx 0: +0.33 | retx 1-2: +0.37 | retx 3-5: +nan | retx 6+: -0.00
+    c2 s60 W192   dT > 0 on 5/5 rows | retx 0: +1.76 (7, nk 2409) | retx 1-2: +nan (0, nk nan) | retx 3-5: +0.81 (3, nk 2431) | retx 6+: -0.01 (918, nk 2391)
+      the same for the window p50: retx 0: +0.64 | retx 1-2: +nan | retx 3-5: +0.64 | retx 6+: -0.00
+    c2 s60 W256   dT > 0 on 5/6 rows | retx 0: +1.53 (9, nk 2410) | retx 1-2: +2.69 (2, nk 2410) | retx 3-5: +3.27 (1, nk 2377) | retx 6+: -0.01 (904, nk 2411)
+      the same for the window p50: retx 0: +0.90 | retx 1-2: +0.96 | retx 3-5: +1.03 | retx 6+: -0.00
+    c2 s60 W2048  dT > 0 on 0/0 rows | retx 0: +nan (0, nk nan) | retx 1-2: +3.66 (3, nk 2406) | retx 3-5: +0.66 (2, nk 2394) | retx 6+: +0.00 (913, nk 2408)
+      the same for the window p50: retx 0: +nan | retx 1-2: +2.92 | retx 3-5: +0.36 | retx 6+: +0.00
+    c1s s60 W64    dT > 0 on 3/6 rows | retx 0: -0.00 (502, nk 5030) | retx 1-2: +0.01 (22, nk 5046) | retx 3-5: +0.00 (9, nk 5179) | retx 6+: +0.00 (166, nk 5104)
+      the same for the window p50: retx 0: +0.00 | retx 1-2: +0.02 | retx 3-5: +0.01 | retx 6+: -0.01
+    c1s s60 W128   dT > 0 on 4/6 rows | retx 0: +0.01 (235, nk 9259) | retx 1-2: -0.01 (38, nk 9204) | retx 3-5: +0.01 (13, nk 9035) | retx 6+: -0.00 (196, nk 9080)
+      the same for the window p50: retx 0: -0.01 | retx 1-2: +0.01 | retx 3-5: -0.01 | retx 6+: +0.00
+    c1s s60 W192   dT > 0 on 4/6 rows | retx 0: +0.02 (306, nk 8966) | retx 1-2: -0.01 (23, nk 11719) | retx 3-5: +0.07 (9, nk 12212) | retx 6+: -0.01 (276, nk 11802)
+      the same for the window p50: retx 0: +0.00 | retx 1-2: +0.00 | retx 3-5: -0.07 | retx 6+: -0.00
+    c1s s60 W2048  dT > 0 on 10/12 rows | retx 0: +1.77 (710, nk 9528) | retx 1-2: -0.53 (607, nk 5247) | retx 3-5: +4.95 (166, nk 4702) | retx 6+: -0.78 (1168, nk 21092)
+      the same for the window p50: retx 0: +0.83 | retx 1-2: -0.47 | retx 3-5: +4.75 | retx 6+: -0.37
+
+== B. The brake, per floor row (ms): b-hat0+ (max of the K = 8 boot brakes, as printed), the median of the same 8, the steady-state brake at the
+   native count (LATE median of tmin - m-hat, = s62's D0 construction), and the brake at the knee's count (median group minimum of g pooled LATE floor
+   windows - LATE m-hat, g = knee nk / floor nk, the knee nk from the cell's K arms) ==
+   'zeros' counts boot brakes that are exactly 0: a window that sets m-hat has tmin = m-hat, and window 1 always does, so the median of the 8 is
+   biased low by construction (a reading, not a candidate). err = [SLAW]'s printed target - tmin, the quantity B1 reads (B1 margin = -err)
+  s62 J0 D12 s42 r3: b0p    5.40 | median of 8   3.38 (zeros 1) | steady native  3.32 (nk 60) | at the knee's count  0.12 (g 8, n ~480) | LATE median err -6.19
+  s62 J0 G12 s42 r1: b0p    4.03 | median of 8   2.99 (zeros 1) | steady native  3.23 (nk 60) | at the knee's count  0.12 (g 8, n ~480) | LATE median err -4.92
+  s62 J0 G12 s7 r2: b0p    5.35 | median of 8   1.13 (zeros 1) | steady native  3.61 (nk 60) | at the knee's count  0.28 (g 8, n ~480) | LATE median err -5.83
+  s62 J0: across rows (min / median / max): b0p 4.03 / 5.35 / 5.40 | median of 8 1.13 / 2.99 / 3.38 | steady native 3.23 / 3.32 / 3.61 | at the knee's count 0.12 / 0.12 / 0.28
+  61c J5 G12 s42 r1: b0p    8.45 | median of 8   1.12 (zeros 4) | steady native  8.44 (nk 60) | at the knee's count  3.00 (g 8, n ~480) | LATE median err -3.29
+  61c J5 G12 s42 r3: b0p    9.76 | median of 8   5.35 (zeros 3) | steady native  8.02 (nk 60) | at the knee's count  4.73 (g 8, n ~480) | LATE median err -5.12
+  61c J5 G12 s42 r5: b0p    9.95 | median of 8   0.00 (zeros 6) | steady native  7.46 (nk 60) | at the knee's count  2.89 (g 8, n ~480) | LATE median err -5.96
+  61c J5 G12 s7 r2: b0p    9.30 | median of 8   3.19 (zeros 3) | steady native  7.80 (nk 60) | at the knee's count  2.72 (g 8, n ~480) | LATE median err -4.83
+  61c J5 G12 s7 r4: b0p    3.26 | median of 8   0.52 (zeros 4) | steady native  8.23 (nk 60) | at the knee's count  4.25 (g 8, n ~480) | LATE median err +1.71
+  61c J5 G12 s7 r6: b0p   12.62 | median of 8   4.55 (zeros 2) | steady native  8.64 (nk 60) | at the knee's count  4.12 (g 8, n ~480) | LATE median err -7.27
+  61c J5: across rows (min / median / max): b0p 3.26 / 9.53 / 12.62 | median of 8 0.00 / 2.15 / 5.35 | steady native 7.46 / 8.12 / 8.64 | at the knee's count 2.72 / 3.56 / 4.73
+  61a J5 G12 s42 r1: b0p   11.29 | median of 8   6.54 (zeros 2) | steady native  6.07 (nk 60) | at the knee's count  1.52 (g 8, n ~480) | LATE median err -8.50
+  61a J5 G12 s42 r3: b0p    9.62 | median of 8   2.72 (zeros 3) | steady native  8.38 (nk 60) | at the knee's count  4.30 (g 8, n ~480) | LATE median err -4.56
+  61a J5 G12 s42 r5: b0p  103.40 | median of 8   2.31 (zeros 2) | steady native  5.59 (nk 60) | at the knee's count  1.99 (g 8, n ~480) | LATE median err -101.25
+  61a J5 G12 s7 r2: b0p   10.74 | median of 8   0.98 (zeros 3) | steady native  7.13 (nk 60) | at the knee's count  2.38 (g 8, n ~480) | LATE median err -6.90
+  61a J5 G12 s7 r4: b0p    6.35 | median of 8   0.34 (zeros 4) | steady native  5.70 (nk 60) | at the knee's count  0.95 (g 8, n ~480) | LATE median err -3.83
+  61a J5 G12 s7 r6: b0p   12.09 | median of 8   7.30 (zeros 3) | steady native  6.42 (nk 60) | at the knee's count  2.04 (g 8, n ~480) | LATE median err -9.04
+  61a J5: across rows (min / median / max): b0p 6.35 / 11.01 / 103.40 | median of 8 0.34 / 2.51 / 7.30 | steady native 5.59 / 6.25 / 8.38 | at the knee's count 0.95 / 2.02 / 4.30
+  c2 s60 G16 s42 r1: b0p    2.06 | median of 8   0.84 (zeros 2) | steady native  2.70 (nk 280) | at the knee's count  1.13 (g 8, n ~2240) | LATE median err +0.07
+  c2 s60 G16 s42 r3: b0p    3.39 | median of 8   1.44 (zeros 3) | steady native  2.17 (nk 282) | at the knee's count  0.45 (g 8, n ~2256) | LATE median err -1.83
+  c2 s60 G16 s42 r5: b0p    4.10 | median of 8   1.50 (zeros 1) | steady native  2.36 (nk 282) | at the knee's count  0.78 (g 8, n ~2256) | LATE median err -2.36
+  c2 s60 G16 s7 r2: b0p    2.04 | median of 8   0.00 (zeros 5) | steady native  2.40 (nk 282) | at the knee's count  0.91 (g 8, n ~2256) | LATE median err -0.12
+  c2 s60 G16 s7 r4: b0p    2.20 | median of 8   0.06 (zeros 4) | steady native  2.42 (nk 278) | at the knee's count  0.75 (g 8, n ~2224) | LATE median err -0.34
+  c2 s60 G16 s7 r6: b0p    3.58 | median of 8   2.07 (zeros 1) | steady native  2.18 (nk 284) | at the knee's count  0.47 (g 8, n ~2272) | LATE median err -1.96
+  c2 s60: across rows (min / median / max): b0p 2.04 / 2.80 / 4.10 | median of 8 0.00 / 1.14 / 2.07 | steady native 2.17 / 2.38 / 2.70 | at the knee's count 0.45 / 0.76 / 1.13
+
+== C. The floor's location statistics per floor row (LATE medians, ms), their spread across rows, and their rise from the floor arm to each other arm ==
+   F = R6.2's min(m, l + b0p) + b0p; C = median of the last 4 native minima (R6.7 candidate C on a static row); p10 / p50 / tmin = median of the window's own
+  s62 J0 floor W12 (3 rows): m-hat 41.33 [41.26, 41.33] range 0.07 | l-hat 41.03 [40.98, 41.20] range 0.23 | F (R6.2) 46.61 [45.36, 46.73] range 1.37 | C 45.57 [43.18, 45.63] range 2.45 | tmin 44.60 [44.53, 44.78] range 0.24 | p10 46.49 [46.43, 46.51] range 0.08 | p50 46.74 [46.69, 46.79] range 0.10
+    W80    (1 rows) rise over the floor: m-hat -0.24 | tmin -2.26 | p10 -1.06 | p50 +0.03 | nk 395
+    W128   (1 rows) rise over the floor: m-hat -0.06 | tmin +10.08 | p10 +11.66 | p50 +17.65 | nk 480
+    W512   (2 rows) rise over the floor: m-hat +172.70 | tmin +199.23 | p10 +200.96 | p50 +208.63 | nk 482
+  61c J5 floor W12 (6 rows): m-hat 34.16 [33.60, 35.28] range 1.68 | l-hat 32.95 [31.88, 34.58] range 2.70 | F (R6.2) 44.20 [37.22, 46.22] range 9.00 | C 43.35 [42.29, 43.72] range 1.42 | tmin 42.75 [42.37, 42.89] range 0.52 | p10 44.42 [44.22, 44.88] range 0.66 | p50 48.73 [48.55, 48.94] range 0.39
+    W16    (6 rows) rise over the floor: m-hat +1.08 | tmin -0.61 | p10 -0.93 | p50 -0.15 | nk 80
+    W24    (6 rows) rise over the floor: m-hat +1.36 | tmin -0.48 | p10 +0.21 | p50 +0.67 | nk 120
+    W80    (6 rows) rise over the floor: m-hat +3.79 | tmin +0.35 | p10 +2.45 | p50 +3.13 | nk 364
+    W100   (6 rows) rise over the floor: m-hat +4.82 | tmin +2.21 | p10 +4.18 | p50 +4.76 | nk 438
+    W108   (6 rows) rise over the floor: m-hat +6.15 | tmin +3.21 | p10 +5.78 | p50 +6.65 | nk 462
+    W120   (6 rows) rise over the floor: m-hat +6.70 | tmin +6.48 | p10 +9.71 | p50 +11.38 | nk 478
+    W152   (6 rows) rise over the floor: m-hat +10.58 | tmin +20.75 | p10 +24.22 | p50 +27.21 | nk 481
+    W512   (6 rows) rise over the floor: m-hat +179.62 | tmin +200.43 | p10 +204.58 | p50 +208.21 | nk 481
+  61a J5 floor W12 (6 rows): m-hat 35.33 [33.28, 36.70] range 3.42 | l-hat 33.07 [31.74, 34.36] range 2.62 | F (R6.2) 46.74 [42.91, 138.47] range 95.56 | C 41.03 [37.74, 44.57] range 6.83 | tmin 42.36 [40.88, 42.72] range 1.84 | p10 44.38 [43.14, 44.65] range 1.51 | p50 48.47 [48.28, 48.83] range 0.54
+    W16    (6 rows) rise over the floor: m-hat -0.84 | tmin -0.53 | p10 -0.93 | p50 +0.03 | nk 80
+    W24    (6 rows) rise over the floor: m-hat +0.84 | tmin -0.50 | p10 -0.15 | p50 +0.70 | nk 120
+    W92    (6 rows) rise over the floor: m-hat +3.16 | tmin +1.44 | p10 +3.31 | p50 +4.09 | nk 412
+    W104   (6 rows) rise over the floor: m-hat +4.22 | tmin +3.08 | p10 +5.17 | p50 +5.92 | nk 452
+    W112   (6 rows) rise over the floor: m-hat +5.17 | tmin +4.42 | p10 +6.99 | p50 +8.43 | nk 468
+    W124   (6 rows) rise over the floor: m-hat +6.63 | tmin +8.15 | p10 +11.21 | p50 +13.73 | nk 479
+    W2048  (6 rows) rise over the floor: m-hat +935.31 | tmin +978.24 | p10 +982.28 | p50 +986.60 | nk 482
+  c2 s60 floor W16 (6 rows): m-hat 6.35 [5.93, 6.82] range 0.89 | l-hat 5.59 [4.76, 6.00] range 1.24 | F (R6.2) 9.38 [7.99, 10.46] range 2.47 | C 8.84 [8.10, 9.44] range 1.34 | tmin 8.68 [8.59, 8.76] range 0.17 | p10 10.69 [10.62, 10.78] range 0.17 | p50 13.70 [13.64, 13.75] range 0.11
+    W32    (6 rows) rise over the floor: m-hat +0.25 | tmin +0.27 | p10 +0.69 | p50 +0.57 | nk 536
+    W48    (6 rows) rise over the floor: m-hat +0.35 | tmin +0.36 | p10 +1.05 | p50 +0.89 | nk 786
+    W160   (6 rows) rise over the floor: m-hat +3.66 | tmin +3.65 | p10 +4.19 | p50 +3.12 | nk 2246
+    W176   (6 rows) rise over the floor: m-hat +4.43 | tmin +4.42 | p10 +5.08 | p50 +4.11 | nk 2342
+    W192   (6 rows) rise over the floor: m-hat +5.29 | tmin +5.35 | p10 +6.17 | p50 +5.42 | nk 2391
+    W256   (6 rows) rise over the floor: m-hat +8.58 | tmin +11.07 | p10 +12.15 | p50 +11.70 | nk 2411
+    W2048  (6 rows) rise over the floor: m-hat +183.81 | tmin +191.82 | p10 +193.81 | p50 +194.15 | nk 2408
+  c1s s60 floor W64 (6 rows): m-hat 2.26 [2.26, 2.38] range 0.12 | l-hat 2.25 [2.22, 2.28] range 0.06 | F (R6.2) 2.44 [2.34, 2.54] range 0.20 | C 2.41 [2.30, 2.48] range 0.18 | tmin 2.39 [2.34, 2.50] range 0.16 | p10 2.64 [2.59, 3.05] range 0.47 | p50 2.84 [2.75, 4.66] range 1.91
+    W128   (6 rows) rise over the floor: m-hat +0.03 | tmin +0.04 | p10 +0.14 | p50 +0.37 | nk 9144
+    W192   (6 rows) rise over the floor: m-hat +0.05 | tmin +0.14 | p10 +0.43 | p50 +0.77 | nk 11934
+    W2048  (12 rows) rise over the floor: m-hat +1.35 | tmin +4.96 | p10 +11.57 | p50 +17.48 | nk 21897
+
+== D. The gates for each floor candidate (r67's screens, r68's uniqueness and R-sign gates), one leg, on each cell's arms' medians over rows (ms) ==
+   c1s's W 2048 control rows are all flagged COLLAPSED by s60, so its control sign is direction only (store-law-r68.md §1.4)
+   margin(W) = target(W) - statistic(W), target = F + A; A = decision 8's form at Bulk (g = 1, q = 0.10) with the cell's native floor numbers:
+   A = S_F + q*F-hat, S_F = the floor arm's median window (p50 - tmin), F-hat = the floor arm's median tmin. For K5 the same S_F is a PLACEHOLDER
+   (decision 8's spread mapped to the median is not logged), so K5's crossing W is not read; its signs and crossing count are.
+   Gates: margin > 0 at the floor arm, < 0 at the control, exactly one sign change along W (R crosses 1 once).
+   K1 R6.2 as the law would read on each arm: F = min(m, l + b0p) + b0p from that arm's own LATE medians; statistic tmin
+   K2 a running brake: F = m + median over the arm's LATE windows of (tmin - m) (what any at-load brake reads); statistic tmin
+   K3 candidate C at the floor's count: F = the floor arm's median tmin, fixed; statistic tmin
+   K4 count-matched minimum: F = M0(n_W), the median group minimum of g = round(n_W / n_floor) pooled LATE floor windows; statistic tmin
+   K5 count-free location: F = the floor arm's median window p50, fixed; A = S_F + q*F (placeholder S_F); statistic the window p50
+  s62 J0: floor W12 nk 60; S_F 2.14; A (min) 6.60; A (K5) 6.82
+    K1: W12 +8.61 | W80 +10.38 | W128 +17.39 | W512 +177.60  -> floor +, control +, sign changes 0: FAIL
+    K2: W12 +6.65 | W80 +6.64 | W128 +6.34 | W512 +5.94  -> floor +, control +, sign changes 0: FAIL
+    K3: W12 +6.60 | W80 +8.87 | W128 -3.48 | W512 -192.63  -> floor +, control -, sign changes 1: PASS
+    K4: W12 +6.60 | W80 +5.80 | W128 -6.63 | W512 -195.78  -> floor +, control -, sign changes 1: PASS
+    K5: W12 +6.82 | W80 +6.79 | W128 -10.83 | W512 -201.82  -> floor +, control -, sign changes 1: PASS
+  61c J5: floor W12 nk 60; S_F 5.80; A (min) 10.08; A (K5) 10.67
+    K1: W12 +11.53 | W16 +10.71 | W24 +11.72 | W80 +10.88 | W100 +11.39 | W108 +10.96 | W120 +13.19 | W152 +23.33 | W512 +188.61  -> floor +, control +, sign changes 0: FAIL
+    K2: W12 +9.73 | W16 +9.53 | W24 +10.04 | W80 +10.24 | W100 +9.84 | W108 +9.86 | W120 +9.68 | W152 +9.75 | W512 +7.27  -> floor +, control +, sign changes 0: FAIL
+    K3: W12 +10.08 | W16 +10.69 | W24 +10.56 | W80 +9.73 | W100 +7.86 | W108 +6.87 | W120 +3.59 | W152 -10.67 | W512 -190.35  -> floor +, control -, sign changes 1: PASS
+    K4: W12 +10.08 | W16 +10.69 | W24 +8.86 | W80 +5.46 | W100 +3.16 | W108 +2.11 | W120 -1.16 | W152 -15.42 | W512 -195.10  -> floor +, control -, sign changes 1: PASS
+    K5: W12 +10.67 | W16 +10.82 | W24 +10.01 | W80 +7.54 | W100 +5.91 | W108 +4.02 | W120 -0.71 | W152 -16.53 | W512 -197.53  -> floor +, control -, sign changes 1: PASS
+  61a J5: floor W12 nk 60; S_F 5.94; A (min) 10.18; A (K5) 10.79
+    K1: W12 +14.56 | W16 +9.86 | W24 +11.92 | W92 +10.64 | W104 +9.30 | W112 +12.30 | W124 +15.65 | W2048 -389.29  -> floor +, control -, sign changes 1: PASS
+    K2: W12 +9.88 | W16 +10.08 | W24 +10.25 | W92 +10.18 | W104 +10.17 | W112 +10.22 | W124 +9.86 | W2048 +9.39  -> floor +, control +, sign changes 0: FAIL
+    K3: W12 +10.18 | W16 +10.70 | W24 +10.68 | W92 +8.74 | W104 +7.10 | W112 +5.76 | W124 +2.03 | W2048 -968.06  -> floor +, control -, sign changes 1: PASS
+    K4: W12 +10.18 | W16 +10.70 | W24 +9.25 | W92 +4.54 | W104 +2.36 | W112 +1.02 | W124 -2.71 | W2048 -972.80  -> floor +, control -, sign changes 1: PASS
+    K5: W12 +10.79 | W16 +10.76 | W24 +10.09 | W92 +6.70 | W104 +4.87 | W112 +2.36 | W124 -2.95 | W2048 -975.82  -> floor +, control -, sign changes 1: PASS
+  c2 s60: floor W16 nk 282; S_F 5.08; A (min) 5.95; A (K5) 6.45
+    K1: W16 +6.65 | W32 +6.04 | W48 +6.56 | W160 +5.87 | W176 +6.83 | W192 +8.08 | W256 +12.67 | W2048 -91.95  -> floor +, control -, sign changes 1: PASS
+    K2: W16 +6.02 | W32 +5.94 | W48 +5.86 | W160 +5.95 | W176 +5.78 | W192 +6.06 | W256 +5.84 | W2048 +6.00  -> floor +, control +, sign changes 0: FAIL
+    K3: W16 +5.95 | W32 +5.68 | W48 +5.59 | W160 +2.31 | W176 +1.54 | W192 +0.60 | W256 -5.12 | W2048 -185.87  -> floor +, control -, sign changes 1: PASS
+    K4: W16 +5.95 | W32 +5.09 | W48 +4.61 | W160 +0.74 | W176 -0.03 | W192 -0.96 | W256 -6.76 | W2048 -187.50  -> floor +, control -, sign changes 1: PASS
+    K5: W16 +6.45 | W32 +5.88 | W48 +5.56 | W160 +3.34 | W176 +2.34 | W192 +1.04 | W256 -5.25 | W2048 -187.70  -> floor +, control -, sign changes 1: PASS
+  c1s s60: floor W64 nk 5196; S_F 0.46; A (min) 0.70; A (K5) 0.74
+    K1: W64 +0.74 | W128 +0.65 | W192 +0.67 | W2048 +4.11  -> floor +, control +, sign changes 0: FAIL
+    K2: W64 +0.69 | W128 +0.71 | W192 +0.69 | W2048 +0.59  -> floor +, control +, sign changes 0: FAIL
+    K3: W64 +0.70 | W128 +0.66 | W192 +0.56 | W2048 -4.26  -> floor +, control -, sign changes 1: PASS
+    K4: W64 +0.70 | W128 +0.62 | W192 +0.52 | W2048 -4.34  -> floor +, control -, sign changes 1: PASS
+    K5: W64 +0.74 | W128 +0.37 | W192 -0.03 | W2048 -16.74  -> floor +, control -, sign changes 1: PASS
+
+== E. Start-up: what a floor set from the first K windows reads (ms). Static floor rows: every window has the same store size, so the
+   boot windows stand in for the K lowest-store windows of a closed loop booting at the floor pool. 'first 8' = k = 1..8 after the warm-up marker ==
+  s62 J0 D12 s42 r3: nk [184, 71, 60, 60, 72, 60, 60, 72]; p50 [66.6, 46.8, 46.8, 46.8, 46.8, 46.9, 47.1, 46.9]; LATE p50 46.79, tmin 44.60
+      median of the first K minus LATE:  p50 K1 +19.85 K3 -0.01 K5 +0.01 K8 +0.05 | tmin K1 -3.37 K3 -0.20 K5 -0.03 K8 +0.01
+  s62 J0 G12 s42 r1: nk [192, 72, 60, 72, 60, 72, 52, 64]; p50 [66.3, 45.5, 45.5, 45.4, 45.3, 45.5, 45.4, 46.5]; LATE p50 46.69, tmin 44.53
+      median of the first K minus LATE:  p50 K1 +19.59 K3 -1.20 K5 -1.23 K8 -1.21 | tmin K1 -3.33 K3 -1.59 K5 -1.54 K8 -0.35
+  s62 J0 G12 s7 r2: nk [204, 61, 72, 60, 60, 72, 27, 49]; p50 [66.4, 46.6, 46.5, 46.6, 46.7, 46.6, 46.7, 46.0]; LATE p50 46.74, tmin 44.78
+      median of the first K minus LATE:  p50 K1 +19.64 K3 -0.16 K5 -0.10 K8 -0.12 | tmin K1 -3.68 K3 -3.59 K5 -1.86 K8 -2.55
+  61c J5 G12 s42 r1: nk [223, 72, 58, 3, 62, 60, 60, 60]; p50 [60.2, 49.3, 47.7, 44.7, 50.1, 50.4, 54.4, 46.1]; LATE p50 48.81, tmin 42.88
+      median of the first K minus LATE:  p50 K1 +11.40 K3 +0.50 K5 +0.50 K8 +0.91 | tmin K1 +5.15 K3 +0.58 K5 -1.13 K8 +0.39
+  61c J5 G12 s42 r3: nk [203, 54, 65, 31, 29, 61, 58, 62]; p50 [84.6, 47.9, 48.3, 46.4, 49.0, 49.1, 48.9, 47.8]; LATE p50 48.94, tmin 42.74
+      median of the first K minus LATE:  p50 K1 +35.64 K3 -0.59 K5 -0.59 K8 -0.30 | tmin K1 +3.41 K3 -0.62 K5 +0.63 K8 +0.01
+  61c J5 G12 s42 r5: nk [213, 60, 48, 15, 55, 60, 70, 62]; p50 [60.3, 49.0, 47.8, 43.4, 48.3, 49.3, 51.6, 48.1]; LATE p50 48.55, tmin 42.37
+      median of the first K minus LATE:  p50 K1 +11.71 K3 +0.42 K5 -0.22 K8 +0.10 | tmin K1 +1.43 K3 +0.90 K5 +0.83 K8 -1.34
+  61c J5 G12 s7 r2: nk [203, 50, 64, 50, 72, 60, 60, 60]; p50 [68.2, 47.0, 46.2, 47.6, 43.5, 49.6, 49.6, 48.5]; LATE p50 48.66, tmin 42.76
+      median of the first K minus LATE:  p50 K1 +19.52 K3 -1.64 K5 -1.64 K8 -0.58 | tmin K1 +4.31 K3 -5.49 K5 -3.04 K8 -2.24
+  61c J5 G12 s7 r4: nk [181, 39, 59, 60, 35, 31, 60, 72]; p50 [69.7, 47.5, 49.4, 49.1, 48.0, 44.6, 49.8, 48.5]; LATE p50 48.55, tmin 42.74
+      median of the first K minus LATE:  p50 K1 +21.19 K3 +0.88 K5 +0.55 K8 +0.23 | tmin K1 -0.06 K3 -0.06 K5 -0.06 K8 -0.58
+  61c J5 G12 s7 r6: nk [206, 58, 52, 60, 37, 62, 60, 60]; p50 [68.8, 48.5, 46.9, 46.8, 52.7, 45.6, 49.4, 51.6]; LATE p50 48.92, tmin 42.89
+      median of the first K minus LATE:  p50 K1 +19.83 K3 -0.45 K5 -0.45 K8 +0.03 | tmin K1 -3.10 K3 -3.10 K5 -3.10 K8 -2.08
+  61a J5 G12 s42 r1: nk [214, 62, 58, 3, 65, 61, 60, 60]; p50 [65.3, 48.4, 49.2, 45.5, 49.7, 49.2, 50.1, 49.5]; LATE p50 48.83, tmin 42.04
+      median of the first K minus LATE:  p50 K1 +16.44 K3 +0.33 K5 +0.33 K8 +0.54 | tmin K1 +0.74 K3 +0.74 K5 +0.23 K8 +0.08
+  61a J5 G12 s42 r3: nk [196, 67, 65, 12, 44, 60, 60, 60]; p50 [68.0, 45.4, 45.6, 53.3, 52.2, 48.3, 50.6, 47.2]; LATE p50 48.67, tmin 42.72
+      median of the first K minus LATE:  p50 K1 +19.28 K3 -3.11 K5 +3.55 K8 +0.80 | tmin K1 -3.28 K3 -3.28 K5 -3.28 K8 -2.38
+  61a J5 G12 s42 r5: nk [70, 71, 95, 60, 25, 35, 69, 63]; p50 [61.4, 250.8, 71.1, 49.9, 45.4, 50.2, 50.4, 43.3]; LATE p50 48.28, tmin 40.88
+      median of the first K minus LATE:  p50 K1 +13.07 K3 +22.81 K5 +13.07 K8 +2.00 | tmin K1 +1.84 K3 +1.84 K5 +1.69 K8 +0.36
+  61a J5 G12 s7 r2: nk [214, 42, 40, 52, 36, 54, 60, 60]; p50 [68.9, 48.3, 48.5, 50.7, 51.2, 46.7, 48.4, 52.7]; LATE p50 48.50, tmin 42.34
+      median of the first K minus LATE:  p50 K1 +20.37 K3 +0.01 K5 +2.15 K8 +1.08 | tmin K1 -0.43 K3 -0.43 K5 -0.43 K8 -0.08
+  61a J5 G12 s7 r4: nk [223, 41, 60, 70, 15, 63, 60, 72]; p50 [67.9, 46.9, 47.6, 49.4, 54.5, 48.2, 50.5, 48.2]; LATE p50 48.44, tmin 42.61
+      median of the first K minus LATE:  p50 K1 +19.50 K3 -0.80 K5 +0.99 K8 +0.39 | tmin K1 +1.70 K3 +0.13 K5 +0.13 K8 +0.92
+  61a J5 G12 s7 r6: nk [145, 106, 49, 60, 25, 63, 60, 60]; p50 [82.4, 139.3, 48.8, 49.8, 51.6, 48.6, 49.7, 49.1]; LATE p50 48.41, tmin 42.38
+      median of the first K minus LATE:  p50 K1 +34.01 K3 +34.01 K5 +3.20 K8 +1.33 | tmin K1 +2.67 K3 -2.30 K5 +0.99 K8 +1.13
+  c2 s60 G16 s42 r1: nk [311, 286, 283, 293, 282, 282, 207, 261]; p50 [31.9, 13.2, 14.7, 14.1, 14.0, 14.4, 13.7, 14.2]; LATE p50 13.75, tmin 8.71
+      median of the first K minus LATE:  p50 K1 +18.19 K3 +0.99 K5 +0.32 K8 +0.39 | tmin K1 -0.61 K3 +0.21 K5 +0.21 K8 +0.23
+  c2 s60 G16 s42 r3: nk [403, 286, 286, 304, 304, 298, 176, 221]; p50 [16.9, 13.4, 14.3, 13.1, 13.2, 13.5, 14.7, 14.0]; LATE p50 13.67, tmin 8.76
+      median of the first K minus LATE:  p50 K1 +3.23 K3 +0.59 K5 -0.27 K8 +0.06 | tmin K1 +0.83 K3 -0.33 K5 -0.33 K8 -0.27
+  c2 s60 G16 s42 r5: nk [414, 282, 249, 298, 320, 272, 298, 164]; p50 [16.7, 13.1, 14.5, 12.9, 12.6, 14.9, 13.3, 13.7]; LATE p50 13.65, tmin 8.68
+      median of the first K minus LATE:  p50 K1 +3.05 K3 +0.85 K5 -0.51 K8 -0.18 | tmin K1 -1.12 K3 +1.41 K5 +0.06 K8 +0.37
+  c2 s60 G16 s7 r2: nk [226, 248, 261, 290, 212, 290, 298, 263]; p50 [78.7, 13.2, 14.2, 13.5, 15.1, 14.0, 13.9, 13.6]; LATE p50 13.73, tmin 8.59
+      median of the first K minus LATE:  p50 K1 +64.93 K3 +0.50 K5 +0.50 K8 +0.22 | tmin K1 +2.19 K3 +0.28 K5 +0.16 K8 -0.12
+  c2 s60 G16 s7 r4: nk [313, 273, 286, 288, 217, 284, 294, 191]; p50 [19.3, 14.2, 13.7, 13.8, 13.7, 14.7, 13.5, 14.6]; LATE p50 13.75, tmin 8.61
+      median of the first K minus LATE:  p50 K1 +5.58 K3 +0.46 K5 +0.02 K8 +0.24 | tmin K1 +0.19 K3 +0.19 K5 +0.10 K8 +0.04
+  c2 s60 G16 s7 r6: nk [438, 298, 237, 294, 292, 221, 288, 304]; p50 [14.7, 13.7, 13.0, 13.8, 13.1, 13.5, 13.9, 13.2]; LATE p50 13.64, tmin 8.68
+      median of the first K minus LATE:  p50 K1 +1.09 K3 +0.06 K5 +0.06 K8 -0.02 | tmin K1 -2.25 K3 +0.09 K5 -0.45 K8 -0.18
+  c1s s60 G64 s42 r1: nk [3208, 4512, 4871, 4759, 5046, 5160, 4562, 4901]; p50 [4.7, 3.2, 3.0, 3.1, 3.0, 2.9, 3.0, 3.0]; LATE p50 2.84, tmin 2.38
+      median of the first K minus LATE:  p50 K1 +1.82 K3 +0.34 K5 +0.27 K8 +0.19 | tmin K1 +0.14 K3 +0.06 K5 +0.04 K8 +0.03
+  c1s s60 G64 s42 r3: nk [2063, 5099, 5351, 5213, 5496, 5319, 5748, 5296]; p50 [7.7, 2.9, 2.8, 2.8, 2.7, 2.8, 2.7, 2.8]; LATE p50 2.84, tmin 2.40
+      median of the first K minus LATE:  p50 K1 +4.86 K3 +0.08 K5 -0.02 K8 -0.04 | tmin K1 +0.13 K3 +0.06 K5 -0.01 K8 -0.04
+  c1s s60 G64 s42 r5: nk [4606, 4902, 5324, 5406, 5496, 5404, 5570, 5224]; p50 [3.0, 2.9, 2.8, 2.8, 2.7, 2.7, 2.7, 2.8]; LATE p50 2.78, tmin 2.37
+      median of the first K minus LATE:  p50 K1 +0.20 K3 +0.13 K5 +0.06 K8 +0.01 | tmin K1 -0.10 K3 -0.04 K5 -0.04 K8 -0.03
+  c1s s60 G64 s7 r2: nk [4876, 5236, 5145, 5223, 4727, 5023, 5317, 5186]; p50 [3.0, 2.8, 2.8, 2.8, 3.0, 2.9, 2.8, 2.9]; LATE p50 2.75, tmin 2.34
+      median of the first K minus LATE:  p50 K1 +0.25 K3 +0.09 K5 +0.09 K8 +0.12 | tmin K1 +0.11 K3 +0.06 K5 +0.08 K8 +0.05
+  c1s s60 G64 s7 r4: nk [3514, 5627, 5219, 5498, 5441, 5570, 5462, 5567]; p50 [3.8, 2.7, 2.7, 2.8, 2.7, 2.8, 2.7, 2.7]; LATE p50 4.66, tmin 2.50
+      median of the first K minus LATE:  p50 K1 -0.90 K3 -1.92 K5 -1.92 K8 -1.92 | tmin K1 -0.13 K3 -0.13 K5 -0.13 K8 -0.15
+  c1s s60 G64 s7 r6: nk [3757, 3340, 4977, 5228, 5111, 5456, 4838, 5608]; p50 [2.7, 2.8, 2.9, 2.9, 2.8, 2.8, 2.9, 2.7]; LATE p50 3.70, tmin 2.42
+      median of the first K minus LATE:  p50 K1 -0.98 K3 -0.95 K5 -0.89 K8 -0.90 | tmin K1 -0.01 K3 -0.01 K5 -0.03 K8 -0.09
+  Per cell: the K = 8 boot-set median minus the LATE median (window p50), against the knee need in median terms
+  (need50: the floor tp50 -> knee tp50 rise at the median W95, knee-margin-rederive.md §2.3; none at J = 0 and c1s, which have no knee bracket)
+    s62 J0: K = 8 error -1.21 / +0.05 ms over 3 rows; no knee need
+    61c J5: K = 8 error -0.58 / +0.91 ms over 6 rows; |error| / need50 up to 0.13 (need50 6.92)
+    61a J5: K = 8 error +0.39 / +2.00 ms over 6 rows; |error| / need50 up to 0.28 (need50 7.17)
+    c2 s60: K = 8 error -0.18 / +0.39 ms over 6 rows; |error| / need50 up to 0.11 (need50 3.61)
+    c1s s60: K = 8 error -1.92 / +0.19 ms over 6 rows; no knee need
+  J = 0: share of LATE windows whose m-hat lies on the low mode (< 41.9 ms, count-rule's 41.2-41.9) and the LATE m-hat range
+    D12 s42 r3: 1.00 of 309; m-hat 41.03 - 41.48
+    G12 s42 r1: 1.00 of 305; m-hat 40.97 - 41.47
+    G12 s7 r2: 1.00 of 303; m-hat 40.98 - 41.57
+    G80 s42 r1: 1.00 of 162; m-hat 40.92 - 41.13
+    G128 s42 r1: 0.79 of 148; m-hat 41.18 - 44.65
+    G512 s42 r1: 0.00 of 155; m-hat 195.26 - 229.01
+    G512 s7 r2: 0.00 of 155; m-hat 198.66 - 229.41
