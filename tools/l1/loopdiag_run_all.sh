@@ -63,6 +63,11 @@
 #
 # LD_PLAN=54 (status 54, the snapshot-order law's guard) is plan 41d, unchanged, with LD_WITNESS54=1: three row-level liveness witnesses (bin_sha per arm; at c8 the CAND p0 [HOLD] hn_n < 2000;
 # [SNAPV] pt_st + tt_st = 0 on every CAND row), applied like the v2 VOID rule (never to a DNF row); smoke54 prints the rehearsal criteria, score54 = score41d's output + the witness table.
+# LD_PLAN=64 (status 64, F2's merge guard: docs/derivations/f2-guard-registration.md; plan64.py, rt64_score.py, framing64.py) is plan 41d's guard (stage G, Bulk, LD_WITNESS64=1: the F2 row witnesses on every CAND row, the
+# F2-FAIL status, score64 = score41d's output + the F2 witness table + GATE-64) followed by stage R (LD_PLAN=64 in the battery: Realtime c2-100 at rho = 1, arms RB / RC, 12 + 12 rows, $RUN/rt64). Reuse: the engine suites by a
+# reference-manifest HIT over the WIDER src_manifest() set (LD_REF_MANIFEST, default tools/l1/ref64-manifest.sha256; a MISS is ABORT-SUITES before any row, a rehearsal included; LD_PRIOR_TESTS is refused); the binaries
+# by LD_BIN_PREBUILT_BASE / LD_BIN_PREBUILT_CAND (each sha-checked against LD_BIN_SHA_BASE / LD_BIN_SHA_CAND: ABORT-BUILD); the tools tests by LD_PRIOR_TOOLS=<the rehearsal's run dir> when tools/l1 is byte-identical
+# (TOOLS-MANIFEST.sha256 beside TOOLS-TESTS-OK; prints TOOLS-TESTS-REUSED). A rehearsal (LD_REHEARSE=1) adds the framing_ns bench (10 runs on CAND's tree, bench/framing_ns.txt, the BENCH label). LD_HARD = launch + 2.5 h, rehearsal + 1.25 h.
 # LD_PLAN=54b (status 54, the store-budget block, REPORTED ONLY): the suites on CAND's tree (levb54), then ONE stage in $RUN/rep54b: c8-100 at 600 MB, arms B2048 / B1024 / B640 on the BASE
 # seat (LD_BASE_SHA = cand54) and L2048 / L1024 / L640 on the CAND seat, RWM_STORE_PATH_POOL = default / 1024 / 640, n = 6, rotated per group, 36 rows + a 6-row smoke (pool54_score.py).
 # LD_PLAN=56 (status 56, the store-pool sweep, REPORTED ONLY, no build): ONE seat -- current main (LD_CAND_SHA = $LD_ROOT/COMMIT) runs every row; there is no BASE tree, no second build, no LD_BASE_SHA (ignored with a
@@ -112,13 +117,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
-crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py test_harness60.py ref_manifest.sh ref56-manifest.sha256 place43_parse.py test_place43_parse.py place46_parse.py event_inject.py test_harness46.py test_harness47.py test_guard_v2.py test_topo_netem.sh \
+crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py plan64.py rt64_score.py framing64.py test_s60.py test_harness60.py ref_manifest.sh ref56-manifest.sha256 place43_parse.py test_place43_parse.py place46_parse.py event_inject.py test_harness46.py test_harness47.py test_guard_v2.py test_topo_netem.sh \
     test_loopdiag_parse.py test_anchordiag_parse.py stage3_parse.py storelaw_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${LD_ROOT:?LD_ROOT}"
 PLAN="${LD_PLAN:-24}"
 # Plan 54 (status 54, the snapshot-order law's guard) IS plan 41d, unchanged, plus three row-level liveness witnesses (pool54_score.guard_witness): from here on PLAN is 41d and
 # W54=1 rides in SENV, so no 41d branch can be missed. The scored rows, order, sizes, timeouts and verdict are plan 41d's; score54 prints score41d's output first.
 W54=0; [ "$PLAN" = "54" ] && { W54=1; PLAN=41d; }
+# Plan 64 (status 64, F2's merge guard) is plan 41d too, with LD_WITNESS64=1 (the F2 row witnesses on every CAND row, score64) and a second stage rt64 (stage R) after it: W64=1 rides in SENV.
+W64=0; [ "$PLAN" = "64" ] && { W64=1; PLAN=41d; }
 case "$PLAN" in
   24) P_SMOKE=smoke; P_SCORE=score; P_CHECK=check ;;
   27) P_SMOKE=smoke27; P_SCORE=score27; P_CHECK=check27 ;;
@@ -210,6 +217,11 @@ if [ "$P60" = 1 ]; then
     done
   fi
 fi
+if [ "$W64" = 1 ]; then
+  # The registered reference manifest of plan 64: src_manifest() of ab9feec4's archive (the tree whose suites ran on the VM); LD_REF_MANIFEST overrides it (the stub suite does).
+  LD_REF_MANIFEST="${LD_REF_MANIFEST:-$HERE/ref64-manifest.sha256}"
+  [ -s "$LD_REF_MANIFEST" ] || { echo "ABORT-SUITES no reference manifest at $LD_REF_MANIFEST (plan 64); NOTHING WAS RUN"; exit 3; }
+fi
 # Plan 46 shares the root-owned tmpfs tree, LD_HARD and the two-tree build with plans 38 / 41 (P38 stays 0: no place-wire arms or ladder).
 if [ "$P46" = 1 ]; then
   CAND_SHA="${LD_CAND_SHA:-UNSET}"
@@ -284,6 +296,14 @@ if [ "$P57" = 1 ]; then
   era "LD-ALL plan $PLAN budget: ${P57_LEFT}s to LD_HARD (at least ${LD_HARD_MIN_S:-$P57_NEED}s required: the worst case of the status)"
   [ "$P57_LEFT" -ge "${LD_HARD_MIN_S:-$P57_NEED}" ] || { era "ABORT-BUDGET plan $P57_TAG: ${P57_LEFT}s before LD_HARD, need at least ${LD_HARD_MIN_S:-$P57_NEED}s; NOTHING WAS RUN"; exit 3; }
 fi
+if [ "$W64" = 1 ]; then
+  # Plan 64 (status 64 section 4, item 8): the launch is run with LD_HARD = launch + 2.5 h, the rehearsal with + 1.25 h; the guard refuses with less than the registered worst case left (plan64.BUDGET_S: every RB row at its full
+  # 150 s timeout, a dead warm-up waits it out; LD_HARD_MIN_S is a test seam).
+  P64_NEED=7650; [ "$REHEARSE" = 1 ] && P64_NEED=3300
+  P64_LEFT=$(( LD_HARD - $(date +%s) ))
+  era "LD-ALL plan 64 budget: ${P64_LEFT}s to LD_HARD (at least ${LD_HARD_MIN_S:-$P64_NEED}s required: the worst case of the status)"
+  [ "$P64_LEFT" -ge "${LD_HARD_MIN_S:-$P64_NEED}" ] || { era "ABORT-BUDGET plan 64: ${P64_LEFT}s before LD_HARD, need at least ${LD_HARD_MIN_S:-$P64_NEED}s; NOTHING WAS RUN"; exit 3; }
+fi
 take_lock "$LOCK_VM"
 take_lock "$LOCK_RP"
 era "LD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 "$PROCFS"/loadavg); io=$(grep '^full' "$PROCFS"/pressure/io)"
@@ -320,6 +340,11 @@ if [ "$P52" = 1 ]; then
 fi
 if [ "$P41D" = 1 ] || [ "$GUARD_PLAN" = "41d" ]; then      # the v2 guard's own parser, scorer and VOID-rule gate (status 41d)
   for t in test_guard_v2.py test_bbr48_parse.py test_place38_parse.py; do
+    python3 ./$t >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: $t)"
+  done
+fi
+if [ "$W64" = 1 ]; then      # status 64: the F2 guard's primitives, tables, scorers and wiring (the stage-G witness path reuses plan 54's helpers)
+  for t in test_l1common.py test_pool54.py test_harness64.py; do
     python3 ./$t >> "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log: $t)"
   done
 fi
@@ -371,6 +396,11 @@ if [ "$P60" = 1 ] && [ -n "${LD_BIN_PREBUILT:-}" ]; then
   [ -x "$LD_BIN_PREBUILT" ] || fail_all "ABORT-BUILD LD_BIN_PREBUILT=$LD_BIN_PREBUILT is not an executable file"
   mkdir -p "$TARGET/release" && cp "$LD_BIN_PREBUILT" "$TARGET/release/raptorpath" || fail_all "ABORT-BUILD prebuilt copy"
   era "LD-ALL binary prebuilt from $LD_BIN_PREBUILT (no build)"
+elif [ "$W64" = 1 ] && [ -n "${LD_BIN_PREBUILT_CAND:-}" ]; then
+  # Plan 64: the launch installs the rehearsal's CAND build (its sha is checked against LD_BIN_SHA_CAND below, before any row): no build, the TARGET dir stays absent.
+  [ -x "$LD_BIN_PREBUILT_CAND" ] || fail_all "ABORT-BUILD LD_BIN_PREBUILT_CAND=$LD_BIN_PREBUILT_CAND is not an executable file"
+  mkdir -p "$TARGET/release" && cp "$LD_BIN_PREBUILT_CAND" "$TARGET/release/raptorpath" || fail_all "ABORT-BUILD prebuilt copy (CAND)"
+  era "LD-ALL CAND binary prebuilt from $LD_BIN_PREBUILT_CAND (no build)"
 else
 ( cd "$SRC" && CARGO_TARGET_DIR="$TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$BUILDLOG" 2>&1 \
   || fail_all "ABORT-BUILD ($BUILDLOG)"
@@ -392,6 +422,11 @@ if [ "$P60" = 1 ] && [ "$SHA" != "$LD_BIN_SHA_EXPECT" ]; then
   fail_all "ABORT-BIN-SHA plan $PLAN: built $SHA != registered $LD_BIN_SHA_EXPECT; NOTHING WAS RUN"
 fi
 [ "$P60" != 1 ] || era "LD-ALL bin_sha equals the registered value $LD_BIN_SHA_EXPECT"
+# Plan 64: a prebuilt binary REQUIRES its pin; a pin, when given, must equal the installed binary (built or prebuilt), before any row. The rehearsal sets no pin: it records both shas (BINSHA.txt) for the amendment.
+if [ "$W64" = 1 ]; then
+  { [ -z "${LD_BIN_PREBUILT_CAND:-}" ] || [ -n "${LD_BIN_SHA_CAND:-}" ]; } || fail_all "ABORT-BUILD plan 64: LD_BIN_PREBUILT_CAND needs LD_BIN_SHA_CAND (the amendment's pin); NOTHING WAS RUN"
+  { [ -z "${LD_BIN_SHA_CAND:-}" ] || [ "$SHA" = "$LD_BIN_SHA_CAND" ]; } || fail_all "ABORT-BUILD plan 64 CAND binary: built / installed $SHA != pinned LD_BIN_SHA_CAND $LD_BIN_SHA_CAND; NOTHING WAS RUN"
+fi
 SHA_BASE=""
 if [ "$P41" = 1 ]; then
   # BASE: main's own binary, its own archive tree and its own fresh target dir (never shared with the shipped tree's).
@@ -402,13 +437,32 @@ if [ "$P41" = 1 ]; then
   BASE_PIN="${LD_BASE_SHA:-4926822}"
   case "$(cat "$ROOT/base/COMMIT" 2>/dev/null)" in "$BASE_PIN"*) ;; *) fail_all "ABORT-BUILD base COMMIT is not $BASE_PIN" ;; esac
   T1=$(date +%s)
+  if [ "$W64" = 1 ] && [ -n "${LD_BIN_PREBUILT_BASE:-}" ]; then
+    # Plan 64: the rehearsal's BASE build, installed instead of built (its sha is checked against LD_BIN_SHA_BASE below).
+    [ -x "$LD_BIN_PREBUILT_BASE" ] || fail_all "ABORT-BUILD LD_BIN_PREBUILT_BASE=$LD_BIN_PREBUILT_BASE is not an executable file"
+    mkdir -p "$BASE_TARGET/release" && cp "$LD_BIN_PREBUILT_BASE" "$BASE_TARGET/release/raptorpath" || fail_all "ABORT-BUILD prebuilt copy (BASE)"
+    era "LD-ALL BASE binary prebuilt from $LD_BIN_PREBUILT_BASE (no build)"
+  else
   ( cd "$BASE_SRC" && CARGO_TARGET_DIR="$BASE_TARGET" CARGO_BUILD_JOBS=4 "$CARGO" build --release --bin raptorpath ) > "$ROOT/build-base.log" 2>&1 \
     || fail_all "ABORT-BUILD (base: $ROOT/build-base.log)"
+  fi
   sudo -n install -m 0755 -o root -g root "$BASE_TARGET/release/raptorpath" "$BIN_BASE" || fail_all "ABORT-BUILD copy (base)"
   SHA_BASE="$(sha256sum "$BIN_BASE" | cut -d' ' -f1)"
   echo "$SHA_BASE  $BIN_BASE  commit=$(cat "$ROOT/base/COMMIT" 2>/dev/null) (BASE)" >> "$RUN/BINSHA.txt"
   era "LD-ALL built BASE wall=$(( $(date +%s) - T1 ))s binary $SHA_BASE"
   [ "$SHA_BASE" != "$SHA" ] || fail_all "ABORT-BUILD BASE and MAIN binaries are identical"
+  if [ "$W64" = 1 ]; then
+    { [ -z "${LD_BIN_PREBUILT_BASE:-}" ] || [ -n "${LD_BIN_SHA_BASE:-}" ]; } || fail_all "ABORT-BUILD plan 64: LD_BIN_PREBUILT_BASE needs LD_BIN_SHA_BASE (the amendment's pin); NOTHING WAS RUN"
+    { [ -z "${LD_BIN_SHA_BASE:-}" ] || [ "$SHA_BASE" = "$LD_BIN_SHA_BASE" ]; } || fail_all "ABORT-BUILD plan 64 BASE binary: built / installed $SHA_BASE != pinned LD_BIN_SHA_BASE $LD_BIN_SHA_BASE; NOTHING WAS RUN"
+    # The seat witness (registration 2.1, before any row, a rehearsal included): the CAND binary holds the strings [SYMSZ] and [UNFRAMABLE] (the F2 framing), the BASE binary neither (main).
+    for _s in '[SYMSZ]' '[UNFRAMABLE]'; do
+      grep -aqF -- "$_s" "$BIN" || fail_all "ABORT-SEAT plan 64: the CAND binary has no $_s string: it is not the F2 build; NOTHING WAS RUN"
+      ! grep -aqF -- "$_s" "$BIN_BASE" || fail_all "ABORT-SEAT plan 64: the BASE binary carries $_s: it is not main's; NOTHING WAS RUN"
+    done
+    era "LD-ALL seat witness: CAND binary holds [SYMSZ] and [UNFRAMABLE], BASE neither"
+    # The rehearsal's two builds, kept in its run dir (persisted) for the launch's LD_BIN_PREBUILT_BASE / _CAND.
+    mkdir -p "$RUN/bins64" && cp "$BIN" "$RUN/bins64/cand-raptorpath" && cp "$BIN_BASE" "$RUN/bins64/base-raptorpath" || fail_all "ABORT-BUILD cannot keep the binaries in $RUN/bins64"
+  fi
 fi
 if [ "$P46" = 1 ]; then
   grep -aq -- "RWM_PLACE_WIRE" "$BIN" && fail_all "ABORT-CAND the CAND binary carries RWM_PLACE_WIRE: it does not contain the promotion"
@@ -466,7 +520,14 @@ run_suites() {
     tst main timeout 7200 "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2 || TFAIL=1
     tst doc timeout 3600 "$CARGO" test --doc -p raptorpath --release || TFAIL=1
     tst wasm env -u GOLDEN_CAPTURE timeout 3600 "$CARGO" test -p raptorpath-wasm || TFAIL=1
+    tst core timeout 3600 "$CARGO" test -p raptorpath-core || TFAIL=1
     tst debug-witness timeout 7200 "$CARGO" test -p raptorpath --no-fail-fast -- --test-threads=2 || TFAIL=1
+    # F2 (ADR-0078): the tests behind the off-by-default `test-seams` feature (the plain runs above skip them); exactly as f2-impl's suites_run.sh has it. A tree without the feature has no such tests.
+    if grep -aq '^test-seams' "$REPO/raptorpath/Cargo.toml" 2>/dev/null; then
+      tst seams timeout 3600 "$CARGO" test -p raptorpath --release --features test-seams --test f2_unframable_closes --test f2_mixed_symbol_size --test f2_realtime_packed -- --test-threads=1 || TFAIL=1
+    else
+      echo "SEAMS n/a (raptorpath/Cargo.toml declares no test-seams feature)" >> "$SD/TESTS.txt"
+    fi
   else
     echo "ENGINE-SUITES-REUSED $ENGINE_WHY" >> "$SD/TESTS.txt"
   fi
@@ -475,7 +536,7 @@ run_suites() {
     # (minutes, even in its fast mode) and belongs to harness changes only, never to a measurement session.
     tst parsers bash -c 'cd tools/l1 && for t in test_*.py; do [ "$t" = test_stubrun.py ] && continue; python3 "$t" || { echo "PYTHON-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1
     # Plan 56 (status 56): the two bash tools tests of section 54 (test_lib_battery.sh, test_abort_witness.sh) always run too (offline stubs: no root, no namespaces).
-    { [ "$PLAN" = "56" ] || [ "$P57" = 1 ]; } && { tst bashtests bash -c 'cd tools/l1 && for t in test_lib_battery.sh test_abort_witness.sh; do bash "$t" || { echo "BASH-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1; }
+    { [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$W64" = 1 ]; } && { tst bashtests bash -c 'cd tools/l1 && for t in test_lib_battery.sh test_abort_witness.sh; do bash "$t" || { echo "BASH-TEST-FAIL $t"; exit 1; }; done' || TFAIL=1; }
   else
     tst parsers bash -c "cd tools/l1 && python3 test_loopdiag_parse.py && python3 test_anchordiag_parse.py" || TFAIL=1
   fi
@@ -483,7 +544,8 @@ run_suites() {
   # TESTS-OK and SRC-MANIFEST.sha256 are a SUITE RECORD that LD_PRIOR_TESTS (another plan's launch) accepts as "the engine suites passed on this tree": written only when they ran. A run that
   # skipped them (plan 56: a reference-manifest hit, or a rehearsal) leaves TOOLS-TESTS-OK instead.
   if [ "$ENGINE_SUITES" = 1 ]; then src_manifest > "$SD/SRC-MANIFEST.sha256"; fi       # what the run covered: LD_PRIOR_TESTS reuse compares against it
-  if [ "$TFAIL" = "0" ]; then if [ "$ENGINE_SUITES" = 1 ]; then touch "$SD/TESTS-OK"; else touch "$SD/TOOLS-TESTS-OK"; fi; else touch "$SD/TESTS-FAIL"; fi
+  # TOOLS-TESTS-OK is written with TOOLS-MANIFEST.sha256 (what the tools tests covered): LD_PRIOR_TOOLS reuse (plan 64) compares against it.
+  if [ "$TFAIL" = "0" ]; then if [ "$ENGINE_SUITES" = 1 ]; then touch "$SD/TESTS-OK"; else tools_manifest > "$SD/TOOLS-MANIFEST.sha256"; touch "$SD/TOOLS-TESTS-OK"; fi; else touch "$SD/TESTS-FAIL"; fi
   era "LD-ALL suites done tfail=$TFAIL"
   return $TFAIL
 }
@@ -493,6 +555,12 @@ src_manifest() {
   ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
     { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
       find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-core/src raptorpath-wasm/src gf256/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
+}
+# The identity of what the tools tests ran on: sha256 of every file under tools/l1 (the tests, the scorers, the scripts, testdata), in C-locale path order; __pycache__ / *.pyc (the parser gate runs python in this tree
+# before the suites stage, so the rehearsal's and the launch's trees differ in them without any source difference) are not part of it.
+tools_manifest() {
+  ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
+    find tools/l1 -type f ! -name '*.pyc' ! -path '*/__pycache__/*' | LC_ALL=C sort | xargs -r sha256sum | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /' )
 }
 # LD_PRIOR_TESTS (plan 34's amendment 2, now plans 41c / 46 / 47 / 48 too): a green suite run of a BYTE-IDENTICAL tree (see src_manifest) may stand in for
 # this session's suites. "Same tree" is the src_manifest paths above. LD_PRIOR_TESTS is that run's dir (or its parent: the suites/ subdir of a plan 47 / 48 run is found too); it must hold TESTS-OK
@@ -509,8 +577,45 @@ reuse_prior_tests() {
   cp "$d/TESTS.txt" "$SD/TESTS-prior.txt" && cp "$d/SRC-MANIFEST.sha256" "$SD/SRC-MANIFEST.sha256" && touch "$SD/TESTS-OK"
   era "LD-ALL suites: reused TESTS-OK from $d (manifest byte-identical, $(wc -l < "$SD/SRC-MANIFEST.sha256") files)"
 }
+# Plan 64 (status 64 section 1.3): the engine suites are reused ONLY by a reference-manifest HIT over the WIDER src_manifest() set (Cargo.toml, Cargo.lock, every crate's Cargo.toml, the engine crates' src, raptorpath/tests, vendor/;
+# not tools/ or docs/) against LD_REF_MANIFEST (default ref64-manifest.sha256, generated from ab9feec4's archive). A MISS stops the launch before any row (ABORT-SUITES, a rehearsal included): the tree is not the one whose suites
+# ran; running them in the session would hide that. LD_PRIOR_TESTS is refused (one reuse rule). The tools tests (python and bash) are reused from LD_PRIOR_TOOLS (the rehearsal's run dir) when tools/l1 is byte-identical to the
+# one it ran on (TOOLS-TESTS-REUSED), else they run; a rehearsal always runs them and writes TOOLS-TESTS-OK + TOOLS-MANIFEST.sha256. src_manifest() itself is unchanged; its sha256sum text/binary marker is normalised here.
+suites_stage64() {
+  [ -z "${LD_PRIOR_TESTS:-}" ] || fail_all "ABORT-TESTS plan 64 reuses the engine suites by the reference manifest (LD_REF_MANIFEST), not by LD_PRIOR_TESTS"
+  [ -s "$REF_MANIFEST" ] || fail_all "ABORT-SUITES no reference manifest at $REF_MANIFEST"
+  cp "$REF_MANIFEST" "$SD/REF-MANIFEST.sha256"
+  src_manifest | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /' > "$SD/SRC-MANIFEST.now"
+  if cmp -s "$SD/REF-MANIFEST.sha256" "$SD/SRC-MANIFEST.now"; then
+    ENGINE_WHY="(src_manifest() byte-identical to the reference manifest $REF_MANIFEST, $(wc -l < "$SD/SRC-MANIFEST.now") files)"
+    era "LD-ALL suite-reuse HIT: engine suites skipped $ENGINE_WHY"; ENGINE_SUITES=0
+  else
+    era "LD-ALL suite-reuse MISS: src_manifest() differs from the reference manifest ($(diff "$SD/REF-MANIFEST.sha256" "$SD/SRC-MANIFEST.now" | grep -c '^[<>]') manifest lines)"
+    fail_all "ABORT-SUITES plan 64 suite-reuse MISS: this tree is not the tested tree of the reference manifest $REF_MANIFEST; NOTHING WAS RUN"
+  fi
+  if [ "$REHEARSE" != 1 ] && [ -n "${LD_PRIOR_TOOLS:-}" ] && reuse_prior_tools; then
+    echo "ENGINE-SUITES-REUSED $ENGINE_WHY" > "$SD/TESTS.txt"
+    echo "TOOLS-TESTS-REUSED $PRIOR_TOOLS_DIR" >> "$SD/TESTS.txt"
+  else
+    run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"
+  fi
+}
+reuse_prior_tools() {
+  local d="" c
+  PRIOR_TOOLS_DIR=""
+  for c in "$LD_PRIOR_TOOLS" "$LD_PRIOR_TOOLS/suites"; do [ -e "$c/TOOLS-TESTS-OK" ] && { d="$c"; break; }; done
+  [ -n "$d" ] && [ -s "$d/TOOLS-MANIFEST.sha256" ] || { era "LD-ALL tools tests: no TOOLS-TESTS-OK with a TOOLS-MANIFEST.sha256 in $LD_PRIOR_TOOLS: the tools tests run"; return 1; }
+  tools_manifest > "$SD/TOOLS-MANIFEST.now"
+  if ! cmp -s "$d/TOOLS-MANIFEST.sha256" "$SD/TOOLS-MANIFEST.now"; then
+    era "LD-ALL tools tests: tools/l1 differs from the tree the rehearsal ran on ($(diff "$d/TOOLS-MANIFEST.sha256" "$SD/TOOLS-MANIFEST.now" | grep -c '^[<>]') manifest lines): the tools tests run"; return 1
+  fi
+  cp "$d/TOOLS-MANIFEST.sha256" "$SD/TOOLS-MANIFEST.sha256" && cp "$d/TESTS.txt" "$SD/TESTS-tools-prior.txt" && touch "$SD/TOOLS-TESTS-OK"
+  PRIOR_TOOLS_DIR="$d"
+  era "TOOLS-TESTS-REUSED $d (tools/l1 byte-identical, $(wc -l < "$SD/TOOLS-MANIFEST.sha256") files)"
+}
 # The suites step of the candidate plans: a verified reuse, else skipped by a rehearsal, else run.
 suites_stage() {
+  if [ "$W64" = 1 ]; then suites_stage64; return; fi      # plan 64: the reference-manifest reuse over src_manifest() and the tools-test reuse (above)
   if [ "$PLAN" = "56" ] || [ "$P57" = 1 ]; then suites_stage56; return; fi      # plan 56 reuses by the reference manifest (below), never by LD_PRIOR_TESTS
   if [ -n "${LD_PRIOR_TESTS:-}" ]; then reuse_prior_tests || fail_all "ABORT-TESTS (prior suites not reusable: $LD_PRIOR_TESTS)"
   elif [ "$REHEARSE" = 1 ]; then era "LD-ALL suites SKIPPED (rehearsal)"
@@ -541,6 +646,24 @@ suites_stage56() {
   fi
   if [ "$REHEARSE" = 1 ]; then ENGINE_SUITES=0; ENGINE_WHY="(rehearsal: no engine suites; tools tests only)"; fi
   run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"
+}
+# Plan 64's rehearsal step (registration 3.1 item 1, section 5 item 7): framing_ns on CAND's tree, release, 10 runs into bench/framing_ns.txt. The test binary is BUILT first (its own fresh target dir, both locks held);
+# only the runs are pinned to core 2 (`taskset -c 2`), so the build is not. framing64.py prints the per-point median of CAND - BASE with its range and the BENCH PASS / BENCH OVER label (a merge condition, not a launch gate).
+# A failure of the step itself (build, a run, nothing parsed) is ABORT-BENCH: the rehearsal cannot record the label and is re-run.
+framing_bench() {
+  local BD="$RUN/bench" CS="$ROOT/src" BT="$ROOT/target-bench" i
+  mkdir -p "$BD"
+  [ ! -e "$BT" ] || fail_all "ABORT-BENCH $BT is not fresh"
+  ( cd "$CS" && CARGO_TARGET_DIR="$BT" CARGO_BUILD_JOBS=4 timeout 3600 "$CARGO" test -p raptorpath --lib --release --no-run ) > "$BD/build.log" 2>&1 || fail_all "ABORT-BENCH build ($BD/build.log)"
+  : > "$BD/framing_ns.txt"
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    echo "--- run $i" >> "$BD/framing_ns.txt"
+    ( cd "$CS" && CARGO_TARGET_DIR="$BT" taskset -c 2 timeout 900 "$CARGO" test -p raptorpath --lib --release framing_ns -- --ignored --nocapture ) >> "$BD/framing_ns.txt" 2>> "$BD/framing_ns.err" \
+      || fail_all "ABORT-BENCH run $i ($BD/framing_ns.err)"
+  done
+  python3 ./framing64.py "$BD/framing_ns.txt" > "$BD/framing-report.txt" 2>&1 || { cat "$BD/framing-report.txt"; fail_all "ABORT-BENCH nothing parsed from $BD/framing_ns.txt"; }
+  cat "$BD/framing-report.txt"
+  era "LD-ALL framing_ns (10 runs, CAND's tree, taskset -c 2): $(tail -1 "$BD/framing-report.txt")"
 }
 # Plans 46 / 41c with LD_P46_SUITES=1 (status 49): after run_suites is defined (it was called above its definition before).
 if [ "$P46" = 1 ] && [ "$PLAN" != "47" ] && [ "$PLAN" != "48" ] && [ "$PLAN" != "52" ] && [ "$PLAN" != "53" ] && [ "$PLAN" != "54b" ] && [ "$PLAN" != "56" ] && [ "$P57" != 1 ] && [ "$PLAN" != "41d" ] && { [ "${LD_P46_SUITES:-0}" = "1" ] || [ -n "${LD_PRIOR_TESTS:-}" ]; }; then
@@ -575,7 +698,9 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
     case "$splan" in
       41c) smk=smoke41c; scr=score41c; chk=check41c ;;
       41d) smk=smoke41d; scr=score41d; chk=check41d
-           [ "$W54" = 1 ] && { smk=smoke54; scr=score54; } ;;      # plan 54 = plan 41d + the witnesses: its own smoke criteria; score54 prints score41d's output first
+           [ "$W54" = 1 ] && { smk=smoke54; scr=score54; }      # plan 54 = plan 41d + the witnesses: its own smoke criteria; score54 prints score41d's output first
+           [ "$W64" = 1 ] && { smk=smoke64; scr=score64; } ;;     # plan 64 = plan 41d + the F2 row witnesses: smoke64 adds the F2 criteria; score64 = score41d's output + the F2 witness table + GATE-64
+      64) smk=smoke64r; scr=score64r; chk=check64r ;;             # plan 64's stage R (battery LD_PLAN=64): Realtime c2-100 at rho = 1, arms RB / RC; the replacement rule is the battery's (run_slot64)
       48) smk=smoke48; scr=score48; chk=check48 ;;
       52) smk=smoke52; scr=score52; chk=check52 ;;
       53) smk=smoke53; scr=score53; chk=check53 ;;
@@ -589,7 +714,7 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
     esac
     mkdir -p "$dir"
     # LD_BASE_SHA rides explicitly: `sudo -n env` resets the environment, and the row parser reads it (status 49). LD_WITNESS54 rides the same way (plan 54's witnesses; the parser and the battery read it).
-    local SENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$dir" LD_PLAN="$splan" LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE" LD_BASE_SHA="${LD_BASE_SHA:-}" LD_WITNESS54="$W54" LD_REHEARSE="$REHEARSE" LD_NOGO="${LD_NOGO:-}")
+    local SENV=(LD_BIN="$BIN" LD_SHA="$SHA" LD_OUTDIR="$dir" LD_PLAN="$splan" LD_BIN_BASE="$BIN_BASE" LD_SHA_BASE="$SHA_BASE" LD_BASE_SHA="${LD_BASE_SHA:-}" LD_WITNESS54="$W54" LD_WITNESS64="$([ "$splan" = "41d" ] && echo "$W64" || echo 0)" LD_REHEARSE="$REHEARSE" LD_NOGO="${LD_NOGO:-}")
     era "LD-ALL stage $name (plan $splan) smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
     sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./loopdiag_battery.sh
     local sbrc=$? P60SMOKE="$splan"
@@ -660,10 +785,25 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
   fi
   if [ "$PLAN" = "41d" ]; then
     # Status 41d: the merge guard v2 alone (suites on CAND's tree, then the one scored stage; c2 / c8 rows at 600 MB, score41d, GATE-41d).
-    GOK=0
+    GOK=0; ROK=1
+    [ "$W64" = 1 ] && [ "$REHEARSE" = 1 ] && framing_bench      # plan 64's rehearsal: framing_ns on CAND's tree (the label is a merge condition)
     stage guard 41d; grc=$?
+    if [ "$grc" = "2" ] && [ "$W64" = 1 ]; then        # plan 64's rehearsal: stage G's smoke passed; stage R's smoke (RB s42, RC s42) is the second
+      stage rt64 64; rrc=$?
+      if [ "$rrc" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
+      fail_all "rehearsal: stage rt64 smoke did not pass (rt64/)"
+    fi
     if [ "$grc" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
     [ "$grc" = "0" ] && GOK=1
+    if [ "$W64" = 1 ]; then
+      # Plan 64: stage R after stage G, in its own ledger (plan 52's pattern); DONE-ALL needs both stages to run to the end. A stage G that did not run to the end stops the session.
+      [ "$GOK" = "1" ] || fail_all "stage guard did not complete (guard/)"
+      ROK=0; stage rt64 64 && ROK=1
+      { echo "F2 MERGE GUARD (status 64): suites/TESTS.txt, guard/score.txt (stage G), rt64/score.txt (stage R)"; echo "== guard"; grep -aE '^(VERDICT|GATE-64)' "$RUN/guard/score.txt"; echo "== rt64"; grep -aE '^(VERDICT|RT-)' "$RUN/rt64/score.txt"; } > "$RUN/score.txt"
+      era "LD-ALL end plan 64 guard_ok=$GOK rt64_ok=$ROK $(grep -a '^GATE-64' "$RUN/guard/score.txt" | head -1) $(grep -a '^VERDICT64R' "$RUN/rt64/score.txt" | head -1) raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
+      if [ "$ROK" = "1" ]; then touch "$RUN/DONE-ALL"; persist; echo "LD-ALL-DONE"; exit 0; fi
+      fail_all "stage rt64 did not complete (rt64/)"
+    fi
     { echo "MERGE GUARD v2 (status 41d): suites/TESTS.txt, guard/score.txt"; grep -a '^VERDICT' "$RUN/guard/score.txt"; } > "$RUN/score.txt"
     era "LD-ALL end plan 41d$([ "$W54" = 1 ] && echo " (LD_PLAN=54: witnesses on)") guard_ok=$GOK raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
     if [ "$GOK" = "1" ]; then touch "$RUN/DONE-ALL"; persist; echo "LD-ALL-DONE"; exit 0; fi

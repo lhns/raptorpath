@@ -1585,6 +1585,24 @@ def main(argv):
         place38_parse.score41d(argv[2:])
         pool54_score.guard_report(argv[2:])
         return 0
+    if cmd == "smoke64":
+        import plan64
+        return plan64.smoke64(argv[2])
+    if cmd == "score64":
+        # Plan 64, stage G = plan 41d's verdict (score41d's output, byte for byte, on the 41d view of the ledger) + the F2 witness table + GATE-64.
+        import plan64
+        plan64.score64(argv[2:])
+        return 0
+    if cmd == "smoke64r":
+        import plan64
+        return plan64.smoke(argv[2])
+    if cmd == "check64r":
+        import plan64
+        return plan64.check(argv[2])
+    if cmd == "score64r":
+        import rt64_score
+        rt64_score.score(argv[2:])
+        return 0
     if cmd == "smoke54b":
         import pool54_score
         return pool54_score.smoke(argv[2])
