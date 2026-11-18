@@ -1244,7 +1244,7 @@ The launch sha is pinned by an amendment.
   - these rows;
   - the deterministic repro (a dropped `WindowStart`, 10 of 10 on Linux);
   - the code (no framing state is announced).
-- **`undeliv=0` still lacks a denominator** (the source symbols the server received per CAND row). It is owed with the harness fix below.
+- **`undeliv=0`'s denominator** is given below: 42–531 k source symbols per CAND row.
 - **The trigger stays inferred:** a lost `WindowStart`, consistent with the failure being stochastic under one netem seed. The CONTROL binary has no counter to show it directly.
 
 **Correction to Amendment 2:** every transfer is DNF on both binaries, and that is by block E's design, not a finding.
@@ -1258,7 +1258,16 @@ The launch sha is pinned by an amendment.
   - **No row in either session prints the client-failure marker** (`perf_rwm_c.sh:385`, printed only when the client exits non-zero). So the perf client exited 0 everywhere, and the rc 1 is added after it, in the script's tail or the battery's row wrapper.
   - The E rehearsal's rc-0 row (CONTROL unpaced U) is not a matched comparison for §63's acked rc-1 rows (CONTROL paced and every CAND row), so a binary or pacer cause is not yet excluded by comparison. The marker rules both out for the client itself.
   - The §63 readings come from the logs and do not depend on rc.
-  - The harness worker is diagnosing it, with a test that fails first on both plan 63 and plan 51e, so block E does not inherit it.
+  - **Cause (found, 2026-11-18; fixed in `harness63` `16a6ed17`):** `harness63`'s own F2 lines in `perf_rwm_c.sh`.
+    - The script sources `lib.sh`, which sets `-euo pipefail`. `grep -c` exits 1 on no match, so the F2 line ended the script with rc 1 after the client had exited 0, on every row with no `[UNFRAMABLE]` line.
+    - The E tree's script (`a271e0bb`) has no such line. The fix ends each substitution with `|| true`.
+    - The stub now runs the real script's F2 lines under `set -euo pipefail`, and plans 63 and 51e assert LIVE; both were red before the fix.
+    - E-pre and the guard must take the fixed lines.
+  - **The `undeliv=0` denominator:** the source symbols the server received per CAND row, recomputed from the raw logs by `plan63.py report`:
+    - PL 42 802 / 42 980;
+    - PM 530 746 / 530 283;
+    - U 341 519.
+    - Every row reads `undeliv=0` on both ends.
 - **Next:**
   - s62, then E-pre on the final F2 tree;
   - the stacked §41c guard (F2 at its base) for the merge to main;
