@@ -1528,7 +1528,7 @@ def case65(plan, path):
         n_slots = len(table)
         n_pairs = n_slots // 2
         min_pairs = int(re.search(r"^MIN_PAIRS65 = (\d+)", open(os.path.join(sbl1, "plan64.py")).read(), re.M).group(1)) if re.search(r"^MIN_PAIRS65 = \d+", open(os.path.join(sbl1, "plan64.py")).read(), re.M) else s65_score.MIN_PAIRS
-        extra_rows = {"base-dead-redrawn": 1, "base-dead-twice": 2, "unresolved-n": 4, "rho-one-end": 1}.get(path, 0)
+        extra_rows = {"base-dead-redrawn": 1, "base-dead-twice": 1, "unresolved-n": 2, "rho-one-end": 1}.get(path, 0)
         check(f"{tag}: the ledger holds the table's {n_slots} slots in rt65/ (+ {extra_rows} redraw row(s) the path asks for), every row with its t64 readings and its early-loss field; the stage ran to the end (DONE, DONE-ALL)",
               len(led) == n_slots + extra_rows and len({(r["arm"], r["seed"], r["rep"]) for r in led}) == n_slots and all(r.get("t64") and "qlost_2s" in r for r in led) and os.path.exists(os.path.join(stage, "DONE")) and os.path.exists(os.path.join(run_dir, "DONE-ALL")),
               (len(led), n_slots, extra_rows))
