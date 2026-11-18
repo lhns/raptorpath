@@ -53,7 +53,7 @@ use super::seq_bits::{ReceivedSeqs, SeqBits};
 use super::{
     SenderCmd,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
-    collect_gen_deficits, create_window_decoder, extract_window_packets,
+    collect_gen_deficits, create_window_decoder, extract_window_packets, log_unframable,
     hole_nack_refresh, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
@@ -134,8 +134,6 @@ pub(crate) async fn run_receiver(
         std::collections::VecDeque::new();
     // Messages processed since the last flush of `acks`.
     let mut since_flush: usize = 0;
-    // Whether the sender packs multiple packets per symbol (set via WindowStart)
-    let mut window_packed: bool = false;
     // The cumulative point for the window ACK (wire v9 `next_expected`): the
     // COUNT of the contiguous delivered prefix -- every seq below it has
     // been handed to the consumer; 0 = nothing delivered. (Through v8 this
@@ -665,7 +663,6 @@ pub(crate) async fn run_receiver(
             // RWM_RDIAG only: count and time the prune (measurement; the
             // prune itself never reads these).
             let rdiag_prune_t = rdiag_on.then(Instant::now);
-            let delivered_last = next_expected.saturating_sub(1);
             let prune_before = decode_inert_floor(next_expected, recv_win_cap);
             // Sync the `received_above` counter first: the prune
             // removes only seqs below the cumulative point, which
@@ -1013,8 +1010,16 @@ pub(crate) async fn run_receiver(
                     }
                     for (dseq, ddata, _) in expired {
                         debug!(seq = dseq, "window hold expired — force-delivering");
-                        for pkt_data in extract_window_packets(&ddata, window_packed) {
-                            let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                        // Fail closed (ADR-0078): read before `next_expected` moves.
+                        let pkts = match extract_window_packets(&ddata) {
+                            Ok(p) => p,
+                            Err(_) => {
+                                log_unframable(dseq, &ddata);
+                                break 'recv;
+                            }
+                        };
+                        for pkt_data in pkts {
+                            let _ = recv_tun_tx.try_send(Bytes::copy_from_slice(pkt_data));
                         }
                         next_expected = next_expected.max(dseq + 1);
                     }
@@ -1517,12 +1522,17 @@ pub(crate) async fn run_receiver(
                                 // lets the sender discard its only copy).
                                 // Held packets go out on the `reserve()`
                                 // wake in the select above.
+                                // Fail closed (ADR-0078): an unframable symbol
+                                // is never delivered; the receiver ends.
+                                let pkts = match extract_window_packets(&sym_data) {
+                                    Ok(p) => p,
+                                    Err(_) => {
+                                        log_unframable(seq, &sym_data);
+                                        break 'recv;
+                                    }
+                                };
                                 let rxp_t = rxp.begin();
-                                let offered = window_delivery.offer(
-                                    &recv_tun_tx,
-                                    seq,
-                                    extract_window_packets(&sym_data, window_packed),
-                                );
+                                let offered = window_delivery.offer(&recv_tun_tx, seq, pkts);
                                 rxp.end(RxSec::Deliv, rxp_t);
                                 if offered.is_err() {
                                     error!("TUN inject channel closed");
@@ -1606,6 +1616,17 @@ pub(crate) async fn run_receiver(
                                 // buffer ever held; its class is the release
                                 // record above. Fed before the packet leaves,
                                 // so a full TUN channel cannot lose the datum.
+                                // Fail closed (ADR-0078): read before the
+                                // delivery is recorded; an unframable symbol
+                                // is never recorded, delivered or passed by
+                                // `next_expected`.
+                                let pkts = match extract_window_packets(&ddata) {
+                                    Ok(p) => p,
+                                    Err(_) => {
+                                        log_unframable(dseq, &ddata);
+                                        break 'recv;
+                                    }
+                                };
                                 let rxp_t = rxp.begin();
                                 blk.lat.note_delivery(
                                     dseq,
@@ -1615,11 +1636,7 @@ pub(crate) async fn run_receiver(
                                 );
                                 rxp.end(RxSec::Book, rxp_t);
                                 let rxp_t = rxp.begin();
-                                let offered = window_delivery.offer(
-                                    &recv_tun_tx,
-                                    dseq,
-                                    extract_window_packets(&ddata, window_packed),
-                                );
+                                let offered = window_delivery.offer(&recv_tun_tx, dseq, pkts);
                                 rxp.end(RxSec::Deliv, rxp_t);
                                 if offered.is_err() {
                                     error!("TUN inject channel closed");
@@ -1753,8 +1770,16 @@ pub(crate) async fn run_receiver(
                                 .saturating_sub(expired.len() as u64);
                         }
                         for (dseq, ddata, _) in expired {
-                            for pkt_data in extract_window_packets(&ddata, window_packed) {
-                                let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                            // Fail closed (ADR-0078): read before `next_expected` moves.
+                            let pkts = match extract_window_packets(&ddata) {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    log_unframable(dseq, &ddata);
+                                    break 'recv;
+                                }
+                            };
+                            for pkt_data in pkts {
+                                let _ = recv_tun_tx.try_send(Bytes::copy_from_slice(pkt_data));
                             }
                             next_expected = next_expected.max(dseq + 1);
                         }
@@ -2069,6 +2094,7 @@ pub(crate) async fn run_receiver(
                                 line.push_str(&format!(" rxdrop{pid}={d}"));
                             }
                         }
+                        line.push_str(&format!(" undeliv={}", super::undeliverable_symbols()));
                         crate::readout!("{line}");
                     }
 
@@ -2148,11 +2174,6 @@ pub(crate) async fn run_receiver(
                 rxp.end(RxSec::Ack, rxp_t);
             }
             WireMessage::Control(ctrl_msg) => {
-                // Handle WindowStart packed flag in receiver loop
-                if let ControlMessage::WindowStart { packed, .. } = &ctrl_msg {
-                    window_packed = *packed;
-                }
-
                 // Mid-stream backend switching is not supported (paper §5.10):
                 // no peer running this code sends WindowSwitch, and acting on
                 // one (rebuilding the decoder mid-stream) is a

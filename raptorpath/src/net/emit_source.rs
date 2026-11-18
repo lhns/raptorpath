@@ -268,6 +268,47 @@ impl SenderState {
     }
 }
 
+/// Test seam (ADR-0078, fail-closed test): the framed source buffer with this
+/// index (counted from arming) has its first u16 replaced by 0xFFFF, a length
+/// no symbol can hold, just before the encoder stores it. The encoder then
+/// keeps the corrupted bytes, so every copy (duplicate send, retransmit, every
+/// repair covering it) carries the same unframable symbol. `u64::MAX` = off.
+/// Compiled only for tests and `--features test-seams`: the release binary
+/// never contains it.
+#[cfg(any(test, feature = "test-seams"))]
+pub static TEST_CORRUPT_SEQ: AtomicU64 = AtomicU64::new(u64::MAX);
+/// The original (uncorrupted) payload of the buffer `TEST_CORRUPT_SEQ` hit.
+#[cfg(any(test, feature = "test-seams"))]
+pub static TEST_CORRUPTED_PAYLOAD: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+/// When the seam fired, so a test can bound "ends within N s of the corruption"
+/// without racing a polling loop.
+#[cfg(any(test, feature = "test-seams"))]
+pub static TEST_CORRUPTED_AT: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+/// Source buffers seen since arming; a test resets it with `TEST_CORRUPT_SEQ`.
+#[cfg(any(test, feature = "test-seams"))]
+pub static TEST_CORRUPT_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// The most packets any framed source buffer has held since the process
+/// started (observation only): proves a test really packed a symbol.
+#[cfg(any(test, feature = "test-seams"))]
+pub static TEST_MAX_PACKED: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(any(test, feature = "test-seams"))]
+fn test_corrupt_framed(framed: bytes::Bytes) -> bytes::Bytes {
+    if let Ok(p) = super::framing::unframe(&framed) {
+        TEST_MAX_PACKED.fetch_max(p.count() as u64, Ordering::Relaxed);
+    }
+    let k = TEST_CORRUPT_SEQ.load(Ordering::Relaxed);
+    if k == u64::MAX || TEST_CORRUPT_COUNT.fetch_add(1, Ordering::Relaxed) != k {
+        return framed;
+    }
+    *TEST_CORRUPTED_PAYLOAD.lock().unwrap() = Some(framed.to_vec());
+    *TEST_CORRUPTED_AT.lock().unwrap() = Some(std::time::Instant::now());
+    let mut bad = framed.to_vec();
+    bad[..2].copy_from_slice(&0xFFFFu16.to_le_bytes());
+    bytes::Bytes::from(bad)
+}
+
 /// Feed one framed packet to the encoder, place it on the wire, account for
 /// it, and emit the proactive repair its taper budget owes.
 #[allow(clippy::too_many_arguments)]
@@ -280,6 +321,8 @@ pub(crate) fn emit_source(
     // The framed buffer becomes the symbol's payload: the encoder window,
     // the retention store and the wire send below all share it (refcount
     // clones), and the wire frame is carved from `st.wire_arena`.
+    #[cfg(any(test, feature = "test-seams"))]
+    let framed = test_corrupt_framed(framed);
     let wire_sym = st.encoder.add_source_owned(framed);
     // GDIAG/GLIFE fill tracking: stamp the generation's first-source
     // and sealed instants (RWM_DIAG only; no-op on the shipped path).
