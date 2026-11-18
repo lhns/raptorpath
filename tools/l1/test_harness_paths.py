@@ -20,24 +20,28 @@ def check(name, ok, detail=""):
 
 
 runall = open(os.path.join(HERE, "loopdiag_run_all.sh"), encoding="utf-8").read()
-KINDS = {"rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base", "guard-v2", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse", "prebuilt", "rsign-abort", "pilot-missing", "control-missing"}
+KINDS = {"rehearse", "full", "prior-tests", "prior-tests-mismatch", "historical-base", "guard-v2", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "nogo-rehearse", "prebuilt", "rsign-abort", "pilot-missing", "control-missing",
+         "reprobe", "nogo-floor", "nogo-gate", "nogo-pilot", "nogo-control", "nogo-short", "abort-netem-first", "prebuilt-required", "budget", "tools-reuse-miss", "rehearsal-missing", "rehearsal-nogo", "knee-mismatch", "abort-netem-last"}
 T = hp.HARNESS_PATHS
 
-check("the table covers the candidate plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b and no other", set(T) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b"}, sorted(T))
+check("the table covers the candidate plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a and no other", set(T) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a"}, sorted(T))
 check("every path name is a known kind and none repeats", all(set(v) <= KINDS and len(set(v)) == len(v) for v in T.values()), T)
 SINGLE_SEAT = ("56", "57a", "57b", "59")       # one seat, suite reuse by the reference manifest
 S60 = ("60a", "60b", "61a", "61b")              # status 60 / 61: one seat, the manifest rule is strict (a MISS aborts), so no "full" path
+S62 = ("62r0", "62a")                          # status 62: the 61 shape, no build; its own path set (62r0: the rehearsal and its NO-GOs; 62a: the cell and the tools-test reuse)
 check("every plan has the rehearse, full, prior-tests and prior-tests-mismatch paths (plans 56, 57a, 57b, 59: rehearse, full, reuse-hit and reuse-miss, their suite reuse being the reference manifest)",
-      all({"rehearse", "full", "prior-tests", "prior-tests-mismatch"} <= set(v) for p, v in T.items() if p not in SINGLE_SEAT + S60) and all({"rehearse", "full", "reuse-hit", "reuse-miss"} <= set(T[p]) for p in SINGLE_SEAT)
-      and not any({"prior-tests", "prior-tests-mismatch"} & set(T[p]) for p in SINGLE_SEAT) and not any({"reuse-hit", "reuse-miss"} & set(v) for p, v in T.items() if p not in SINGLE_SEAT + S60)
+      all({"rehearse", "full", "prior-tests", "prior-tests-mismatch"} <= set(v) for p, v in T.items() if p not in SINGLE_SEAT + S60 + S62) and all({"rehearse", "full", "reuse-hit", "reuse-miss"} <= set(T[p]) for p in SINGLE_SEAT)
+      and not any({"prior-tests", "prior-tests-mismatch"} & set(T[p]) for p in SINGLE_SEAT) and not any({"reuse-hit", "reuse-miss"} & set(v) for p, v in T.items() if p not in SINGLE_SEAT + S60 + S62)
       and all({"rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch"} <= set(T[p]) and "full" not in T[p] and not ({"prior-tests", "prior-tests-mismatch"} & set(T[p])) for p in S60 if p != "61b")
-      and {"reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"} == set(T["61b"]))      # 61b has no rehearsal of its own (s61 registration section 6: c2's rows ran in s60 on this binary)
+      and {"reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"} == set(T["61b"])      # 61b has no rehearsal of its own (s61 registration section 6: c2's rows ran in s60 on this binary)
+      and {"rehearse", "reprobe", "nogo-floor", "nogo-gate", "nogo-pilot", "nogo-control", "nogo-short", "abort-netem-first", "control-missing", "prebuilt-required", "reuse-miss", "bin-sha-mismatch", "budget"} == set(T["62r0"])
+      and {"full", "tools-reuse-miss", "rehearsal-missing", "rehearsal-nogo", "knee-mismatch", "pilot-missing", "abort-netem-last", "slaw-echo-void", "budget"} == set(T["62a"]))      # plans 62r0 / 62a: their own path sets
 check("historical-base (LD_BASE_SHA unset) is listed for every plan that allows it, and not for plans 41d, 48, 52, 53, 54 and 54b, which require LD_BASE_SHA, nor 56, 57a, 57b, 59, 60a, 60b (single seat: no BASE)",
-      all(("historical-base" in v) == (p not in ("41d", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b")) for p, v in T.items()) and ': "${LD_BASE_SHA:?' in runall)
-m = re.search(r'case "\$PLAN" in 61a\) ;; 41c\|41d\|46\|47\|48\|52\|53\|54b\|56\|57a\|57b\|59\|60a\|60b\) ;; \*\) echo "ABORT-REHEARSE', runall)
+      all(("historical-base" in v) == (p not in ("41d", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a")) for p, v in T.items()) and ': "${LD_BASE_SHA:?' in runall)
+m = re.search(r'case "\$PLAN" in 62r0\|61a\) ;; 41c\|41d\|46\|47\|48\|52\|53\|54b\|56\|57a\|57b\|59\|60a\|60b\) ;; \*\) echo "ABORT-REHEARSE', runall)
 check("loopdiag_run_all.sh defines LD_REHEARSE for exactly the plans of the table (other plans: ABORT-REHEARSE)", m is not None)
 # plan 54 is plan 41d with LD_WITNESS54=1: run_all rewrites PLAN before the plan case, so it has no case line of its own, only the alias line
-check("every plan of the table is selectable in run_all's plan case (plan 54 through its alias to plan 41d)", all(re.search(r"^  %s\) P_SMOKE=" % re.escape(p), runall, re.M) for p in T if p != "54")
+check("every plan of the table is selectable in run_all's plan case (plan 54 through its alias to plan 41d)", all(re.search(r"^  (?:\w+\|)*%s(?:\|\w+)*\) P_SMOKE=" % re.escape(p), runall, re.M) for p in T if p != "54")
       and 'W54=0; [ "$PLAN" = "54" ] && { W54=1; PLAN=41d; }' in runall and "54" in T)
 check("LD_PRIOR_TESTS is wired into the suites step of the table's plans (suites_stage) and records its manifest at suite time",
       "suites_stage() {" in runall and "reuse_prior_tests() {" in runall and 'src_manifest > "$SD/SRC-MANIFEST.sha256"' in runall)

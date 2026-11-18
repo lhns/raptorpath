@@ -42,6 +42,27 @@ Plans 61a / 61b (the c3 sweep, status 61) are plan 60's shape with their own tab
   pilot-missing          (61a) a non-rehearsal launch without LD_KNEE61: ABORT-PILOT, rc 5, no row measured
   control-missing        (61a) a launch (the rehearsal included) without LD_CTL61=512: ABORT-CONTROL61, rc 5, no row measured (status 61 Amendment 2: the 61a control is W 512)
   prebuilt               (61b) LD_BIN_PREBUILT = 61a's binary: no build, the sha still checked against LD_BIN_SHA_EXPECT
+Plans 62r0 / 62a (c3 at jitter 0, status 62) are plan 61's single-seat shape with their own tables (plan62.py), scorer (s62_score.py), the same strict manifest rule and registered bin_sha, and NO build: LD_BIN_PREBUILT (the staged
+binary, its sha checked) is required. The rehearsal IS plan 62r0 (its rows are its smoke; LD_REHEARSE is implied); 62a reads the rehearsal's GO and PILOT62 W= from LD_REHEARSAL62 (the rehearsal's run dir) and reuses its python and bash
+tools-test result when tools/l1 is byte-identical (a recorded manifest). One stage rep62r0 / rep62a. Paths:
+  62r0 rehearse          the 7 rows R1-R6 + D1 (control x2, floor pair, probes W 80 / 128, the dump row), no battery, no engine suites; `LABEL62 GO-c3j0 GO` and PILOT62; the tools tests ran and their manifest is recorded
+  62r0 reprobe           the first probes read both-above: the rehearsal re-runs R4 / R5 ONCE at W 64 / 96 (section 3.3) and goes
+  62r0 nogo-floor        a floor row DNFs (re-run once, DNF again): `LABEL62 GO-c3j0 NO-GO-FLOOR`
+  62r0 nogo-gate         the floor minimum falls with the sample count: NO-GO-GATE
+  62r0 nogo-pilot        both the first and the re-probe pair read both-above: NO-GO-PILOT
+  62r0 nogo-control      the controls' loss truth above 4.76 % + 1 pp: NO-GO-CONTROL
+  62r0 nogo-short        a row with fewer than 100 native LATE windows: NO-GO-SHORT
+  62r0 abort-netem-first the FIRST row's pre read of the live qdisc carries a jitter term: ABORT-NETEM, the launch stops after that row
+  62r0 control-missing   LD_CTL62 unset: ABORT-CONTROL62 (both launches), rc 5, no row measured
+  62r0 prebuilt-required no LD_BIN_PREBUILT: ABORT-BUILD (plan 62 never builds), no cargo call
+  62r0 budget / 62a budget   a launch at the REGISTERED LD_HARD offset (launch + 1.0 h / + 2.5 h) passes the budget guard, one 300 s under the guard's worst case is refused (ABORT-BUDGET)
+  62r0 reuse-miss / bin-sha-mismatch   as plan 61 (ABORT-SUITES, ABORT-BIN-SHA), rc 5, no row measured
+  62a full               the whole session (smoke + 7 arms x 6 replicates + 2 dump rows from the rehearsal's PILOT62 W=); tools-test reuse HIT (skipped, TOOLS-TESTS-REUSED), scored
+  62a tools-reuse-miss   one byte of tools/l1 differs from the rehearsal's: the reuse MISSes, the tools tests run, the launch completes
+  62a rehearsal-missing / rehearsal-nogo / knee-mismatch   no LD_REHEARSAL62, a rehearsal without `LABEL62 GO-c3j0 GO`, LD_KNEE62 != the rehearsal's PILOT62 W=: ABORT-REHEARSAL62, no row measured
+  62a pilot-missing      LD_KNEE62 unset: ABORT-PILOT, rc 5, no row measured
+  62a abort-netem-last   the LAST row's post read (the ACK leg) carries a jitter term: ABORT-NETEM, every row ran, nothing scored (the scorer refuses too)
+  62a slaw-echo-void     the first scored slot echoes RWM_SLAW wrongly on the client end: VOID (gate-slaw), re-run once, the replacement LIVE
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -63,4 +84,6 @@ HARNESS_PATHS = {
     "60b": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt", "rsign-abort"),
     "61a": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "slaw-echo-void", "pilot-missing", "control-missing"),
     "61b": ("reuse-hit", "reuse-miss", "bin-sha-mismatch", "prebuilt"),
+    "62r0": ("rehearse", "reprobe", "nogo-floor", "nogo-gate", "nogo-pilot", "nogo-control", "nogo-short", "abort-netem-first", "control-missing", "prebuilt-required", "reuse-miss", "bin-sha-mismatch", "budget"),
+    "62a": ("full", "tools-reuse-miss", "rehearsal-missing", "rehearsal-nogo", "knee-mismatch", "pilot-missing", "abort-netem-last", "slaw-echo-void", "budget"),
 }

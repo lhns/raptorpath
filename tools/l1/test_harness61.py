@@ -162,16 +162,16 @@ del os.environ["LD_KNEE61"]
 
 # ═══ 4. shell side ═══
 check("battery: plans 61a / 61b accepted (P61), single-seat (P38 + PCAND, no P41), the instrument env is RWM_RDIAG=1 + the timeout, the cell c3-25 has its cell_spec",
-      'P61=0; case "$PLAN" in 61a|61b) P61=1 ;; esac' in battery and '[ "$P61" = 1 ] && { P38=1; PCAND=1; }' in battery and '[ "$P61" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=120)' in battery
+      'P61=0; case "$PLAN" in 61a|61b) P61=1 ;; esac' in battery and '{ [ "$P61" = 1 ] || [ "$P62" = 1 ]; } && { P38=1; PCAND=1; }' in battery and '[ "$P61" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=120)' in battery
       and 'c3-25)   echo "c3 c3 single 25000000"' in battery)
 check("battery: every row's bytes / timeout / hint / env come from plan61.py armspec (one table), an unknown arm is refused, the cell must be the plan's, HINT is per row", 'python3 ./plan61.py armspec "$cell" "$arm"' in battery
       and 'read -r bytes p61_tmo HINT p60_arm_env' in battery and 'tmo_env=(RWM_PERF_TIMEOUT_S="$p61_tmo")' in battery and "UNKNOWN-ARM $arm at $cell (plan 61)" in battery and 'UNKNOWN-CELL $cell (plan $PLAN)' in battery
-      and 'if [ "$P60" = 1 ] || [ "$P61" = 1 ]; then\n    read -r -a arm_env <<< "$p60_arm_env"' in battery)
+      and 'if [ "$P60" = 1 ] || [ "$P61" = 1 ] || [ "$P62" = 1 ]; then\n    read -r -a arm_env <<< "$p60_arm_env"' in battery)
 check("battery: the table-size asserts (66 / 30, 6 rehearsal, 1 smoke), ABORT-PILOT without LD_KNEE61, the replacement call, the binary must carry the gauge tokens",
-      'want=66; [ "$PLAN" = "61b" ] && want=30' in battery and '-eq 6 ]' in battery and "ABORT-PILOT" in battery and "python3 ./plan61.py replace" in battery and 'if [ "$P60" = 1 ] || [ "$P61" = 1 ]; then\n    preflight_binary "$BIN" "RWM_SLAW"' in battery)
+      'want=66; [ "$PLAN" = "61b" ] && want=30' in battery and '-eq 6 ]' in battery and "ABORT-PILOT" in battery and "python3 ./plan61.py replace" in battery and 'if [ "$P60" = 1 ] || [ "$P61" = 1 ] || [ "$P62" = 1 ]; then\n    preflight_binary "$BIN" "RWM_SLAW"' in battery)
 check("battery: the 6 rehearsal rows run through the replacement rule (a pilot / floor DNF re-runs once), the smoke row of a launch through run_one", 'run_slot61 "$cell" "$arm" "$seed" "$rep" "$store"' in battery and 'run_one "$cell" "$arm" "$seed" "$rep" "$store"; else run_slot61' in battery)
 check("run_all: plans 61a / 61b are selectable, 61a rehearsable (61b is not: ABORT-REHEARSE), both ride plan 60's gates (P60: bin_sha, manifest; P57: budget, /dev/shm; P46) and the R-sign gate stays 60b's",
-      "  61a) P_SMOKE=" in runall and "  61b) P_SMOKE=" in runall and 'case "$PLAN" in 61a) ;; 41c|' in runall and 'P61=0; { [ "$PLAN" = "61a" ] || [ "$PLAN" = "61b" ]; } && { P61=1; P60=1; P46=1; P57=1; }' in runall
+      "  61a) P_SMOKE=" in runall and "  61b) P_SMOKE=" in runall and 'case "$PLAN" in 62r0|61a) ;; 41c|' in runall and 'P61=0; { [ "$PLAN" = "61a" ] || [ "$PLAN" = "61b" ]; } && { P61=1; P60=1; P46=1; P57=1; }' in runall
       and '[ "$PLAN" = "60b" ] && [ "$REHEARSE" != "1" ]' in runall)
 check("run_all: a 61a launch, the rehearsal included, refuses unless LD_CTL61=512 (ABORT-CONTROL61, nothing run), inside the P61 block after the bin_sha check; plan 61b is not subject to it",
       'if [ "$PLAN" = "61a" ] && [ "${LD_CTL61:-}" != "512" ]; then\n    fail_all "ABORT-CONTROL61 plan 61a' in runall and runall.index("ABORT-CONTROL61") > runall.index('fail_all "ABORT-BIN-SHA plan $PLAN') and runall.index("ABORT-CONTROL61") < runall.index('fail_all "ABORT-PILOT plan 61a'))
@@ -202,8 +202,8 @@ g1 = git("cat-file", "-t", BASE) if g0 is not None and g0.returncode == 0 else N
 if g1 is not None and g1.returncode == 0 and g1.stdout.strip() == "commit":
     dd = git("diff", "--stat", BASE, "HEAD", "--", *ENGINE)
     check(f"engine diff against {BASE} (raptorpath, raptorpath-math, raptorpath-core, raptorpath-wasm, gf256, Cargo.toml, Cargo.lock) is EMPTY", dd is not None and dd.returncode == 0 and dd.stdout.strip() == "", dd.stdout if dd else "git failed")
-    dm = git("diff", "--stat", BASE, "HEAD", "--", "tools/l1/ref60-manifest.sha256", "tools/l1/lib.sh")
-    check(f"tools/l1/ref60-manifest.sha256 and lib.sh (no RWM_SLAW outside this branch's tables) equal {BASE}'s", dm is not None and dm.returncode == 0 and dm.stdout.strip() == "", dm.stdout if dm else "git failed")
+    dm = git("diff", "--stat", BASE, "HEAD", "--", "tools/l1/ref60-manifest.sha256")      # lib.sh gained status 62's c3j0 scenario after this branch: test_harness62.py pins that diff
+    check(f"tools/l1/ref60-manifest.sha256 equals {BASE}'s", dm is not None and dm.returncode == 0 and dm.stdout.strip() == "", dm.stdout if dm else "git failed")
     dw = git("diff", "--stat", "cb88df3a", "HEAD", "--", *ENGINE) if git("cat-file", "-t", "cb88df3a").returncode == 0 else None
     if dw is not None:
         check("section 7's witness: the engine equals s60-tree cb88df3a's", dw.returncode == 0 and dw.stdout.strip() == "", dw.stdout)

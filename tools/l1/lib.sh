@@ -181,6 +181,8 @@ scenario_params() {
         c1|dc)       echo "1gbit   1   0  0.05 50" ;;
         c2|wifi)     echo "100mbit 5   3  1.3  50" ;;
         c3|lte)      echo "20mbit  20  5  2    40" ;;
+        # `c3j0` -- status 62: c3 with the jitter removed (the line `20mbit 20 0 2 40`: tc prints `delay 20ms` with no jitter term).
+        c3j0)        echo "20mbit  20  0  2    40" ;;
         # `c3hg` -- "c3, heavy, GE form": the reachability cell for the
         # completion glide. The glide's fully-exposed target is
         # `BULK_TAIL_BUDGET = 0.05`, so on any channel cleaner than 5 % the

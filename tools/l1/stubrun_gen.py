@@ -346,6 +346,8 @@ def gauge60(fam, w, n, bad, evict):
             if fam == "c8" and p == 0 and "nogo8" in bad:
                 nk = 4
             tmin = floors[p] + qf60(w) * (0.6 if p else 1.0)
+            if "gatedrop" in bad and w == 12 and k > 8 and k % 10 == 0:
+                tmin -= 4.0      # plan 62 NO-GO-GATE: the floor minimum falls with the sample count (D0 >= 0.5 ms)
             tp50, tmean = tmin + 1.2, tmin + 1.25
             brake = 0.0 if k == 1 else 0.1 + 0.01 * k
             if k <= 8:
@@ -401,7 +403,7 @@ def gauge60(fam, w, n, bad, evict):
 def plan60_cli(cli, fam, w, nbytes, slaw, evict, bad):
     """-> the client log lines of an s60 row: the fixture's non-[DIAG] lines, then 220 ticks of [DIAG] (known loop dynamics) interleaved with the gauge's window lines (G / EVICT rows) and, for EVICT, plan 59's
     per-tick src / cod / cum / wait / wake fields and a [SPAN] line every 0.5 s."""
-    n = 220
+    n = 120 if "short" in bad else 220      # plan 62 NO-GO-SHORT: 120 ticks leave 60 native LATE windows (< 100)
     floors = FLOOR60[fam]
     rl = run_lines(fam, False, n=n)
     g = gauge60(fam, w, n, bad, evict) if slaw else {}
@@ -459,6 +461,8 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
     mbps = 100.0 * w / (w + 100.0)
     if fam == "c3":
         mbps = min(0.19 * w, 17.3)      # status 61 section 1: 0.19 Mbit/s per slot below the knee, the 17.3 Mbit/s control rate above it (the knee u = 0.95 falls at W 86.5)
+        if ("pilotabove1" in bad and w in (80, 128)) or ("pilotabove2" in bad and w in (80, 128, 64, 96)):
+            mbps = 17.3      # plan 62: a probe at full goodput (case both-above); pilotabove1 = the first pair only (the re-probe then reads proportional), pilotabove2 = the re-probe's too (NO-GO-PILOT)
     secs = max(20.0, int(nbytes) * 8 / 1e6 / mbps)
     hnt = "realtime" if evict else "bulk"
     drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, int(nbytes))]
@@ -470,6 +474,45 @@ def gen60(cli, srv, drv, nbytes, fam, hint):
         tail = '{"bytes":%s,"dnf":1,"hint":"%s","proto":"rp-native","runs":1,"summary":true}' % (nbytes, hnt)
         cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
         drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
+    if os.environ.get("LD_PLAN") in ("62r0", "62a"):
+        cli, srv, drv = gen62(cli, srv, drv, w, bad)
+    return cli, srv, drv
+
+
+GOOD_NETEM = "qdisc netem 8001: root refcnt 2 limit 1000 delay 20ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 42 "
+
+
+def gen62(cli, srv, drv, w, bad):
+    """Plan 62 on the c3j0 stub: the engine's RWM_RTT_DUMP echo, the live-netem witness the real driver prints (`[NETEM] tag=pre|post leg=cli|srv`; STUB_NETEM62=<invocation>:<pre|post>:<jitter|missing|delay> corrupts one
+    read of one row: invocation 0 is the first row the driver is called for), the RTT dump of a D arm (4 352 samples of a path whose estimators saw 4 400: coverage 0.989) and plan 62's control-loss knob."""
+    dump = os.environ.get("RWM_RTT_DUMP", "0")
+    cli = [re.sub(r"\sRWM_RTT_DUMP=\S+", "", ln) + f" RWM_RTT_DUMP={dump}" if "[GATES]" in ln else ln for ln in cli]
+    srv = [re.sub(r"\sRWM_RTT_DUMP=\S+", "", ln) + f" RWM_RTT_DUMP={dump}" if "[GATES]" in ln else ln for ln in srv]
+    marker = os.path.join(TMP, "netem-count")
+    seen = len(open(marker).read()) if os.path.exists(marker) else 0
+    open(marker, "a").write("x")
+    want = ((os.environ.get("STUB_NETEM62") or "::") + ":").split(":")      # <invocation>:<pre|post>:<jitter|delay|missing>[:<cli|srv>] (the leg defaults to the data leg)
+    bad_leg = want[3] or "cli"
+    nl = []
+    for tag in ("pre", "post"):
+        for leg, dev in (("cli", "cli0"), ("srv", "srv0")):
+            text = GOOD_NETEM
+            if want[0] == str(seen) and want[1] == tag and leg == bad_leg:
+                if want[2] == "jitter":
+                    text = text.replace("delay 20ms", "delay 20ms  5ms")
+                elif want[2] == "delay":
+                    text = text.replace("delay 20ms", "delay 5ms")
+                elif want[2] == "missing":
+                    continue
+            nl.append(f"[NETEM] tag={tag} leg={leg} dev={dev} qdisc: {text}")
+    drv = drv + nl
+    if dump == "1":
+        t0, rows = 1_000_000, []
+        for b in range(17):
+            rows.append(f"[RTTDUMP] p=0 t0={t0 + b * 256 * 12500} n=256 d=" + ";".join(f"{0 if i == 0 else 12500},{40000 + (i * 37) % 700}" for i in range(256)))
+        cli = cli + rows
+    if "ctlloss" in bad and w == 512:
+        drv = [ln.replace("loss=0.005000", "loss=0.090000") for ln in drv]
     return cli, srv, drv
 
 
@@ -487,7 +530,7 @@ def qcap(before, durings, after):
 
 def main(argv):
     ca, cb, _hint, nbytes, _n, mode = argv[:6]
-    fam = {"c1": "c1d" if mode == "dual" else "c1s", "c2": "c8" if cb == "c3" else "c2", "c3": "c3"}[ca]
+    fam = {"c1": "c1d" if mode == "dual" else "c1s", "c2": "c8" if cb == "c3" else "c2", "c3": "c3", "c3j0": "c3"}[ca]
     plan = os.environ.get("LD_PLAN", "")
     base = "bin-base" in os.environ.get("RWM_BIN", "")
     cand = not base
@@ -689,7 +732,7 @@ def main(argv):
             tail = '{"bytes":%s,"dnf":1,"hint":"realtime","proto":"rp-native","runs":1,"summary":true}' % nbytes
             cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + [dnf, tail]
             drv = [ln for ln in drv if '"summary"' not in ln] + [tail]
-    elif plan in ("60a", "60b", "61a", "61b"):
+    elif plan in ("60a", "60b", "61a", "61b", "62r0", "62a"):
         cli, srv, drv = gen60(cli, srv, drv, nbytes, fam, _hint)
     else:
         cli = cli + run_lines(fam, cand and os.environ.get("RWM_QUIC_CC") == "bbr_rs")

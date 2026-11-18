@@ -371,3 +371,47 @@ def thr_columns(lines, prefix, phase="xfer", window=None):
     for key in ("p50_us", "p99_us", "max_us", "n"):
         cols[k("lag_" + key)] = lg[key] if lg else None
     return cols
+
+
+# ── status 62: the live-netem witness (`[NETEM] tag=pre|post leg=cli|srv dev=<dev> qdisc: <tc qdisc show text>`, perf_rwm_c.sh with RWM_NETEM_WITNESS=1) ──
+_NETEM_LINE = re.compile(r"\[NETEM\] tag=(\w+) leg=(\w+) dev=(\S+) qdisc: (.*)$")
+_TIME_TOK = re.compile(r"^\d+(?:\.\d+)?(?:us|ms|s)$")
+
+
+def netem_delay_ok(text, delay_ms=20):
+    """-> (ok, reason): `tc qdisc show` text reads a netem root with `delay <delay_ms>ms` and NO jitter term (the token after the delay is not a time value; tc prints no term at jitter 0)."""
+    toks = (text or "").split()
+    if "netem" not in toks:
+        return False, "no netem qdisc"
+    if "delay" not in toks:
+        return False, "no delay term"
+    i = toks.index("delay")
+    d = toks[i + 1] if i + 1 < len(toks) else ""
+    try:
+        d_ok = d.endswith("ms") and float(d[:-2]) == float(delay_ms)
+    except ValueError:
+        d_ok = False
+    if not d_ok:
+        return False, f"delay {d or '-'} (want {delay_ms}ms)"
+    j = toks[i + 2] if i + 2 < len(toks) else ""
+    if _TIME_TOK.match(j):
+        return False, f"jitter term {j}"
+    return True, ""
+
+
+def netem_witness(lines):
+    """-> ({(tag, leg): (ok, reason)}, problems): every `[NETEM]` line of a row's driver output read with netem_delay_ok; problems lists a missing (pre / post) x (cli / srv) witness and each failing one."""
+    got = {}
+    for ln in lines or []:
+        m = _NETEM_LINE.search(ln)
+        if m:
+            got[(m.group(1), m.group(2))] = netem_delay_ok(m.group(4))
+    p = []
+    for tag in ("pre", "post"):
+        for leg in ("cli", "srv"):
+            r = got.get((tag, leg))
+            if r is None:
+                p.append(f"{tag}/{leg}: no [NETEM] witness")
+            elif not r[0]:
+                p.append(f"{tag}/{leg}: {r[1]}")
+    return got, p

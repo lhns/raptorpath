@@ -179,6 +179,16 @@ else
     aw_step topo_up bash "$TOPO" up "$SCENA" "$SCENB" --seed "${SEED:-42}"
 fi
 aw_state post_topo
+# Status 62: the LIVE qdisc of the first data leg and its ACK leg, read right after the topology is up (pre) and again before the teardown (post) and printed as `[NETEM] tag= leg=cli|srv dev= qdisc: <tc qdisc show>`
+# (RWM_NETEM_WITNESS=1, set by the 62 battery only). The battery reads them (plan62.py netem) and stops the launch on a jitter term: nothing here decides. `|| true`: this script runs under `set -e`.
+netem_witness() { # tag
+    local c s
+    c="$(ip netns exec "$NS_CLI" tc qdisc show dev "${CLI_LEGS[0]}" 2>&1 | tr '\n' ' ' || true)"
+    s="$(ip netns exec "$NS_SRV" tc qdisc show dev "${SRV_LEGS[0]}" 2>&1 | tr '\n' ' ' || true)"
+    echo "[NETEM] tag=$1 leg=cli dev=${CLI_LEGS[0]} qdisc: $c"
+    echo "[NETEM] tag=$1 leg=srv dev=${SRV_LEGS[0]} qdisc: $s"
+}
+if [ "${RWM_NETEM_WITNESS:-0}" = 1 ]; then netem_witness pre; fi
 # The receiver netns's kernel UDP receive-buffer drops, baselined before the
 # server starts: the one local-loss term no engine token counts (read again
 # at run end for the `[TRUTH]` lines' `rcvbuf_drops=`).
@@ -383,6 +393,12 @@ fi
 CLI_ST=0
 for _s in "${CLI_PIPE[@]}"; do [ "$_s" -ne 0 ] && CLI_ST="$_s"; done
 [ "$CLI_ST" -ne 0 ] && echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
+# F2 witness (f2-framing-design section 8 step 9): the largest `undeliv=` on any [CTLD] line and the number of [UNFRAMABLE] lines over both logs, for l1common.f2_void / f2_counts.
+# lib.sh turns `set -e` on in this script and `grep` exits 1 on no match, so every substitution here ends in `|| true` (a bare `grep -c` killed the script on plan 63's first rows: rc 1, VOID-RC on all of them).
+_F2_TXT="$(sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log /tmp/rwm-c.log 2>/dev/null || true)"
+_F2_UND="$(printf '%s\n' "$_F2_TXT" | grep -a '\[CTLD\]' | grep -aoE 'undeliv=[0-9]+' | cut -d= -f2 | sort -n | tail -1 || true)"
+_F2_UNF="$(printf '%s\n' "$_F2_TXT" | grep -ac '\[UNFRAMABLE\]' || true)"
+echo "--- F2 undeliv=${_F2_UND:-0} unframable=${_F2_UNF:-0}"
 # Stop the captures (SIGINT by PID, then wait) and print each one's counts as a parseable line:
 #   [CAPTURE] leg=<i> dev=<dev> captured=<n> kdrop=<n>     (`-` when tcpdump printed no summary)
 # SIGINT can be ignored by a `&` job without job control: bounded wait, then SIGTERM by PID.
@@ -502,6 +518,7 @@ for _lg in /tmp/rwm-c.log /tmp/rwm-s.log; do
 done
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
+if [ "${RWM_NETEM_WITNESS:-0}" = 1 ]; then netem_witness post; fi
 
 # netem's qdisc counters before teardown: bytes/pkts that passed netem per
 # direction plus its drops. Read-only; whole-invocation totals (warm-up object
