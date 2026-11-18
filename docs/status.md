@@ -1178,7 +1178,7 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 | dump D12 coverage | 0.993 (21 248 of 21 403), no cap | — |
 
 - **The jitter is off on both witnesses:** the netem line, and the floor's p90 − p10 falling from about 8.2 to 0.64 ms.
-- **The count dependence that remains** sits in the step from the native window to 250 samples. That shows as the gap between native p50 − min (1.99 ms) and p90 − p10 (0.64 ms): a thin low tail below a tight bulk.
+- **The count dependence that remains** sits in the step from the native window to 250 samples. That shows as the gap between native p50 − min (1.99 ms) and p90 − p10 (0.64 ms). **Corrected (count-rule `2d557191`):** this is two modes, not a thin tail. A tight bulk sits around 46.8 ms, and a queue-free low mode at 41.2–41.9 ms holds 2–3 % of samples.
   - A native floor window holds about 58 samples: the D12 dump's 21 403 over 371 windows.
   - D₀ is about 7 datagram times at c3 (0.49 ms each). That is the registration's "service-time" side, not its 0.1–0.2 ms timing side. That is the registration's framing; the cause goes to the derivation.
 - **Limits:**
@@ -1192,6 +1192,28 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **The derivation starts from the D12 dump,** with no VM:
   - Are the low samples spread evenly in time, or do they follow gaps?
   - Which count does the law's lifetime-minimum floor (ℓ̂, m̂) correspond to?
+
+**The count-rule derivation (2026-11-18; `count-rule` `2d557191`; post hoc, on existing rows; Fable-reviewed): no count rule exists on these rows. The open question is the sampler's design.**
+- **Established, scoped to three W 12 rows at J = 0 and one loss rate** (s62's D12 dump and its floor pair):
+  - The J = 0 floor has a queue-free low mode at 41.2–41.9 ms (40 ms propagation, plus about a datagram, plus processing).
+  - 29–32 % of native windows reach it, in runs of 1–2 windows.
+  - It appears mostly in windows that carry a retransmission: 84–87 % of low-mode windows, against 5–8 % of the rest. Every send pause of 60 ms or more sits next to a retransmit.
+  - So how often the queue-free loop is seen depends on the loss and send rates.
+- **s62's D₀ is the law's own brake term in steady state.** The native window minimum minus m̂ is 3.36 ms at J = 0 (44.66 − 41.30), and 8.4 / 7.1 at J = 5: D₀ exactly.
+  - The brake bridges the window minimum the law steers and the long-run minimum it anchors on. Dropping it would put 3–8 ms into the need at zero load.
+- **Defect finding (a ledger row owed, beside F07 and E13): b̂₀⁺ is a bad estimator of that brake.**
+  - It latches the maximum of `tmin − m̂` over the first 8 windows, during the start transient, while m̂ is still falling. Boot windows hold 3–223 samples.
+  - So one window sets F for the whole row: F reads 37.2–46.2 ms across 61c's rows and 42.9–138.5 across 61a's (one 103.4 ms brake, at k = 2).
+  - Owed check: whether that 61a row is G12 s42 r5, the B1 outlier both §61a Results left open.
+- **Not established (hypotheses):**
+  - **m̂ as the floor anchor.** It reads the low mode at J = 0, but 34–35 ms at J = 5, the jitter's low extreme on a 40 ms path, and its count grows about 8× from floor to knee.
+  - **Burst serialization as the cause of the bulk offset.** It explains about half (a 6.2-symbol burst × 0.47 ms ≈ 2.9 ms of J = 0's 5.4 ms), and it misses the W 16 dose point.
+- **s62's consequence, restated:** no count rule exists on these rows. The 500-sample minimum still drifts 2.5–4.1 ms at J = 5 and 1.2 ms at c2, so it is dropped.
+- **Next: a sampler-design derivation** (a fresh Opus agent, no VM, no s62 re-run):
+  - how to estimate the brake, given it shrinks as windows fill (2.97 of 3.36 ms is gone by 250 samples at J = 0);
+  - whether the knee's window minimum is also set by post-loss drains;
+  - what anchors the floor under jitter.
+  - J = 3 stays parked. Decision 8 is unchanged and unsettled.
 
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
@@ -1825,7 +1847,7 @@ The launch sha is pinned by an amendment.
 - **What the law fixes (coordinator, from the formula, R6.7 line):** T̂min(n\*) = F + σ + q(δ)·ℓ̂.
   - **The knee side is the per-window minimum T̂min,** so the law fixes the knee statistic.
   - **The floor F is built from m̂** (Copa `min_rtt`), ℓ̂ (a running lifetime minimum) and the boot term b̂₀⁺, not from a per-window floor arm. Its sample count is the law's open design item (R6.7's n₀).
-  - So the native floor windows (60 samples at c3, 282 at c2) belong to the measurement, not to the law.
+  - **Corrected (2026-11-18, `count-rule` `2d557191`):** the earlier line "the native floor windows belong to the measurement, not to the law" is wrong. b̂₀⁺ is built from the 250 ms sampler's first 8 windows (`net/slaw.rs` `WinSampler::close`, :150–165, on `slaw-gauge` `d416d59b`), so the 250 ms window is the law's. Only the floor arm (W 12) is the measurement's.
 - **On the knee-native minimum against native S_F:** 61c disagrees with c2, and 61a is marginal (it clears Δ by 0.002, on arms chosen post hoc; the two c3 sessions differ by 0.04 in ρ).
   - The need there is 4.05 / 3.71 / 4.10 ms, and the whole gap is native S_F (5.08 against 5.86–6.09).
   - So this reading and the withdrawn "constant in ms" are one fact read two ways.
