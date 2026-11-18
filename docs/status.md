@@ -1136,6 +1136,26 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - Fast unfiltered stub run ALL OK (822 ok). `s65_score.py` is byte-unchanged (`41d9d58e…`).
 - **The RB row was a harness fault, not a reading,** so the rehearsal is re-run from a fresh archive of `18de42d1`. Its rows are new rows, as registered. The run rules are those of Amendment 1.
 
+**§65 Result (2026-11-18, 21:55–22:20Z, `harness65` `18de42d1`; Fable-reviewed): NOT-REPLICATED. The fixed build's in-order delay lean is not shown, and a cost up to +27.3 % is not ruled out (95 % one-sided).**
+- **Rehearsal** (second attempt, 21:42Z, `~/r65b`): SMOKE-PASS.
+  - RC s42 r1 RT-OK. RB s42 r1 died in warm-up (BASE-F2-DEAD), so the conditional RB s7 r1 ran and read LIVE: the conditional third row's first real exercise.
+- **The launch:** host lock held, process lists logged twice (cargo 0, rustc 0, python 0); tools tests reused from the rehearsal (181 files byte-identical); budget 9 112 s.
+- **Scored (the registered test):**
+  - `TEST65` n = 23 (nonzero 23), RC worse in 13; W+ = 165; exact one-sided signed-rank p = 0.2137; HL shift +8.36 %; one-sided 95 % upper bound U = +27.28 %.
+  - `VERDICT65 NOT-REPLICATED`. `F2-FINDING65 none` (every RC row passes items 1–4).
+  - Usable pairs 23 of 24. Pair s42 r2 dropped: its RB row died twice.
+- **Dead BASE warm-ups:** 5 dead RB rows over 24 slots (redrawn alive 3, dead twice 1), so the 4-slot redraw cap was reached exactly. All five are on seed 42; seed 7 had none. §63's two never-acked old-binary rows were also both seed 42. Seed and run order are the same split here (seed 42 always runs RB first), so this points to seed but cannot separate them.
+- **What "closes" means here:** U (+27.3 %) sits above the +24 % the run was powered for. The pair differences' spread is wider than the power model assumed (sd of ln ratio 0.413 here against 0.268 in §64's 11 pairs), so "power 0.96" does not describe this run. The question closes by the registered rule; the data do not exclude an effect of the size §64 saw.
+- **Noise floor:** `RESOLUTION65` (old-binary rows alone) q95|x| = 0.251 over 2 000 splits, so a +8 % shift is well inside the old binary's own split-to-split spread.
+- **Registered as reported only (never a label):**
+  - by seed (seed and order are one split): seed 42 HL −3.3 %, RC worse in 5/11; seed 7 HL +17.9 %, RC worse in 8/12;
+  - early loss by 2 s (leg 0, client): RB and RC alike, about 2.1–2.8 % per row on both;
+  - goodput HL +0.23 % (p 0.12); CPU/GB client −1.57 %, server −1.64 %; lag_E client +2.05 % (p 0.24); `rtp_floor_p0` −4.01 % (p 0.80);
+  - **lag_E server +18.16 %, RC worse in 15/23, p = 0.0117.** One of six reported readouts, uncorrected for multiplicity, and not the scored quantity. It leans the same way on both seeds (seed 42 +8.5 %, 7/11; seed 7 +28.2 %, 8/12), and §64's stage R read the same sign (+20.0 %, p 0.198). §64's Bulk guard read it the other way at c2-100 (−10.1 %, p 0.61). Two Realtime sessions leaning one way is recorded as an open reading (roadmap: parked), with no session by default.
+- **Host re-score:** `loopdiag_parse.py score65r` on the pulled `ld.log` reproduces the VM's `score.txt` byte for byte.
+- **Ledger:** `docs/l1-raw/s65/` (`s65-session.tgz`, `s65-rehearsal.tgz`, the VM and host scores), scrubbed. The harness's full process-list dumps are left out; their counts are in `all-era.txt`.
+- **What follows, by the registration:** the question closes at the size seen. No further session by default. The merge stands.
+
 ## 64. The F2 merge guard (§41c pattern, F2 alone), scored: pre-registration (before any VM contact)
 
 **It registers `docs/derivations/f2-guard-registration.md` at `f2-guard-design` `39269746` verbatim.** Fable reviewed it in three rounds.

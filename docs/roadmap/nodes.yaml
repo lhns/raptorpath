@@ -3175,27 +3175,51 @@ nodes:
   notes: 'Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). The post-hoc analysis is on branch s64-lean 6d55024c (docs/derivations/s64-lean-posthoc.md), not reviewed and not on main. Done when: it is reviewed and its reading is in status.'
   waiting_on: review of the post-hoc analysis
 - id: rec-realtime-delay-recheck
-  title: Realtime delay re-check, long rows
+  title: Realtime delay re-check
   track: rec
   kind: research
-  state: next
+  state: done
   outcome: unrated
   evidence:
   - status §64 Result (stage R)
   - branch s64-lean 6d55024c
+  - status §65 Result
+  - docs/l1-raw/s65
+  verdict_quote: 'VERDICT65 NOT-REPLICATED (not replicated at the seen size; the cost still possible is U = +27.28 %)'
+  headline: 'Not replicated: 23 pairs, +8.4 %, p 0.21; up to +27 % not ruled out'
+  depends_on:
+  - rec-s64-delay-lean
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-18'
+  end: '2026-11-18'
+  folded: []
+  overview: true
+  plain: A registered repeat of the guard's low-latency runs, 24 pairs of the old and fixed programs, to see whether the framing fix really adds delivery delay. It did not show up; a cost up to about a quarter is not ruled out.
+  notes: 'Done when: a registered run of Realtime rows of at least 260 MB at ρ = 1, paired by slot, scores whole-run in-order delay and its Result is in status. §64''s 100 MB rows sit below the in-order delay''s 30 s tick floor (p 0.0503, no resolution). Blocked only on the post-hoc read''s review (rec-s64-delay-lean); it becomes next when that is done.'
+- id: rec-realtime-srv-lag-lean
+  title: Server-side delay lean on the fixed build
+  track: rec
+  kind: research
+  state: parked
+  outcome: unrated
+  evidence:
+  - status §65 Result
+  - status §64 Result (stage R)
   verdict_quote: ''
   headline: ''
   depends_on:
-  - rec-s64-delay-lean
+  - rec-realtime-delay-recheck
   replaced_by: []
   qualified_by: []
   lane: vm
   start: ''
   end: ''
   folded: []
-  overview: true
-  plain: A registered low-latency run with long transfers at full reliability, the two programs paired by slot, to see whether the framing fix really adds delivery delay.
-  notes: 'Done when: a registered run of Realtime rows of at least 260 MB at ρ = 1, paired by slot, scores whole-run in-order delay and its Result is in status. §64''s 100 MB rows sit below the in-order delay''s 30 s tick floor (p 0.0503, no resolution). Blocked only on the post-hoc read''s review (rec-s64-delay-lean); it becomes next when that is done.'
+  overview: false
+  plain: In two low-latency runs the fixed program's server-side delay read about a fifth higher than the old one's. It is a side reading, not a scored result, so nothing runs on it unless it shows up again.
+  notes: 'Reported only, uncorrected for multiplicity: §65 +18.2 % (p 0.012, both seeds), §64 stage R +20.0 % (p 0.198). §64''s Bulk guard read −10.1 % at c2-100.'
 - id: rec-user-framing-fix
   title: Owner calls on the framing fix
   track: rec

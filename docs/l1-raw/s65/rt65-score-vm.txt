@@ -1,0 +1,92 @@
+S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, RC worse predicted; TOL 5 %, alpha 0.05, design 24 pairs, pair floor 18): ledger rows 52
+SLOT65 RB s42 r1: LIVE dnf=False qlost_2s=620/27418 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r1: RT-OK dnf=False qlost_2s=601/26100 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r1: RT-OK dnf=False qlost_2s=709/27590 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r1: LIVE dnf=False qlost_2s=736/27663 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r2: BASE-F2-DEAD (redrawn: first row BASE-F2-DEAD) dnf=None qlost_2s=3/20 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r2: RT-OK dnf=False qlost_2s=635/26850 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r2: RT-OK dnf=False qlost_2s=707/27558 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r2: LIVE dnf=False qlost_2s=781/27633 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r3: LIVE dnf=False qlost_2s=674/27521 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r3: RT-OK dnf=False qlost_2s=628/26914 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r3: RT-OK dnf=False qlost_2s=709/27773 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r3: LIVE dnf=False qlost_2s=725/26759 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r4: LIVE (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=642/27926 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r4: RT-OK dnf=False qlost_2s=619/26081 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r4: RT-OK dnf=False qlost_2s=633/26040 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r4: LIVE dnf=False qlost_2s=679/27749 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r5: LIVE dnf=False qlost_2s=615/27380 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r5: RT-OK dnf=False qlost_2s=659/26225 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r5: RT-OK dnf=False qlost_2s=777/27851 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r5: LIVE dnf=False qlost_2s=674/27794 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r6: LIVE dnf=False qlost_2s=623/27457 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r6: RT-OK dnf=False qlost_2s=631/27775 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r6: RT-OK dnf=False qlost_2s=696/27828 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r6: LIVE dnf=False qlost_2s=726/28167 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r7: LIVE dnf=False qlost_2s=604/27435 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r7: RT-OK dnf=False qlost_2s=693/26877 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r7: RT-OK dnf=False qlost_2s=704/27664 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r7: LIVE dnf=False qlost_2s=688/27675 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r8: LIVE (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=658/27650 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r8: RT-OK dnf=False qlost_2s=575/26823 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r8: RT-OK dnf=False qlost_2s=757/27380 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r8: LIVE dnf=False qlost_2s=755/27926 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r9: LIVE (redrawn: first row BASE-F2-DEAD) dnf=False qlost_2s=649/27363 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r9: RT-OK dnf=False qlost_2s=674/27438 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r9: RT-OK dnf=False qlost_2s=671/27581 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r9: LIVE dnf=False qlost_2s=760/27297 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r10: LIVE dnf=False qlost_2s=603/27472 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r10: RT-OK dnf=False qlost_2s=642/27446 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r10: RT-OK dnf=False qlost_2s=686/25639 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r10: LIVE dnf=False qlost_2s=746/27590 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r11: LIVE dnf=False qlost_2s=590/26062 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r11: RT-OK dnf=False qlost_2s=649/26256 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r11: RT-OK dnf=False qlost_2s=718/27469 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r11: LIVE dnf=False qlost_2s=716/27830 bin_sha=0ec952583a99a3f3
+SLOT65 RB s42 r12: LIVE dnf=False qlost_2s=660/27596 bin_sha=0ec952583a99a3f3
+SLOT65 RC s42 r12: RT-OK dnf=False qlost_2s=581/27222 bin_sha=8104fa027c9dea55
+SLOT65 RC s7 r12: RT-OK dnf=False qlost_2s=716/27548 bin_sha=8104fa027c9dea55
+SLOT65 RB s7 r12: LIVE dnf=False qlost_2s=726/28087 bin_sha=0ec952583a99a3f3
+REDRAWS BASE-F2-DEAD 4 (at most 4 slots)
+BASE-F2-DEAD65 5 dead RB row(s) over 24 RB slots: redrawn alive 3, dead twice 1, not redrawn 0 (a dead row never enters the test)
+RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|=0.2508 (splits=2000, nRB=23)  TOL=0.0500
+F2-FINDING65 none (every RC row that ran passes items 1-4)
+PAIRS65 usable 23 of 24; dropped: s42 r2 (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)
+  pair d = ln(RC/RB): s42r1:+0.297 s7r1:+0.225 s7r2:-0.085 s42r3:+0.420 s7r3:+0.257 s42r4:-0.330 s7r4:+0.398 s42r5:-0.610 s7r5:+0.088 s42r6:-0.692 s7r6:+0.970 s42r7:-0.046 s7r7:-0.236 s42r8:+0.569 s7r8:+0.493 s42r9:+0.310 s7r9:-0.575 s42r10:-0.261 s7r10:+0.225 s42r11:+0.112 s7r11:-0.085 s42r12:-0.248 s7r12:+0.388
+TEST65 n=23 (nonzero 23) RC worse in 13; W+=165; exact one-sided signed-rank p=0.2137; HL shift=+8.36 %; one-sided 95 % upper bound U=+27.28 % (c=83)
+VERDICT65 NOT-REPLICATED (not replicated at the seen size; the cost still possible is U = +27.28 % (95 % one-sided); no further session by default)
+REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)
+  s42 (RB first): HL -3.3 %, RC worse in 5/11
+  s7 (RC first): HL +17.9 %, RC worse in 8/12
+REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC
+  s42r1 (RB first): RB 620/27418 | RC 601/26100
+  s7r1 (RC first): RB 736/27663 | RC 709/27590
+  s7r2 (RC first): RB 781/27633 | RC 707/27558
+  s42r3 (RB first): RB 674/27521 | RC 628/26914
+  s7r3 (RC first): RB 725/26759 | RC 709/27773
+  s42r4 (RB first): RB 642/27926 | RC 619/26081
+  s7r4 (RC first): RB 679/27749 | RC 633/26040
+  s42r5 (RB first): RB 615/27380 | RC 659/26225
+  s7r5 (RC first): RB 674/27794 | RC 777/27851
+  s42r6 (RB first): RB 623/27457 | RC 631/27775
+  s7r6 (RC first): RB 726/28167 | RC 696/27828
+  s42r7 (RB first): RB 604/27435 | RC 693/26877
+  s7r7 (RC first): RB 688/27675 | RC 704/27664
+  s42r8 (RB first): RB 658/27650 | RC 575/26823
+  s7r8 (RC first): RB 755/27926 | RC 757/27380
+  s42r9 (RB first): RB 649/27363 | RC 674/27438
+  s7r9 (RC first): RB 760/27297 | RC 671/27581
+  s42r10 (RB first): RB 603/27472 | RC 642/27446
+  s7r10 (RC first): RB 746/27590 | RC 686/25639
+  s42r11 (RB first): RB 590/26062 | RC 649/26256
+  s7r11 (RC first): RB 716/27830 | RC 718/27469
+  s42r12 (RB first): RB 660/27596 | RC 581/27222
+  s7r12 (RC first): RB 726/28087 | RC 716/27548
+  dead RB rows (their [DIAG] clock is the warm-up phase, not comparable): s42r2 3/22, s42r2 3/20, s42r4 4/23, s42r8 4/23, s42r9 4/22
+REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL
+  goodput       RC worse in 13 of 23  p=0.1234  HL +0.23 %
+  cpu_cli/GB    RC worse in  9 of 23  p=0.8703  HL -1.57 %
+  cpu_srv/GB    RC worse in 10 of 23  p=0.8828  HL -1.64 %
+  lag_E_cli     RC worse in 12 of 23  p=0.2410  HL +2.05 %
+  lag_E_srv     RC worse in 15 of 23  p=0.0117  HL +18.16 %
+  rtp_floor_p0  RC worse in  8 of 23  p=0.8035  HL -4.01 %

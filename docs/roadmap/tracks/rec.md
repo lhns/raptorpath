@@ -50,7 +50,8 @@ flowchart TB
     rec_s63_f2_first_contact["✔ Framing fix on<br/>failed rows"]
     rec_f2_merge_guard["✔ Framing fix<br/>regression test"]
     rec_s64_delay_lean["✔ Realtime delay lean,<br/>post-hoc read"]
-    rec_realtime_delay_recheck["○ Realtime delay re-<br/>check, long rows"]
+    rec_realtime_delay_recheck["✔ Realtime delay re-<br/>check"]
+    rec_realtime_srv_lag_lean["⏸ Server-side delay<br/>lean on the fixed<br/>build"]
     rec_framing_followups["○ Framing fix<br/>leftovers"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
     rec_leverb_guard["⏸ Gap horizon guard,<br/>then merge"]
@@ -102,9 +103,10 @@ flowchart TB
     rec_s63_f2_first_contact ~~~ rec_f2_merge_guard
     rec_f2_merge_guard ~~~ rec_s64_delay_lean
     rec_s64_delay_lean ~~~ rec_realtime_delay_recheck
-    rec_s64_delay_lean ~~~ rec_framing_followups
-    rec_s64_delay_lean ~~~ rec_w0_leg_question
-    rec_realtime_delay_recheck ~~~ rec_leverb_guard
+    rec_realtime_delay_recheck ~~~ rec_realtime_srv_lag_lean
+    rec_realtime_delay_recheck ~~~ rec_framing_followups
+    rec_realtime_delay_recheck ~~~ rec_w0_leg_question
+    rec_realtime_srv_lag_lean ~~~ rec_leverb_guard
     rec_framing_followups ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_fix_perleg_clock_n1
     rec_leverb_guard ~~~ rec_recovery_timeouts
@@ -137,13 +139,14 @@ flowchart TB
     rec_s63_f2_first_contact --> rec_f2_merge_guard
     rec_f2_merge_guard --> rec_s64_delay_lean
     rec_s64_delay_lean --> rec_realtime_delay_recheck
+    rec_realtime_delay_recheck --> rec_realtime_srv_lag_lean
     rec_f2_merge_guard --> rec_framing_followups
     rec_s54_session --> rec_w0_leg_question
     rec_s54_session --> rec_leverb_guard
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 54,55,56,66 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 55,56,57,67 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -158,13 +161,13 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter,rec_defect_realtime_framing succ
-    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean unrated
+    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean,rec_realtime_delay_recheck unrated
     class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
-    class rec_recov_sp,rec_dispersion_est,rec_leverb_guard parked
+    class rec_recov_sp,rec_dispersion_est,rec_realtime_srv_lag_lean,rec_leverb_guard parked
     class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
-    class rec_realtime_delay_recheck,rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
+    class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
     class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
 ```
 <!-- END GENERATED: track-rec -->
@@ -208,7 +211,8 @@ flowchart TB
 | `rec-s63-f2-first-contact` | Framing fix on failed rows | done | very-successful | fixed binary 5/5, old binary failed 2/5 | status §63; status §63 Result | rec-defect-realtime-framing |
 | `rec-f2-merge-guard` | Framing fix regression test | done | very-successful | Bulk unchanged, Realtime fixed; merged | status §64; status §64 Result | rec-s63-f2-first-contact |
 | `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | done | unrated |  | status §64 Result; branch s64-lean 6d55024c; docs/derivations/s64-lean-posthoc.md (branch s64-lean) | rec-f2-merge-guard |
-| `rec-realtime-delay-recheck` | Realtime delay re-check, long rows | next | unrated |  | status §64 Result (stage R); branch s64-lean 6d55024c | rec-s64-delay-lean |
+| `rec-realtime-delay-recheck` | Realtime delay re-check | done | unrated | Not replicated: 23 pairs, +8.4 %, p 0.21; up to +27 % not ruled out | status §64 Result (stage R); branch s64-lean 6d55024c; status §65 Result; docs/l1-raw/s65 | rec-s64-delay-lean |
+| `rec-realtime-srv-lag-lean` | Server-side delay lean on the fixed build | parked | unrated |  | status §65 Result; status §64 Result (stage R) | rec-realtime-delay-recheck |
 | `rec-user-framing-fix` | Owner calls on the framing fix | done | n/a | one framing, fail closed, merge | status Owner decisions (2026-11-17) items 11-12, 15 |  |
 | `rec-defect-realtime-framing` | Realtime receiver misread packets (fixed) | done | unrated | Realtime tunnel can be dead with healthy counters | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |  |
 | `rec-framing-followups` | Framing fix leftovers | next | unrated |  | ADR-0078; status Owner decisions (2026-11-17) item 12; status §64 Result (merge conditions); status §3.3 | rec-f2-merge-guard |
@@ -263,7 +267,8 @@ flowchart TB
 | `rec-s63-f2-first-contact` | Framing fix on failed rows | CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63. | status §63; status §63 Result |
 | `rec-f2-merge-guard` | Framing fix regression test | Stage G GATE-41d PASS p=0.991 (min-p 0.273), F2-FAIL 0; stage R RT-PASS 12/12, BASE F2-dead 1/12; BENCH PASS. Merged --no-ff f36d9172 (patch-id 3e69ce68), ADR-0078 Accepted, wire v10. Realtime delay readouts lean worse, none flagged: post-hoc read on branch s64-lean. Harness [SYMSZ] column defect fixed before harness64 reaches main. | status §64; status §64 Result |
 | `rec-s64-delay-lean` | Realtime delay lean, post-hoc read | Readouts lag_E +13-20 % (unreadable on this link), in-order delay +12.6 % (no resolution at 100 MB), rtp_floor_p0 +5.7 % (also +5.6 % at Bulk c2). The post-hoc analysis is on branch s64-lean 6d55024c (docs/derivations/s64-lean-posthoc.md), not reviewed and not on main. Done when: it is reviewed and its reading is in status. | status §64 Result; branch s64-lean 6d55024c; docs/derivations/s64-lean-posthoc.md (branch s64-lean) |
-| `rec-realtime-delay-recheck` | Realtime delay re-check, long rows | Done when: a registered run of Realtime rows of at least 260 MB at ρ = 1, paired by slot, scores whole-run in-order delay and its Result is in status. §64's 100 MB rows sit below the in-order delay's 30 s tick floor (p 0.0503, no resolution). Blocked only on the post-hoc read's review (rec-s64-delay-lean); it becomes next when that is done. | status §64 Result (stage R); branch s64-lean 6d55024c |
+| `rec-realtime-delay-recheck` | Realtime delay re-check | Done when: a registered run of Realtime rows of at least 260 MB at ρ = 1, paired by slot, scores whole-run in-order delay and its Result is in status. §64's 100 MB rows sit below the in-order delay's 30 s tick floor (p 0.0503, no resolution). Blocked only on the post-hoc read's review (rec-s64-delay-lean); it becomes next when that is done. | status §64 Result (stage R); branch s64-lean 6d55024c; status §65 Result; docs/l1-raw/s65 |
+| `rec-realtime-srv-lag-lean` | Server-side delay lean on the fixed build | Reported only, uncorrected for multiplicity: §65 +18.2 % (p 0.012, both seeds), §64 stage R +20.0 % (p 0.198). §64's Bulk guard read −10.1 % at c2-100. | status §65 Result; status §64 Result (stage R) |
 | `rec-user-framing-fix` | Owner calls on the framing fix | Decision 11: format A, one framing. Decision 12: fail closed; the receiver takes the sender's announced size. Decision 15: merge now (f36d9172), ADR-0078 Accepted, wire v10. | status Owner decisions (2026-11-17) items 11-12, 15 |
 | `rec-defect-realtime-framing` | Realtime receiver misread packets (fixed) | Found by the §51 E rehearsal; it blocked block E and block 51 (their Realtime rows). Before the fix: a red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state. Owner decisions 11-12: one framing for every symbol (format A), fail closed. Fixed on f2-impl (ADR-0078, wire v10), checked by §63 and the §64 guard, merged f36d9172 (decision 15). Leftovers: rec-framing-followups. | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |
 | `rec-framing-followups` | Framing fix leftovers | 1. Mixed-hint pairs still connect silently: they differ in the receiver's default ρ, which nothing on the wire checks (ADR-0078 Consequences, audit §6); owner decision 12 keeps them unsupported. Refusing them at the handshake is a wire change, so it is put to the owner first. 2. The sender still chooses packing by hint (use_packing, sender_policy.rs, status §3.3; ADR-0078 decision 2): a NO-MODE-SWITCH debt, counted in model-mode-switch-debts. 3. The receiver-timestamp field is now wire v11 (ADR-0078 decision 3); status §1's protocol line and the §42/§43 texts that call it v10 are owed (§64 Result, 'At the merge'). Done when: a short note puts the mixed-preset choice to the owner (refuse at the handshake, with a protocol bump, or accept and record the risk), and the status texts read v11. The refusal, if chosen, is its own change with a test. | ADR-0078; status Owner decisions (2026-11-17) item 12; status §64 Result (merge conditions); status §3.3 |

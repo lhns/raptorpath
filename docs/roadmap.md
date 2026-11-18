@@ -129,6 +129,7 @@ flowchart TB
         store_s62_j0["store · ✔ Slow-link<br/>knee without jitter"]
         store_count_rule["store · ✔ Sample-count<br/>rule derivation"]
         rec_f2_merge_guard["rec · ✔ Framing fix<br/>regression test"]
+        rec_realtime_delay_recheck["rec · ✔ Realtime delay<br/>re-check"]
     end
     subgraph bd_4["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
@@ -139,7 +140,6 @@ flowchart TB
         store_defect_b0p_brake>"store · ⚠ Boot-time<br/>brake estimate latches<br/>transients"]
         store_sampler_design[/"store · ○ Store-law<br/>delay sampler design"/]
         meas_blocke_pacing_gate>"meas · ⚠ Pacer late-<br/>send check fails"]
-        rec_realtime_delay_recheck["rec · ○ Realtime delay<br/>re-check, long rows"]
         meas_s51_session["meas · ○ Off-Bulk<br/>baseline and δ sweep"]
     end
     subgraph bd_6["Later (blocked or parked)"]
@@ -172,15 +172,17 @@ flowchart TB
     rec_defect_realtime_framing ~~~ store_s62_j0
     store_s62_j0 ~~~ store_count_rule
     store_s62_j0 ~~~ rec_f2_merge_guard
-    store_count_rule ~~~ cc_bbrrs_r2
-    rec_f2_merge_guard ~~~ store_law_derivation
+    store_count_rule ~~~ rec_realtime_delay_recheck
+    rec_f2_merge_guard ~~~ rec_realtime_delay_recheck
+    rec_realtime_delay_recheck ~~~ cc_bbrrs_r2
+    rec_realtime_delay_recheck ~~~ store_law_derivation
     cc_bbrrs_r2 ~~~ rate_evict_epre
     store_law_derivation ~~~ store_defect_b0p_brake
     rate_evict_epre ~~~ store_sampler_design
     store_defect_b0p_brake ~~~ meas_blocke_pacing_gate
-    store_sampler_design ~~~ rec_realtime_delay_recheck
+    store_sampler_design ~~~ meas_s51_session
     meas_blocke_pacing_gate ~~~ meas_s51_session
-    rec_realtime_delay_recheck ~~~ rate_evict_session
+    meas_s51_session ~~~ rate_evict_session
     meas_s51_session ~~~ store_fix_maxbw_minrtt
     rate_evict_session ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
@@ -202,7 +204,7 @@ flowchart TB
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 38 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 40 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -218,9 +220,9 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cod_block_pipeline,rate_r_battery,store_power_law,place_daps dead
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,rec_defect_realtime_framing,place_wire_price,cc_bbr_default,meas_formula_first,meas_guard_41c,model_vis_continuum succ
-    class rec_snapver_law,store_count_rule,model_law_ledger unrated
+    class rec_snapver_law,store_count_rule,rec_realtime_delay_recheck,model_law_ledger unrated
     class rate_est_cadence,rec_f2_merge_guard,perf_emit_batch_law0,perf_io_owner vsucc
-    class rate_evict_epre,store_sampler_design,rec_realtime_delay_recheck,meas_s51_session next
+    class rate_evict_epre,store_sampler_design,meas_s51_session next
     class rate_evict_session,store_engine_form_impl,store_fix_maxbw_minrtt blocked
     class store_law_derivation inprog
     class store_s60a,store_s62_j0 mixed
@@ -248,7 +250,8 @@ flowchart TB
 | Hole law unmeasured where it operates | ⚠ open defect | Open problem: the rule that decides when a missing packet is lost had never been measured in the conditions where it matters most. |
 | Hole refresh clock degenerate input | ⚠ open defect | Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one. |
 | Framing fix regression test | ✔ done · very-successful | The full regression test for the framing fix: the fast and slow links behave as before, the low-latency setting no longer dies at start-up, and the fix is now on main. |
-| Realtime delay re-check, long rows | ○ next | A registered low-latency run with long transfers at full reliability, the two programs paired by slot, to see whether the framing fix really adds delivery delay. |
+| Realtime delay re-check | ✔ done · unrated | A registered repeat of the guard's low-latency runs, 24 pairs of the old and fixed programs, to see whether the framing fix really adds delivery delay. It did not show up; a cost up to about a quarter is not ruled out. |
+| Server-side delay lean on the fixed build | ⏸ parked | In two low-latency runs the fixed program's server-side delay read about a fifth higher than the old one's. It is a side reading, not a scored result, so nothing runs on it unless it shows up again. |
 | Realtime receiver misread packets (fixed) | ✔ fixed | Fixed: on the low-latency setting, losing one start-up message made the receiver misread all data for the whole connection, while every counter looked fine. |
 | Framing fix leftovers | ○ next | Closing what the framing fix left open: peers on different presets still connect without any check, which needs an owner call; the sender still picks packing by preset; and some status text names the wrong protocol version for a planned field. |
 | Singles hole suppression | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
@@ -363,7 +366,6 @@ flowchart TB
 **vm**
 
 - `rate-evict-epre`: Evicting-seat test suites and binary
-- `rec-realtime-delay-recheck`: Realtime delay re-check, long rows
 - `meas-s51-session`: Off-Bulk baseline and δ sweep
 - `meas-progress-baseline`: Cumulative progress benchmark
 
@@ -501,7 +503,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 52 nodes (21 done, 6 in progress, 5 next, 3 blocked, 3 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 53 nodes (22 done, 6 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 28 nodes (11 done, 4 in progress, 2 next, 7 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
