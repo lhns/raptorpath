@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Status 65: the Realtime in-order delay re-check (docs/derivations/s65-registration.md). Plan 65 = c2-100, Realtime, rho = 1, arms RB = BASE's binary and RC = CAND's,
-N_PAIRS slots (seeds 42 / 7, plan 41c's interleave: seed 42's pair runs RB first, seed 7's RC first), 600 MB rows. RC against RB PAIRED BY SLOT (seed, rep).
+"""Status 65: the exact replication of section 64's Realtime in-order delay lean (docs/derivations/s65-registration.md). Plan 65 = section 64's stage R configuration
+unchanged (c2-100, Realtime, rho = 1 witnessed on both ends, 100 MB rows, RWM_PERF_TIMEOUT_S=150; arms RB = BASE's binary, RC = CAND's) at N_PAIRS slots (seeds 42 / 7,
+plan 41c's interleave: seed 42's pair runs RB first, seed 7's RC first). RC against RB PAIRED BY SLOT (seed, rep).
 
     s65_score.py <ledger> [...]
 
-Scored (two readouts, each one-sided, prediction registered: RC worse):
-  HEAD  the in-order delay mean over ticks t <= HEAD_S (the window section 64's 12 s rows saw): the REPLICATION;
-  REST  the in-order delay mean over ticks t > HEAD_S: PERSISTENCE.
-Per readout: d = ln(RC / RB) per usable pair; exact one-sided Wilcoxon signed-rank p (sign-flip distribution by exact counting), the Hodges-Lehmann shift h and its exact one-sided
-95 % upper bound U; REGRESSION iff p <= ALPHA and h > TOL; NO-REGRESSION iff U <= TOL; else UNRESOLVED; fewer than MIN_PAIRS usable pairs: UNRESOLVED-N.
-Session label from the pair (HEAD, REST): BISECT, START-UP-COST, REPLICATED-PERSISTENCE-OPEN, LATE-ONLY, REST-REGRESSION, CLOSED, NOT-REPLICATED or UNRESOLVED (table in the registration, section 3.5).
-Reported only: the whole-run in-order mean; the RB half-split q95 per window; the shift per run order; early loss (quinn lost packets by t = 2 s) per row; the other readouts.
-Pure and env-free; MIN_TICK_S is a parameter only so the path exercise can run the code on section 64's 12 s rows (labelled there)."""
+Scored, one readout, one-sided, the prediction registered (RC worse): the whole-row in-order delay mean (the row's inorder_mean, threadp1_parse.inorder_delay_stats).
+d = ln(RC / RB) per usable pair; exact one-sided Wilcoxon signed-rank p (exact counting over the sign flips), the Hodges-Lehmann shift h and its exact one-sided 95 % upper bound U.
+  UNRESOLVED-N    fewer than MIN_PAIRS usable pairs;
+  REPLICATED      p <= ALPHA and h > TOL;
+  NOT-REPLICATED  otherwise (U printed: the cost still possible).
+Reported only: the RB half-split q95; the shift per run order; early loss (quinn lost / sent packets by t = 2 s) per pair; the other readouts. Pure and env-free."""
 import functools
 import itertools
 import math
@@ -23,18 +22,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 TOL = 0.05                    # the margin: the tolerance the merge guard applies to c2's in-order clause (section 64 stage G printed tol=0.0500; l1ab.REL_FLOOR); fixed
-ALPHA = 0.05                  # one-sided, per readout
+ALPHA = 0.05                  # one-sided
 N_PAIRS = 24                  # fixed before the launch from the power table (registration section 4); never extended after rows are read
-MIN_PAIRS = math.ceil(5 * N_PAIRS / 6)       # 20: fewer usable pairs -> UNRESOLVED-N (5/6 of the design)
+MIN_PAIRS = 18                # the power table: 18 pairs replicate the seen size with probability 0.90; fewer usable pairs -> UNRESOLVED-N
 SEEDS = ("42", "7")
-MIN_TICK_S = 30.0             # guard v2's floor (section 41d): a completed row with under 30 s of ticks is VOID-SHORT
-HEAD_S = 11.5                 # section 64's stage R rows ended at 11.5-11.8 s
 EARLY_S = 2.0                 # the early-loss window (reported)
-DEAD_CAP = N_PAIRS // 12 + 3  # 5: BASE-F2-DEAD slots redrawn at most (Poisson(2) >= 6 is about 1.7 %)
-VOID_CAP = N_PAIRS // 6       # 4: non-F2 void slots redrawn at most
-REDRAW = ("WITNESS-FAIL", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK", "VOID-RHO", "VOID-RC", "NO_DATA", "VOID-SHORT", "BASE-F2-DEAD")
-WINDOWS = [("head", "inorder_mean_head"), ("rest", "inorder_mean_rest")]
-WHOLE = ("whole", "inorder_mean")
+REDRAW_CAP = 4                # plan 64's replacement rule with BASE-F2-DEAD added to the replaceable set and the cap 2 -> 4 slots (registration section 3.1)
+REDRAW = ("WITNESS-FAIL", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK", "VOID-RHO", "VOID-RC", "NO_DATA", "BASE-F2-DEAD")
+SCORED = ("inorder_delay_mean", "inorder_mean")
 READOUTS = [("goodput", "mbps", -1), ("cpu_cli/GB", "cpu_cli", 1), ("cpu_srv/GB", "cpu_srv", 1), ("lag_E_cli", "cli_lag_E", 1), ("lag_E_srv", "srv_lag_E", 1),
             ("rtp_floor_p0", "rtp_floor_p0", 1)]
 _T = re.compile(r"\[DIAG\] t=([\d.]+)s")
@@ -55,12 +50,8 @@ def first_seat(seed):
 
 
 def row_fields(cli):
-    """The row fields plan 65 adds (the parser calls this from plan64.rt_row): the head / rest in-order means (ms; None without a tick) and the early loss (leg 0, the
-    client's last [DIAG] tick at t <= EARLY_S: quinn lost / sent packets, cumulative)."""
-    from threadp1_parse import inorder_delay
-    d = inorder_delay(cli)
-    head = [x for t, x in d if t <= HEAD_S]
-    rest = [x for t, x in d if t > HEAD_S]
+    """The row fields plan 65 adds (the parser calls this from plan64.rt_row): the early loss, quinn's lost / sent packets on leg 0 at the client's last [DIAG] tick with
+    t <= EARLY_S (cumulative; None without such a tick)."""
     ql = None
     for ln in cli:
         mt = _T.search(ln)
@@ -69,29 +60,21 @@ def row_fields(cli):
         m = _QLP.search(ln)
         if m:
             ql = (int(m.group(1)), int(m.group(2)))
-    return {"inorder_mean_head": 1e3 * sum(head) / len(head) if head else None, "inorder_mean_rest": 1e3 * sum(rest) / len(rest) if rest else None,
-            "qlost_2s": ql[0] if ql else None, "qsent_2s": ql[1] if ql else None}
+    return {"qlost_2s": ql[0] if ql else None, "qsent_2s": ql[1] if ql else None}
 
 
 def slot_key(r):
     return (str(r["seed"]), str(r["rep"]))
 
 
-def eff_status(r, min_tick):
-    if r["status"] in ("LIVE", "RT-OK") and not r.get("dnf") and (r.get("tick_span_s") or 0.0) < min_tick:
-        return "VOID-SHORT"
-    return r["status"]
-
-
-def final_rows(rows, min_tick=MIN_TICK_S):
-    """{(arm, seed, rep): (row, effective status, first row's status if redrawn else None)}: one redraw per slot (the slot's second row replaces a first row in REDRAW)."""
+def final_rows(rows):
+    """{(arm, seed, rep): (row, status, first row's status if redrawn else None)}: one redraw per slot (the slot's second row replaces a first row in REDRAW)."""
     by = {}
     for r in rows:
         by.setdefault((r["arm"],) + slot_key(r), []).append(r)
     out = {}
     for k, rs in by.items():
-        st0 = eff_status(rs[0], min_tick)
-        out[k] = (rs[1], eff_status(rs[1], min_tick), st0) if (st0 in REDRAW and len(rs) > 1) else (rs[0], st0, None)
+        out[k] = (rs[1], rs[1]["status"], rs[0]["status"]) if (rs[0]["status"] in REDRAW and len(rs) > 1) else (rs[0], rs[0]["status"], None)
     return out
 
 
@@ -180,7 +163,7 @@ def paired(pairs, key, sign=1):
 
 
 def test(xs, min_pairs=MIN_PAIRS):
-    """-> dict(n, p, w, h_rel, u_rel, c, label) for one readout's d values."""
+    """-> dict(n, nz, p, w, h_rel, u_rel, c, worse, label) for the d values."""
     p, nz, w = signed_rank_p(xs)
     if xs:
         h, u, c = hl_upper(xs)
@@ -191,31 +174,10 @@ def test(xs, min_pairs=MIN_PAIRS):
     if len(xs) < min_pairs:
         lab = "UNRESOLVED-N"
     elif p <= ALPHA and h_rel > TOL:
-        lab = "REGRESSION"
-    elif u_rel <= TOL:
-        lab = "NO-REGRESSION"
+        lab = "REPLICATED"
     else:
-        lab = "UNRESOLVED"
+        lab = "NOT-REPLICATED"
     return {"n": len(xs), "nz": nz, "p": p, "w": w, "h_rel": h_rel, "u_rel": u_rel, "c": c, "label": lab, "worse": sum(1 for x in xs if x > 0)}
-
-
-def session_label(head, rest):
-    """A window is called clean only when it reads NO-REGRESSION; an UNRESOLVED(-N) window is open, never 'no effect'."""
-    if head == "REGRESSION" and rest == "REGRESSION":
-        return "BISECT", "the head replicates and the rest persists: a regression of the merged fix; bisect commit 6's engine against commit 8's"
-    if head == "REGRESSION" and rest == "NO-REGRESSION":
-        return "START-UP-COST", "the head replicates and the rest excludes more than TOL: a start-up cost of the merged fix, not a steady-state one"
-    if head == "REGRESSION":
-        return "REPLICATED-PERSISTENCE-OPEN", f"the head replicates; the rest reads {rest}, so persistence is open"
-    if head == "NO-REGRESSION" and rest == "REGRESSION":
-        return "LATE-ONLY", "the rest regresses and the head excludes more than TOL: not the predicted pattern; to the owner"
-    if rest == "REGRESSION":
-        return "REST-REGRESSION", f"the rest regresses; the head reads {head}, so the start-up window is open: a steady-state regression of the merged fix"
-    if head == "NO-REGRESSION" and rest == "NO-REGRESSION":
-        return "CLOSED", "neither window regresses beyond TOL: section 64's lean closes"
-    if rest == "NO-REGRESSION":
-        return "NOT-REPLICATED", f"the head reads {head} (no replication at alpha, not excluded either) and the rest excludes more than TOL: no steady-state regression, the start-up lean not reproduced"
-    return "UNRESOLVED", f"head {head}, rest {rest}"
 
 
 SPLITS_MAX = 2000             # the reported q95: every split when there are at most this many (section 64's 200), else a seeded sample of this many
@@ -247,24 +209,22 @@ def q95_halfsplit(vals_by_seed):
     return g.q95(xv), len(xv)
 
 
-def score(paths, out=print, min_tick=MIN_TICK_S, rows=None, n_pairs=N_PAIRS):
+def score(paths, out=print, rows=None, n_pairs=N_PAIRS, min_pairs=MIN_PAIRS):
     import place38_parse as pp
-    mp = math.ceil(5 * n_pairs / 6)
     if rows is None:
         rows, _ = pp.rows_of(paths)
-    fin = final_rows(rows, min_tick)
+    fin = final_rows(rows)
     slots = plan(n_pairs)
-    out(f"S65 REPORT (Realtime c2-100 at rho = 1; RB = BASE's binary, RC = CAND's; scored: the HEAD (t <= {HEAD_S:g} s, the replication) and REST (t > {HEAD_S:g} s, persistence) in-order "
-        f"delay means, paired by slot, one-sided (RC worse predicted); TOL {100 * TOL:.0f} %, alpha {ALPHA} per readout, design {n_pairs} pairs, min pairs {mp}, min ticks {min_tick:g} s): "
-        f"ledger rows {len(rows)}")
+    out(f"S65 REPORT (the exact replication: Realtime c2-100 at rho = 1, 100 MB; RB = BASE's binary, RC = CAND's; scored: the whole-row in-order delay mean, paired by slot, one-sided, "
+        f"RC worse predicted; TOL {100 * TOL:.0f} %, alpha {ALPHA}, design {n_pairs} pairs, pair floor {min_pairs}): ledger rows {len(rows)}")
     n_redraw = {}
     for k in slots:
         r, st, was = fin.get(k, (None, "NO-ROW", None))
         if was:
             n_redraw[was] = n_redraw.get(was, 0) + 1
         out(f"SLOT65 {k[0]} s{k[1]} r{k[2]}: {st}" + (f" (redrawn: first row {was})" if was else "")
-            + ("" if r is None else f" dnf={r.get('dnf')} ticks={r.get('tick_span_s')} qlost_2s={r.get('qlost_2s')}/{r.get('qsent_2s')} bin_sha={str(r.get('bin_sha'))[:16]}"))
-    out("REDRAWS " + (", ".join(f"{k} {v}" for k, v in sorted(n_redraw.items())) or "none") + f" (caps: BASE-F2-DEAD {DEAD_CAP} slots, non-F2 voids {VOID_CAP} slots)")
+            + ("" if r is None else f" dnf={r.get('dnf')} qlost_2s={r.get('qlost_2s')}/{r.get('qsent_2s')} bin_sha={str(r.get('bin_sha'))[:16]}"))
+    out("REDRAWS " + (", ".join(f"{k} {v}" for k, v in sorted(n_redraw.items())) or "none") + f" (at most {REDRAW_CAP} slots)")
     rb_slots = [k for k in slots if k[0] == "RB"]
     dead_rows = sum(1 for r in rows if r["arm"] == "RB" and r["status"] == "BASE-F2-DEAD")
     alive = sum(1 for k in rb_slots if k in fin and fin[k][2] == "BASE-F2-DEAD" and fin[k][1] == "LIVE")
@@ -273,12 +233,10 @@ def score(paths, out=print, min_tick=MIN_TICK_S, rows=None, n_pairs=N_PAIRS):
     out(f"BASE-F2-DEAD65 {dead_rows} dead RB row(s) over {len(rb_slots)} RB slots: redrawn alive {alive}, dead twice {twice}, not redrawn {unred} (a dead row never enters the test)")
     pslots = list(dict.fromkeys((sd, rp) for _, sd, rp in slots))
     rb_ok = {k: fin[("RB",) + k][0] for k in pslots if ("RB",) + k in fin and fin[("RB",) + k][1] == "LIVE"}
-    # reported first, from RB alone: the half-split q95 per window
-    for name, key in WINDOWS + [WHOLE]:
-        by = {s: [val(r, key) for k, r in rb_ok.items() if k[0] == s and not r.get("dnf") and val(r, key) is not None] for s in SEEDS}
-        by = {s: v for s, v in by.items() if v}
-        q, ns = q95_halfsplit(by) if by else (None, 0)
-        out(f"RESOLUTION65 {name:<5} (RB rows alone, REPORTED ONLY): q95|x|={'-' if q is None else '%.4f' % q} (splits={ns}, nRB={sum(len(v) for v in by.values())})  TOL={TOL:.4f}")
+    by = {s_: [val(r, SCORED[1]) for k, r in rb_ok.items() if k[0] == s_ and not r.get("dnf") and val(r, SCORED[1]) is not None] for s_ in SEEDS}
+    by = {s_: v for s_, v in by.items() if v}
+    q, ns = q95_halfsplit(by) if by else (None, 0)
+    out(f"RESOLUTION65 (RB rows alone, REPORTED ONLY): q95|x|={'-' if q is None else '%.4f' % q} (splits={ns}, nRB={sum(len(v) for v in by.values())})  TOL={TOL:.4f}")
     rc_fin = {k: fin[("RC",) + k] for k in pslots if ("RC",) + k in fin}
     f2 = [(k, v[0].get("rt_items")) for k, v in rc_fin.items() if v[1] == "RT-FAIL"]
     out("F2-FINDING65 " + ("none (every RC row that ran passes items 1-4)" if not f2 else
@@ -287,43 +245,38 @@ def score(paths, out=print, min_tick=MIN_TICK_S, rows=None, n_pairs=N_PAIRS):
     pairs = [(k, rb_ok[k], rc_ok[k]) for k in pslots if k in rb_ok and k in rc_ok]
     dropped = [f"s{k[0]} r{k[1]}" for k in pslots if k not in rb_ok or k not in rc_ok]
     out(f"PAIRS65 usable {len(pairs)} of {n_pairs}; dropped: " + (", ".join(dropped) or "none") + " (a dead, void or RT-FAIL side drops its pair; a dead BASE row is never CAND's win)")
-    res, dd = {}, {}
-    for name, key in WINDOWS + [WHOLE]:
-        d = paired(pairs, key)
-        dd[name] = {k: x for k, x, _ in d}
-        res[name] = test([x for _, x, _ in d], mp)
-        out(f"  pair d = ln(RC/RB) {name}: " + " ".join(f"s{k[0]}r{k[1]}:{x:+.3f}{('(' + w + ')') if w else ''}" for k, x, w in d))
-    for name, _ in WINDOWS + [WHOLE]:
-        t = res[name]
-        out(f"{'TEST65' if name != 'whole' else 'REPORTED65'} {name:<5} n={t['n']} (nonzero {t['nz']}) RC worse in {t['worse']}; W+={t['w']:g}; exact one-sided signed-rank p={t['p']:.4f}; "
-            f"HL shift={100 * t['h_rel']:+.2f} %; one-sided 95 % upper bound={'inf' if t['u_rel'] == math.inf else '%+.2f %%' % (100 * t['u_rel'])} (c={t['c']}) -> "
-            + (t["label"] if name != "whole" else f"({t['label']}, reported only)"))
-    lab, why = session_label(res["head"]["label"], res["rest"]["label"])
-    out(f"VERDICT65 {lab} (head {res['head']['label']}, rest {res['rest']['label']}: {why})")
-    out("REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first): per window the HL shift and RC-worse count")
-    for s in SEEDS:
-        parts = []
-        for name, _ in WINDOWS + [WHOLE]:
-            xs = [x for k, x in dd[name].items() if k[0] == s]
-            if xs:
-                t = test(xs)
-                parts.append(f"{name} HL {100 * t['h_rel']:+.1f} % ({t['worse']}/{t['n']})")
-        out(f"  s{s} ({first_seat(s)} first): " + ("; ".join(parts) or "-"))
+    d = paired(pairs, SCORED[1])
+    out("  pair d = ln(RC/RB): " + " ".join(f"s{k[0]}r{k[1]}:{x:+.3f}{('(' + w + ')') if w else ''}" for k, x, w in d))
+    t = test([x for _, x, _ in d], min_pairs)
+    ub = "inf" if t["u_rel"] == math.inf else "%+.2f %%" % (100 * t["u_rel"])
+    out(f"TEST65 n={t['n']} (nonzero {t['nz']}) RC worse in {t['worse']}; W+={t['w']:g}; exact one-sided signed-rank p={t['p']:.4f}; HL shift={100 * t['h_rel']:+.2f} %; "
+        f"one-sided 95 % upper bound U={ub} (c={t['c']})")
+    why = {"UNRESOLVED-N": f"{t['n']} usable pairs < the floor {min_pairs}",
+           "REPLICATED": f"p {t['p']:.4f} <= {ALPHA} and HL {100 * t['h_rel']:+.2f} % > TOL: the follow-up (long rows + the commit 6 / commit 8 bisect seat); the merge stands",
+           "NOT-REPLICATED": f"not replicated at the seen size; the cost still possible is U = {ub} (95 % one-sided); no further session by default"}[t["label"]]
+    out(f"VERDICT65 {t['label']} ({why})")
+    out("REPORTED65 by run order (seed 42's pair runs RB first, seed 7's RC first)")
+    dd = {k: x for k, x, _ in d}
+    for s_ in SEEDS:
+        xs = [x for k, x in dd.items() if k[0] == s_]
+        if xs:
+            ts = test(xs, 0)
+            out(f"  s{s_} ({first_seat(s_)} first): HL {100 * ts['h_rel']:+.1f} %, RC worse in {ts['worse']}/{ts['n']}")
     out("REPORTED65 early loss (quinn lost / sent packets on leg 0 by t = 2 s, client) per pair: RB | RC")
     for k, rb, rc in pairs:
         out(f"  s{k[0]}r{k[1]} ({first_seat(k[0])} first): RB {rb.get('qlost_2s')}/{rb.get('qsent_2s')} | RC {rc.get('qlost_2s')}/{rc.get('qsent_2s')}")
     dead = [r for r in rows if r["arm"] == "RB" and r["status"] == "BASE-F2-DEAD"]
     if dead:
-        out("  dead RB rows: " + ", ".join(f"s{r['seed']}r{r['rep']} {r.get('qlost_2s')}/{r.get('qsent_2s')}" for r in dead))
-    out("REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p")
+        out("  dead RB rows (their [DIAG] clock is the warm-up phase, not comparable): " + ", ".join(f"s{r['seed']}r{r['rep']} {r.get('qlost_2s')}/{r.get('qsent_2s')}" for r in dead))
+    out("REPORTED65 other readouts (never a label): RC worse in k of n pairs, exact signed-rank p, HL")
     for name, key, sign in READOUTS:
         xs = [x for _, x, _ in paired(pairs, key, sign)]
         if not xs:
             out(f"  {name:<13} - (absent on these rows)")
             continue
-        t = test(xs)
-        out(f"  {name:<13} RC worse in {t['worse']:2d} of {t['nz']}  p={t['p']:.4f}  HL {100 * t['h_rel']:+.2f} %")
-    return {"label": lab, "head": res["head"], "rest": res["rest"], "whole": res["whole"], "n": len(pairs), "f2": len(f2)}
+        to = test(xs, 0)
+        out(f"  {name:<13} RC worse in {to['worse']:2d} of {to['nz']}  p={to['p']:.4f}  HL {100 * to['h_rel']:+.2f} %")
+    return {"label": t["label"], "test": t, "n": len(pairs), "f2": len(f2)}
 
 
 def main(argv):
