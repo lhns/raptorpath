@@ -1138,6 +1138,61 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - Before 62a, the coordinator reads the first readings: D₀, F at three counts, E90_own and X_min's bind, u₈₀ / u₁₂₈ and the case, the K margins, the floor spread against J = 5's, and D1's dump coverage.
   - A rehearsal NO-GO is the Result.
 
+**§62 Result (2026-11-18; the registered NO-GO; Fable-reviewed): `LABEL62 GO-c3j0 NO-GO-GATE`, so s62 ends as UNSCOREABLE. Its registered consequence is that R6.7 item 4's count rule comes first.** The cell (62a) does not run.
+
+**In plain words.**
+- With c3's jitter switched off, the floor's minimum, read from one native window up to 2 100 samples, still depends on the count by 3.36 ms, against the registered 0.5 ms gate.
+- **Almost all of that is below 250 samples.** Beyond 250 the floor moves 0.39 ms, under the gate. Whether a minimum at 250 or more samples is count-free at J = 0 is the derivation's question, not this Result's.
+- **The comparison with J = 5:** switching the jitter off removed the drop above 250 samples, and left the drop below it.
+- The registered next step is the count rule, before any knee reading.
+
+**Run.**
+- Rehearsal `62r0`, launch 05:18:54Z, done at 05:38:48Z. Tree `harness62` `95dafa59`; prebuilt `e410d640`.
+  - SMOKE-PASS / REHEARSAL-PASS are the harness criteria. The go/no-go read NO-GO-GATE.
+- **Host:** cargo paused under the coordinator's host lock.
+  - The `harness64` worker was told to pause host tests too, and did not confirm before the launch.
+  - Its log and export directories show no file written between 05:18 and 05:39Z.
+  - Either way, the same lower step shows in both quiet-host J = 5 sessions.
+- The host re-score (`s62_score.py smoke62 62r0`) matches the VM's `smoke-check.txt` byte for byte.
+- **Ledger:** `docs/l1-raw/s62/`.
+
+**Every rehearsal check passed except the gate:**
+- the live netem read is `delay 20ms` with no jitter term on both legs, before and after every row;
+- floor validity: 65 G(250) groups, not COLLAPSED;
+- control health: R1 / R6 17.81 / 17.82 Mbit/s, loss 0.0476 / 0.0495, within 1 % of each other;
+- the pilot is proportional: `PILOT62 W=93.8 u_lo=0.810 u_hi=0.994`, giving K 88/100/112, P1 144;
+- LATE lengths are 148–305 windows.
+
+**First readings (the Result's content; reported, interpretation goes to a derivation):**
+
+| reading | J = 0 (this rehearsal) | J = 5 (61c / 61a) |
+|---|---|---|
+| floor W 12 F: native / G(250) / G(2 100) | 44.656 / 41.688 / 41.297 ms | — |
+| **D₀ = max(native, G250) − G2100** | **3.359 ms** (the gate needs < 0.5) | 8.43 / 7.07 |
+| native → G(250) | 2.968 ms | 3.973 / 3.462 |
+| G(250) → G(2 100) | 0.391 ms | 4.459 / 3.609 |
+| floor window spread: native p50 − min / p90 − p10 | 1.986 / 0.641 ms | 5.801 / 8.169 (61a 5.941 / 8.285) |
+| X_own on the floor pair | 3.34 ms (E50 1.99, E90 2.44); X_min 2.08 does not bind | — |
+| E90_own / (p90 − tmin), ms | floor 2.47 / 2.48 and 2.42 / 2.34; W 80 7.86 / 8.00; W 128 13.82 / 13.05; control 20.69 / 18.01 and 24.54 / 19.21 | E90 9.34 (floor) |
+| u₈₀ / u₁₂₈ | 0.810 / 0.994 | — |
+| dump D12 coverage | 0.993 (21 248 of 21 403), no cap | — |
+
+- **The jitter is off on both witnesses:** the netem line, and the floor's p90 − p10 falling from about 8.2 to 0.64 ms.
+- **The count dependence that remains** sits in the step from the native window to 250 samples. That shows as the gap between native p50 − min (1.99 ms) and p90 − p10 (0.64 ms): a thin low tail below a tight bulk.
+  - A native floor window holds about 58 samples: the D12 dump's 21 403 over 371 windows.
+  - D₀ is about 7 datagram times at c3 (0.49 ms each). That is the registration's "service-time" side, not its 0.1–0.2 ms timing side. That is the registration's framing; the cause goes to the derivation.
+- **Limits:**
+  - the J = 0 floor reading rests on two rows, the rehearsal's floor pair;
+  - 61c's G(2 100) step had only 4 groups per W 12 row.
+- **Reordering:** not measured (no counter exists).
+
+**Registered consequence:** NEEDS-MORE-gate. The J = 0 floor still depends on its count, so R6.7 item 4's count rule comes first, as a derivation for review.
+- J = 3 stays a separate decision (§62).
+- Decision 8 is unchanged and unsettled.
+- **The derivation starts from the D12 dump,** with no VM:
+  - Are the low samples spread evenly in time, or do they follow gaps?
+  - Which count does the law's lifetime-minimum floor (ℓ̂, m̂) correspond to?
+
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
 **Why.**
@@ -1763,7 +1818,7 @@ The launch sha is pinned by an amendment.
   - Decision 10 is unaffected.
 
 **The knee-margin re-derivation, closed post hoc (2026-11-17; `knee-margin-rederive` `399407f4`, three rounds, Fable-reviewed).** These rows cannot settle decision 8, and no further round on them can add evidence.
-- **The count drop follows jitter.**
+- **The count drop follows jitter,** above 250 samples only. §62's J = 0 rehearsal removed the drop above 250 (0.39 ms) and left the drop from one native window to 250 (2.97 ms).
   - At a fixed count, interleaved and shuffled pooling read the same as contiguous pooling, so the drop comes from the count, not the pooled time span.
   - On the jitter-free c1s line the floor minimum falls only 0.12–0.18 ms over 32 windows, against 2.2 ms at c2 and 7.8 ms at c3.
 - **Two cells can give every label.** Across 15 location and spread pairs (min, p10 and p50 against S_F, native S_F and p90 − p10), the same rows read AGREES, UNRESOLVED and DISAGREES of both signs. For example, the median's rise over the registered S_F is 0.711 at c2, against 0.713 and 0.750 at c3.

@@ -1,0 +1,78 @@
+SENTINEL-WRITABLE /dev/shm/r62/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/REHEARSAL-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/r62/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-18T05:18:54Z user=VMUSER dir=/dev/shm/r62/run launch=2026-11-18T05:18:54Z
+LD-ALL start plan=62r0 load=0.11 0.12 0.27 1/389 3534678 2026-11-18T05:18:55Z
+LD-ALL precondition met procs_running=[1,2,1,1,1,] cargo=0 rustc=0 io=full avg10=3.21 avg60=2.30 avg300=0.77 total=5322082998 2026-11-18T05:19:03Z
+LD-ALL plan 62r0 budget: 3891s to LD_HARD (at least 2400s required: the worst case of the status) 2026-11-18T05:19:03Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.09 0.12 0.26; io=full avg10=3.21 avg60=2.30 avg300=0.77 total=5322083017 2026-11-18T05:19:03Z
+LD-ALL plan 62r0 pre-flight: 5309052 KB free on /dev/shm (need 1048576) 2026-11-18T05:19:03Z
+LD-ALL parser test ok 2026-11-18T05:21:23Z
+LD-ALL binary prebuilt from ~/p51/raptorpath-e410 (no build) 2026-11-18T05:21:23Z
+LD-ALL built wall=1s 2026-11-18T05:21:24Z
+LD-ALL binary e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-18T05:21:24Z
+LD-ALL bin_sha equals the registered value e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d 2026-11-18T05:21:24Z
+LD-ALL suite-reuse HIT: engine suites skipped (raptorpath/src + raptorpath/tests byte-identical to the reference manifest ~/r62/src/tools/l1/ref60-manifest.sha256, 187 files) 2026-11-18T05:21:24Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-18T05:29:46Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-18T05:29:48Z
+LD-ALL suites done tfail=0 2026-11-18T05:29:48Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,11,11,] cargo=0 rustc=0 io=full avg10=0.10 avg60=0.18 avg300=0.21 total=5323851257 2026-11-18T05:29:56Z
+LD-ALL stage rep62r0 (plan 62r0) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.04 avg60=0.15 avg300=0.21 total=5323851310 2026-11-18T05:30:04Z
+SMOKE62 plan=62r0 rows=7 slots=7
+PASS one row per slot ran with a t60 and a t61
+PASS every row read delay 20 ms with no jitter term on both legs before and after the transfer (the live `tc qdisc show`; ABORT-NETEM otherwise)
+PASS the store-law replay modules (s60replay, caplog_replay) import
+  ROW c3j0-25 G512 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 78, 'SLAW': 214, 'SLAWC': 214, 'WSTAT': 214, 'WSTORE': 214} witness={'bad': 0, 'error': None, 'n': 414, 'ok': True, 'worst': 4.97010586153479e-06} caplog_ok=True q=['0.100000'] windows=155 ticks=214 qshare=0.000 loss=0.0476
+  ROW c3j0-25 G12 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 58, 'SLAW': 369, 'SLAWC': 369, 'WSTAT': 369, 'WSTORE': 369} witness={'bad': 0, 'error': None, 'n': 724, 'ok': True, 'worst': 4.9900293759286285e-06} caplog_ok=True q=['0.100000'] windows=310 ticks=369 qshare=0.000 loss=0.0382
+  ROW c3j0-25 G12 s7 r2: status=LIVE dnf=0 tags(cli)={'CAPLOG': 50, 'SLAW': 369, 'SLAWC': 369, 'WSTAT': 369, 'WSTORE': 369} witness={'bad': 0, 'error': None, 'n': 716, 'ok': True, 'worst': 4.980510079022338e-06} caplog_ok=True q=['0.100000'] windows=306 ticks=369 qshare=0.000 loss=0.0377
+  ROW c3j0-25 G80 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 25, 'SLAW': 221, 'SLAWC': 221, 'WSTAT': 221, 'WSTORE': 221} witness={'bad': 0, 'error': None, 'n': 428, 'ok': True, 'worst': 4.994676093605932e-06} caplog_ok=True q=['0.100000'] windows=162 ticks=221 qshare=0.220 loss=0.0472
+  ROW c3j0-25 G128 s42 r1: status=LIVE dnf=0 tags(cli)={'CAPLOG': 28, 'SLAW': 207, 'SLAWC': 207, 'WSTAT': 207, 'WSTORE': 207} witness={'bad': 0, 'error': None, 'n': 400, 'ok': True, 'worst': 4.984930681573019e-06} caplog_ok=True q=['0.100000'] windows=148 ticks=207 qshare=0.000 loss=0.0457
+  ROW c3j0-25 G512 s7 r2: status=LIVE dnf=0 tags(cli)={'CAPLOG': 75, 'SLAW': 214, 'SLAWC': 214, 'WSTAT': 214, 'WSTORE': 214} witness={'bad': 0, 'error': None, 'n': 414, 'ok': True, 'worst': 4.996010978031151e-06} caplog_ok=True q=['0.100000'] windows=155 ticks=214 qshare=0.000 loss=0.0495
+  ROW c3j0-25 D12 s42 r3: status=LIVE dnf=0 tags(cli)={'CAPLOG': 45, 'SLAW': 371, 'SLAWC': 371, 'WSTAT': 371, 'WSTORE': 371} witness={'bad': 0, 'error': None, 'n': 728, 'ok': True, 'worst': 4.989133677302249e-06} caplog_ok=True q=['0.100000'] windows=312 ticks=371 qshare=0.000 loss=0.0410
+PASS every row carries ALL gauge tags (WSTAT, SLAW, WSTORE, SLAWC, CAPLOG) on the client after the warm-up cut
+PASS RWM_SLAW echoed 1 on both ends
+PASS [SLAW] q = 0.100000 on every row (every s62 row is Bulk)
+PASS the per-row replay witness PASS (R~ with the row's own b0p and l reproduces printed R and Rb to 6e-6)
+PASS the CAPLOG replay PASS (records > 0 and every replayable cap reproduced)
+PASS t61 carries LATE windows with [WSTAT] p10 / p50 / p90
+  GO-NOGO-FLOOR G12 s42 r1: live/no DNF True | G(250) groups 65 >= 6 True | not COLLAPSED under CR62 True (share>X_use 0.029)
+  GO-NOGO-FLOOR G12 s7 r2: live/no DNF True | G(250) groups 65 >= 6 True | not COLLAPSED under CR62 True (share>X_use 0.016)
+FIRST-READING D0 (the gate's pre-read on the floor pair) 3.359 ms = max(F_native 44.656, F_G250 41.688) - F_G2100 41.297; gate FAIL (< 0.5 ms)
+PILOT62 W=93.8 u_lo=0.810 u_hi=0.994 arms={'K': [88, 100, 112], 'P1': 144} case=proportional clamped=no probes=80/128 (control W512 median of 2 rows)
+FIRST-READING u80 0.810 u128 0.994
+  GO-NOGO-CONTROL R1 / R6 W512: (a) goodput 17.81 / 17.82 >= 0.98 x max(probes) = 17.35 True; (b) loss truth 0.0476 / 0.0495 <= 0.0576 True; (c) R1 / R6 within 1 % True
+FIRST-READING G512 s42 r1: E90_own 20.69 ms, p90 - tmin 18.01 ms, LATE windows 155, native p50 - min 9.641 ms, p90 - p10 12.816 ms
+FIRST-READING G12 s42 r1: E90_own 2.47 ms, p90 - tmin 2.48 ms, LATE windows 305, native p50 - min 2.143 ms, p90 - p10 0.656 ms
+FIRST-READING G12 s7 r2: E90_own 2.42 ms, p90 - tmin 2.34 ms, LATE windows 303, native p50 - min 1.830 ms, p90 - p10 0.625 ms
+FIRST-READING G80 s42 r1: E90_own 7.86 ms, p90 - tmin 8.00 ms, LATE windows 162, native p50 - min 4.613 ms, p90 - p10 5.633 ms
+FIRST-READING G128 s42 r1: E90_own 13.82 ms, p90 - tmin 13.05 ms, LATE windows 148, native p50 - min 9.381 ms, p90 - p10 9.858 ms
+FIRST-READING G512 s7 r2: E90_own 24.54 ms, p90 - tmin 19.21 ms, LATE windows 155, native p50 - min 10.704 ms, p90 - p10 14.515 ms
+FIRST-READING X_own on the pair 3.34 ms (E50 1.99, E90 2.44); X_min = q_R F_floor = 2.08 ms; X_min does not bind
+FIRST-READING floor window spread (the second witness that the jitter is off): J = 0 native p50 - min 1.986 ms, p90 - p10 0.641 ms; beside J = 5 (61c) p50 - min 5.801 ms, p90 - p10 8.169 ms (61a: 5.941 / 8.285); E90 9.34 ms at J = 5 (s62pred.out)
+FIRST-READING reordering: not measured (no counter exists: tools/l1 has only lib.sh's comment about an earlier offline measurement; the binary's out_of_order is a config field; netem's stats carry none)
+FIRST-READING dump D12: coverage 0.993 (21248 of 21403), cap no
+LABEL62 GO-c3j0 NO-GO-GATE
+NO-GO-LIST NO-GO-GATE
+SMOKE-PASS
+LD-ALL stage rep62r0 SMOKE-PASS 2026-11-18T05:38:48Z
+REHEARSAL62 PILOT62 W=93.8 u_lo=0.810 u_hi=0.994 arms={'K': [88, 100, 112], 'P1': 144} case=proportional clamped=no probes=80/128 (control W512 median of 2 rows);LABEL62 GO-c3j0 NO-GO-GATE;NO-GO-LIST NO-GO-GATE; 2026-11-18T05:38:48Z
+LD-ALL REHEARSAL-PASS stage rep62r0 (smoke only, no battery) 2026-11-18T05:38:48Z
+PERSISTED /dev/shm/r62/run -> ~/r62/run 2026-11-18T05:38:48Z
+LD-ALL-REHEARSAL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

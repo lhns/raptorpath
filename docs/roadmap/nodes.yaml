@@ -2954,19 +2954,20 @@ nodes:
   title: c3 knee need at zero jitter (s62)
   track: store
   kind: research
-  state: next
-  outcome: unrated
+  state: done
+  outcome: mixed
   evidence:
   - status §62
-  verdict_quote: ''
-  headline: ''
+  - status §62 Result
+  verdict_quote: 'LABEL62 GO-c3j0 NO-GO-GATE'
+  headline: floor still count-dependent at J = 0 (D0 3.36 ms)
   depends_on:
   - rec-s63-f2-first-contact
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
-  end: ''
+  start: '2026-11-18'
+  end: '2026-11-18'
   folded: []
   overview: false
   plain: 'Measure the knee margin on the slow link with the delay jitter switched off, to see whether the counting problem and the margin come from jitter.'
