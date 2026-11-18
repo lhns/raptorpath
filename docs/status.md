@@ -1249,6 +1249,25 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
   - stage R's `window_reliable: true` on both ends, finishing well inside 150 s;
   - the BENCH label and its ten-run table.
 
+**§64 Amendment 2 (2026-11-18, after the rehearsal, before the launch): the binary pins and the rehearsal's readings.**
+- **Rehearsal** (08:45–09:17Z, `g64-cand2` / `g64-base2`): REHEARSAL-PASS on stage G and stage R.
+  - **CAND** `LD_BIN_SHA_CAND` = `8104fa027c9dea559c9ffdb0d5630117e70ffcd97a092e73700441446771be5b`.
+  - **BASE** `LD_BIN_SHA_BASE` = `0ec952583a99a3f3f08e56debbdcc9c3c2ddf41516f14220421964fe931ee39b`.
+  - The seat witness is right: CAND holds `[SYMSZ]` and `[UNFRAMABLE]`, BASE neither.
+  - Suite reuse is a HIT (212 files).
+- **`framing_ns`, 10 runs on CAND's tree, `taskset -c 2`: BENCH PASS.**
+  - Per-run medians (CAND − BASE): frame +2–13 ns; read −3 to +11 ns; the packed S=512 read about 38–41 ns faster.
+  - Raw: `run/bench/framing_ns.txt` in the ledger.
+- **Stage G smoke:** c1s BASE and CAND, and the 600 MB dual-leg c8 CAND row, are all LIVE with rc 0.
+  - The CAND rows read `[SYMSZ]` 1200/1200 on both ends, the server's `[CTLD]` with `undeliv=0`, and no `[UNFRAMABLE]`.
+  - Received source symbols: 338 501 (c1s), 507 544 (c8).
+- **Stage R smoke:** RB LIVE; RC RT-OK, passing the F2 reading (warm-up acked, `undeliv=0`, 512/512). Both are `window_reliable` true on both ends and complete at about 69 Mbit/s.
+- **Launch:**
+  - `LD_PLAN=64`, `LD_HARD` = launch + 2.5 h;
+  - `LD_BIN_PREBUILT_BASE` / `_CAND` = the rehearsal's `run/bins64/{base,cand}-raptorpath`, checked against the pins above;
+  - `LD_PRIOR_TOOLS` = the rehearsal's run directory;
+  - fresh archives of `13bb3647` / `3b8fca94`.
+
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
 **Why.**
