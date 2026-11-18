@@ -3127,8 +3127,8 @@ nodes:
   end: ''
   folded: []
   overview: true
-  plain: 'The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late; with the framing fix about 1-4 % of packets go late, so that rule needs a decision before the test can run.'
-  notes: 'From the s51e_score path exercise on §63''s CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. It gates only the paced evicting-seat test (rate-evict-session), the one block that uses the pacer; the off-Bulk sweep''s rows are not paced (§51 ''In plain words''). The suites step (rate-evict-epre) is unaffected and can run first. Done when: gate (c) is amended with a reason or the pacer is fixed, recorded in status before the E rehearsal.'
+  plain: 'The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late. In the first paced runs, 1-4 % of packets went late on the old and the fixed program alike, against a limit that was set without data, so the rule needs a decision before the test runs.'
+  notes: 'Old binary late share too (2.06 / 2.60 / 1.04 %): the fix did not cause it. The 1 % and 2 ms are declared in s51-evict-design §5.2, never measured; every reading so far ran while a stuck host process held a full core. From the s51e_score path exercise on §63''s CAND PL/PM rows (e-tree-f2 11213363): gate (c) late <= 1 % fires (PL 1.6 / 3.6 %, PM 1.2 %); the rate, source count and last tick pass. PM K4-steady 114 windows against a predicted < 30. It gates only the paced evicting-seat test (rate-evict-session), the one block that uses the pacer; the off-Bulk sweep''s rows are not paced (§51 ''In plain words''). The suites step (rate-evict-epre) is unaffected and can run first. Done when: gate (c) is amended with a reason or the pacer is fixed, recorded in status before the E rehearsal.'
 - id: meas-harness-reuse
   title: Cheaper sessions by reuse
   track: meas

@@ -320,7 +320,7 @@ flowchart TB
 | Per-path I/O owner | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
-| Pacer late-send check fails | ⚠ open defect | The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late; with the framing fix about 1-4 % of packets go late, so that rule needs a decision before the test can run. |
+| Pacer late-send check fails | ⚠ open defect | The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late. In the first paced runs, 1-4 % of packets went late on the old and the fixed program alike, against a limit that was set without data, so the rule needs a decision before the test runs. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
 | Formula-first review | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
 | Rank-minp merge guard | ✔ done · successful ⚠ | Built the statistical check that every change must pass before merging, calibrated against identical runs. |
