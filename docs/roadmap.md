@@ -104,30 +104,22 @@ flowchart TB
         cod_legacy_rlc["cod · ↷ Legacy<br/>sliding-<br/>window/generation<br/>decoders"]
         place_early_window_sched["place · ↷ Loss-ranked<br/>multipath window<br/>scheduling"]
     end
-    subgraph bd_1["Jul 2026"]
-        rec_reliable_window["rec · ✔ Reliable<br/>window (RWM Phase A)"]
+    subgraph bd_1["Jul 2026 to Aug 2026"]
         place_daps["place · ↷ DAPS queue-<br/>management chain"]
-        cc_bbr_default["cc · ✔ BBR as<br/>substrate default<br/>(ADR-0054)"]
-        cod_unified_span["cod · ✔ Unified span<br/>machine (ADR-0064)"]
         store_honest_cap_family[/"store · ✖ Honest<br/>floor-clock cap<br/>(HONEST_CAP)"/]
-        meas_adr52_discipline["meas · ✔ L1<br/>measurement discipline<br/>(ADR-0052)"]
-        model_vis_continuum["model · ✔ Visualizer<br/>as one continuum law"]
-    end
-    subgraph bd_2["Aug 2026"]
         rate_est_cadence["rate · ✔ Batched BOCD<br/>estimator cadence"]
         cod_one_pipeline["cod · ✔ One window<br/>pipeline (ADR-0069)"]
         meas_formula_first["meas · ✔ Formula-first<br/>review (ADR-0070)"]
-        store_delta_cap[/"store · ✔ Derived<br/>setpoint 1 + q(δ)"/]
         rec_goal101[/"rec · ✖ Recovery clock<br/>verdict battery (#35;101)"/]
     end
-    subgraph bd_3["Sep 2026 to Oct 2026"]
+    subgraph bd_2["Sep 2026 to Oct 2026"]
         rate_r_battery["rate · ✖ Funded coding<br/>at r #gt; 0"]
         perf_emit_batch_law0["perf · ✔ Emission<br/>batching, Law 0 (#167;8)"]
         perf_io_owner["perf · ✔ Per-path I/O<br/>owner (Q1)"]
         store_adr72_one_law[/"store · ✔ One store<br/>law (ADR-0072)"/]
         store_power_law[/"store · ✖ Power-<br/>seeking store law D"/]
     end
-    subgraph bd_4["Nov 2026"]
+    subgraph bd_3["Nov 2026"]
         cc_quinn_bbr_collapse>"cc · ⚠ Quinn BBR<br/>window collapse (#167;47)"]
         meas_guard_41c["meas · ✔ Rank-minp<br/>merge guard (#167;41c)"]
         cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
@@ -136,16 +128,21 @@ flowchart TB
         model_law_ledger["model · ✔ Law ledger"]
         rec_s54_session["rec · ✔ #167;54: filter<br/>guard, store budget"]
         store_s60a["store · ✔ Gauge<br/>session 60a (#167;60)"]
-        rec_defect_realtime_framing>"rec · ⚠ Realtime<br/>receiver misreads<br/>packed symbols (F2)"]
+        store_s61a_rerun["store · ✔ c3 sweep re-<br/>run (#167;61 Amendment 2)"]
+        rec_defect_realtime_framing>"rec · ✔ Realtime<br/>receiver misreads<br/>packed symbols (F2)"]
+        rec_s63_f2_first_contact["rec · ✔ F2 first<br/>contact (#167;63)"]
+        store_s62_j0["store · ✔ c3 knee need<br/>at zero jitter (s62)"]
+        rec_f2_merge_guard["rec · ✔ F2 merge guard<br/>(#167;64)"]
     end
-    subgraph bd_5["Now (in progress)"]
+    subgraph bd_4["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
         store_law_derivation["store · ▶ Store-law<br/>derivation"]
     end
-    subgraph bd_6["Next"]
-        store_law_g_rederive[/"store · ○ Re-derive<br/>the knee-margin term"/]
+    subgraph bd_5["Next"]
+        store_defect_b0p_brake>"store · ⚠ Boot-time<br/>brake estimate latches<br/>transients"]
+        store_sampler_design[/"store · ○ Store-law<br/>delay sampler design"/]
     end
-    subgraph bd_7["Later (blocked or parked)"]
+    subgraph bd_6["Later (blocked or parked)"]
         rec_leverb_guard["rec · ⏸ Lever-B guard<br/>v2, then merge"]
         meas_s51_session["meas · ⛔ Off-Bulk<br/>baseline and δ sweep"]
         cc_bbrrs_promote["cc · ⛔ bbr_rs<br/>promotion (new ADR)"]
@@ -157,21 +154,13 @@ flowchart TB
     cc_aimd_v1 ~~~ cod_legacy_rlc
     cod_mettle ~~~ place_early_window_sched
     cod_legacy_rlc ~~~ place_early_window_sched
-    place_early_window_sched ~~~ rec_reliable_window
     place_early_window_sched ~~~ place_daps
-    rec_reliable_window ~~~ cc_bbr_default
-    place_daps ~~~ cod_unified_span
-    cc_bbr_default ~~~ store_honest_cap_family
-    cod_unified_span ~~~ meas_adr52_discipline
-    store_honest_cap_family ~~~ model_vis_continuum
-    meas_adr52_discipline ~~~ model_vis_continuum
-    model_vis_continuum ~~~ rate_est_cadence
-    model_vis_continuum ~~~ cod_one_pipeline
+    place_early_window_sched ~~~ store_honest_cap_family
+    place_daps ~~~ rate_est_cadence
+    store_honest_cap_family ~~~ cod_one_pipeline
     rate_est_cadence ~~~ meas_formula_first
-    cod_one_pipeline ~~~ store_delta_cap
-    meas_formula_first ~~~ rec_goal101
-    store_delta_cap ~~~ rec_goal101
-    rec_goal101 ~~~ rate_r_battery
+    cod_one_pipeline ~~~ rec_goal101
+    meas_formula_first ~~~ rate_r_battery
     rec_goal101 ~~~ perf_emit_batch_law0
     rate_r_battery ~~~ perf_io_owner
     perf_emit_batch_law0 ~~~ store_adr72_one_law
@@ -185,14 +174,19 @@ flowchart TB
     place_wire_price ~~~ model_law_ledger
     rec_snapver_law ~~~ rec_s54_session
     model_law_ledger ~~~ store_s60a
-    rec_s54_session ~~~ rec_defect_realtime_framing
+    rec_s54_session ~~~ store_s61a_rerun
     store_s60a ~~~ rec_defect_realtime_framing
-    rec_defect_realtime_framing ~~~ cc_bbrrs_r2
-    rec_defect_realtime_framing ~~~ store_law_derivation
-    cc_bbrrs_r2 ~~~ store_law_g_rederive
-    store_law_derivation ~~~ store_law_g_rederive
-    store_law_g_rederive ~~~ rec_leverb_guard
-    store_law_g_rederive ~~~ meas_s51_session
+    store_s61a_rerun ~~~ rec_s63_f2_first_contact
+    rec_defect_realtime_framing ~~~ rec_s63_f2_first_contact
+    rec_s63_f2_first_contact ~~~ store_s62_j0
+    rec_s63_f2_first_contact ~~~ rec_f2_merge_guard
+    store_s62_j0 ~~~ cc_bbrrs_r2
+    rec_f2_merge_guard ~~~ store_law_derivation
+    cc_bbrrs_r2 ~~~ store_defect_b0p_brake
+    store_law_derivation ~~~ store_defect_b0p_brake
+    store_defect_b0p_brake ~~~ store_sampler_design
+    store_sampler_design ~~~ rec_leverb_guard
+    store_sampler_design ~~~ meas_s51_session
     rec_leverb_guard ~~~ cc_bbrrs_promote
     meas_s51_session ~~~ cc_bbrrs_promote
     cc_bbrrs_promote ~~~ cc_hybrid
@@ -200,21 +194,21 @@ flowchart TB
     cc_hybrid ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     cod_block_pipeline -.-> cod_one_pipeline
-    cod_legacy_rlc -.-> cod_unified_span
-    cc_bbr_default -.-> cc_quinn_bbr_collapse
-    cod_unified_span --> model_vis_continuum
-    cod_unified_span --> cod_one_pipeline
     meas_guard_41c --> cc_bbrrs_r1
     rec_snapver_law --> rec_s54_session
+    rec_defect_realtime_framing --> rec_s63_f2_first_contact
+    rec_s63_f2_first_contact --> store_s62_j0
+    rec_s63_f2_first_contact --> rec_f2_merge_guard
     cc_bbrrs_r1 --> cc_bbrrs_r2
     model_law_ledger --> store_law_derivation
+    store_s62_j0 --> store_defect_b0p_brake
+    store_defect_b0p_brake --> store_sampler_design
     rec_s54_session --> rec_leverb_guard
     store_law_derivation --> rec_leverb_guard
     cc_bbrrs_promote --> cc_hybrid
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 48 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -229,13 +223,13 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cod_block_pipeline,cod_mettle,cod_legacy_rlc,rec_goal101,rate_r_battery,store_honest_cap_family,store_power_law,place_daps,cc_aimd_v1,place_early_window_sched dead
-    class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,place_wire_price,cc_bbr_default,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_vis_continuum succ
+    class cod_one_pipeline,store_adr72_one_law,rec_defect_realtime_framing,place_wire_price,meas_formula_first,meas_guard_41c succ
     class rec_snapver_law,model_law_ledger,rec_s54_session unrated
-    class rate_est_cadence,store_delta_cap,perf_emit_batch_law0,perf_io_owner vsucc
+    class rate_est_cadence,rec_s63_f2_first_contact,rec_f2_merge_guard,perf_emit_batch_law0,perf_io_owner vsucc
     class store_law_derivation inprog
-    class store_s60a mixed
-    class store_law_g_rederive next
-    class rec_defect_realtime_framing,cc_quinn_bbr_collapse defect
+    class store_s60a,store_s61a_rerun,store_s62_j0 mixed
+    class store_defect_b0p_brake,cc_quinn_bbr_collapse defect
+    class store_sampler_design next
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
     class rec_leverb_guard,cc_hybrid parked
@@ -252,10 +246,8 @@ flowchart TB
 | METTLE swappable FEC backend | ✖ dead end | An experimental lighter error-correcting code that needed more spare data than the standard one, so it was dropped. |
 | Generation cross-path fungible coding | ⏸ parked | An optional feature that codes data across paths in groups has never been switched on by default, and nobody has yet decided whether to keep it. |
 | Legacy sliding-window/generation decoders | ↷ superseded | The older decoders for the sliding-window code, replaced by one decoder that handles every case. |
-| Unified span machine (ADR-0064) | ✔ done · successful | Merged two separate decoders into one machine that slides smoothly from low-delay to bulk traffic, with no switch between modes. |
 | One window pipeline (ADR-0069) | ✔ done · successful | Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere. |
 | Owner call: keep generation coding | ⏸ parked | Owner decision on whether to keep or archive the optional cross-path coding feature that has never been switched on by default. |
-| Reliable window (RWM Phase A) | ✔ done · successful | Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode. |
 | σ dispersion estimators (fixed lag) | ⏸ parked | Estimators of the delay spread that a derived recovery clock would need; all failed their bar, and the paper keeps the question open. |
 | Recovery clock verdict battery (#101) | ✖ dead end | A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed. |
 | Gap horizon lever B (§52) | ⏳ waiting | Letting the sender hear about many more missing packets at once removed most of the end-of-transfer wait on the hardest test, but raised duplicate packets; the merge is still pending. |
@@ -263,7 +255,9 @@ flowchart TB
 | [QCLK] w_us pinned at clamp | ⚠ open defect | Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts. |
 | c8 hole law never measured | ⚠ open defect | Open problem: the rule that decides when a missing packet is lost had never been measured in the conditions where it matters most. |
 | Hole refresh clock degenerate input | ⚠ open defect | Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one. |
-| Realtime receiver misreads packed symbols (F2) | ⚠ open defect | Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine. |
+| F2 first contact (§63) | ✔ done · very-successful | Run the rows that failed on the old binary and on the fixed one, to confirm the framing fix removes the failure. |
+| F2 merge guard (§64) | ✔ done · very-successful | The full regression test for the framing fix: the fast and slow links behave as before, the low-latency setting no longer dies at start-up, and the fix is now on main. |
+| Realtime receiver misreads packed symbols (F2) | ✔ fixed | Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine. |
 | Singles hole suppression (RECOV_SP) | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
 | Lever B c1d duplicate cost | ⚠ open defect | Open problem: the end-of-transfer fix adds about thirteen percent more duplicate packets on the fast two-path test, and the loss-report fix does not remove them. |
 | Main's duplicates mostly unexplained | ⚠ open defect | Open problem: even the current main version receives a thousand or more duplicate packets per run, and most of them are unexplained. |
@@ -275,7 +269,6 @@ flowchart TB
 | Receiver refresh clock input | ⛔ blocked | Giving the receiver a real delay for its re-report timer; it waits for the in-flight limit fix, because until then the timer's limits decide its value anyway. |
 | NACK repair throttle: gauge, paper | ○ next | First measuring how often a hidden rule that limits re-sends per loss report actually bites, then justifying it in the paper or removing it. |
 | Retransmits queued behind source? | ○ next | Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets. |
-| Retention is the ρ dial | ✔ done · n/a | The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting. |
 | Batched BOCD estimator cadence | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
 | Funded coding at r > 0 | ✖ dead end | Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand. |
 | DoF ledger feedback leg (§39) | ⏸ parked | An analysis found that feeding repair results back into the repair rate is sound in principle but cannot help measurably today, so it is on hold. |
@@ -293,14 +286,17 @@ flowchart TB
 | Loss estimator approximations | ⛔ blocked | Checking and tightening three approximations inside the loss and delay estimators. |
 | Low-latency and partial-reliability laws | ⛔ blocked | Fixing the rules that only act when data may be dropped, so they follow the dials smoothly and read honest delays. |
 | Honest floor-clock cap (HONEST_CAP) | ✖ dead end | A store limit sized from more honest clock readings; it was never adopted, and the law family it fed was archived. |
-| Derived setpoint 1 + q(δ) | ✔ done · very-successful ⚠ | Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput. |
 | One store law (ADR-0072) | ✔ done · successful ⚠ | Made one in-flight data limit rule apply to any number of paths, removing a special case for single-path links. |
 | Power-seeking store law D | ✖ dead end | Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work. |
 | Who limits at each δ | ⏳ waiting | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
 | Store-law derivation | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
 | Store-law gauge build (B-1) | ⏳ waiting | Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors. |
 | Gauge session 60a (§60) | ✔ done · mixed | Measuring on the test network where the queue-free floor of the in-flight data limit lies on very small stores, and testing the limit's target form against it. |
+| c3 sweep re-run (§61 Amendment 2) | ✔ done · mixed | The registered knee test disagreed at the second link shape, but the reading mixes two sample counts, so what the margin scales with is not settled. |
 | Re-derive the knee-margin term | ○ next | Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner's call. |
+| c3 knee need at zero jitter (s62) | ✔ done · mixed | Measure the knee margin on the slow link with the delay jitter switched off, to see whether the counting problem and the margin come from jitter. |
+| Boot-time brake estimate latches transients | ⚠ open defect | The store law estimates its delay floor from the first few quarter-seconds of a connection, so one odd early sample can skew it for the whole run. |
+| Store-law delay sampler design | ○ next | Work out how the store law should sample delay, since the no-queue delay shows up mostly after retransmissions and a quarter-second window usually misses it. |
 | Store-law allowance short of the c2 knee | ⚠ open defect | Open problem: with honest floors, the store law's safety margin is too small at the two-path test, so it would size the store below the point where goodput tops out. |
 | Store cap constant at c8 | ⚠ open defect | Open problem: on the hardest two-path test the in-flight data limit is stuck at its ceiling, because both of its inputs read far too high. |
 | Store-law engine form guard | ⛔ blocked | Real-network check of the rebuilt in-flight data limit, confirming it no longer sits stuck at its ceiling. |
@@ -315,7 +311,6 @@ flowchart TB
 | Owner calls on per-leg design | ○ next | Owner decision on five open design questions for keeping each path's measurements in one place. |
 | Per-leg state implementation | ⛔ blocked | Keeping all of each path's measurements in one place instead of in several slightly different copies. |
 | Loss-ranked multipath window scheduling | ↷ superseded | An early way of picking paths that ranked them by loss rate, later replaced by pricing each path's marginal cost. |
-| BBR as substrate default (ADR-0054) | ✔ done · successful ⚠ | Switched the underlying congestion controller to BBR, which removed a hidden speed ceiling and raised throughput about four times. |
 | Copa-BBR fusion (ADR-0068) | ⏸ parked | A proposed design for a controller that blends the speed of BBR with the low queues of Copa; prerequisite measurements are done but nothing is built. |
 | Quinn BBR window collapse (§47) | ⚠ open defect | Open problem: the default congestion controller can shrink its sending window to almost nothing on fast links because it remembers one unrealistically low delay sample. |
 | Fixed bbr_rs versus quinn BBR | ✔ done · bad ⚠ | Our own fixed BBR controller stopped that collapse but cost a little throughput and CPU, so it was not adopted; a later check also found it delayed delivery. |
@@ -335,7 +330,6 @@ flowchart TB
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
-| L1 measurement discipline (ADR-0052) | ✔ done · successful | Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run. |
 | Formula-first review (ADR-0070) | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
 | Rank-minp merge guard (§41c) | ✔ done · successful ⚠ | Built the statistical check that every change must pass before merging, calibrated against identical runs. |
 | Guard clause rtp_floor_p0 measures drain | ⚠ open defect | Open problem: one reading in the merge check measured the start or the end of a run rather than the network path, so it scored good fixes as worse. |
@@ -353,7 +347,6 @@ flowchart TB
 | Cumulative progress benchmark | ○ next | One measurement of the current system against the early-July version, showing how much each result has improved since. |
 | Gauges for the remaining constants | ⛔ blocked | Adding readouts or derivations for the last hand-set numbers, so none hides inside a formula. |
 | Shared engine laws and decisions (ADR-0077) | ▶ in progress | Letting the visualizer call the same code as the engine, so the model cannot drift from it. |
-| Visualizer as one continuum law | ✔ done · successful ⚠ | Rebuilt the visualizer around one smooth law across the latency dial, with an automatic test that forbids any mode switch. |
 | Engine NO-MODE-SWITCH debts (§3.3) | ⚠ open defect | Open problem: five places in the engine still switch behaviour on the chosen preset instead of following one smooth rule. |
 | Open-constants register (§3.4) | ⚠ open defect | Open problem: about twenty numbers in the code were picked by hand and have no derivation behind them. |
 | Paper versus engine reconciliation | ⏳ waiting | Compared every claim in the paper with what the code actually does and listed the mismatches; a few questions wait on the owner. |
@@ -394,6 +387,8 @@ flowchart TB
 - `rate-evict-registration`: Evicting-seat m̄ registration (plan 59)
 - `rate-spare-cwnd`: Is spare's cwnd enforced?
 - `store-law-g-rederive`: Re-derive the knee-margin term
+- `store-defect-b0p-brake`: Boot-time brake estimate latches transients
+- `store-sampler-design`: Store-law delay sampler design
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `meas-s51-harness`: §51 harness and scorer
 - `infra-derivation-merges`: Derivation branch merges
@@ -518,9 +513,9 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 47 nodes (17 done, 7 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 48 nodes (19 done, 6 in progress, 3 next, 3 blocked, 3 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 27 nodes (10 done, 3 in progress, 3 next, 7 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 66 nodes (33 done, 4 in progress, 2 next, 5 blocked, 22 abandoned)
+- [store - store law](roadmap/tracks/store.md): 68 nodes (33 done, 4 in progress, 4 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 18 nodes (6 done, 2 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)

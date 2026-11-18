@@ -331,7 +331,7 @@ nodes:
   - commit c3a9d768
   - branch diag/unified-collapse
   - paper §11.1 open question 4
-  overview: true
+  overview: false
   plain: Merged two separate decoders into one machine that slides smoothly from low-delay to bulk traffic, with no switch between modes.
   notes: 'Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cod-one-pipeline
@@ -495,7 +495,7 @@ nodes:
   folded:
   - branch §16 Fountain Multipath Aggregation
   - branch §16 rewrite
-  overview: true
+  overview: false
   plain: Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode.
   notes: 'Paper §16 (fountain multipath aggregation, then Reliable Windowed Multipath) and Phase A: retain-until-acked window, auto-switch removed.'
 - id: rec-fec-vs-arq
@@ -1302,7 +1302,7 @@ nodes:
   folded:
   - commit 62ffbb76
   - paper §11.1 open question 2
-  overview: true
+  overview: false
   plain: The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting.
   notes: Owner corrections 2026-07-06 (retention moves to the ARQ layer; retention is the triangle's ρ). Folds paper §11.1 open question 2 (is ρ a runtime dial).
 - id: rate-unified-shed
@@ -2243,7 +2243,7 @@ nodes:
   - branch Tier-0 corrections
   - branch the literature cross-check
   - commit e9c6b242
-  overview: true
+  overview: false
   plain: Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput.
   notes: 'RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19).'
 - id: store-s18-one-law
@@ -2903,7 +2903,7 @@ nodes:
   start: '2026-11-17'
   end: '2026-11-17'
   folded: []
-  overview: false
+  overview: true
   plain: 'The registered knee test disagreed at the second link shape, but the reading mixes two sample counts, so what the margin scales with is not settled.'
   notes: 'W 512 control outright (LD_CTL61=512, enforced), R6 go/no-go with CR61, proportional pilot capped at 128; a new tools-only launch sha with red-first tests and a STUBRUN_FULL 61a run at W 512. Scored 66/66: rho_3 0.457 [0.409, 0.483], DISAGREES, not floor-sensitive; every allowance candidate COVERED; need_3 4.43 ms vs need_2 4.05. Erratum 1: the floor minimum falls with the sample count (c3 W12 42.75 at n 60 to 33.23 at n 4223); the constant-in-ms lead and the S_F-is-not-the-term reading are withdrawn; an estimator count rule comes first.'
 - id: store-law-g-rederive
@@ -2925,7 +2925,7 @@ nodes:
   start: ''
   end: ''
   folded: []
-  overview: true
+  overview: false
   plain: 'Work out what the knee margin really scales with, now that the floor spread failed at a second link shape; the new form is the owner''s call.'
   notes: 'Registered consequence of DISAGREES. First: the estimator''s sample-count rule (R6.7), since the minimum falls with the count (Erratum 1); the constant-in-ms lead is withdrawn. Round 1 on branch knee-margin-rederive fc0d1514. Inputs: c3 need_3 against each rival sentence, the c2 and c3 price and landing tables. F07 ledger update owed. FORMULA-FIRST: formula and provenance in the paper before any engine form.'
 - id: rec-s63-f2-first-contact
@@ -2947,7 +2947,7 @@ nodes:
   start: '2026-11-17'
   end: '2026-11-17'
   folded: []
-  overview: false
+  overview: true
   plain: 'Run the rows that failed on the old binary and on the fixed one, to confirm the framing fix removes the failure.'
   notes: 'CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63.'
 - id: store-s62-j0
@@ -2969,9 +2969,74 @@ nodes:
   start: '2026-11-18'
   end: '2026-11-18'
   folded: []
-  overview: false
+  overview: true
   plain: 'Measure the knee margin on the slow link with the delay jitter switched off, to see whether the counting problem and the margin come from jitter.'
   notes: 'Registration s62-design 0f40a59d; J = 0 only, about 1.4 h; J = 3 decided after its Result (owner decision 13, shape note).'
+- id: rec-f2-merge-guard
+  title: F2 merge guard (§64)
+  track: rec
+  kind: research
+  state: done
+  outcome: very-successful
+  evidence:
+  - status §64
+  - status §64 Result
+  verdict_quote: 'GATE-64 PASS'
+  headline: Bulk unchanged, Realtime fixed; merged
+  depends_on:
+  - rec-s63-f2-first-contact
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-18'
+  end: '2026-11-18'
+  folded:
+  - commit f36d9172
+  overview: true
+  plain: 'The full regression test for the framing fix: the fast and slow links behave as before, the low-latency setting no longer dies at start-up, and the fix is now on main.'
+  notes: 'Stage G GATE-41d PASS p=0.991 (min-p 0.273), F2-FAIL 0; stage R RT-PASS 12/12, BASE F2-dead 1/12; BENCH PASS. Merged --no-ff f36d9172 (patch-id 3e69ce68), ADR-0078 Accepted, wire v10. Realtime delay readouts lean worse, none flagged: post-hoc read on branch s64-lean. Harness [SYMSZ] column defect fixed before harness64 reaches main.'
+- id: store-defect-b0p-brake
+  title: Boot-time brake estimate latches transients
+  track: store
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status "The count-rule derivation"
+  verdict_quote: 'So one window sets F for the whole row'
+  headline: F swings 37-139 ms from one boot window
+  depends_on:
+  - store-s62-j0
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: true
+  plain: 'The store law estimates its delay floor from the first few quarter-seconds of a connection, so one odd early sample can skew it for the whole run.'
+  notes: 'b0p = max(tmin - m-hat) over the first 8 windows (slaw.rs:150-165) during the start transient. A ledger row is owed beside F07 and E13. s62 D0 equals the steady-state brake (3.36 ms at J = 0).'
+- id: store-sampler-design
+  title: Store-law delay sampler design
+  track: store
+  kind: law
+  state: next
+  outcome: unrated
+  evidence:
+  - status "The count-rule derivation"
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - store-defect-b0p-brake
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: true
+  plain: 'Work out how the store law should sample delay, since the no-queue delay shows up mostly after retransmissions and a quarter-second window usually misses it.'
+  notes: 'Questions: how to estimate the brake as windows fill; whether the knee minimum is set by post-loss drains; what anchors the floor under jitter. Decision 8 stays unsettled until then.'
 - id: meas-defect-cr61-large-pool
   title: Collapse rule blind at large pools
   track: meas
@@ -3019,11 +3084,14 @@ nodes:
   title: Realtime receiver misreads packed symbols (F2)
   track: rec
   kind: defect-verdict
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
   - status "Engine defect F2"
   - status §51 Amendment 2
+  - status §63 Result
+  - status §64 Result
+  - ADR-0078
   verdict_quote: 'The receiver still records the delivery and acks the seq, so the sender prunes it and ARQ never notices.'
   headline: Realtime tunnel can be dead with healthy counters
   depends_on: []
@@ -3031,7 +3099,7 @@ nodes:
   qualified_by: []
   lane: host-cargo
   start: '2026-11-17'
-  end: ''
+  end: '2026-11-18'
   folded: []
   overview: true
   plain: 'Open problem: on the low-latency setting, losing one start-up message makes the receiver misread all data for the whole connection, while every counter looks fine.'
@@ -3613,7 +3681,7 @@ nodes:
   end: '2026-07-21'
   folded:
   - commit 519467e0
-  overview: true
+  overview: false
   plain: Switched the underlying congestion controller to BBR, which removed a hidden speed ceiling and raised throughput about four times.
   notes: 'Start 2026-07-13 (the substrate ceiling was named in 0d9f26e7); ADR date is the migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cc-bbrrs-v1
@@ -4615,7 +4683,7 @@ nodes:
   end: '2026-08-08'
   folded:
   - commit dd1319b4
-  overview: true
+  overview: false
   plain: Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run.
   notes: 'Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: meas-adversarial-b1
@@ -5323,7 +5391,7 @@ nodes:
   - commit 149a0e48
   - commit 61dc8a18
   - commit 867d1976
-  overview: true
+  overview: false
   plain: Rebuilt the visualizer around one smooth law across the latency dial, with an automatic test that forbids any mode switch.
   notes: '2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434).'
 - id: model-mode-switch-debts

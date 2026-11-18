@@ -46,8 +46,9 @@ flowchart TB
     rec_defect_base_duplicates>"⚠ Main's duplicates<br/>mostly unexplained"]
     rec_s54_session["✔ #167;54: filter guard,<br/>store budget"]
     rec_wire_clock_derivation["✔ Recovery-clock<br/>derivation (wire<br/>clock)"]
-    rec_defect_realtime_framing>"⚠ Realtime receiver<br/>misreads packed<br/>symbols (F2)"]
+    rec_defect_realtime_framing>"✔ Realtime receiver<br/>misreads packed<br/>symbols (F2)"]
     rec_s63_f2_first_contact["✔ F2 first contact<br/>(#167;63)"]
+    rec_f2_merge_guard["✔ F2 merge guard (#167;64)"]
     rec_w0_leg_question["⛔ Retransmit leg<br/>choice with filter"]
     rec_leverb_guard["⏸ Lever-B guard v2,<br/>then merge"]
     rec_fix_perleg_clock_n1[/"○ Per-leg recovery<br/>clock, one law"/]
@@ -93,9 +94,12 @@ flowchart TB
     rec_leverb_c1d_cost ~~~ rec_wire_clock_derivation
     rec_defect_base_duplicates ~~~ rec_defect_realtime_framing
     rec_s54_session ~~~ rec_s63_f2_first_contact
-    rec_wire_clock_derivation ~~~ rec_w0_leg_question
-    rec_defect_realtime_framing ~~~ rec_leverb_guard
-    rec_s63_f2_first_contact ~~~ rec_fix_perleg_clock_n1
+    rec_wire_clock_derivation ~~~ rec_s63_f2_first_contact
+    rec_defect_realtime_framing ~~~ rec_s63_f2_first_contact
+    rec_s63_f2_first_contact ~~~ rec_f2_merge_guard
+    rec_s63_f2_first_contact ~~~ rec_w0_leg_question
+    rec_s63_f2_first_contact ~~~ rec_leverb_guard
+    rec_f2_merge_guard ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_fix_perleg_clock_n1
     rec_leverb_guard ~~~ rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 ~~~ rec_recovery_timeouts
@@ -125,12 +129,13 @@ flowchart TB
     rec_snapver_filter --> rec_defect_base_duplicates
     rec_snapver_law --> rec_s54_session
     rec_defect_realtime_framing --> rec_s63_f2_first_contact
+    rec_s63_f2_first_contact --> rec_f2_merge_guard
     rec_s54_session --> rec_w0_leg_question
     rec_s54_session --> rec_leverb_guard
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 49,50,51,61 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 52,53,54,64 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -144,13 +149,13 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter succ
+    class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter,rec_defect_realtime_framing succ
     class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation unrated
     class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
     class rec_recov_sp,rec_dispersion_est,rec_leverb_guard parked
     class rec_gap_horizon waiting
-    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_defect_realtime_framing defect
-    class rec_s63_f2_first_contact vsucc
+    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
+    class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
     class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
     class rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
 ```
@@ -193,7 +198,8 @@ flowchart TB
 | `rec-defect-hole-law` | c8 hole law never measured | in-progress | unrated | 3.7–6.6 k times per run | status §3.10 item 5 | rec-gap-horizon, rec-snapver-filter |
 | `rec-defect-refresh-input` | Hole refresh clock degenerate input | in-progress | unrated | srtt = exactly 50 000 µs | status §3.10 item 6 | rec-snapver-filter |
 | `rec-s63-f2-first-contact` | F2 first contact (§63) | done | very-successful | fixed binary 5/5, old binary failed 2/5 | status §63; status §63 Result | rec-defect-realtime-framing |
-| `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | in-progress | unrated | Realtime tunnel can be dead with healthy counters | status "Engine defect F2"; status §51 Amendment 2 |  |
+| `rec-f2-merge-guard` | F2 merge guard (§64) | done | very-successful | Bulk unchanged, Realtime fixed; merged | status §64; status §64 Result | rec-s63-f2-first-contact |
+| `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | done | unrated | Realtime tunnel can be dead with healthy counters | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |  |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor (P10a) | abandoned | dead-end |  | branch P10a |  |
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | parked | unrated | +0.3 Mbit/s | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |  |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | in-progress | unrated | +13 % | status §53 open item 2 | rec-snapver-filter |
@@ -243,7 +249,8 @@ flowchart TB
 | `rec-defect-qclk-clamp` | [QCLK] w_us pinned at clamp | Folds status §3.5 item 5: the recovery-clock bind fractions were measured on the saturation-filtered path set and never re-measured. | status §3.10 item 4; status §3.5 item 5 |
 | `rec-defect-hole-law` | c8 hole law never measured | §53 open item 6: [HOLD] is skewed on main too (hn and ripe_frac mostly re-stamps from stale reports), so item 5's "main already wastes about 12 % of its retransmits" must be re-checked if it came from this gauge. | status §3.10 item 5 |
 | `rec-s63-f2-first-contact` | F2 first contact (§63) | CONTROL e-tree 8013a312, CAND f2-cand-e 1a2acc73 (patch-id equal to f2-impl). 10 rows, reported only; harness63. | status §63; status §63 Result |
-| `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; owner decision 11 (2026-11-17): format (A), one framing for every symbol; design on f2-design, then an ADR, a protocol bump and the fix. | status "Engine defect F2"; status §51 Amendment 2 |
+| `rec-f2-merge-guard` | F2 merge guard (§64) | Stage G GATE-41d PASS p=0.991 (min-p 0.273), F2-FAIL 0; stage R RT-PASS 12/12, BASE F2-dead 1/12; BENCH PASS. Merged --no-ff f36d9172 (patch-id 3e69ce68), ADR-0078 Accepted, wire v10. Realtime delay readouts lean worse, none flagged: post-hoc read on branch s64-lean. Harness [SYMSZ] column defect fixed before harness64 reaches main. | status §64; status §64 Result |
+| `rec-defect-realtime-framing` | Realtime receiver misreads packed symbols (F2) | Found by the §51 E rehearsal. Blocks block E and block 51 (their Realtime rows). Before the fix: red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state; owner decision 11 (2026-11-17): format (A), one framing for every symbol; design on f2-design, then an ADR, a protocol bump and the fix. | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor (P10a) | Split from rec-bulk-arq (its parent). The source names no replacement; P10b (window-mode reactive repair, G236) merged the same day. | branch P10a |
 | `rec-recov-sp` | Singles hole suppression (RECOV_SP) | Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |
 | `rec-leverb-c1d-cost` | Lever B c1d duplicate cost | No raw record (§53 open items are in the section text, not extracted as items). Goes with the lever-B merge question. | status §53 open item 2 |
