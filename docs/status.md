@@ -2518,6 +2518,7 @@ The owner took the coordinator's recommendations ("take your recommendations"). 
     - Merged `--no-ff` as `f36d9172` (engine patch-id `3e69ce68…`, as guarded).
     - ADR-0078 is Accepted. Wire v10 refuses v9 peers, so every endpoint upgrades together. An engine with no initial path refuses to start.
     - The Realtime delay lean is followed up post hoc (§64 Result).
+    - **Merge check:** `binid_run.sh` on the VM rebuilt main `f2109b56` to sha256 `8104fa027c9dea559c9ffdb0d5630117e70ffcd97a092e73700441446771be5b`. That is the guarded CAND binary, so what was tested is what merged.
 
 Still held: whether the slaw gauge's engine code reaches main (a stacked guard) or is dropped. The c3 sweep uses it on its own tree.
 
