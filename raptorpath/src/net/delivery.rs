@@ -45,23 +45,28 @@ impl WindowDelivery {
     /// Hand one symbol's packets (`seq`, in `extract_window_packets` order)
     /// to the consumer. While anything is held, the symbol queues behind it
     /// (never overtakes), then the queue is flushed from its head.
-    pub(crate) fn offer(
+    pub(crate) fn offer<P: AsRef<[u8]>>(
         &mut self,
         tx: &mpsc::Sender<Bytes>,
         seq: u64,
-        packets: Vec<Vec<u8>>,
+        packets: impl IntoIterator<Item = P>,
     ) -> Result<(), Closed> {
-        let mut pkts: VecDeque<Bytes> = packets.into_iter().map(Bytes::from).collect();
+        let mut packets = packets.into_iter();
         if !self.held.is_empty() {
+            let pkts: VecDeque<Bytes> = packets.map(|p| Bytes::copy_from_slice(p.as_ref())).collect();
             self.held.push_back((seq, pkts));
             return self.flush(tx);
         }
-        while let Some(pkt) = pkts.pop_front() {
-            match tx.try_send(pkt) {
+        // Common case: no queue is built, each packet is copied out once and
+        // handed straight to the channel.
+        while let Some(p) = packets.next() {
+            match tx.try_send(Bytes::copy_from_slice(p.as_ref())) {
                 Ok(()) => {}
                 Err(mpsc::error::TrySendError::Full(pkt)) => {
                     if self.hold_on_full {
-                        pkts.push_front(pkt);
+                        let mut pkts = VecDeque::new();
+                        pkts.push_back(pkt);
+                        pkts.extend(packets.map(|p| Bytes::copy_from_slice(p.as_ref())));
                         self.held.push_back((seq, pkts));
                         return Ok(());
                     }

@@ -54,6 +54,12 @@ use super::protocol::{Handshake, WireMessage, PROTOCOL_VERSION};
 use super::rcvbuf::{self, RcvbufGrant};
 use crate::scheduler::PathId;
 
+/// Test seam (default 0 = off, no effect): the number of client-side
+/// `WindowStart` control datagrams the owner silently drops before
+/// `send_datagram`. Reproduces "the one-shot announce was lost" (status,
+/// Engine defect F2) in an in-process loopback. Set only by tests.
+pub static TEST_DROP_WINDOW_START: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 // ───────────────────────────────────────────────────────────────────────────
 // Constants (docs/fec-arq-model.md §11.2 provenance)
 
@@ -558,8 +564,8 @@ pub(crate) enum IoCmd {
     },
     /// Connect to `peer` (client) or accept one connection (server), with the
     /// ADR-0010 handshake.
-    Connect { peer: SocketAddr, reply: oneshot::Sender<anyhow::Result<()>> },
-    Accept { reply: oneshot::Sender<anyhow::Result<()>> },
+    Connect { peer: SocketAddr, reply: oneshot::Sender<anyhow::Result<u16>> },
+    Accept { reply: oneshot::Sender<anyhow::Result<u16>> },
     /// Close the connection and end the owner.
     Close,
 }
@@ -784,8 +790,10 @@ impl OwnedConn {
     }
 }
 
-fn local_handshake(path_id: PathId) -> Handshake {
-    Handshake { version: PROTOCOL_VERSION, max_block_size: 64 * 1024, symbol_size: 1200, path_id }
+/// Our handshake. `symbol_size` is the sender's REAL source-symbol size (v10;
+/// through v9 a constant 1200), so a peer can tell which size our symbols have.
+fn local_handshake(path_id: PathId, symbol_size: u16) -> Handshake {
+    Handshake { version: PROTOCOL_VERSION, max_block_size: 64 * 1024, symbol_size, path_id }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -875,6 +883,8 @@ pub(crate) struct OwnerArgs {
     /// Shared by every path's owner: notified when a path's connection is
     /// lost (`PathView::conn_lost`).
     pub lost: Arc<tokio::sync::Notify>,
+    /// The local source-symbol size, announced in the handshake (v10).
+    pub symbol_size: u16,
 }
 
 /// The owner task. Spawned on the main runtime; the identity task-local is
@@ -927,8 +937,8 @@ async fn owner_body(mut a: OwnerArgs) {
             }
         };
         match res {
-            Ok(c) => {
-                let _ = reply.send(Ok(()));
+            Ok((c, peer_symbol_size)) => {
+                let _ = reply.send(Ok(peer_symbol_size));
                 break c;
             }
             Err(e) => {
@@ -941,21 +951,31 @@ async fn owner_body(mut a: OwnerArgs) {
     drop(ep);
 }
 
-async fn connect(ep: &Endpoint, a: &OwnerArgs, peer: SocketAddr) -> anyhow::Result<OwnedConn> {
-    let raw = ep.connect(peer, "raptorpath")?.await?;
-    let conn = OwnedConn::new(raw, a.path, a.view.clone());
-    let _peer_hs = conn.perform_handshake(&local_handshake(a.path)).await?;
-    info!(path_id = a.path, %peer, "connected and handshake complete");
-    Ok(conn)
+/// A peer whose handshake announces a size outside the range this build
+/// emits is refused at connect (ADR-0078).
+fn check_peer_symbol_size(size: u16) -> anyhow::Result<u16> {
+    crate::net::reconcile_peer_symbol_size(&[size])
 }
 
-async fn accept(ep: &Endpoint, a: &OwnerArgs) -> anyhow::Result<OwnedConn> {
+async fn connect(ep: &Endpoint, a: &OwnerArgs, peer: SocketAddr) -> anyhow::Result<(OwnedConn, u16)> {
+    let raw = ep.connect(peer, "raptorpath")?.await?;
+    let conn = OwnedConn::new(raw, a.path, a.view.clone());
+    let peer_hs = conn.perform_handshake(&local_handshake(a.path, a.symbol_size)).await?;
+    info!(path_id = a.path, %peer, local_symbol_size = a.symbol_size,
+        peer_symbol_size = peer_hs.symbol_size, "connected and handshake complete");
+    let size = check_peer_symbol_size(peer_hs.symbol_size)?;
+    Ok((conn, size))
+}
+
+async fn accept(ep: &Endpoint, a: &OwnerArgs) -> anyhow::Result<(OwnedConn, u16)> {
     let incoming = ep.accept().await.ok_or_else(|| anyhow::anyhow!("endpoint closed"))?;
     let raw = incoming.await?;
     let conn = OwnedConn::new(raw, a.path, a.view.clone());
-    let _peer_hs = conn.accept_handshake(&local_handshake(a.path)).await?;
-    info!(path_id = a.path, remote = %conn.remote_address(), "accepted with handshake");
-    Ok(conn)
+    let peer_hs = conn.accept_handshake(&local_handshake(a.path, a.symbol_size)).await?;
+    info!(path_id = a.path, remote = %conn.remote_address(), local_symbol_size = a.symbol_size,
+        peer_symbol_size = peer_hs.symbol_size, "accepted with handshake");
+    let size = check_peer_symbol_size(peer_hs.symbol_size)?;
+    Ok((conn, size))
 }
 
 struct Readers {
@@ -1079,6 +1099,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                 }
                             }
                             for b in dgrams.drain(..) {
+                                if lane == Lane::Ctrl && !a.is_server && test_drop_window_start(&b) {
+                                    continue;
+                                }
                                 send_one(conn, &a, &mut shim_q, b);
                             }
                             view.recycle(dgrams);
@@ -1311,6 +1334,23 @@ fn push_inbound(
     }
 }
 
+/// `TEST_DROP_WINDOW_START`: true (and the budget spent) when `b` is a
+/// `WindowStart` and the seam is armed. One relaxed load when unarmed.
+fn test_drop_window_start(b: &Bytes) -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    if TEST_DROP_WINDOW_START.load(Relaxed) == 0 {
+        return false;
+    }
+    let is_ws = matches!(
+        WireMessage::deserialize(b),
+        Ok(WireMessage::Control(crate::transport::ControlMessage::WindowStart { .. }))
+    );
+    is_ws
+        && TEST_DROP_WINDOW_START
+            .fetch_update(Relaxed, Relaxed, |n| n.checked_sub(1))
+            .is_ok()
+}
+
 /// One datagram: through the L0 shim's queue when it is active, else the
 /// audit (under `RWM_DIAG`) and `send_datagram`.
 fn send_one(conn: &OwnedConn, a: &OwnerArgs, shim_q: &mut VecDeque<(u64, Bytes)>, b: Bytes) {
@@ -1511,6 +1551,19 @@ impl TxBatch {
 mod tests {
     use super::*;
     use crate::transport::ControlMessage;
+
+    /// v10: the handshake carries the sender's REAL symbol size, through the
+    /// wire, not the constant 1200 of v9 (ADR-0078). 512 is Realtime's.
+    #[test]
+    fn local_handshake_carries_the_senders_real_symbol_size() {
+        for size in [512u16, 1200, 72] {
+            let hs = local_handshake(3, size);
+            assert_eq!(hs.symbol_size, size);
+            let back = Handshake::deserialize(&hs.serialize().unwrap()).unwrap();
+            assert_eq!(back.symbol_size, size, "survives the wire");
+            assert_eq!(back.path_id, 3);
+        }
+    }
 
     fn wire(m: ControlMessage) -> Bytes {
         Bytes::from(WireMessage::Control(m).serialize().expect("serializes"))

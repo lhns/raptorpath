@@ -85,11 +85,24 @@ fn bincode_options() -> impl Options {
 ///       more received runs than one report can name, the sender's store
 ///       gate never released past the cap. The count lets the gate converge
 ///       (`net::store_released_for_gate`).
+/// v10: one framing for every source symbol (ADR-0078, engine defect F2).
+///   (a) A source symbol is `[u16 LE length][bytes]` repeated, the zero padding
+///       being the terminator (`net::framing::put_packet` / `read_packets`).
+///       One-packet and packed symbols are the same format, so the receiver no
+///       longer has to be told which a sender uses. v9 Realtime symbols were
+///       BE-packed and read with a flag carried by one unreliable datagram; a
+///       v9 peer misreads a v10 packed symbol, hence the bump. A one-packet
+///       symbol (every Bulk and Auto source symbol) is byte-identical to v9's.
+///   (b) `ControlMessage::WindowStart` loses `packed` (no receive-side mode bit)
+///       and `symbol_size` (the reliable handshake is its one source). The
+///       variant keeps its place, so no later control tag is renumbered.
+///   (c) `Handshake.symbol_size` is the sender's real symbol size (512 at
+///       Realtime, 1200 at Bulk and Auto). Through v9 it was a constant 1200.
 /// Both `Handshake::deserialize` and `WireMessage::deserialize` hard-refuse a
 /// version mismatch, so mixed versions fail cleanly at handshake instead of
 /// silently mis-parsing control traffic. (The compact DATA frame carries no
 /// version: a peer only ever sends it after a successful handshake.)
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
@@ -438,15 +451,10 @@ pub enum ControlMessage {
     /// Graceful shutdown notification.
     Shutdown,
 
-    /// Announce that the sender is entering sliding-window FEC mode.
-    WindowStart {
-        symbol_size: u16,
-        backend: FecBackend,
-        /// Whether the sender packs multiple small packets into each symbol.
-        /// When true, the receiver must use `extract_packets()` (block-mode framing)
-        /// instead of `extract_window_packet()` to recover individual packets.
-        packed: bool,
-    },
+    /// Announce that the sender is entering sliding-window FEC mode (log
+    /// only: the receiver reads every symbol with the one framing, and the
+    /// symbol size travels in the reliable handshake, v10).
+    WindowStart { backend: FecBackend },
 
     /// Acknowledge received window-mode symbols with SACK (receiver → sender).
     ///
@@ -803,8 +811,8 @@ mod tests {
     /// The version itself: pinned here and in the handshake test below so
     /// moving it is a deliberate two-line edit, never a silent bump.
     #[test]
-    fn protocol_version_is_nine() {
-        assert_eq!(PROTOCOL_VERSION, 9, "the wire version moved without its pin");
+    fn protocol_version_is_ten() {
+        assert_eq!(PROTOCOL_VERSION, 10, "the wire version moved without its pin");
     }
 
     /// **The compact layout, byte by byte.** The v9 `path_seq` varint sits
@@ -888,17 +896,17 @@ mod tests {
         );
     }
 
-    /// The handshake refuses a mismatch, pinned at v9 -- so a v8 peer (whose
-    /// `SymbolBatch` lacks `path_seq` and whose `WindowAck` means "highest
-    /// delivered" where v9 means "count delivered") fails cleanly and loudly
-    /// at the handshake instead of mis-parsing traffic.
+    /// The handshake refuses a mismatch, pinned at v10 -- so a v9 peer (whose
+    /// Realtime symbols are BE-packed and whose `WindowStart` carries the
+    /// `packed` flag) and a v8 peer fail cleanly and loudly at the handshake
+    /// instead of mis-parsing traffic.
     #[test]
-    fn handshake_refuses_an_old_peer_at_v9() {
+    fn handshake_refuses_an_old_peer_at_v10() {
         let hs = Handshake { version: PROTOCOL_VERSION, max_block_size: 64, symbol_size: 1200, path_id: 0 };
         let good = hs.serialize().unwrap();
-        assert_eq!(u32::from_be_bytes(good[4..8].try_into().unwrap()), 9);
+        assert_eq!(u32::from_be_bytes(good[4..8].try_into().unwrap()), 10);
         assert!(Handshake::deserialize(&good).is_ok());
-        for old in [8u32, 7] {
+        for old in [9u32, 8] {
             let mut stale = good.clone();
             stale[4..8].copy_from_slice(&old.to_be_bytes());
             let e = Handshake::deserialize(&stale).unwrap_err().to_string();
@@ -907,6 +915,24 @@ mod tests {
             let mut d = WireMessage::Control(ControlMessage::Shutdown).serialize().unwrap();
             d[4..8].copy_from_slice(&old.to_be_bytes());
             assert!(WireMessage::deserialize(&d).is_err(), "v{old} control must be refused");
+        }
+    }
+
+    /// **v10 `WindowStart { backend }` round-trips, and its body is the
+    /// backend tag alone** -- no `packed` flag, no `symbol_size` (ADR-0078):
+    /// it is exactly one fixint u32 longer than a unit variant of the same enum.
+    #[test]
+    fn window_start_carries_only_the_backend() {
+        let ws = WireMessage::Control(ControlMessage::WindowStart { backend: FecBackend::Rlc })
+            .serialize()
+            .unwrap();
+        let unit = WireMessage::Control(ControlMessage::Shutdown).serialize().unwrap();
+        assert_eq!(ws.len(), unit.len() + 4, "WindowStart body = the 4-byte backend tag");
+        match WireMessage::deserialize(&ws).unwrap() {
+            WireMessage::Control(ControlMessage::WindowStart { backend }) => {
+                assert_eq!(backend, FecBackend::Rlc)
+            }
+            other => panic!("WindowStart did not round-trip: {other:?}"),
         }
     }
 

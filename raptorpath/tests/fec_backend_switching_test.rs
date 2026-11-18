@@ -35,7 +35,11 @@ fn test_window_switch_message_roundtrip() {
 fn test_window_flush_and_switch_encode_decode() {
     // Simulate window-mode: encode with RLC, flush, then restart with a fresh RLC window
     use raptorpath::fec::{RlcWindowEncoder, RlcWindowDecoder, WindowEncoder, WindowDecoder};
-    use raptorpath::net::framing::{frame_window_packet, extract_window_packet};
+    use raptorpath::net::framing::{frame_window_packet, read_packets};
+
+    fn extract_window_packet(data: &[u8]) -> Option<Vec<u8>> {
+        read_packets(data).ok().and_then(|p| p.into_iter().next())
+    }
 
     let symbol_size: u16 = 128;
 

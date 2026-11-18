@@ -5,7 +5,7 @@
 //! RNG — so the digests depend only on the code under test:
 //!
 //! * the source path: `frame_window_packet` → `WindowEncoder::add_source` →
-//!   the one-symbol `SymbolBatch` → `serialize_data_compact` (wire v9
+//!   the one-symbol `SymbolBatch` → `serialize_data_compact` (wire v10
 //!   compact framing) AND the bincode `WireMessage::Data` framing, for a
 //!   scripted packet sequence whose lengths and envelope fields straddle the
 //!   padding edge and every varint width boundary;
@@ -167,7 +167,7 @@ fn pin_rlc_window_source_and_repair_wire_bytes() {
     check(
         "rlc",
         &digest(&mut enc),
-        "98e7b35280352b079c57463e16b11898bc568facf70e68ae1be86cf17389cc9e",
+        "01b78985f1fbc580081d2fd704dce8573c9b6796867f38775ccdacf500e8d324",
     );
 }
 
@@ -178,7 +178,7 @@ fn pin_systematic_generation_source_and_repair_wire_bytes() {
     check(
         "gen_systematic",
         &digest(&mut enc),
-        "446fe60d36755c5cd6fda8d83387714a5d76f5d9da4580b1f4d1b6c3fbd6c1aa",
+        "e245944cc65dd888e1e6847b67a26292bf91c376c171305017addb1f6e207e93",
     );
 }
 
@@ -256,4 +256,27 @@ fn add_source_owned_matches_add_source() {
         }
     }
     assert_eq!(&a.generate_repair().data[..], &b.generate_repair().data[..]);
+}
+
+/// v9's `frame_window_packet_inner`, inlined verbatim (F2 design §7). The
+/// one-packet symbol is every Bulk and Auto source symbol, so the one framing
+/// must keep producing exactly these bytes; permanent, and green from the start.
+fn v9_frame_window_packet(data: &[u8], symbol_size: u16) -> Vec<u8> {
+    let size = symbol_size as usize;
+    let mut buf = vec![0u8; size];
+    let max_payload = size.saturating_sub(2);
+    let len = data.len().min(max_payload);
+    buf[0..2].copy_from_slice(&(len as u16).to_le_bytes());
+    buf[2..2 + len].copy_from_slice(&data[..len]);
+    buf
+}
+
+#[test]
+fn frame_window_packet_is_byte_identical_to_v9() {
+    for t in [T, 512u16] {
+        for (i, &len) in LENS.iter().enumerate() {
+            let pkt = packet(i, len);
+            assert_eq!(frame_window_packet(&pkt, t), v9_frame_window_packet(&pkt, t), "T={t} len={len}");
+        }
+    }
 }
