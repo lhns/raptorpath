@@ -1090,6 +1090,33 @@ The rehearsal's values are not read. The plan-53 harness gets a stub-run test be
 - **Order:** after §63 (owner decision 13). The `harness62` worker starts after `harness63` is pushed, and the launch sha is pinned by an amendment.
 - **Cost:** about 1.4 h typical, 2.8 h worst, with host cargo paused.
 
+## 64. The F2 merge guard (§41c pattern, F2 alone), scored: pre-registration (before any VM contact)
+
+**It registers `docs/derivations/f2-guard-registration.md` at `f2-guard-design` `39269746` verbatim.** Fable reviewed it in three rounds.
+- **Seats:**
+  - BASE64 = branch `g64-base` (main + `harness64`, tools only);
+  - CAND64 = `g64-cand` (BASE64 + `git merge --no-ff github/f2-impl` at `ab9feec4`, 17 commits; commit 1 never alone).
+  - The engine patch-id must equal `3e69ce68…`.
+- **Stage G (scored, Bulk):** plan 41d's 96 rows (c1s, c1d, c2, c8; rank-minp, PASS iff p > 0.05), plus the F2 witnesses on every CAND row. An `F2-FAIL` row fails the guard whatever p reads.
+- **Stage R (scored, Realtime):** c2-100 at ρ = 1 on both ends, 100 MB, 12 + 12 rows.
+  - The F2 reading must pass on every CAND row. Completion is scored against BASE's surviving rows.
+  - Non-F2 voids are replaced once; a repeat reads `RT-INCOMPLETE`.
+- **`framing_ns`:**
+  - the bound is frame ≤ +22.3 and read ≤ +36.5 ns per call;
+  - the scored reading is the rehearsal's 10-run median of CAND − BASE (the frame point is an upper bound);
+  - tonight's runs are a pre-read, committed raw.
+  - Its label is a merge condition: PASS, or the owner accepts the printed cost.
+- **Reuse:**
+  - the engine suites come from `ab9feec4`'s VM run (release 1151/0, debug 1002 with one cited flake, wasm, core, seams), through a wider `src_manifest()` reference (`ref64`) with a host `cmp` proof;
+  - the launch takes the rehearsal's sha-checked binaries and tools-test result.
+- **Merge conditions:**
+  - GATE-41d PASS, zero F2-FAIL rows, RT-PASS and the bench label;
+  - the owner's go on wire v10 (every endpoint upgrades together; v9 is refused) and on an engine with no initial path refusing to start;
+  - ADR-0078 to Accepted on that go.
+  - These are asked once, with the Result.
+- **Cost:** about 2 h typical and 4.5 h worst, with host cargo paused.
+- **Order:** s62, then §64, then E-pre, block E, block 51. `harness64` is a second Sonnet worker, and the seat shas are pinned by an amendment.
+
 ## 63. F2 first contact: the failing E rows on the old and fixed binaries, reported only — pre-registration (before any VM contact for its rows)
 
 **Why.**
