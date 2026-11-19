@@ -28,12 +28,13 @@ flowchart TB
     rate_evict_registration["✔ Evicting-seat m̄<br/>registration"]
     rate_spare_cwnd["✔ Is spare's cwnd<br/>enforced?"]
     rate_evict_epre["✔ Evicting-seat test<br/>suites and binary"]
+    rate_c8_frontier_recopy["✔ c8 repair budget re-<br/>copies"]
     rate_evict_session["✔ Evicting-seat test,<br/>rehearsal and runs"]
     rate_k4_input_checks>"✔ Two checks before<br/>the repair-share<br/>comparison"]
     rate_spare_clamp_verdict[/"○ Spare clamp on<br/>Realtime: verdict"/]
     rate_delta_jitter_fix["○ Jitter margin reads<br/>wrong direction"]
     rate_fix_rate_readout["○ Repair-rate readout"]
-    rate_c8_frontier_recopy["○ c8 repair budget re-<br/>copies"]
+    rate_s06_plost_derivation[/"○ P_lost given resends<br/>in flight"/]
     rate_law_reconcile[/"⛔ Rate-law<br/>reconciliation"/]
     rate_fix_estimators[/"⛔ Loss estimator<br/>approximations"/]
     rate_fix_term_gauge["⛔ Rate-law term-win<br/>gauge"]
@@ -57,17 +58,18 @@ flowchart TB
     rate_pfec_continuous ~~~ rate_evict_registration
     rate_pfec_oracle ~~~ rate_spare_cwnd
     rate_defect_taper_inert ~~~ rate_evict_epre
-    rate_evict_registration ~~~ rate_evict_epre
+    rate_evict_registration ~~~ rate_c8_frontier_recopy
     rate_spare_cwnd ~~~ rate_evict_session
     rate_evict_epre ~~~ rate_evict_session
+    rate_c8_frontier_recopy ~~~ rate_evict_session
     rate_evict_session ~~~ rate_k4_input_checks
     rate_evict_session ~~~ rate_spare_clamp_verdict
     rate_k4_input_checks ~~~ rate_delta_jitter_fix
     rate_spare_clamp_verdict ~~~ rate_fix_rate_readout
-    rate_spare_clamp_verdict ~~~ rate_c8_frontier_recopy
+    rate_spare_clamp_verdict ~~~ rate_s06_plost_derivation
     rate_delta_jitter_fix ~~~ rate_law_reconcile
     rate_fix_rate_readout ~~~ rate_fix_estimators
-    rate_c8_frontier_recopy ~~~ rate_fix_estimators
+    rate_s06_plost_derivation ~~~ rate_fix_estimators
     rate_law_reconcile ~~~ rate_fix_term_gauge
     rate_fix_estimators ~~~ rate_fix_rho_realtime
     rate_saturation_rstar -.-> rate_defect_pfec
@@ -84,11 +86,12 @@ flowchart TB
     rate_evict_session --> rate_k4_input_checks
     rate_evict_session --> rate_spare_clamp_verdict
     rate_k4_input_checks --> rate_delta_jitter_fix
+    rate_c8_frontier_recopy --> rate_s06_plost_derivation
     rate_pfec_oracle --> rate_law_reconcile
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
-    linkStyle 32,35 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 33,36 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -102,14 +105,14 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_dials_made_real,rate_k4_input_checks succ
+    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_dials_made_real,rate_c8_frontier_recopy,rate_k4_input_checks succ
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
     class rate_defect_pfec,rate_defect_taper_inert defect
     class rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_pfec_oracle waiting
-    class rate_spare_clamp_verdict,rate_delta_jitter_fix,rate_fix_rate_readout,rate_c8_frontier_recopy next
+    class rate_spare_clamp_verdict,rate_delta_jitter_fix,rate_fix_rate_readout,rate_s06_plost_derivation next
     class rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
 ```
 <!-- END GENERATED: track-rate -->
@@ -144,7 +147,8 @@ flowchart TB
 | `rate-delta-jitter-fix` | Jitter margin reads wrong direction | next | unrated |  | status "The two K4 input checks, post hoc"; law ledger S03 | rate-k4-input-checks |
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | done | unrated | Not enforced: 0.81 and 0.89 of the overload rows | status §51 block E Result; status §60 Amendment 2; status §51 (choice 5; design §7); status §51 Amendment 2 |  |
 | `rate-fix-rate-readout` | Repair-rate readout | next | unrated |  | docs/derivations/s51-design.md §8 P2 |  |
-| `rate-c8-frontier-recopy` | c8 repair budget re-copies | next | unrated |  | status §51 block 51 Result, finding 1 | meas-s51-session |
+| `rate-c8-frontier-recopy` | c8 repair budget re-copies | done | successful | S06 copies the cum-ack blocker on every slot; 4–7× losses, mostly already received | status §51 block 51 Result, finding 1; status §51 block 51 Result, Addendum 2; docs/l1-raw/s51b/recopy | meas-s51-session |
+| `rate-s06-plost-derivation` | P_lost given resends in flight | next | unrated |  | status §51 block 51 Result, Addendum 2; law ledger S06 | rate-c8-frontier-recopy |
 | `rate-user-rate-law` | Owner calls on rate law | blocked | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec, meas-s51-session |
 | `rate-law-reconcile` | Rate-law reconciliation | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session, rate-pfec-oracle |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | blocked | unrated |  | law ledger rows R02 | rate-fix-estimators |
@@ -180,7 +184,8 @@ flowchart TB
 | `rate-delta-jitter-fix` | Jitter margin reads wrong direction | Engine change: read the peer-reported forward jitter (WindowAck.jitter_us, today stored only in ps.jitter_us) into the estimator Delta reads; fix the WindowAck builds that send 0; print J. Paper derivation first (FORMULA-FIRST), then a guard. | status "The two K4 input checks, post hoc"; law ledger S03 |
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | §60 Amendment 2, pending item 3: on the rehearsal row cwnd jumped from 1 159 to 10 000 at t ≈ 10.3 s and the source was not held to it. Done when: it is settled, by reading or a test, whether the cwnd that Scheduler::spare_capacity reads is enforced on the evicting seat under quinn's BBR. Settled: the s51-evict design read the code and found the clamp's cwnd enforced at neither seat (design §7, status §51 choice 5), and the E rehearsal's U row read NOT-ENFORCED (§51 Amendment 2, one row, reported only). The clamp's verdict (DEGENERATE-AS-WIRED is a defect finding) is rate-spare-clamp-verdict. | status §51 block E Result; status §60 Amendment 2; status §51 (choice 5; design §7); status §51 Amendment 2 |
 | `rate-fix-rate-readout` | Repair-rate readout | Without it §51 reads only the granted r and reports the law's r, the clamps and the channel split as missing. rate-fix-term-gauge (R02) can merge into it if controller_rate returns its argmax bit-identically. Done when: a behaviour-neutral [RATE] readout on the [DIAG] cadence carries the law's r (mean, p50), r_anchor, r_late and β, the tail target, the spare-clamped rate with a per-leg bind fraction, the soft-saturation, overhead and W* clip bind fractions, the fraction of evaluations on the P_fec > 0 side, cod split by channel (proactive, margin, request), and a one-time echo of the resolved dial on both ends; a bit-identical test shows behaviour unchanged. | docs/derivations/s51-design.md §8 P2 |
-| `rate-c8-frontier-recopy` | c8 repair budget re-copies | c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained. | status §51 block 51 Result, finding 1 |
+| `rate-c8-frontier-recopy` | c8 repair budget re-copies | c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained. | status §51 block 51 Result, finding 1; status §51 block 51 Result, Addendum 2; docs/l1-raw/s51b/recopy |
+| `rate-s06-plost-derivation` | P_lost given resends in flight | Derivation on branch s06-derivation (docs/derivations/s06-plost-resend.md), Fable review, then the paper §3.2 amendment, then the engine law with a red-first host loopback test counting copies per seq (ptgt / pmax from c8-gauges) and the ±2 % δ continuity test. Goes before rate-delta-jitter-fix; rate-spare-clamp-verdict and the S08 fix wait for it (all edit the proactive-slot path). Getting goodput back also needs the rate law's r (R02 / R04) to come down; fixing S06 alone turns copies into coded repair. Done when: the law is in the paper, merged through a guard, and the copy count per seq is bounded by the test. | status §51 block 51 Result, Addendum 2; law ledger S06 |
 | `rate-user-rate-law` | Owner calls on rate law | Needs the off-Bulk session's reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). | plan user decision 11; status §3.10 item 2 (conflict for the owner) |
 | `rate-law-reconcile` | Rate-law reconciliation | Law ledger: R07, R03, R04, R05 (ranks 20-22, 26, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence. Was titled 'Rate-law reconciliation (W22, W*)'. | plan W3.5, W3.7 |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | Law ledger: R02. Done when: an engine gauge reports which term or clamp of controller_rate wins, per tick, so the off-Bulk session can read it. | law ledger rows R02 |
