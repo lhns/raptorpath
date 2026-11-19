@@ -122,13 +122,13 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [C01](#c01) | per-path time threshold 9/8 * max(srtt, ewma) | DISHONEST-INPUT | P1 | 15 | E01, E11 |
 | [C09](#c09) | NACK repair throttle (NackCongestionState x MAX_NACK_REPAIRS_PER_NACK, per-period nack cap) | UNDERIVED | P1 | 16 | E01 |
 | [R01](#r01) | rate mix r(beta) | DEGENERATE(L1 cells: Bulk with chi = 0) | P1 | 17 | R02, R05 |
-| [R02](#r02) | controller_rate (anchor term body) | UNDERIVED | P1 | 18 | E07, E08, E01 |
+| [R02](#r02) | controller_rate (anchor term body) | UNDERIVED, DISHONEST-INPUT | P1 | 18 | E07, E08, E01 |
 | [C04](#c04) | legacy age gate srtt/2 (the shipped N = 1 recovery law) | DIVERGENT, UNDERIVED, DISHONEST-INPUT | P2 | 19 | E11 |
 | [C06](#c06) | tail-sweep timeout | PINNED(c8), UNDERIVED, DISHONEST-INPUT | P2 | 20 | E11 |
 | [R07](#r07) | W* derived window and the keep-behind clip | DIVERGENT, UNDERIVED | P2 | 21 | E07, E01 |
 | [R03](#r03) | P_fec normal approximation (truncated) | DIVERGENT, DEGENERATE(below r = eps/(1-eps)) | P2 | 22 | - |
-| [R04](#r04) | r_saturation soft cap | UNDERIVED, DIVERGENT | P2 | 23 | R03, E01 |
-| [E07](#e07) | BOCD predictive_loss_upper (eps upper quantile) | DIVERGENT | P2 | 24 | E06 |
+| [R04](#r04) | r_saturation soft cap | UNDERIVED, DIVERGENT, DISHONEST-INPUT | P2 | 23 | R03, E01 |
+| [E07](#e07) | BOCD predictive_loss_upper (eps upper quantile) | DIVERGENT, DISHONEST-INPUT | P2 | 24 | E06 |
 | [E08](#e08) | Gilbert-Elliott estimator (sigma2_burst, mean burst, mass stats) | DIVERGENT | P2 | 25 | E06 |
 | [E09](#e09) | RTTVAR stand-ins (0.1*SRTT for P_lost, 0.125*SRTT for chi) | UNDERIVED, DIVERGENT | P2 | 26 | E01 |
 | [R05](#r05) | completion exposure chi and BULK_TAIL_BUDGET | UNDERIVED, DEGENERATE(tunnel) | P2 | 27 | E09 |
@@ -137,7 +137,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [S01](#s01) | span deadline D | DIVERGENT, DISHONEST-INPUT | P2 | 30 | E01, E03 |
 | [S04](#s04) | shed budget | DIVERGENT, DISHONEST-INPUT | P2 | 31 | R03, S01 |
 | [S05](#s05) | receiver shed hold | DIVERGENT, UNDERIVED | P2 | 32 | E10 |
-| [S06](#s06) | taper copy decision (P_lost) | DISHONEST-INPUT, DEGENERATE(L1: never fires; fires on paced Realtime) | P2 | 33 | E01, E09 |
+| [S06](#s06) | taper copy decision (P_lost) | PINNED(c8: P_lost ≈ 1 on the blocker), UNDERIVED(no resend in flight in the posterior), DISHONEST-INPUT | P2 (P1 proposed) | 33 | E01, E09 |
 | [S08](#s08) | Realtime duplicate source send | MODE-SWITCH(live), UNDERIVED | P2 | 34 | - |
 | [S09](#s09) | symbol packing and emission-batching scope (use_packing, emit_batch_on) | MODE-SWITCH(live), UNDERIVED | P2 | 35 | - |
 | [K05](#k05) | placement cost (place_costs) | DIVERGENT, UNDERIVED | P2 | 36 | - |
@@ -546,7 +546,7 @@ a branch.
 - *6. clamp bind:* [0,1]; MAX_RUN_LENGTH 200, hazard 0.01
 - *7. inputs honest?:* fed by E06
 - *8. NO-MODE-SWITCH:* none
-- *9. verdict:* **DIVERGENT**: divergence bounded by bocd_quantile_is_the_weighted_average_of_quantiles_not_the_mixture_quantile (gap 0.003-0.0045); clean-link floor 0.0354 unexplained (§3.7)
+- *9. verdict:* **DIVERGENT**: divergence bounded by bocd_quantile_is_the_weighted_average_of_quantiles_not_the_mixture_quantile (gap 0.003-0.0045); clean-link floor 0.0354 unexplained (§3.7) **DISHONEST-INPUT** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): plu reads below the wire truth on 54–65 % of ticks and above twice the truth on 15–25 %. The feed is one per-WindowAck counter delta into `record_batch`; why it misreads is not yet read from code.
 - *10. fix class, priority:* paper or law (bounded); **P2**, rank 24; depends on E06
 - *flags:* measured partial, gauge yes
 
@@ -996,7 +996,7 @@ a branch.
 - *6. clamp bind:* via R02
 - *7. inputs honest?:* R02's inputs
 - *8. NO-MODE-SWITCH:* none in the engine (no beta = 0 fast path); the wasm has one (M03)
-- *9. verdict:* **DEGENERATE(L1 cells: Bulk with chi = 0)**: the_rate_mix_is_byte_identical_at_the_presets and the no-step test pin the shape; on every measured cell it computes exactly 0 (bulk_rate_is_exactly_zero_through_the_controller)
+- *9. verdict:* **DEGENERATE(L1 cells: Bulk with chi = 0)**: the_rate_mix_is_byte_identical_at_the_presets and the no-step test pin the shape; on every measured cell it computes exactly 0 (bulk_rate_is_exactly_zero_through_the_controller) **Measured off Bulk** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): off Bulk r = (1−β)·r_anchor, because χ = 0 on the tunnel makes r_late zero. Its shape (continuous in δ, no step at a preset) is measured; DEGENERATE stays for the Bulk cells.
 - *10. fix class, priority:* measurement (one off-Bulk row with a which-term-wins tally); **P1**, rank 17; depends on R02, R05
 - *flags:* measured no, gauge partial
 
@@ -1017,7 +1017,7 @@ a branch.
 - *6. clamp bind:* max_overhead 0.5 and soft_sat: no engine gauge of either bind or of which max() term wins (the wasm has get_saturation_pressure)
 - *7. inputs honest?:* p = E07 upper quantile, sigma2/B = E08, srtt = E01, t_symbols = srtt*tput/sym
 - *8. NO-MODE-SWITCH:* bulk_late_is_fine bool selects the term inside R01's always-computed mix (a term selector, not a mode)
-- *9. verdict:* **UNDERIVED**: the composition max(core, burst, mass) has no derivation of why max (§4.4 'partial' in §9.10); no gauge of which term or clamp binds
+- *9. verdict:* **UNDERIVED**: the composition max(core, burst, mass) has no derivation of why max (§4.4 'partial' in §9.10); no gauge of which term or clamp binds **DISHONEST-INPUT, UNDERIVED parts named** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): off Bulk the core term's margin z·S is 85–90 % of r at c8. That margin rests on the tail target t_tail = 10⁻⁵·0.5/δ, a config default with no derivation. The law gives the NACK channel no credit at ρ = 1, and `max(r_core, r_burst, r_mass)` has no stated reason. Which term wins at c2 is **undecided**: the core term needs σ² ≈ 30 against an honest 13, so the window-mass term cannot be excluded without the term gauge (`rate-fix-term-gauge`). The 0.5 overhead cap binds on 6–8 % of c2 ticks and 12–16 % of c8 ticks at Auto and above (inferred from a port of the law, not yet checked on a row).
 - *10. fix class, priority:* gauge (term-win tally) then measurement; **P1**, rank 18; depends on E07, E08, E01
 - *flags:* measured no, gauge no
 
@@ -1059,7 +1059,7 @@ a branch.
 - *6. clamp bind:* grid [0.01, 1]; no engine gauge
 - *7. inputs honest?:* inherits R03's step through P_fec; srtt = E01
 - *8. NO-MODE-SWITCH:* none
-- *9. verdict:* **UNDERIVED, DIVERGENT**: four constants with no provenance; its cost curve carries the P_fec cut (R03)
+- *9. verdict:* **UNDERIVED, DIVERGENT**: four constants with no provenance; its cost curve carries the P_fec cut (R03) **DISHONEST-INPUT** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): r_sat reads a dwell-inclusive srtt (564–600 ms at c8 against the design's 250 ms). That puts the live r_sat near 0.32, so c8's consumed r above the predicted 0.245–0.250 is in r_sat's inputs, not a breach of the cap. No r_sat gauge exists.
 - *10. fix class, priority:* paper + gauge; **P2**, rank 23; depends on R03, E01
 - *flags:* measured no, gauge no
 
@@ -1286,7 +1286,7 @@ a branch.
 
 **taper copy decision (P_lost)** (default (correction slots))
 
-- *1. location:* net/emit_source.rs:703-757; p_lost raptorpath-math/src/lib.rs:64; inputs net/channel_set.rs:65-73
+- *1. location:* net/emit_source.rs:739–822 (decision :750–797; the target is `retransmit_buffer.first()`, :757–759); p_lost raptorpath-math/src/lib.rs:64; inputs net/channel_set.rs:65–73
 - *2. formula (code):* 
 
   ```text
@@ -1299,8 +1299,8 @@ a branch.
 - *6. clamp bind:* [0,1]
 - *7. inputs honest?:* srtt = E01 of the worst-eps path (dwell-inclusive), rttvar = 0.1*srtt
 - *8. NO-MODE-SWITCH:* none
-- *9. verdict:* **DISHONEST-INPUT, DEGENERATE(L1: never fires)**: taper_copy reads 0 on the measured cells; correction slots exist only when r > 0
-- *10. fix class, priority:* diagnose (why zero) after E01/E09; **P2**, rank 33; depends on E01, E09
+- *9. verdict:* **PINNED(c8: P_lost ≈ 1 on the blocker), UNDERIVED(no resend in flight in the posterior), DISHONEST-INPUT** (status §51 block 51, the copy diagnosis, 2026-11-19). The earlier DEGENERATE(L1: never fires) is withdrawn: at ρ = 1 the decision fires on every row above Bulk in both cells of the off-Bulk sweep. Formula against its sentence: the paper's P_lost is the posterior that a symbol sent once is still missing, and assumes a spread of ages in the buffer (§3.2). The code evaluates it on one seq only, `retransmit_buffer.first()`, the cumulative-ack blocker, on its ORIGINAL send age, on every debt slot. A copy re-stamps nothing, writes no `nack_retx_at` and is not conditioned on copies in flight, so between two cumulative advances every slot copies the same seq. Measured: copies are 4–7× true wire losses, at least about 70 % land below the receiver's decode floor, and the NACK path already resends each loss about once. At c8 the blocker's age (5–7 s) pins P_lost at about 1, so no proactive coded symbol is sent on two paths at any δ. An honest E01 makes it worse (an earlier knee); E09 cannot matter at that age. So E01 / E09 are inputs, not the cause.
+- *10. fix class, priority:* derivation in the paper first (`rate-s06-plost-derivation`), then the engine law with a red-first copy-count test; **P2, P1 proposed** (owner's call), rank 33; E01, E09 are contributing inputs only
 - *flags:* measured partial, gauge yes
 
 #### S07
@@ -1389,7 +1389,7 @@ a branch.
 - *6. clamp bind:* spare and the 1.0-per-source cap: no gauge
 - *7. inputs honest?:* r from R01, q from E08, spare from K04 (inflated cwnd)
 - *8. NO-MODE-SWITCH:* RWM_TAPER_R experiment gate
-- *9. verdict:* **DIVERGENT, DEGENERATE(r = 0)**: A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code
+- *9. verdict:* **DIVERGENT, DEGENERATE(r = 0)**: A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code **Evidence** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): `TaperBudget::accrue` passes the rate straight through, with `owed=0.00` on all 16 843 `[SPAN]` lines, so the emitted rate is min(r, spare).
 - *10. fix class, priority:* paper (write the grant law on its own line; retire A.2's raw-density line); **P3**, rank 38; depends on R01
 - *flags:* measured no, gauge no
 
@@ -1431,7 +1431,7 @@ a branch.
 - *3. paper:* A.6 line 2, §7.1; MAX_NACK_GAPS is not in the paper
 - *4. derivation:* 3 cited (RFC 9002 kPacketThreshold); 20 none (a report-size choice)
 - *5. measured in regime?:* NOT measured in regime before §52 (§3.10 item 5): under the 20-gap horizon p0 holes reach the law at ~3.5 s age; the channel fires 0-755 times per run on main vs 3.7-6.6 k under lever B. Mean in-order delay at c8 ~5.3 s on main vs ~1.0 s under lever B (§53 Erratum 1); tail 3.95 s vs 0.36 s (§53)
-- *6. clamp bind:* the 20-run horizon is a clamp on which holes the law can see: no gauge on main (the snapver branch's horizon test measures it)
+- *6. clamp bind:* the 20-run horizon is a clamp on which holes the law can see: no gauge on main (the snapver branch's horizon test measures it). **The SACK encoding cap binds at c8** (status §51 block 51; evidence pending a verdict): `MAX_SACK_RANGES` = 64, and `[SACKI] ranges/reports` reads 63.7 on c8 HA s42 r1 (1 754 631 / 27 557), 63.0–63.9 on every c8 HA / RM / RP row, against 3.7 at c2 (95 119 / 25 824). So every c8 report is truncated at the cap, and which holes a report can name is set by the cap, not by the loss pattern. That clamp needs its own derivation or a verdict, alongside the 20-run horizon.
 - *7. inputs honest?:* fed gap reports; stale reports from the slow return leg feed it false evidence (C03)
 - *8. NO-MODE-SWITCH:* N >= 2 only (as C01)
 - *9. verdict:* **UNDERIVED, DEGENERATE(c8: the law sees only old holes)**: c8 on main: holes judged at ~3.5 s, tail 3.95 s, in-order delay ~5.3 s; lever B (64-gap) cuts the tail to 0.36 s (§53)

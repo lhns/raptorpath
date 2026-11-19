@@ -6716,10 +6716,36 @@ nodes:
   title: c8 repair budget re-copies
   track: rate
   kind: research
-  state: next
-  outcome: unrated
+  state: done
+  outcome: successful
   evidence:
   - status §51 block 51 Result, finding 1
+  - status §51 block 51 Result, Addendum 2
+  - docs/l1-raw/s51b/recopy
+  verdict_quote: 'the proactive copies are a defect in the taper copy decision (law ledger S06). Every proactive slot between two cumulative-ack advances copies the same blocking seq on its original send age, so copies run at 4–7× the true losses and mostly land at a receiver that already has the seq.'
+  headline: S06 copies the cum-ack blocker on every slot; 4–7× losses, mostly already received
+  depends_on:
+  - meas-s51-session
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-19'
+  end: '2026-11-19'
+  folded: []
+  overview: false
+  plain: Most repair slots re-send old data instead of sending a coded repair symbol (about two thirds on one path, nearly all on two); find out why and whether it is a defect.
+  notes: 'c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained.'
+- id: rate-overprovision-verdict
+  title: Repair rate over-provision verdict
+  track: rate
+  kind: defect-verdict
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - status §51 block 51 Result (r(δ) table, goodput against δ)
+  - status §51 block 51 Result, Addendum 2 (goodput arithmetic)
+  - owner decision 2026-11-19 ("do b")
+  - status §51 block 51 Result, Addendum 3
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -6727,12 +6753,36 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: no-cargo
+  start: '2026-11-19'
+  end: ''
+  folded: []
+  overview: false
+  plain: The repair rate spends about a fifth of the link on repair where real loss is about 3 %; decide whether that is a defect and derive the fix, in parallel with the re-send fix, since this is where the lost throughput is.
+  notes: 'Owner decision 2026-11-19: treat the over-provisioned rate as a defect now, in parallel with rate-s06-plost-derivation (option b). Consumed r 0.19-0.21 (c2) and 0.24-0.26 (c8) from Auto up against wire loss 0.026-0.039; goodput c2 90 to 76, c8 98 to 83 Mbit/s, wire-bound. Fixing S06 alone changes what fills the slots, not how many. Diagnosis on branch rate-overprovision (docs/derivations/rate-overprovision.md); law-ledger rows R01, R02, R04. Done when: a ledger verdict is recorded and a derived fix direction is reviewed.'
+- id: rate-s06-plost-derivation
+  title: Delete the taper copy branch
+  track: rate
+  kind: mechanism
+  state: next
+  outcome: unrated
+  evidence:
+  - status §51 block 51 Result, Addendum 2
+  - law ledger S06
+  - owner decision 2026-11-19 (delete the copy branch)
+  - status §51 block 51 Result, Addendum 3
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rate-c8-frontier-recopy
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
   start: ''
   end: ''
   folded: []
   overview: true
-  plain: Most repair slots re-send old data instead of sending a coded repair symbol (about two thirds on one path, nearly all on two); find out why and whether it is a defect.
-  notes: 'c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained.'
+  plain: Remove the re-send-copy branch so every repair slot sends coded repair, after a new ADR and the paper change, with tests that no copies are sent and that dropping past-deadline packets still works.
+  notes: 'Derivation on branch s06-derivation (docs/derivations/s06-plost-resend.md), Fable review, then the paper §3.2 amendment, then the engine law with a red-first host loopback test counting copies per seq (ptgt / pmax from c8-gauges) and the ±2 % δ continuity test. Goes before rate-delta-jitter-fix; rate-spare-clamp-verdict and the S08 fix wait for it (all edit the proactive-slot path). Getting goodput back also needs the rate law''s r (R02 / R04) to come down; fixing S06 alone turns copies into coded repair. Done when: the law is in the paper, merged through a guard, and the copy count per seq is bounded by the test.'
 - id: meas-s51-c8-gauges
   title: Per-leg clamp and saturation gauges
   track: meas
