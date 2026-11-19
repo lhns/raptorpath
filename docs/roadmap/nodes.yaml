@@ -7412,7 +7412,7 @@ nodes:
   folded: []
   overview: false
   plain: Owner decision on five mismatches between the paper and the code in how much repair data to send.
-  notes: 'Needs the off-Bulk session''s reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin).'
+  notes: 'Needs the off-Bulk session''s reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). 2026-11-19: target_tail_loss is a declared dial (CLI flag, Home / Datacenter profiles, ADR-0050) that the engine does not deliver and no gauge reads; kept unchanged pending a superseding ADR (owner); the deciding test is a flag sweep at fixed δ in the no-copy VM session, registered two-sided (status §51 Addendum 3).'
 - id: cc-user-adr68-direction
   title: 'Owner call: hybrid controller direction'
   track: cc
