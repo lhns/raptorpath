@@ -354,6 +354,11 @@ pub struct FecStats {
     /// DIAG-gated `mpd_plost_retx` beside it), so the waste split
     /// {gap-fire copy, taper copy, margin} is readable from a shipped run.
     pub taper_copy: AtomicU64,
+    /// Proactive correction slots taken (one per iteration of the
+    /// `repair_debt >= 1` loop in `net/emit_source.rs`), ungated. `cod=`
+    /// also counts the reactive leading-window repairs, so "every slot is
+    /// coded" is read as `taper == 0 && pslot > 0`, not from `cod`.
+    pub proactive_slots: AtomicU64,
     /// Source copies put on the wire in a correction slot: SACK-gap
     /// retransmits, request-law copies and taper copies. Disjoint from
     /// `total_repair_symbols`, which counts genuinely coded repair only.

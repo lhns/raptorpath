@@ -1947,6 +1947,74 @@ mod tests {
         }
     }
 
+    /// ADR-0079 / S06, bounding test for the documented model-vs-engine
+    /// divergence (paper §11.3, "reactive retransmit trigger in the wasm
+    /// model"). The model's P_lost retransmit is its whole REACTIVE plane
+    /// (NACK and refresh merged): its candidates are oracle-lost symbols
+    /// (`lost && !recovered`) cooled per symbol by the `rtt_ticks` of the
+    /// path they were last sent on. It is not a copy branch: the engine
+    /// deleted its copy of a still-in-flight seq; the model never had one.
+    /// Bound, stated absolutely: at most one retransmit of a symbol per
+    /// `rtt_ticks` of the path the PREVIOUS send went out on (a resend sets
+    /// `sym.path = dest`, so the next eligibility is read against that
+    /// path), and none of a recovered symbol. Green on main by construction:
+    /// a bounding test, not a red-first one.
+    #[test]
+    fn model_retransmit_is_reactive_and_bounded() {
+        use std::collections::HashMap;
+        // (label, eps, q, rtt_ms, capacity) per path.
+        let scenarios: [(&str, &str, Vec<f64>, Vec<f64>, Vec<u32>, Vec<u32>); 3] = [
+            ("N=1 bulk", "bulk", vec![0.10], vec![0.3], vec![80], vec![4]),
+            ("N=2 bulk", "bulk", vec![0.05, 0.10], vec![0.5, 0.3], vec![30, 80], vec![4, 4]),
+            ("N=2 auto", "auto", vec![0.10, 0.10], vec![0.3, 0.3], vec![40, 120], vec![4, 4]),
+        ];
+        for (label, hint, eps, q, rtt, cap) in scenarios {
+            let mut s = Simulation::multipath(
+                eps, q, rtt, cap, 64, hint.into(), None, None, None,
+            );
+            let mut observed = 0u64;
+            while !s.is_finished() && s.get_tick() < 20_000 {
+                // seq -> (last_retx_tick, path, recovered) before the tick.
+                let before: HashMap<u64, (i64, usize, bool)> = s
+                    .symbols
+                    .iter()
+                    .map(|x| (x.seq, (x.last_retx_tick, x.path, x.recovered)))
+                    .collect();
+                s.step();
+                for x in &s.symbols {
+                    let Some(&(prev_tick, prev_path, was_recovered)) = before.get(&x.seq)
+                    else {
+                        continue;
+                    };
+                    if x.last_retx_tick == prev_tick {
+                        continue;
+                    }
+                    observed += 1;
+                    assert!(
+                        !was_recovered,
+                        "{label}: seq {} retransmitted after it was recovered",
+                        x.seq
+                    );
+                    let gap = x.last_retx_tick - prev_tick;
+                    let rtt = s.paths[prev_path].rtt_ticks as i64;
+                    assert!(
+                        gap >= rtt,
+                        "{label}: seq {} retransmitted {gap} ticks after its previous send                          on path {prev_path} (rtt_ticks {rtt})",
+                        x.seq
+                    );
+                }
+            }
+            println!(
+                "model_retransmit_is_reactive_and_bounded {label}: total_arq={} observed={observed}",
+                s.get_total_arq()
+            );
+            // Witness: the mechanism under test executed.
+            assert!(s.get_total_arq() > 0, "{label}: no retransmit happened");
+            assert!(observed > 0, "{label}: no retransmit was observed");
+            assert!(observed <= s.get_total_arq() as u64, "{label}: observed more than sent");
+        }
+    }
+
     /// The tail-rate memo is pure: every cache hit equals a fresh solve to
     /// the bit, and solves = runs of identical consecutive keys (a solve
     /// happens at least once per key change, never per source symbol), and

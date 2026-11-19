@@ -72,6 +72,8 @@ impl ReorderBuffer {
         data: Bytes,
         now: Instant,
     ) -> Vec<(u64, Bytes, Instant)> {
+        #[cfg(feature = "test-seams")]
+        crate::test_seams::on_arrive(seq);
         if seq < self.next_deliver_seq {
             // The in-order gate has already advanced past this sequence (an
             // expiry gave up on the hole). Holding a late fill buys no
@@ -133,6 +135,8 @@ impl ReorderBuffer {
 
         // Release every pending entry up to and including k, in order.
         let to_deliver: Vec<u64> = self.pending.range(..=k).map(|(&seq, _)| seq).collect();
+        #[cfg(feature = "test-seams")]
+        crate::test_seams::on_give_up(self.next_deliver_seq, k + 1, &to_deliver);
         for seq in to_deliver {
             if let Some((data, at)) = self.pending.remove(&seq) {
                 result.push((seq, data, at));

@@ -11,5 +11,7 @@ pub mod routing;
 pub mod runtime_obs;
 pub mod scheduler;
 pub mod task_obs;
+#[cfg(feature = "test-seams")]
+pub mod test_seams;
 pub mod transport;
 pub mod tun;

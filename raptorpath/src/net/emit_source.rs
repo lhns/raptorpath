@@ -644,6 +644,11 @@ pub(crate) fn emit_source(
                                     a_star as f64,
                                     crate::control::fec_rate::burst_variance_factor(est),
                                 );
+                            #[cfg(feature = "test-seams")]
+                            {
+                                st.shed_budget_frac =
+                                    crate::test_seams::budget_frac(st.shed_budget_frac);
+                            }
                         }
                         Some((a_star, delta))
                     } else {
@@ -748,6 +753,7 @@ pub(crate) fn emit_source(
 
         while st.repair_debt >= 1.0 && st.encoder.window_size() > 0 {
             st.repair_debt -= 1.0;
+            ctx.stats.fec.proactive_slots.fetch_add(1, Ordering::Relaxed);
 
             // P_lost-based correction symbol decision:
             // Check oldest un-ACKed symbol in retransmit buffer.
@@ -791,6 +797,8 @@ pub(crate) fn emit_source(
                             st.shed_seqs.insert(seq);
                             st.shed_total += 1;
                             st.shed_slot += 1;
+                            #[cfg(feature = "test-seams")]
+                            crate::test_seams::on_shed(seq, age_us_c, st.shed_deadline_us_live);
                         } else {
                             if pol.shed_on
                                 && st.shed_deadline_us_live > 0
