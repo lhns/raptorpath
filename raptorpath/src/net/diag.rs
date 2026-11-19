@@ -828,11 +828,13 @@ pub(crate) fn report(
         // refused, live 1−ρ fraction and deadline. Empty when off.
         let sheddiag = if pol.shed_on {
             format!(
-                " shed={}/{} bud={:.4} D={}ms",
+                " shed={}/{} bud={:.4} D={}ms shed_slot={} shed_nack={}",
                 st.shed_total,
                 st.shed_denied,
                 st.shed_budget_frac,
                 st.shed_deadline_us_live / 1000,
+                st.shed_slot,
+                st.shed_nack,
             )
         } else {
             String::new()

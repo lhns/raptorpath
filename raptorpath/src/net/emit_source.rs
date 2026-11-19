@@ -165,6 +165,9 @@ pub(crate) struct SenderState {
     /// Past-deadline candidates the ρ budget refused (the serialize arm of
     /// the law — visible in DIAG so the budget's bite is measurable).
     pub shed_denied: u64,
+    /// `shed_total` split by decision site: the P_lost slot path / the NACK path.
+    pub shed_slot: u64,
+    pub shed_nack: u64,
     /// The live derived 1−ρ budget fraction and δ deadline (µs), refreshed
     /// per source symbol alongside the span parameters.
     pub shed_budget_frac: f64,
@@ -255,6 +258,8 @@ impl SenderState {
             shed_seqs: BTreeSet::new(),
             shed_total: 0,
             shed_denied: 0,
+            shed_slot: 0,
+            shed_nack: 0,
             shed_budget_frac: 0.0,
             shed_deadline_us_live: 0,
             gl: std::collections::HashMap::new(),
@@ -785,6 +790,7 @@ pub(crate) fn emit_source(
                             st.nack_retx_at.remove(&seq);
                             st.shed_seqs.insert(seq);
                             st.shed_total += 1;
+                            st.shed_slot += 1;
                         } else {
                             if pol.shed_on
                                 && st.shed_deadline_us_live > 0
@@ -904,8 +910,9 @@ pub(crate) fn emit_source(
 
 }
 
-/// The live r_sat of the worst-ε path (`[SPAN] rsat=`), read from the same
-/// snapshot the rate mix evaluates. 1.0 when there is no path (= no cap).
+/// The live r_sat (`[SPAN] rsat=`) and rate-law term gauge (`rlaw=`) of the
+/// worst-ε path, read from the snapshot the rate mix evaluates. 1.0 / "-"
+/// when there is no path.
 fn diag_r_sat(
     fec_controller: &FecRateController,
     scheduler: &crate::scheduler::Scheduler,

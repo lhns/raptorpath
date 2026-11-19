@@ -861,6 +861,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             st.nack_retx_at.remove(&seq);
                             st.shed_seqs.insert(seq);
                             st.shed_total += 1;
+                            st.shed_nack += 1;
                             continue;
                         }
                         if st.shed_deadline_us_live > 0 && age > st.shed_deadline_us_live {
