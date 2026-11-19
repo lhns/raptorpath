@@ -8,8 +8,9 @@ Status: PLAN for a Sonnet worker. Decided by the owner on 2026-11-19 (ADR-0079; 
 ## 0. Prerequisite: `c8-gauges` lands first
 
 The shed-conservation test (§3, T3) needs the split shed counter `shed_slot=` / `shed_nack=`, which branch `c8-gauges` adds. That branch is not on `github` yet. It also edits the same proactive-slot block (`ptgt=` / `pmax=`).
-- Rebase onto main **after** `c8-gauges` merges. Do not guess its code, and do not re-implement the split counter here.
-- If it has not merged when you start, do steps T1, T2 and T4 first, and stop before T3 with a note.
+- **§1 (the deletion) does not start until `c8-gauges` is on main.** Base the branch on main after that merge. Do not guess its code, and do not re-implement the split counter here.
+- **Before that, only T4 may land** (model-only, green on main; §3). T1 and T2 may be written, but their red runs are recorded on the post-`c8-gauges` main, since that branch edits the block they exercise.
+- If `c8-gauges` has not merged when you start, land T4 and stop with a note.
 - `ptgt=` / `pmax=` count copies of one seq. After this change they read 0 forever. Keep them printing (see §2), and say so in the report.
 
 ## 1. The engine change (`raptorpath/src/net/emit_source.rs`)
@@ -65,6 +66,7 @@ The fields **keep printing, at 0**, so every parser stays stable. No field is re
 | `tools/l1/s51_score.py:44, 118–164` (`_TAPER`, `r_consumed = (cod + taper) / src`) | consumed r | unchanged; on CAND `taper` = 0, so `r_consumed` = cod / src, which is still the consumed r |
 | `tools/l1/holeaudit_report.py:125, 164` (`WASTE SPLIT: taper_copy=`) | waste split | unchanged; reads 0 |
 | `tools/l1/holeaudit_battery.sh:45` | comment | unchanged |
+| `tools/l1/stage3_parse.py:50, 192, 509` (`coded_share = cod / (src + cod)`) and `s51_score.py`'s `coded_share` | coded share | unchanged; on CAND it rises, because `cod=` now carries the former copy slots. That is the effect, not a parser change |
 | `tools/l1/stubrun_gen.py:860`, `test_s51.py:253–263`, `test_snap53.py:40–44` | synthetic fixture lines | unchanged: they are inputs, not output pins |
 | `[DIAG] retx=` and `total_copy_symbols` (`diag.rs:445`) | all source copies | taper copies leave both. `CorrectionKind::SourceCopy` keeps its other producers (`sender_phases.rs:1096`, `net/mod.rs:3478`), so the variant and the `stats.rs:512` unit test stay |
 | `ptgt=` / `pmax=` (from `c8-gauges`) | copies of one seq | keep printing, at 0 |
@@ -90,8 +92,10 @@ Each test is committed first and **run red on main**. Record the red output (cou
 - Seats:
   - reliable: `Transfer` / `lossy_run` (always passes `--window-reliable`);
   - evicting: Realtime without `--window-reliable`. Either add a `reliable: bool` to `Transfer` (default true), or use `in_process_loopback(hint, false, …)` (`loopback.rs:715`).
-- Hints: Auto and Realtime, and Bulk·1.02 if the CLI reaches it; otherwise Auto and Realtime only, and say so.
-- **Assert, absolute:** `taper=` == 0, `plost=` == 0 and `pslot=` > 0 on the last `[DIAG]`.
+- Dial points: the nine preset triples {0.98, 1, 1.02}·δ_p at Bulk (0.005), Auto (0.5) and Realtime (50), set with `RWM_DELTA=<v>` on the Auto carrier on both ends, as the §51 sweep did (`tools/l1/plan51.py` `ARM_TABLE`: BM 0.0049, BP 0.0051, AM 0.49, AP 0.51, RM 49, RP 51), plus the three named hints. Read `[GATES] RWM_DELTA=` on both ends as the wiring witness.
+- Points where `pslot=` is 0 (the Bulk triple: rr = 0) assert `taper=` == 0 only. That is not a step: the share is undefined at zero slots.
+- Run the nine points on the reliable seat at N = 1. Run the seat and N = 2 variants at Auto (0.5) only, to bound the runtime.
+- **Assert, absolute:** `taper=` == 0 and `plost=` == 0 on the last `[DIAG]` at every point, and `pslot=` > 0 at every point off the Bulk triple.
 - **Red on main:** `taper=` > 0 at Auto on the reliable seat. Record the value.
 
 **T2. `stalled_blocker_recovered_by_nack`** (same file, reliable seat, N = 1).
@@ -112,12 +116,13 @@ Each test is committed first and **run red on main**. Record the red output (cou
   - Record (seq, age, D, site, verdict) in a `test-seams` trace at the NACK site, and assert on absolute seqs.
 - **Witness:** `shed_denied` increments at least once with the budget set to refuse. Use a seam that forces `shed_budget_frac = 0`. If none exists, add it under `test-seams`.
 - **Red on main:** `shed_slot=` > 0. Record it. That count is the slot-time trigger ADR-0079 gives up.
+- **If main reads `shed_slot=0`** on this setup, the slot site never shed first there, and T3 is not red-first. Lengthen the stall: suppress gap reports past the blocker (no arrivals above the frontier) for longer than D and shorter than the tail-sweep timeout, the one interval where only the slot site can shed (derivation §4.1.2). If it still reads 0, do not weaken the test: keep the CAND assertions, report main's 0 with the setup, and stop for the coordinator.
 
 **T4. `raptorpath-wasm`: `model_retransmit_is_reactive_and_bounded`** (in `src/lib.rs`'s test module; private fields are reachable).
 - Step a lossy scenario tick by tick at N = 1 and N = 2.
 - For each symbol, record the ticks at which `last_retx_tick` changes.
 - **Assert, absolute:**
-  - consecutive retransmits of one symbol are at least that symbol's path `rtt_ticks` apart (read at the earlier retransmit);
+  - consecutive retransmits of one symbol are at least `rtt_ticks` apart, read for the path the **earlier** resend went out on. A resend sets `sym.path = dest`, and the next eligibility is checked against that path, so at N = 2 the original path's clock would fail falsely when `dest` is the faster leg;
   - no symbol is retransmitted after `recovered` is true;
   - `total_arq > 0` (witness).
 - This bounds the documented model–engine divergence (paper §11.3, "reactive retransmit trigger in the wasm model").
@@ -142,7 +147,7 @@ Deleting it would delete the model's ARQ, not mirror the engine change. Re-keyin
   - `raptorpath-math` `span_deadline_d_pinned_and_continuous`, `span_width_a_star_pinned_and_continuous` and `sim_tail_target_of_delta_pinned_and_continuous` (`span_forms.rs:102, 122, 184`), and `test_r_star_mass_monotone_and_continuous_in_delta` (`lib.rs:2086`);
   - `raptorpath-wasm` `test_continuum_one_law_across_the_dial`, `test_named_hints_are_points_on_the_continuum` and `giveup_budget_monotone_and_continuous_in_rho`;
   - `raptorpath-visualizer/test_visualizer.mjs` and `test_visualizer_ui.mjs` via `build_visualizer.sh`.
-- **Continuity of the deleted law itself:** T1's zero-copy assertion holds at every hint it runs. Copies are identically 0, so there is no step across any preset. Add a ±2 % δ triple only if the CLI takes δ directly, and say whether it does.
+- **Continuity of the deleted law itself:** T1 runs the nine preset points, and copies are identically 0 at each, so there is no step across any preset.
 - **Decision pins:** `decision_trace_pin` (`net/decision_trace_pin.rs`) is unchanged. D11 `shed_allowed` and D21 `TaperBudget` are pure functions this change does not touch. `hotpath_pin` is unchanged (pure layer).
 - `cargo check --all-targets`; lib `net::` and `gates`; integration tests `holeclass_reachability`, `recovery_bench`, `sim_nack_test` and `place_arms_reachability`; the new `s06_no_copy`; `raptorpath-wasm` tests; `build_visualizer.sh`; `tools/l1` python tests.
 - The host ns bench, for the per-symbol ε read removed in §1.3.
@@ -169,7 +174,21 @@ This is a deliberate behaviour change, not a zero-behaviour refactor. The deriva
      - `[RFA] fill_coded` per source (holes closed by decoding; c2's predicted band is 63–83 % of source losses, derivation §4.1.1; c8 is unknown within [6 %, 100 %]);
      - `below_floor` arrivals, predicted to fall from about 60–97k to H-B's under 1k;
      - `cod=` / `pslot=`.
-   - A c8 delay cost is a finding on the NACK clock (law ledger C02). It goes to the owner and does not reopen the copy branch.
+   - The c8 delay reading goes to the owner. The plan takes no position on what a cost there means.
 4. **Stage R, evicting seat: Realtime c2-100 paced** (block E's PM shape).
    - Register `shed_slot` (CAND 0), `shed_nack`, `shed_denied` and delivered fraction, reported only.
    - In-order delay is not defined at ρ < 1 (§41d item 3), so it is not read here.
+
+## 7. Paper follow-ups in the engine merge commit
+
+The paper was amended ahead of the code, so the merge commit makes these edits to `docs/fec-arq-model.md`:
+- **§3.2:** "Once the deletion merges, no engine decision reads it" becomes "No engine decision reads it".
+- **§5.6:** drop "Today it also runs inside the probabilistic retransmit branch … except between gap batches", and keep the NACK-site sentence.
+- **§10**, the "Probabilistic taper copy" row: status "removed (ADR-0079)", with the deletion commit's hash.
+- **§11.3:**
+  - delete the "proactive slot content" interim row and the "P_lost inputs" row;
+  - in "recovery-plane path set", drop "the taper's ε̂ at send";
+  - in the wasm row, replace "Bounding test owed (T4 …)" with the test's name.
+- **§9.1:** "reads 0 once ADR-0079's deletion merges" becomes "reads 0 since ADR-0079".
+- **ADR-0079 Status** and the `docs/adr/README.md` row: "engine change pending" becomes the merge commit.
+- Rebuild with `bash tools/build_paper.sh docs/fec-arq-model.md <scratch>.pdf` (pandoc and typst, no cargo), and run `python tools/roadmap/history_audit.py`, which parses §10.

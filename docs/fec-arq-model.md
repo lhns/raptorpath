@@ -512,7 +512,7 @@ sweep (status §51 block 51, Addendum 2):
   received;
 - at c8 the blocker was 5–7 s old against a worst-path SRTT of 0.26–0.6 s, so
   P_lost was pinned near 1, copies took 98 % of the slots, and no proactive
-  coded repair was sent on two paths above Bulk;
+  coded repair was sent on two paths at any measured δ above Bulk;
 - NACK resends stayed at about one per source loss on every arm, so the
   copies came on top of the reactive plane rather than replacing it.
 
@@ -3328,9 +3328,9 @@ itself.
 gap-fire loop (the dominant source), the refresh and tail sweep, and a rank
 answer. A fourth, the probabilistic taper copy, is deleted by ADR-0079
 (Section 3.2): it was measured at 4–7× the true losses, not zero. Under the
-request law the receiver's report is the single authority; the tail sweep
-survives for the end of stream and for the regime where no report can
-arrive.
+request law the receiver's report is the single authority; the tail sweep,
+the sender's own stall detector, survives for the end of stream and for any
+stall that no report names.
 The per-sequence gap producer is the one site to suppress; the SACK path is
 left alone, because SACK drives slot release, never recoverability.
 
@@ -4324,7 +4324,7 @@ never-delivered tail target.
 | 6 | Do the three channel implementations (test GE, recovery-bench chain, L0 netem shim) agree? | a differential test at fixed seeds; none exists |
 | 7 | What sets the recovery clock? | the self-heal quantile F_heal(7.22 ms) at c7; an `RWM_STORE_GAIN` contrast; a c8L attribution pass (Section 7.7) |
 | 8 | Is the c8L pool cap interior? | the within-run Σ series (pin fraction 0.23 today) |
-| 9 | What does deleting the taper copy cost in delivered delay at c8? (The old question 9, "why does the taper retransmit never fire?", is answered: it fires on every slot, status §51 block 51, Addendum 2; ADR-0079 deletes it.) At c8 the NACK fires at a run-mean live-flight age of 3.0–3.6 s (law ledger C02), and the first copy per stall may have been the only early trigger | c8 in-order delay, BASE against the no-copy CAND at Auto, registered with no prediction (`docs/derivations/s06-delete-plan.md`); a cost there is a finding on the NACK clock (C02), not a reason to restore the copy |
+| 9 | What does deleting the taper copy cost in delivered delay at c8? (The old question 9, "why does the taper retransmit never fire?", is answered: it fires on every slot, status §51 block 51, Addendum 2; ADR-0079 deletes it.) At c8 the NACK fires at a run-mean live-flight age of 3.0–3.6 s (law ledger C02), and the first copy per stall may have been the only early trigger | c8 in-order delay, BASE against the no-copy CAND at Auto, registered with no prediction (`docs/derivations/s06-delete-plan.md`); the reading goes to the owner |
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
@@ -4399,7 +4399,7 @@ decide it.
 | give-up budget (Section 5.6) | `min(1 − ρ, R)` after D(δ); ρ = 1 is the retain seat at every δ (budget 0) | seat switch: the evicting seat (not `--window-reliable`; the CLI reaches it only at Realtime) runs budget R, the retain seat 0. Agrees at ρ = 1 and wherever 1 − ρ ≥ R; the model is tighter only for 0 < 1 − ρ < R. Bounded at equal R by `giveup_budget_vs_engine_seats_at_equal_r_is_bounded` (`raptorpath-wasm`) |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |
 | proactive slot content (Section 3.2, ADR-0079) | every proactive slot carries a coded repair | **interim, until the deletion merges:** the engine still runs the taper copy (`net/emit_source.rs`, the P_lost branch on the cumulative-ack blocker), so `mpr[.. taper=]` > 0 off Bulk. Closed by the engine change in `docs/derivations/s06-delete-plan.md`, whose red-first test asserts zero copies with slots above zero on both seats |
-| reactive retransmit trigger in the wasm model | the NACK path: a named hole resent on packet- or time-threshold ripeness, once per SRTT (Section 7.1) | the model (`raptorpath-wasm/src/lib.rs`, slot priority 1) resends an oracle-lost symbol after one path `rtt_ticks` with probability P_lost of its original-send age. It never draws on the repair debt, so the model's proactive slots are already coded only. Bounded by the plan's wasm test: at most one retransmit per lost symbol per `rtt_ticks`, and none of a recovered symbol. After the deletion P_lost's readers are this trigger, the visualizer's `p_lost` export, `raptorpath-math`'s bit pin, formula tests and `p_lost_combined`, and the test harnesses (`tests/common/gate_harness.rs`, `tests/gate_suite.rs`); no engine decision reads it |
+| reactive retransmit trigger in the wasm model | the NACK path: a named hole resent on packet- or time-threshold ripeness, once per SRTT (Section 7.1) | the model (`raptorpath-wasm/src/lib.rs`, slot priority 1) resends an oracle-lost symbol after one path `rtt_ticks` with probability P_lost of its original-send age. It never draws on the repair debt, so the model's proactive slots are already coded only. Bounding test owed (T4 in `docs/derivations/s06-delete-plan.md`): at most one retransmit per lost symbol per `rtt_ticks`, and none of a recovered symbol. After the deletion P_lost's readers are this trigger, the visualizer's `p_lost` export, `raptorpath-math`'s bit pin, formula tests and `p_lost_combined`, and the test harnesses (`tests/common/gate_harness.rs`, `tests/gate_suite.rs`); no engine decision reads it |
 
 The per-path loss feed's two laws (the row above). Tracker, per arriving
 batch with per-path sequence `s` and `n` symbols, `h` the highest sequence
