@@ -2059,6 +2059,19 @@ The launch sha is pinned by an amendment.
   - M1 runs first when the owner clears Ceph; its tools-only plan is prepared before.
   - The candidate and the doc's proposed ledger and paper text stay held until M1 and the out-of-sample checks.
 
+**VM queue (2026-11-19, waits for the owner to clear Ceph; one binary per line).**
+
+| # | session | binary | build? | state |
+|---|---|---|---|---|
+| 1 | **M1** (sampler inputs, RTT dumps; tools-only plan `m1-plan.md` on `store-law-state`) | a prebuilt gauge binary: post-F2 `a6a7e7e6` (block E) or pre-F2 `e410d640`, chosen against sampler-design §4.1 | no | plan under review; plan code (plan 66) waits for the harness base below |
+| 2 | **Engine pre-flight** (suites, `--lib gates`, decision pins) for `tunnel-inorder-guard` `987b0360` and `c8-gauges` `311f8284` | one build each | yes | both branches ready on host; both change the binary, so neither merges before it (the gauges merge is not "after its stub run" alone) |
+| 3 | **S06 deletion guard** (ADR-0079): BASE = measurement tree, CAND = measurement tree + `s06-delete`; Stage G (Bulk) + Stage A (Auto c2 / c8, hole-close time and in-order delay, pool arms at the knee, the store-law candidate and 640) + Stage R (paced evicting seat) | two builds | yes | `s06-delete` being built; the off-Bulk stages have no harness owner yet |
+| 4 | **Tail-target flag sweep** (ADR-0050's claim, a draft) | the measurement tree | rides #3's BASE | needs the perf pass-through for `--target-tail-loss` (no owner) |
+| 5 | **c1s store arm set** (W 256–1 024; the store-law candidate's falsifier) | the gauge binary of #1 | no | can it ride M1's session? (asked) |
+
+- **Measurement tree** = main + `c8-gauges` (diagnostic prints) + the perf pass-through + the block E pacer (`4ee1df9b`) for Stage R. One BASE build serves #3 and #4.
+- **Harness base:** W1 (`w1-bracket-fix`) and the tools-only commits of `c8-gauges` (scorer, `crlf_guard`) land on main first. Then one harness worker takes plan 66 and the off-Bulk guard stages together.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
