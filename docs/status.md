@@ -2063,14 +2063,25 @@ The launch sha is pinned by an amendment.
 
 | # | session | binary | build? | state |
 |---|---|---|---|---|
-| 1 | **M1** (sampler inputs, RTT dumps; tools-only plan `m1-plan.md` on `store-law-state`) | a prebuilt gauge binary: post-F2 `a6a7e7e6` (block E) or pre-F2 `e410d640`, chosen against sampler-design §4.1 | no | plan under review; plan code (plan 66) waits for the harness base below |
+| 1 | **M1** (sampler inputs: four RTT-dump rows with their four gauge twins and a smoke row, sampler-design §4.1; `m1-plan.md` on `store-law-state` `d1b703c9`) | pre-F2 gauge binary **`e410d640`**: its scored g_R compares against need₅₀, F̂₅₀ and IQR bands frozen on that binary. **Carry-over assumption:** floor location, spread and knee need are the same on post-F2 main within M1's bands (F2 adds bytes per symbol, about 4 µs at 20 Mbit/s against 0.6–1.1 ms bands). Owed before any engine form ships: one c2-100 G16/D16 pair on post-F2 `a6a7e7e6` inside M1's c2 band | no | plan reviewed; plan code (plan 66, `m1-plan.md` §B) waits for the harness base below |
 | 2 | **Engine pre-flight** (suites, `--lib gates`, decision pins) for `tunnel-inorder-guard` `987b0360` and `c8-gauges` `311f8284` | one build each | yes | both branches ready on host; both change the binary, so neither merges before it (the gauges merge is not "after its stub run" alone) |
 | 3 | **S06 deletion guard** (ADR-0079): BASE = measurement tree, CAND = measurement tree + `s06-delete`; Stage G (Bulk) + Stage A (Auto c2 / c8, hole-close time and in-order delay, pool arms at the knee, the store-law candidate and 640) + Stage R (paced evicting seat) | two builds | yes | `s06-delete` being built; the off-Bulk stages have no harness owner yet |
 | 4 | **Tail-target flag sweep** (ADR-0050's claim, a draft) | the measurement tree | rides #3's BASE | needs the perf pass-through for `--target-tail-loss` (no owner) |
-| 5 | **c1s store arm set** (W 256–1 024; the store-law candidate's falsifier) | the gauge binary of #1 | no | can it ride M1's session? (asked) |
+| 5 | **c1s store arm set** (G256 / G384 / G640 / G1024, n = 3, plan 60's c1s bytes; the store-law candidate's falsifier) | the gauge binary of #1 | no | rides M1's session as a `66c` table, launched right after M1 (`m1-plan.md` §C, about +45 min) |
 
 - **Measurement tree** = main + `c8-gauges` (diagnostic prints) + the perf pass-through + the block E pacer (`4ee1df9b`) for Stage R. One BASE build serves #3 and #4.
 - **Harness base:** W1 (`w1-bracket-fix`) and the tools-only commits of `c8-gauges` (scorer, `crlf_guard`) land on main first. Then one harness worker takes plan 66 and the off-Bulk guard stages together.
+
+**Store law, review round 2 (2026-11-19, docs only; `store-law-state` `d1b703c9`; Fable-reviewed):**
+- **The c1s cost is real:** about −20 % at Bulk, on c1s's honest, jitter-free floor. Ruled out as an input artefact: on c1s, netem truth shrinks the margin further.
+- **The proposed release-interval term τ_rel is a hypothesis, most likely an engine clock**, so it is not adopted.
+  - It reads 0.8–1.3 ms flat on c2 and c8 across a 16× change in the store. That matches `LOOP_WAKE_US` = 1 000 µs (`recovery_laws.rs:29`).
+  - Gap-advertising reports are held to one per `GAP_ACK_MIN_INTERVAL` = 2 ms (`net/mod.rs:236`, `receiver.rs:1956–1957`), and that floor binds on every report (`[LATE] sampler_bind=1.0000` at c2, c1s and c1d).
+  - Adding τ_rel as measured would carry an engine timer into the law, the workaround shape the owner rejected. Only its growth above 1 ms at c1s and c1d (0.93 → 2.24 ms as the store grows) could be a receiver effect.
+  - With τ_rel, the fixed point's restoring force G drops from 0.85 to 0.62 (stability needs 0 < G < 2).
+  - **New pinned constant:** the 2 ms report floor binds on 100 % of reports and needs a ledger row beside C02 (to add).
+- **κ is read per row** (`[SUCC] rep_mean` over the LATE loop), and the fitted constant is withdrawn. With the measured κ, B1024 (κ = 3.1) sits at the old-hole edge with no fit. At the candidate's point (κ = 1.23) the horizon condition holds about 7× and the SACK-prefix condition about 3×.
+- **Future pool arms go at the knee, the candidate and 640 per path:** c8 170 / 256 / 640. Off Bulk the knee arms are rescaled estimates, and the measured knee is the readout.
 
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
