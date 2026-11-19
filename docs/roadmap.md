@@ -490,7 +490,7 @@ flowchart TB
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated from nodes.yaml on 2026-11-18.
+Generated from nodes.yaml on 2026-11-19.
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
