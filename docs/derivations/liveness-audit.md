@@ -91,16 +91,22 @@ Shares are per sender `[DIAG]` / `[SPAN]` tick (t ≥ 2 s, src > 0), pooled over
 | K09 | EX | EX | EX | EX | EX | EX | EX | `qcwnd` c2 A 0.46–3.26 MB; never binds (E `qcwnd/(cwnd·512)` 250–394) |
 | K10 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | branch |
 
-**Counts** (scratch script `count.py` over this table, §4). There are 65 engine rows × 7 seats = 455 cells. Excluded: the 8 n/a-everywhere rows (C03, C13 + M01–M04 as one line, F07, K10) and the 12 n/a cells of E13/E14 off the E seat. That leaves 443 classified:
+**Counts** (`liveness-audit/count.py` over this table):
+- The ledger has 73 rows. This table has 69 lines, because M01–M04 share C13's line.
+- 4 lines (8 ledger rows: C03, F07, K10, C13 + M01–M04) are n/a at every seat.
+- That leaves **65 engine lines × 7 seats = 455 cells**. Of these, 12 are n/a (E13 and E14 off the E seat), so **443 are classified**.
 
-| class | cells | share |
-|---|---|---|
-| EX (incl. 21 EX\*) | 163 | 37 % |
-| PIN | 87 | 20 % |
-| NR | 121 | 27 % |
-| NG | 72 | 16 % |
+| class | all 443 | c2 B | c2 A | c8 B | c8 A |
+|---|---|---|---|---|---|
+| EX (incl. EX\*) | 163 (21) | 20 (3) | 24 (4) | 21 (3) | 24 (3) |
+| PIN | 87 | 14 | 13 | 13 | 13 |
+| NR | 121 | 23 | 16 | 19 | 12 |
+| NG | 72 | 6 | 10 | 10 | 14 |
+| classified | 443 | 63 | 63 | 63 | 63 |
 
-At the default hint (the c2 A and c8 A columns, 126 classified cells): EX 48 (7 EX\*), PIN 26, NR 28, NG 24. Only 41 of 126 law cells at the default hint execute and vary clearly (below the 70 % line).
+- **The other columns:** c2 R is EX 25 (4), PIN 12, NR 16, NG 10. c8 R is EX 26 (3), PIN 13, NR 11, NG 13. E is EX 23 (1), PIN 9, NR 24, NG 9.
+- **At the default hint** (c2 A + c8 A, 126 cells): EX 48 (7 EX\*), PIN 26, NR 28, NG 24. Only 41 of 126 vary clearly.
+- **At Bulk** (c2 B + c8 B, 126 cells): EX 41 (6 EX\*), PIN 27, NR 42, NG 16. NR is a third of the Bulk cells, because the anchor term and every r-driven law is weighted 0 there. That is why the merge guard, which runs Bulk only, could not see them.
 
 **Where a "never fires / inert" reading exists, did its precondition hold where it was read?**
 - **S06's withdrawn DEGENERATE(L1: never fires).** It was read on Bulk-only cells, where r = 0, so the copy branch's precondition (debt > 0) never held. Off Bulk it fires on every row. The withdrawal is right.
@@ -148,27 +154,27 @@ Paths are under `raptorpath/src` unless named.
 | 0013 | stats, `/status` | `monitor/http.rs:52` | WIRED | `status` prints a PI term that is always 0 |
 | 0014 | skip seen symbol ids | `fec/unified.rs:385-393` | WIRED | |
 | 0015 | Ctrl+C flush + Shutdown | `net/mod.rs:3061`; `control_msg.rs:119` | WIRED | |
-| 0017 | symbol size = min path `max_datagram_size` | `Scheduler::min_mtu` `scheduler/mod.rs:578`, **no caller** | UNWIRED | size comes from `symbol_size_for_hint` (`net/mod.rs:181,623`), which is hint-keyed and has no ledger row; SUPERSEDED (code-only) in practice |
+| 0017 | symbol size = min path `max_datagram_size` | `Scheduler::min_mtu` `scheduler/mod.rs:578`, **no caller** (verified) | UNWIRED | size comes from `symbol_size_for_hint` (`net/mod.rs:181,623`), which is hint-keyed and has no ledger row; SUPERSEDED (code-only) in practice |
 | 0018 | `POST/DELETE /paths` | `monitor/http.rs:54-55`; `net/mod.rs:1290-1312` | WIRED | |
-| 0018 | PathAdd/PathRemove peer messages | none | UNWIRED | |
+| 0018 | PathAdd/PathRemove peer messages | none: no such `ControlMessage` variant (`protocol.rs:400-573`) | UNWIRED | verified |
 | 0020 | SHA-256 cert pinning | `transport/quic.rs:960,1025` | WIRED | |
 | 0023 | GE estimator feeds the rate law | `fec_rate.rs:456-497`, fed `estimator.rs:319-330` | WIRED | per-batch lumped feed; `record_symbol` (`estimator.rs:418`) has no production caller |
-| 0023 | log burst multiplier | none | SUPERSEDED | by 0050; `ge_burst_factor` config is dead (§2b) |
+| 0023 | log burst multiplier | none | SUPERSEDED | by 0050; `ge_burst_factor` and `realtime_burst_extra` are **never passed**: they stop at `merge` (`config.rs:198-199`) and are not PeerConfig fields (`net/mod.rs:125` area) |
 | 0023 | GE in placement | `scheduler/place.rs:366` | WIRED-OFF | `RWM_PLACE_WDIV_DERIVED=0` |
 | 0041 | SIMD gf256 | `gf256/src/lib.rs:97-113` | WIRED | |
-| 0050 | NackAck message | none; RX loss from data batches | SUPERSEDED (code-only) | |
+| 0050 | NackAck message | none: no `NackAck` variant in `ControlMessage` (`transport/protocol.rs:400-573`); RX loss from data batches (`receiver.rs:2145`) | SUPERSEDED (code-only) | ADR-0050 :32, :103 still decides it |
 | 0050 | nack_effectiveness = (1 − ε_rx)² | `estimator.rs:130`, read only at `net/mod.rs:3316` | PARTIAL | ε_rx ≈ 1 in a one-way flow (inferred); it feeds only the floored NACK budget |
 | 0050 | spare-capacity clamp | `net/emit_source.rs:574-580,589` | WIRED | `compute_repair_rate_capped` (`fec_rate.rs:561`) has no caller. Live: **PIN-slack at c2 and E** (K04); it binds only on an overdriven leg (c8 R, E U) |
-| 0050 | "BBR reduces source rate first when spare < needed" | none | UNWIRED | |
+| 0050 | "BBR reduces source rate first when spare < needed" (ADR :62) | none: the spare clamp only lowers r (`emit_source.rs:574-580`) | UNWIRED | verified |
 | 0050 | BOCD replaces EWMA + margin + PI | `estimator.rs:520` → `fec_rate.rs:491` | WIRED | |
-| 0050 | PI is a no-op | `fec_rate.rs:411-414` | WIRED | dead call at `tx_inputs.rs:183`; `enable_pi_feedback` has no reader |
-| 0050 | **Phase 3: proactive = total − nack_expected** | `BudgetAllocator::proactive_rate` `fec_rate.rs:832`, **called only from `control/fec_rate/tests.rs:629-650`** | **UNWIRED** | `controller_rate` (`raptorpath-math/src/lib.rs:735-830`) has no NACK term |
+| 0050 | PI is a no-op | `fec_rate.rs:411-414` | WIRED | dead call at `tx_inputs.rs:183`; `enable_pi_feedback` is **passed and ignored** (passed `net/mod.rs:782`, received as `_enable_pi_feedback` `fec_rate.rs:317`) |
+| 0050 | **Phase 3: proactive = total − nack_expected** | `BudgetAllocator::proactive_rate` `fec_rate.rs:832`, **called only from `control/fec_rate/tests.rs:629-650`** (verified: no other caller) | **UNWIRED** | `controller_rate` (`raptorpath-math/src/lib.rs:735-830`) has no NACK term |
 | 0050 | NACK repairs gated by the remaining budget | `net/mod.rs:3309-3337` → `sender_phases.rs:664,806,1098,1158` | PARTIAL | input is the heuristic `current_loss·0.5`, floored at 10 (`:3335`); `nbud=10` on 70–97 % of ticks (C09) |
 | 0050 | hint → target_tail_loss | `fec_rate.rs:335-340` → `:504` → math `lib.rs:752` | PARTIAL | perf base always 1e-5; inert at B; no gauge (D06 NG) |
 | 0050 | the BOCD quantile at the adjusted confidence IS the mechanism | `fec_rate.rs:491` (fixed 0.95) | PARTIAL | the target enters via z(δ_eff) (`lib.rs:764`); only the NACK budget uses 1 − target (`net/mod.rs:3315`); no superseding ADR |
 | 0050 | codec overhead × P(decoder invoked) | math `lib.rs:756-758` | WIRED | |
 | 0054 | `RWM_QUIC_CC`, BBR default | `transport/quic.rs:79-93,191-211` | WIRED | |
-| 0054 | endstate: the hint price chooses the controller | none | UNWIRED | deferred to 0068 (Proposed) |
+| 0054 | endstate: the hint price chooses the controller (ADR :28) | none: `quic_cc_mode` reads only `RWM_QUIC_CC` (`transport/quic.rs:79-93`) | UNWIRED | verified; deferred to 0068 (Proposed) |
 | 0055 | min_mtu = initial_mtu = 1350 | `transport/quic.rs:901-913` | WIRED | |
 | 0056 | sparse-aware decoding | `net/mod.rs:3639-3641` | WIRED | |
 | 0056 | systematic wire (generation arm) | `net/mod.rs:648` | WIRED-OFF | opt-in |
@@ -194,14 +200,18 @@ Paths are under `raptorpath/src` unless named.
 | 0069 | block pipeline deleted | `net/mod.rs:385-392`; `config.rs:255-270` | WIRED | remnants: BlockStart/BlockResult variants, a dead RaptorQ/RS arm (`fec_rate.rs:323-326`), `RWM_UNIFIED=0` legacy decoders |
 | 0072 | `n_live < 2` guard removed | `store_cap.rs:76-96`; `sender_phases.rs:109,191` | WIRED | |
 | 0077 | formulas to `raptorpath-math` | `fec_rate.rs:161-164` → math `lib.rs:735` | PARTIAL | `span_forms.rs` is used only by the wasm; the engine keeps its own inline copy (`emit_source.rs:619-626`) |
-| 0077 | decisions to `raptorpath-core` | `raptorpath-core/src/lib.rs` (14 lines) | UNWIRED | no crate depends on it |
+| 0077 | decisions to `raptorpath-core` | `raptorpath-core/src/lib.rs` (14 lines, doc comment only: "empty at this step") | UNWIRED | verified: only the workspace `members` list names it; no `Cargo.toml` dependency |
 | 0078 | one writer / one reader | `framing.rs:34`; `net/mod.rs:1396` → `receiver.rs:1014,1527,1623` | WIRED | |
 | 0078 | `WindowStart.packed` removed | `protocol.rs:457` | WIRED | `use_packing` still hint-keyed (listed debt) |
 | 0078 | wire v10; sender size in handshake; unframable closes | `protocol.rs:105,324-325`; `io_owner.rs:796`; `net/mod.rs:1399-1440` | WIRED | |
-| 0079 | delete the taper copy branch | `emit_source.rs:743-822` | UNWIRED (pending) | live: `plost=taper` 48k–172k copies/row off Bulk; writes no `nack_retx_at` |
+| 0079 | delete the taper copy branch | `emit_source.rs:743-822` | UNWIRED (pending) | verified: `retransmit_buffer.first()` at `emit_source.rs:757-759`; live: `plost=taper` 48k–172k copies/row off Bulk; writes no `nack_retx_at` |
 | 0079 | shed kept at the NACK site | `sender_phases.rs:846-869` | WIRED | inert at ρ = 1 |
 
-**Counts** (65 rows, script over this table): WIRED 36, WIRED-OFF 7, PARTIAL 10, UNWIRED 7, SUPERSEDED 5 (two code-only); n/a 5 ADRs not tabled.
+**Counts** (65 rows, counted over this table): WIRED 36, WIRED-OFF 7, PARTIAL 10, UNWIRED 7, SUPERSEDED 5; n/a 5 ADRs not tabled.
+- **All 7 UNWIRED rows were re-checked by hand** (0017, 0018, 0050 BBR-first, 0050 Phase 3, 0054 endstate, 0077 core, 0079).
+- **The 2 decisions changed in code with no superseding ADR:**
+  1. ADR-0050's `NackAck` message (ADR :32, :103). There is no variant in `ControlMessage` (`protocol.rs:400-573`); RX loss comes from incoming data batches instead (`receiver.rs:2145`).
+  2. ADR-0017's MTU-derived symbol size (ADR :14-20). `Scheduler::min_mtu` (`scheduler/mod.rs:578`) has no caller; size is `symbol_size_for_hint(config.protocol_hint)` (`net/mod.rs:181`, `:623`).
 
 **Recovery channels that ignore each other** (code-read):
 - **A decode close does not cancel the pending NACK resend.** The gap-fire path (`sender_phases.rs:789-962`) checks shed, cooldown, the hole law or age gate, and `sent_store`. It never checks decoder or SACK state.
@@ -225,8 +235,8 @@ Flow: profile, then TOML, then CLI overlay (`main.rs:331-399`), then `config::re
 | `window_reliable` / `--window-reliable` (ρ) | `config.rs:293-295`, default `hint != Realtime` ⇒ **ρ = 1 at Auto** | `main.rs:295` | `net/mod.rs:616,627,1195`; `receiver.rs:161-172` | WIRED; the bare-bool flag cannot set ρ < 1 at B/A from the CLI (TOML only on the tunnel, unreachable in perf) |
 | `--profile` Home / Datacenter | `main.rs:336-339` | none | via fields | WIRED tunnel only |
 | δ (`RWM_DELTA`) | **env only** (`gates.rs:64`) | env | every δ-priced law; the hint-keyed branches keep the hint's value | no config surface |
-| `enable_pi_feedback` | TOML → `net/mod.rs:782` | default true | **none**: `_enable_pi_feedback` ignored at `fec_rate.rs:316`; `pi_correction` hard 0.0 `:575` (`status` prints +0.000) | NO-READER |
-| `ge_burst_factor`, `realtime_burst_extra` | parsed and merged (`config.rs:65-67,198-199`), **never reach PeerConfig, no warning** | – | none (docs promise default 0.10) | NO-READER (silent) |
+| `enable_pi_feedback` | TOML → `net/mod.rs:782` (passed) | default true | **passed and ignored**: `_enable_pi_feedback` ignored at `fec_rate.rs:316`; `pi_correction` hard 0.0 `:575` (`status` prints +0.000) | NO-READER |
+| `ge_burst_factor`, `realtime_burst_extra` | parsed and merged (`config.rs:65-67,198-199`), **never passed**: not PeerConfig fields, no warning | – | none (docs promise default 0.10) | NO-READER (silent) |
 | `reorder_timeout_ms` | TOML → `net/mod.rs:1282` | 20 | `receiver.rs:165-166`, only `!reliable && !ooo`; overwritten by `shed_recv_hold` once SRTT exists (`receiver.rs:792,1758`) | INERT at ρ = 1; mostly also at ρ < 1 |
 | `reorder_max_size` | TOML → `net/mod.rs:1283` | 500 | `receiver.rs:166` (ρ < 1 only) | INERT at ρ = 1 |
 | `window_out_of_order`, `_coded_only`, `_generation_coding`, `_systematic_repair` | the CLI overlay sets None but **a TOML value survives `merge`** (`main.rs:389-396`) | `main.rs:296-299` | `net/mod.rs:632,646-648,941,1208` | WIRED; the tunnel's in-order guard is comment-only |
@@ -245,84 +255,92 @@ Flow: profile, then TOML, then CLI overlay (`main.rs:331-399`), then `config::re
 
 **Basis.** These are the measured §51 medians at the named hints:
 
-| | goodput (Mbit/s) | in-order delay | CPU/GB, client |
+| | goodput | in-order delay | CPU/GB, client |
 |---|---|---|---|
-| c2 Bulk | 90.0 | 340 ms | 30.2 |
-| c2 Auto | 76.1 | 403 ms | 41.8 |
-| c8 Bulk | 97.6 | 4.7 s | 34.3 |
-| c8 Auto | 83.0 | 5.5 s | 43.7 |
+| c2 Bulk | 90.0 Mbit/s | 340 ms | 30.2 |
+| c2 Auto | 76.1 Mbit/s | 403 ms | 41.8 |
+| c8 Bulk | 97.6 Mbit/s | 4.7 s | 34.3 |
+| c8 Auto | 83.0 Mbit/s | 5.5 s | 43.7 |
 
-So Auto pays −15 % goodput, +18 % (c2) / +16 % (c8) delay and +39 % / +27 % client CPU against Bulk, and buys nothing at ρ = 1. That gap is the budget the first items share; their estimates are not additive.
+**Conventions.**
+- The numbering is one global rank (1 = largest expected effect at the default), across three groups:
+  - **(a) SIZED:** a measured or arithmetic effect, with its basis;
+  - **(b) PINNED, NO MEASURED COST:** the law sits at a limit, but nothing shows that the limit limits behaviour;
+  - **(c) NEEDS A GAUGE.**
+- Each item names its failure pattern: **[R]** recovery channels that ignore each other, **[P]** never executed or pinned, **[W]** decided or declared but not wired.
+- "Covered" names an existing roadmap node or ledger row. **New** means none was found.
 
-**Coverage.** "Covered" names an existing roadmap node or ledger row. **New** means no node or ledger reading found.
+### (a) SIZED
 
-**Numbering is the global rank (1 = largest expected effect at the default).** It is grouped under the patterns only where the ranks fall together. Items 1–3 are measured or arithmetic estimates. Items 4–15 are mostly unquantified pins whose rank follows how directly they sit on the Auto data path. Items 16–22 have no behaviour effect at the default.
+1. **The repair rate r at ρ = 1, which is the whole Auto-against-Bulk cost.** [R][W]
+   - **Cost:** c2 −15 % goodput (90.0 → 76.1 Mbit/s), +39 % client CPU/GB, in-order +18 % (340 → 403 ms, above c2's 12 % resolution). c8 −15 % (97.6 → 83.0), +27 % CPU, delay +16 % (below c8's 50 % resolution).
+   - **What it buys:** earlier closes for 42–46 % of losses (a decode close at a median 9 ms against 229 ms for the resend, c2; Addendum 3), with no measured drop in delay.
+   - **Candidate causes.** They are one cost, not additive:
+     - (i) **S06 copies take 64 % (c2) / 98 % (c8) of the proactive slots** (ADR-0079 pending). Addendum 2's arithmetic for not sending those slots: c2 ≈ 85, c8 ≈ 97 Mbit/s.
+     - (ii) **ADR-0050 Phase 3 is not wired.** `proactive_rate` has only test callers, and `controller_rate` has no NACK term. So the law gives ARQ no credit, and r ≈ 0.20–0.26 where ARQ alone delivers every byte.
+     - (iii) **A decode close does not cancel the pending NACK resend** (`sender_phases.rs:789-962` never checks decoder state). Resends stay at 1.02–1.03 per source loss, while decoding closes 42–46 % of holes. That is ≈ 0.44 × 0.026 ≈ 1.1 % of the wire, and it is why the coded symbols save no bandwidth.
+     - (iv) **R02's margin is not derived to its declared target** (Addendum 3).
+   - Covered: `rate-s06-plost-derivation` (i), `rate-overprovision-verdict` and `rate-user-rate-law` (iv). **(ii) and (iii) have no node.**
+2. **The c8 in-order delay of 4.7–6.1 s** (H-B 4.7 s with no copies, H-A 5.5 s, R− 6.1 s), the largest delay effect. [P]
+   - **Mechanism (C02):** the 20-gap report horizon means p0 holes reach the hole law at ≈ 3.5 s age. On top of that, the 64-range SACK encoding cap binds on every c8 report (63.7 ranges per report against 3.7 at c2).
+   - **Basis:** §53 measured the gap-horizon lever B branch at a mean in-order delay of ≈ 1.0 s against ≈ 5.3 s on main, and a tail of 0.36 s against 3.95 s. Lever B is not on main.
+   - It affects every multipath tunnel at every hint. Covered: `rec-gap-horizon` (in progress), `rec-leverb-guard` (parked).
+3. **The TCP tunnel's in-order guard is comment-only.** This is a product-path correctness item, conditional on a config file setting the flag. [W]
+   - **Mechanism (code-read):** the CLI overlay sets `window_out_of_order` / `window_coded_only` / `window_generation_coding` / `window_systematic_repair` to None (`main.rs:387-396`), and `merge` takes `overlay.or(base)` (`config.rs:204`). So a TOML value reaches `net::run`.
+   - **Effect:** out-of-order or coded-only object delivery into the TUN under an in-order tunnel. Not measured. Its size is "every byte" for whoever sets it, and zero for the default file.
+   - **New.**
+4. **The ρ contract is not an input to its own "1 − ρ" shed budget.** It matters at ρ < 1 only. [W][R]
+   - **Reading** (PM s42 r1, the client `[DIAG]` shed token): `bud=0.0000` on 351 of 366 printed ticks; the other 15 read 0.0001–0.0272. Meanwhile shed rises 11 → 1 934 and denied 133 → 25 530.
+   - **Code:** the budget is `residual_loss_after_fec(est.loss_rate(), flat_rate, a_star, σ²)` (`emit_source.rs:635`, `fec_rate.rs:784`). Its loss input is E06's unweighted per-ack EWMA (`estimator.rs:342-351`), which spikes after a burst and decays below the print in ≈ 8 ms.
+   - **So sheds are admitted during those spikes, against a cumulative count.** ρ never enters: `contract_rho` is a literal 1.0 (`sender_policy.rs:616`), and the budget's arguments carry no ρ.
+   - **Size:** 1 934 sheds / 531 378 sources = 0.36 % of the source dropped in a 62 s row. Its relation to 1 − ρ is undefined.
+   - Covered in part: `rate-fix-rho-realtime`, `model-defect-rho-inert`, `rate-fix-estimators` (E06). The ρ-blind budget itself is **new**.
+5. **The hint-keyed Realtime paths** (S08 duplicate, S09 packing, `symbol_size_for_hint`), off the default. [W]
+   - **Cost:** T2 Realtime FAILs in both cells. c2 H-R 68.0 against 74.6 Mbit/s for the same δ as a number, and CPU/GB 109 against 43–47. Delay is 187 against 388–404 ms, which is better. At c8, S08 overdrives the slow leg and pins the spare clamp (rr 0.005).
+   - Covered: `model-fix-hint-keyed-paths`, `model-mode-switch-debts`. `symbol_size_for_hint` still has no ledger row.
 
-### Pattern A: recovery channels that ignore each other
+### (b) PINNED, NO MEASURED COST
 
-1. **S06 / ADR-0079: the copy branch is live.** Copies are 64 % (c2) and 98 % (c8) of proactive slots, at 4.5–7.3 copies per true loss.
-   - **Estimate (Addendum 2 arithmetic):** c2 Auto 76 → about 85 Mbit/s and c8 to about 97 if the slots were not sent. CPU scales with them.
-   - Covered: `rate-s06-plost-derivation`, ADR-0079.
-2. **ADR-0050 Phase 3 unwired: the rate law gives the NACK channel no credit.** r ≈ 0.20–0.26 at ρ = 1, where ARQ alone delivers.
-   - **Estimate:** after S06 the same slots become coded symbols, and goodput is unchanged (Addendum 2). The Auto−Bulk gap of about 14 Mbit/s and +11 CPU/GB at c2 is the upper bound of what r costs.
-   - Covered: `rate-overprovision-verdict`, `rate-user-rate-law`. The unwired split itself is new as a node (Addendum 4 only).
-3. **A decode close does not cancel the pending NACK resend.** Resends run at 1.02–1.03 per source loss while decode closes 42–46 % of holes at c2 Auto. retx/GB is 22.1k at Auto against 23.1k at Bulk.
-   - **Estimate:** about 0.44 × retx/src 0.026 ≈ 1.1 % of wire is redundant at c2 Auto. More importantly, it is why coded repair buys no bandwidth.
-   - **New** (status Addendum 4 text only).
-4. **The NACK budget sits at its floor** (C09, `nbud=10` on 70–97 % of ticks; `.max(MAX_NACK_REPAIRS_PER_NACK)` at `net/mod.rs:3331-3333`). The target and nack_effectiveness reach it only on the minority of ticks off the floor. Effect at Auto: unknown, and needs a VM arm with the floor removed.
-   - Covered: `rec-fix-nack-throttle` (no gauge yet; this gives the reading).
+6. **C09 NACK budget at its floor** (`nbud=10` on 70–97 % of ticks; `.max(MAX_NACK_REPAIRS_PER_NACK)` at `net/mod.rs:3331-3333`). [P]
+   - **Is the budget ever spent?** Nothing shows starvation. Resends run 1.01–1.09 per source loss on every arm (Addendum 3), the sender's `wait.nack` is 0 % on all but 1 of 34 785 c2/c8 ticks, and E's per-report cap binds on 6 % of reports (`[SLAWC] c09_frac` 0.063).
+   - Covered: `rec-fix-nack-throttle`.
+7. **K01 cwnd at MAX_CWND on 59–76 % of c2 ticks, and K04 spare clamp slack** (s < 0.5 on ≤ 5 % of ticks at c2 and E). [P]
+   - Not cause and effect: E is slack at cwnd 205–1 884. The cwnd is not enforced (`rate-spare-cwnd` done), so the pin has no measured cost. The clamp binds only on an overdriven leg (c8 R, E U).
+   - Covered: K01, `rate-spare-clamp-verdict`. The bind fraction is new.
+8. **C04: the N = 1 age gate never suppresses** (0 on every tick of 24 c2 rows and 12 E rows). No measured cost: a FIFO single path reports a hole about one RTT after its send. Covered: `rec-fix-perleg-clock-n1`. [P]
+9. **S03 Δ = 1, S02 A\* ≥ W (96–100 %), R07 W = 201 (95–100 %).** The coded span is pinned to the whole window. [P]
+   - No measured cost: coded slots are 0.07 per source at c2 Auto and 0.004 at c8, and the copies dominate.
+   - Covered: `rate-delta-jitter-fix` (S03). The S02 and R07 bind fractions are new.
+10. **The recovery clocks are on seeds or clamps** (C06 at its 100 ms cap; E10 latched per row, the 50 ms seed at c8 B/A; C07 at its 25 ms floor or 100 ms cap; S05 at 60 ms or 200 ms). [P]
+    - A cost is implied only through item 2 (c8 delay), not separately measured.
+    - Covered: `rec-defect-qclk-clamp`, `rec-defect-refresh-input`, `rec-fix-refresh-clock`. S05 is new (ρ < 1 only).
+11. **S10 TaperBudget pass-through** (`owed=0` on 100 % of lines at every r). It is a no-op stage, with no cost beyond item 1's r. Covered: `rate-defect-taper-inert`. [P]
+12. **F01 store cap at its ceiling** on 74–86 % of ticks, and 93 % at c8 R. Covered: `store-defect-cap-constant`. [P]
+13. **R08 cadence at its 5 ms cap (inferred), C08 sampler floor (0.92–1.0), F03 burst bound** (a constant; it ends 0.1–14 % of bursts). Covered: `meas-fix-gauges-p3`, `perf-fix-burst-bound`. [P]
+14. **E06 `loss_rate()`** reads 0.0000 on 82–88 % of ticks. Its measured cost is item 4 (E's shed admission). At ρ = 1 it picks the worst path and feeds nack_effectiveness under the floor of item 6. Covered: `rate-fix-estimators`. [P]
+15. **NR everywhere by design** (R05 χ, C12, F04, F05, R09, K02, K03, K08). No effect at the default. [P]
 
-### Pattern B: never executed or pinned
+### (c) NEEDS A GAUGE
 
-5. **K01 / K04: the scheduler cwnd sits at MAX_CWND 10 000 on 59–76 % of c2 ticks** (both legs at MAX on 21 % / 79 % at c8 A / R), and the spare clamp is slack (s < 0.5 on ≤ 5 % of c2 ticks).
-   - The MAX_CWND pin is not the cause of the slack: E's PM/PL rows have cwnd 205–1 884 (`MAX_CWND-share` 0) and are SLACK too. The ledger reads the cwnd as inflated and not enforced (K01; `rate-spare-cwnd` done: NOT-ENFORCED).
-   - Effect: the "never hurts" clamp of ADR-0050 is inert at the default. It binds only on an overdriven leg (c8 R finding 2, E U).
-   - Covered: K01 ledger row and `rate-spare-clamp-verdict`. Only the MAX_CWND bind fraction (59–76 %) is new.
-6. **S03 Δ = 1 on 100 % of lines, every seat.** Covered: `rate-delta-jitter-fix`.
-7. **S02 A\* ≥ W on 96–100 % of ticks**, so the span is the whole 201-window off E, and the A\* law is pinned at W wherever W is the clip. **New** (the ledger has no bind fraction). Effect on decode-close latency unknown; needs a VM arm.
-8. **R07 W = 201 on 95–100 % (clip 200), with the NACK-budget floor (item 4).** Together with D06 NG this means **target_tail_loss has no live reader at the default except the anchor term's z.** It also has no perf flag.
-   - Covered: `rate-user-rate-law` (flag sweep, perf pass-through). R07's bind fraction is new.
-9. **C04: the N = 1 age gate never suppresses** (0 of every tick, all c2 arms and E). The shipped single-path recovery law is the constant `true`.
-   - Effect: every judged gap fires once cooldown allows. `[RFA] false_frac` is 0.08 at c2 A (6.4k of 80.6k), but whether that counts these fires was not verified.
-   - Covered: `rec-fix-perleg-clock-n1`. This answers Addendum 4's open question.
-10. **C06 / C07 / E10 / S05 pinned on seeds or clamps.**
-    - Tail sweep at its 100 ms cap on every c2/c8 row.
-    - The receiver refresh at its 25 ms floor (c2) or its 100 ms cap from the 50 ms seed (c8 B/A).
-    - The receiver shed hold at its 60 ms floor (c2, E) or exactly 200 ms (c8 B/A, same seed).
-    - Covered: `rec-defect-qclk-clamp`, `rec-defect-refresh-input`, `rec-fix-refresh-clock`. S05's pin is new, and it matters only at ρ < 1.
-11. **S10 TaperBudget pass-through** (`owed=0` on 100 % at every r, so the "DEGENERATE(r = 0)" reason is wrong). Covered: `rate-defect-taper-inert`.
-12. **F01 store cap at its ceiling** on 74–86 % of ticks, and 93 % at c8 R. Covered: `store-defect-cap-constant`.
-13. **R08 cadence at its 5 ms cap** (inferred), **C08 sampler at the 2 ms floor** (0.92–1.0), **F03 burst bound** (a constant; it ends 0.1–14 % of bursts). Low effect. Covered: `meas-fix-gauges-p3`, `perf-fix-burst-bound`.
-14. **E06 `loss_rate()` 0.0000 on 82–88 % of ticks.** It feeds worst-path selection, the E shed budget and nack_effectiveness. Covered: `rate-fix-estimators`.
-15. **NR at every seat** (R05 χ, C12, F04, F05, R09, K02, K03, K08): opt-in or off by design. They are listed for completeness, with no effect at the default. R05 is covered by the ledger (DEGENERATE tunnel).
+16. **Rate-law internals:** which `max()` term wins (R02, R06), the live r_sat and P_fec (R03, R04), and t_tail (D06). Without these, item 1's cause split (i)–(iv) cannot be sized from logs. Covered: `rate-fix-term-gauge`, `rate-fix-rate-readout`. [P]
+17. **Per-leg cwnd and spare at c8 B/A** (K01, K04, D05). Covered: `meas-s51-c8-gauges`.
+18. **The remaining NG laws:** span deadline D (S01), the send-rate anchor (E12), taper-cache refreshes (S07), the reactive margin (C10), placement T and w_div (K06, K07), and the GE σ² and the RTTVAR stand-ins on main (E08, E09). Covered: `meas-fix-gauges-p3` (in part).
 
-### Pattern C: decided or declared but not wired
-
-16. **The perf client drops the dials.**
-    - It has no `--target-tail-loss`, `--max-fec-overhead`, `--inner-feedback-weight` or profile, and `--config` is silently dropped. The logged 1e-5 is the raw base, not × ζ(δ).
-    - Effect on the default tunnel: none. It blocks every measurement of those dials.
-    - Covered partly: `rate-user-rate-law` (target pass-through). The rest is new.
-17. **Dead config knobs:** `enable_pi_feedback` (no reader; `status` prints PI +0.000), and `ge_burst_factor` / `realtime_burst_extra` (silently dropped, docs promise 0.10). No behaviour effect; a user setting them gets nothing. **New.**
-18. **δ has no config or CLI surface** (`RWM_DELTA` only). Auto is the fixed point δ = 0.5, and `set_protocol_hint` has no caller ("auto-detect" is false). **New.**
-19. **The tunnel's in-order guarantee is comment-only:** TOML `window_out_of_order` / `coded_only` / `generation_coding` survive `merge`. Effect only if set. **New.**
-20. **0077 `raptorpath-core` is empty, and the span law exists twice** (engine inline, and `span_forms.rs` used only by the wasm). There is no runtime effect, but the model and the engine can drift. Covered: `model-shared-core`.
-21. **Hint-keyed paths** (S08, S09, `symbol_size_for_hint`, F02's 1024 at ρ < 1). Not the default, but T2 Realtime FAILs in both cells. Covered: `model-fix-hint-keyed-paths`, `model-mode-switch-debts`. `symbol_size_for_hint` also makes ADR-0017 UNWIRED (code-only supersession).
-22. **Docs drift:** README 0010 says v8 (code v10). 0050's NackAck and 0017's MTU sizing were replaced without an ADR.
-
-**Needs a VM reading to classify:**
-- the NG cells (E09, E12, S01, S07, R03/R04/R06 term-win, D06, C10, K06/K07);
-- the per-leg cwnd at c8 B/A (K01, K04);
-- the effect of items 3, 4 and 7;
-- S04 at E: `bud=0.0000` with `shed=181–1992` on every row; which budget admits those sheds is a code read plus a gauge.
+**Declared, not wired, with no behaviour effect at the default** (listed, not ranked):
+- **Perf dials:** no `--target-tail-loss`, `--max-fec-overhead`, `--inner-feedback-weight` or `--profile`, and `--config` is silently dropped (`main.rs:263`). This blocks measuring the dials. Covered in part: `rate-user-rate-law`.
+- **Dead knobs:** `enable_pi_feedback` is passed and ignored; `ge_burst_factor` and `realtime_burst_extra` are never passed. New.
+- **δ is env-only** (`RWM_DELTA`), and `set_protocol_hint` has no caller. New.
+- **ADR-0077:** the core crate is empty, and the span law exists twice. Covered: `model-shared-core`.
+- **Docs drift:** README 0010 says v8; the code is at v10. There are two code-only supersessions (§2a).
 
 ## 4. Method and limits
 
 **Method.**
-- The tarballs were extracted into a scratch directory outside the repo. Four read-only python scripts (run with `-I`, paths as arguments; not committed, since this branch carries one doc):
+- The tarballs were extracted into a scratch directory outside the repo. Read-only python scripts, committed in `docs/derivations/liveness-audit/` (run with `-I`, paths as arguments, against the extracted tarballs; `plib.py` is their shared line parser):
   - `live.py`: per-key tick distributions of the sender's `[DIAG]` / `[SPAN]` (n, mode, mode share, p10 / p50 / p90, distinct count) per arm;
   - `endl.py`: the last line of every other tag per row, as median and range across rows;
   - `derived.py`: the paired shares (a\* ≥ W, rr = 0.5 and 0, cwnd = N·MAX_CWND, rtt > 20 ms, nbud = 10, p1 in-flight > 9 000, `eb_end` cap and store shares);
-  - `count.py`: the class counts of §1.
+  - `count.py`: the class counts of §1, per seat.
 - Gauge meanings were read from their format sites: `net/diag.rs:840-960` (`mpr`, `pf`, `supp=cool/age/law`), `net/late.rs:45-55`, `net/holddown.rs:305-320`, `control/fec_rate.rs:268`, `net/emit_burst.rs:160`.
 - The ADR call sites were checked by a delegated code read; I spot-checked the load-bearing ones (`fec_rate.rs:316`, `config.rs:198`, `main.rs:263`, `scheduler/mod.rs:596`, `sender_phases.rs:957`).
 
@@ -334,3 +352,9 @@ So Auto pays −15 % goodput, +18 % (c2) / +16 % (c8) delay and +39 % / +27 % cl
 - **c8 per-leg readings** are limited by the missing per-leg cwnd (`meas-s51-c8-gauges`). K01, K04 and D05 at c8 B/A stay NG.
 - **The E column is PM**, with PL noted where it differs. U, the unpaced control, is cited only for K04.
 - **No VM was used.** The table cannot classify rows that have no printed field (the NG cells). Items needing a VM reading are flagged in §3.
+
+## 5. Ledger input (proposed text only; the ledger and status.md are not edited here)
+
+- **S10, item 9 (verdict reason):** "DEGENERATE(r = 0) is replaced by PINNED(owed = 0 at every r). `[SPAN] owed=0.00` on 100 % of lines at every seat of §51 block 51 (c2 and c8, all 14 arms, including rr ≈ 0.20–0.28 off Bulk) and on block E (PM, PL, U). TaperBudget passes the rate straight through whatever r is, so r = 0 was never the reason (liveness-audit §1)."
+- **C09 / Addendum 4, first open question (what the 10 is):** "The `nbud=10` reading is `MAX_NACK_REPAIRS_PER_NACK` applied as a floor: `nack_cap_symbols.saturating_sub(nack_repairs_this_period).max(MAX_NACK_REPAIRS_PER_NACK)` (`net/mod.rs:3331-3333`). The raw cap `nack_cap × source_symbols_this_period` resets every 10 acked seqs and, by the code's own comment, truncates to 0 almost always. So the 1 − target quantile and nack_effectiveness reach the budget only on the minority of ticks off the floor. The values 0–9 and > 10 (p10 8, max 1 319) are not yet attributed between the `None` branch and the cap."
+- **C04 / Addendum 4, second open question (can the srtt/2 age gate hold at N = 1?):** "It did not. The age-gate suppression counter (`[DIAG] mpr supp=<cool>/<age>/<law>`, the middle field, `sender_phases.rs:957-959`) reads 0 on every tick of the 24 c2 rows read (H-B, H-A, H-R, R−, six rows each) and of the 12 block E rows, against ≈ 13.5k fires per c2 row. The shipped N = 1 recovery law evaluated to `true` on every fire: PINNED (always ripe)."
