@@ -54,6 +54,7 @@ flowchart TB
     meas_w1_bracket_fix["○ Repair-share bound<br/>counts every slot"]
     meas_defect_cr61_large_pool>"⚠ Collapse rule blind<br/>at large pools"]
     meas_s51b_rho["⛔ Partial-reliability<br/>measurement block"]
+    meas_guard_bulk_blind["○ Merge guard blind<br/>off Bulk"]
     meas_s51_c8_gauges["○ Per-leg clamp and<br/>saturation gauges"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Harness robustness<br/>for every plan"]
@@ -111,9 +112,10 @@ flowchart TB
     meas_blocke_pacing_gate ~~~ meas_w1_bracket_fix
     meas_blocke_pacing_gate ~~~ meas_defect_cr61_large_pool
     meas_blocke_steady_rule ~~~ meas_s51b_rho
-    meas_w1_bracket_fix ~~~ meas_s51_c8_gauges
-    meas_defect_cr61_large_pool ~~~ meas_adversarial_cells_build
-    meas_s51b_rho ~~~ meas_harness_robustness
+    meas_w1_bracket_fix ~~~ meas_guard_bulk_blind
+    meas_defect_cr61_large_pool ~~~ meas_s51_c8_gauges
+    meas_s51b_rho ~~~ meas_adversarial_cells_build
+    meas_guard_bulk_blind ~~~ meas_harness_robustness
     meas_s51_c8_gauges ~~~ meas_guard_resolution
     meas_adversarial_cells_build ~~~ meas_test_hygiene
     meas_harness_robustness ~~~ meas_adversarial_cells_run
@@ -121,7 +123,6 @@ flowchart TB
     meas_test_hygiene ~~~ meas_progress_baseline
     meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
     meas_competitor_battery ~~~ meas_fix_gauges_p3
-    meas_progress_baseline ~~~ meas_fix_gauges_p3
     meas_l0_sim_bench --> meas_transport_comparison
     meas_l0_sim_bench --> meas_matrix_bench
     meas_adr51_scenarios --> meas_l1_harness
@@ -156,7 +157,7 @@ flowchart TB
     class meas_c8_aggregation_arc,meas_coupling_model dead
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool defect
-    class meas_w1_bracket_fix,meas_s51_c8_gauges,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
+    class meas_w1_bracket_fix,meas_guard_bulk_blind,meas_s51_c8_gauges,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
     class meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
 ```
 <!-- END GENERATED: track-meas -->
@@ -211,6 +212,7 @@ flowchart TB
 | `meas-s51-design` | Off-Bulk benchmark design | done | unrated |  | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) | meas-guard-v2 |
 | `meas-s51-harness` | Off-Bulk sweep harness and scorer | done | unrated |  | docs/derivations/s51-design.md §8 P1; status §51 "Host checks so far"; status §51 Amendment 1; branch harness51 a59efa60 | rec-s54-session |
 | `meas-s51b-rho` | Partial-reliability measurement block | blocked | unrated |  | docs/derivations/s51-design.md §2.3, §8 P4 | meas-s51-session |
+| `meas-guard-bulk-blind` | Merge guard blind off Bulk | next | unrated |  | docs/derivations/s06-delete-plan.md (merge gate) |  |
 | `meas-s51-c8-gauges` | Per-leg clamp and saturation gauges | next | unrated |  | status §51 block 51 Result, gauge defects; status §51 block 51 rehearsal (crlf_guard) | meas-s51-session |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | done | unrated |  | plan W5.3; branch adv-cells |  |
 | `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
@@ -273,6 +275,7 @@ flowchart TB
 | `meas-s51-design` | Off-Bulk benchmark design | No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it). | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) |
 | `meas-s51-harness` | Off-Bulk sweep harness and scorer | Built on harness51 a59efa60 (plans 51 and 51e, parser, scorers, the d80 table, stub paths): unfiltered test_stubrun 722 ok, plan and scorer tests pass (status §51 'Host checks'); the Linux shell tests passed in E-pre (§51 Amendment 1). Merged into b51-tree and e-tree, not into main: main takes the harness only after the §51 Result. The rehearsal is part of the session (meas-s51-session, schema rule 1). Done when (met): plan 51, its parser, score51, the d80 table and a stub-run path exist and pass (design §6 items 1-7). | docs/derivations/s51-design.md §8 P1; status §51 "Host checks so far"; status §51 Amendment 1; branch harness51 a59efa60 |
 | `meas-s51b-rho` | Partial-reliability measurement block | This is where the P_fec step (R03) becomes visible in δ (the shed budget). Lane: host-cargo for the CLI and perf changes, then the VM session. Done when: a numeric (or at least carrier-independent) ρ is settable on the CLI, the perf driver completes with declared loss (delivered fraction), chunks carry a send stamp, and a reported session measures ρ < 1 rows with resolution delay and the abandoned fraction. | docs/derivations/s51-design.md §2.3, §8 P4 |
+| `meas-guard-bulk-blind` | Merge guard blind off Bulk | Found by the S06 deletion plan: the 41d guard rows run hint=bulk (no proactive slots), so Stage G only checks Bulk did not regress. The plan adds Stage A (Auto at c2 / c8 with per-row execution witnesses) and Stage R (paced evicting seat). Done when: the guard has off-Bulk stages with witnesses as a reusable plan, not per-change additions. | docs/derivations/s06-delete-plan.md (merge gate) |
 | `meas-s51-c8-gauges` | Per-leg clamp and saturation gauges | s51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows. | status §51 block 51 Result, gauge defects; status §51 block 51 rehearsal (crlf_guard) |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | Done when: the netem cells (jitter 0/5/15/25 ms, an 8-packet shallow buffer, a 100 Mbit policer) exist in the harness, each mechanism-validated by a stub run and a check that the shaper does what it claims. Built on branch adv-cells (106 checks off the VM, 2026-11-13); still waiting on the VM check of the 7 cells (a waiting_on field would warn on a done node, so it is kept here). | plan W5.3; branch adv-cells |
 | `meas-harness-robustness` | Harness robustness for every plan | Done when: LD_REHEARSE covers every plan, each plan path has an end-to-end stub-run test, the sudo env-propagation contract is pinned by a test, and one HARNESS_PATHS table ties plans to tested paths. | plan W5.2 |

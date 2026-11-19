@@ -6770,6 +6770,8 @@ nodes:
   - law ledger S06
   - owner decision 2026-11-19 (delete the copy branch)
   - status §51 block 51 Result, Addendum 3
+  - ADR-0079
+  - docs/derivations/s06-delete-plan.md
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -6783,6 +6785,26 @@ nodes:
   overview: true
   plain: Remove the re-send-copy branch so every repair slot sends coded repair, after a new ADR and the paper change, with tests that no copies are sent and that dropping past-deadline packets still works.
   notes: 'Derivation on branch s06-derivation (docs/derivations/s06-plost-resend.md), Fable review, then the paper §3.2 amendment, then the engine law with a red-first host loopback test counting copies per seq (ptgt / pmax from c8-gauges) and the ±2 % δ continuity test. Goes before rate-delta-jitter-fix; rate-spare-clamp-verdict and the S08 fix wait for it (all edit the proactive-slot path). Getting goodput back also needs the rate law''s r (R02 / R04) to come down; fixing S06 alone turns copies into coded repair. Done when: the law is in the paper, merged through a guard, and the copy count per seq is bounded by the test.'
+- id: meas-guard-bulk-blind
+  title: Merge guard blind off Bulk
+  track: meas
+  kind: instrument
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/s06-delete-plan.md (merge gate)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: The standard merge guard runs only Bulk rows, which send no repair slots, so it cannot see any change to the repair path; give it off-Bulk stages.
+  notes: 'Found by the S06 deletion plan: the 41d guard rows run hint=bulk (no proactive slots), so Stage G only checks Bulk did not regress. The plan adds Stage A (Auto at c2 / c8 with per-row execution witnesses) and Stage R (paced evicting seat). Done when: the guard has off-Bulk stages with witnesses as a reusable plan, not per-change additions.'
 - id: meas-s51-c8-gauges
   title: Per-leg clamp and saturation gauges
   track: meas

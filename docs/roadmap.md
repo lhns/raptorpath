@@ -345,6 +345,7 @@ flowchart TB
 | Two-path control bimodal collapse | ⚠ open defect | Open problem: on the hardest two-path test, the control runs sometimes fall back to using only the fast path, which makes results very noisy. |
 | Delay readout prints whole milliseconds | ⚠ open defect | Open problem: one diagnostic line rounds the delay to whole milliseconds, which hides small delays on fast links. |
 | Partial-reliability measurement block | ⛔ blocked | A follow-up test of the mode where some data may be dropped, which first needs that setting to be adjustable on its own. |
+| Merge guard blind off Bulk | ○ next | The standard merge guard runs only Bulk rows, which send no repair slots, so it cannot see any change to the repair path; give it off-Bulk stages. |
 | Per-leg clamp and saturation gauges | ○ next | Fix the measurements that only work on one path, so the next two-path run can read the congestion-window clamp and saturation per path. |
 | Harness robustness for every plan | ○ next | Making sure every test plan can be rehearsed end to end without the real network, so a long test session does not die on a script bug. |
 | Guard CPU and lag resolution | ○ next | Making the merge check sensitive to smaller CPU and delay changes, which it currently cannot see. |
@@ -400,6 +401,7 @@ flowchart TB
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `rec-framing-followups`: Framing fix leftovers
 - `rate-s06-plost-derivation`: Delete the taper copy branch
+- `meas-guard-bulk-blind`: Merge guard blind off Bulk
 - `meas-harness-robustness`: Harness robustness for every plan
 - `infra-tech-tree-skill`: tech-tree skill PR
 - `rec-retx-behind-source`: Retransmits queued behind source?
@@ -521,7 +523,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 57 nodes (41 done, 4 in progress, 7 next, 4 blocked, 1 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 4 in progress, 8 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (12 done, 2 in progress, 1 next)
