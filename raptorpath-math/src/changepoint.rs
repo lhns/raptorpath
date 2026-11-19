@@ -431,7 +431,7 @@ mod tests {
         assert_eq!(
             bocd.predictive_quantile(conf),
             avg,
-            "predictive_quantile must be exactly the run-length-weighted average of quantiles              (paper §3 names the mixture quantile; this pins the divergence, §11.3, "BOCD quantile" row)"
+            "predictive_quantile must be exactly the run-length-weighted average of quantiles              (paper §3 names the mixture quantile; this pins the divergence, §11.3, BOCD quantile row)"
         );
 
         // Φ via Abramowitz-Stegun 7.1.26 erf (|err| < 1.5e-7).
