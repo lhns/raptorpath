@@ -32,7 +32,7 @@ flowchart TB
     model_viz_fix["✔ Visualizer fixes"]
     model_defect_rho_inert>"⚠ ρ inert at Auto,<br/>Realtime"]
     model_warm_start["✔ Warm-started tail<br/>solve (visualizer)"]
-    model_fix_hint_keyed_paths["⛔ Hint-keyed engine<br/>paths made continuous"]
+    model_fix_hint_keyed_paths["○ Hint-keyed engine<br/>paths made continuous"]
     model_wasm_fixes["▶ Wasm model fixes"]
     model_fix_paper_p2["○ Paper text for<br/>placement and bbr_rs"]
     model_fix_paper_p3["⛔ Paper-only law<br/>records"]
@@ -104,8 +104,8 @@ flowchart TB
     class model_mode_switch_debts,model_open_constants,model_bound_tests_unrun,model_defect_rho_inert defect
     class model_paper_recon waiting
     class model_shared_core,model_wasm_fixes inprog
-    class model_fix_hint_keyed_paths,model_fix_paper_p3 blocked
-    class model_fix_paper_p2 next
+    class model_fix_hint_keyed_paths,model_fix_paper_p2 next
+    class model_fix_paper_p3 blocked
 ```
 <!-- END GENERATED: track-model -->
 
@@ -134,7 +134,7 @@ flowchart TB
 | `model-defect-dead-machine` | Wasm dead second machine | done | unrated |  | status §3.10 item 3; status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd | model-wasm-audit |
 | `model-bound-tests-unrun` | Erratum: pre-flight tests not run | in-progress | unrated |  | status §53 Erratum 2 (cbe2be3f) |  |
 | `model-law-ledger` | Law ledger | done | unrated |  | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |  |
-| `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | blocked | unrated |  | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2 | meas-s51-session |
+| `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | next | unrated |  | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2; status §51 block 51 Result (T2 Realtime FAIL; finding 2, S08 at c8) | meas-s51-session |
 | `model-user-wasm-calls` | Owner calls on wasm audit | done | n/a |  | status "Owner decisions (2026-11-14)"; status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md | model-wasm-audit |
 | `model-giveup-law` | Model give-up law | done | successful |  | status "Owner decisions (2026-11-14)" item 3; commit 56388aee; derivation giveup-law-model.md; paper §5.6 | model-user-wasm-calls, model-defect-tcut |
 | `model-viz-fix` | Visualizer fixes | done | successful |  | status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd; branch viz-fix | model-user-wasm-calls, model-defect-dead-machine |
@@ -167,7 +167,7 @@ flowchart TB
 | `model-defect-dead-machine` | Wasm dead second machine | Fixed by viz-fix (model-viz-fix): the classic-hint machine is removed and the named hints are an alias table onto the one continuum constructor. Law ledger M03 has not been re-labelled. | status §3.10 item 3; status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd |
 | `model-bound-tests-unrun` | Erratum: pre-flight tests not run | No raw record. Status §53 Erratum 2 (cbe2be3f): the visualizer build, the native golden test and the bound-tests wasm pool test were registered for the pre-flight but not run; they move to the next VM session's pre-flight. | status §53 Erratum 2 (cbe2be3f) |
 | `model-law-ledger` | Law ledger | Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 64-73 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire). | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |
-| `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | Law ledger: S08, S09 (moved from rate-fix-rho-realtime). queue_target_mult is K01's, which cc-copa-consumers deletes or reduces; whichever lands first removes the table. The symbol-size row has no ledger row yet (s51-design P6). Covers model-mode-switch-debts. Done when: the five hint-keyed behaviours (source-symbol size, the Realtime duplicate send, packing and batching scope, queue_target_mult, the default ρ) are each one formula continuous in δ (or ρ an independent dial), with continuity tests through every preset (±2 %), after §51 has measured the step. | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2 |
+| `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | Law ledger: S08, S09 (moved from rate-fix-rho-realtime). queue_target_mult is K01's, which cc-copa-consumers deletes or reduces; whichever lands first removes the table. The symbol-size row has no ledger row yet (s51-design P6). Covers model-mode-switch-debts. Done when: the five hint-keyed behaviours (source-symbol size, the Realtime duplicate send, packing and batching scope, queue_target_mult, the default ρ) are each one formula continuous in δ (or ρ an independent dial), with continuity tests through every preset (±2 %), after §51 has measured the step. | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2; status §51 block 51 Result (T2 Realtime FAIL; finding 2, S08 at c8) |
 | `model-user-wasm-calls` | Owner calls on wasm audit | Done when: the owner rules on the audit's five calls (including removal or cfg(test) of the dead second machine and the T_cut floor), recorded in status. | status "Owner decisions (2026-11-14)"; status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md |
 | `model-giveup-law` | Model give-up law | Replaces V5/V6 (the cartoon's budget choice) and W14 (the sim's T_cut horizon); the sim stops calling find_t_cut. The 1 − ρ cap is a model law the engine lacks, so it has its paper §5.6 line, a §11.3 row and a bounding test; dropping T_cut diverges at harsh Bulk (8–26 of 100 slider positions), also bounded by a test. Goldens unchanged. | status "Owner decisions (2026-11-14)" item 3; commit 56388aee; derivation giveup-law-model.md; paper §5.6 |
 | `model-viz-fix` | Visualizer fixes | Also: the W11 β = 0 guard is gone, a W22 bounding test is added, the store text is per cell (2048 is a clamp measured pinned; 512·N an underived constant), the model-vs-engine table rows C04 and S05 are fixed. Goldens unchanged; 39 native wasm tests and both mjs gates pass. | status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd; branch viz-fix |

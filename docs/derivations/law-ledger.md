@@ -1295,7 +1295,7 @@ a branch.
 
 - *3. paper:* A.2 P_lost, §3.2-3.3; §11.3 P_lost row
 - *4. derivation:* §3.2; rttvar stand-in E09
-- *5. measured in regime?:* measured waste is zero; why it never fires is undecided (§11.2 taper row). It does fire on the paced Realtime rows of status §51 block E (ρ < 1, r ≈ 0.23–0.41): `plost` = `taper` = 10 197 on PM s42 r1, about a tenth of the debt slots (status "The two K4 input checks, post hoc")
+- *5. measured in regime?:* measured waste is zero; why it never fires is undecided (§11.2 taper row). It does fire on the paced Realtime rows of status §51 block E (ρ < 1, r ≈ 0.23–0.41): `plost` = `taper` = 10 197 on PM s42 r1, about a tenth of the debt slots (status "The two K4 input checks, post hoc") **Unpaced too** (status §51 block 51 Result, 2026-11-19, evidence pending a verdict): `plost=` = `taper=` > 0 on every row above Bulk in both cells, at ρ = 1. Copies are about 64 % of proactive slots at c2 (taper 0.126 against cod 0.072 per source at Auto) and nearly all of them at c8 (0.238 against 0.0039 above the margin). The "never fires" reading is withdrawn for these cells; the verdict moves with `rate-c8-frontier-recopy`.
 - *6. clamp bind:* [0,1]
 - *7. inputs honest?:* srtt = E01 of the worst-eps path (dwell-inclusive), rttvar = 0.1*srtt
 - *8. NO-MODE-SWITCH:* none
@@ -1340,7 +1340,7 @@ a branch.
 
 - *3. paper:* §11.1 q13; §3.3
 - *4. derivation:* none (a redundancy decision priced by nothing)
-- *5. measured in regime?:* crown spot only
+- *5. measured in regime?:* crown spot only **c8, ρ = 1** (status §51 block 51 Result, finding 2, evidence pending a verdict): the duplicate fills the slow leg (p1: 687–1 703 source placements against 272k–591k handoffs), drives it to loss 0.55 or RTT 2.2 s, and pins the min-over-legs spare at 0.000–0.002, so granted rr falls from about 0.03 to 0.001–0.005 once p1 in-flight passes 9 000. T2 Realtime FAILs in both cells.
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): hint equality
@@ -1758,7 +1758,7 @@ a branch.
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* Copa cwnd inflated by the anchor floor (K01), so 'saturated' rarely fires; in-flight expiry max(4*srtt, 250 ms) on E02
 - *8. NO-MODE-SWITCH:* none
-- *9. verdict:* **DISHONEST-INPUT**: cwnd 10-20 k against in-flight 0.1-1 k at c8 (p0-dwell-diag §4). **DEGENERATE(paced c2)** (status §51 block E Result, 2026-11-19): as the repair cap (flat_rate = min(window_rate, spare)) it never binds at either paced load (φ = 0 over 1 105 LATE windows each at 700 sym/s and 35 Mbit) and binds 96 % on the overdriven row, where the cwnd it reads is not enforced (τ_x 0.81 / 0.89). A saturation switch, not a headroom law (MEASUREMENT DISCIPLINE 18).
+- *9. verdict:* **DISHONEST-INPUT**: cwnd 10-20 k against in-flight 0.1-1 k at c8 (p0-dwell-diag §4). **DEGENERATE(paced c2)** (status §51 block E Result, 2026-11-19): as the repair cap (flat_rate = min(window_rate, spare)) it never binds at either paced load (φ = 0 over 1 105 LATE windows each at 700 sym/s and 35 Mbit) and binds 96 % on the overdriven row, where the cwnd it reads is not enforced (τ_x 0.81 / 0.89). A saturation switch, not a headroom law (MEASUREMENT DISCIPLINE 18). **Binds at c8 named Realtime** (status §51 block 51 Result, evidence pending a verdict with `rate-spare-clamp-verdict`): the min-over-legs spare is pinned near 0 on 81–99 % of both-legs-at-MAX ticks on every HR row, through S08's in-flight charge. It is the first measured regime where it binds.
 - *10. fix class, priority:* follows K01; **P3**, rank 47; depends on K01
 - *flags:* measured yes, gauge yes
 

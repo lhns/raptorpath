@@ -1793,6 +1793,73 @@ The launch sha is pinned by an amendment.
 - **Tree layout:** `src` is the `git archive` of the tools tree, whose engine paths are byte-identical to `d9dd18dd`. `COMMIT` holds `LD_BASE_SHA`, as the harness requires, and `TOOLS_TREE` holds `6306959`.
 - **Harness defect, pre-existing on main** (from `harness65` `b99a09a8`): `loopdiag_run_all.sh`'s `crlf_guard` line lost its trailing `\`. Its continuation line (17 files, including `test_loopdiag_parse.py`, `l1common.py` and `plan64.py`) runs as a command ("command not found"), so those files are not CRLF-guarded. It is harmless on a `git archive` tree (stored LF), and is fixed on the next harness commit.
 
+**§51 block 51 Result (2026-11-19; c2-100 08:13–09:57Z, c8-100 09:58–11:35Z; `b51-tree-v11` `6306959`, `LD_BASE_SHA` `d9dd18dd`, `bin_sha` `8104fa02…` on both; scorer `s51_score.py` at the tree; host re-scores of both cells match the VM byte for byte from `ld.log` alone; Fable-reviewed): REPORTED-WITH-SCORED. 152 of 152 rows LIVE (76 per cell), 0 void, 0 replaced, 0 DNF, 0 VOID-F2. No step at any preset above the noise floor in either cell (T1 PASS ×6, ±2 % nudges, at the in-session resolution below), the first engine measurement of the no-mode-switch claim. The named Realtime hint is a measured step at its preset (T2 Realtime FAIL in both cells), as predicted. Two engine findings that the design did not predict surface at c8, and two c8 gauges read the wrong quantity.**
+
+- **In plain words.**
+  - Nudging the latency dial across Bulk, Auto or Realtime shows no jump, on one path or two, at the size the test can see. The points between presets are reported, not scored.
+  - Naming a preset and giving its number behave the same at Bulk and Auto. Naming Realtime does not: it switches on the hint-keyed paths (512-byte symbols, the duplicate source copy), as predicted.
+  - Most of the repair budget goes to re-sending old data rather than coded repair: about two thirds of it on one path, nearly all of it on two. Named Realtime also overloads the slow path with its duplicate copies, which shuts repair off.
+- **Scored labels (registered, FAIL iff family p ≤ 0.0167):**
+
+| cell | T1 Bulk | T1 Auto | T1 Realtime | T2 Auto | T2 Bulk | T2 Realtime | W-ROUTE |
+|---|---|---|---|---|---|---|---|
+| c2 | PASS p 0.595 | PASS 0.461 | PASS 0.799 | PASS 0.829 | PASS 0.628 | **FAIL 0.0003** (all four clauses p 0.0001) | PASS |
+| c8 | PASS 0.147 | PASS 0.199 | PASS 0.383 | PASS 0.476 | PASS 0.509 | **FAIL 0.0003** (in-order and both CPU clauses p 0.0001; goodput p 0.067) | PASS |
+
+  - **Resolution:** the in-session A/A governs, as registered. At c2 d80 is goodput 1 %, in-order 12 %, CPU 8 % / 8 %. At c8 it is goodput 3 %, **in-order 50 %**, CPU 12 % / 12 %. A PASS bounds a step only above those sizes; at c8 a step in in-order delay below 50 % is not resolved.
+  - **The not-overdriven witness passed on c8 HR only through the aggregate gauge** (`tau_x` 0.040, see the gauge defects). Per leg those rows are overdriven (p1 truth loss 0.55–0.56 on two rows, RTT 2.2–2.3 s on four). So the registered not-overdriven premise fails for HR at c8, and T2 c8 Realtime compares an overdriven named-hint seat with RM / RP. The FAIL label stands as a step; its size at c8 is not the hint's alone. T1 is untouched, since it uses RM / RP. The T1 lines print the historical d80 of their min-p clause, not the governing in-session value.
+  - **T2 Realtime is a step at a preset, so it is a defect finding** (MEASUREMENT DISCIPLINE 18), not a footnote. At c2 the named hint reads 68.0 Mbit/s against 74.6–74.7 as a number, CPU/GB 109 / 90 against 43–47, and in-order 187 ms against 388–404 ms. The c2 step mixes the 512 B symbol size, S09 and K01, which this session cannot separate. At c8 it is dominated by S08 (inference from finding 2). The ledger verdicts go to `model-fix-hint-keyed-paths`. The symbol-size site (`symbol_size_for_hint`) has no law-ledger row yet; it gets one with the verdict.
+- **Predictions against readings:**
+  - **δ\* (provisional):** 0.0158 in both cells. At c8 this is inside the predicted 0.013–0.018. At c2 the predicted 0.011–0.012 is not a sweep point: the readout can only return a grid point, and the bracket (0.0075, 0.0158] contains the prediction. **Consistent, not a miss** (an earlier coordinator remark that called it a miss is withdrawn).
+  - **Goodput non-increasing in δ:** true in both cells (c2 90.0 → 74.6 Mbit/s; c8 97.6 → 80.8).
+  - **W-ROUTE:** rr is exactly 0 on every H-B / B− row in both cells.
+  - **Δ = 1:** `delta=Some(1)` on all 17 904 `[SPAN]` lines (c2 9 709, c8 8 195), as predicted in Amendment 6 (law ledger S03).
+  - **`srcsize` at c8 Realtime:** src/byte 0.0020, the plain 512 B value. The duplicate source does not count in `cum=`, so the ×2.2 widening was not needed (that registered reading is resolved).
+  - **r(δ) against the registered bands.** The band is a lower bound: the law r at default mass statistics, "r can only rise, up to r_sat" (`s51-design.md` :198). It is compared with consumed r net of H-B (:106).
+
+| point | c2 net r | band | | c8 net r | band | |
+|---|---|---|---|---|---|---|
+| H-B | 0.0000 | 0 | in | 0.0000 | 0 | in |
+| B+ | 0.0000 | 0.0003–0.0005 | below margin noise | 0.0001 | 0.0003–0.0007 | below margin noise |
+| I1 | 0.0041 | 0.007–0.011 | **below** | 0.0113 | 0.007–0.015 | in |
+| I2 | 0.0281 | 0.023–0.036 | in | 0.0482 | 0.021–0.046 | above (allowed) |
+| I3 | 0.0765 | 0.054–0.081 | in | 0.1093 | 0.049–0.100 | above (allowed) |
+| Auto | 0.1930 | 0.133–0.197 | in | 0.2361 | 0.120–0.227 | above (allowed) |
+| I4 | 0.2104 | 0.156–0.225 | in | 0.2431 | 0.139–0.240 | above (allowed) |
+| R+ | 0.2167 | 0.176–0.249 | in | 0.2570 | 0.154–0.246 | **above the predicted r_sat 0.245–0.250** |
+
+  - c2 I1 is the only point below its band; it sits next to δ\*, where the design calls the reading provisional.
+  - At c8, R+ (and RM at 0.2514) reads above the r_sat predicted from the design's inputs. The live r_sat is not printed, so this is a miss on r_sat's predicted inputs, not a breach of the cap.
+  - **Scorer label defect (minor):** the column says "minus the H-B coded share", but the code subtracts H-B's consumed r (`s51_score.py` :433, :440). The two differ by under 1e-4 at c2; at c8 the net values are about 0.002 low.
+  - **In-order delay:** the design registered no sign along the sweep (:232). It does not fall with δ as a number in either cell: c2 338–343 ms through I2, 363 at I3, 388–404 from Auto on; c8 4.1–4.5 s through I3, 5.5–6.4 s from Auto on. At c2 the rise from I2 to Auto (+16 %) is above that cell's 12 % resolution. At c8 the rise (+25–45 %) is below its 50 % resolution, so it is not resolved. Only the named Realtime hint lowers delay: c2 187 ms, and c8 1.7 s, which is about 3.5× lower and resolved.
+  - **Named Realtime at c8 against the design (:215–218, :237), item by item:** r at r_sat with the cap binding was predicted, and 0.005 was read; lower goodput was predicted, and it is not lower (T2 goodput p 0.067); higher delay was predicted, and it is 3.5× lower; spare was expected slack, and it is pinned (finding 2). All four miss.
+- **Finding 1 (engine, unpredicted): at c8 the proactive budget goes almost entirely to P_lost copies.**
+  - Example row (c8 HA s42 r1): 507 616 source symbols, 2 124 coded repair symbols, 119 684 taper copies; `plost=` equals `taper=` on every row of both cells.
+  - Medians per source symbol: c8 HA has cod 0.0039 and taper 0.238 (cod at H-B is 0.0056, the NACK margin). At c2, cod is 0.072 and taper 0.126.
+  - **Not c8-only:** at c2 copies are already about 64 % of proactive slots. At c8 the coded share is flat at the margin on every arm. The scorer reads it correctly: one sender-global count over all legs. The design's premise that `cod` carries the proactive channel (:120–128) is weak at c2 and fails at c8.
+  - **Mechanism (code-read; the ages are not printed, so this is an inference):** a taper copy neither removes nor re-stamps its `retransmit_buffer` entry. Removal happens only at shed, at `sender_phases.rs:860` and at `prune_below(ack+1)`. So the oldest unacked seq stays oldest with its first send time, and its `p_lost` goes to 1 once its age far exceeds the worst-ε path's srtt. At c8 the cumulative ack lags the window by 20k–74k symbols (`retx_buf`), against 0.7k–3.7k at c2. **Which seqs the copies target is not known.** `rx_dup` (the receiver's `[C8CONV-R] dup=`) reads 23–30k at c8 Auto and above, against about 120k copies, and 6k against about 64k at c2. So most copies do not land as duplicates, and it does not support repeated copies of one stalled seq.
+  - It goes to `rate-c8-frontier-recopy` for diagnosis.
+- **Finding 2 (engine, unpredicted): at c8 named Realtime's duplicate overdrives the slow leg and pins the spare clamp, so it grants almost no repair.**
+  - The readings: consumed r 0.005 and granted rr 0.008, against 0.26–0.28 on RM / RP; rx_dup 142k against about 27k.
+  - **Mechanism, from the logs:**
+    - The hint-keyed duplicate (S08, `emit_source.rs` :508–531) sends every source symbol again on the other path and charges that path's in-flight.
+    - p1 carries 687–1 703 source placements against 272k–591k handoffs, while RM / RP carry 12k–30k against about 110k (coordinator spot check, s42 r1: HR 687 / 570 223, RM 16 075 / 109 751).
+    - p1 in-flight crosses 9 000 at t ≈ 11–13 s on every HR row. Before that rr averages 0.028–0.038; after it, 0.001–0.005.
+    - `spare_capacity` is the minimum over legs. No per-leg cwnd is printed, so it is derived only on ticks where `[DIAG] cwnd=` reads 20 000 (both legs at MAX_CWND 10 000), from the per-leg `pN:infl=`. On those ticks its median is 0.000–0.002, against 4.5–23 on RM / RP (`scripts/spare.py`).
+    - The slow leg is overdriven: truth loss 0.55–0.56 on two rows, and p1 RTT 2.2–2.3 s on the other four.
+  - **Control:** at c2 (single path, S08 inert) HR grants rr 0.26. So there is no hint-keyed rr path; S08 acts through the spare clamp.
+  - It joins `model-fix-hint-keyed-paths` (S08) and `rate-spare-clamp-verdict` (K04: the first measured regime where the spare clamp binds) as evidence. The law-ledger rows S06, S08 and K04 carry it, pending verdicts.
+- **Gauge defects at c8 (scorer and design definition):**
+  - `MAX_CWND bind` reads 0.000 on every c8 row. It is computed, not a default, but it compares the **sum over paths** of `[DIAG] cwnd=` against the per-path MAX_CWND 10 000. The sum never equals 10 000 at c8; it reaches 20 000 (both legs at MAX) on 0 % of ticks on Bulk / I1 / I2, 7 % at I3, 9–25 % at Auto / R±, and 78 % on HR. At c2 (single path) the gauge is valid: 0.59–0.74.
+  - The printed `tau_x` is `tau_sat`, aggregate in-flight ≥ cwnd, with the same flaw: c8 HR reads 0.040 while p1 alone sits at 9 930–9 998.
+  - The spare-clamp bracket is MISSING at c8 (no per-leg cwnd is printed), and the live r_sat is not printed.
+  - Both go to `meas-s51-c8-gauges`, together with the `crlf_guard` continuation fix (rehearsal entry).
+- **Disclosures:**
+  - The coordinator's ssh polls ran on the VM every 90 s through each cell's block 1 (the stop rule), with a python3 parse of `ld.log` near row 15, and every 300 s after.
+  - Other projects' Claude sessions ran on the Windows host throughout, outside raptorpath; the host quiet check counted none of them, by design.
+  - Steal was 0.28–0.34 % and iowait well under 0.1 % across both cells (`steal.txt`). Whether the VM shares the Ceph cluster that another session was restarting is unanswered by the owner.
+- **Ledger:** `docs/l1-raw/s51b/` (scrubbed): per cell `ld.log` (sufficient to re-score), `score-vm.txt`, `score-host.txt`, `launch.out`, `BINSHA.txt`, `smoke.log`, `steal.txt`; plus the rehearsal tarball. `s51b-diag-cited.tgz` holds the client and server logs of every row the findings cite (c8 HR ×6; c8 RM, RP, HA s42 r1; c2 HA, HR s42 r1), and `scripts/` holds the three read-only scripts behind the findings' numbers (`rows.py`, `spare.py`, `hr.py`; each takes a `diag-ld` directory, and `hr.py` also takes the `ld.log`). The full per-row logs (53–70 MB per cell) are not committed. They stay on the VM in `~/b51c2/run` and `~/b51c8/run` until `rate-c8-frontier-recopy` has read them. The VM's `src` / `target` trees, `/dev/shm/b51*` and the unscrubbed tarballs are removed.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).

@@ -1,0 +1,59 @@
+S51 SCORE (the off-Bulk baseline and the delta sweep; two-sided rank-sum min-p per preset, exact relabellings, FAIL iff family p <= 0.05/3 = 0.0167); REPORTED + SCORED T1 / T2; ABORT-TOKENS none
+== c2-100: 76 live rows, 0 void, 0 DNF
+  HB  n=6 dnf=0 goodput 90.0 Mbit/s; in-order 340.0 ms (B' source phase 340.0); CPU/GB cli 30.18 srv 32.77; retx/GB 23138; rx_dup 578; coded share 0.0037; consumed r 0.0038; granted rr mean 0.0000 p50 0.000 nz 0.00; W 201; SUMCAP pin 0.78; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.005 (saturated-tick share); eviction share 0.0005; dgev/hand 0.0005; MAX_CWND bind 0.601; spare-clamp bracket: lower share(s = 0) 0.005, upper share(s < 0.5) 0.027
+  HA  n=6 dnf=0 goodput 76.1 Mbit/s; in-order 403.0 ms (B' source phase 403.0); CPU/GB cli 41.83 srv 44.61; retx/GB 22168; rx_dup 6308; coded share 0.0674; consumed r 0.1955; granted rr mean 0.2322 p50 0.241 nz 1.00; W 201; SUMCAP pin 0.83; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.004 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.681; spare-clamp bracket: lower share(s = 0) 0.004, upper share(s < 0.5) 0.044
+  HR  n=6 dnf=0 goodput 68.0 Mbit/s; in-order 186.9 ms (B' source phase 186.9); CPU/GB cli 109.08 srv 90.33; retx/GB 44165; rx_dup 12169; coded share 0.1005; consumed r 0.2534; granted rr mean 0.2646 p50 0.270 nz 1.00; W 201; SUMCAP pin 0.86; src/byte 0.0020227
+      s51-evict 3.2: tau_x 0.004 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.738; spare-clamp bracket: lower share(s = 0) 0.004, upper share(s < 0.5) 0.041
+  NA  n=6 dnf=0 goodput 76.1 Mbit/s; in-order 394.4 ms (B' source phase 394.4); CPU/GB cli 41.43 srv 43.97; retx/GB 22356; rx_dup 5962; coded share 0.0709; consumed r 0.1975; granted rr mean 0.2205 p50 0.216 nz 1.00; W 201; SUMCAP pin 0.84; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.004 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.679; spare-clamp bracket: lower share(s = 0) 0.004, upper share(s < 0.5) 0.031
+  BM  n=6 dnf=0 goodput 90.2 Mbit/s; in-order 343.0 ms (B' source phase 343.1); CPU/GB cli 30.48 srv 33.59; retx/GB 22761; rx_dup 606; coded share 0.0037; consumed r 0.0037; granted rr mean 0.0000 p50 0.000 nz 0.00; W 201; SUMCAP pin 0.80; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.005 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.618; spare-clamp bracket: lower share(s = 0) 0.005, upper share(s < 0.5) 0.019
+  BP  n=6 dnf=0 goodput 90.1 Mbit/s; in-order 343.2 ms (B' source phase 343.2); CPU/GB cli 30.87 srv 34.05; retx/GB 23021; rx_dup 599; coded share 0.0037; consumed r 0.0038; granted rr mean 0.0006 p50 0.000 nz 0.45; W 201; SUMCAP pin 0.80; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.005 (saturated-tick share); eviction share 0.0001; dgev/hand 0.0001; MAX_CWND bind 0.619; spare-clamp bracket: lower share(s = 0) 0.005, upper share(s < 0.5) 0.024
+  AM  n=6 dnf=0 goodput 76.2 Mbit/s; in-order 394.3 ms (B' source phase 394.3); CPU/GB cli 41.43 srv 44.45; retx/GB 22101; rx_dup 6288; coded share 0.0698; consumed r 0.1952; granted rr mean 0.2193 p50 0.224 nz 1.00; W 201; SUMCAP pin 0.84; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.004 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.679; spare-clamp bracket: lower share(s = 0) 0.004, upper share(s < 0.5) 0.034
+  AP  n=6 dnf=0 goodput 76.0 Mbit/s; in-order 390.4 ms (B' source phase 390.4); CPU/GB cli 41.93 srv 44.10; retx/GB 22064; rx_dup 5584; coded share 0.0760; consumed r 0.1972; granted rr mean 0.2194 p50 0.229 nz 1.00; W 201; SUMCAP pin 0.83; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.004 (saturated-tick share); eviction share 0.0001; dgev/hand 0.0001; MAX_CWND bind 0.673; spare-clamp bracket: lower share(s = 0) 0.004, upper share(s < 0.5) 0.037
+  RM  n=6 dnf=0 goodput 74.7 Mbit/s; in-order 387.9 ms (B' source phase 387.9); CPU/GB cli 43.97 srv 46.62; retx/GB 21864; rx_dup 5828; coded share 0.0923; consumed r 0.2207; granted rr mean 0.2484 p50 0.260 nz 1.00; W 201; SUMCAP pin 0.84; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.002 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.686; spare-clamp bracket: lower share(s = 0) 0.002, upper share(s < 0.5) 0.036
+  RP  n=6 dnf=0 goodput 74.6 Mbit/s; in-order 404.1 ms (B' source phase 404.1); CPU/GB cli 43.48 srv 47.04; retx/GB 22238; rx_dup 6938; coded share 0.0797; consumed r 0.2205; granted rr mean 0.2444 p50 0.245 nz 1.00; W 201; SUMCAP pin 0.82; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.004 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.679; spare-clamp bracket: lower share(s = 0) 0.004, upper share(s < 0.5) 0.050
+  I1  n=4 dnf=0 goodput 90.0 Mbit/s; in-order 337.7 ms (B' source phase 337.7); CPU/GB cli 30.52 srv 33.74; retx/GB 22934; rx_dup 926; coded share 0.0052; consumed r 0.0078; granted rr mean 0.0154 p50 0.011 nz 1.00; W 201; SUMCAP pin 0.79; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.002 (saturated-tick share); eviction share 0.0003; dgev/hand 0.0003; MAX_CWND bind 0.592; spare-clamp bracket: lower share(s = 0) 0.002, upper share(s < 0.5) 0.032
+  I2  n=4 dnf=0 goodput 87.7 Mbit/s; in-order 341.0 ms (B' source phase 341.0); CPU/GB cli 32.42 srv 35.89; retx/GB 23108; rx_dup 2074; coded share 0.0123; consumed r 0.0319; granted rr mean 0.0474 p50 0.035 nz 1.00; W 201; SUMCAP pin 0.72; src/byte 0.0008459
+      s51-evict 3.2: tau_x 0.005 (saturated-tick share); eviction share 0.0012; dgev/hand 0.0012; MAX_CWND bind 0.615; spare-clamp bracket: lower share(s = 0) 0.005, upper share(s < 0.5) 0.030
+  I3  n=4 dnf=0 goodput 84.0 Mbit/s; in-order 363.3 ms (B' source phase 363.3); CPU/GB cli 35.90 srv 38.94; retx/GB 23264; rx_dup 3636; coded share 0.0286; consumed r 0.0802; granted rr mean 0.0982 p50 0.084 nz 1.00; W 201; SUMCAP pin 0.82; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.004 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.640; spare-clamp bracket: lower share(s = 0) 0.005, upper share(s < 0.5) 0.023
+  I4  n=4 dnf=0 goodput 75.1 Mbit/s; in-order 394.8 ms (B' source phase 394.8); CPU/GB cli 43.17 srv 46.14; retx/GB 22278; rx_dup 5981; coded share 0.0852; consumed r 0.2142; granted rr mean 0.2390 p50 0.259 nz 1.00; W 201; SUMCAP pin 0.84; src/byte 0.0008460
+      s51-evict 3.2: tau_x 0.002 (saturated-tick share); eviction share 0.0000; dgev/hand 0.0000; MAX_CWND bind 0.684; spare-clamp bracket: lower share(s = 0) 0.002, upper share(s < 0.5) 0.033
+  W-ROUTE c2: rr exactly 0 on every H-B / B- row: True; R-INERT (rr = 0 on every beta < 1 row): False
+  r(delta) c2: point | consumed r (minus the H-B coded share) | granted rr mean | registered band (plu - plc) | plu/(1-plu) | plc/(1-plc)   [r_sat 0.315, crossing eps/(1-eps) 0.0142-0.0267]
+    H-B 0.005              0.0038 (0.0000)  0.0000  band 0-0  0.0167  0.0258
+    B+ 0.0051              0.0038 (0.0000)  0.0006  band 0.0003-0.0005  0.0150  0.0256
+    I1 0.0075              0.0078 (0.0041)  0.0154  band 0.007-0.011  0.0152  0.0256
+    I2 0.0158              0.0319 (0.0281)  0.0474  band 0.023-0.036  0.0177  0.0257
+    I3 0.05                0.0802 (0.0765)  0.0982  band 0.054-0.081  0.0187  0.0262
+    Auto 0.5 (H-A, N-A)    0.1967 (0.1930)  0.2244  band 0.133-0.197  0.0197  0.0261
+    I4 5                   0.2142 (0.2104)  0.2390  band 0.156-0.225  0.0198  0.0263
+    Realtime R+ 51         0.2205 (0.2167)  0.2444  band 0.176-0.249  0.0196  0.0264
+  delta* c2 (provisional: P2's channel split is missing; first sweep point whose consumed r exceeds plu/(1-plu)): 0.0158   [predicted 0.011-0.012]
+  goodput against delta: 0.005:90.0 0.0051:90.1 0.0075:90.0 0.0158:87.7 0.05:84.0 0.5:76.1 5:75.1 51:74.6   monotone non-increasing (2 % slack): True
+  A/A c2 (in-session bootstrap d80, H-A + N-A rows, 40 draws): goodput 1 % inorder 12 % cpu_cli 8 % cpu_srv 8 %; historical d80: goodput 1 % inorder 20 % cpu_cli 8 % cpu_srv 12 %; resolution as registered
+  T1 c2 Bulk: PASS -- no step above d80 = 1 % at Bulk (family p 0.5952); n 6 v 6, 924 relabellings (exact); per-clause p goodput 0.2403 inorder 0.8182 cpu_cli 0.8182 cpu_srv 0.8182
+  T1 c2 Auto: PASS -- no step above d80 = 20 % at Auto (family p 0.4610); n 6 v 6, 924 relabellings (exact); per-clause p goodput 0.2900 inorder 0.1797 cpu_cli 0.4199 cpu_srv 0.4567
+  T1 c2 Realtime: PASS -- no step above d80 = 12 % at Realtime (family p 0.7987); n 6 v 6, 924 relabellings (exact); per-clause p goodput 0.4848 inorder 0.5887 cpu_cli 0.6645 cpu_srv 0.3939
+  T2 c2 Auto: PASS -- the named hint HA against NA as a number (family p 0.8290, clause cpu_cli; n 6 v 6, 924 relabellings exact); per-clause p goodput 1.0000 inorder 0.6991 cpu_cli 0.3939 cpu_srv 0.3939   [predicted PASS (identical laws)]
+  T2 c2 Bulk: PASS -- the named hint HB against BM+BP as a number (family p 0.6279, clause inorder; n 6 v 12, 18564 relabellings exact); per-clause p goodput 0.6988 inorder 0.2908 cpu_cli 0.3009 cpu_srv 0.4502   [predicted PASS predicted (queue_target_mult 1.25 vs 1.125; a FAIL is a K01 verdict)]
+  T2 c2 Realtime: FAIL -- the named hint HR against RM+RP as a number (family p 0.0003, clause goodput; n 6 v 12, 18564 relabellings exact); per-clause p goodput 0.0001 inorder 0.0001 cpu_cli 0.0001 cpu_srv 0.0001   [predicted FAIL predicted in both cells (512 B symbols, S09 batching out of scope; S08 at c8)]; the measured size of the section 3.3 debts (symbol size, S09 batching, K01 table; S08 at c8): each failing clause is a ledger entry
+VERDICT51 REPORTED-WITH-SCORED slots=76/76 live=76 void=0 replaced=0 dnf=0 labels=9 void_f2=0
+LABEL51 W-ROUTE-c2 PASS
+LABEL51 DELTA-STAR-c2 PROVISIONAL 0.0158
+LABEL51 AA-RESOLUTION-c2 AS-REGISTERED
+LABEL51 T1-c2-Bulk PASS p=0.5952
+LABEL51 T1-c2-Auto PASS p=0.4610
+LABEL51 T1-c2-Realtime PASS p=0.7987
+LABEL51 T2-c2-Auto PASS p=0.8290
+LABEL51 T2-c2-Bulk PASS p=0.6279
+LABEL51 T2-c2-Realtime FAIL p=0.0003

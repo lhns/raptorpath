@@ -1,0 +1,64 @@
+loopdiag_run_all.sh: line 126: test_loopdiag_parse.py: command not found
+SENTINEL-WRITABLE /dev/shm/b51c8/run/all.out (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/TESTS.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/TESTS-OK (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/TESTS-FAIL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/REHEARSAL-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/ld.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE /dev/shm/b51c8/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-11-19T09:58:21Z user=VMUSER dir=/dev/shm/b51c8/run launch=2026-11-19T09:58:21Z
+LD-ALL start plan=51 load=0.34 0.87 1.05 1/388 3836822 2026-11-19T09:58:21Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=1.02 avg60=0.58 avg300=0.16 total=5406784482 2026-11-19T09:58:29Z
+LD-ALL plan 51 budget: 17992s to LD_HARD (at least 17400s required: the worst case of the status) 2026-11-19T09:58:29Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.31 0.86 1.05; io=full avg10=0.84 avg60=0.56 avg300=0.16 total=5406784484 2026-11-19T09:58:29Z
+LD-ALL plan 51 pre-flight: 5047216 KB free on /dev/shm (need 1048576) 2026-11-19T09:58:29Z
+LD-ALL parser test ok 2026-11-19T10:00:52Z
+LD-ALL built wall=307s 2026-11-19T10:05:59Z
+LD-ALL binary 8104fa027c9dea559c9ffdb0d5630117e70ffcd97a092e73700441446771be5b 2026-11-19T10:05:59Z
+LD-ALL bin_sha equals the registered value 8104fa027c9dea559c9ffdb0d5630117e70ffcd97a092e73700441446771be5b 2026-11-19T10:05:59Z
+LD-ALL dial pins ok (delta_budget_b_is_the_dial_not_a_mode, scheduling_weights_are_the_dial_not_a_mode, control::fec_rate, test_continuum_one_law_across_the_dial) 2026-11-19T10:10:11Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-19T10:17:22Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-19T10:17:23Z
+LD-ALL suites done tfail=0 2026-11-19T10:17:23Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,2,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.00 avg300=0.03 total=5410044898 2026-11-19T10:17:31Z
+LD-ALL stage rep51 (plan 51) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.00 avg60=0.00 avg300=0.03 total=5410045070 2026-11-19T10:17:40Z
+SMOKE51 set=smoke cell=c8-100 rows=4 slots=4
+PASS one row per smoke slot ran with a t51
+  ROW HB (bulk, delta unset): status=LIVE dnf=0 mbps=99.165 in-order 4174.6 ms rr max 0.000 dgev/hand 0.0000 tau_x 0.006 last tick 48.2 s
+  ROW HR (realtime, delta unset): status=LIVE dnf=0 mbps=82.186 in-order 1726.2 ms rr max 0.500 dgev/hand 0.0057 tau_x 0.040 last tick 58.4 s
+  ROW BP (auto, delta 0.0051): status=LIVE dnf=0 mbps=94.136 in-order 4457.0 ms rr max 0.002 dgev/hand 0.0000 tau_x 0.011 last tick 50.8 s
+  ROW NA (auto, delta 0.5): status=LIVE dnf=0 mbps=84.673 in-order 5825.6 ms rr max 0.500 dgev/hand 0.0000 tau_x 0.009 last tick 56.5 s
+PASS every smoke row is LIVE (no witness problem)
+PASS [GATES] RWM_DELTA equals the arm's value (or unset) on BOTH ends
+PASS pipe_cli / pipe_srv = [window, Rlc, <the arm's hint>] and the header hint agrees
+PASS the emission-batching echo: ACTIVE at bulk / auto, 'out of scope' at realtime, and not the other
+PASS source symbols per byte match the carrier's symbol size; no [CHI] activity; the generation guard absent
+PASS every row ran the one seat's binary (LD_SHA)
+PASS rr is exactly 0 on the H-B row (beta = 1: the proactive slot cannot fire)
+PASS rr parsed on N-A and > 0 unless R-INERT is attributed: rr max 0.500
+PASS the in-order delay is computed (non-None) on every completed row
+PASS the H-R row finished inside RWM_PERF_TIMEOUT_S=200 (not a DNF)
+PASS NOT-OVERDRIVEN witness on HR: dgev/hand <= 0.02 and tau_x <= 0.10 (predicted 0.0000-0.009 and 0.02-0.04); a failing row is NO-GO, the session is amended before the battery
+PASS NOT-OVERDRIVEN witness on NA: dgev/hand <= 0.02 and tau_x <= 0.10 (predicted 0.0000-0.009 and 0.02-0.04); a failing row is NO-GO, the session is amended before the battery
+PASS no row is short (the last tick at or after 30 s on a completed row)
+SMOKE-PASS
+LD-ALL stage rep51 SMOKE-PASS 2026-11-19T10:21:27Z
+LD-ALL stage rep51 battery rc=0 wall=4424s 2026-11-19T11:35:11Z
+CHECK51 done=True slots=76/76 rows=76 extra=0
+LD-ALL stage rep51 end ok=1 VERDICT51 REPORTED-WITH-SCORED slots=76/76 live=76 void=0 replaced=0 dnf=0 labels=9 void_f2=0 2026-11-19T11:35:20Z
+LD-ALL end plan 51 rep51_ok=1 raptorpath=0 netns=0 2026-11-19T11:35:20Z
+PERSISTED /dev/shm/b51c8/run -> ~/b51c8/run 2026-11-19T11:35:20Z
+LD-ALL-DONE
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED ~/rp.lock

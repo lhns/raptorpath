@@ -6712,15 +6712,59 @@ nodes:
   overview: false
   plain: A follow-up test of the mode where some data may be dropped, which first needs that setting to be adjustable on its own.
   notes: 'This is where the P_fec step (R03) becomes visible in δ (the shed budget). Lane: host-cargo for the CLI and perf changes, then the VM session. Done when: a numeric (or at least carrier-independent) ρ is settable on the CLI, the perf driver completes with declared loss (delivered fraction), chunks carry a send stamp, and a reported session measures ρ < 1 rows with resolution delay and the abandoned fraction.'
+- id: rate-c8-frontier-recopy
+  title: c8 repair budget re-copies
+  track: rate
+  kind: research
+  state: next
+  outcome: unrated
+  evidence:
+  - status §51 block 51 Result, finding 1
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - meas-s51-session
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: true
+  plain: Most repair slots re-send old data instead of sending a coded repair symbol (about two thirds on one path, nearly all on two); find out why and whether it is a defect.
+  notes: 'c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained.'
+- id: meas-s51-c8-gauges
+  title: Per-leg clamp and saturation gauges
+  track: meas
+  kind: instrument
+  state: next
+  outcome: unrated
+  evidence:
+  - status §51 block 51 Result, gauge defects
+  - status §51 block 51 rehearsal (crlf_guard)
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - meas-s51-session
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Fix the measurements that only work on one path, so the next two-path run can read the congestion-window clamp and saturation per path.
+  notes: 's51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows.'
 - id: model-fix-hint-keyed-paths
   title: Hint-keyed engine paths made continuous
   track: model
   kind: mechanism
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
   - status §3.3 additions (695c7f4f)
   - docs/derivations/s51-design.md §1.2
+  - status §51 block 51 Result (T2 Realtime FAIL; finding 2, S08 at c8)
   verdict_quote: ''
   headline: ''
   depends_on:
@@ -6962,16 +7006,19 @@ nodes:
   title: Off-Bulk baseline and δ sweep
   track: meas
   kind: research
-  state: next
-  outcome: unrated
+  state: done
+  outcome: successful
   evidence:
   - status §51
   - status §51 Amendment 2
   - status §63 Result
   - status §51 Amendment 6
+  - status §51 block 51 rehearsal
+  - status §51 block 51 Result
+  - docs/l1-raw/s51b
   - plan W5.1
-  verdict_quote: ''
-  headline: ''
+  verdict_quote: 'The engine''s behaviour is continuous in δ through all three presets in both cells (T1 PASS ×6), the first engine measurement of the no-mode-switch claim. The named Realtime hint is a measured step at its preset (T2 Realtime FAIL in both cells), as predicted.'
+  headline: 152 of 152 rows live; δ-continuous at every preset in both cells; named Realtime steps, as predicted
   depends_on:
   - meas-s51-design
   - meas-s51-harness
@@ -6980,14 +7027,13 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
-  end: ''
+  start: '2026-11-19'
+  end: '2026-11-19'
   folded: []
   overview: true
-  vm_order: 3
-  order_reason: Third, after the evicting-seat test, in the registered launch order; it reads none of that test's results.
   plain: First real-network measurement of the system away from the bulk setting, checking that behaviour changes smoothly as the latency dial moves.
-  notes: 'Before the launch: rebuild its tree (b51-tree) on main with the merged framing fix and re-pin it; the old tree predates the merge. Law ledger: R01 (rank 17, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). §51 Amendment 6 (2026-11-19) re-bases it on b51-tree-v11 6306959 (engine identical to main d9dd18dd, LD_BASE_SHA pinned there for all three launches), adds a stop rule on each cell''s block 1 (every arm''s first real row), a c2-to-c8 chain rule and a host quiet check; next is the 51 rehearsal.'
+  notes: 'Before the launch: rebuild its tree (b51-tree) on main with the merged framing fix and re-pin it; the old tree predates the merge. Law ledger: R01 (rank 17, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51''s block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). §51 Amendment 6 (2026-11-19) re-bases it on b51-tree-v11 6306959 (engine identical to main d9dd18dd, LD_BASE_SHA pinned there for all three launches), adds a stop rule on each cell''s block 1 (every arm''s first real row), a c2-to-c8 chain rule and a host quiet check; next is the 51 rehearsal. Result (2026-11-19): REPORTED-WITH-SCORED, T1 PASS at all three presets in both cells, T2 Auto / Bulk PASS, T2 Realtime FAIL in both (predicted); δ* 0.0158 in both (consistent with both predictions at the grid''s resolution). Two unpredicted c8 findings went to rate-c8-frontier-recopy and model-fix-hint-keyed-paths; the c8 gauge defects to meas-s51-c8-gauges.'
+
 - id: cc-s48d-session
   title: bbr_rs controller, round 2
   track: cc
