@@ -1,565 +1,614 @@
 # S06: P_lost conditioned on resends in flight (the taper copy law)
 
-Status: DERIVATION, proposed. No engine change, no paper edit, no VM. Base `github/main` at
-`87e646f7`. Law-ledger row S06 (rank 33), with E01 and E09 as inputs. Paper §3.2, §3.4, §3.7,
-§4.13 and A.2 (`docs/fec-arq-model.md`). The measured defect is status §51 block 51 Result,
-Finding 1, which goes to `rate-c8-frontier-recopy`.
+Status: DERIVATION, proposed, review round 1 addressed. No engine change, no paper or ledger edit,
+no VM.
+- **Base:** `github/main` at `b65b25df`.
+- **Ledger row:** S06, with E01 and E09 as inputs.
+- **Paper:** §3.2, §3.4, §4.13, §11.3 and A.2 (`docs/fec-arq-model.md`).
+- **Measured defect:** status "§51 block 51 Result, Addendum 2", with evidence in
+  `docs/l1-raw/s51b/recopy/`.
 
-**In plain words.** Each correction slot asks "was this symbol lost?" and answers from the
-symbol's *first* send alone. It never counts the resends of that symbol already on the wire. So
-once the oldest unacked symbol is older than about 1.2 srtt, every slot copies it again, until the
-cumulative ack moves. The fix has two parts. (1) The question includes every send of the symbol:
-the probability that it is still missing is the product of one P_lost factor per send. (2) Each
-symbol gets one random draw per resend, not one per slot, and only holes the receiver has named are
-candidates. Copies then fall from 5–8 per loss to about 0.12–1.3 per loss. The freed slots go to
-coded repair; the number of slots does not change.
+**In plain words.**
+- **Today.** Each correction slot asks "was the oldest unacked symbol lost?" and answers from its
+  first send alone. It never counts the resends of that symbol already on the wire. So past the
+  knee, every slot copies the same symbol until the cumulative ack moves.
+- **The fix, part 1: count every send.** The probability that a symbol is still missing is the
+  product of one P_lost factor per send. Each factor's age runs to the newest report, not to "now".
+- **The fix, part 2: one draw per symbol per resend.** The draw is made once per resend, not once
+  per slot. Only holes the receiver has named are candidates.
+- **What it changes.** Copies fall from 4–6 per wire loss to between about 0.1 and 1 per wire loss.
+  The freed slots go to coded repair; the slot count does not change.
+- **What it does not settle.** Whether a copy is worth more than a coded symbol is still
+  undecided. The "copy with probability π" rule is kept from the paper, not derived.
 
-## 0. The defect as read on `87e646f7`
+## 0. The defect as read on `b65b25df`
 
 Code read for this document:
+- **Today's decision** (`net/emit_source.rs:739–822`): each debt slot evaluates
+  `p_lost(age since FIRST send, eps_at_send, srtt, rttvar)` on `retransmit_buffer.first()`, the
+  cumulative-ack blocker, and copies it if `rand::random() < p`.
+- **No stamp.** The copy writes no `nack_retx_at`, which only the NACK loop
+  (`sender_phases.rs:1091`) and the request-copy producer (`net/mod.rs:3493`) write. So the NACK
+  cooldown (`sender_phases.rs:871–878`) and the copy decision do not see each other.
+- **Inputs.** `eps_at_send` is the worst-ε estimator at the original send (`emit_source.rs:499–505`),
+  not the send path's. `(srtt, rttvar)` is the worst-ε path's `est.rtt()` and 0.1·srtt
+  (`channel_set.rs:65–73`).
+- **Pruning.** Entries leave only through shed or `prune_below(ack+1)` (`sender_phases.rs:1403`).
 
-- `net/emit_source.rs:739–822`. Per debt slot, `st.retransmit_buffer.first()`, the lowest unacked
-  seq, is evaluated with `p_lost(age_since_FIRST_send, eps_at_send, srtt, rttvar)`. The slot then
-  copies it if `rand::random() < p`.
-- The copy does not stamp `nack_retx_at`. Only the NACK loop (`sender_phases.rs:1091`) and the
-  request-copy producer (`net/mod.rs:3493`) stamp it. So the NACK cooldown (`sender_phases.rs:871–878`)
-  does not see proactive copies, and the copy decision does not see NACK resends.
-- `eps_at_send` is the worst-ε estimator at the original send (`emit_source.rs:499–505`), not the
-  ε of the path that carried the seq. `(srtt, rttvar)` is the worst-ε path's `est.rtt()` and
-  `0.1·srtt` (`channel_set.rs:65–73`; E01, E09).
-- Entries leave the buffer only through shed or `prune_below(ack+1)` (`sender_phases.rs:1403`).
-  SACK marks never remove them (`sack.rs:140–150`).
+**Measured**, status Addendum 2 (`recopy/acct-c2.txt`, `acct-c8.txt`; per-arm medians, Auto HA):
 
-So between two cumulative advances every slot evaluates the same seq. Its probability is computed
-from the same original send time and is ≈ 1 past the knee.
-
-**Measured** (my reads of `docs/l1-raw/s51b`, 6-row medians unless a row is named):
-
-| cell, Auto (HA) | src/row | wire loss | NACK retx / src | taper copies / src | coded / src | copies per source loss |
+| cell | taper / src | retx / src | lost / src | taper / lost | (taper + retx) / lost | below-floor arrivals |
 |---|---|---|---|---|---|---|
-| c2 | 507 616 | 0.0252 | 0.0262 | 0.126 | 0.072 | 5.0 |
-| c8 | 507 616 | 0.0293 (egress-weighted, both legs) | 0.0267 | 0.238 | 0.0039 | 8.1 |
+| c2 | 0.1256 | 0.0262 | 0.0315 | 4.02 | 4.85 | 60 686 |
+| c8 | 0.2379 | 0.0267 | 0.0377 | 6.29 | 7.00 | 93 436 |
 
-Sources for the table:
-- Wire loss is the median over the six HA rows of `truth_lost / truth_egress` from `P38ROW` in `ld.log`.
-- NACK retx per source is `retx/GB ÷ (src/byte · 10⁹)`, from `score-host.txt`.
-- Taper and coded per source are the status §51 medians.
-- The cited row c2 HA s42 r1 (`rows.py` on `s51b-diag-cited.tgz`) reads taper 0.094 and cod 0.096, so this one row is less extreme than the median. c8 HA s42 r1 reads taper 0.236 and cod 0.0042.
-- I take source losses as src × wire loss. This assumes the wire drops every datagram class alike.
+How to read the table:
+- **Denominators.** Status's `lost` is the sum over the legs of `[TRUTH] lost=`: every wire datagram
+  lost, an upper bound on the source losses. Below, I also use L = src × the per-datagram loss
+  rate (c2 0.0252, c8 0.0293: the median over the six HA rows of `truth_lost / truth_egress` from
+  `P38ROW`) as the *source*-loss estimate. Each column header says which one it uses.
+- **Copy share and blocker.** Addendum 2 reads a copy share of slots of 0.98 at c8 and a c8
+  blocker age of 5–7 s against a worst-path srtt of 0.26–0.6 s.
+- **Duplicates.** At least about 70 % of copies land below the receiver's decode floor.
+- **NACK.** NACK resends are about the loss rate on every arm.
 
-**From the coordinator's diagnosis** (the brief for this document; these figures are not yet in a
-committed ledger):
+## 1. Channel model and assumptions
 
-- copies are 4–7× true wire losses over the 152 rows;
-- at least about 70 % of copies land below the receiver's decode floor;
-- up to about 137 copies per long stall at c8;
-- the c8 blocker's age is 5–7 s against srtt 0.26–0.6 s.
+These are §3.2's assumptions, made explicit:
+- **A1 (stated assumption): independent losses across sends.** Each send j of seq k is lost
+  independently, with probability ε_j. This is §3.2's i.i.d. reading. Under GE bursts, a resend
+  sent into the same burst is correlated with the loss it answers. A1 then makes π too low for
+  resends sent within about B symbol times of the original.
+- **A2: the report time is random.** A delivered send j is reflected by the first report generated
+  after it arrives. The report reaches the sender RTT_j after the send, with S_j(a) =
+  P(RTT_j > a) = 1 − Φ((a − SRTT_j)/RTTVAR_j). RTT_j is send → report arrival. That is what an
+  app-echo sample measures, so the one-way return share is inside it.
+- **A3: a report speaks only up to its horizon.** A WindowAck's SACK list is a *prefix* of the
+  receiver's received runs (at most `MAX_SACK_RANGES` = 64, `sack.rs:518–545`). Its horizon h is
+  the end of the last range. Above h the report says nothing ("not reported (may be in flight)").
 
-I did not re-derive these. Status calls the ages an inference, because no age gauge is printed.
-The table above is consistent with them: NACK retx ≈ loss on every arm, so each loss already gets
-one NACK resend, and the copies are on top of it.
-
-## 1. The channel model (unchanged from §3.2)
-
-These are the paper's assumptions for P_lost, kept as they are:
-
-- Each send j of a seq k is lost independently with probability ε_j (the i.i.d. reading of §3.2).
-- If send j is delivered, the first report that reflects it reaches the sender after a random
-  time RTT_j with survival function S_j(a) = P(RTT_j > a) = 1 − Φ((a − SRTT_j)/RTTVAR_j).
-- "Reflects" means that the cumulative ack passes k, or that a SACK range covers k.
-- **A report speaks only up to its horizon.** A capped report is a *prefix* of the receiver's
-  received runs: at most `MAX_SACK_RANGES` = 64 ranges (`sack.rs:518–545`). Its horizon h is the
-  end of its last range. Above h the report is silent: "not reported (may be in flight)". For
-  k > h, the absence of k from the report is no evidence at all. At a stalled c8 frontier with
-  20k–74k unacked seqs and a loss every ~35 seqs, 64 ranges cover only about 2k of them, so most
-  unacked seqs sit above every report's horizon.
-
-The paper's §3.2 is the case of exactly one send (m = 0):
-
+§3.2 is the case of exactly one send:
 ```text
-   P_lost(a; ε, SRTT, RTTVAR)  =  ε / [ ε + (1−ε)·S(a) ]                      (§3.2, p_lost)
+   P_lost(a; ε, SRTT, RTTVAR)  =  ε / [ ε + (1−ε)·S(a) ]                         (§3.2, p_lost)
 ```
 
 ## 2. The posterior with resends
 
-**Evidence.** At time t the sender holds:
-- the sends of k at times t_0 < t_1 < … < t_m, where t_0 is the original and t_1… are NACK resends
-  and proactive copies alike, on paths p_0 … p_m;
-- the latest report, in which neither the cumulative ack nor any SACK range covers k.
+**Evidence and its clock (review item 1).** The sender holds:
+- the sends of k: t_0 is the original, and t_1 … t_m are NACK resends and copies alike, on paths
+  p_j;
+- the newest report R, which arrived at sender time t_R, has horizon h_R ≥ k, and does not cover
+  k (neither its cumulative ack nor its SACK ranges).
 
-The reports that have arrived by t are exactly the ones whose RTT has elapsed. So the "no report
-yet" event for send j is "RTT_j > a_j", with a_j = t − t_j. The sender's clock is "now", and the
-report path is inside RTT_j.
+R was generated at the receiver at t_R − D_ret. A delivered send j is reflected in R iff
+t_j + D_fwd,j ≤ t_R − D_ret, that is, iff RTT_j ≤ t_R − t_j. So **each factor's age runs on the
+report clock:**
+```text
+   a_j  =  t_R − t_j          (not now − t_j; the one-way share is already inside RTT_j)
+```
+- **No flip on elapsed time.** Between two reports π does not move. A check that ran the age to
+  "now" would take π from 0.025 to 0.998 within 70 ms at SRTT 50 ms on elapsed time alone, with
+  no new evidence. That flip does not happen here.
+- **Each new report is new evidence.** A report that still does not cover k raises π.
+- **Approximation (N ≥ 2).** D_ret is the return delay of R's own arrival path. Using the carrying
+  leg's RTT_j assumes the return shares are comparable. Where they are not, the factor is off by
+  the difference in return delay.
 
-**Hypotheses.** k is still missing (it will not arrive from what has been sent) iff every send is
-lost. The prior is Π ε_j. The likelihood of "no report reflects k" is 1 under "all lost". Under
-"send j delivered", the likelihood of send j's term is S_j(a_j). The sends are independent, so the
-marginal factorises per send, and so does the posterior:
+**Report cadence in the engine:**
+- **Gap reports:** a SACK-bearing WindowAck goes out whenever a higher seq arrives, at most once
+  per `GAP_ACK_MIN_INTERVAL` = 2 ms (`receiver.rs:1953–1957`, `net/mod.rs:236`). It is sent at
+  every seat; `window_ack_emission` (`sack.rs:482–489`) has no seat input.
+- **Cumulative advances** are advertised at once: `receiver.rs:1953` on data, and `:1077` on
+  force-delivery.
+- **Stalled frontier with no arrivals:** the hole is re-advertised every 2·SRTT, clamped to
+  [25, 100] ms (`recovery_laws.rs:340`, `mod.rs:241–242`). That refresh runs only on the
+  reliable seat (`receiver.rs:856`, `if recv_window_reliable`).
+- **Net:** while data flows, t_R lags "now" by about 2 ms plus the return path.
+- **Measured volume:** the c8 HA rows carry about 22.5k gap reports each (`mpr rep=`); the c2 HA
+  rows about 21–23k.
 
-> **Sentence.** The probability that seq k is still missing at the receiver, given every send of k
-> so far and no report reflecting it, is the product over its sends of the single-send P_lost of
-> each send's own age on its own path.
+**Limit: reports late or lost.** t_R freezes, so π freezes at its last value. No copy fires on
+elapsed time; the absence of a report is not evidence about k. Recovery then rests on the
+existing backstops:
+- the receiver's stalled-hole refresh, at ρ = 1;
+- the sender's tail sweep, 2·SRTT clamped (`recovery_laws.rs:327–332`, `mod.rs:250`);
+- the evicting seat's force-delivery, at ρ < 1.
+
+The copy law is not a liveness mechanism, and should not be one.
+
+> **Sentence.** The probability that seq k is still missing, given every send of k and the newest
+> report that could have named it, is the product over the sends of each send's single-send
+> P_lost, aged to that report's arrival on the send's own path.
 
 ```text
-   π_k(t)  =  Π_{j=0}^{m}  P_lost( t − t_j ;  ε_{p_j}, SRTT_{p_j}, RTTVAR_{p_j} )    for ack < k ≤ h  (S06′)
-   π_k(t)  =  0          if a report covers k (cum-ack or SACK)
-   π_k(t)  =  Π_j ε_{p_j}    for k > h: no report has spoken about k, so the posterior is the prior
+   π_k  =  Π_{j=0}^{m} P_lost( t_R − t_j ; ε_{p_j}, SRTT_{p_j}, RTTVAR_{p_j} )    ack < k ≤ h_R, k not covered   (S06′)
+   π_k  =  0                 k covered by R (cum-ack or SACK)
+   π_k  =  Π_j ε_{p_j}       k > h_R: no report has spoken, so the posterior is the prior
 ```
 
-All three lines are one likelihood: send j's no-report term is S_j(a_j) where a report could have
-reflected k, 0 where one did, and 1 where none could. They are evidence cases, not a δ or ρ branch.
-The third line matters: a seq delivered above the horizon would otherwise age to π → 1 and be
-copied, once per distinct seq. Each such seq is new, so the per-epoch cap of §4 would not bound it.
+The three lines are one likelihood. Send j's no-report term is S_j(a_j) where R could reflect k,
+0 where R did, and 1 where R could not. They are evidence cases, not a δ or ρ branch. For m = 0
+and k ≤ h_R, S06′ is §3.2 bit for bit, except that the age runs to t_R.
 
-**Shape against the sentence.** Every factor is in [0, 1], so π_k ≤ min_j P_lost(a_j). Adding a
-send can only lower π. Each factor rises with its age, so π rises with time. The only order in m is
-the product. Units: ages and RTT moments are all in seconds. For m = 0, S06′ is §3.2 bit for bit.
-
-**What it is not.**
-- π_k is not the probability that the *original* was lost. That is the m = 0 factor, which is
-  what the code evaluates today.
-- π_k is also not conditioned on coded repairs whose span covers k. A coded row multiplies in one
-  more factor ≤ 1, so S06′ is an upper bound when such rows exist. The trailing span
-  [end − A*, end − Δ) does not reach an old blocker, so for the seqs this law acts on the bound is
-  tight. §4.13's DoF ledger is where the coupling belongs (open question Q4).
+**Shape against the sentence:**
+- every factor is in [0, 1];
+- adding a send lowers π;
+- π rises only when a report arrives;
+- the only order in m is the product;
+- all quantities are in seconds.
 
 **Symbol provenance.**
 
 | symbol | provenance |
 |---|---|
-| t_j, p_j | the sender's own state: the original in `retransmit_buffer` (send time, path); resends in `nack_retx_at` (time, path), extended in §5 |
-| ε_p | measured: path p's loss estimator. Today the original's factor reads the worst-ε estimator at send (`emit_source.rs:499–503`), which is DIVERGENT at N ≥ 2; the law wants the send path's ε |
-| SRTT_p | measured: path p's smoothed send-to-report RTT. Today it is the worst-ε path's app-echo EWMA (E01, DISHONEST-INPUT) |
-| RTTVAR_p | measured RTT dispersion per path. Today it is a stand-in, 0.1·SRTT floored at 1 ms (E09, UNDERIVED) |
-| Φ | cited: the Gaussian RTT model of §3.2 |
-| "covered by a report" | the exact reflection signal: cum-ack and SACK ranges, §4.13's definition of *live* |
+| t_j, p_j | the sender's own state: `retransmit_buffer` holds the original (time, path); `nack_retx_at` holds the newest resend, extended in §5 |
+| t_R, h_R | the sender's own state: the arrival time of the newest gap report, and the end of its last range |
+| ε_p | measured: path p's loss estimator. The original's factor reads the worst-ε path's ε today (§2.1) |
+| SRTT_p | measured: path p's smoothed app-echo RTT, `est.rtt()` (E01; dwell-inclusive, which is the right quantity for a send → report time) |
+| RTTVAR_p | measured: path p's RFC 6298 mean deviation, `rtt_mdev_us` (`scheduler/path.rs:820–843`), ×1.2533 for σ. Today it is the 0.1·SRTT stand-in (E09) |
+| Φ | cited: §3.2's Gaussian RTT model |
+
+### 2.1 Input honesty, as a reading (review item 2)
+
+**Method.** I read every `[DIAG]` tick with src > 0 on the c8 sweep rows (full logs; 6 rows per
+arm; `[DIAG] … pN: pl=… rtt=…/wrtt=…/rtp…ms … rvar_us=…`). For each tick I took the worst-ε leg
+the way `p_lost_inputs` does (the max of `pl=`, which is `estimator.loss_rate()`). The script is
+the scratchpad `rtt.py`; it is not committed.
+
+| c8 arm | worst leg = p0 | SRTT used: median (p10–p90) | 0.1·SRTT used | p0 app-echo rtt / wire rtt | p1 app-echo rtt / wire rtt | measured RTTVAR p0 / p1 |
+|---|---|---|---|---|---|---|
+| HA | 66 % of ticks | 308 ms (164–705) | 31 ms | 282 / 113 ms | 610 / 585 ms | 0.5 / 1.6 ms |
+| NA | 67 % | 297 ms (166–699) | 30 ms | 275 / 117 ms | 612 / 578 ms | 0.5 / 1.6 ms |
+| AM, AP, RM, RP | 67–70 % | 283–311 ms | 28–31 ms | 260–287 / 121–138 ms | 607–638 / 576–596 ms | 0.5 / 1.5–1.7 ms |
+
+**The ε input reads mostly 0** (scratchpad `pl.py`; all ticks with src > 0):
+
+| arm | ticks with max(`pl=`) > 0 | its median when > 0 | p90 | truth per-datagram loss |
+|---|---|---|---|---|
+| c8 HA | 45 % | 0.0032 | 0.044 | 0.025 / 0.045 (p0 / p1) |
+| c2 HA | 18 % | 0.0033 | 0.037 | 0.025 |
+
+**Readings:**
+1. **SRTT used is the wrong leg two thirds of the time.** It is the fast leg's clock (about
+   300 ms), while a resend placed on p1 is reported after about 610 ms. Every p1 epoch then ends in
+   a copy: π crosses its draw at about 1.2 × 300 ms, long before the p1 report.
+   - The worst-ε leg is p0, the fast leg, so this is the "early copy" direction of §3, not the
+     harmless late one.
+   - Per-path SRTT removes it. The p1 factor would then use about 610 ms.
+2. **0.1·SRTT is 20–60× the measured RTTVAR.** That is 30 ms against 0.5 ms (p0) and 1.6 ms (p1).
+   - The stand-in makes the knee *wider*, so it is not the source of early copies here.
+   - But measured RTTVAR is not honest either. The app-echo EWMA drifts 137–336 ms (p0, p10–p90)
+     over a run, and the per-sample mean deviation does not see the drift. With RTTVAR = 0.5 ms the
+     posterior flips within 2 ms of SRTT. Any drift faster than the EWMA turns into copies.
+   - So neither input is honest for S06′'s S_j. The honest one is the dispersion of the send →
+     report time around the *current* SRTT, including its drift over one RTT. No gauge prints it.
+3. **ε̂ is 0 on 55 % (c8) and 82 % (c2) of ticks,** against a truth of 0.025–0.045. `p_lost`
+   returns 0 at ε ≤ 0, so a send whose ε̂ at send was 0 is never copied.
+   - This damps today's defect. It does not cause it: the blocker's `eps_at_send` was taken on a
+     tick where ε̂ > 0.
+   - Under S06′ it would make factors on those sends 0, so their holes would rest on NACK alone.
+   - ε̂ is the TX EWMA (`estimator.rs:498`). That is a DISHONEST-INPUT finding for every reader
+     of `loss_rate()` as a per-send loss probability. It belongs on the estimator row, not here
+     (reported, not fixed).
+
+**The copy-chain bound (one copy per knee time, no backoff).** Assume the worst case: every
+report is later than the knee, so every epoch ends in a copy.
+- **Per hole.** An epoch whose draw is U > 2ε needs S ≤ ε(1−U)/(U(1−ε)) ≤ 1/2, so it lasts at
+  least SRTT_used. With probability ≤ 2ε it ends sooner. So per named hole, copies ≤
+  SRTT_used⁻¹/(1 − 2ε) ≈ 1.1 per SRTT_used.
+- **Per sender.** Copies/s ≤ 1.1·H / SRTT_used, where H is the number of named seqs. H is measured
+  as gap seqs per report (`mpr seqs/rep`): 67–77 at c8 HA and 33–42 at c2 HA.
+
+| cell | H | SRTT_used | chain bound | slots/s today (r × src rate) | copies/s today |
+|---|---|---|---|---|---|
+| c8 HA | 72 | 164 ms (p10) | ≤ 480/s | 0.242 × 8 770 ≈ 2 120 | 2 067 (Addendum 2) |
+| c8 HA | 72 | 308 ms (median) | ≤ 260/s | 2 120 | 2 067 |
+| c2 HA | 38 | 245 ms | ≤ 170/s | 0.198 × 8 080 ≈ 1 600 | about 1 000 |
+
+The worst case is ≤ 23 % of today's slot count at c8 and ≤ 11 % at c2. So it stays below the slot
+count, and below today's copies by 4–8×. Without backoff, the chain holds as long as the hole
+does. That is the cost of inputs that are not honest, and per-path SRTT removes the p1 half of it
+(owner question Q2).
 
 ## 3. Shape checks
 
-All values are computed from S06′ (`scratchpad` arithmetic with the paper's §3.2 WiFi values
-ε = 0.025, SRTT = 50 ms, RTTVAR = 5 ms, unless stated).
+Values are computed from S06′ with §3.2's WiFi values (ε = 0.025, SRTT = 50 ms, RTTVAR = 5 ms)
+unless stated. Ages are on the report clock.
 
-**ε → 0.** Every factor goes to 0 at a fixed age, so π → 0. A clean link never copies, and the
-slot goes to coded repair. The order of limits matters: at fixed ε > 0, a → ∞ gives 1. In the code,
-`p_lost` returns 0 at ε ≤ 0. Read under the model, that is an anomaly verdict: a seq that is never
-acked on a link with "zero loss" is not a loss the model can price. NACK and the tail sweep stay
-its backstop.
+- **ε → 0.** π → 0 at a fixed age, so a clean link never copies. The order of limits matters: at a
+  fixed ε > 0, a → ∞ gives 1. `p_lost` returns 0 at ε ≤ 0; under the model that is an anomaly the
+  model cannot price, and NACK and the tail sweep are its backstop. §2.1 reading 3 shows this
+  limit is live: ε̂ reads 0 on most ticks.
+- **One resend in flight, younger than SRTT.** The original is 70 ms old (factor 0.9988):
 
-**One copy in flight, age below srtt.** The original is aged 70 ms, so its factor is 0.9988. Now
-add a resend aged a_1:
+  | a_1 | 0 | 20 ms | 40 ms | 50 ms | 55 ms | 60 ms | 70 ms |
+  |---|---|---|---|---|---|---|---|
+  | π | 0.0250 | 0.0250 | 0.0255 | 0.0487 | 0.139 | 0.529 | 0.998 |
 
-| a_1 | 0 | 20 ms | 40 ms | 50 ms | 55 ms | 60 ms | 70 ms |
-|---|---|---|---|---|---|---|---|
-| π | 0.0250 | 0.0250 | 0.0255 | 0.0487 | 0.139 | 0.529 | 0.998 |
+  A young resend brings π down to its own path's ε. Today's code reads 0.9988 throughout.
+- **age ≫ SRTT with m resends that all failed.** π → 1, and a copy is right. m does not lower π:
+  each overdue report refutes delivery. The fragility is that late reports make every factor
+  overconfident in the same direction (§2.1). The chain bound limits the cost to about 1.1 copies
+  per SRTT_used per hole.
+- **N = 1.** All factors share (ε, SRTT, RTTVAR), and the newest send dominates.
+- **N = 2.** Each factor uses its own send's path. A c8-like case: the original is on the slow leg
+  (0.045, 577 ms, 57.7 ms) and aged 6 s; the resend is on the fast leg (0.025, 237 ms, 23.7 ms):
 
-- A young resend brings π down to ≈ ε_{p_1}: the probability that the resend itself is lost.
-- π comes back to 1 only once the resend's own report is overdue. The curve is §3.2's curve,
-  re-started at the resend.
-- Today's code reads 0.9988 throughout. That is the measured duplication.
+  | resend age | 50 ms | 200 ms | 237 ms | 260 ms | 300 ms |
+  |---|---|---|---|---|---|
+  | π with per-path inputs | 0.025 | 0.027 | 0.049 | 0.134 | 0.867 |
+  | π with the worst-ε (slow) leg's inputs | 0.045 | 0.045 | 0.045 | 0.045 | 0.045 |
 
-**age ≫ srtt with m resends that all failed.** Every factor → 1, so π → 1. The symbol is surely
-still missing, and a copy is right. m does not lower π: each overdue report refutes delivery
-outright, because the Gaussian survival falls faster than ε^m does.
+  - When the worst-ε leg is the slow one, the error is a late copy, which is harmless.
+  - When it is the fast one, which is the measured c8 case (§2.1), the error is early copies:
+    waste.
+  - Per-path inputs need no path-count branch: the product runs over sends.
+- **δ and ρ.** S06′ has no δ or ρ input. δ reaches the slot only through the slot count
+  r(β(δ)) and the shed deadline D(δ). ρ reaches it through the shed budget and the seat switch
+  (§4, §6).
 
-The same point is a fragility. If reports are late for a reason the model lacks (dwell in
-`est.rtt()`, E01; a too-small RTTVAR, E09; a slow ack path), every factor is overconfident *in the
-same direction*. The sends are then not independent evidence. S06′ stays correct only with honest
-per-path SRTT and RTTVAR. The rate of copies this can cause is bounded by the draw rule of §4: at
-most one per resend epoch, not one per slot.
+## 4. The slot decision
 
-**N = 1.** All factors share (ε, SRTT, RTTVAR). π = Π_j P_lost(a_j), and the newest send dominates.
-The candidate set of §5 (the named holes) has no path dimension, at any N.
+**The per-slot draw.** Today's draw runs once per slot, and slots are far more frequent than RTTs:
+about 390 evaluations per SRTT at c2 Auto (1.6k slots/s × 245 ms), and 500–1 300 at c8. With a
+resend in flight, π ≈ ε still gives 1 − 0.975³⁹⁰ ≈ 1, so you still get about one copy per loss.
+The draw has to be made per symbol:
 
-**N = 2.** Each factor uses the path of its own send. A c8-like example:
-- the original was sent on the slow leg (ε 0.045, SRTT 577 ms, RTTVAR 57.7 ms) and is aged 6 s;
-- a resend went on the fast leg (ε 0.025, SRTT 237 ms, RTTVAR 23.7 ms).
-
-| resend age | 50 ms | 200 ms | 237 ms | 260 ms | 300 ms |
-|---|---|---|---|---|---|
-| π, per-path inputs (S06′) | 0.025 | 0.027 | 0.049 | 0.134 | 0.867 |
-| π, worst-ε path's inputs for every factor (today's input choice) | 0.045 | 0.045 | 0.045 | 0.045 | 0.045 |
-
-With today's inputs, the fast-leg resend is judged on the slow leg's clock. Its loss is noticed
-only after 577 ms + 3·58 ms instead of 237 + 3·24 ms. That is late, not wasteful, but only because
-the worst-ε leg is the slow one here. Where the worst-ε leg is the fast one, a slow-leg resend is
-judged on the fast clock, and the error is early copies: waste. Per-path inputs
-are required for the shape at N ≥ 2. They need no path-count branch: the product runs over sends,
-whatever N is.
-
-**Continuity in δ and ρ.** S06′ has no δ and no ρ input. The δ dial reaches this law only through:
-- the number of slots, r(β(δ)), which is already continuous and pinned;
-- the shed deadline D(δ) inside the slot.
-
-ρ reaches it only through the shed budget. So the copy law is trivially continuous through every
-preset, and the test of §8 asserts this at the engine (copies per hole), not only at the formula.
-
-## 4. The slot decision: when a copy of k beats a coded symbol
-
-**The per-slot draw is the second defect.** Today a slot copies with probability π, and slots are
-far more frequent than RTTs:
-- c2 Auto has about 8.1k source/s × 0.198 ≈ 1.6k slots/s, so about 390 evaluations per
-  srtt (245 ms);
-- c8 has about 2.1k slots/s, so 500–1 300 per fast-leg srtt.
-
-Re-stamping alone therefore does not fix the duplication. With a NACK resend in flight, π ≈ ε =
-0.025, and 1 − 0.975³⁹⁰ ≈ 1, so you still get about one copy per loss, duplicating its NACK resend.
-The paper's "retransmit with probability P_lost(t)" is right *per symbol* and wrong *per slot*.
-The law has to state it per symbol.
-
-**The Bayes comparison, and why it cannot ship yet.** Both kinds of symbol cross a channel that
-loses them with the same ε, so ε cancels. A slot that carries a copy of k delivers a needed
-degree of freedom (DoF) with probability π_k. A coded symbol delivers one with probability u, the
-chance that its span still has a missing DoF that no live correction covers. The expected-DoF rule
-is:
+> **Sentence.** A slot carries a copy of a named hole k when π_k has reached k's draw for its
+> current send epoch; otherwise it carries a coded symbol.
 
 ```text
-   copy k  iff  π_k  >  u                                                         (Bayes form)
+   copy k   iff   π_k  ≥  U_{k,m_k} ,     U_{k,m} = h(k, m) / 2⁶⁴   (h: a fixed 64-bit mix)      (S06′ decision)
 ```
 
-The paper's only closed form for u is the window model at the operating rate, u ≈ 1 − P_fec(r)
-(A.3).
-- At c2 Auto (W 201, ε 0.025, r 0.19, σ² = 1) this is Q(13.3) ≈ 7·10⁻⁴¹. The rule then copies on
-  every slot, because every unacked seq has π ≥ ε ≫ u. That reproduces the defect.
-- So the model u is DEGENERATE at the operating point: r ≫ ε, which is R01's and R02's business.
-- A measured u needs §4.13's DoF ledger: per-component k_c − a_c from receiver reports. The plain
-  window does not implement it (§11.3, "the rate law's feedback leg").
-
-This form is therefore the target, not the shipped law (Q1).
-
-**The shippable form: one draw per symbol per send epoch.** Read §3.2's rule literally: the
-*symbol* is retransmitted with probability P_lost by the time its report is overdue. Give each
-(seq, send count) one uniform variate, U_{k,m} ~ U(0,1), and copy at the first slot where the
-posterior reaches it:
-
-> **Sentence.** A slot carries a copy of the candidate seq k when the probability that k is still
-> missing has reached that seq's draw for its current send epoch; otherwise the slot carries a coded
-> symbol.
-
-```text
-   copy k   iff   π_k(t)  ≥  U_{k,m_k} ,     U_{k,m} = h(k, m) / 2⁶⁴                 (S06′ decision)
-```
-
-Here h is a fixed 64-bit mix of (seq, send count), the same draw on every evaluation. It needs no
-RNG state, and a test can reproduce it.
-
-Properties:
-
-1. **At most one copy per epoch.** A copy increments m_k and starts a fresh epoch, with its own
-   draw, and π falls to ≈ π·ε_c. So per epoch, P(copy) = P(U ≤ sup π over the epoch) ≤ 1.
-   Immediate re-fires happen with probability ≈ ε_c. This holds whatever the slot rate, so it
-   holds whatever r(β(δ)) is.
-2. **NACK and copies compose.** Both producers stamp the same per-seq clock (§5). A NACK resend
-   starts an epoch the copy law sees, and a copy engages the NACK cooldown. Together they produce
-   about one correction per seq per resend round, whichever fires first.
-3. **The waste per epoch, integrated.** Take an epoch whose send is in fact delivered. π rises
-   with age, so the copy fires before the report iff U ≤ P_lost(RTT), where RTT is that send's
-   report time. By the probability integral transform, S(RTT) ~ U(0,1), so
-
+**Properties:**
+1. **At most one copy per epoch per hole.** A copy increments m and draws afresh. Re-fires within
+   an epoch happen with probability ≈ ε. This holds whatever the slot rate r(β(δ)) is.
+2. **Integrated waste per delivered epoch.** The copy fires before the report iff U ≤ P_lost(RTT).
+   S(RTT) ~ U(0,1), so
    ```text
-      w(ε)  =  E[ P_lost(RTT) ]  =  ∫₀¹ ε / (ε + (1−ε)s) ds  =  ε·ln(1/ε) / (1 − ε)
+      w(ε)  =  ∫₀¹ ε / (ε + (1−ε)s) ds  =  ε·ln(1/ε) / (1 − ε)            (0.095 at ε = 0.025; 0.158 at 0.05)
    ```
+   This holds on honest inputs only; on the §2.1 inputs, p1 epochs end in a copy (the chain bound).
+3. **Shared stamp.** NACK resends and copies stamp one per-seq clock (§5). Per epoch they produce
+   one correction between them, plus the ≈ w redundant copy.
 
-   This is 0.095 at ε = 0.025 and 0.158 at ε = 0.05. It is not ε: the posterior spends its ramp
-   inside the delivered send's own RTT spread. An epoch whose send is lost copies with
-   probability → 1, and that copy is useful.
-   - Per *named hole*, then: about w·(1 − ε) + ε ≈ 0.12–0.21 copies per resend epoch.
-   - Per evaluated *delivered* symbol (any never-lost seq the slot reaches near its report time):
-     w. If the candidate set reached every unreported seq, that would mean ln(1/ε) ≈ 3.7 redundant
-     copies per useful one. The candidate set of §5 must therefore be the named holes only.
-     §3.4's localisation rule ("retransmit once the loss is confirmed, repair while it is
-     uncertain") says the same.
-4. **No constant and no mode.** The only symbols are the posterior and the uniform. No δ or ρ
-   enters, so there is no threshold on either and no hint branch.
+**The marginal value of a copy (review item 3).** Candidates are named holes, and the NACK path
+already resends each one once per SRTT from the same stamp. So, at ρ = 1, a copy adds **no
+degree of freedom** that the NACK would not send.
 
-**The ρ seat inside this slot is debt, not a dependency.** The `pol.shed_on` block in the slot
-(`emit_source.rs:760–795`) is the give-up seat switch (§11.3, give-up row; ledger M04 and related
-rows). This law does not build on it. Composition: the shed test runs first, on the original age
-against D(δ), exactly as today. A seq it sheds leaves the candidate set, and its posterior is moot.
-A seq refused by the ρ budget falls through to S06′ unchanged. When the seat switch is replaced by
-the continuous give-up law, S06′ does not change.
+It adds only *timing*, in two forms:
+- **(a) An earlier first resend,** when the posterior's knee (about 1.2·SRTT_p) comes before NACK
+  ripeness.
+  - Measured: the mean live-flight age at NACK fire (`mpr age=`, a cumulative mean over the run)
+    is 195 ms at c2 HA, below its knee of about 290 ms. So at c2 the NACK usually wins and a copy
+    adds about nothing.
+  - At c8 the same gauge reads 3.0–3.6 s at the median (p10 0.41 s), against a knee of
+    0.36–0.75 s. There a copy is the earlier trigger by seconds. That is C02's "the law sees only
+    old holes", which the copy is papering over.
+- **(b) Cover for the resend's own loss** (probability ε), a cooldown earlier than the NACK's next
+  ripe report.
 
-## 5. Which seq a slot evaluates, and the state
+So a copy is a second *trigger* for the same correction, not a second correction. Its value is
+latency, priced by δ. The slot decision does not read δ.
 
-**The premise of §3.2 fails as wired.** "The smoothness comes from the spread of symbol ages in
-the buffer" assumes that the slot sees many seqs. The code reads only `first()`. That is the
-receiver's last reported `next_expected`, the cumulative-ack blocker, so it is never SACKed as of
-the latest report. With the age measured from the original send, it is also the seq whose π is
-most over-stated.
+**What is derived and what is kept.**
+- **Derived:** S06′ (the posterior), the epoch rule (one draw per symbol per epoch), the named-hole
+  candidate set, and the bounds in properties 1–3.
+- **Kept from §3.2, not derived:** "copy with probability π", i.e. U uniform. The derived
+  comparison would weigh π_k's latency value against a coded symbol's usefulness u:
+  ```text
+     copy k  iff  π_k · v_copy(δ)  >  u · v_coded(δ)                      (target form)
+  ```
+  - u needs §4.13's DoF ledger. The model's u = 1 − P_fec(r) is about 7·10⁻⁴¹ at c2 Auto
+    (W 201, ε 0.025, r 0.19), so it is degenerate.
+  - The v(δ) needs the latency price of an earlier trigger.
 
-**The candidate set: the named holes.** A named hole is a seq with ack < k ≤ h that is not
-covered by any SACK range of the latest report and is not shed. The cumulative blocker `first()`
-is one of them. Two other kinds of seq are not candidates:
-- A SACKed seq has π = 0 by evidence, so the law excludes it without a branch.
-- A seq above the horizon has π = Π ε_j (the prior, §2). Its loss is not localised, so it belongs
-  to coded repair (§3.4). Making it a candidate would copy w ≈ 0.1 of every delivered symbol (§4,
-  property 3).
+  Neither exists, so **this part stays UNDERIVED** (owner question Q1).
 
-The slot evaluates every named hole and takes the one with the largest π − U_{k,m} ≥ 0. If there
-is none, the slot carries a coded symbol.
+**ρ < 1 (review item 4).** The `pol.shed_on` block in the slot (`emit_source.rs:760–795`) is
+the give-up seat switch: existing debt (§11.3 give-up row), which this law does not build on. The
+shed test runs first, on the original age against D(δ); a shed seq leaves the candidate set.
 
-**Cost.**
-- There are at most `MAX_SACK_RANGES` + 1 = 65 named holes per report: one gap before each range,
-  plus the blocker.
-- The set is rebuilt per report, as `sack_to_gaps` already does for the NACK loop, in
-  O(ranges).
-- One evaluation is O(65) per slot, constant in N, in the window size and in `retx_buf`.
-- Memory is O(65) beyond the per-seq state below.
+Does ρ select the named-hole set through the wire? It does not, provided the set is built from the
+**gap stream**:
+- **The receiver sends SACK-bearing gap reports at every seat.** The data-arm path is ungated
+  (`receiver.rs:1953–1990`, `sack.rs:482`).
+- **The sender gets the gaps at every seat.** `sack_to_gaps` (`control_msg.rs:728`) feeds
+  `nack_tx`, which is `Some` whenever `!generation && !request_law` (`net/mod.rs:1062–1069`).
+- **Only the SACK-range forward is seat-gated.** `sack_tx` is `Some` only on the reliable,
+  non-generation, non-coded-only seat with the store-release gate on (`net/mod.rs:1101–1109`).
+  Reading `sack_released` would make the evidence ρ-selected. So the requirement is: **build the
+  named-hole set from the gap batches, never from `sack_released`** (§5, R1).
+- **What ρ does change:** the stalled-hole refresh exists only at ρ = 1 (`receiver.rs:856`), and
+  force-delivery only at ρ < 1. So the *report cadence* at a stall is seat-selected. That is the
+  same seat-switch debt. It changes t_R, not the definition of a named hole.
 
-**SACK must be excluded, and the state must not depend on a gate.** The sender's SACK record
-(`sack_released`, `net/mod.rs:1911`) is filled only when `store_sack_release_on`. That is
-`reliable && !generation && !coded_only && gate` (`sender_policy.rs:627–628`). If S06′ read it as
-it stands, its evidence would be selected by the ρ boolean. That is a mode switch by the back door.
+**Arithmetic on block E, PM s42 r1** (c2, paced 35 Mbit/s, evicting seat; `s51e-session.tgz`,
+last `[DIAG]` and `[TRUTH]`):
 
-So the engine requirement is a per-seq "covered by a SACK range" predicate, kept from the
-reports on every seat. For example, the `SackMemo` interval set, maintained independently of
-whether the store release consumes it.
+| quantity | value |
+|---|---|
+| src | 531 378 |
+| coded | 101 361 |
+| taper = plost | 10 197 |
+| NACK retx | 9 315 |
+| shed | 1 934 |
+| wire loss | 0.0253 (10 864 lost) |
+| `retx_buf` at end | 117 |
+| app-echo srtt | 14 ms |
+| mean NACK live-flight age | 17 ms |
 
-A SACKed seq can still be evicted at the receiver (`sack.rs` comment on the store release). The
-NACK path, which serves from `sent_store`, stays its backstop.
+- **Today.** L ≈ 0.0253 × 531 378 ≈ 13.4k. Copies are 0.76 per source loss, NACKs 0.69 and sheds
+  0.14, for a total of 1.6 per loss. Copies are 9.1 % of slots (10 197 / 111 558).
+- **There is no stuck blocker.** `retx_buf` is 117, so `first()` turns over within about one
+  RTT, and today's law already behaves like a per-epoch rule there.
+- **Under S06′** the band is 0.12–1.15 copies per source loss, so 1.6k–15.4k copies. Today's
+  10.2k is inside it.
+- **So S06′ changes little at ρ < 1 paced.** The defect is a stalled-frontier defect.
 
-**Per-seq state (the requirement).** Extend `nack_retx_at: seq → (t_last, path_last)` to
-`seq → (t_last, path_last, m, ε_last)`. That is 8 B more per resent seq. The map is pruned at
-the cumulative ack (`sender_phases.rs:1434`), so its size is ≤ |retransmit_buffer|.
+## 5. Candidates, state and requirements
 
-The original's (t_0, ε_0, path_0) stays in `retransmit_buffer`. The ε stored should be the send
-path's, not the worst path's.
+**R1: the candidate set is the named holes,** built from the gap stream at every seat. A named
+hole is a seq inside the newest gap batch's gaps (ack < k ≤ h_R, not SACKed) that is not shed;
+the blocker is one of them.
+- A SACKed seq has π = 0.
+- A seq above h_R has π = Π ε. Its loss is not localised, so it belongs to coded repair (§3.4).
+  Making it a candidate would copy w ≈ 0.1 of every delivered symbol.
 
-**The approximation, with its direction.** The state holds the original and the newest resend. It
-drops the factors of intermediate resends.
+**R2: the SACK and gap evidence must be held independently of any seat or gate.** This is not an
+owner question: NO-MODE-SWITCH forces it. Per R1 it already holds if the set is read from the
+`nack_tx` gap batches. `sack_released` must never be read.
 
+**Selection and cost.**
+- The slot takes the named hole with the largest π that meets π ≥ U. The order of candidates is
+  by newest send time; it is held as a heap keyed by t_last and rebuilt per gap batch.
+- H, the number of named seqs, is measured at 33–42 per report at c2 and 67–77 at c8. So the cost
+  is O(H log H) per report and O(log H) per slot, and memory is O(H).
+
+**Per-seq state.** Extend `nack_retx_at` from `seq → (t_last, path_last)` to
+`(t_last, path_last, m, ε_last)`.
+- That is 8 B more per resent seq. The map is pruned at the cumulative ack
+  (`sender_phases.rs:1434`), so it holds ≤ |`retransmit_buffer`| entries.
+- The original's (t_0, path_0) stays in `retransmit_buffer`.
+- The ε stored at send should be the send path's.
+
+**Settled here: one resend in the state (was Q5).** The state holds the original and the newest
+resend:
 ```text
    π̂_k  =  P_lost(a_0) · P_lost(a_m)   ≥   π_k
 ```
+- The dropped factors are ≤ 1, so the approximation can only bring a copy forward.
+- Once the newest resend is older than SRTT + 3·RTTVAR, the dropped factors are ≈ 1.
+- The only material case is an immediate re-fire (probability ≈ ε), which over-states by 1/ε for
+  one epoch and costs at most the one copy that property 1 already counts.
+- A second slot (12 B per seq) does not pay for itself.
 
-Every dropped factor is ≤ 1, so π̂ over-states π and can only bring a copy forward. Once the newest
-resend is older than about SRTT + 3·RTTVAR, every dropped factor is ≥ the newest's and ≈ 1, so the
-error is in the 3rd significant figure.
+**Settled here: ignore coded coverage (was Q4), with a bound.**
+- A coded repair covers k only while k is inside the trailing span: within A*/R of k's send. That
+  is about 109 / 8.1k ≈ 13 ms at c2 and about 109 / 8.8k ≈ 12 ms at c8 (`[SPAN] a_star=`).
+- A recovery by such a row is reflected by the report that follows it. So the over-statement of
+  π from ignoring coded rows is at most S(a_0 − A*/R) in absolute terms.
+- At the first knee (a_0 ≈ SRTT + 2·RTTVAR), that is ≤ Q(2 − (A*/R)/RTTVAR). This is 0.055 with
+  RTTVAR = 30 ms, and ≈ 0 with an RTTVAR of milliseconds. It is 0 for every later epoch, since k
+  has left the span for good.
+- The bound is smaller than w, so no factor is added.
 
-The worst case is two resends younger than SRTT: an immediate re-fire, probability ≈ ε_c. Then π̂
-over-states by 1/ε_c for one epoch. That costs at most the one extra copy that property 1 already
-counts. Keeping the two newest resends removes the case, at 12 B more per seq (Q5).
+**Settled here: do not use v9's `received_above` (was Q7).** It is evidence about seqs above the
+horizon, which are not candidates. It would sharpen a prior that S06′ never acts on.
 
-**Side effects of a copy stamping the clock.** They are intended, and the request-copy producer at
+**Side effects of a copy stamping the clock.** These are intended; the request-copy producer at
 `net/mod.rs:3493` already does the same.
-- (a) The NACK cooldown (`sender_phases.rs:871`) suppresses a NACK for k within SRTT of a copy.
-- (b) `mp_flight` (`:884`) clocks the copy's flight on its own path. That is the "live flight" the
-  hole law should see.
-- (c) The packet-threshold fast path is disabled for k (`!nack_retx_at.contains_key`, `:913`). This
-  is by design: wire order ≠ seq order for resent seqs.
-- (d) `hold_echo.on_retx` must be called beside the stamp, as both other producers do.
+- (a) The NACK cooldown (`sender_phases.rs:871`) suppresses a NACK within SRTT of a copy.
+- (b) `mp_flight` clocks the copy's own flight.
+- (c) The packet-threshold fast path is skipped for a resent seq (`!nack_retx_at.contains_key`).
+- (d) `hold_echo.on_retx` is called beside the stamp.
 
-## 6. Predictions (arithmetic only; Auto, 6-row medians)
+## 6. Model side (review item 5)
 
-The slots are fixed: the debt accrues rr per source, and S06′ does not change that. So
-`coded = slots − copies`, and the wire volume does not move to first order.
+**What I searched:** `raptorpath-wasm`, `raptorpath-math` and `raptorpath-visualizer`.
+- `raptorpath-math` has `p_lost` (bit-pinned by `tests/engine_fold_pins.rs:51`), `p_lost_seq` and
+  `p_lost_combined` (`lib.rs:1412–1421`). None of them is a copy decision.
+- `raptorpath-wasm` takes one decision, its retransmit at `src/lib.rs:1266–1300`:
+  - Candidates are symbols that are truly `lost && !recovered` (an oracle; the engine has no
+    such flag).
+  - A per-symbol cooldown of one path `rtt_ticks` since `last_retx_tick` is applied.
+  - `p_lost` is evaluated on the age since the *original* send, with the loss belief and RTT of the
+    path the symbol was *last* sent on.
+  - A per-slot `rng() < pl` draw follows.
+- The model has one channel (NACK and copy are merged), a stamp, and an oracle candidate set. So it
+  never shows the engine's defect, and it diverges from S06′ in its candidate set (oracle against
+  named holes) and in its age clock.
 
-Let L be the source losses per source, ε_c the loss of the path carrying a copy, and E the
-number of resend epochs a hole needs.
+**What the change needs:**
+- `p_miss` lands in `raptorpath-math` as a **new** function. `p_lost` is unchanged, so its bit pin
+  and the wasm model are untouched in that commit (ADR-0076 phase 6, class A: no hint, δ or ρ
+  input).
+- The model–engine divergence then needs a **bounding test**, under CLAUDE.md's rule that every
+  documented divergence carries a test that bounds it. In `raptorpath-wasm`, assert that
+  retransmits per lost symbol per `rtt_ticks` are ≤ 1, the model's analogue of property 1, so the
+  divergence is bounded in copies per hole.
+- Moving the model onto `p_miss` is a separate, deliberate model change, with a `GOLDEN_CAPTURE=1`
+  re-capture of `test_multipath_n1_identical_golden`, stated as such. I do not propose it in the
+  engine change.
 
-With w(ε) = ε·ln(1/ε)/(1 − ε), the integrated waste per delivered epoch from §4 (property 3):
+## 7. Predictions (arithmetic only; Auto, 6-row medians)
 
-- **Lower edge: the NACK always fires first.** Every hole's first epoch is a NACK resend. The copy
-  law adds w(ε_c)·(1 − ε_c) redundant copies plus ε_c useful ones per epoch. So copies ≈
-  L·(w·(1 − ε_c) + ε_c) ≈ 0.12 L at ε_c = 0.025, and 0.20 L at 0.05.
-- **Upper edge: the copy always wins the first epoch.** Copies replace NACKs, so copies ≈
-  L·(1 + w·(1 − ε_c) + ε_c)/(1 − ε_c), and NACK retx falls by about L.
-- **Either way,** copies + NACK ≈ L·(1 + w(1−ε) + ε)/(1 − ε) + W_cal. Here W_cal is the
-  calibration waste of §3, from reports later than the Gaussian model allows.
-- **No floor from never-lost seqs.** Only named holes are candidates, so the r·w floor that would
-  come from evaluating delivered symbols at their report time does not arise. It would be
-  0.019 per source at c2 and 0.023–0.038 at c8.
+Assumptions:
+- Slots are fixed by rr, so coded = slots − copies.
+- L = src × per-datagram loss, the source-loss estimate. The last row restates the result per
+  status's wire-loss denominator.
 
-| per source symbol | c2 measured | c2 under S06′ | c8 measured | c8 under S06′ |
+The edges of the band:
+- **Lower edge:** the NACK wins the first epoch. Copies ≈ L·(w(1−ε) + ε).
+- **Upper edge:** the copy wins the first epoch. Copies ≈ L·(1 + w(1−ε) + ε)/(1 − ε).
+- **The chain term:** add up to the §2.1 chain bound while the inputs are not honest.
+
+| per source symbol | c2 now | c2 under S06′ | c8 now | c8 under S06′ |
 |---|---|---|---|---|
-| L (wire loss) | 0.0252 | — | 0.0293 | — |
-| ε_c used | — | 0.025 | — | 0.025–0.05 (p0 / p1) |
-| slots (consumed r) | 0.198 | 0.198 | 0.242 | 0.242 |
-| taper copies | 0.126 | 0.0030 – 0.029, + W_cal | 0.238 | 0.0034 – 0.037, + W_cal |
-| coded | 0.072 | 0.169 – 0.195, − W_cal | 0.0039 | 0.205 – 0.239, − W_cal |
-| copies per source loss | 5.0 | 0.12 – 1.15 | 8.1 | 0.12 – 1.26 |
+| L (source losses) | 0.0252 | — | 0.0293 | — |
+| slots (taper + cod) | 0.198 | 0.198 | 0.242 | 0.242 |
+| taper copies | 0.126 | 0.0030 – 0.029 | 0.238 | 0.0034 – 0.037 |
+| coded | 0.072 | 0.169 – 0.195 | 0.0039 | 0.205 – 0.239 |
+| copies per source loss (L) | 5.0 | 0.12 – 1.15 | 8.1 | 0.12 – 1.26 |
+| copies per wire loss (status's `lost`) | 4.02 | 0.10 – 0.92 | 6.29 | 0.09 – 0.98 |
 
-So at c8 the proactive coded channel goes from 1.6 % of slots to 85–99 % of them. At c2 it goes
-from 36 % to 85–99 %.
+- **Where each cell lands, from the NACK-age reading of §4.** c2 lands near the lower edge: NACK
+  fires at about 195 ms, before the knee. c8 lands near the upper edge: NACK fires at about 3 s,
+  after it.
+- **c8 under the worst case.** The chain bound adds ≤ 260–480 copies/s (≤ 0.03–0.055 per source)
+  while SRTT is the worst leg's. The coded share of slots goes from 1.6 % to at least about 60 %
+  in the worst case, and to 85–99 % on per-path inputs.
+- **Shares:** at c2 from 36 % to 85–99 %; at c8 from 1.6 % to 85–99 % on per-path inputs.
 
-**What a run must answer.**
+**What a run must answer:**
+- the race placement per hole, since `age=` is a run-mean, not a distribution;
+- how much of the chain term is realised;
+- whether the freed coded slots are useful, with r ≈ 0.24 against L ≈ 0.03 (R01, R02 over-provision);
+- goodput and in-order delay;
+- whether the c8 blocker age collapses;
+- the NACK count with a shared cooldown.
 
-1. **Where in the band each cell lands.** This is the race between packet-threshold or
-   time-threshold NACK detection (about 1 RTT, C01, C02) and the posterior's knee (about SRTT +
-   2·RTTVAR on the newest send). Its timing distribution is not printed.
-2. **W_cal.** It comes from report delays outside the Gaussian model: dwell in `est.rtt()` and
-   RTTVAR = 0.1·SRTT. It is bounded by one copy per epoch, so it is at most (hole lifetime ÷ epoch
-   length) per hole. For a 5–7 s c8 stall at SRTT 0.26–0.6 s, that is 8–27 copies, against about
-   137 today (brief). It cannot be smaller than 0 or predicted without an age-at-copy gauge.
-3. **Whether the freed coded slots are useful.** At c8, r ≈ 0.24 against L ≈ 0.03. The trailing
-   span can use at most about L of them, so most of the coded symbols may be wasted too. That is
-   the rate law's over-provision (R01, R02, r_sat), which this law exposes rather than fixes.
-4. **Goodput and in-order delay, at c2 and c8.** In particular, whether the c8 blocker age and
-   `retx_buf` collapse once the stale copies stop. Status calls the ages an inference.
-5. **The NACK count once the cooldown is shared.** It is in the band, not pinned.
+Addendum 2's goodput arithmetic stands: spending the slots on coded repair leaves goodput
+unchanged, because the slot count is the consumed r.
 
-## 7. Proposed paper text
+## 8. Proposed paper text
 
 **§3.2, replace from "The transition is sharp;" to the end of the section with:**
 
-> P_lost is the posterior of a symbol sent once. A symbol already resent has more evidence: each
-> send j, at age a_j on path p_j, is either lost or delivered with its report not yet back, and the
-> sends are independent under the same channel model. The probability that symbol k is still
-> missing is then the product of one P_lost factor per send:
+> P_lost is the posterior of a symbol sent once. With resends, each send j is either lost or
+> delivered and not yet reflected by the newest report R that could name the symbol, arrived at
+> t_R. Under independent losses across sends, the probability that symbol k is still missing is
+> then:
 >
 > ```text
->    π_k(t)  =  Π_{j=0}^{m} P_lost(t − t_j ; ε_{p_j}, SRTT_{p_j}, RTTVAR_{p_j})    for k within the latest report's horizon
->    π_k     =  0 once a report covers k ;   π_k = Π_j ε_{p_j} above the horizon (no report has spoken)
+>    π_k  =  Π_{j=0}^{m} P_lost(t_R − t_j ; ε_{p_j}, SRTT_{p_j}, RTTVAR_{p_j})   for k inside R's horizon
+>    π_k  =  0 once a report covers k ;   π_k = Π_j ε_{p_j} above every report's horizon
 > ```
 >
-> With one send this is P_lost. A young resend brings π_k down to about its own path's ε. π_k comes
-> back to one only when that resend's report is overdue. Resends that are all overdue leave π_k at
-> one, however many there are.
+> - Ages run on the report clock, so the posterior moves only when evidence arrives. If reports
+>   stop, π freezes and the stall backstops recover the symbol.
+> - A young resend brings π_k down to its own path's ε. Resends whose reports are all overdue
+>   leave π_k at one.
 >
-> **The copy decision is per symbol, not per slot.** Each symbol draws one uniform U_{k,m} per send
-> epoch, and a correction slot copies the candidate k once π_k reaches U_{k,m}. Otherwise the slot
-> carries a coded symbol. A symbol is therefore copied with probability π_k by the time its report
-> is overdue, and at most once per epoch, whatever the slot rate.
+> **The copy is decided per symbol, not per slot.** The candidates are the holes the newest report
+> names. Each draws one uniform U_{k,m} per send epoch, and a correction slot copies k once π_k
+> reaches it; otherwise the slot carries a coded symbol. Every send stamps one per-seq clock
+> (time, path, count), which the NACK cooldown also reads.
 >
-> A draw per slot repeats the same question hundreds of times per RTT. That was the shipped defect:
-> copies were 5–8 per wire loss, and the coded channel was shut at two paths (status §51 block 51,
-> Finding 1).
->
-> The candidates are the named holes: seqs inside the latest report's horizon that it neither
-> acks nor SACKs. A seq whose loss is not localised gets coded repair (Section 3.4). Every send
-> stamps one per-seq clock (time, path, count), which the NACK cooldown reads too.
->
-> For an epoch whose send is in fact delivered, the copy fires before its report with probability
-> E[P_lost(RTT)] = ε·ln(1/ε)/(1 − ε): 0.095 at ε = 0.025. An epoch whose send is lost copies with
-> probability one. The law has no δ or ρ input. The dial reaches it only through the number of
-> slots r(β(δ)).
->
-> The expected-DoF comparison, "copy iff π_k exceeds the chance u that a coded symbol supplies a
-> missing DoF", is the target form. It needs a measured u (the DoF ledger of Section 4.13). The
-> model's u = 1 − P_fec(r) is about 10⁻⁴⁰ at the operating rates, which would turn every slot into
-> a copy.
+> - For a delivered epoch, the copy fires before the report with probability
+>   ε·ln(1/ε)/(1 − ε): 0.095 at ε = 0.025.
+> - The copy adds no degree of freedom over the NACK resend. It is an earlier trigger and cover
+>   for the resend's loss.
+> - "Probability π" is retained from the single-send rule, not derived. The derived comparison
+>   needs the latency value of an earlier trigger and the usefulness of a coded symbol (the DoF
+>   ledger of Section 4.13).
+> - A per-slot draw repeats the same question hundreds of times per RTT. That was the shipped
+>   defect (status §51 block 51, Addendum 2).
 
-**§3.2, the last paragraph** ("In the shipped window machine …") is replaced by the engine state,
-once it ships, and the "measured inert" sentence is withdrawn. Status §51 measured the copy firing
-on every off-Bulk row.
+**§3.2, the last paragraph:** withdraw "measured inert", and replace it with the engine state
+once that ships.
 
-**A.2, add a line under P_lost:**
-
+**A.2:**
 ```text
-   π_k(t)     =  Π_j P_lost(t − t_j ; ε_{p_j}, SRTT_{p_j}, RTTVAR_{p_j})  (named holes) ;  copy iff π_k ≥ U_{k,m}      p_miss
+   π_k  =  Π_j P_lost(t_R − t_j ; ε_{p_j}, SRTT_{p_j}, RTTVAR_{p_j})  (named holes) ;  copy iff π_k ≥ U_{k,m}      p_miss
 ```
 
-**§11.3, P_lost inputs row:** add "per-send path inputs; the original's ε is the worst path's at
-send (`emit_source.rs:499`)" until it is fixed.
+**§11.3, P_lost inputs row:** add three things until they are fixed.
+- The original's ε is the worst path's at send.
+- SRTT is the worst-ε leg's, which is the fast leg on about 2/3 of c8 ticks.
+- ε̂ reads 0 on 55–82 % of ticks.
 
-## 8. Proposed law-ledger S06 entry (verdict words from §1's vocabulary only)
+## 9. S06 verdict: one set (review item 6)
 
-These are proposals for the ledger owner. I did not edit the md or the yaml.
+**Adopt main's set**, with two refinements in the evidence text:
+**PINNED(c8: P_lost ≈ 1 on the blocker), UNDERIVED(no resend in flight in the posterior;
+"copy w.p. π" kept, not derived), DISHONEST-INPUT.**
 
-- *2. formula (code):* unchanged until the engine change ships.
-- *3. paper:* A.2 P_lost and the proposed π_k (`p_miss`); §3.2 as amended above; §4.13 for the
-  target u.
-- *4. derivation:* `docs/derivations/s06-plost-resend.md` (this document).
-- *5. measured in regime?:* fires on every off-Bulk row of §51 block 51. Copies are 5.0× (c2) and
-  8.1× (c8) source losses on top of NACK retx ≈ loss. The coded share is 1.6 % of slots at c8.
-  "Never fires" is withdrawn.
-- *6. clamp bind:* the [0, 1] clamp binds at 1 at c8 by the brief's age reading. **No gauge**:
-  add a `plost_p` bind fraction, the share of slot evaluations with p ≥ 0.999, before tagging
-  PINNED.
-- *7. inputs honest?:* unchanged (E01, E09), plus the original's ε is the worst path's at send.
-- *9. verdict:* **DIVERGENT, DISHONEST-INPUT**, plus **PINNED(c8)** once the bind gauge reads it.
-  - DIVERGENT: the code evaluates the cumulative-ack blocker on its first-send age, with a per-slot
-    draw. The derived law is a per-symbol posterior over every send, read only for the named holes
-    inside the report horizon, with one draw per epoch.
-    The paper's own §3.2 text lacks the resend conditioning, so the paper is amended too.
-  - DEGENERATE(L1: never fires) is withdrawn.
-- *10. fix class, priority:* law change needing a battery, plus paper.
-  - **P1** is proposed (owner call): the default Auto path, wrong by a factor of 5–8 at both measured
-    cells, and it shuts the coded channel at two paths.
-  - Depends on E01 and E09 (per-path honest SRTT and RTTVAR, for W_cal), and on a new requirement:
-    gate-independent SACK state at the sender.
-- *flags:* measured yes, gauge partial (copies yes, ages no, bind no).
+- **I withdraw my DIVERGENT.** The code and §3.2 agree in shape: both lack the resend
+  conditioning. So the defect is a law without provenance (UNDERIVED), not a code–paper gap.
+  Once S06′ is in the paper, the code diverges from it until the engine change lands. That
+  DIVERGENT belongs to the post-paper state.
+- **The bind gauge already exists, at a stated tolerance.** The copy share of slots is E[p] over
+  slot evaluations. A share of 0.98 at c8 therefore implies that at least (0.98 − θ)/(1 − θ) of
+  evaluations have p ≥ θ: ≥ 50 % at θ = 0.96, and ≥ 80 % at θ = 0.9. That meets the ledger's
+  PINNED threshold (bind fraction ≥ 0.5) at "p ≥ 0.96". The exact p ≥ 0.999 fraction waits for
+  the `pmax=` counter that `c8-gauges` is adding.
+- **DISHONEST-INPUT evidence to add:**
+  - the worst-ε SRTT is the fast leg's on 66–70 % of c8 ticks, while p1 reports arrive at about
+    610 ms;
+  - ε̂ (`loss_rate()`) reads 0 on 55 % (c8) and 82 % (c2) of ticks.
+  This is not my earlier "E01 / E09 are the cause". They are inputs, and they set the chain term,
+  not the defect.
+- **Fix class:** paper (this derivation) first, then the engine law with the red-first tests
+  below. **P1** is proposed; the owner calls it.
 
-## 9. Tests the engine change needs (red first)
+## 10. Tests the engine change needs (red first)
 
-Each test fails on `87e646f7`, or on the change minus its mechanism, before it passes.
-
-1. **`raptorpath-math`: `p_miss_is_the_product_of_per_send_p_lost`** (absolute values).
+1. **`raptorpath-math`: `p_miss_is_the_product_of_per_send_p_lost`**, absolute values.
    - m = 0 equals `p_lost` bit for bit.
    - The §3 tables: 0.0250 / 0.529 / 0.998 at a_1 = 0 / 60 / 70 ms, and ≥ 1 − 10⁻¹² for three
      overdue sends.
-   - ε = 0 gives 0, and a covered seq gives 0.
-   - **N = 1** (one path's moments for all sends) and **N = 2** (the 0.025 / 0.867 row of §3) are
-     absolute.
+   - ε = 0 gives 0, a covered seq gives 0, and above the horizon the value is Π ε.
+   - **N = 1** and **N = 2** (the 0.025 / 0.867 row) are absolute.
    - The value is invariant to the order of sends.
+   - **Report clock:** the same value at t_R and at t_R + 1 s with no new report.
 2. **`raptorpath-math`: `p_miss_draw_is_once_per_epoch`.** U_{k,m} is a pure function of (k, m).
-   1 000 evaluations at a fixed state give one decision, and incrementing m changes the draw.
+   1 000 evaluations at a fixed state give one decision.
 3. **Engine, host loopback, N = 1 and N = 2: `taper_copies_per_seq_bounded_under_stalled_cum_ack`.**
-   - **Preconditions, each with a witness.** Without them the slot never fires, even on main.
-     `p_lost` returns 0 at ε ≤ 0, and `loss_rate()` is the TX EWMA (`estimator.rs:498`), which a
-     single drop leaves near 0. The paper already records `taper_copy = 0` on both loopback
-     topologies.
-     - Warm the loss estimate with seeded i.i.d. loss of about 2.5 % for at least a few RTTs.
-     - Run at an off-Bulk δ (Auto), so that rr > 0.
-     - Assert that the slot count and `eps_at_send` of seq k are both > 0 before the stall starts.
-   - Then drop seq k's original and its first resend.
-   - Have the receiver withhold the cumulative ack past k for T = 20·SRTT, while still SACKing above
-     it.
-   - Assert copies(k) + NACK(k) ≤ ⌈T / SRTT⌉ + 2. Assert that no SACKed seq and no seq above the
-     report horizon is ever copied. Both are absolute counts.
-   - **Red on main:** roughly one copy of k per slot over T.
-   - It must also print the mechanism witness (MEASUREMENT DISCIPLINE rule 1): the stamps that the
-     copies wrote to `nack_retx_at`.
+   - **Preconditions, each with a witness.** On main the slot never fires without them: `p_lost`
+     is 0 at ε ≤ 0, and ε̂ is often 0 (§2.1).
+     - Warm ε̂ with seeded i.i.d. loss of 2.5 %.
+     - Run at Auto, so that rr > 0.
+     - Assert that the slot count and `eps_at_send(k)` are both > 0 before the stall.
+   - Drop k's original and its first resend.
+   - Have the receiver withhold the cumulative ack past k for T = 20·SRTT, while still gap-reporting
+     above it.
+   - **Assert, as absolute counts:**
+     - copies(k) + NACK(k) ≤ ⌈1.1·T / SRTT⌉ + 2;
+     - no SACKed seq is copied;
+     - no seq above the horizon is copied;
+     - with reports suppressed for 5·SRTT, zero copies are made in that interval (the report-clock
+       limit).
+   - **Red on main:** about one copy of k per slot.
+   - **Witness:** the stamps the copies wrote to `nack_retx_at`.
 4. **Engine: `taper_copy_stamps_the_resend_clock`.**
    - After a copy, `nack_retx_at[k]` = (now, path, m + 1).
-   - A gap report for k within SRTT increments `mpd_supp_cool` and sends no NACK.
-   - Red on main, which writes no stamp.
-5. **Engine: `copy_evidence_does_not_follow_the_rho_seat`.** The same loss trace is run with
-   `store_sack_release_on` true and false. A SACKed seq is never copied in either. Red on main
-   only once the candidate set is widened; on main it guards the gate-independent SACK state.
-6. **Continuity through the δ presets (CLAUDE.md).**
-   - `p_miss` takes no δ or ρ. Its continuity test asserts identical output for every δ in
-     {Bulk, Auto, Realtime} × {0.98, 1, 1.02}: a compile-level fact made explicit, and it extends
-     the gate list.
-   - At the engine, run test 3's trace at the nine δ values and assert per preset triple
-     {0.98, 1, 1.02}·δ_p. One assertion over all nine values would be false, because Bulk has
-     rr = 0 and so no slots and no copies.
-     - **Auto and Realtime triples (slots plentiful):** copies per named hole are identical within
-       a triple, as absolute counts. The copy share of slots differs by no more than the slot
-       count's own change across the triple.
-     - **Bulk triple (slot-starved):** at every point, copies ≤ slots. Copies and coded may both be
-       0; the copy share is then undefined, not a step. Assert that the copy count is
-       non-decreasing in the slot count across the triple, with no jump larger than the slot-count
-       change.
-   - This adds to `raptorpath-visualizer/test_visualizer.mjs`'s preset sweep only if the wasm model
-     gains a copy decision. I did not check whether it has one.
+   - A gap report within SRTT increments `mpd_supp_cool` and sends no NACK.
+5. **Engine: `named_holes_do_not_follow_the_rho_seat`.** One loss trace is run on the reliable seat
+   and on the evicting seat, and with the store-release gate on and off.
+   - The named-hole set fed to the copy law is identical in all four runs, as absolute seqs, at
+     equal reports.
+   - No SACKed seq is copied in any of them.
+6. **Continuity through the δ presets (CLAUDE.md), per preset triple {0.98, 1, 1.02}·δ_p.**
+   - `p_miss` takes no δ or ρ, so its output is identical at all nine points.
+   - **At the engine, Auto and Realtime triples:** copies per named hole are identical within a
+     triple, as absolute counts. The copy share differs by no more than the slot count's own
+     change.
+   - **At the engine, the Bulk triple:** this is the slot-starved regime, and Bulk has rr = 0. At
+     every point copies ≤ slots, and the copy count is non-decreasing in the slot count, with no
+     jump larger than the slot-count change. When both are 0 the share is undefined, which is not
+     a step.
+7. **`raptorpath-wasm`: the divergence bound of §6.** Retransmits per lost symbol per `rtt_ticks`
+   are ≤ 1.
 
-The change touches the engine, so it also needs the decision pins and the host ns bench (scope
-rules). It is a deliberate behaviour change, so the §41c guard does not apply. It is not a
-refactor.
+The change also needs the decision pins and the host ns bench. It is a deliberate behaviour
+change, not a refactor, so the §41c guard does not apply.
 
-## 10. Open questions for the owner
+## 11. Open questions for the owner
 
-- **Q1. Target form or shippable form?**
-  - The Bayes form "copy iff π > u" is the right comparison, but u needs §4.13's ledger, and the
-    model's u ≈ 10⁻⁴⁰ is degenerate.
-  - The proposal ships the per-epoch draw now and records the Bayes form as the target.
-  - Alternative: ship nothing until §4.13. Copies stay 5–8× losses until then.
-- **Q2. Per-path SRTT and RTTVAR (E01, E09) before or with S06′?** Without them W_cal is unbounded
-  except by the epoch rule. With today's worst-path inputs, the fast-leg epochs at c8 run on the
-  slow leg's clock. That is late, not wasteful, while the worst-ε leg is the slow one. Where the
-  worst-ε leg is the fast one, the error flips to early copies, which is waste.
-- **Q7. Use v9's `received_above`?** The report's aggregate count above the frontier is evidence
-  about seqs past the horizon, as a count rather than per seq. A mean-field factor could sharpen
-  the prior there. It is not needed while those seqs are not candidates.
-- **Q3. Gate-independent SACK state at the sender.** It is required by the law, and today it exists
-  only under the store-release gate, which is selected by `reliable`. Who owns it: S06, or the
-  store-release row?
-- **Q4. Coded rows covering k.** Should π_k carry a factor for coded repairs whose span meets k?
-  That is §4.13's a_c. It is not needed for the old-blocker case, and it is needed once the
-  candidate set reaches the trailing span.
-- **Q5. One resend or two in the per-seq state?** Two removes the one-epoch over-statement after
-  an immediate re-fire, at 12 B more per resent seq.
-- **Q6. The rate law's over-provision at Auto** (r ≈ 0.2–0.24 against loss 0.025–0.03, R01/R02):
-  S06′ moves 87–99 % of slots to coded repair, which may be mostly wasted. Should S06′ ship with,
-  or after, a rate-law verdict, so that the run does not read a rate-law waste as a copy-law
-  result?
+- **Q1. Ship the kept rule now, or wait for the derived comparison?**
+  - The posterior, the epoch rule and the named-hole set are derived. "Copy w.p. π" is not (§4).
+  - A third option is to drop the copy branch and give every proactive slot to coded repair,
+    relying on NACK alone. That is the lower edge of §7 with zero copies.
+  - Measured trade: at c2 it costs nothing, since NACK fires first. At c8 it loses the earlier
+    trigger against a NACK that fires seconds late, which is C02's defect rather than S06's.
+- **Q2. Per-path SRTT (E01's leg choice) with S06′, or before it?** The reading in §2.1:
+  - the worst-ε SRTT is the fast leg on 2/3 of c8 ticks, so p1 epochs end in a copy, bounded at
+    ≤ 260–480 copies/s, ≤ 23 % of slots;
+  - neither the 0.1·SRTT stand-in nor the measured mean deviation (0.5–1.6 ms) is the right
+    dispersion;
+  - ε̂ reads 0 on most ticks.
+  With per-path SRTT, the chain term at c8 falls to the drift-driven residual.
+- **Q6. Ship S06′ with or after a rate-law verdict** (r ≈ 0.2–0.24 against loss 0.025–0.03; R01,
+  R02)? S06′ moves 60–99 % of slots to coded repair, much of which the trailing span cannot use.
