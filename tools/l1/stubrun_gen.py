@@ -279,13 +279,14 @@ def seat59(lines, armed, side):
     return out
 
 
-def diag59(ln, k, armed, n_src=200):
-    """The plan-59 fields of the k-th plan-48-shaped [DIAG] line: src / cod rates, cum = src/cod/ack (cumulative), wait[.. n=] (per period), wake[.. ack=] (cumulative), the shed gauge."""
+def diag59(ln, k, armed, n_src=200, plost=False):
+    """The plan-59 fields of the k-th plan-48-shaped [DIAG] line: src / cod rates, cum = src/cod/ack (cumulative), wait[.. n=] (per period), wake[.. ack=] (cumulative), the shed gauge; `plost` (plan 59 only) adds the cumulative P_lost copies mpr[.. plost= taper=] at 10 per source tick."""
     s = 250 * min(k, n_src)
     src = 2000 if k <= n_src else 0
     n = 100 + k % 5
     sh = f" shed={3 * k}/{k} bud=0.0500 D=40ms" if armed else ""
-    return (ln + f" src={src}sym/s cod={320 if src else 0}sym/s cum={s}/{40 * min(k, n_src)}/{240 * min(k, n_src)} retx=0{sh} "
+    pl = f" mpr[rep=0 seqs=0 fired=0 stale=0 plost={10 * min(k, n_src)} taper={10 * min(k, n_src)} age=1ms]" if plost else ""
+    return (ln + f" src={src}sym/s cod={320 if src else 0}sym/s cum={s}/{40 * min(k, n_src)}/{240 * min(k, n_src)} retx=0{pl}{sh} "
             f"wait[tun=1% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=82% cmd=0% n={n} us=250000 busy=45% busy_us=112500] "
             f"wake[tun=1 paused=0 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack={20 * k} cmd=1 timer_acked=0]")
 
@@ -1079,7 +1080,7 @@ def main(argv):
         for i, ln in enumerate(rl):
             if ln.startswith("[DIAG]"):
                 k += 1
-                rl[i] = diag59(ln, k, armed)
+                rl[i] = diag59(ln, k, armed, plost=True) + f"\n[WSTORE] t={0.25 * k:.2f} k={k} tw=250.0 n=100 W=50 dbt_acc=30.00 dbt_em=5 dbt_share=0.5000 dbt_rm_ack=0.00"
                 if k % 2 == 0:
                     rl[i] = rl[i] + "\n" + span59(k // 2, armed, "norr" in bad)
         rl = "\n".join(rl).split("\n")
