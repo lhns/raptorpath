@@ -1,15 +1,15 @@
 //! Per-seq fault injection and event trace for the S06 reactive-recovery
 //! tests (`tests/s06_reactive.rs`). Compiled only with `--features test-seams`
-//! (never in the release binary); inert unless `RWM_TS_SEQ` is set.
+//! (never in the release binary); inert unless `RWM_TEST_TS_SEQ` is set.
 //!
 //! Env (read once per process):
-//! * `RWM_TS_SEQ=<k>`: the seq under test (a source symbol's `block_id`).
-//! * `RWM_TS_DROP=first:<n>` swallow the first n wire sends of source seq k;
+//! * `RWM_TEST_TS_SEQ=<k>`: the seq under test (a source symbol's `block_id`).
+//! * `RWM_TEST_TS_DROP=first:<n>` swallow the first n wire sends of source seq k;
 //!   `all` swallow every wire send of source seq k; `dead` swallow every data
 //!   send (source and repair) from the first send of k on.
-//! * `RWM_TS_DEAD_MS=<ms>`: `dead` ends that long after k's first send
+//! * `RWM_TEST_TS_DEAD_MS=<ms>`: `dead` ends that long after k's first send
 //!   (default: never).
-//! * `RWM_TS_BUDGET_CLOSED=1`: the sender's shed budget fraction is forced to 0.
+//! * `RWM_TEST_TS_BUDGET_CLOSED=1`: the sender's shed budget fraction is forced to 0.
 //!
 //! Every event is printed on stderr as `[TSEAM] ev=<name> seq=<k> t_us=<µs>
 //! …` so a test reads it from the process log. Times are one process's own
@@ -37,8 +37,8 @@ struct Cfg {
 fn cfg() -> &'static Cfg {
     static C: OnceLock<Cfg> = OnceLock::new();
     C.get_or_init(|| {
-        let k = std::env::var("RWM_TS_SEQ").ok().and_then(|v| v.parse().ok()).unwrap_or(u64::MAX);
-        let drop = match std::env::var("RWM_TS_DROP").ok().as_deref() {
+        let k = std::env::var("RWM_TEST_TS_SEQ").ok().and_then(|v| v.parse().ok()).unwrap_or(u64::MAX);
+        let drop = match std::env::var("RWM_TEST_TS_DROP").ok().as_deref() {
             Some("all") => Mode::All,
             Some("dead") => Mode::Dead,
             Some(s) => s
@@ -47,8 +47,8 @@ fn cfg() -> &'static Cfg {
                 .map_or(Mode::Off, Mode::First),
             None => Mode::Off,
         };
-        let budget_closed = std::env::var("RWM_TS_BUDGET_CLOSED").is_ok_and(|v| v == "1");
-        let dead_us = std::env::var("RWM_TS_DEAD_MS")
+        let budget_closed = std::env::var("RWM_TEST_TS_BUDGET_CLOSED").is_ok_and(|v| v == "1");
+        let dead_us = std::env::var("RWM_TEST_TS_DEAD_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .map_or(u64::MAX, |ms| ms * 1000);
@@ -109,7 +109,7 @@ pub fn on_shed(seq: u64, age_us: u64, d_us: u64) {
     }
 }
 
-/// `shed_budget_frac` override (`RWM_TS_BUDGET_CLOSED=1` ⇒ 0).
+/// `shed_budget_frac` override (`RWM_TEST_TS_BUDGET_CLOSED=1` ⇒ 0).
 pub fn budget_frac(frac: f64) -> f64 {
     if cfg().budget_closed { 0.0 } else { frac }
 }

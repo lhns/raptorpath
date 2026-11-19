@@ -95,8 +95,8 @@ fn first(evs: &[Ev], name: &str) -> Option<Ev> {
 /// proactive slot, and the NACK resends are spaced by the clock.
 #[test]
 fn stalled_blocker_recovered_by_nack() {
-    let drop = ("RWM_TS_DROP", "first:2");
-    let seq = ("RWM_TS_SEQ", K);
+    let drop = ("RWM_TEST_TS_DROP", "first:2");
+    let seq = ("RWM_TEST_TS_SEQ", K);
     let diag = [("RWM_DIAG", "1"), ("RUST_LOG", "raptorpath=info")];
     let cli_env = [
         ("RWM_L0_NETEM", CELL),
@@ -174,12 +174,12 @@ fn evicting_run(
     done: impl Fn(&[Ev], &[Ev]) -> bool,
 ) -> Run {
     let binds = loopback::free_addrs(1);
-    let senv = [("RWM_DIAG", "1"), ("RUST_LOG", "raptorpath=info"), ("RWM_TS_SEQ", seq)];
+    let senv = [("RWM_DIAG", "1"), ("RUST_LOG", "raptorpath=info"), ("RWM_TEST_TS_SEQ", seq)];
     let srv = loopback::spawn_perf_server(&binds, &senv, &["--protocol-hint", "realtime"]);
     let mut cenv: Vec<(&str, &str)> = vec![
         ("RWM_DIAG", "1"),
         ("RUST_LOG", "raptorpath=info"),
-        ("RWM_TS_SEQ", seq),
+        ("RWM_TEST_TS_SEQ", seq),
         ("RWM_L0_NETEM", CELL),
         ("RWM_L0_SEED", "42"),
     ];
@@ -210,7 +210,7 @@ fn evicting_run(
 /// hold of the first arrival above k.
 #[test]
 fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_arrivals_continue() {
-    let run = evicting_run(K, "12000000", &[("RWM_TS_DROP", "all")], Duration::from_secs(30), |_, rx| {
+    let run = evicting_run(K, "12000000", &[("RWM_TEST_TS_DROP", "all")], Duration::from_secs(30), |_, rx| {
         first(rx, "above").is_some()
             && (first(rx, "pass").is_some() || first(rx, "fill").is_some())
     });
@@ -235,7 +235,7 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_arrivals_continue() {
 /// D + one sweep + one tick of its send.
 #[test]
 fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_open() {
-    let run = evicting_run(K_TAIL, BYTES_TAIL, &[("RWM_TS_DROP", "dead")], Duration::from_secs(30), |c, _| {
+    let run = evicting_run(K_TAIL, BYTES_TAIL, &[("RWM_TEST_TS_DROP", "dead")], Duration::from_secs(30), |c, _| {
         first(c, "shed").is_some()
     });
     let sent = events(&run.cli);
@@ -268,7 +268,7 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_closed()
     let run = evicting_run(
         K_TAIL,
         BYTES_TAIL,
-        &[("RWM_TS_DROP", "dead"), ("RWM_TS_DEAD_MS", "1500"), ("RWM_TS_BUDGET_CLOSED", "1")],
+        &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", "1500"), ("RWM_TEST_TS_BUDGET_CLOSED", "1")],
         Duration::from_secs(30),
         |c, _| c.iter().any(|e| e.ev == "send" && e.n > 1 && !e.dropped),
     );

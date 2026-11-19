@@ -1966,7 +1966,7 @@ mod tests {
         let scenarios: [(&str, &str, Vec<f64>, Vec<f64>, Vec<u32>, Vec<u32>); 3] = [
             ("N=1 bulk", "bulk", vec![0.10], vec![0.3], vec![80], vec![4]),
             ("N=2 bulk", "bulk", vec![0.05, 0.10], vec![0.5, 0.3], vec![30, 80], vec![4, 4]),
-            ("N=2 auto", "auto", vec![0.10, 0.10], vec![0.3, 0.3], vec![40, 120], vec![4, 4]),
+            ("N=2 bulk, skewed", "bulk", vec![0.10, 0.10], vec![0.3, 0.3], vec![40, 120], vec![4, 4]),
         ];
         for (label, hint, eps, q, rtt, cap) in scenarios {
             let mut s = Simulation::multipath(
