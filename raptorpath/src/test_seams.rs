@@ -144,3 +144,11 @@ pub fn on_give_up(before: u64, after: u64, held: &[u64]) {
         eprintln!("[TSEAM] ev=pass seq={} t_us={}", c.k, t_us());
     }
 }
+
+/// A slot-site shed (the deleted `P_lost` branch's shed; only the pre-ADR-0079
+/// tree calls it). Kept so one test file reads both trees.
+pub fn on_shed_slot(seq: u64, age_us: u64, d_us: u64) {
+    if seq == cfg().k {
+        eprintln!("[TSEAM] ev=shed_slot seq={seq} age_us={age_us} d_us={d_us} t_us={}", t_us());
+    }
+}

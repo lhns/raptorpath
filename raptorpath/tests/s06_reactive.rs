@@ -288,3 +288,68 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_closed()
     );
     assert!(served.t >= t0 + 1_500_000, "the resend left before the link returned");
 }
+
+// ── T3, mid-object ───────────────────────────────────────────────────────
+
+/// A stall in the MIDDLE of the object (evicting seat, k = 2000 of ~12 000):
+/// every wire send from k's first send is swallowed for 1.5 s, while the
+/// sender keeps emitting behind k, so k leaves the 200-symbol coding window.
+/// On the evicting seat the NACK site clamps a gap to that window
+/// (`sender_phases.rs`), so it never judges k. Before ADR-0079 the proactive
+/// slot path judged `retransmit_buffer.first()` (k) at slot time, whatever
+/// the window. The test asserts what holds on BOTH trees and prints the
+/// tree-specific numbers: `shed_slot` events (pre-deletion only), NACK-site
+/// sheds, and how k left the receiver.
+///
+/// Common assertions: the shed gauge's `shed_slot=` equals the number of slot
+/// shed events of k (0 or 1), and k is passed or filled at the receiver once
+/// the link returns, within the hold plus one RTT-scale slack.
+#[test]
+fn past_deadline_blocker_mid_object_stall_evicting() {
+    let run = evicting_run(
+        K,
+        "12000000",
+        &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", "1500")],
+        Duration::from_secs(25),
+        |_, rx| first(rx, "pass").is_some() || first(rx, "fill").is_some(),
+    );
+    let sent = events(&run.cli);
+    let rx = events(&run.srv);
+    let t0 = first(&sent, "send").unwrap_or_else(|| panic!("k never sent:\n{}", run.cli)).t;
+    let slot = sent.iter().filter(|e| e.ev == "shed_slot").count();
+    let nack = sent.iter().filter(|e| e.ev == "shed").count();
+    let gauge = |key: &str| {
+        run.cli
+            .split_whitespace()
+            .filter_map(|t| t.strip_prefix(key))
+            .filter_map(|v| numeric_prefix(v).parse::<u64>().ok())
+            .max()
+            .unwrap_or(0)
+    };
+    let (g_slot, g_nack) = (gauge("shed_slot="), gauge("shed_nack="));
+    let pass = first(&rx, "pass");
+    let fill = first(&rx, "fill");
+    let above = first(&rx, "above");
+    let rel = |e: &Option<Ev>| e.as_ref().map(|e| e.t as i64 - t0 as i64);
+    println!(
+        "[s06 T3-mid] k shed events: slot-site {slot}, NACK-site {nack}; gauge shed_slot={g_slot} \
+         shed_nack={g_nack}; receiver (us after k's send): first above {:?}, pass {:?}, fill {:?}",
+        rel(&above),
+        rel(&pass),
+        rel(&fill)
+    );
+    assert_eq!(g_slot as usize >= slot, true, "slot gauge below its own shed events");
+    assert!(g_nack as usize >= nack, "NACK gauge below its own shed events");
+    let resolved = [pass, fill]
+        .into_iter()
+        .flatten()
+        .map(|e| e.t)
+        .min()
+        .unwrap_or_else(|| panic!("k={K} neither passed nor filled at the receiver:\n{}", run.srv));
+    let bound = 1_500_000 + HOLD_MAX_US + 2 * TICK_US + SLACK_US + 300_000;
+    assert!(
+        resolved.saturating_sub(t0) <= bound,
+        "k resolved {} us after its send; bound {bound}",
+        resolved.saturating_sub(t0)
+    );
+}
