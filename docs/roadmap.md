@@ -288,6 +288,8 @@ flowchart TB
 | Repair-rate readout | ○ next | Adding a readout of how much repair data the formula asks for and which limit is in control, without changing behaviour. |
 | Repair rate over-provision verdict | ⚠ open defect | The repair rate spends about a fifth of the link on repair where real loss is about 3 %; decide whether that is a defect and derive the fix, in parallel with the re-send fix, since this is where the lost throughput is. |
 | Delete the taper copy branch | ○ next | Remove the re-send-copy branch so every repair slot sends coded repair, after a new ADR and the paper change, with tests that no copies are sent and that dropping past-deadline packets still works. |
+| Shed budget ignores ρ | ⚠ open defect | The budget for dropping late data on the slow-link mode is computed from a flawed loss estimate and does not use the retention setting at all; decide its verdict and derive it from ρ. |
+| ADR-0050 budget split unwired | ⚠ open defect | ADR-0050 decided that proactive repair is the total budget minus the expected resends; that code is only called from tests, and a decode close does not cancel the resend it covers. |
 | Owner calls on rate law | ⛔ blocked | Owner decision on five mismatches between the paper and the code in how much repair data to send. |
 | Rate-law reconciliation | ⛔ blocked | Making the paper and the code agree on how much repair data to send, with a test for every remaining difference. |
 | Rate-law term-win gauge | ⛔ blocked | Adding a readout that shows which part of the repair-rate formula is actually in control. |
@@ -371,6 +373,7 @@ flowchart TB
 | Observability implementation | ⛔ blocked | Building one metrics system that feeds the status page, the logs and standard monitoring tools. |
 | Workspace restructure | ⏳ waiting | Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open. |
 | Recorded, not fixed | ⚠ open defect | Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much. |
+| Tunnel in-order guard | ⚠ open defect | Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins. |
 | tech-tree skill PR | ○ next | Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository. |
 <!-- END GENERATED: plain-words -->
 
@@ -385,6 +388,7 @@ flowchart TB
 
 - `rate-delta-jitter-fix`: Jitter margin reads wrong direction
 - `rate-fix-rate-readout`: Repair-rate readout
+- `infra-tunnel-inorder-guard`: Tunnel in-order guard
 - `meas-s51-c8-gauges`: Per-leg clamp and saturation gauges
 - `model-fix-hint-keyed-paths`: Hint-keyed engine paths made continuous
 - `meas-guard-resolution`: Guard CPU and lag resolution
@@ -401,6 +405,8 @@ flowchart TB
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `rec-framing-followups`: Framing fix leftovers
 - `rate-s06-plost-derivation`: Delete the taper copy branch
+- `rate-shed-budget-rho`: Shed budget ignores ρ
+- `rate-adr50-split-unwired`: ADR-0050 budget split unwired
 - `meas-guard-bulk-blind`: Merge guard blind off Bulk
 - `meas-harness-robustness`: Harness robustness for every plan
 - `infra-tech-tree-skill`: tech-tree skill PR
@@ -518,7 +524,7 @@ Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 53 nodes (22 done, 6 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 33 nodes (16 done, 4 in progress, 4 next, 5 blocked, 1 parked, 3 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 35 nodes (16 done, 4 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
@@ -526,6 +532,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 4 in progress, 8 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (12 done, 2 in progress, 1 next)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 16 nodes (12 done, 2 in progress, 2 next)
 <!-- END GENERATED: tracks -->
 

@@ -1989,6 +1989,33 @@ The launch sha is pinned by an amendment.
   - **The tight arms already ran, with copies.** t_tail = base·0.5/δ, so I4 and R± are about the 10⁻⁶ and 10⁻⁷ arms, if β ≈ 0 from Auto up and the clamp does not bind (both to be checked).
   - From Auto to R±, P(late) and in-order delay stayed flat and goodput fell about 2 %. That is the with-copies baseline.
 
+**Liveness and wiring audit (2026-11-19, committed logs and code only; `docs/derivations/liveness-audit.md`, merged as a record; Fable-reviewed): the repair half of the engine first ran in scored rows this week. At the default hint (Auto), 41 of 126 ledger cells clearly vary. The fixes are ordered by this ranking, not by arrival.**
+- **Why it went unseen:** the merge guard runs Bulk only, and every r-driven law is weighted 0 there. A third of the Bulk cells never run (Bulk c2 + c8: 41 execute, 27 pinned, 42 never run, 16 no gauge). Process rules are on `meas-guard-bulk-blind`.
+- **Counts:** 65 engine ledger lines × 7 seats = 455 cells, 12 n/a, 443 classified. Of those, 163 execute (21 near-pinned), 87 are pinned, 121 never run and 72 have no gauge. At Auto (126 cells): 48 execute (7 near-pinned), 26 pinned, 28 never run, 24 no gauge.
+- **Sized** (in order):
+  1. **The repair rate r at ρ = 1.** Against Bulk it costs −15 % goodput, +39 % client CPU per GB and +18 % in-order delay at c2 (c8: −15 %, +27 %, +16 %, the last below resolution). It buys earlier closes for 42–46 % of losses, with no measured drop in delay. One cost, four candidate causes, not additive: the S06 copies (ADR-0079, in progress), ADR-0050's Phase 3 split unwired, the decode close not cancelling the NACK resend, and R02 not derived to its target. The cause split needs the rate-law gauges.
+  2. **c8 in-order delay of 4.7–6.1 s**, the largest delay effect. Its causes are the 20-gap horizon (C02) and the 64-range SACK cap, which binds on every c8 report. Lever B measured about 1.0 s against 5.3 s at §53 and is not on main (`rec-gap-horizon`, `rec-leverb-guard`).
+  3. **The TCP tunnel's in-order guard is a comment only** (coordinator-verified). The CLI overlay sets `window_out_of_order` / `_coded_only` / `_generation_coding` / `_systematic_repair` to None (`main.rs:387–396`), and `merge` takes `overlay.or(base)` (`config.rs:204`). So a TOML value reaches the tunnel. This is a product-path correctness item, conditional on a config file setting it; not measured.
+  4. **ρ is not an input to the "1 − ρ" shed budget** (coordinator-verified, matters at ρ < 1).
+     - The budget is `residual_loss_after_fec(est.loss_rate(), r, A*, σ²)` (`emit_source.rs:635`), and `contract_rho` is a literal 1.0 (`sender_policy.rs:616`).
+     - It reads the unweighted per-ack loss EWMA (Addendum 4), which spikes after a burst and decays below print within about 8 ms.
+     - On block E PM s42 r1, `bud=` reads 0.0000 on 351 of 366 printed ticks (0.0001–0.0272 on the other 15). Meanwhile shed rises 11 → 1 934 and denied 133 → 25 530, so 0.36 % of the source is dropped with no defined relation to 1 − ρ.
+  5. **Hint-keyed Realtime paths** (T2 FAIL), `model-fix-hint-keyed-paths`.
+- **Pinned, no measured cost:**
+  - **The NACK budget at its floor of 10** on 70–97 % of ticks. The 10 is `.max(MAX_NACK_REPAIRS_PER_NACK)` (`net/mod.rs:3331–3333`, coordinator-verified). It answers Addendum 4's question. Resends still run 1.01–1.09 per loss and `wait.nack` is 0 %, so nothing shows the floor starving them.
+  - **The scheduler cwnd at MAX_CWND on 59–76 % of c2 ticks**, with the spare clamp slack (K01, K04).
+  - **The N = 1 age gate never suppresses** (C04, worker read), which answers Addendum 4's other question.
+  - **Δ = 1, A\* ≥ W on 96–100 % of ticks, and W = 201** (S03, S02, R07): the coded span is pinned to the whole window.
+- **Needs a gauge:** rate-law internals (term win, r_sat, P_fec, t_tail; on `c8-gauges`), and the per-leg cwnd and spare at c8.
+- **Wiring:**
+  - 65 decision rows: 36 wired, 7 wired but off by default, 10 partial, 7 unwired, 5 superseded. All 7 unwired rows are hand-checked: 0017, 0018, two in 0050, 0054's endstate, 0077's core, and 0079.
+  - **Two decisions changed in code with no superseding ADR:**
+    - ADR-0050's `NackAck` message has no `ControlMessage` variant (`protocol.rs:400–573`); RX loss comes from data batches instead.
+    - ADR-0017's MTU-derived symbol size: `min_mtu` (`scheduler/mod.rs:578`) has no caller, and the size comes from the hint-keyed `symbol_size_for_hint`.
+  - `enable_pi_feedback` is passed (`net/mod.rs:782`) but ignored (`fec_rate.rs:317`). `ge_burst_factor` and `realtime_burst_extra` stop at merge. `set_protocol_hint` has no non-test caller, so the documented Auto detection does not happen.
+  - The perf client takes no tail target, overhead cap or profile, and silently drops `--config`.
+- **Ledger:** S10's reason is corrected (PINNED at `owed = 0` at every r), and C04 gets the age-gate reading.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).

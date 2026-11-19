@@ -6785,6 +6785,66 @@ nodes:
   overview: true
   plain: Remove the re-send-copy branch so every repair slot sends coded repair, after a new ADR and the paper change, with tests that no copies are sent and that dropping past-deadline packets still works.
   notes: 'Derivation on branch s06-derivation (docs/derivations/s06-plost-resend.md), Fable review, then the paper §3.2 amendment, then the engine law with a red-first host loopback test counting copies per seq (ptgt / pmax from c8-gauges) and the ±2 % δ continuity test. Goes before rate-delta-jitter-fix; rate-spare-clamp-verdict and the S08 fix wait for it (all edit the proactive-slot path). Getting goodput back also needs the rate law''s r (R02 / R04) to come down; fixing S06 alone turns copies into coded repair. Done when: the law is in the paper, merged through a guard, and the copy count per seq is bounded by the test.'
+- id: infra-tunnel-inorder-guard
+  title: Tunnel in-order guard
+  track: infra
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/liveness-audit.md item 3
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins.
+  notes: 'Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test.'
+- id: rate-shed-budget-rho
+  title: Shed budget ignores ρ
+  track: rate
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/liveness-audit.md item 4
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: The budget for dropping late data on the slow-link mode is computed from a flawed loss estimate and does not use the retention setting at all; decide its verdict and derive it from ρ.
+  notes: 'Liveness audit item 4 (coordinator-verified): budget = residual_loss_after_fec(est.loss_rate(), r, A*, sigma2) (emit_source.rs:635), contract_rho is a literal 1.0 (sender_policy.rs:616); loss_rate() is the unweighted per-ack EWMA (Addendum 4). Block E PM s42 r1: bud=0.0000 on 351 of 366 ticks while shed rises to 1 934 (0.36 % of source). Done when: a ledger verdict and a derived budget in the paper.'
+- id: rate-adr50-split-unwired
+  title: ADR-0050 budget split unwired
+  track: rate
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status §51 Addendum 4
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: ADR-0050 decided that proactive repair is the total budget minus the expected resends; that code is only called from tests, and a decode close does not cancel the resend it covers.
+  notes: 'Candidate causes of the r cost (audit item 1): BudgetAllocator::proactive_rate called only from tests (fec_rate.rs tests 629-650); the NACK serve loop has no decoder-state check (sender_phases.rs:790-880, coordinator-read). Sized only after the rate-law gauges (c8-gauges) and a no-copy reading. Done when: ledger verdicts and either wiring or a superseding ADR.'
 - id: meas-guard-bulk-blind
   title: Merge guard blind off Bulk
   track: meas

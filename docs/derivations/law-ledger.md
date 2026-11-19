@@ -142,7 +142,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [S09](#s09) | symbol packing and emission-batching scope (use_packing, emit_batch_on) | MODE-SWITCH(live), UNDERIVED | P2 | 35 | - |
 | [K05](#k05) | placement cost (place_costs) | DIVERGENT, UNDERIVED | P2 | 36 | - |
 | [K10](#k10) | bbr_rs (branch github/bbrrs-r3, not default) | DIVERGENT | P2 | 37 | - |
-| [S10](#s10) | proactive repair emission (taper density and TaperBudget accrual) | DIVERGENT, DEGENERATE(r = 0) | P3 | 38 | R01 |
+| [S10](#s10) | proactive repair emission (taper density and TaperBudget accrual) | DIVERGENT, PINNED(owed = 0 at every r) | P3 | 38 | R01 |
 | [C13](#c13) | T_cut give-up horizon (wasm model) | PINNED(every measured rho < 1 point) | P3 | 39 | R03 |
 | [M04](#m04) | wasm give-up law (cartoon + sim; was V5/V6 and W14) | DEGENERATE(rho inert at Auto and Realtime under the shipped R), DIVERGENT | P3 | 40 | R03 |
 | [M03](#m03) | wasm rate beta-guard and the dead classic-hint machine | MODE-SWITCH(live), MODE-SWITCH(dead) | P3 | 41 | - |
@@ -1389,7 +1389,7 @@ a branch.
 - *6. clamp bind:* spare and the 1.0-per-source cap: no gauge
 - *7. inputs honest?:* r from R01, q from E08, spare from K04 (inflated cwnd)
 - *8. NO-MODE-SWITCH:* RWM_TAPER_R experiment gate
-- *9. verdict:* **DIVERGENT, DEGENERATE(r = 0)**: A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code **Evidence** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): `TaperBudget::accrue` passes the rate straight through, with `owed=0.00` on all 16 843 `[SPAN]` lines, so the emitted rate is min(r, spare).
+- *9. verdict:* **DIVERGENT, DEGENERATE(r = 0)**: A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code **Evidence** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): `TaperBudget::accrue` passes the rate straight through, with `owed=0.00` on all 16 843 `[SPAN]` lines, so the emitted rate is min(r, spare). **Reason corrected** (liveness audit, 2026-11-19): it is PINNED at `owed = 0` at every r, not DEGENERATE(r = 0); the emitted rate is min(r, spare).
 - *10. fix class, priority:* paper (write the grant law on its own line; retire A.2's raw-density line); **P3**, rank 38; depends on R01
 - *flags:* measured no, gauge no
 
@@ -1476,7 +1476,7 @@ a branch.
 - *6. clamp bind:* none (10 ms only via the pool fallback)
 - *7. inputs honest?:* DISHONEST: srtt_pool = E11 (dwell-inclusive) against an age from the original send
 - *8. NO-MODE-SWITCH:* path-count switch: N = 1 runs this, N >= 2 runs C01/C02 (column-8 note; a step at N = 1 -> 2, like the guard ADR-0072 removed from the store)
-- *9. verdict:* **DIVERGENT, UNDERIVED, DISHONEST-INPUT**: code: sender_phases.rs:898 needs mp_n_paths > 1 and :937 needs RWM_RECOV_SP (off), so :958 is the N = 1 law; paper §11.2 says it runs only with per-path detection off. Likely inert in effect, never gauged
+- *9. verdict:* **DIVERGENT, UNDERIVED, DISHONEST-INPUT**: code: sender_phases.rs:898 needs mp_n_paths > 1 and :937 needs RWM_RECOV_SP (off), so :958 is the N = 1 law; paper §11.2 says it runs only with per-path detection off. Likely inert in effect, never gauged **The N = 1 age gate never suppressed** (liveness audit, 2026-11-19, worker read): the age-suppression counter is 0 on every tick of the 24 c2 rows and the 12 block E rows read, against about 13.5k fires per row. So the shipped N = 1 law is effectively constant true.
 - *10. fix class, priority:* paper correction now; law (C01 at N = 1, RWM_RECOV_SP exists as the off arm) with a battery; **P2**, rank 19; depends on E11
 - *flags:* measured no, gauge yes
 

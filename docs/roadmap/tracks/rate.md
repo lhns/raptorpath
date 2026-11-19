@@ -36,6 +36,8 @@ flowchart TB
     rate_delta_jitter_fix["○ Jitter margin reads<br/>wrong direction"]
     rate_fix_rate_readout["○ Repair-rate readout"]
     rate_s06_plost_derivation["○ Delete the taper<br/>copy branch"]
+    rate_shed_budget_rho>"⚠ Shed budget ignores<br/>ρ"]
+    rate_adr50_split_unwired>"⚠ ADR-0050 budget<br/>split unwired"]
     rate_law_reconcile[/"⛔ Rate-law<br/>reconciliation"/]
     rate_fix_estimators[/"⛔ Loss estimator<br/>approximations"/]
     rate_fix_term_gauge["⛔ Rate-law term-win<br/>gauge"]
@@ -68,10 +70,13 @@ flowchart TB
     rate_k4_input_checks ~~~ rate_delta_jitter_fix
     rate_spare_clamp_verdict ~~~ rate_fix_rate_readout
     rate_spare_clamp_verdict ~~~ rate_s06_plost_derivation
-    rate_delta_jitter_fix ~~~ rate_law_reconcile
-    rate_fix_rate_readout ~~~ rate_fix_estimators
-    rate_s06_plost_derivation ~~~ rate_fix_estimators
-    rate_law_reconcile ~~~ rate_fix_term_gauge
+    rate_delta_jitter_fix ~~~ rate_shed_budget_rho
+    rate_fix_rate_readout ~~~ rate_adr50_split_unwired
+    rate_s06_plost_derivation ~~~ rate_law_reconcile
+    rate_shed_budget_rho ~~~ rate_fix_estimators
+    rate_adr50_split_unwired ~~~ rate_fix_estimators
+    rate_law_reconcile ~~~ rate_fix_estimators
+    rate_fix_estimators ~~~ rate_fix_term_gauge
     rate_fix_estimators ~~~ rate_fix_rho_realtime
     rate_saturation_rstar -.-> rate_defect_pfec
     rate_ge_hmm --> rate_rstar_window_mass
@@ -92,7 +97,7 @@ flowchart TB
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
-    linkStyle 33,36 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 36,39 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -110,7 +115,7 @@ flowchart TB
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
-    class rate_defect_pfec,rate_defect_taper_inert,rate_overprovision_verdict defect
+    class rate_defect_pfec,rate_defect_taper_inert,rate_overprovision_verdict,rate_shed_budget_rho,rate_adr50_split_unwired defect
     class rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_pfec_oracle waiting
     class rate_spare_clamp_verdict,rate_delta_jitter_fix,rate_fix_rate_readout,rate_s06_plost_derivation next
@@ -151,6 +156,8 @@ flowchart TB
 | `rate-c8-frontier-recopy` | c8 repair budget re-copies | done | successful | S06 copies the cum-ack blocker on every slot; 4–7× losses, mostly already received | status §51 block 51 Result, finding 1; status §51 block 51 Result, Addendum 2; docs/l1-raw/s51b/recopy | meas-s51-session |
 | `rate-overprovision-verdict` | Repair rate over-provision verdict | in-progress | unrated |  | status §51 block 51 Result (r(δ) table, goodput against δ); status §51 block 51 Result, Addendum 2 (goodput arithmetic); owner decision 2026-11-19 ("do b"); status §51 block 51 Result, Addendum 3 | meas-s51-session |
 | `rate-s06-plost-derivation` | Delete the taper copy branch | next | unrated |  | status §51 block 51 Result, Addendum 2; law ledger S06; owner decision 2026-11-19 (delete the copy branch); status §51 block 51 Result, Addendum 3; ADR-0079; docs/derivations/s06-delete-plan.md | rate-c8-frontier-recopy |
+| `rate-shed-budget-rho` | Shed budget ignores ρ | next | unrated |  | docs/derivations/liveness-audit.md item 4 |  |
+| `rate-adr50-split-unwired` | ADR-0050 budget split unwired | next | unrated |  | status §51 Addendum 4 |  |
 | `rate-user-rate-law` | Owner calls on rate law | blocked | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec, meas-s51-session |
 | `rate-law-reconcile` | Rate-law reconciliation | blocked | unrated |  | plan W3.5, W3.7 | rate-user-rate-law, meas-s51-session, rate-pfec-oracle |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | blocked | unrated |  | law ledger rows R02 | rate-fix-estimators |
@@ -189,6 +196,8 @@ flowchart TB
 | `rate-c8-frontier-recopy` | c8 repair budget re-copies | c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained. | status §51 block 51 Result, finding 1; status §51 block 51 Result, Addendum 2; docs/l1-raw/s51b/recopy |
 | `rate-overprovision-verdict` | Repair rate over-provision verdict | Owner decision 2026-11-19: treat the over-provisioned rate as a defect now, in parallel with rate-s06-plost-derivation (option b). Consumed r 0.19-0.21 (c2) and 0.24-0.26 (c8) from Auto up against wire loss 0.026-0.039; goodput c2 90 to 76, c8 98 to 83 Mbit/s, wire-bound. Fixing S06 alone changes what fills the slots, not how many. Diagnosis on branch rate-overprovision (docs/derivations/rate-overprovision.md); law-ledger rows R01, R02, R04. Done when: a ledger verdict is recorded and a derived fix direction is reviewed. | status §51 block 51 Result (r(δ) table, goodput against δ); status §51 block 51 Result, Addendum 2 (goodput arithmetic); owner decision 2026-11-19 ("do b"); status §51 block 51 Result, Addendum 3 |
 | `rate-s06-plost-derivation` | Delete the taper copy branch | Derivation on branch s06-derivation (docs/derivations/s06-plost-resend.md), Fable review, then the paper §3.2 amendment, then the engine law with a red-first host loopback test counting copies per seq (ptgt / pmax from c8-gauges) and the ±2 % δ continuity test. Goes before rate-delta-jitter-fix; rate-spare-clamp-verdict and the S08 fix wait for it (all edit the proactive-slot path). Getting goodput back also needs the rate law's r (R02 / R04) to come down; fixing S06 alone turns copies into coded repair. Done when: the law is in the paper, merged through a guard, and the copy count per seq is bounded by the test. | status §51 block 51 Result, Addendum 2; law ledger S06; owner decision 2026-11-19 (delete the copy branch); status §51 block 51 Result, Addendum 3; ADR-0079; docs/derivations/s06-delete-plan.md |
+| `rate-shed-budget-rho` | Shed budget ignores ρ | Liveness audit item 4 (coordinator-verified): budget = residual_loss_after_fec(est.loss_rate(), r, A*, sigma2) (emit_source.rs:635), contract_rho is a literal 1.0 (sender_policy.rs:616); loss_rate() is the unweighted per-ack EWMA (Addendum 4). Block E PM s42 r1: bud=0.0000 on 351 of 366 ticks while shed rises to 1 934 (0.36 % of source). Done when: a ledger verdict and a derived budget in the paper. | docs/derivations/liveness-audit.md item 4 |
+| `rate-adr50-split-unwired` | ADR-0050 budget split unwired | Candidate causes of the r cost (audit item 1): BudgetAllocator::proactive_rate called only from tests (fec_rate.rs tests 629-650); the NACK serve loop has no decoder-state check (sender_phases.rs:790-880, coordinator-read). Sized only after the rate-law gauges (c8-gauges) and a no-copy reading. Done when: ledger verdicts and either wiring or a superseding ADR. | status §51 Addendum 4 |
 | `rate-user-rate-law` | Owner calls on rate law | Needs the off-Bulk session's reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). 2026-11-19: target_tail_loss is a declared dial (CLI flag, Home / Datacenter profiles, ADR-0050) that the engine does not deliver and no gauge reads; kept unchanged pending a superseding ADR (owner); the deciding test is a flag sweep at fixed δ in the no-copy VM session, registered two-sided (status §51 Addendum 3). | plan user decision 11; status §3.10 item 2 (conflict for the owner) |
 | `rate-law-reconcile` | Rate-law reconciliation | Law ledger: R07, R03, R04, R05 (ranks 20-22, 26, P2): owner calls on file, then the law fixes; they wait on the off-Bulk measurement. Done when: code and paper agree on P_fec (no 0 -> ½ step) and the W* budget, with a bounding test per remaining divergence. Was titled 'Rate-law reconciliation (W22, W*)'. | plan W3.5, W3.7 |
 | `rate-fix-term-gauge` | Rate-law term-win gauge | Law ledger: R02. Done when: an engine gauge reports which term or clamp of controller_rate wins, per tick, so the off-Bulk session can read it. | law ledger rows R02 |
