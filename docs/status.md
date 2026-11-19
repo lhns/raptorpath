@@ -2016,6 +2016,12 @@ The launch sha is pinned by an amendment.
   - The perf client takes no tail target, overhead cap or profile, and silently drops `--config`.
 - **Ledger:** S10's reason is corrected (PINNED at `owed = 0` at every r), and C04 gets the age-gate reading.
 
+**Owner decision 2026-11-19, the c8 delay: the store law, not lever B.** The owner chose to re-guard lever B, then reversed it the same day: "we dont want a workaround actually, we want the proper solution".
+- **Basis:** in §54b the store cap binds on 99.7–100 % of ticks on every arm, so the pool constant is the law. The constant's value alone moves c8 in-order delay from 4.4 s (pool 2048) to 0.38 s (pool 640). Lever B adds about 0.06 s on top (L640 0.32 s), and it sets a 20-gap horizon to the 64-range cap, which already binds at c8.
+- **So lever B (20 → 64) and a smaller pool constant (2048 → 640) are both workarounds.** The fix is a derived store law: how much each path may hold outstanding, as a formula in that path's measured rate and delay and in δ (`store-law-derivation`). Decision 6 stands; `rec-leverb-guard` is parked again.
+- C02's 20-gap literal gets its answer after the store law, from a horizon bind gauge. The condition to derive is that the holes outstanding under the law fit in one report. The SACK cap and the horizon then become witnesses, not fixes.
+- **Process:** two owner choices today were asked without their history. A question now carries the node's earlier decisions in its own text.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
