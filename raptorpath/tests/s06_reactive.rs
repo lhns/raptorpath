@@ -76,6 +76,13 @@ fn max_field(log: &str, key: &str) -> u64 {
         .unwrap_or_else(|| panic!("`{key}` never appeared in the log"))
 }
 
+fn max_field_f64(log: &str, key: &str) -> f64 {
+    log.split_whitespace()
+        .filter_map(|t| t.strip_prefix(key))
+        .filter_map(|v| numeric_prefix(v).parse::<f64>().ok())
+        .fold(0.0, f64::max)
+}
+
 fn first(evs: &[Ev], name: &str) -> Option<Ev> {
     evs.iter().find(|e| e.ev == name).cloned()
 }
@@ -238,8 +245,17 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_open() {
     let shed = first(&sent, "shed").unwrap_or_else(|| panic!("k={K} was never shed:\n{}", run.cli));
     assert!(shed.d_us > 0, "no derived deadline at the shed");
     let dt = shed.t.saturating_sub(t0);
-    let bound = shed.d_us + TAIL_SWEEP_MAX_US + TICK_US + SLACK_US;
-    println!("[s06 T3ii] shed {dt} us after the send; D={} us, bound {bound}", shed.d_us);
+    // The sweep targets the cumulative blocker, which is k only once the acks
+    // of the seqs in flight ahead of it have returned: up to one RTT after
+    // k's send (the plan's bound omits this term; the measured shed lands at
+    // about D + 2 sweeps, i.e. D + 100 ms + RTT). RTT = the largest the
+    // sender's own `[DIAG] rtt=` reported.
+    let rtt_us = (max_field_f64(&run.cli, "rtt=") * 1000.0) as u64;
+    let bound = shed.d_us + TAIL_SWEEP_MAX_US + rtt_us + TICK_US + SLACK_US;
+    println!(
+        "[s06 T3ii] shed {dt} us after the send; D={} us, rtt={rtt_us} us, bound {bound}",
+        shed.d_us
+    );
     assert!(shed.age_us > shed.d_us, "shed at age {} <= D {}", shed.age_us, shed.d_us);
     assert!(dt <= bound, "shed {dt} us after the send, bound {bound}");
 }
