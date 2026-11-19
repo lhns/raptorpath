@@ -1600,15 +1600,17 @@ nodes:
   title: Evicting-seat test, rehearsal and runs
   track: rate
   kind: research
-  state: next
+  state: done
   outcome: unrated
   evidence:
+  - status §51 block E Result
+  - docs/l1-raw/s51e
   - status §51
   - status §51 Amendment 2
   - status §63 Result
   - docs/derivations/s51-evict-design.md
-  verdict_quote: ''
-  headline: ''
+  verdict_quote: 'VERDICT51E REPORTED-ONLY slots=12/12 live=12 void=0 replaced=0 dnf=12 outcome=DEGENERATE-AS-WIRED rate_spare_cwnd=NOT-ENFORCED'
+  headline: 'Repair cap never binds at paced loads; overload cwnd not enforced'
   depends_on:
   - rate-evict-epre
   - meas-blocke-pacing-gate
@@ -1616,21 +1618,21 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: vm
-  start: ''
-  end: ''
+  start: '2026-11-19'
+  end: '2026-11-19'
   folded: []
   overview: true
   plain: 'Measuring the repair loop on a low-latency path that may drop late data, with the sender paced below the link rate: a rehearsal, then the measured runs, to feed the repair-rate oracle.'
   notes: 'Status §51 block E: the E rehearsal (LD_HARD + 1 h), then the E battery (+ 1.5 h), on the tree and bin_sha that rate-evict-epre pins. The first rehearsal (§51 Amendment 2, e-tree a271e0bb) was NO-GO from engine defect F2: U passed its gates, PL and PM died in the warm-up; per §10 those rows are not re-run. PL and PM''s gates (b)-(h) have never been read (§63 Result). Paced rows DNF by design (timeout = emission + 15 s). The pacer and the spare-clamp gauge stay on the measurement tree (§51 choice 4). Done when: the registered rows run after a rehearsal GO, and m̄ (adv), W1 (dbt_share) and K4''s inputs (fec=) are recorded for rate-pfec-oracle, with the spare-clamp bind fraction for rate-spare-clamp-verdict.'
-  vm_order: 2
   order_reason: 'Second: the rehearsal, then the measured runs, on the build the suites step pins, once the pacer''s late-send rule is decided.'
 - id: rate-spare-clamp-verdict
   title: 'Spare clamp on Realtime: verdict'
   track: rate
   kind: law
-  state: blocked
+  state: next
   outcome: unrated
   evidence:
+  - status §51 block E Result
   - status §60 Amendment 2
   verdict_quote: ''
   headline: ''
@@ -1645,27 +1647,49 @@ nodes:
   overview: false
   plain: Deciding, from a run that does not overload the link, whether the cap that zeroes the repair rate on a full path is a defect.
   notes: '§60 Amendment 2 (one rehearsal row, n = 1, an observation): flat_rate = window_rate.min(spare) read r = 0 in 46 of 53 sending windows, with spare = 0 on every saturated tick; the unclamped window_rate is not printed. FORMULA-FIRST: every clamp gets a bind-fraction gauge. Done when: the bind fraction is reported on a row that is not overdriven and the clamp''s ledger verdict is recorded.'
+- id: rate-k4-input-checks
+  title: Two checks before the repair-share comparison
+  track: rate
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status §51 block E Result
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rate-evict-session
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: true
+  plain: 'Before the measured repair share is compared with the model, two readings need explaining: at the higher load it sits above a bound it should never exceed, and the jitter allowance read its minimum on every run, which may mean its input is never fed.'
+  notes: 'W1 0.856-0.860 against the upper bracket (cod/src)/rr 0.738-0.788 on all five PM rows; the two use different tick sets (cod/src only where src > 1 000 sym/s). At PL the bracket is empty (lower 0, upper n/a), so PL''s W1 is untested. Delta = clamp(ceil(rate_sym*J), 1, 64) reads 1 on PL, PM and U (J <= 11 us implied at U); J is the receive-side estimator and is not printed. Code and ledger reads only. Done when: both have a recorded cause, and K4''s inputs are either cleared or re-scoped.'
 - id: rate-spare-cwnd
   title: Is spare's cwnd enforced?
   track: rate
   kind: research
-  state: in-progress
+  state: done
   outcome: unrated
   evidence:
+  - status §51 block E Result
   - status §60 Amendment 2
   - status §51 (choice 5; design §7)
   - status §51 Amendment 2
   verdict_quote: ''
-  headline: ''
+  headline: 'Not enforced: 0.81 and 0.89 of the overload rows'
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: no-cargo
   start: '2026-11-16'
-  end: '2026-11-17'
+  end: '2026-11-19'
   folded: []
   overview: false
-  plain: 'Checked whether the congestion window that the repair cap reads is enforced on the path that may drop late data: it is not, both by reading the code and on one test run.'
+  plain: 'Checked whether the congestion window that the repair cap reads is enforced on the path that may drop late data: it is not, by reading the code and on both measured overload runs.'
   notes: '§60 Amendment 2, pending item 3: on the rehearsal row cwnd jumped from 1 159 to 10 000 at t ≈ 10.3 s and the source was not held to it. Done when: it is settled, by reading or a test, whether the cwnd that Scheduler::spare_capacity reads is enforced on the evicting seat under quinn''s BBR. Settled: the s51-evict design read the code and found the clamp''s cwnd enforced at neither seat (design §7, status §51 choice 5), and the E rehearsal''s U row read NOT-ENFORCED (§51 Amendment 2, one row, reported only). The clamp''s verdict (DEGENERATE-AS-WIRED is a defect finding) is rate-spare-clamp-verdict.'
 - id: store-xn-pool
   title: Path-scaled pool ×N
@@ -6690,9 +6714,10 @@ nodes:
   title: Derivation and harness branches to main
   track: infra
   kind: infra
-  state: next
+  state: done
   outcome: unrated
   evidence:
+  - branch tools-to-main 49343157
   - status §61 (s61-c3-design, harness61)
   - status §62 (s62-design) and Amendment 1 (harness62)
   - status §63 Amendment 1 (harness63)
@@ -6705,8 +6730,8 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: no-cargo
-  start: ''
-  end: ''
+  start: '2026-11-19'
+  end: '2026-11-19'
   folded: []
   overview: false
   plain: Merging to main the finished design documents and test scripts that sessions were registered from but that still sit on side branches.

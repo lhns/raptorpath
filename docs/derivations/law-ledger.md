@@ -151,7 +151,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [K01](#k01) | Copa app-echo cwnd law (queue target, P10 floor, anchor floor and pull) | MODE-SWITCH(live), UNDERIVED, DISHONEST-INPUT | P3 | 44 | E03, E04 |
 | [K02](#k02) | Copa delta off the wire signal (constant 0.5) | DIVERGENT | P3 | 45 | K01 |
 | [K03](#k03) | Copa wire-mode law and TCP-compete mode (opt-in) | MODE-SWITCH(live) | P3 | 46 | - |
-| [K04](#k04) | spare capacity and the active_paths saturation filter | DISHONEST-INPUT | P3 | 47 | K01 |
+| [K04](#k04) | spare capacity and the active_paths saturation filter | DISHONEST-INPUT, DEGENERATE(paced c2) | P3 | 47 | K01 |
 | [E02](#e02) | Copa srtt / PathState::srtt() | DISHONEST-INPUT | P3 | 48 | E01 |
 | [S02](#s02) | span width A* | DISHONEST-INPUT | P3 | 49 | S01, E12 |
 | [S03](#s03) | trailing offset Delta | UNDERIVED | P3 | 50 | - |
@@ -1758,7 +1758,7 @@ a branch.
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* Copa cwnd inflated by the anchor floor (K01), so 'saturated' rarely fires; in-flight expiry max(4*srtt, 250 ms) on E02
 - *8. NO-MODE-SWITCH:* none
-- *9. verdict:* **DISHONEST-INPUT**: cwnd 10-20 k against in-flight 0.1-1 k at c8 (p0-dwell-diag §4)
+- *9. verdict:* **DISHONEST-INPUT**: cwnd 10-20 k against in-flight 0.1-1 k at c8 (p0-dwell-diag §4). **DEGENERATE(paced c2)** (status §51 block E Result, 2026-11-19): as the repair cap (flat_rate = min(window_rate, spare)) it never binds at either paced load (φ = 0 over 1 105 LATE windows each at 700 sym/s and 35 Mbit) and binds 96 % on the overdriven row, where the cwnd it reads is not enforced (τ_x 0.81 / 0.89). A saturation switch, not a headroom law (MEASUREMENT DISCIPLINE 18).
 - *10. fix class, priority:* follows K01; **P3**, rank 47; depends on K01
 - *flags:* measured yes, gauge yes
 

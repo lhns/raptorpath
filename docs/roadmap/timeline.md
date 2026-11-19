@@ -95,7 +95,8 @@ gantt
     Repair taper shape inert as wired :active, rate_defect_taper_inert, 2026-11-14, 2026-11-19
     Evicting-seat m̄ registration :rate_evict_registration, 2026-11-16, 2026-11-17
     Evicting-seat test suites and binary :rate_evict_epre, 2026-11-18, 2026-11-18
-    Is spare's cwnd enforced? :active, rate_spare_cwnd, 2026-11-16, 2026-11-17
+    Evicting-seat test, rehearsal and runs :rate_evict_session, 2026-11-19, 2026-11-19
+    Is spare's cwnd enforced? :rate_spare_cwnd, 2026-11-16, 2026-11-19
     section store - store law
     Path-scaled pool ×N :crit, store_xn_pool, 2026-07-14, 2026-08-19
     Per-path store accounts :crit, store_percap_family, 2026-07-18, 2026-07-19
@@ -313,7 +314,8 @@ gantt
     Workspace restructure :active, infra_restructure, 2026-11-12, 2026-11-19
     Recorded, not fixed :active, infra_defect_recorded_not_fixed, 2026-09-30, 2026-11-19
     Inventory merges (first batch) :infra_inventory_merges, 2026-11-13, 2026-11-13
+    Derivation and harness branches to main :infra_derivation_merges, 2026-11-19, 2026-11-19
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-realtime-srv-lag-lean`, `rec-framing-followups`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-evict-session`, `rate-spare-clamp-verdict`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-derivation-merges`, `infra-tech-tree-skill`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-realtime-srv-lag-lean`, `rec-framing-followups`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-spare-clamp-verdict`, `rate-k4-input-checks`, `rate-fix-rate-readout`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51b-rho`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-s51-session`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-tech-tree-skill`
 <!-- END GENERATED: timeline -->

@@ -21,7 +21,7 @@ flowchart TB
     infra_simplify_batch2["✔ Later simplify<br/>batches"]
     infra_restructure["⏳ Workspace<br/>restructure"]
     infra_inventory_merges["✔ Inventory merges<br/>(first batch)"]
-    infra_derivation_merges["○ Derivation and<br/>harness branches to<br/>main"]
+    infra_derivation_merges["✔ Derivation and<br/>harness branches to<br/>main"]
     infra_tech_tree_skill["○ tech-tree skill PR"]
     infra_early_platform ~~~ infra_net_seams
     infra_mtu_floor ~~~ infra_cleanup_0927
@@ -58,8 +58,8 @@ flowchart TB
     class infra_early_platform,infra_mtu_floor,infra_consolidation,infra_net_seams,infra_cleanup_0927,infra_fix_program,infra_simplify_review,infra_simplify_batch1,infra_simplify_batch2 succ
     class infra_defect_recorded_not_fixed defect
     class infra_restructure waiting
-    class infra_inventory_merges unrated
-    class infra_derivation_merges,infra_tech_tree_skill next
+    class infra_inventory_merges,infra_derivation_merges unrated
+    class infra_tech_tree_skill next
 ```
 <!-- END GENERATED: track-infra -->
 
@@ -81,7 +81,7 @@ flowchart TB
 | `infra-restructure` | Workspace restructure | in-progress | unrated |  | ADR-0076; status §58 Amendment 3 |  |
 | `infra-defect-recorded-not-fixed` | Recorded, not fixed | in-progress | unrated | ≈ 0.0354 | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |  |
 | `infra-inventory-merges` | Inventory merges (first batch) | done | unrated |  | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |  |
-| `infra-derivation-merges` | Derivation and harness branches to main | next | unrated |  | status §61 (s61-c3-design, harness61); status §62 (s62-design) and Amendment 1 (harness62); status §63 Amendment 1 (harness63); status §64 (f2-guard-design) and Result (harness64); status "The count-rule derivation" (count-rule); status "The knee-margin re-derivation, closed post hoc" |  |
+| `infra-derivation-merges` | Derivation and harness branches to main | done | unrated |  | branch tools-to-main 49343157; status §61 (s61-c3-design, harness61); status §62 (s62-design) and Amendment 1 (harness62); status §63 Amendment 1 (harness63); status §64 (f2-guard-design) and Result (harness64); status "The count-rule derivation" (count-rule); status "The knee-margin re-derivation, closed post hoc" |  |
 | `infra-tech-tree-skill` | tech-tree skill PR | next | unrated |  | plan Live state TECH TREE (AFTERWARDS) | infra-inventory-merges, model-law-ledger |
 
 ### Details per node
@@ -101,6 +101,6 @@ flowchart TB
 | `infra-restructure` | Workspace restructure | Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phase 6's five closed forms moved to raptorpath-math with endspeed-relaid (status §58 Amendment 3, model-endspeed), after ADR-0076's status line (dated 2026-11-14) was last updated, so that line still reads 'not executed'; phase 5 open. | ADR-0076; status §58 Amendment 3 |
 | `infra-defect-recorded-not-fixed` | Recorded, not fixed | Status §3.7 rows: the BOCD predictive_loss_upper floor (≈ 0.0354 on clean links, unverified), balanced v9 striping at ≈ 1.34x sender kernel CPU at the dual c1 cell, and the per-batch Ack arm releasing more than was sent under reorder. Undated raw records; date approximate (fix-program VM runs). | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |
 | `infra-inventory-merges` | Inventory merges (first batch) | Merged to main 2026-11-13: guard-v2, law-ledger, p0-dwell-diag, roadmap, test-debts (docs/tools/tests only). The derivation-branch merges are infra-derivation-merges. | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |
-| `infra-derivation-merges` | Derivation and harness branches to main | harness64 merged to main 2026-11-18 (after the regression test's Result; its [SYMSZ] table fix included). Checked by content against github/main 93f29d77 (tools merge by path, so ancestry is not the test). Registered verbatim or run from, not on main: harness61 3cdc4470 (plan61, s61_score), harness62 95dafa59 (plan62, s62_score; owed first: the full unfiltered test_stubrun), harness63 16a6ed17 (plan63 and the set -e fix), harness64 4feeb8fd (plan64; owed first: keep [SYMSZ] in KEEP_PAT and fail closed on its absence, with a stub test; §64 Result: 'harness64's tools to main with it'), s62-design 0f40a59d (s62-registration.md, s62pred), f2-guard-design 39269746 (f2-guard-registration.md, the framing_ns pre-reads), count-rule 2d557191 (count-rule.md, crdump/crfollow/crrule), knee-margin-rederive 399407f4 (knee-margin-rederive.md, kmr). harness51 waits for the §51 Result by design; s64-lean waits for its review (rec-s64-delay-lean). Older docs-only branches, still unmerged: derive-w1, w1r2, perleg-design, paper-recon, otel-design, adr68-amend, wire-clock-derive (wasm-modeswitch-audit, guard-clause-dry and s51-design's doc are on main). Done when: each branch is merged to main by path or recorded as kept-unmerged with a reason. | status §61 (s61-c3-design, harness61); status §62 (s62-design) and Amendment 1 (harness62); status §63 Amendment 1 (harness63); status §64 (f2-guard-design) and Result (harness64); status "The count-rule derivation" (count-rule); status "The knee-margin re-derivation, closed post hoc" |
+| `infra-derivation-merges` | Derivation and harness branches to main | harness64 merged to main 2026-11-18 (after the regression test's Result; its [SYMSZ] table fix included). Checked by content against github/main 93f29d77 (tools merge by path, so ancestry is not the test). Registered verbatim or run from, not on main: harness61 3cdc4470 (plan61, s61_score), harness62 95dafa59 (plan62, s62_score; owed first: the full unfiltered test_stubrun), harness63 16a6ed17 (plan63 and the set -e fix), harness64 4feeb8fd (plan64; owed first: keep [SYMSZ] in KEEP_PAT and fail closed on its absence, with a stub test; §64 Result: 'harness64's tools to main with it'), s62-design 0f40a59d (s62-registration.md, s62pred), f2-guard-design 39269746 (f2-guard-registration.md, the framing_ns pre-reads), count-rule 2d557191 (count-rule.md, crdump/crfollow/crrule), knee-margin-rederive 399407f4 (knee-margin-rederive.md, kmr). harness51 waits for the §51 Result by design; s64-lean waits for its review (rec-s64-delay-lean). Older docs-only branches, still unmerged: derive-w1, w1r2, perleg-design, paper-recon, otel-design, adr68-amend, wire-clock-derive (wasm-modeswitch-audit, guard-clause-dry and s51-design's doc are on main). Done when: each branch is merged to main by path or recorded as kept-unmerged with a reason. | branch tools-to-main 49343157; status §61 (s61-c3-design, harness61); status §62 (s62-design) and Amendment 1 (harness62); status §63 Amendment 1 (harness63); status §64 (f2-guard-design) and Result (harness64); status "The count-rule derivation" (count-rule); status "The knee-margin re-derivation, closed post hoc" |
 | `infra-tech-tree-skill` | tech-tree skill PR | Done when: a project-neutral tech-tree skill is opened as a PR to the design-skills repo (no direct commit to its main, no link in ~/.claude/skills) and tested with skill-creator on a fixture or a second project. | plan Live state TECH TREE (AFTERWARDS) |
 <!-- END GENERATED: table-infra -->

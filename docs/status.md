@@ -1699,6 +1699,41 @@ The launch sha is pinned by an amendment.
 - **Host tests on `8899fef8`** (the coordinator's LF export): `test_s51e` 64 (including the alternating-sample red-first check), `test_s51` 64, `test_harness51` 20, the remaining 43 tools/l1 files rc 0 (`test_s60` aside: its host-only `python -I` step, 169 checks before it pass), and the fast unfiltered stub run ALL OK (772 ok, 0 FAIL). `test_s60` on the VM: 190 ok, 0 failed. The same commit is cherry-picked onto `harness51-pace` `72bc0ef8` (`test_s51e` 64, `test_s51` 64, `test_harness51` 20).
 - **Pins:** tools only, so the engine, the ref51e manifest and `LD_BIN_SHA_EXPECT` = `a6a7e7e6…` are unchanged from Amendment 4.
 
+**§51 block E Result (2026-11-19, rehearsal 04:58–05:16Z, battery 05:20–05:51Z; `e-tree-f2-pace` `8899fef8`, bin_sha `a6a7e7e6…`, manifest HIT; scorer `s51e_score.py` sha256 `ee953665…` with `s60_score.py` `2fcc75d2…`, both at `8899fef8`; Fable-reviewed): REPORTED-ONLY. Outcome DEGENERATE-AS-WIRED and rate-spare-cwnd NOT-ENFORCED, both as predicted. K4 is NOT handed to the oracle yet: W1 fails its upper bracket on every PM row and has never been tested at PL, and Δ reads 1 everywhere.**
+- **Rehearsal:** SMOKE-PASS, every gate (a)–(h) PASS; PL 42 steady windows (predicted 30–50), so the calibration rule did not fire. The first battery launch stopped at ABORT-PRECONDITION (one `procs_running` sample of 12; cause not identified), NOTHING RUN; relaunched in a fresh directory after six quiet load samples.
+- **Battery:** 12/12 slots LIVE, void 0, replaced 0, DNF 12 (by design), VOID-F2 0. PACE PASS, GAUGE-WITNESS PASS.
+- **The spare-clamp verdict (design §6.3), registered input to `rate-spare-clamp-verdict`:**
+  - PL and PM: φ = ζ = π = 0.0000 over 1 105 LATE windows each, class SLACK (predicted SLACK).
+  - U: φ 0.960, ζ 0.941 (control ≥ 0.5, prediction ≥ 0.8), π 0.020, clamp deficit 0.471, class PINNED.
+  - **Outcome DEGENERATE-AS-WIRED (predicted):** at both paced loads the clamp never binds; it closes repair only when the source outruns an unenforced cwnd. A saturation switch, not a headroom law: a defect finding (MEASUREMENT DISCIPLINE 18) naming the clamp, the repair grant and the shed budget's r.
+- **rate-spare-cwnd NOT-ENFORCED (predicted):** τ_x on U 0.806 and 0.891. U's eviction share 0.703 / 0.749, MAX_CWND share 0.403 / 0.255.
+- **K4 inputs** (K4 itself is computed off-VM on `pfec-oracle`):
+  - PL steady windows 38, 38, 34, 44, 40, all ≥ 30: K4-PL SCOREABLE. Means: ε 0.0064–0.0078, σ² 3.07–3.65, r 0.402–0.426, A\* 5.57–5.69, Δ 1, dbt_share 0.50–0.53.
+  - PM 0, 0, 0, 0, 1: K4-UNSCOREABLE (predicted).
+- **m̄ and W1:**
+  - **PL m̄ 2.04–2.07 against a predicted 1–2: missed.** Witness m̄ ≥ mbar_lo 0.52 ok.
+  - PL W1 0.511–0.521, **never tested:** the lower bracket is 0 (rr·mbar_lo ≈ 0.21 < 1) and the upper is n/a by construction (cod/src is read over ticks with src > 1 000 sym/s, and PL runs 700).
+  - PM m̄ 9.75–10.19, witness ok. **W1 0.856–0.860 against an upper bracket (cod/src)/rr of 0.738–0.788: FAIL on all five rows.** The bracket is built to over-count (cod includes margin and request repairs), so W1 above it means either the W1 reading or the bracket's premise is wrong at PM.
+    - Both read the same rr (the LATE `[SPAN] rr` median in `mbar59_score`), but over different tick sets: cod/src only over ticks with src > 1 000 sym/s, W1 over every LATE window. Whether that difference explains the gap is not checked.
+    - The design (§8.1, §10) gives the W1 bracket no void or label rule, so the failure enters no label; it does block K4, which compares the oracle against this same W1.
+- **Other predictions:**
+  - src PL 700, PM 8 854–8 856 (±5 %), last tick 62 s: hit. Eviction share PL/PM 0.0000: hit. τ_x PM 0.000: hit. PM rr 0.234–0.250 (0.15–0.32): hit. PL A\* 6.0 (3–7): hit; PM A\* 75.5–78 (49–133): hit.
+  - **Δ reads 1 on every row of every arm (PL, PM and U):** predicted 9–27 at PM, missed. Δ = clamp(⌈rate_sym·J⌉, 1, 64) (`emit_source.rs:634`), so it is pinned at its floor across a 134× rate range: J ≤ 0.11 ms at PM and ≤ 11 µs at the overdriven U. The c2 cell has no jitter term, but 11 µs on an overdriven path is implausible, and J (`est.jitter_us()`, the receive-side estimator) is not printed.
+    - §63's PM rows already read Δ = 1 on 110 of 110 SPAN lines.
+    - Under FORMULA-FIRST a law pinned over its measured range is a defect finding needing a ledger verdict. Whether J is fed at all on the sending side is owed a code read. K4's Δ input is suspect until then, and the steady rule's delta clause cannot fail.
+- **Pacing (Amendment 4's reported readings):** enqueue-late PL 0.85–2.22 %, PM 0.71–0.94 %; late_max 5.4–11.9 ms (stall limit 250); off-load 0/220 on every paced row; no steady window excluded.
+- **Host load (disclosed):**
+  - A worker's host stub run ran until 05:21:17Z after the host lock was taken (≈ 04:57Z), so it overlapped the whole rehearsal. The same worker ran three short unit tests under the lock, at times not recorded. The coordinator ran a two-minute file search at ≈ 05:25Z.
+  - The battery's scored rows started after the smoke at 05:35:36Z (`all-era.txt`), after the stub run and the search.
+  - **So Amendment 4's "first quiet-host late share" is not the rehearsal's** (PL 2.22 % etc. there ran under load). The battery's ten paced rows are its first quiet-host reading, unless the three short tests fell inside them.
+  - The coordinator's pre-launch host check read 0 busy processes with that stub run live, so it misses short-lived child processes. It is to be fixed before the overnight sweep.
+- **Host re-score:** `s51e_score.py score51e` on the pulled `ld.log` reproduces the VM's `score.txt` byte for byte.
+- **Ledger:** `docs/l1-raw/s51e/` (session and rehearsal archives, the VM and host scores), scrubbed, process-list dumps left out.
+- **What follows:**
+  - `rate-spare-clamp-verdict` has its input: DEGENERATE-AS-WIRED, a defect finding (law ledger K04). The fix is a law change with its own derivation.
+  - `rate-spare-cwnd` is settled NOT-ENFORCED on two rows.
+  - **K4 waits on two diagnoses, code and ledger only:** the PM W1 bracket failure (tick sets, then the bracket's premise) and Δ pinned at 1 (whether J is fed). Only then do PL's K4 inputs go to the oracle off-VM.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
