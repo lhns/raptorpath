@@ -1860,6 +1860,22 @@ The launch sha is pinned by an amendment.
   - Steal was 0.28–0.34 % and iowait well under 0.1 % across both cells (`steal.txt`). Whether the VM shares the Ceph cluster that another session was restarting is unanswered by the owner.
 - **Ledger:** `docs/l1-raw/s51b/` (scrubbed): per cell `ld.log` (sufficient to re-score), `score-vm.txt`, `score-host.txt`, `launch.out`, `BINSHA.txt`, `smoke.log`, `steal.txt`; plus the rehearsal tarball. `s51b-diag-cited.tgz` holds the client and server logs of every row the findings cite (c8 HR ×6; c8 RM, RP, HA s42 r1; c2 HA, HR s42 r1), and `scripts/` holds the three read-only scripts behind the findings' numbers (`rows.py`, `spare.py`, `hr.py`; each takes a `diag-ld` directory, and `hr.py` also takes the `ld.log`). The full per-row logs (53–70 MB per cell) are not committed. They stay on the VM in `~/b51c2/run` and `~/b51c8/run` until `rate-c8-frontier-recopy` has read them. The VM's `src` / `target` trees, `/dev/shm/b51*` and the unscrubbed tarballs are removed.
 
+**§51 block 51 Result, Addendum 1 (2026-11-19, after the owner's report that the Ceph cluster was unstable; ledgers only, no VM; Fable-reviewed): the labels stand. The VM saw no I/O signal in this session, in block E or in §65.**
+- **Owner report:** "ceph was unstable" during the session. When it started and whether it has ended is asked; no scored VM session runs until the owner says it is over.
+- **Why the labels survive by design.**
+  - Every PASS is stated at the in-session A/A resolution, which absorbs any disturbance that hit both arms.
+  - Every block holds each arm once, so a disturbance over time cannot make a T2 FAIL.
+  - The cost a disturbance can carry is resolution. The c8 in-order d80 of 50 % (historical 30 %) is the candidate.
+- **Readings** (per-row I/O stall, the delta of PSI `io full total` between consecutive rows; `scripts/iopsi.py`):
+  - **block 51 c2:** median 0.028 s per row of about 60 s, max 0.144 s; correlation with the row's goodput residual within its arm +0.078.
+  - **block 51 c8:** median 0.023 s, max 0.131 s, correlation −0.082.
+  - **No block trend.** Block 1 is highest in both cells (0.73 / 0.68 s summed) and has the same arm mix as the others.
+  - **§65 rt65:** median 0.008 s, max 0.59 s (an RB row, goodput 68.8 against its arm median 68.2), correlation +0.017.
+  - **Block E:** 0.006–0.185 s on all 11 rows.
+  - **CPU steal** across block 51 was 0.28–0.34 %.
+- **The limit:** PSI and steal see only what reaches the guest. A hypervisor-side stall that delays the netem qdisc or the clock without blocking guest I/O would not show here.
+- **One pushed sentence is withdrawn pending a check:** Finding 1's "most copies do not land as duplicates". It assumed `rx_dup` counts every duplicate arrival at the receiver, and nobody had read that counter. The copy diagnosis (`rate-c8-frontier-recopy`) reads the counter and bounds copies by true wire losses instead.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
