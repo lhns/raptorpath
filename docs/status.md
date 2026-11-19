@@ -2018,9 +2018,46 @@ The launch sha is pinned by an amendment.
 
 **Owner decision 2026-11-19, the c8 delay: the store law, not lever B.** The owner chose to re-guard lever B, then reversed it the same day: "we dont want a workaround actually, we want the proper solution".
 - **Basis:** in §54b the store cap binds on 99.7–100 % of ticks on every arm, so the pool constant is the law. The constant's value alone moves c8 in-order delay from 4.4 s (pool 2048) to 0.38 s (pool 640). Lever B adds about 0.06 s on top (L640 0.32 s), and it sets a 20-gap horizon to the 64-range cap, which already binds at c8.
-- **So lever B (20 → 64) and a smaller pool constant (2048 → 640) are both workarounds.** The fix is a derived store law: how much each path may hold outstanding, as a formula in that path's measured rate and delay and in δ (`store-law-derivation`). Decision 6 stands; `rec-leverb-guard` is parked again.
+- **So lever B (20 → 64) and a smaller pool constant (2048 → 640) are both workarounds.** The fix is the derived store law (`store-law-derivation`), a time law: how much each path may hold outstanding follows from its delay targets and δ, with the rate cancelling in the update (see the store-law state entry; the earlier "rate and delay" wording was the coordinator's). Decision 6 stands; `rec-leverb-guard` is parked again.
 - C02's 20-gap literal gets its answer after the store law, from a horizon bind gauge. The condition to derive is that the holes outstanding under the law fit in one report. The SACK cap and the horizon then become witnesses, not fixes.
 - **Process:** two owner choices today were asked without their history. A question now carries the node's earlier decisions in its own text.
+
+**Store law, state of the work (2026-11-19, docs and committed logs only; `docs/derivations/store-law-state.md` on `store-law-state` `bdc9f431`; Fable-reviewed): the formula is mostly there, the inputs are not. Until the estimators are honest, the c8 delay stays, because the owner ruled out workarounds.**
+- **One cause behind several of today's delay readings** (coordinator-reproduced). At c2 the in-order delay is the store's standing queue: 1.49–1.60 × 2048/λ_src on all 14 arms.
+  - Bulk: 2048/9 517 = 0.215 s, measured 340 ms.
+  - Auto: 0.255 s, measured 394–403 ms.
+  - Named Realtime, whose 512 B symbols halve the store's time: 0.120 s, measured 187 ms.
+  - The store cap sits at N·2048 on 97–100 % of LATE ticks at every δ; one Auto row reads pin 0.84 of 11 108 ticks, mean ask 10 725 against cap 1 826.
+  - **Erratum, readings that all read this one queue:**
+    - the +16–18 % in-order delay from Bulk to Auto is the goodput ratio (90 / 76), through a fixed store;
+    - "a coded slot buys no drop in delay" (Addendum 3 and the audit);
+    - T2 Realtime's delay step at c2;
+    - "Auto's delay is no lower than Bulk's".
+    None of them is evidence about the repair path's latency value.
+- **δ moves nothing in the store cap.** The shipped law is clamp((1+q)·Σ max_bw·min_rtt, 10, N·2048). Its ask is 3–34× above the ceiling, because `btlbw` reads 6–19× the link and `rtp` 5–25× the floor (E03, E04). The (1+r) unit mismatch is still on main. Ledger F01 is updated.
+- **Consequence for open registrations.** At the default pool, a tighter tail target lowers the source rate, so delay can only rise. The flag-sweep draft would therefore read "supersede ADR-0050" by construction, and ADR-0079's c8-delay registration is confounded the same way.
+  - Both must read hole-close time, not in-order delay.
+  - Both add arms at a pool inside §56's flat region, set by env. That is a measurement condition, not a shipped workaround.
+- **Correction:** the derived store law is a **time law**. Its update n′ = n·Σwᵢ·T*ᵢ / Σwᵢ·T̂ᵢ reads no rate, because the rate cancels, and its fixed point is n* = Σλᵢ·T*ᵢ + H. The earlier owner-decision entry's "a formula in that path's measured rate and delay" was the coordinator's wording, not the owner's.
+- **Where it stands:**
+  - **Derived:** G = 1, uniqueness, no separate H term, the coupled floor Φᵢ, q(δ) from RFC 8289.
+  - **Not sourced in the engine:**
+    - the window sampler (on unmerged `slaw-gauge`);
+    - the floor and brake estimators (E13 and E14 convicted);
+    - the allowance (F07 UNDERIVED: decision 8's g·S_F failed out of sample, need/S_F 0.46 at c3 against 0.80 at c2).
+  - **The sampler redesign waits on M1** (four RTT-dump rows, about 1 h, no build, needing a tools-only plan).
+  - **The per-leg refactor:** `perleg-phase-a` `e5246d7f` is unmerged and waits for its guard; Phase B and W3.3 are not started.
+- **The candidate is held.** On logged inputs it fails like the shipped law. On netem truth and the §60 floors it lands near §54b's working sizes and the §56 knees, but only in sample: its allowance was set at c2, and the floors come from the same cells.
+  - Out of sample it failed at c3 and costs at least 21 % at c1s. **c1s is a falsifier, not an owner question.**
+  - Owed:
+    - the §57a and §57b readings;
+    - c1d evaluated on netem truth;
+    - all predicted caps in one unit (per path or total);
+    - an independent check of the report-fit condition, whose κ ≈ 2 was fitted to §54b.
+- **The report-fit condition** (derived, not yet validated): G(n*) ≤ 64 (the SACK prefix) and κ·Σε_run,ᵢ·n*ᵢ ≤ 20 (the horizon). Two bind gauges are owed: a SACK-prefix bind fraction on the receiver and a horizon ripe-overflow fraction on the sender.
+- **Next:**
+  - M1 runs first when the owner clears Ceph; its tools-only plan is prepared before.
+  - The candidate and the doc's proposed ledger and paper text stay held until M1 and the out-of-sample checks.
 
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):

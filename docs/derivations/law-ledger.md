@@ -107,7 +107,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 |---|---|---|---|---|---|
 | [E04](#e04) | Copa max_bw / btlbw (delivery-rate max) | DISHONEST-INPUT | P0 | 1 | - |
 | [E03](#e03) | Copa min_rtt (RTprop) | DISHONEST-INPUT | P0 | 2 | - |
-| [F01](#f01) | pooled store cap | PINNED(c8,c1s), DISHONEST-INPUT | P0 | 3 | E03, E04 |
+| [F01](#f01) | pooled store cap | PINNED(c8,c1s,c2 at every δ), DISHONEST-INPUT | P0 | 3 | E03, E04 |
 | [E13](#e13) | lifetime echo minimum l-hat (WinSampler::life_min; gauge branch github/slaw-gauge, not on main) | DISHONEST-INPUT | P0 | 4 | - |
 | [E14](#e14) | boot brake b-hat0+ (WinSampler::close; gauge branch github/slaw-gauge, not on main) | UNDERIVED, DISHONEST-INPUT | P0 | 5 | - |
 | [F07](#f07) | store-law candidate allowance sigma + q(delta)*l-hat (R6.2 / R6.7 line; derivation only, not built) | UNDERIVED, DISHONEST-INPUT | P0 | 6 | E13 |
@@ -846,7 +846,7 @@ a branch.
 - *6. clamp bind:* ceiling N*2048: gauge [SUMCAP] pin=, 0.74-0.98 (c8), ~0.7 (c1s); floor 10: [SUMCAP] floor=; boot 128: no gauge; law asks 12-43 k at c8 ([DCAP] ask=)
 - *7. inputs honest?:* both inputs DISHONEST (E03 min_rtt 7-33x, E04 max_bw 11-24x), so ask = 3-10x the ceiling and a positive loop queue -> min_rtt -> ask is cut only by the clamp (p0-dwell-diag §4). With honest inputs the law undershoots (no hole/dwell term): W1 H1, §44 erratum (b0 offset has no engine source)
 - *8. NO-MODE-SWITCH:* none on the default seat. Path-count: none (ADR-0072). rho: see F02
-- *9. verdict:* **PINNED(c8,c1s), DISHONEST-INPUT**: pin = 0.74-0.98 at c8 on main (§53 Erratum 1); ask 12-43 k vs 4096; honest-input form collapses to the floor at c2 (W1 H1) - the law needs its hole/dwell term in the same change as honest inputs. The replacement law (store-law R6.2/R6.7) carries its own rows: F07 (allowance SHORT at c2, s60) and E13 (l-hat)
+- *9. verdict:* **PINNED(c8,c1s), DISHONEST-INPUT**: pin = 0.74-0.98 at c8 on main (§53 Erratum 1); ask 12-43 k vs 4096; honest-input form collapses to the floor at c2 (W1 H1) - the law needs its hole/dwell term in the same change as honest inputs. The replacement law (store-law R6.2/R6.7) carries its own rows: F07 (allowance SHORT at c2, s60) and E13 (l-hat) **Pinned at every δ, and it sets the c2 delay** (status §51, the store-law state entry, 2026-11-19; `store-law-state` `bdc9f431`): on the 152 sweep rows the cap sits at N·2048 on 97–100 % of LATE ticks (arm medians) at every δ. The ask (1+q)·Σ max_bw·min_rtt is 3–34× above that ceiling, because `btlbw` reads 6–19× the link and `rtp` 5–25× the floor (E03, E04), so δ (through q) moves nothing. At c2 the in-order delay is 1.49–1.60 × 2048/λ_src on all 14 arms (coordinator-reproduced from the score file: Bulk 0.215 s → 340 ms, Auto 0.255 s → 394–403 ms, named Realtime 0.120 s → 187 ms), so the delay is the store's standing queue. Delay rises with δ only because repair lowers the source rate through a fixed store. At c8 it is 10–14 × 2048/λ_src (the old holes). The (1+r) unit mismatch is still on main: `max_bw` counts every datagram on the path (1.03 at Bulk, 1.22–1.32 at Auto).
 - *10. fix class, priority:* law change needing a battery, shipped with the input fixes; **P0**, rank 3; depends on E03, E04; ships with E03, E04, F07, E13
 - *flags:* measured yes, gauge yes
 

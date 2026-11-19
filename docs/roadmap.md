@@ -388,7 +388,6 @@ flowchart TB
 
 - `rate-delta-jitter-fix`: Jitter margin reads wrong direction
 - `rate-fix-rate-readout`: Repair-rate readout
-- `infra-tunnel-inorder-guard`: Tunnel in-order guard
 - `meas-s51-c8-gauges`: Per-leg clamp and saturation gauges
 - `model-fix-hint-keyed-paths`: Hint-keyed engine paths made continuous
 - `meas-guard-resolution`: Guard CPU and lag resolution
@@ -532,6 +531,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 4 in progress, 8 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 16 nodes (12 done, 2 in progress, 2 next)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 16 nodes (12 done, 3 in progress, 1 next)
 <!-- END GENERATED: tracks -->
 
