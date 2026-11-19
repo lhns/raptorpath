@@ -6789,22 +6789,23 @@ nodes:
   title: Tunnel in-order guard
   track: infra
   kind: defect-verdict
-  state: next
+  state: in-progress
   outcome: unrated
   evidence:
   - docs/derivations/liveness-audit.md item 3
+  - branch tunnel-inorder-guard 987b0360
   verdict_quote: ''
   headline: ''
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: host-cargo
-  start: ''
+  start: '2026-11-19'
   end: ''
   folded: []
   overview: false
   plain: Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins.
-  notes: 'Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test.'
+  notes: 'Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test. Branch tunnel-inorder-guard 987b0360: run and check reject the four object modes from a config file and pin them false; --lib config:: 17/17, red then green. Waits for the VM pre-flight suites (binary changes; startup validation only), or an owner waiver.'
 - id: rate-shed-budget-rho
   title: Shed budget ignores ρ
   track: rate
