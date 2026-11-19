@@ -267,7 +267,7 @@ that meets the status entry's sentence is flagged in §5 (item C).
 - **Monotone in δ:** T* is non-decreasing in q (and in g), and q is continuous and monotone in b(δ).
 - **ρ:** none. **Mode switch:** none; one expression, with δ only through q and g.
 - **What the sentence does not yet say:** why S_F is the knee margin. §61a found it is not the same fraction of S_F
-  at c3 as at c2. That gap is F07, and owner question 1.
+  at c3 as at c2. That gap is F07, and §5 item B.
 
 ### 3.2 The inputs: logged, netem truth and §60 (`cand2.py`, `little54b.out`, `sl51-*.out`)
 
