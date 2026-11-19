@@ -491,10 +491,33 @@ which is proactive redundancy with no special case.
 
 In the shipped window machine this probabilistic retransmit of the oldest
 unacked symbol (`net/emit_source.rs`) evaluates P_lost with the worst path's
-smoothed RTT and RTTVAR fixed at 0.1·SRTT. It is live code but measured inert:
-`taper_copy = 0` at all four audited cells and on both loopback
-topologies. Whether its ε̂ at send time is structurally near zero or the
-oldest symbol never ages far enough is open (Section 11.2).
+smoothed RTT and RTTVAR fixed at 0.1·SRTT. It was read as inert
+(`taper_copy = 0` at four audited cells and on both loopback topologies).
+The §51 sweep refuted that reading (status §51 block 51, Addendum 2, all 152
+rows):
+
+- the branch evaluated P_lost on one seq per slot, the cumulative-ack
+  blocker, on its original send age, and never conditioned on its own
+  resends in flight, so between two cumulative advances it copied the same
+  seq on every slot;
+- copies ran at 4.0× (c2 Auto) and 6.3× (c8 Auto) the wire losses, and at
+  least about 70 % of them landed below the receiver's decode floor, already
+  received;
+- at c8 the blocker was 5–7 s old against a worst-path SRTT of 0.26–0.6 s,
+  so P_lost was pinned near 1, copies took 98 % of the slots, and no
+  proactive coded repair was sent on two paths at any measured δ above Bulk;
+- NACK resends stayed at about one per source loss on every arm, so the
+  copies came on top of the reactive plane.
+
+**Owner decision, 2026-11-19 (ADR-0079):** the copy branch is to be
+deleted, so that every proactive slot carries a coded symbol and
+retransmission is reactive only. The basis is that at ρ = 1 a copy adds no
+degree of freedom over the NACK resend; it is only an earlier trigger for
+the same correction. The rejected alternative was a posterior over resends
+in flight (S06′, derivation `s06-plost-resend.md` on branch
+`s06-derivation`), whose "copy with probability π" rule is kept, not
+derived. The engine change is pending (`docs/derivations/s06-delete-plan.md`);
+until it merges, the paragraphs above describe the shipped engine.
 
 ### 3.3 The taper
 
@@ -4187,6 +4210,7 @@ shipped.
 | FMTCP-class decode-on-total [Cui2015] | 0.48× at the heterogeneous dual; on the clean substrate c7 ×0.11, c8 ×0.20 of the default stack, a recovery flood (coded share > 1) at about 8× plain CPU | `f841757` | removed |
 | Leading-window taper emission | repairs coded over in-flight members are unsolvable on arrival: −22 pp delivered reliability; replaced by trailing-span emission | — | superseded |
 | **Proactive FEC timing** | | | |
+| Probabilistic taper copy, P(retransmit) = P_lost (Section 3.2) | each proactive slot copied the cumulative-ack blocker on its original send age, never counting its own resends: copies at 4.0× (c2) and 6.3× (c8) the wire losses, ≥ 70 % already received, 98 % of c8 slots; a copy adds no degree of freedom over the NACK resend at ρ = 1. The posterior over resends in flight (S06′) was derived and rejected (its copy rule is not derived) | `21d5a2b5` | removal decided (ADR-0079, owner 2026-11-19); engine change pending |
 | Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`) | the proactive fraction fell (0.27 → 0.22) as the wait grew; the covering repair was absent, not late (7 useful of 4 600 fed) | `3a0ca0c` | removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 2026-07-08; route: user ruling; re-test if the question returns; tag `archive/RWM_REPAIR_WAIT`) |
 | Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`) | repair anchored at the frontier loses to its own ARQ (4 useful of 718) | `bede4a3` | removed |
 | Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`) | presence rises, throughput does not: a saturated single path has no spare bandwidth for a repair that buys back a round trip | `806c0f4` | removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 2026-07-08; route: user ruling; re-test if the question returns; tag `archive/RWM_PROACTIVE_PACER`) |
@@ -4280,7 +4304,7 @@ never-delivered tail target.
 | 6 | Do the three channel implementations (test GE, recovery-bench chain, L0 netem shim) agree? | a differential test at fixed seeds; none exists |
 | 7 | What sets the recovery clock? | the self-heal quantile F_heal(7.22 ms) at c7; an `RWM_STORE_GAIN` contrast; a c8L attribution pass (Section 7.7) |
 | 8 | Is the c8L pool cap interior? | the within-run Σ series (pin fraction 0.23 today) |
-| 9 | Why does the probabilistic taper retransmit never fire? | whether ε̂ at send is structurally ~0 or the oldest symbol never ages past the P_lost knee |
+| 9 | What does deleting the taper copy cost in c8 delivered delay? | answered: it fired on every slot (§3.2, status §51 Addendum 2); deletion decided (ADR-0079). Open: c8 in-order delay without copies, registered two-sided in ADR-0079 |
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
