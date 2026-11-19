@@ -38,6 +38,11 @@ law ledger or the roadmap; §6 proposes that text.
   - Whether a rate-free update meets the status entry's "formula in rate and delay" is a premise flag for the
     coordinator.
 
+- **Follow-up (§7):** the c1s cost is real, ≈ −20 % at Bulk by the law's own fixed point (not an input artefact),
+  and the receiver-bound regime needs one release interval τ_rel in T* (≈ −9 % with it). Every cap is restated per
+  path (c8 254–257 against the knee's 170 and the flat region's 256). κ is checked independently on §56's map
+  (1.23 at W 512, rising to 1.9–3.1 at the edge). M1's plan is `m1-plan.md`.
+
 Rules followed: FORMULA-FIRST (formulas stated with a provenance per symbol and a shape check before any number);
 NO-MODE-SWITCH (every form below is one expression continuous in δ; no hint or threshold branch); every clamp named
 gets a bind gauge.
@@ -646,6 +651,142 @@ a node for the two report gauges (§4.5) under the store track, `kind: instrumen
 
 ---
 
+## 7. Follow-up (coordinator, 2026-11-19): out of sample, one unit, κ, M1
+
+**M1** is planned in `docs/derivations/m1-plan.md` (same branch).
+- It needs plan code; the worker spec is §B there.
+- It runs on the prebuilt gauge binary `e410d640`, not main's: main has `RWM_RTT_DUMP` but not `RWM_SLAW`, which the
+  harness gates on.
+
+### 7.1 Out of sample: c1s and c1d (§57a, §57b, §56; `c1oos.py`, `wakes.py`)
+
+**What §57a and §57b add.**
+- **§57a (the emission burst at c1s) is UNDERPOWERED.** Its paired within-replicate reading is that a larger burst
+  *lowers* c1s's rate (−2.7 %, n 6). So the sender's emission burst is not what c1s's standing queue buys.
+- **§57b (the c1d pool sweep) finds T UNSCOREABLE.**
+  - c1d's ratios at the same total W read like c1s's: 0.954 / 0.950 / 0.888 / 0.798 against 0.96 / 0.94 / 0.89 / 0.79,
+    at q_ℓ 7.3 / 4.8 / 3.0 / 2.6 against 6.8 / 4.7 / 2.7 / 2.1 ms.
+  - Release batch / W rises 0.05 → 0.16, and ack wakes per loop fall from 14 to 5–7.
+- Both cells are receiver-bound (R6.1): goodput keeps rising with standing queue up to the control, with no capacity
+  at which a curve diverges.
+
+**netem truth** (c1: `1gbit 1 0`, so 2 ms RTT, no jitter, 98 425 datagrams/s per path):
+- **The static form n* = λ·T* gives two answers** depending on which λ it is fed:
+  - with the link rate: c1s 266–308 per path; c1d 266–308 per path (532–616 in total, between §57b's W 512 and 768);
+  - with the delivered rate at the landing (c1s 73 k/s at W 384; c1d ≈ 64 k/s in total at W 384): c1s ≈ 260–290,
+    c1d ≈ 113 per path (226 in total), below both maps.
+- **The static form is therefore not the test on a receiver-bound cell:** the link rate is never reached (the c1s
+  control runs at 93 k of 98.4 k).
+- **The test is the law's own fixed point,** where λ cancels: T̂min(n*) = F̂ + A. On netem truth A is even smaller,
+  because S_F → 0 with no jitter; the measured 0.43 ms is host-side.
+
+**The fixed point on the c1s map.**
+- §60 logs c1s window minima only at W 64/128/192/2048, so T̂min(W) for W 384–1 024 is *estimated* as
+  F̂ + (mean loop − T₀), with T₀ = 4.0 ms and R6.1's q.
+- This assumes the whole distribution shifts with load, as r68 §1.2 measured at c2. It is flagged as an assumption.
+
+| form | q | c1s landing W | goodput / control (§56, interpolated) |
+|---|---|---|---|
+| candidate, A = S_F + q·F̂ (0.67 ms) | 0.10 | ≈ 398 | ≈ 0.80 |
+| candidate | 0.05 | < 384 (T̂min(384) ≈ 2.99 > target 2.93) | ≤ 0.79 |
+| candidate + τ_rel (below) | 0.10 / 0.05 | ≈ 630 / ≈ 610 | ≈ 0.91 |
+
+- **c1d:** there is no floor calibration.
+  - By §57b's c1s-matching q_ℓ relation, the candidate's ≈ 0.7 ms above the floor lands at or below c1d's smallest
+    store-bound pool: W 384 in total, 192 per path, ratio 0.80–0.85.
+
+**Verdict: the c1s cost is real, not an input artefact. It is ≈ −20 % at Bulk (W ≈ 400) and ≥ −21 % toward
+Realtime.**
+- The rate cancels in the law, so E04 plays no part.
+- c1s's floor is honest: the cell has no jitter, the floor slope is flat (b = 0.0009 ms/slot) and ℓ̂ sits within
+  0.1 ms of F̂.
+- netem truth makes the margin smaller, not larger.
+- The earlier "≥ 21 %, unbracketed" (§3.5) came from the static form; the fixed-point reading puts it at ≈ 0.80.
+
+**The term a receiver-bound regime needs: one release interval, τ_rel,ᵢ.**
+
+```text
+   T*ᵢ  =  Φᵢ + g(δ)·S_F,ᵢ + q(δ)·F̂ᵢ + τ_rel,ᵢ + Ŝᵢ          τ_rel,ᵢ = 1 / (rate of report-driven releases on leg i)
+```
+
+- *Sentence:* the sender refills the store only when a report releases slots. Between two releases the bottleneck
+  is fed only from what the store already holds beyond the loop, so the target must cover one release interval.
+  The other allowance terms are link-FIFO terms (the jitter spread and CoDel's setpoint), and none of them names
+  this.
+- *Provenance:* measured. It is the `[DIAG] wake[ack]` counter's rate, an engine quantity already logged, and it
+  needs no new estimator.
+
+| cell | τ_rel (ms) | where it is read |
+|---|---|---|
+| c1s | 1.00 / 1.20 / 1.68 / 1.48 / 2.34 at W 384 / 512 / 768 / 1 024 / 2 048 | §56 |
+| c2 | 1.17–1.31, flat in W | §56 W 128–2 048; sweep HB 1.15 |
+| c8 | 0.82–1.22, flat in W | §56 |
+
+- *Shape:* it is in ms; order 0 in N (per leg); one expression with no regime branch.
+  - It matters only where it is comparable to the rest of the allowance: at c1s it is 1.5–3.5× the 0.67 ms margin,
+    while at c2 it is ≈ 20 % of the 5.95 ms margin.
+  - So "receiver-bound" is a magnitude, not a mode.
+- *Gates (estimated, on the T̂min estimate above):*
+  - **Uniqueness holds:** T̂min rises ≈ 2.0 ms per 256 slots against τ_rel's ≈ 0.48.
+  - **The R-sign gate holds at the c1s control:** the target is 3.05 + 2.34 = 5.39 ms, below §60's measured T̂min
+    of 6.57 at W 2 048, so R < 1.
+  - **Self-funding risk:** τ_rel grows with W at c1s (larger stores release in larger, rarer batches; release batch /
+    W ≈ 0.2, `c1srows.out`). This is W80's warning class, and uniqueness is the gate that must be measured, not
+    estimated.
+- *Price elsewhere:*
+  - c2: +1.2 ms of loop, ≈ +11 slots (188 → ≈ 200; replay 198 → ≈ 210 per path, inside §56's flat region).
+  - c8: ≈ +1 ms per leg, ≈ +6 slots per path.
+- *Predicted c1s with the term:* W ≈ 610–630 per path, ≈ 0.91 of control (≈ −9 %), at both ends of the dial.
+- *Not established:* T̂min at c1s for W 384–1 024 (estimated, not logged), the release interval's statistic (a mean
+  is used), and whether the release clock is the receiver's batching or the sender's ack handling.
+- *The measurement that settles it:* a c1s gauge arm set (W 256–1 024) on `e410d640`. It is not in M1, and it is
+  proposed as M1's follow-on.
+
+### 7.2 Every predicted cap in one unit: per path
+
+"Per path" means the pool convention (total ÷ N, the unit of `RWM_STORE_PATH_POOL` and of §54b's 640–1 024). For c8
+the per-leg Little split nᵢ = λᵢ·T*ᵢ is shown beside it, since the store is pooled and leg 0 carries about 83 % of the
+rate.
+
+| point | candidate n* per path (S60, g = 1) | c8 per-leg split (leg 0 / leg 1) | knee per path | flat region per path | working per path (§54b) | shipped |
+|---|---|---|---|---|---|---|
+| c8 Bulk (§54b B640, sweep HB) | **254–257** (NETEM 270) | 385 / 122 | §56 0.95 point W 340 total → **170** | to W 512 total → **256** (106.0 against 106.5 Mbit/s) | 640–1 024 | 2 048 |
+| c8 Auto / δ 51 | 196–200 | ≈ 300 / ≈ 97 | ≈ 133 (rescaled by λ_src 0.78) | — | — | 2 048 |
+| c2 Bulk | 188 (replay 198–203) | — | 168 | 192–256 | — | 2 048 |
+| c2 Auto / δ 51 | 151–156 | — | ≈ 142 / 138 | — | — | 2 048 |
+| c1s Bulk | ≈ 398 by the fixed point (§7.1); +τ_rel ≈ 630 | — | none (no plateau) | — | — | 2 048 |
+| c1d Bulk | ≤ 192 (§57b's smallest store-bound pool); +τ_rel: not evaluated | — | none found (§57b) | — | — | 2 048 |
+
+- **The c8 comparison, redone in one unit:** the candidate sits at 254–257 per path. That is 1.5× §56's knee of 170
+  per path, exactly at the end of the flat region (256), and 2.5–4× below §54b's working 640–1 024.
+- So the earlier statement holds, now in matching units: the candidate lands above the knee and below the working
+  constants, and §56's W 512 point gives its outcome (goodput −0.5 %, in-order 0.09 s).
+- The per-leg split shows the slow leg holding only ≈ 122. That is why §56's knee is leg 1 starving (r₁ falls from
+  1 853 to 188 below W 320 in total): the coupled floor Φ₀ is what keeps leg 0 from taking the whole store.
+
+### 7.3 κ: an independent check exists, and it agrees (`kappa.py`)
+
+κ ≈ 2 was read from §54b's old-hole onset. An independent reading comes from committed data:
+- the hole lifetime itself, `[SUCC] rep_mean` (server, holes closed by repair, measured from receiver detection to
+  fill);
+- over the LATE rate-weighted echo loop, on §56's c8 map, which has no old holes at any arm and was never used for
+  the onset.
+
+| c8 W (total) | 160 | 224 | 320 | 512 | 768 | 1 280 | §54b B640 | §54b B1024 | §54b B2048 (old holes) |
+|---|---|---|---|---|---|---|---|---|---|
+| κ = rep_mean / loop | 2.50 | 1.89 | 1.51 | **1.23** | 1.49 | 1.98 | 1.90 | 3.08 | 13.3 |
+
+- c2 (§56) reads 1.08–1.55 at W 128–384.
+- **It agrees with κ ≈ 2 at the edge:** κ climbs to 1.9–3.1 at W 1 280–2 048, where the onset sits, because holes
+  start to wait at the horizon there.
+- **κ is not a constant.** It rises toward the edge, a feedback the condition has to carry: it is (b) evaluated with
+  its own measured κ, not a fixed one.
+- **At the candidate's point (W ≈ 512) κ = 1.23,** so (b)'s margin is 20 / (1.23 × 4.5·10⁻³ × 510) ≈ 7×, wider than
+  the 4–6× in §4.4.
+- The same counter in loops should be the (b) gauge's companion (§4.5): per row, rep_mean ÷ loop.
+
+---
+
 ## Appendix: scripts and outputs
 
 Extraction (any empty scratch directory `X`; the scripts live elsewhere and take paths as arguments):
@@ -1008,3 +1149,104 @@ c1s link rate       0.0500 -          -         -      298   337   295   2.93
 ### A.6 In-order against W/λ_src (`sl51-*.out` columns)
 
 Computed as in-order ÷ (1000·W/src) per arm. The c2 ratio is 1.49–1.60 on all 14 arms; c8 is 8.9–13.9 (§2.3).
+
+### A.7 `c1oos.py`, `wakes.py`, `kappa.py` (§7)
+
+```python
+"""Out-of-sample c1s landing of the candidate, with and without a release-interval term (store-law-state.md sec. 7).
+Fixed point of the ratio law at one leg: Tmin(n*) = F + A, A = S_F + q*F (+ tau_rel(n) in the extended form).
+Tmin(W) is not logged at c1s for W >= 384 (s60 has W 64/128/192/2048 only), so it is estimated as F + q_W, with
+q_W = mean echo loop - T0 (R6.1 / s56curve.out: T0 = 4.0 ms; q 0.61/1.16/3.18/5.29/14.19 at W 384/512/768/1024/2048):
+the whole-distribution-shift reading r68 sec. 1.2 measured at c2 (assumption, flagged).
+tau_rel(W): release (ack-wake) interval from wakes.py on the s56 c1s rows. Goodput/control: s56 (0.79/0.89/0.94/0.96/1)."""
+F, SF = 2.381, 0.430
+W = [384, 512, 768, 1024, 2048]
+qW = [0.61, 1.16, 3.18, 5.29, 14.19]
+tau = [1.00, 1.20, 1.68, 1.48, 2.34]
+gp = [0.79, 0.89, 0.94, 0.96, 1.00]
+
+
+def land(q, extra):
+    f = [(F + qq) - (F + SF + q * F + e) for qq, e in zip(qW, extra)]   # Tmin - target; crossing where it turns positive
+    if f[0] >= 0:
+        return None
+    for i in range(1, len(W)):
+        if f[i] >= 0:
+            x = f[i - 1] / (f[i - 1] - f[i])
+            return W[i - 1] + x * (W[i] - W[i - 1]), gp[i - 1] + x * (gp[i] - gp[i - 1])
+    return 'above', None
+
+
+for q in (0.10, 0.05):
+    print('q %.2f  candidate: %s   with tau_rel: %s' % (q, land(q, [0] * 5), land(q, tau)))
+# below W 384: Tmin(384) estimate 2.99 vs target 3.05 at q 0.10 -> f(384) < 0 means the law still grows at 384
+print('Tmin(384) est %.2f; target q0.10 %.2f; q0.05 %.2f' % (F + qW[0], F + SF + 0.10 * F, F + SF + 0.05 * F))
+```
+
+Output: `q 0.10 candidate (397.5, 0.80) with tau_rel (629.7, 0.91)`; `q 0.05 candidate None (below W 384) with tau_rel (609.9, 0.91)`; `Tmin(384) est 2.99; target 3.05 / 2.93`.
+
+```python
+"""Release (ack-wake) interval per arm: LATE [DIAG] ticks (t >= 15 s, src > 0), d(wake ack)/dt, as an interval in ms.
+Usage: python -I wakes.py <diag-ld dir> <glob>"""
+import glob, os, re, statistics as st, sys
+arms = {}
+for f in glob.glob(os.path.join(sys.argv[1], sys.argv[2])):
+    arm = re.match(r'(c\w+-\d+)@def-(\w+)-', os.path.basename(f)).groups()
+    tk = []
+    for L in open(f, errors='replace'):
+        if L.startswith('[DIAG]'):
+            t = float(re.search(r't=([\d.]+)s', L).group(1)); m = re.search(r'wake\[.*? ack=(\d+)', L); s = re.search(r' src=(\d+)sym', L)
+            if m and s and t >= 15 and int(s.group(1)) > 0:
+                tk.append((t, int(m.group(1))))
+    if len(tk) > 4:
+        rate = (tk[-1][1] - tk[0][1]) / (tk[-1][0] - tk[0][0])
+        arms.setdefault(arm, []).append(1000.0 / rate)
+for k in sorted(arms):
+    print('%s %s n=%d release interval %.2f ms [%.2f..%.2f]' % (k[0], k[1], len(arms[k]), st.median(arms[k]), min(arms[k]), max(arms[k])))
+```
+
+Output (median [min..max] ms): c1s P384 1.00, P512 1.20, P768 1.68, P1024 1.48, P2048 2.34; c2 P128 1.31, P160 1.26, P192 1.21, P256 1.19, P384 1.18, P2048 1.17, sweep HB 1.15; c8 P80 1.22, P112 1.04, P160 0.89, P256 0.82, P384 0.85, P640 0.87.
+
+```python
+"""Hole lifetime in loops, kappa, measured directly (independent of the old-hole onset kappa ~ 2 was read from).
+Per row: server final [SUCC] rep_mean_us and rep_p50_us (holes closed by repair: detection at the receiver to fill),
+over the client's LATE (t >= 15 s, src > 0) rate-weighted echo loop T = sum r_i*rtt_i / sum r_i (rtt_i medians,
+r_i = d(dgq_i tx)/dt). kappa_mean = rep_mean / T, kappa_p50 = rep_p50 / T. Arm medians.
+Usage: python -I kappa.py <diag-ld dir> [...]"""
+import glob, os, re, statistics as st, sys
+m = st.median
+arms = {}
+for D in sys.argv[1:]:
+    for f in glob.glob(os.path.join(D, '*-c.log')):
+        k = re.match(r'(c\w+-\d+)@def-(\w+)-', os.path.basename(f))
+        if not k:
+            continue
+        nleg = 2 if k.group(1).startswith(('c8', 'c1d')) else 1
+        tk = []
+        for L in open(f, errors='replace'):
+            if not L.startswith('[DIAG]'):
+                continue
+            t = float(re.search(r't=([\d.]+)s', L).group(1)); s = re.search(r' src=(\d+)sym', L)
+            dq = [re.search(r'dgq%d\[hand=\d+ tx=(\d+)' % i, L) for i in range(nleg)]
+            pp = [re.search(r' p%d:infl=.*? rtt=(\d+)/wrtt' % i, L) for i in range(nleg)]
+            if t >= 15 and s and int(s.group(1)) > 0 and all(dq) and all(pp):
+                tk.append((t, [int(d.group(1)) for d in dq], [int(p.group(1)) for p in pp]))
+        sf = f[:-6] + '-s.log'
+        su = [L for L in open(sf, errors='replace') if L.startswith('[SUCC]') and 'final=1' in L] if os.path.exists(sf) else []
+        if len(tk) < 4 or not su:
+            continue
+        mm = re.search(r'rep_n=(\d+) rep_p50_us=(\d+) .*?rep_mean_us=(\d+)', su[-1])
+        if not mm or int(mm.group(1)) < 50:
+            continue
+        dt = tk[-1][0] - tk[0][0]
+        r = [(tk[-1][1][i] - tk[0][1][i]) / dt for i in range(nleg)]
+        rtt = [m([x[2][i] for x in tk]) for i in range(nleg)]
+        T = sum(r[i] * rtt[i] for i in range(nleg)) / sum(r) * 1000.0  # us
+        arms.setdefault((k.group(1), k.group(2)), []).append((int(mm.group(3)) / T, int(mm.group(2)) / T, T / 1000))
+for a in sorted(arms):
+    xs = arms[a]
+    print('%s %-6s n=%d loop %.0f ms  kappa_mean %.2f [%.2f..%.2f]  kappa_p50 %.2f' % (
+        a[0], a[1], len(xs), m(x[2] for x in xs), m(x[0] for x in xs), min(x[0] for x in xs), max(x[0] for x in xs), m(x[1] for x in xs)))
+```
+
+Output (c8 arm: loop ms, kappa_mean): P80 17 2.50; P112 21 1.89; P160 28 1.51; P256 42 1.23; P384 62 1.49; P640 105 1.98; B640 104 1.90; B1024 162 3.08; B2048 205 13.31; L640 107 1.53; L1024 171 1.43; L2048 343 1.00; sweep Bulk arms 13.3-14.1, Auto/RT arms 9.7-12.8 (old holes), HR 0.53. c2: P128 1.48, P160 1.55, P192 1.38, P256 1.18, P384 1.08, P2048 0.85; sweep HB 0.84, Auto 0.23-0.25.
