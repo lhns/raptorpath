@@ -137,7 +137,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [S01](#s01) | span deadline D | DIVERGENT, DISHONEST-INPUT | P2 | 30 | E01, E03 |
 | [S04](#s04) | shed budget | DIVERGENT, DISHONEST-INPUT | P2 | 31 | R03, S01 |
 | [S05](#s05) | receiver shed hold | DIVERGENT, UNDERIVED | P2 | 32 | E10 |
-| [S06](#s06) | taper copy decision (P_lost) | DISHONEST-INPUT, DEGENERATE(L1: never fires; fires on paced Realtime) | P2 | 33 | E01, E09 |
+| [S06](#s06) | taper copy decision (P_lost) | PINNED(c8: P_lost ≈ 1 on the blocker), UNDERIVED(no resend in flight in the posterior), DISHONEST-INPUT | P2 (P1 proposed) | 33 | E01, E09 |
 | [S08](#s08) | Realtime duplicate source send | MODE-SWITCH(live), UNDERIVED | P2 | 34 | - |
 | [S09](#s09) | symbol packing and emission-batching scope (use_packing, emit_batch_on) | MODE-SWITCH(live), UNDERIVED | P2 | 35 | - |
 | [K05](#k05) | placement cost (place_costs) | DIVERGENT, UNDERIVED | P2 | 36 | - |
@@ -1286,7 +1286,7 @@ a branch.
 
 **taper copy decision (P_lost)** (default (correction slots))
 
-- *1. location:* net/emit_source.rs:703-757; p_lost raptorpath-math/src/lib.rs:64; inputs net/channel_set.rs:65-73
+- *1. location:* net/emit_source.rs:739–822 (decision :750–797; the target is `retransmit_buffer.first()`, :757–759); p_lost raptorpath-math/src/lib.rs:64; inputs net/channel_set.rs:65–73
 - *2. formula (code):* 
 
   ```text
@@ -1299,8 +1299,8 @@ a branch.
 - *6. clamp bind:* [0,1]
 - *7. inputs honest?:* srtt = E01 of the worst-eps path (dwell-inclusive), rttvar = 0.1*srtt
 - *8. NO-MODE-SWITCH:* none
-- *9. verdict:* **DISHONEST-INPUT, DEGENERATE(L1: never fires)**: taper_copy reads 0 on the measured cells; correction slots exist only when r > 0
-- *10. fix class, priority:* diagnose (why zero) after E01/E09; **P2**, rank 33; depends on E01, E09
+- *9. verdict:* **PINNED(c8: P_lost ≈ 1 on the blocker), UNDERIVED(no resend in flight in the posterior), DISHONEST-INPUT** (status §51 block 51, the copy diagnosis, 2026-11-19). The earlier DEGENERATE(L1: never fires) is withdrawn: at ρ = 1 the decision fires on every row above Bulk in both cells of the off-Bulk sweep. Formula against its sentence: the paper's P_lost is the posterior that a symbol sent once is still missing, and assumes a spread of ages in the buffer (§3.2). The code evaluates it on one seq only, `retransmit_buffer.first()`, the cumulative-ack blocker, on its ORIGINAL send age, on every debt slot. A copy re-stamps nothing, writes no `nack_retx_at` and is not conditioned on copies in flight, so between two cumulative advances every slot copies the same seq. Measured: copies are 4–7× true wire losses, at least about 70 % land below the receiver's decode floor, and the NACK path already resends each loss about once. At c8 the blocker's age (5–7 s) pins P_lost at about 1, so no proactive coded symbol is sent on two paths at any δ. An honest E01 makes it worse (an earlier knee); E09 cannot matter at that age. So E01 / E09 are inputs, not the cause.
+- *10. fix class, priority:* derivation in the paper first (`rate-s06-plost-derivation`), then the engine law with a red-first copy-count test; **P2, P1 proposed** (owner's call), rank 33; E01, E09 are contributing inputs only
 - *flags:* measured partial, gauge yes
 
 #### S07
