@@ -2,15 +2,16 @@
 
 Status: PLAN for a Sonnet worker. Decided by the owner on 2026-11-19 (ADR-0079; status "§51 block 51 Result, Addendum 3"). Do not relitigate it.
 - **Base:** `github/main` at `d1e952cf`. Line numbers below are at that commit; every anchor also quotes text, so match on the text.
-- **Paper:** §3.2 is already amended on `s06-delete-docs` (proactive slots are coded; retransmission is reactive only). The engine change makes the paper true.
+- **Paper:** main's §3.2 records the measured defect and the owner's decision (`s06-delete-docs`). The present-tense paper (proactive slots are coded, retransmission is reactive only, the §11.3 rows, the A.2 note) is on `s06-delete-paper-present`, stacked on `s06-delete-docs`. **Merge it in the same merge as the engine change, never before:** main's paper must not say slots are coded while main's engine still copies.
 - **Not yours:** `docs/status.md`, `docs/derivations/law-ledger.md`/`.yaml` and the roadmap. The coordinator updates them with the merge.
 
 ## 0. Prerequisite: `c8-gauges` lands first
 
-The shed-conservation test (§3, T3) needs the split shed counter `shed_slot=` / `shed_nack=`, which branch `c8-gauges` adds. That branch is not on `github` yet. It also edits the same proactive-slot block (`ptgt=` / `pmax=`).
+Branch `c8-gauges` edits the same proactive-slot block (`ptgt=` / `pmax=`), and Stage R reads its `shed_slot=` (§6). It holds the split shed counter `shed_slot=` / `shed_nack=` plus the `rlaw` and `plx` commits, and it is local only, not on `github` yet. T3 in its current form does **not** need the split counter, because it asserts per-seq times from a trace, not counts per site. The dependency is kept for the shared block and for Stage R.
 - **§1 (the deletion) does not start until `c8-gauges` is on main.** Base the branch on main after that merge. Do not guess its code, and do not re-implement the split counter here.
-- **Before that, only T4 may land** (model-only, green on main; §3). T1 and T2 may be written, but their red runs are recorded on the post-`c8-gauges` main, since that branch edits the block they exercise.
-- If `c8-gauges` has not merged when you start, land T4 and stop with a note.
+- T1, T2 and T3 may be written before then. Record their red (or baseline) runs on the post-`c8-gauges` main, since that branch edits the block they exercise.
+- **T4 lands with the engine branch, together with `s06-delete-paper-present`**, whose §11.3 wasm row cites it. It does not land alone.
+- If `c8-gauges` has not merged when you start, write the tests and stop with a note.
 - `ptgt=` / `pmax=` count copies of one seq. After this change they read 0 forever. Keep them printing (see §2), and say so in the report.
 
 ## 1. The engine change (`raptorpath/src/net/emit_source.rs`)
@@ -32,7 +33,7 @@ Inside `while st.repair_debt >= 1.0 && st.encoder.window_size() > 0 {` (:742), t
 - The shed law keeps one call site: `sender_phases.rs:846–869` (`if pol.shed_on { if st.shed_seqs.contains(&seq) { continue; } … shed_allowed(…) … }`). Do not touch it.
 - Its inputs `st.shed_deadline_us_live` and `st.shed_budget_frac` are refreshed in the span block (`emit_source.rs:630–640`, `if pol.shed_on { st.shed_deadline_us_live = shed_deadline_us(…); st.shed_budget_frac = …residual_loss_after_fec(…) }`). That is outside the deleted block, so the NACK site keeps reading live values. Keep it.
 - `shed_total`, `shed_denied` and `shed_seqs` are now written only by the NACK site. The `[SPAN] … shed=a/b` gauge is unchanged.
-- After `c8-gauges`: `shed_slot` has no producer left. Keep the field and its print (it reads 0), and keep `shed_nack`. The identity `shed_total == shed_slot + shed_nack` becomes `shed_total == shed_nack` (T3 asserts it).
+- After `c8-gauges`: `shed_slot` has no producer left. Keep the field and its print (it reads 0), and keep `shed_nack`. The identity `shed_total == shed_slot + shed_nack` becomes `shed_total == shed_nack` (Stage R reads it).
 - Remove `shed_allowed` from the `use super::{ … }` list (:41). It has no other use in this file.
 
 ### 1.3 Dead code the deletion leaves (separate commit, same branch)
@@ -75,7 +76,7 @@ No reader of `plost=` / `taper=` exists in `raptorpath-wasm`, `raptorpath-visual
 
 ## 3. Red-first tests
 
-Each test is committed first and **run red on main**. Record the red output (counts) in the commit message. A zero-copy test that is green on main proves nothing: `holeclass_reachability` reads 0 copies over c3 loopback, because ε̂ at send is near 0 there.
+T1 and T2 are committed first and **run red on main**. T3 and T4 are bounds, green on both trees, and their commits say so. Record the red output (counts) in the commit message. A zero-copy test that is green on main proves nothing: `holeclass_reachability` reads 0 copies over c3 loopback, because ε̂ at send is near 0 there.
 
 **Preconditions for every engine test, each with a witness:**
 - Warm ε̂ with seeded i.i.d. loss of about 2.5 %, using L0 netem on the client: `RWM_L0_NETEM=custom:<rate>;<ow_ms>;<jit_ms>;<ge_p>;<ge_q>` plus `RWM_L0_SEED` (the `CLEAN_RATE` / `C3` pattern in `tests/common/loopback.rs:422–455`).
@@ -93,10 +94,15 @@ Each test is committed first and **run red on main**. Record the red output (cou
   - reliable: `Transfer` / `lossy_run` (always passes `--window-reliable`);
   - evicting: Realtime without `--window-reliable`. Either add a `reliable: bool` to `Transfer` (default true), or use `in_process_loopback(hint, false, …)` (`loopback.rs:715`).
 - Dial points: the nine preset triples {0.98, 1, 1.02}·δ_p at Bulk (0.005), Auto (0.5) and Realtime (50), set with `RWM_DELTA=<v>` on the Auto carrier on both ends, as the §51 sweep did (`tools/l1/plan51.py` `ARM_TABLE`: BM 0.0049, BP 0.0051, AM 0.49, AP 0.51, RM 49, RP 51), plus the three named hints. Read `[GATES] RWM_DELTA=` on both ends as the wiring witness.
-- Points where `pslot=` is 0 (the Bulk triple: rr = 0) assert `taper=` == 0 only. That is not a step: the share is undefined at zero slots.
+- **The Bulk triple is not a witness.** It has no slots (rr = 0), and a clean loopback gives no copies on main either. There T1 asserts `taper=` == 0 only, and the commit says it proves nothing.
+- **The six points off Bulk carry the test** (the Auto and Realtime triples). Each runs with seeded loss.
 - Run the nine points on the reliable seat at N = 1. Run the seat and N = 2 variants at Auto (0.5) only, to bound the runtime.
-- **Assert, absolute:** `taper=` == 0 and `plost=` == 0 on the last `[DIAG]` at every point, and `pslot=` > 0 at every point off the Bulk triple.
-- **Red on main:** `taper=` > 0 at Auto on the reliable seat. Record the value.
+- **Assert, absolute, at each of the six points:**
+  - `pslot=` > 0;
+  - ε̂ > 0 (`[DIAG] pl=` on the worst leg), so the loss the netem spec injects reaches the estimator;
+  - `taper=` == 0 and `plost=` == 0 on the last `[DIAG]`.
+- **Red on main, at the same six points and seeds:** `taper=` > 0 at each. Record the six values in the commit message.
+  - A point where main reads `taper=0` is not a witness. Raise the loss or the transfer size until main copies there, and keep the CAND assertion at that setup.
 
 **T2. `stalled_blocker_recovered_by_nack`** (same file, reliable seat, N = 1).
 - Drop k's original and its first resend, with a test seam under `test-seams`, as `TEST_DROP_WINDOW_START` does (`transport/io_owner.rs:61`).
@@ -107,16 +113,24 @@ Each test is committed first and **run red on main**. Record the red output (cou
 - Read NACK(k) from a per-seq trace under the same seam. Do not infer it from `retx=`.
 - **Red on main:** copies of k > 0, i.e. `taper=` grows during the stall.
 
-**T3. `shed_set_conserved_without_the_copy_branch`** (evicting seat, paced, seeded loss, small D(δ) at Realtime; needs `c8-gauges`).
-- **Assert on CAND, absolute:**
-  - `shed_slot=` == 0;
-  - `shed_nack=` > 0 (witness);
-  - `shed_total == shed_nack`.
-- **Assert, per seq:** every named hole older than D at a judged gap batch or a tail sweep is shed within that batch while the budget allows.
-  - Record (seq, age, D, site, verdict) in a `test-seams` trace at the NACK site, and assert on absolute seqs.
-- **Witness:** `shed_denied` increments at least once with the budget set to refuse. Use a seam that forces `shed_budget_frac = 0`. If none exists, add it under `test-seams`.
-- **Red on main:** `shed_slot=` > 0. Record it. That count is the slot-time trigger ADR-0079 gives up.
-- **If main reads `shed_slot=0`** on this setup, the slot site never shed first there, and T3 is not red-first. Lengthen the stall: suppress gap reports past the blocker (no arrivals above the frontier) for longer than D and shorter than the tail-sweep timeout, the one interval where only the slot site can shed (derivation §4.1.2). If it still reads 0, do not weaken the test: keep the CAND assertions, report main's 0 with the setup, and stop for the coordinator.
+**T3. `past_deadline_blocker_is_shed_or_passed_in_bounded_time`** (evicting seat, Realtime, N = 1, seeded loss; does not need `c8-gauges`).
+
+After the deletion there is one shed site, so a per-site count is a tautology. T3 asserts an absolute time bound instead.
+- **Setup:** drop the original of seq k with the T2 seam and suppress its resends, so k can leave only by shed or by pass. Run two variants:
+  - (i) arrivals above k continue (the normal case);
+  - (ii) no seq above k arrives (the stall case: a gap in the sends after k, by the same seam).
+- **The bound, from the code's own clocks.** Confirm each constant at the base commit before writing the test. If the code disagrees, stop and report.
+  - **Receiver pass:** at ρ < 1 the reorder buffer force-delivers past a held hole when its hold expires.
+    - The hold is `shed_recv_hold` (`net/shed.rs:58`): SRTT/2 while the give-up budget is open, otherwise 4·SRTT clamped to [60, 300] ms (`REORDER_MIN_HOLD`, `REORDER_MAX_HOLD`, `net/mod.rs:217–218`).
+    - So, with t_a the first arrival above k: t_pass(k) ≤ t_a + 300 ms + one receiver tick.
+  - **Sender shed:** the tail sweep fires at the blocker's last activity plus 2·SRTT clamped to [25, 100] ms (`tail_sweep_timeout_us`, `TAIL_SWEEP_MIN_US`, `TAIL_SWEEP_MAX_US`, `net/mod.rs:250–251`). Its batch is always judged.
+    - So, with the budget open: t_shed(k) ≤ t_k + D + 100 ms + one sender tick, where D = `shed_deadline_us_live`.
+- **Assert, absolute, per run:**
+  - (i): t_pass(k) ≤ t_a + 300 ms + tick;
+  - (ii), budget open: t_shed(k) ≤ t_k + D + 100 ms + tick;
+  - (ii), budget forced closed (a `test-seams` override of `shed_budget_frac = 0`): k is not shed, `shed_denied` increments, and k is served, i.e. a NACK resend is sent once resends are un-suppressed.
+- **Times come from `test-seams` traces** at the receiver's force-deliver and at the sender's NACK-site shed: (seq, event, t_us). Do not infer them from counters.
+- **Run it on main and on CAND.** It is a bound, not a red-first test. On main the slot site may shed k earlier in (ii), which still meets the bound. The test asserts that the deletion leaves no blocker stranded past it.
 
 **T4. `raptorpath-wasm`: `model_retransmit_is_reactive_and_bounded`** (in `src/lib.rs`'s test module; private fields are reachable).
 - Step a lossy scenario tick by tick at N = 1 and N = 2.
@@ -125,7 +139,9 @@ Each test is committed first and **run red on main**. Record the red output (cou
   - consecutive retransmits of one symbol are at least `rtt_ticks` apart, read for the path the **earlier** resend went out on. A resend sets `sym.path = dest`, and the next eligibility is checked against that path, so at N = 2 the original path's clock would fail falsely when `dest` is the faster leg;
   - no symbol is retransmitted after `recovered` is true;
   - `total_arq > 0` (witness).
-- This bounds the documented model–engine divergence (paper §11.3, "reactive retransmit trigger in the wasm model").
+- **The bound, as the paper row states it:** ≤ 1 retransmit per lost symbol per `rtt_ticks`, and none of a recovered symbol.
+  - The candidates are oracle-lost symbols with a per-symbol `rtt_ticks` cooldown. They are evaluated inside the slot loop but cooled per symbol, so this is the model's reactive ARQ, not a copy branch (§4).
+- This bounds the documented model–engine divergence (paper §11.3 on `s06-delete-paper-present`, "reactive retransmit trigger in the wasm model"). The row and T4 land together.
 - It is green on main by construction. Say so in the commit: it is a bounding test, not a red-first one.
 
 ## 4. The wasm model: a bounding test, no golden re-capture
@@ -163,32 +179,48 @@ This is a deliberate behaviour change, not a zero-behaviour refactor. The deriva
    - the `bound-tests` wasm pool test.
 2. **Stage G, the guard: §41d v2** (`LD_PLAN=41d`, rank-minp, 12 + 12 at c1s/c1d/c2/c8; c2 and c8 at 600 MB).
    - **Caveat: the guard rows run at `hint=bulk`** (`tools/l1/loopdiag_battery.sh:156`). Bulk sends no proactive slots (rr = 0; status Addendum 2's H-B has no copies), so both arms take the same path and Stage G is blind to this change. Read it as a check that the release binary did not regress Bulk, nothing more.
-3. **Stage A, the readout: Auto c2-100 and c8-100,** BASE vs CAND, 6 + 6 per seed (42, 7), 600 MB, reported only.
-   - **Witnesses per row:** BASE `taper=` > 0, CAND `taper=` == 0 and `pslot=` > 0. A row that fails its witness is VOID.
-   - **Register:**
-     - **c8 in-order delay** (§41d's definition: mean of `t − t_src(ack(t))` over ticks with ack > 0, ρ = 1 only), **with no prediction**. This is ADR-0079's unknown.
-     - c2 in-order delay;
+3. **Stage A, the readout: Auto c2-100 and c8-100,** BASE vs CAND, 6 + 6 per seed (42, 7), so 12 v 12 per arm and cell, at 600 MB. Reported only.
+   - **Execution witnesses per row.** A row that fails one is VOID and re-run.
+     - BASE: `taper=` > 0.
+     - CAND: `taper=` == 0 and `pslot=` > 0.
+     - CAND: `below_floor` arrivals back at H-B's order.
+       - H-B read 854 (c2) and 122 (c8), against 57–97k on today's Auto rows (status Addendum 2).
+       - The registered threshold is ≤ 5 × the same session's H-B median, or ≤ 5 000 if no H-B row runs in the session.
+       - A CAND row above it means copies are still reaching the receiver by some other path. The row is VOID pending a read.
+   - **c8 in-order delay, registered two-sided.** It uses §41d's definition: the mean of `t − t_src(ack(t))` over ticks with ack > 0, at ρ = 1 only.
+     - **A rise** would mean the copy was the only early trigger at c8: once it is gone, C02's 3.0–3.6 s run-mean NACK age dominates the frontier.
+     - **A fall** would mean the redundant copies were congesting p1 (98 % of c8 slots, at least about 70 % already received), and removing them shortens the frontier stall.
+     - No direction is predicted.
+   - **Resolution:**
+     - The c8 in-order d80 was 50 % at 6 v 6 (§51's in-session A/A).
+     - No 12 v 12 d80 exists at Auto c8. §41d's 20 % is for Bulk 12 + 12 rows.
+     - The plan does **not** raise n. The reading is reported with its ratio and rank-sum p, and a move below 50 % is reported as unresolved, not as "no effect". Raising n is the owner's call.
+   - **Also registered, reported only:**
+     - c2 in-order delay (d80 12 % at 6 v 6, §51);
      - goodput, predicted unchanged by arithmetic (Addendum 2);
      - CPU/GB at both ends;
      - `[DIAG] retx=` per source;
-     - `[RFA] fill_coded` per source (holes closed by decoding; c2's predicted band is 63–83 % of source losses, derivation §4.1.1; c8 is unknown within [6 %, 100 %]);
-     - `below_floor` arrivals, predicted to fall from about 60–97k to H-B's under 1k;
+     - `[RFA] fill_coded` per source: holes closed by decoding. c2's predicted band is 63–83 % of source losses (derivation §4.1.1); c8 is unknown within [6 %, 100 %];
      - `cod=` / `pslot=`.
-   - The c8 delay reading goes to the owner. The plan takes no position on what a cost there means.
-4. **Stage R, evicting seat: Realtime c2-100 paced** (block E's PM shape).
-   - Register `shed_slot` (CAND 0), `shed_nack`, `shed_denied` and delivered fraction, reported only.
+   - Every Stage A reading goes to the owner.
+4. **Stage R, evicting seat: Realtime c2-100, paced.**
+   - **The rows need slots, and an unpaced evicting row has almost none.** §60's unpaced evicting rehearsal row read rr = 0 from the spare clamp in 46 of its 53 sending windows.
+   - **The pacer is not on main.** `RWM_PERF_RATE_MBIT` (commit `4ee1df9b`) was carried on `s51e-tree` / `e-tree`. The current `raptorpath/src/perf.rs` on main does not contain it.
+   - **So build both seats on a paced tree:** BASE = main with `4ee1df9b` cherry-picked, CAND = the engine branch with the same pick, as `e-tree` did. Run block E's PM shape (paced 35 Mbit/s); block E's PM s42 r1 carried 111 558 slots (derivation §4).
+   - **Smoke witness before the stage:** one paced BASE row and one paced CAND row. BASE must read `taper=` > 0, and CAND `pslot=` > 0 with a `[SPAN]` median rr > 0. If either fails, Stage R is VOID and goes back to the coordinator.
+   - **Register** `shed_slot` (CAND 0), `shed_nack`, `shed_denied` and the delivered fraction, reported only.
    - In-order delay is not defined at ρ < 1 (§41d item 3), so it is not read here.
 
-## 7. Paper follow-ups in the engine merge commit
+## 7. Paper follow-ups in the engine merge
 
-The paper was amended ahead of the code, so the merge commit makes these edits to `docs/fec-arq-model.md`:
-- **§3.2:** "Once the deletion merges, no engine decision reads it" becomes "No engine decision reads it".
-- **§5.6:** drop "Today it also runs inside the probabilistic retransmit branch … except between gap batches", and keep the NACK-site sentence.
+- Merge `s06-delete-paper-present` with the engine branch, in the same merge. It carries:
+  - §3.2's present tense, §3.3, §3.4, §3.7, §5.6, §7.6, §9.1 and the §11.1 q9 swap;
+  - the §11.3 changes: the P_lost inputs row deleted, the taper's ε̂ dropped from the path-set row, and the wasm row citing T4;
+  - the A.2 note.
 - **§10**, the "Probabilistic taper copy" row: status "removed (ADR-0079)", with the deletion commit's hash.
-- **§11.3:**
-  - delete the "proactive slot content" interim row and the "P_lost inputs" row;
-  - in "recovery-plane path set", drop "the taper's ε̂ at send";
-  - in the wasm row, replace "Bounding test owed (T4 …)" with the test's name.
-- **§9.1:** "reads 0 once ADR-0079's deletion merges" becomes "reads 0 since ADR-0079".
 - **ADR-0079 Status** and the `docs/adr/README.md` row: "engine change pending" becomes the merge commit.
-- Rebuild with `bash tools/build_paper.sh docs/fec-arq-model.md <scratch>.pdf` (pandoc and typst, no cargo), and run `python tools/roadmap/history_audit.py`, which parses §10.
+- **Positional citations.** Engine comments cite §11.3 rows by number, and they are already stale.
+  - `raptorpath-math/src/changepoint.rs:396` says row 14 for the BOCD row. It is row 16 today, and row 15 once the P_lost inputs row goes. Fix it in the same commit, or cite the row by name.
+  - The comment at `net/tests.rs:6076` goes with its test (§1.3).
+- Rebuild with `bash tools/build_paper.sh docs/fec-arq-model.md <scratch>.pdf` (pandoc and typst, no cargo).
+- Run `python tools/roadmap/history_audit.py`, which parses §10. Revert the snapshot files it rewrites unless the roadmap update is yours.
