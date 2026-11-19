@@ -1682,6 +1682,31 @@ mod tests {
         assert!(h.rate < r_sat);
     }
 
+    #[test]
+    fn test_controller_rate_is_the_trace_rate_bit_for_bit() {
+        let mut n = 0;
+        let mut bounds = std::collections::BTreeSet::new();
+        for &late in &[false, true] {
+            for &cap in &[false, true] {
+                for &p in &[1e-12, 0.001, 0.026, 0.09, 0.3] {
+                    for &ts in &[0.0, 2.0, 40.0] {
+                        for &mo in &[0.01, 0.5, 5.0] {
+                            for &chi in &[0.0, 0.5, 1.0] {
+                                let inp = RateInputs { bulk_late_is_fine: late, saturation_cap: cap, t_symbols: ts, max_overhead: mo, completion_exposure: chi, ..tunnel_inputs(p, 56.0) };
+                                let t = controller_rate_trace(&inp);
+                                assert_eq!(controller_rate(&inp).to_bits(), t.rate.to_bits(), "{inp:?}");
+                                bounds.insert(t.bound);
+                                n += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(n, 2 * 2 * 5 * 3 * 3 * 3);
+        assert_eq!(bounds.len(), 3, "the grid covers cap, sat and free: {bounds:?}");
+    }
+
     fn bulk_inputs(p: f64, chi: f64) -> RateInputs {
         RateInputs {
             p_upper: p,
