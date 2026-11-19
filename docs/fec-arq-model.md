@@ -481,20 +481,49 @@ and reaches near-certainty two to three RTTVAR later. For WiFi-like values (ε =
 |---|---|---|---|---|---|---|
 | P_lost(t) | 0.025 | 0.026 | 0.049 | 0.14 | 0.53 | 0.999 |
 
-The transition is sharp; the smoothness of a repair/retransmit mix in
-practice comes from the spread of symbol ages in the buffer, not from the
-curve. Choosing a retransmit with probability P_lost(t) and a repair
-otherwise wastes, in expectation,
-P_lost·(1 − P_lost) per slot: zero at both extremes, maximal at 0.5. At high
-loss (ε = 0.5) half of all correction slots are retransmits from age 0,
-which is proactive redundancy with no special case.
+P_lost is the posterior for a symbol sent once. A proactive correction slot
+cannot use it: every hole the receiver names is already resent by the NACK
+path, once per SRTT, from the same reports. At ρ = 1 a copy would add no
+degree of freedom over that resend. It would be only an earlier trigger for
+the same correction, and cover for the resend's own loss. So:
 
-In the shipped window machine this probabilistic retransmit of the oldest
-unacked symbol (`net/emit_source.rs`) evaluates P_lost with the worst path's
-smoothed RTT and RTTVAR fixed at 0.1·SRTT. It is live code but measured inert:
-`taper_copy = 0` at all four audited cells and on both loopback
-topologies. Whether its ε̂ at send time is structurally near zero or the
-oldest symbol never ages far enough is open (Section 11.2).
+- **Proactive slots are coded.** Every correction slot the rate law r(β(δ))
+  pays for (`TaperBudget`, Section 3.3) carries a coded repair.
+- **Retransmission is reactive only.** A named hole is recovered by the NACK
+  resend (Section 7.1), the receiver's stalled-hole refresh (ρ = 1), the
+  sender's tail sweep, or decoding (the race, Section 3.7).
+
+P_lost stays here as the single-send posterior. Once the deletion merges, no
+engine decision reads it (ADR-0079). The readers that remain, and the interim
+until the engine change lands, are listed in Section 11.3.
+
+**The removed law, and why it was removed.** Until ADR-0079 each proactive
+slot copied a source symbol with probability P(retransmit) = P_lost(t), as a
+smooth transition from FEC to ARQ, and sent a coded repair otherwise. The
+engine evaluated it on one seq per slot (`net/emit_source.rs`): the oldest
+unacked symbol, which is the cumulative-ack blocker, on its original send age
+and with the worst path's SRTT and RTTVAR fixed at 0.1·SRTT. It never
+conditioned on its own resends in flight, so between two cumulative advances
+it copied the same seq on every slot. Measured on all 152 rows of the §51
+sweep (status §51 block 51, Addendum 2):
+
+- copies ran at 4.0× (c2 Auto) and 6.3× (c8 Auto) the wire losses, and at
+  least about 70 % of them landed below the receiver's decode floor, already
+  received;
+- at c8 the blocker was 5–7 s old against a worst-path SRTT of 0.26–0.6 s, so
+  P_lost was pinned near 1, copies took 98 % of the slots, and no proactive
+  coded repair was sent on two paths above Bulk;
+- NACK resends stayed at about one per source loss on every arm, so the
+  copies came on top of the reactive plane rather than replacing it.
+
+An earlier reading of this section, "live code but measured inert
+(`taper_copy = 0`)", is withdrawn. It held at the four audited cells and on
+the loopback topologies, not on the sweep. The repair of the law, a
+posterior over resends in flight with one draw per symbol per send epoch,
+was derived and rejected, because its "copy with probability π" rule is
+kept, not derived (derivation `s06-plost-resend.md`, branch
+`s06-derivation`). At ρ < 1 the deletion also removes one trigger of the
+δ-honest shed (Section 5.6). The shed law itself is unchanged.
 
 ### 3.3 The taper
 
@@ -521,7 +550,8 @@ For an i.i.d. channel (q = 1) the taper is flat.
 
 τ(B) ≈ 0.37·A, τ(2B) ≈ 0.14·A, τ(5B) ≈ 0.007·A. Once a symbol is acknowledged
 its taper stops, so the infinite tail is truncated by the acknowledgement
-mechanism. The GE estimate adapts the decay; a BOCD changepoint widens the
+mechanism. The taper sets how many corrections there are and when; every
+proactive one is a coded repair (Section 3.2). The GE estimate adapts the decay; a BOCD changepoint widens the
 posterior and with it the correction budget.
 
 Two facts limit how much the shape matters. First, repairs are
@@ -557,9 +587,11 @@ bandwidth, and cross the same channel. They differ in timing and content:
 | waste | duplicate if the original arrives | never wasted while it adds rank |
 | best when | loss is localised | loss is uncertain or bursty |
 
-The model treats both as **correction symbols**. The taper sets how many;
-P_lost(t) and loss localisation set which kind. Once a loss is localised by
-SACK, one exact symbol is the cheapest correction, so the window/ARQ split
+The model treats both as **correction symbols**. The taper sets how many
+proactive slots there are, and every one carries a repair (Section 3.2).
+Loss localisation decides when an exact copy is sent: once a loss is
+localised by SACK, one exact symbol is the cheapest correction, and the
+reactive plane (NACK, refresh, tail sweep) sends it. So the window/ARQ split
 falls out of localisation rather than a rule. This reproduces the optimal
 policy of Mehrotra and Li [Mehrotra2010]: repair while loss is uncertain,
 retransmit once it is confirmed.
@@ -606,8 +638,12 @@ clean link, where the decoder rarely runs.
    P(delivered by T)  =  1 − P(t_fec > T)·P(L_arq > T)
 ```
 
-and the pair is better than either alone. P_lost sets the bandwidth split
-between them, not which one runs.
+and the pair is better than either alone. The rate law sets the proactive
+share and the losses set the reactive share; neither decides which one runs.
+Measured at c2, decoding closes about 42 % of source losses at Auto, a median
+9 ms after the loss against 229 ms for the resend, while the NACK resend
+still fires about once per loss (status §51 block 51, Addendum 3). A coded
+slot buys an earlier close, not fewer resends.
 
 **The latency crossover.** Per hole, FEC is faster when t_fec(W) < L_arq ≈
 1.5·RTT: at high RTT, short bursts and high bandwidth. A decode-resolved hole
@@ -1732,8 +1768,12 @@ budget = 0; the model agrees at ρ = 1 and wherever 1 − ρ ≥ R (Section 11.3
 `shed_deadline_us`, `shed_allowed` (`net/shed.rs`),
 `control/fec_rate.rs::residual_loss_after_fec`; gate `RWM_UNIFIED_SHED`,
 default on. The budget is evaluated with the transmit-side EWMA loss, the
-spare-capped live rate and the span width A* as the window, inside the
-probabilistic retransmit branch. Beyond the budget the machine serialises:
+spare-capped live rate and the span width A* as the window. The test runs at
+the NACK path on every seq of every judged gap batch (`net/sender_phases.rs`).
+Today it also runs inside the probabilistic retransmit branch of the
+proactive slot, on the blocker only. ADR-0079 deletes that branch; the slot
+site's set is contained in the NACK site's set plus the tail sweep's, except
+between gap batches. Beyond the budget the machine serialises:
 ρ wins over δ. The retain (ρ = 1) seat never sheds; the law runs only on the
 evicting seat.
 The receiver arm holds a hole for `SRTT/2` while its give-up budget
@@ -3284,11 +3324,13 @@ single path a parity answer with m > 1 would under-provide rank, because
 almost every hole there is a genuine loss; the law reaches m = 1 there by
 itself.
 
-**One authority.** Four mechanisms can emit a copy for the same hole: the
-gap-fire loop (the dominant source), the probabilistic taper copy (measured
-zero), the refresh and tail sweep, and a rank answer. Under the request law
-the receiver's report is the single authority; the taper survives for the
-regime where no report can arrive and the tail sweep for the end of stream.
+**One authority.** Three mechanisms can emit a copy for the same hole: the
+gap-fire loop (the dominant source), the refresh and tail sweep, and a rank
+answer. A fourth, the probabilistic taper copy, is deleted by ADR-0079
+(Section 3.2): it was measured at 4–7× the true losses, not zero. Under the
+request law the receiver's report is the single authority; the tail sweep
+survives for the end of stream and for the regime where no report can
+arrive.
 The per-sequence gap producer is the one site to suppress; the SACK path is
 left alone, because SACK drives slot release, never recoverability.
 
@@ -3923,7 +3965,8 @@ number, Copa's utility difference at the contract's δ (Section 7.4).
 The ones the results below read: `[DIAG]` (per-path anchors, loss, σ; `cod=`
 counts coded repair symbols actually sent, while source copies (gap
 retransmits, request copies, taper copies) are counted apart as `retx=` and
-`total_copy_symbols`; batteries before this split read copies inside `cod=`), `[SF]` (store-cap refresh and saturation fractions),
+`total_copy_symbols`, and the taper copies alone as `mpr[.. taper=]`, which
+reads 0 once ADR-0079's deletion merges (the field keeps printing); batteries before this split read copies inside `cod=`), `[SF]` (store-cap refresh and saturation fractions),
 `[DCAP]` (the δ-cap's dial point, request and pin fraction), `[RACK]` (the
 shipped clamp's false alarms against RFC 8985's 1/16 budget), `[QCLK]` (the
 realised recovery clock as a distribution), `[SUCC]` and `[HOLD]` (hole outcomes and closure classes), `[FCAUSE]`
@@ -4187,6 +4230,7 @@ shipped.
 | FMTCP-class decode-on-total [Cui2015] | 0.48× at the heterogeneous dual; on the clean substrate c7 ×0.11, c8 ×0.20 of the default stack, a recovery flood (coded share > 1) at about 8× plain CPU | `f841757` | removed |
 | Leading-window taper emission | repairs coded over in-flight members are unsolvable on arrival: −22 pp delivered reliability; replaced by trailing-span emission | — | superseded |
 | **Proactive FEC timing** | | | |
+| Probabilistic taper copy, P(retransmit) = P_lost (Section 3.2) | each proactive slot copied the cumulative-ack blocker on its original send age, never counting its own resends: copies at 4.0× (c2) and 6.3× (c8) the wire losses, ≥ 70 % already received, 98 % of c8 slots; a copy adds no degree of freedom over the NACK resend at ρ = 1. The posterior over resends in flight (S06′) was derived and rejected (its copy rule is not derived) | `21d5a2b5` | removal decided (ADR-0079, owner 2026-11-19); engine change pending |
 | Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`) | the proactive fraction fell (0.27 → 0.22) as the wait grew; the covering repair was absent, not late (7 useful of 4 600 fed) | `3a0ca0c` | removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 2026-07-08; route: user ruling; re-test if the question returns; tag `archive/RWM_REPAIR_WAIT`) |
 | Inline / frontier-anchored repair (`RWM_INLINE_REPAIR`, `RWM_FRONTIER*`) | repair anchored at the frontier loses to its own ARQ (4 useful of 718) | `bede4a3` | removed |
 | Present-at-stall proactive pacer (`RWM_PROACTIVE_PACER`) | presence rises, throughput does not: a saturated single path has no spare bandwidth for a repair that buys back a round trip | `806c0f4` | removed 2026-11-10 (simplification batch 1, ADR-0073; refuted before the measurement discipline, 2026-07-08; route: user ruling; re-test if the question returns; tag `archive/RWM_PROACTIVE_PACER`) |
@@ -4280,7 +4324,7 @@ never-delivered tail target.
 | 6 | Do the three channel implementations (test GE, recovery-bench chain, L0 netem shim) agree? | a differential test at fixed seeds; none exists |
 | 7 | What sets the recovery clock? | the self-heal quantile F_heal(7.22 ms) at c7; an `RWM_STORE_GAIN` contrast; a c8L attribution pass (Section 7.7) |
 | 8 | Is the c8L pool cap interior? | the within-run Σ series (pin fraction 0.23 today) |
-| 9 | Why does the probabilistic taper retransmit never fire? | whether ε̂ at send is structurally ~0 or the oldest symbol never ages past the P_lost knee |
+| 9 | What does deleting the taper copy cost in delivered delay at c8? (The old question 9, "why does the taper retransmit never fire?", is answered: it fires on every slot, status §51 block 51, Addendum 2; ADR-0079 deletes it.) At c8 the NACK fires at a run-mean live-flight age of 3.0–3.6 s (law ledger C02), and the first copy per stall may have been the only early trigger | c8 in-order delay, BASE against the no-copy CAND at Auto, registered with no prediction (`docs/derivations/s06-delete-plan.md`); a cost there is a finding on the NACK clock (C02), not a reason to restore the copy |
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
@@ -4347,13 +4391,15 @@ decide it.
 | r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget. The seat's deficit loop (`GenerationDeficit` minus in-flight) is already the ledger's a-posteriori term (Section 4.13) |
 | the rate law's feedback leg | one DoF ledger over live symbols, `Ω = Σ_c (k_c − a_c)⁺ + B`, with B the taper bank and copies accruing r(β) (Section 4.13) | not implemented on the plain window: proactive repairs come from the open-loop `TaperBudget`, the reactive plane serves each ripe hole by its own cooldown plus `ceil(retx·ε̂)` leading-window repairs, and neither counts the other's live symbols or the decoder's held rows; the receiver's rank deficit (`RepairRequest`) is sent only by the off request-law arm. Bounded by the r > 0 battery's `[RFA]` counters: the removable part is `preempt_src`, ≤ 0.5 % of source at the corner (Section 4.13); status §39 records the verdict (gain not shown, not refuted) and the owed tests, with no battery |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
-| P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
+| P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()`. The only engine call site is the taper copy, which ADR-0079 deletes; the row goes with it |
 | GE estimator input | per-symbol loss sequence | per-batch counts, losses fed before receives |
 | per-path loss feed | wire loss of the path's own direction | the sender's own ack deltas only (`WindowAck` counters, or the per-batch `Ack` with `RWM_ACK_MERGE=0`), reorder credited back by the tracker and carried by the sender, never negative; the peer's `PathReport` loss is monitoring only, and the receiver's incoming loss feeds the RX slot. Window batches carry one symbol, so the tracker's `gap × received` charge is exact (`test_path_batch_tracker_with_gap`); datagrams dropped in quinn's buffers count as loss and are named by `[DIAG] dgev` / `[CTLD] dgrx` |
 | BOCD quantile | mixture quantile | run-length-weighted average of quantiles |
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
 | give-up budget (Section 5.6) | `min(1 − ρ, R)` after D(δ); ρ = 1 is the retain seat at every δ (budget 0) | seat switch: the evicting seat (not `--window-reliable`; the CLI reaches it only at Realtime) runs budget R, the retain seat 0. Agrees at ρ = 1 and wherever 1 − ρ ≥ R; the model is tighter only for 0 < 1 − ρ < R. Bounded at equal R by `giveup_budget_vs_engine_seats_at_equal_r_is_bounded` (`raptorpath-wasm`) |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |
+| proactive slot content (Section 3.2, ADR-0079) | every proactive slot carries a coded repair | **interim, until the deletion merges:** the engine still runs the taper copy (`net/emit_source.rs`, the P_lost branch on the cumulative-ack blocker), so `mpr[.. taper=]` > 0 off Bulk. Closed by the engine change in `docs/derivations/s06-delete-plan.md`, whose red-first test asserts zero copies with slots above zero on both seats |
+| reactive retransmit trigger in the wasm model | the NACK path: a named hole resent on packet- or time-threshold ripeness, once per SRTT (Section 7.1) | the model (`raptorpath-wasm/src/lib.rs`, slot priority 1) resends an oracle-lost symbol after one path `rtt_ticks` with probability P_lost of its original-send age. It never draws on the repair debt, so the model's proactive slots are already coded only. Bounded by the plan's wasm test: at most one retransmit per lost symbol per `rtt_ticks`, and none of a recovered symbol. After the deletion P_lost's readers are this trigger, the visualizer's `p_lost` export, `raptorpath-math`'s bit pin, formula tests and `p_lost_combined`, and the test harnesses (`tests/common/gate_harness.rs`, `tests/gate_suite.rs`); no engine decision reads it |
 
 The per-path loss feed's two laws (the row above). Tracker, per arriving
 batch with per-path sequence `s` and `n` symbols, `h` the highest sequence
@@ -4713,6 +4759,9 @@ engine.
    P_arq      =  1 − (1 − ρ) / (ε·(1 − P_fec))
    ε_codec,eff  =  ε_codec·(1 − (1−ε)^W)
 ```
+
+P_lost is the single-send posterior; no slot rule reads it. Proactive slots are
+coded and retransmission is reactive only (Section 3.2, ADR-0079).
 
 ### A.3 The rate law (Section 4)
 
