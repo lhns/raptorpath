@@ -97,7 +97,10 @@ Owner calls (a purple hexagon) are not drawn in the trees; they are listed under
 <!-- BEGIN GENERATED: overview -->
 ```mermaid
 flowchart TB
-    subgraph bd_0["Mar 2026 to Jul 2026"]
+    subgraph bd_0["Earlier (no start date)"]
+        meas_blocke_pacing_gate>"meas · ✔ Pacer late-<br/>send check replaced"]
+    end
+    subgraph bd_1["Mar 2026 to Jul 2026"]
         cod_block_pipeline["cod · ↷ RaptorQ block<br/>FEC pipeline"]
         rec_reliable_window["rec · ✔ Reliable<br/>window"]
         place_daps["place · ↷ DAPS queue-<br/>management chain"]
@@ -105,19 +108,19 @@ flowchart TB
         cod_unified_span["cod · ✔ Unified span<br/>machine"]
         model_vis_continuum["model · ✔ Visualizer<br/>as one continuum law"]
     end
-    subgraph bd_1["Aug 2026 to Sep 2026"]
+    subgraph bd_2["Aug 2026 to Sep 2026"]
         rate_est_cadence["rate · ✔ Batched BOCD<br/>estimator cadence"]
         cod_one_pipeline["cod · ✔ One window<br/>pipeline"]
         meas_formula_first["meas · ✔ Formula-first<br/>review"]
         rate_r_battery["rate · ✖ Funded coding<br/>at r #gt; 0"]
     end
-    subgraph bd_2["Oct 2026"]
+    subgraph bd_3["Oct 2026"]
         perf_emit_batch_law0["perf · ✔ Emission<br/>batching law"]
         perf_io_owner["perf · ✔ Per-path I/O<br/>owner"]
         store_adr72_one_law[/"store · ✔ One store<br/>law"/]
         store_power_law[/"store · ✖ Power-<br/>seeking store law"/]
     end
-    subgraph bd_3["Nov 2026"]
+    subgraph bd_4["Nov 2026"]
         cc_quinn_bbr_collapse>"cc · ⚠ Quinn BBR<br/>window collapse"]
         meas_guard_41c["meas · ✔ Rank-minp<br/>merge guard"]
         cc_bbrrs_r1["cc · ✔ Fixed bbr_rs<br/>versus quinn BBR"]
@@ -129,24 +132,25 @@ flowchart TB
         store_s62_j0["store · ✔ Slow-link<br/>knee without jitter"]
         store_count_rule["store · ✔ Sample-count<br/>rule derivation"]
         rec_f2_merge_guard["rec · ✔ Framing fix<br/>regression test"]
+        rate_evict_epre["rate · ✔ Evicting-seat<br/>test suites and binary"]
         rec_realtime_delay_recheck["rec · ✔ Realtime delay<br/>re-check"]
     end
-    subgraph bd_4["Now (in progress)"]
+    subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
         store_law_derivation["store · ▶ Store-law<br/>derivation"]
     end
-    subgraph bd_5["Next"]
-        rate_evict_epre["rate · ○ Evicting-seat<br/>test suites and binary"]
+    subgraph bd_6["Next"]
         store_defect_b0p_brake>"store · ⚠ Boot-time<br/>brake estimate latches<br/>transients"]
         store_sampler_design[/"store · ○ Store-law<br/>delay sampler design"/]
-        meas_blocke_pacing_gate>"meas · ⚠ Pacer late-<br/>send check fails"]
+        rate_evict_session["rate · ○ Evicting-seat<br/>test, rehearsal and<br/>runs"]
         meas_s51_session["meas · ○ Off-Bulk<br/>baseline and δ sweep"]
     end
-    subgraph bd_6["Later (blocked or parked)"]
-        rate_evict_session["rate · ⛔ Evicting-seat<br/>test, rehearsal and<br/>runs"]
+    subgraph bd_7["Later (blocked or parked)"]
         store_fix_maxbw_minrtt[/"store · ⛔ Honest rate<br/>and delay inputs"/]
         store_engine_form_impl[/"store · ⛔ Store-law<br/>engine form"/]
     end
+    meas_blocke_pacing_gate ~~~ cod_block_pipeline
+    meas_blocke_pacing_gate ~~~ rec_reliable_window
     cod_block_pipeline ~~~ place_daps
     rec_reliable_window ~~~ cc_bbr_default
     place_daps ~~~ cod_unified_span
@@ -172,19 +176,17 @@ flowchart TB
     rec_defect_realtime_framing ~~~ store_s62_j0
     store_s62_j0 ~~~ store_count_rule
     store_s62_j0 ~~~ rec_f2_merge_guard
-    store_count_rule ~~~ rec_realtime_delay_recheck
+    store_count_rule ~~~ rate_evict_epre
     rec_f2_merge_guard ~~~ rec_realtime_delay_recheck
-    rec_realtime_delay_recheck ~~~ cc_bbrrs_r2
+    rate_evict_epre ~~~ cc_bbrrs_r2
     rec_realtime_delay_recheck ~~~ store_law_derivation
-    cc_bbrrs_r2 ~~~ rate_evict_epre
+    cc_bbrrs_r2 ~~~ store_defect_b0p_brake
     store_law_derivation ~~~ store_defect_b0p_brake
-    rate_evict_epre ~~~ store_sampler_design
-    store_defect_b0p_brake ~~~ meas_blocke_pacing_gate
+    store_defect_b0p_brake ~~~ store_sampler_design
+    store_defect_b0p_brake ~~~ rate_evict_session
     store_sampler_design ~~~ meas_s51_session
-    meas_blocke_pacing_gate ~~~ meas_s51_session
-    meas_s51_session ~~~ rate_evict_session
+    rate_evict_session ~~~ meas_s51_session
     meas_s51_session ~~~ store_fix_maxbw_minrtt
-    rate_evict_session ~~~ store_engine_form_impl
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     cod_block_pipeline -.-> cod_one_pipeline
     cc_bbr_default -.-> cc_quinn_bbr_collapse
@@ -192,15 +194,13 @@ flowchart TB
     cod_unified_span --> cod_one_pipeline
     meas_guard_41c --> cc_bbrrs_r1
     store_s62_j0 --> store_count_rule
+    rec_f2_merge_guard --> rate_evict_epre
     cc_bbrrs_r1 --> cc_bbrrs_r2
     model_law_ledger --> store_law_derivation
-    rec_f2_merge_guard --> rate_evict_epre
     store_count_rule --> store_defect_b0p_brake
     store_defect_b0p_brake --> store_sampler_design
-    rec_f2_merge_guard --> meas_blocke_pacing_gate
-    rec_f2_merge_guard --> meas_s51_session
     rate_evict_epre --> rate_evict_session
-    meas_blocke_pacing_gate --> rate_evict_session
+    rec_f2_merge_guard --> meas_s51_session
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
@@ -219,16 +219,16 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cod_block_pipeline,rate_r_battery,store_power_law,place_daps dead
-    class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,rec_defect_realtime_framing,place_wire_price,cc_bbr_default,meas_formula_first,meas_guard_41c,model_vis_continuum succ
-    class rec_snapver_law,store_count_rule,rec_realtime_delay_recheck,model_law_ledger unrated
+    class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,meas_blocke_pacing_gate,rec_defect_realtime_framing,place_wire_price,cc_bbr_default,meas_formula_first,meas_guard_41c,model_vis_continuum succ
+    class rec_snapver_law,rate_evict_epre,store_count_rule,rec_realtime_delay_recheck,model_law_ledger unrated
     class rate_est_cadence,rec_f2_merge_guard,perf_emit_batch_law0,perf_io_owner vsucc
-    class rate_evict_epre,store_sampler_design,meas_s51_session next
-    class rate_evict_session,store_engine_form_impl,store_fix_maxbw_minrtt blocked
+    class rate_evict_session,store_sampler_design,meas_s51_session next
     class store_law_derivation inprog
     class store_s60a,store_s62_j0 mixed
-    class store_defect_b0p_brake,meas_blocke_pacing_gate,cc_quinn_bbr_collapse defect
+    class store_defect_b0p_brake,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
+    class store_engine_form_impl,store_fix_maxbw_minrtt blocked
 ```
 <!-- END GENERATED: overview -->
 
@@ -251,7 +251,7 @@ flowchart TB
 | Hole refresh clock degenerate input | ⚠ open defect | Open problem: the receiver timer that re-reports missing packets reads a fixed default delay instead of a measured one. |
 | Framing fix regression test | ✔ done · very-successful | The full regression test for the framing fix: the fast and slow links behave as before, the low-latency setting no longer dies at start-up, and the fix is now on main. |
 | Realtime delay re-check | ✔ done · unrated | A registered repeat of the guard's low-latency runs, 24 pairs of the old and fixed programs, to see whether the framing fix really adds delivery delay. It did not show up; a cost up to about a quarter is not ruled out. |
-| Server-side delay lean on the fixed build | ⏸ parked | In two low-latency runs the fixed program's server-side delay read about a fifth higher than the old one's. It is a side reading, not a scored result, so nothing runs on it unless it shows up again. |
+| Server delay lean, fixed build | ⏸ parked | In two low-latency runs the fixed program's server-side delay read about a fifth higher than the old one's. It is a side reading, not a scored result, so nothing runs on it unless it shows up again. |
 | Realtime receiver misread packets (fixed) | ✔ fixed | Fixed: on the low-latency setting, losing one start-up message made the receiver misread all data for the whole connection, while every counter looked fine. |
 | Framing fix leftovers | ○ next | Closing what the framing fix left open: peers on different presets still connect without any check, which needs an owner call; the sender still picks packing by preset; and some status text names the wrong protocol version for a planned field. |
 | Singles hole suppression | ⏸ parked | A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused. |
@@ -271,8 +271,8 @@ flowchart TB
 | P_fec truncation divergence | ⚠ open defect | Open problem: the code that estimates how often extra repair data helps jumps from zero to one half at one point, where the paper describes a smooth curve. |
 | Executed sliding P_fec oracle | ⏳ waiting | A test that runs the engine's real encoder and decoder to measure how often repair data recovers a loss, to settle the repair-rate formula. |
 | Repair taper shape inert as wired | ⚠ open defect | Open problem: the law that shapes when repairs are sent has no effect as the code calls it, so repairs go out at the flat rate. |
-| Evicting-seat test suites and binary | ○ next | Running the engine's full test suites on the fixed test tree and recording the exact program build that every later step of the evicting-seat test must use. |
-| Evicting-seat test, rehearsal and runs | ⛔ blocked | Measuring the repair loop on a low-latency path that may drop late data, with the sender paced below the link rate: a rehearsal, then the measured runs, to feed the repair-rate oracle. |
+| Evicting-seat test suites and binary | ✔ done · unrated | Running the engine's full test suites on the fixed test tree and recording the exact program build that every later step of the evicting-seat test must use. |
+| Evicting-seat test, rehearsal and runs | ○ next | Measuring the repair loop on a low-latency path that may drop late data, with the sender paced below the link rate: a rehearsal, then the measured runs, to feed the repair-rate oracle. |
 | Spare clamp on Realtime: verdict | ⛔ blocked | Deciding, from a run that does not overload the link, whether the cap that zeroes the repair rate on a full path is a defect. |
 | Is spare's cwnd enforced? | ▶ in progress | Checked whether the congestion window that the repair cap reads is enforced on the path that may drop late data: it is not, both by reading the code and on one test run. |
 | Repair-rate readout | ○ next | Adding a readout of how much repair data the formula asks for and which limit is in control, without changing behaviour. |
@@ -323,7 +323,7 @@ flowchart TB
 | Per-path I/O owner | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
-| Pacer late-send check fails | ⚠ open defect | The planned test of loss repair on a low-latency link that may drop late data requires its rate pacer to send almost nothing late. In the first paced runs, 1-4 % of packets went late on the old and the fixed program alike, against a limit that was set without data, so the rule needs a decision before the test runs. |
+| Pacer late-send check replaced | ✔ fixed | The planned test of loss repair on a low-latency link required its rate pacer to send almost nothing late, against a limit set without data. Lateness turned out to be ordinary timer delay on both programs, so the limit was replaced by a check for gross stalls, and lateness is now reported instead of voiding runs. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
 | Formula-first review | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
 | Rank-minp merge guard | ✔ done · successful ⚠ | Built the statistical check that every change must pass before merging, calibrated against identical runs. |
@@ -365,7 +365,7 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
-- `rate-evict-epre`: Evicting-seat test suites and binary
+- `rate-evict-session`: Evicting-seat test, rehearsal and runs
 - `meas-s51-session`: Off-Bulk baseline and δ sweep
 - `meas-progress-baseline`: Cumulative progress benchmark
 
@@ -381,7 +381,6 @@ flowchart TB
 
 - `store-defect-b0p-brake`: Boot-time brake estimate latches transients
 - `store-sampler-design`: Store-law delay sampler design
-- `meas-blocke-pacing-gate`: Pacer late-send check fails
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `rec-framing-followups`: Framing fix leftovers
 - `infra-derivation-merges`: Derivation and harness branches to main
@@ -482,9 +481,8 @@ flowchart TB
 ## VM queue
 
 <!-- BEGIN GENERATED: vm-queue -->
-1. `rate-evict-epre`: Evicting-seat test suites and binary. First: the engine's tests and the build identity on the fixed tree; the pacer decision does not affect it.
-2. `rate-evict-session`: Evicting-seat test, rehearsal and runs. Second: the rehearsal, then the measured runs, on the build the suites step pins, once the pacer's late-send rule is decided.
-3. `meas-s51-session`: Off-Bulk baseline and δ sweep. Third, after the evicting-seat test, in the registered launch order; it reads none of that test's results.
+1. `rate-evict-session`: Evicting-seat test, rehearsal and runs. Second: the rehearsal, then the measured runs, on the build the suites step pins, once the pacer's late-send rule is decided.
+2. `meas-s51-session`: Off-Bulk baseline and δ sweep. Third, after the evicting-seat test, in the registered launch order; it reads none of that test's results.
 <!-- END GENERATED: vm-queue -->
 
 ## Timeline
@@ -492,7 +490,7 @@ flowchart TB
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated from nodes.yaml on 2026-11-18.
+Generated from nodes.yaml on 2026-11-19.
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
@@ -504,12 +502,12 @@ Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 53 nodes (22 done, 6 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 28 nodes (11 done, 4 in progress, 2 next, 7 blocked, 1 parked, 3 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 28 nodes (12 done, 4 in progress, 2 next, 6 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 54 nodes (38 done, 4 in progress, 7 next, 4 blocked, 1 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 55 nodes (40 done, 4 in progress, 6 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 1 next, 2 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (11 done, 2 in progress, 2 next)

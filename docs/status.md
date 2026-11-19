@@ -1653,6 +1653,52 @@ The launch sha is pinned by an amendment.
   - A path exercise on the framing check's paced rows on the fixed binary shows gate (c)'s "late ≤ 1 %" firing: PL 1.6 / 3.6 %, PM 1.2 %. The rate, source count and last tick pass.
   - E-pre does not depend on it.
 
+**§51 Amendment 4 (2026-11-18, before the evicting-seat rehearsal; Fable-reviewed): the pacer rule, the steady-window rule, the launch tree and the pins.**
+- **Supersedes `s51-evict-design.md` §5.2 line 163's "`late` ≤ 1 % of chunks" and amends §6's steady-window rule** (item below). The design keeps a dated pointer; its text is unchanged.
+  - **Why:** the 1 % and the 2 ms threshold under it were declared, never measured.
+    - The harness worker's reads (code and ledgers; all seven late shares were taken while the stuck process held a host core, on binaries other than `a6a7e7e6`, and the lag baseline is from Bulk rows on `e410d640`) found the threshold sits inside ordinary timer lag: on a quiet host the client's 10 ms-tick p99 overshoot is 1.5 ms (§60's c2 rows), and 2.0 ms under host load.
+    - A late chunk is counted when it enters the 8 192-chunk feed queue (`perf.rs` `Pacer::note_sent`), so the reading is the timer and scheduler, not link backpressure.
+    - The old and fixed binaries read alike (1.0–3.6 %), so the fix is not its cause. Why the low rate (PL) reads higher than PM is unexplained.
+  - **The new rule:**
+    - **`pace-stall`** iff `late_max_ms > 250` (one reading window; declared, about 18× the largest value seen), or the field is missing. It is a harness-fault detector: it voids a battery row, re-run once, and fails the go/no-go on a rehearsal row. No reading below 250 ms is claimed protected.
+    - **Enqueue lateness** (`late`, `late_max`) is reported per row as whether the harness offered the load on schedule.
+    - **The engine side, a reading and never a void:** the share of offer-window ticks whose source count is off the offered rate by more than 5 % (an empty tick counts as off).
+    - **§6's steady-window rule, amended:** a K4-steady window that is off-load is not scored. It is excluded from the steady count and from the 30-window floor, and the exclusions are printed.
+      - If the exclusions take an arm under 30 windows, the arm reads K4-UNSCOREABLE by the existing floor rule.
+      - The scorer prints the excluded count per row; it does not print K4 without the exclusion. If any row excludes a window, K4 is re-scored post hoc without `skip` from the ledger and both are reported; a label difference is reported, not resolved.
+    - **The late share is registered as this rehearsal's first quiet-host reading,** with no threshold.
+  - **Checks:**
+    - red-first stubs: right mean with one 5 s stall gives `pace-stall`; `late_max` 14 / 250 is clean and 251 stalls; `late` 3.57 % is reported only; a missing field stalls; 40 empty LATE windows show in the off-load share;
+    - on §63's seven paced rows (old and fixed binaries), no pace problem, off-load 0/220 on every row, and no steady window excluded.
+- **Launch tree: `e-tree-f2-pace` `ac74586e21012ecb7289ef4d39f814a93f26f183`** = `e-tree-f2` `11213363` + the pacer change (`61852b6c`) + the new `ref51e-manifest.sha256` (193 files, from `11213363`). It is tools only, so the engine equals E-pre's tree.
+  - **Pins:** `LD_BIN_SHA_EXPECT` = `a6a7e7e6248d9a33e204b0622e64da6404d0c621bf77b0062c03b4e68c815c4d` (E-pre's `binid_run.sh`). Suite reuse is a HIT on the new manifest (the `engine_manifest()` pipeline on an LF export equals the committed file).
+  - **Host tests at `61852b6c`:** 46 tools/l1 files, 2 220 ok (`test_s60`'s host-only step aside); the fast unfiltered stub run ALL OK (772 ok).
+  - The same pacer commit is on `harness51-pace` `480e6fe8` for the off-Bulk sweep.
+- **PM's steady count:** the legacy rule read 106–114 steady windows on PM (PL 145–159) against a predicted < 30. The prediction was right and the rule was empty (Amendment 5). Why is owed before the rehearsal is read: which rtprop A\* reads, and how often it changes.
+- **Order (supersedes §65's "before the evicting-seat test's rehearsal"):** §65 ran first and read NOT-REPLICATED, so no fix opens on the delivery path this binary carries and the battery does not wait on it. This rehearsal is the first VM row on commit 8's evicting branch.
+- **Before the launch:** the amended go/no-go reads §63's fixed-build U, PL and PM s42 rows (the rehearsal's own row set) and must read GO.
+  - **Read (2026-11-18, `ac74586e`):** SMOKE-PASS, every gate PASS. U has no pace line, reads off-load n/a and no `pace-stall`. Scope: the rows were relabelled, ran binary `96c2dc1c` (not `a6a7e7e6`), and had rc forced to 0, because §63's rows carry the harness's old rc-1 defect (Amendment 2's correction). So the exit-code path is not exercised by this read.
+
+**§51 Amendment 5 (2026-11-18, before the evicting-seat rehearsal; Fable-reviewed): the steady-window rule's a_star / delta clause is read phase-independently. The launch tree moves to `e-tree-f2-pace` `8899fef8d5aad888e68557fa19ed74a04f190093`.**
+- **The defect:** the rule's sentence is "one a_star and one delta across the window and both neighbours". `[SPAN]` (the only printed integer a_star / delta) is a point sample every 0.5 s, and the legacy code read only the samples inside a window's 0.75 s span. So a window holding one sample passed vacuously, about half of them by sample phase.
+  - On FPM s42: 110 of 227 windows held one sample, 111 held two or more (106 of the two-sample windows disagreed), 5 held none, and the last window has no right neighbour. Legacy steady = 110 vacuous + 4 agreeing = 114.
+- **The fix (`s60_score.evict_stats(bracket=True)`, plan 51e only):** the last sample at or before the span's start and the first at or after its end are added, so every window is tested by at least two samples. A window with fewer is `untested`, never steady. The limit: point samples, so a steady window shows "no change observed at the samples".
+  - **Stricter than the sentence:** a change up to 0.5 s outside the 0.75 s span now fails the window. That is the conservative direction, and it is part of why PL reads 40.
+  - Per-clause failure counts (n, ab, untested, a_star, delta, off-load) are printed on each row. The default s60 path is byte-for-byte unchanged.
+  - Red-first: a_star alternating on every sample read 111 steady windows under the legacy rule and 0 under the fix.
+- **Counts on §63's paced rows (legacy → fixed):** fixed binary PL 149 → 40 and 154 → 40, PM 114 → 0 twice; old binary PL 145 → 23 and 159 → 38, PM 106 → 0.
+  - PM is K4-UNSCOREABLE, as the design's §4 predicted. PL on the fixed binary clears the 30-window floor (40).
+- **The calibration line** ran on a real row for the first time (the old binary's PL s42, 23 steady): new PL rate 570 sym/s. Whether that reaches 30 is not known without a recheck row; a crude model puts it near 29 (24–37). If a PL row falls under 30 and calibration cannot lift it, K4 has no scoreable arm, and that is a paper decision before more VM time.
+- **What already went through the rule:** §60's committed ledgers re-score byte-identical (that session never used it). The first evicting-seat rehearsal's U readings (ζ 0.950, τ_x 0.879, evict-share 0.736) and NOT-ENFORCED are unchanged.
+- **The go/no-go re-read on §63's FPL/FPM/FU s42** (on `8899fef8`, by the coordinator; same scope as Amendment 4's read): SMOKE-PASS; (h) PL 40 steady ≥ 30, the calibration line does not fire.
+  - The printed "astar-token witness mismatches" reads 37 of PL's 40 steady windows. Nothing gates on it: it compares the per-window continuous A\* with the integer sample, so it is not a check. The K4 input means use the per-window A\*.
+- **The exit-code path:** the rehearsal is the first 51e contact with the fixed rc lines. They are byte-identical to `harness65` `18de42d1`'s, which ran every §65 row at rc 0.
+- **Prediction for the rehearsal's PL row (fixed binary):** 30–50 steady windows (§63's two fixed-binary rows read 40 and 40). Under 30 fires the calibration line.
+- **Before the battery, settled on paper:** K4 needs every PL row at 30 or more. If one falls short, K4 reads K4-UNSCOREABLE by the registered rule, reported with the per-clause counts. Calibration is not a rescue (its model lands near 29), and no arm is added after rows are read.
+  - **What the battery still delivers then:** K4 is computed off-VM from the inputs this session supplies (design §8.1), and it enters no session label. The spare-clamp verdict (§6.3's classes: φ per arm, U's ζ control), m̄ and W1 with their witnesses, τ_x (§7, is spare's cwnd enforced), the eviction share and the pacing readings are all scored or reported without it. So an unscoreable K4 costs K4 only, and the battery runs without an owner call.
+- **Host tests on `8899fef8`** (the coordinator's LF export): `test_s51e` 64 (including the alternating-sample red-first check), `test_s51` 64, `test_harness51` 20, the remaining 43 tools/l1 files rc 0 (`test_s60` aside: its host-only `python -I` step, 169 checks before it pass), and the fast unfiltered stub run ALL OK (772 ok, 0 FAIL). `test_s60` on the VM: 190 ok, 0 failed. The same commit is cherry-picked onto `harness51-pace` `72bc0ef8` (`test_s51e` 64, `test_s51` 64, `test_harness51` 20).
+- **Pins:** tools only, so the engine, the ref51e manifest and `LD_BIN_SHA_EXPECT` = `a6a7e7e6…` are unchanged from Amendment 4.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
