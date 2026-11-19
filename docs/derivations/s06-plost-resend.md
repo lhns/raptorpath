@@ -411,7 +411,7 @@ last `[DIAG]` and `[TRUTH]`):
   10.2k is inside it.
 - **So S06′ changes little at ρ < 1 paced.** The defect is a stalled-frontier defect.
 
-### 4.1 The fork: no copy branch (review 2, item 3)
+### 4.1 The fork: no copy branch (review 2, item 3; review 3)
 
 **The law.** Every proactive slot carries a coded symbol, so the copy count is identically 0.
 
@@ -423,7 +423,6 @@ unchanged. In the ledger's vocabulary the fix class is **delete**.
 - Copies are 0 at every δ, ρ and N.
 - Coded / slots = 1 wherever there are slots, and undefined at rr = 0. That is not a step.
 - The fork is continuous through every preset trivially, with no hint, threshold or seat input.
-- At N = 1 and N = 2 the only change is the slot content.
 
 **What recovers a named hole.** Each of these mechanisms already exists:
 - **NACK resend**, once per SRTT cooldown, on packet-threshold or time-threshold ripeness
@@ -431,45 +430,121 @@ unchanged. In the ledger's vocabulary the fix class is **delete**.
 - **The receiver's stalled-hole refresh**, every 2·SRTT clamped to [25, 100] ms, at ρ = 1
   (`receiver.rs:856`).
 - **The sender's tail sweep**, 2·SRTT clamped to [25, 100] ms (`recovery_laws.rs:327–332`,
-  `mod.rs:250–251`), for holes with no successors.
-- **Coded repair** for losses inside the trailing span: within A*/R ≈ 12–13 ms of their send.
+  `mod.rs:250–251`).
+- **Decoding** from coded repair, measured below.
 
-**Where the shed test goes.** Today the slot-path shed sits *inside* the copy branch: it is reached
-only when `rand < p` fires (`emit_source.rs:760–795`).
-- The NACK path has its own shed (`sender_phases.rs:846–869`). It runs on every seq of every
-  judged gap batch, before the cooldown check.
-- Under the fork the slot-path shed goes away, and a past-deadline named hole is shed the next time
-  a gap batch names it.
-- A hole that is never named again, because it is above the horizon or no report arrives, is not
-  shed by the sender. On the evicting seat the receiver force-delivers past it
-  (`receiver.rs:1060–1077`).
-- The printed `shed=` total does not separate slot-path from NACK-path sheds. So the fork's effect
-  on the shed count (PM s42 r1: 1 934) cannot be predicted from the logs.
+#### 4.1.1 What a coded slot buys today (the c2 sweep, all arms)
 
-**What recovers the c8 blocker.** NACK alone. Its run-mean live-flight age at fire is 3.0–3.6 s
-at c8 HA and NA (p10 0.41 s), which is C02's "the law sees only old holes".
-- Today copies are the earlier trigger. About 70 % of them land below the receiver's decode floor
-  (Addendum 2). The remaining ≤ 30 % may be what moves the c8 frontier. No counter separates them.
-- **The no-copy witness that exists is H-B** (rr = 0, so no copies and no coded). It reads in-order
-  4.7 s at c8 against 5.5 s at Auto with copies, and 340 ms against 403 ms at c2.
-- That is not a controlled comparison, since r differs too. But it shows that the seconds-long c8
-  frontier exists without copies. It is the C02 / W3.6b tail, not S06.
+**The counter.** The receiver's `[RFA]` line (`net/report.rs:51–69`, printed at `:176`):
+- `fill_coded` counts a seq the decoder reconstructed rather than received as source: a hole
+  closed by decoding. It is incremented at `receiver.rs:1470–1480` for every seq that comes out of
+  the decoder other than the arriving symbol's own (`report.rs:520–524`).
+- `rep_n` counts the coded symbols that arrived.
 
-**Predictions** (arithmetic; slots fixed):
+**Method.**
+- Data: the last `[RFA]` of each server log, the last `[DIAG]` of each client log (src, cod,
+  retx), and the driver's `[TRUTH]` (wire lost and egress per leg).
+- L_src is the source-loss estimate: src × lost / egress.
+- Values are 6-row medians, or 4 at the in-between points I1–I4.
+- The script is `fill.py`, Appendix A.
 
-| per source symbol | c2 Auto | c8 Auto | PM s42 r1 (ρ < 1) |
-|---|---|---|---|
-| copies | 0.126 → 0 | 0.238 → 0 | 0.019 → 0 |
-| coded | 0.072 → 0.198 | 0.0039 → 0.242 | 0.191 → 0.210 |
-| NACK retx | 0.026, unchanged (NACK already fires first) | 0.027 → 0.027 – 0.038 (up to + L / (1 − ε) if copies were the first trigger) | 0.018 → ≤ 0.025 |
+| c2 arm | coded / src | holes closed by decode / src | per coded symbol sent | share of source losses closed by decode | NACK resends / src | NACK resends per source loss |
+|---|---|---|---|---|---|---|
+| H-B, BM, BP | 0.0037–0.0038 | 0.0013 | 0.34 | 5 % | 0.027 | 1.09 |
+| I1 | 0.0052 | 0.0018 | 0.34 | 7 % | 0.027 | 1.09 |
+| I2 | 0.0125 | 0.0037 | 0.31 | 15 % | 0.027 | 1.08 |
+| I3 | 0.0294 | 0.0068 | 0.23 | 27 % | 0.028 | 1.08 |
+| HA, NA, AM, AP | 0.072–0.082 | 0.0107–0.0117 | 0.14 | 42–46 % | 0.026 | 1.02–1.03 |
+| I4 | 0.0931 | 0.0127 | 0.14 | 49 % | 0.026 | 1.02 |
+| RM, RP | 0.087–0.102 | 0.0113–0.0131 | 0.13 | 44–52 % | 0.026 | 1.01–1.03 |
+| (HR, the named hint: duplicate source, not comparable) | 0.112 | 0.0131 | 0.12 | 52 % | 0.022 | 0.86 |
 
-**Not predictable without a run:**
-- the in-order delay at c8, which depends on how much of the frontier the ≤ 30 % useful copies
-  move;
-- the c8 NACK count;
-- the shed split at ρ < 1;
-- goodput, which is unchanged by the slot arithmetic but depends on whether the coded symbols are
-  used.
+At c8, coded / src is 0.004–0.006 on every arm, because copies take the slots. Decoding there
+closes 0.40–0.59 holes per coded symbol and 6–12 % of source losses, and NACK resends per source
+loss are 0.91–1.01.
+
+**Readings:**
+1. **Coded symbols at today's placement do close holes.** At c2 Auto, decoding closes about 42 % of
+   source losses, against 5 % at Bulk.
+   - The average yield is 0.14 holes per coded symbol at Auto.
+   - The marginal yield from H-B to Auto is (0.0107 − 0.0013) / (0.0723 − 0.0038) ≈ 0.14, and from
+     Auto to RM it is ≈ 0.08. The yield falls as coded rises.
+2. **They do not displace NACK.** NACK resends stay at 0.026–0.028 per source, about 1.0–1.09 per
+   source loss, on every arm from H-B to R+. That holds while decoding closes 5 % → 52 % of the
+   losses.
+   - So every loss still gets its NACK resend, whether or not the decoder closes it first.
+   - What a coded slot buys is the race (§3.7): an earlier close for about 40–50 % of the losses.
+     It does not buy fewer resends.
+   - Where the decoder wins, the NACK resend is the redundant one (`preempt_src`: a source arrival
+     for a seq already decoded), or it lands below the decode floor, where `[RFA]` cannot see it.
+3. **Most coded symbols carry nothing needed.** `rep_redundant / rep_n` is 0.85 at c2 Auto, against
+   0.64 at H-B.
+
+**The fork's prediction, restated as holes closed.** Slots are fixed, so coded = slots.
+- **c2 Auto:** coded goes from 0.072 to 0.198 per source.
+  - Holes closed by decode were 0.0107 per source (42 % of L_src = 0.0252). They are bounded by
+    L_src.
+  - At the falling marginal yield (0.08 → lower), they rise to about 0.0107 + (0.04–0.08) × 0.126 ≈
+    0.016–0.021 per source: **about 63–83 % of source losses closed by decoding.**
+  - NACK resends stay at about 1 per loss (reading 2).
+  - Today's copies closing holes are not separable: `fill_src` also counts reordered originals.
+- **c8 Auto:** coded goes from 0.004 to 0.242 per source. There is no measured c8 point above 0.006
+  coded per source, so the yield cannot be extrapolated.
+  - Bound: holes closed by decode ≤ L_src ≈ 0.029 per source, and ≤ 0.42 × 0.242.
+  - **The share is unknown** within [6 %, 100 %] of losses.
+- **c8 in-order delay: unknown.** I withdraw "as H-B". H-B sends no proactive slots, so it does not
+  witness the fork.
+  - Today the first copy per stall may be the only early trigger: NACK fires at a run-mean
+    live-flight age of 3.0–3.6 s (C02).
+  - Under the fork the blocker waits for NACK, and coded repair cannot reach it (it is outside the
+    trailing span).
+- **ρ < 1, PM s42 r1:** copies go from 0.019 to 0 per source, and coded from 0.191 to 0.210.
+
+#### 4.1.2 ρ < 1: the shed test under "delete"
+
+**The two call sites apply the same test** (`shed_allowed`, `shed.rs:39–49`):
+- the arguments are identical: the age since the original send, `shed_deadline_us_live` D(δ),
+  `shed_total`, the total sources and `shed_budget_frac`;
+- the effects are identical: remove from `retransmit_buffer` and `nack_retx_at`, insert into
+  `shed_seqs`, increment `shed_total`, or increment `shed_denied` when the seq is past D but the
+  budget refuses.
+
+**They apply it to different seqs:**
+- **Slot path** (`emit_source.rs:760–795`): `retransmit_buffer.first()` only, and only on a slot
+  whose P_lost draw fired.
+- **NACK path** (`sender_phases.rs:846–869`): every seq of every judged gap batch, before the
+  cooldown. Already-shed seqs are skipped. The tail sweep's own batch, which carries no snapshot,
+  is always judged (`snapver.rs:14–16`).
+- The blocker is the first gap of any report that has SACK ranges (`sack_to_gaps` starts at
+  `next_expected`, `sack.rs:77`).
+- So the slot path's set is contained in the NACK path's set plus the tail sweep's, except on one
+  interval: when no gap batch names the blocker (no arrivals above the frontier, and no tail sweep
+  yet). On the evicting seat, the receiver's hold expiry (60–300 ms, `REORDER_MIN_HOLD` /
+  `REORDER_MAX_HOLD`, `net/mod.rs:217–218`) then force-delivers past it.
+
+**What "delete" conserves:**
+- the shed law of ADR-0064 (accepted): the same function, deadline and 1 − ρ budget;
+- the accounting (`shed_total`, `shed_denied`);
+- the property that a past-deadline named hole is shed or served by the next judged batch.
+
+**What it loses:** the extra trigger points: a shed at slot time, between batches.
+
+**Evicting-seat test: `shed_set_conserved_without_the_copy_branch`.**
+- Run on a host loopback, evicting seat, paced, with seeded loss and a small D.
+- Assert that every named hole older than D at a judged gap batch, or at a tail sweep, is shed
+  within that batch while the budget allows, as absolute seqs.
+- Assert `shed_total + shed_denied` ≥ the count on main minus the slot-path sheds main made
+  between batches. Main's slot-path count needs a split counter: the printed `shed=` total does not
+  separate the producers.
+- Witness: `shed_denied` increments at least once with the budget set to refuse.
+
+**ADR.**
+- I found no accepted ADR behind §3.2's FEC-to-ARQ transition. I grepped `docs/adr` for P_lost,
+  taper copy, retransmit, correction and localisation; the hits are ADR-0059 (per-path recovery
+  clocks), ADR-0063 (`TaperBudget`) and ADR-0064 (shedding). None decides the copy branch.
+- So the fork supersedes no ADR. ADR-0064's shed law stays intact at its NACK call site.
+- Removing a recovery mechanism that the paper describes is hard to reverse, though, so the fork
+  should carry a **new** ADR recording the deletion and the §4.1.1 evidence.
 
 **Tests (red first).**
 1. **`no_taper_copy_on_any_seat`** (host loopback, N = 1 and N = 2). Run at Auto, Realtime and
@@ -479,9 +554,7 @@ at c8 HA and NA (p10 0.41 s), which is C02's "the law sees only old holes".
 2. **`stalled_blocker_recovered_by_nack`.** Drop k's original and its first resend.
    - Assert NACK(k) ≥ 1 within the time threshold plus one hole-refresh period.
    - Assert NACK(k) ≤ ⌈T / SRTT_min⌉ + 1 over a stall T, and copies(k) == 0.
-3. **`past_deadline_hole_shed_on_the_nack_path`** (evicting seat). A named hole older than D is
-   shed by the next gap batch that names it, with the copy branch gone.
-   - Witness: `shed_total` increments, and no copy is made.
+3. **`shed_set_conserved_without_the_copy_branch`**, above.
 4. **δ continuity, per preset triple.** Copies are 0 at all nine points, and coded / slots = 1
    wherever slots > 0.
 
@@ -771,16 +844,27 @@ change, not a refactor, so the §41c guard does not apply.
 ## 11. Open questions for the owner
 
 - **Q1. The fork: S06′ or no copy branch (§4.1)?**
-  - **S06′ ships a rule this document calls UNDERIVED,** "copy w.p. π" (§4). FORMULA-FIRST forbids
-    shipping it without an owner waiver.
-  - **The fork** deletes the branch. It needs no new law and no waiver, and its tests are in §4.1.
-  - **Measured trade:**
-    - a copy adds no degree of freedom at ρ = 1;
-    - at c2 it adds about nothing, since NACK fires first;
-    - on the paced evicting row it adds 9 % of slots, and NACK covers the same holes;
-    - at c8 it is the earlier trigger against a NACK that fires seconds late (C02).
-  - So the fork's only measurable risk is the c8 frontier. H-B already shows that frontier without
-    copies, at 4.7 s.
+  - **What S06′ costs:**
+    1. **New per-seq state:** `nack_retx_at` grows to (t_last, path, m, ε_last), plus the
+       named-hole heap and the per-seq send-count gauge (§5).
+    2. **A gate-independent hole set (R2):** built from the gap stream at every seat, never from
+       `sack_released`.
+    3. **Per-path inputs (E01, E09):** per-leg SRTT and an honest RTTVAR. Without them the
+       fast-clock chain is ≤ 0.064 copies per source at c8, and the dispersion S06′ needs has no
+       gauge (§2.1).
+    4. **A FORMULA-FIRST waiver:** "copy w.p. π" is kept from §3.2, not derived (§4), and so stays
+       UNDERIVED.
+    5. **R3:** its |ΔR| (about 15 ± 8 ms) is a testbed netem number with no engine source. The
+       engine measures no one-way delays.
+  - **What the fork costs:**
+    - one deletion (fix class delete);
+    - a new ADR (§4.1.2);
+    - the shed trigger at slot time between gap batches;
+    - an unknown c8 delay, since the first copy per stall may be the only early trigger against a
+      NACK that fires seconds late (C02).
+  - **What a slot buys either way** (§4.1.1): decoding closes about 42 % of c2 source losses at
+    Auto. NACK resends stay at about 1 per loss on every arm, so coded repair buys an earlier
+    close, not fewer resends. A copy adds no degree of freedom at ρ = 1.
   - A third option is to wait for the target form (u from §4.13 and v(δ)).
 - **Q2. Per-path SRTT with S06′, or before it?** The §2.1 reading cannot settle it yet. The worst
   leg is unresolved on 55 % of ticks at the print resolution, so SRTT_used is about 300 ms or about
@@ -800,6 +884,7 @@ comma-separated arm list.
   to p0.
 - `rtt2.py` gives the worst leg with printed ties separated.
 - `pl.py` gives the printed ε̂ distribution.
+- `fill.py` gives the §4.1.1 table: holes closed by decoding against coded and NACK, per arm.
 
 ```python
 # rtt2.py: worst-eps leg per [DIAG] tick, printed ties separated (pl= is printed to 4 decimals).
@@ -875,4 +960,47 @@ for arm,a in agg.items():
     print(f"{arm} ticks={a['n']} worst=p0 share {a['worst0']/a['n']:.2f}  srtt_used med {md(a['srtt'])}ms (p10 {q(a['srtt'],.1)}, p90 {q(a['srtt'],.9)}) rttvar_used med {md(a['srtt'])/10:.0f}ms")
     for k in (0,1):
         print(f"   p{k}: pl med {md(a['pl%d'%k]):.4f}  rtt(app-echo) med {md(a['r%d'%k])} p10 {q(a['r%d'%k],.1)} p90 {q(a['r%d'%k],.9)}  wrtt med {md(a['w%d'%k])} p10 {q(a['w%d'%k],.1)} p90 {q(a['w%d'%k],.9)}  rvar med {md(a['v%d'%k]):.1f}ms p90 {q(a['v%d'%k],.9):.1f}")
+```
+
+```python
+# fill.py: per arm, holes closed by decoding ([RFA] fill_coded) against coded sent and NACK resends.
+# fill.py: per arm, what closed the holes at the receiver ([RFA], last line of the -s.log)
+# against what the sender sent (last [DIAG] of the -c.log) and the driver's wire losses ([TRUTH]).
+# Usage: python -I fill.py <diag-ld dir> <cell prefix, e.g. c2-100>
+import sys, re, glob, os, statistics as st
+d, cell = sys.argv[1], sys.argv[2]
+ARMS = ["HB", "BM", "BP", "I1", "I2", "I3", "HA", "NA", "AM", "AP", "I4", "RM", "RP", "HR"]
+def last(path, tag):
+    out = None
+    for ln in open(path, errors="replace"):
+        if tag in ln:
+            out = ln
+    return out
+def num(ln, key):
+    m = re.search(r"[ \[]" + re.escape(key) + r"=(\d+)", ln)
+    return int(m.group(1)) if m else None
+print("arm n retx/src fill_coded/src fill_coded/Lsrc retx/Lsrc | cod/src fill_coded/cod fill_coded/rep_n fill_coded/lost retx/lost fill_src/lost dup_src/(retx+taper) rep_redundant/rep_n")
+for arm in ARMS:
+    rows = []
+    for c in sorted(glob.glob(os.path.join(d, f"{cell}@def-{arm}-*-c.log"))):
+        s = c[:-6] + "-s.log"; drv = c[:-6] + "-drv.out"
+        dg = last(c, "[DIAG] t="); rfa = last(s, "[RFA]")
+        if not dg or not rfa:
+            continue
+        cum = re.search(r"cum=(\d+)/(\d+)/", dg)
+        src, cod = int(cum.group(1)), int(cum.group(2))
+        retx, taper = num(dg, "retx"), num(dg, "taper")
+        txt = open(drv, errors="replace").read()
+        lost = sum(int(x) for x in re.findall(r"\[TRUTH\].*? lost=(\d+)", txt))
+        egr = sum(int(x) for x in re.findall(r"\[TRUTH\].*? egress_dgrams=(\d+)", txt))
+        Ls = src * lost / egr
+        fc, fs, ds = num(rfa, "fill_coded"), num(rfa, "fill_src"), num(rfa, "dup_src")
+        rn, rr = num(rfa, "rep_n"), num(rfa, "rep_redundant")
+        rows.append(dict(cs=cod / src, fcc=fc / cod if cod else 0, fcr=fc / rn if rn else 0, fcl=fc / lost,
+                         rl=retx / lost, fsl=fs / lost, dup=ds / (retx + taper) if retx + taper else 0,
+                         red=rr / rn if rn else 0, rs=retx / src, fcs=fc / src, fcL=fc / Ls, rL=retx / Ls))
+    if not rows:
+        continue
+    m = lambda k: st.median(r[k] for r in rows)
+    print(f"{arm} {len(rows)} {m('rs'):.4f} {m('fcs'):.4f} {m('fcL'):.3f} {m('rL'):.3f} | {m('cs'):.4f} {m('fcc'):.3f} {m('fcr'):.3f} {m('fcl'):.3f} {m('rl'):.3f} {m('fsl'):.3f} {m('dup'):.3f} {m('red'):.3f}")
 ```
