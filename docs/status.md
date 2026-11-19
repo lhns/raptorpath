@@ -1779,6 +1779,20 @@ The launch sha is pinned by an amendment.
   - The rehearsal also reads per-row log bytes, to check 76 rows fit in the run directory's free space.
 - **Launch variables:** as the registration, with `LD_PLAN=51`, `LD_BASE_SHA` = main at launch, `LD_HARD` = launch + 5 h (rehearsal + 1 h); the rehearsal (`LD_REHEARSE=1`, c2-100) records `bin_sha`, and each battery launch passes it as `LD_BIN_SHA_EXPECT`. Order: rehearsal, c2-100, c8-100; worst case 17 400 s per cell. Plan 51e's `ref51e-manifest.sha256` and its `LD_BIN_SHA_EXPECT` are not used.
 
+**§51 block 51 rehearsal (2026-11-19, 07:48–08:12Z, `b51-tree-v11` `6306959`, `LD_BASE_SHA` `d9dd18dd`): REHEARSAL-PASS. The c2 battery launched at 08:13Z.**
+- **`bin_sha` `8104fa027c9dea559c9ffdb0d5630117e70ffcd97a092e73700441446771be5b`**, the same as §65's post-F2 binary. Both batteries pass it as `LD_BIN_SHA_EXPECT`. The dial pins are OK, and the tools tests and bash tests are green.
+- **The smoke (c2-100, seed 42): all four rows LIVE.**
+  - HB: 90.2 Mbit/s, in-order 340 ms, rr 0.
+  - HR: 68.2 Mbit/s, in-order 175 ms, dgev/hand 0.0004.
+  - BP: 90.1 Mbit/s.
+  - NA: 76.3 Mbit/s, rr max 0.500.
+  - Every witness passed, including the post-F2 Bulk / Auto symbol-size and batching witnesses (their first post-F2 reading) and the not-overdriven witness on HR and NA.
+- **Δ: `delta=Some(1)` on all 484 `[SPAN]` lines**, as predicted (Amendment 6).
+- **Logs:** 2.8 MB for 4 rows, so 76 rows fit in `/dev/shm`, which has about 5 GB free.
+- **Steal:** about 600 jiffies per 10 min on 10 CPUs, under 0.1 %. iowait is about 1 300 jiffies per 10 min.
+- **Tree layout:** `src` is the `git archive` of the tools tree, whose engine paths are byte-identical to `d9dd18dd`. `COMMIT` holds `LD_BASE_SHA`, as the harness requires, and `TOOLS_TREE` holds `6306959`.
+- **Harness defect, pre-existing on main** (from `harness65` `b99a09a8`): `loopdiag_run_all.sh`'s `crlf_guard` line lost its trailing `\`. Its continuation line (17 files, including `test_loopdiag_parse.py`, `l1common.py` and `plan64.py`) runs as a command ("command not found"), so those files are not CRLF-guarded. It is harmless on a `git archive` tree (stored LF), and is fixed on the next harness commit.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
