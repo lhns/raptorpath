@@ -12,8 +12,8 @@ law ledger or the roadmap; §6 proposes that text.
 - **Missing:** every input of T*. There is no per-window echo sampler on main, the floor F̂ and brake estimators
   were each convicted (E13, E14), and the allowance (F07) is UNDERIVED. Decision 8's g(δ)·S_F failed its
   second-cell test (§61a), and the sampler redesign waits on a measurement (M1) that has not run.
-- **What δ moves today:** nothing. In the 152 sweep rows the cap sits at N·2048 on 99–100 % of LATE ticks at every
-  δ, and the only δ seat, (1 + q), multiplies an ask 3–34× above that ceiling.
+- **What δ moves today:** nothing. In the 152 sweep rows the cap sits at N·2048 on 97–100 % of LATE ticks at every
+  δ (arm medians; single rows down to 0.86), and the only δ seat, (1 + q), multiplies an ask 3–34× above that ceiling.
   - So the in-order delay follows W/λ_src. At c2 it is 1.49–1.60 × W/λ_src on every arm, named Realtime included.
   - It *rises* with δ because repair lowers the source rate through a fixed store.
 - **The candidate** (decision 8's allowance in the R6.7 line), evaluated unclamped on committed data:
@@ -23,16 +23,20 @@ law ledger or the roadmap; §6 proposes that text.
     c8 ≈ 510–540 in total (≈ 255–270 per path) and c2 ≈ 188–201 at Bulk.
   - Both are at or below §54b's working 640–1024 per path (W 1 280–2 048), above the §56 knees (c8 W ≈ 340, c2 168),
     and inside §56's flat regions.
-  - **At c1s** it lands near W 300–350, where §56 reads 0.79–0.89 of control; c1d cannot be evaluated.
+  - **At c1s** it lands near W 300–350, below §56's smallest arm (W 384, 0.79 of control), so the cost is at least
+    −21 % and not bracketed. c1d cannot be evaluated.
 - **Units:** the (1 + r) wire-against-source mismatch is still on main (`d_received` counts every datagram). It
   reads 1.03 at Bulk and 1.22–1.32 at Auto in the sweep. A time law removes it, because the rate cancels.
-- **Report fit:** "the holes outstanding under the law fit in one report" is two conditions.
+- **Report fit:** the status entry's condition ("the holes outstanding under the law fit in one report") is two
+  conditions.
   - (a) Every gap fits the 64-range SACK prefix.
   - (b) Every ripe loss hole fits the 20-gap horizon.
   - On §56's map, c8 carries 20 ranges per report at W 512 against 55–64 at W ≥ 1 280. At the candidate's point
-    (a) holds about 3× and (b) about 6×, so both constants become witnesses with two named bind gauges.
-- **Owner questions** (§5, three): the form of δ's term now that S_F failed at c3; the c1s/c1d price; and whether a
-  rate-free update meets "a formula in rate and delay".
+    (a) holds about 3× and (b) 4–6× (κ = 2 to 1.5), so both constants become witnesses with two named bind gauges.
+- **Owner question** (§5): one is live, the c1s/c1d price under decision 2.
+  - The allowance's form (decision 8) waits on M1 by status's own record, so M1 is the critical-path item.
+  - Whether a rate-free update meets the status entry's "formula in rate and delay" is a premise flag for the
+    coordinator.
 
 Rules followed: FORMULA-FIRST (formulas stated with a provenance per symbol and a shape check before any number);
 NO-MODE-SWITCH (every form below is one expression continuous in δ; no hint or threshold branch); every clamp named
@@ -63,7 +67,9 @@ only). Inputs: `docs/l1-raw/s51b/full/b51c{2,8}-full.tgz`, `docs/l1-raw/s54/rep5
 
 ### 1.2 Inputs with no engine source
 
-The plan named four: L̂, the time term, b₀ and δ's seat. Their state, and that of the terms the derivation added:
+The plan named four: L̂, the time term, b₀ and δ's seat. In the repo they appear as `store-engine-form-impl`'s
+done-criterion ("reads an engine L̂ and time term from the per-leg state"), ledger F01 item 7 ("b0 offset has no
+engine source") and W1's U2. Their state, and that of the terms the derivation added:
 
 | input | plan's name | state on main | state of the derivation |
 |---|---|---|---|
@@ -85,9 +91,9 @@ The plan named four: L̂, the time term, b₀ and δ's seat. Their state, and th
 | `perleg-phase-a` | `e5246d7f` | Phase A, A0–A4 (2026-11-16..17): `leg_state_trace_pin`, one `LegState.s`, m̂/b̂/sampler/J1–J3/wire RTT moved into `LegState`, the `[LEG]` gauge; zero behaviour change, 6 commits ahead of main | no; waits for the one stacked zero-behaviour guard (owner decision 5); node `place-per-leg-relocate` in-progress |
 | (Phase B + W3.3) | — | consumers onto `LegState` and the store law's engine form | not started: `place-per-leg-impl` and `store-engine-form-impl` are blocked; `store-engine-form-impl` depends on `place-per-leg-impl` |
 | `slaw-gauge` | `d416d59b` | `[SLAW]` gauge, `WinSampler` (ℓ̂, b̂₀⁺) | no; "reach main through a stacked guard, or be dropped" is still held |
-| `derive-w1`, `w1r2` | `ed4e3405` | `w1-who-limits.md` (candidate A, U1–U3) | no (docs) |
-| `store-law-rev6`, `r67`, `r67-verdicts` | merged | `store-law.md`, `-r67.md`, `-r68.md` | yes |
-| `knee-margin-rederive`, `count-rule`, `sampler-design` | `399407f4`, `2d557191`, `3375acd9` | the post-§61 re-derivations | no (docs) |
+| `derive-w1`, `w1r2` | `ed4e3405`, `22574061` | `w1-who-limits.md` (candidate A, U1–U3) | no (docs) |
+| `store-law-rev6`, `store-law-r67`, `r67-verdicts` | `5058abf0`, `c49c0a77`, `6794780d` | `store-law.md`, `-r67.md`, `-r68.md` | yes |
+| `knee-margin-rederive`, `count-rule`, `sampler-design` | `c6c55958`, `2d557191`, `3375acd9` | the post-§61 re-derivations (`knee-margin-rederive.md`, `count-rule.md`, `sampler-design.md`) | yes (all three heads are ancestors of main) |
 
 ### 1.4 What pushed the work out
 
@@ -193,8 +199,8 @@ With the store pinned at a fixed symbol count, Little gives the loop as T ≈ W/
 - **c2 HR, the only arm whose delay falls,** is the same law. The named hint halves the symbol to 512 B. The pool
   counts symbols, so λ_src in symbols doubles and the store's time halves (0.56 predicted, 0.55 measured). Status §51
   reads "only the named Realtime hint lowers delay". That is the pool constant counted in symbols, not a δ effect.
-- **c8:** in-order delay is 10–14 × W/λ_src. The multiplier is waiting behind old holes and the capped reports (§4).
-  Its rise to Auto (+16 to +37 %) tracks W/λ_src (+28 %), inside c8's 50 % in-order resolution.
+- **c8:** in-order delay is 10–14 × W/λ_src. The multiplier is waiting behind old holes (§54b: 1 289 at the shipped
+  pool). That the 64-range prefix adds to it is a hypothesis (§4.3), not a reading. Its rise to Auto (+16 to +37 %) tracks W/λ_src (+28 %), inside c8's 50 % in-order resolution.
 - So in-order delay does not fall with δ because the store does not move with δ. It cannot fall while the cap is
   pinned, and the pin is set by inputs that over-read by 37–435× in product (§3.2), not by δ.
 
@@ -231,15 +237,17 @@ owner decision 8). The update is per 250 ms window k:
 > weighted by delivered share. A leg's target is its coupled queue-free floor, plus a knee margin, plus a δ-priced
 > fraction of the floor, plus the window's own spread.
 
-**Its fixed point is the rate × delay formula the owner's sentence names.** At R = 1, by Little:
+**Its fixed point is the rate × delay formula the status entry names** (owner decision 2026-11-19, status's
+"how much each path may hold outstanding, as a formula in that path's measured rate and delay and in δ"; the owner's
+own words quoted there are "we want the proper solution"). At R = 1, by Little:
 
 ```text
    n*  =  Σᵢ λᵢ · T*ᵢ(δ)  +  H ,        T*ᵢ(δ)  =  Φᵢ + g(δ)·S_F,ᵢ + q(δ)·F̂ᵢ + Ŝᵢ          (λᵢ: delivered SOURCE rate of leg i)
 ```
 
 So per path, the store holds the path's measured delivered rate times a target loop built from the path's measured
-floor and spread and the dial. The law never has to *read* λᵢ: the update is the ratio form, and λ cancels. Owner
-question 3 (§5) asks whether that meets the 2026-11-19 sentence.
+floor and spread and the dial. The law never has to *read* λᵢ: the update is the ratio form, and λ cancels. Whether
+that meets the status entry's sentence is flagged in §5 (item C).
 
 | symbol | meaning | provenance | engine source |
 |---|---|---|---|
@@ -310,8 +318,8 @@ netem truth from `tools/l1/lib.sh` `scenario_params`:
 | c8 sweep HA (Auto) | 0.0667 | 35 199 | 4 096 | 57 740 | 534 | **399** | 343 | knee rescaled by λ_src: ≈ 340 × 0.78 ≈ 265 |
 | c8 sweep RP (δ 51) | 0.050 | 26 333 | 4 096 | 39 545 | 531 | **392** | 337 | ≈ 263 |
 | c2 sweep HB | 0.10 | 8 804 | 2 048 | 12 949 | 201 | **188** (replay 198–203) | replay 70 | §60 W₉₅ 168; §56 flat to 192–256 (−0.7 %) |
-| c2 sweep HA | 0.0667 | 11 815 | 2 048 | 16 522 | 198 | **156** (replay 196) | — | knee rescaled ≈ 168 × 0.84 ≈ 142 |
-| c2 sweep RP | 0.050 | 11 751 | 2 048 | 15 581 | 196 | **151** (replay 194) | replay 51 | ≈ 138 |
+| c2 sweep HA | 0.0667 | 11 815 | 2 048 | 16 522 | 198 | **156** (r68 replay at Auto's q on §60's Bulk-rate rows: 196, a different operating point) | — | knee rescaled ≈ 168 × 0.84 ≈ 142 |
+| c2 sweep RP | 0.050 | 11 751 | 2 048 | 15 581 | 196 | **151** (same replay at q 0.05: 194) | replay 51 (§61b, Bulk rate) | ≈ 138 |
 | c1s (link rate) | 0.10 | — | 2 048 | — | 308 | **349** | 307 | §56: W 384 → 0.79, W 512 → 0.89 of control, no plateau |
 | c1d | — | — | 4 096 | — | — | **not evaluable** | — | no floor calibration; see §3.5 |
 
@@ -330,7 +338,7 @@ Reading:
   static form's 508–514 agrees with it.
 - **g = 0, the "δ-free margin removed" bracket:** c2 lands at 70 at Bulk and 51 at Realtime (§61b's landing table,
   u 0.45 / 0.34), far below the knee. c8 lands at 337–443 by the static form, near the knee. So whether g(Realtime)
-  is near 1 or near 0 is a 3–4× difference in the c2 store (owner question 1).
+  is near 1 or near 0 is a 3–4× difference in the c2 store (§5, item B).
 
 ### 3.4 Off Bulk: q's share against the rate's share
 
@@ -354,10 +362,12 @@ In slots, n* falls 17–24 % from Bulk to Auto:
 ### 3.5 c1s and c1d: where the candidate costs
 
 - **c1s** (1 Gbit/s, 1 ms, no jitter; §60 F̂ 2.38 ms, S_F 0.43 ms): T* − F̂ ≈ 0.67 ms, so n* ≈ 300–350.
-  - §56 reads 0.79 of control at W 384 and 0.89 at W 512. The cell is receiver-bound (R6.1), and its goodput keeps
-    rising with standing queue up to the control.
-  - **Expected cost about −11 to −21 % at Bulk.** This is the price owner decision 2 named ("the price sits at
-    c1s") without sizing it.
+  - §56's smallest c1s arm is W 384, at 0.79 of control (0.89 at W 512). The landing lies below the map, so it is
+    not bracketed.
+  - The cell is receiver-bound (R6.1), and its goodput keeps rising with standing queue up to the control.
+  - **Expected cost: at least −21 % at Bulk, unbracketed below.** This is the price owner decision 2 named ("the
+    price sits at c1s") without sizing it. The static form also uses the link rate as λ, which over-states λ
+    below a knee, so the true landing could sit lower still.
 - **c1d:** §60 has no c1d floor calibration, so the static form cannot be evaluated.
   - On §57b's q_ℓ axis, the candidate's ≈ 0.7 ms of queue above the floor sits below c1d's smallest store-bound
     pool (W 384, q_ℓ 2.6 ms, ratio 0.80–0.85).
@@ -383,8 +393,12 @@ In slots, n* falls 17–24 % from Bulk to Auto:
 - **The SACK prefix, M_S = 64** (`net/sack.rs:522`, `MAX_SACK_RANGES` = ⌊(1 155 − 72 − 48)/16⌋, derived from one
   control datagram).
   - A report lists received runs in [next_expected, seen] and stops at 64.
-  - Seqs above the last listed range are "not reported (may be in flight)" (`sack.rs:533–540`). The sender keeps
-    their store slots.
+  - Seqs above the last listed range are "not reported (may be in flight)" (`sack.rs:533–540`), and `sack_to_gaps`
+    cannot name a gap there.
+  - **The store gate does not depend on the prefix** (wire v9). The gate's released count is
+    max(|SACK marks|, `received_above` − not-retained), clamped to the retained count (`store_released_for_gate`,
+    `sack.rs:386`; seat `net/mod.rs:2300–2310`). So slots of received seqs past the 64th run *are* returned to the
+    pool by count; what the prefix loses is per-seq visibility.
   - The number of runs in the window equals the number of gaps below `seen`.
 - **The gap horizon, M_N = 20** (`net/mod.rs:225`, `MAX_NACK_GAPS`). `sack_to_gaps` (`sack.rs:79`) acts on the 20
   *oldest* gaps of a report, and the receiver's `RepairRequest` list is cut the same way.
@@ -421,7 +435,16 @@ The gaps below `seen` in one report are:
 | d_fwd,ᵢ | forward one-way delay incl. queue. **No engine source:** the echo is a loop. On symmetric netem it is the loop minus the return propagation; returns travel on their own leg (5 and 20 ms), as `store-law.md` §6 reads |
 | βᵢ | mean run of consecutive seqs placed on leg i; ≈ 1 fits the map below; not gauged |
 | ε_run,ᵢ | loss runs per datagram: `lib.sh` calibration 0.027/8 (c8 leg 0), 0.0407/4 (leg 1), 0.026/10 (c2) |
-| κ | hole lifetime in loops: ≈ 1.5 (`store-law.md` §1, `[SUCC] rep_p50`); measured, not derived |
+| κ | hole lifetime in loops: ≈ 1.5 (`store-law.md` §1, `[SUCC] rep_p50`); measured, not derived. Reproducing §54b's old holes needs κ ≈ 2 (below) |
+
+**Shape check.**
+- **Units:** counts (rate × time).
+- **Order in the store:** G_loss is order 1 in n, so (b) is a linear bound on the store. G_re depends on n only
+  through the forward-delay gap, which the law's target sets (§4.4).
+- **Monotone:** non-decreasing in every λᵢ, εᵢ and in the delay gap.
+- **N = 1:** the sum in G_re runs over a one-element set, so d_fwd − min d_fwd = 0 by arithmetic, with no path-count
+  branch. At c2 the model gives G_loss ≈ 0.7 against 1.3 measured at W 192, and ≈ 8 against 4.1 at W 2 048. So
+  the single-leg term is right in order and off by up to 2×, and κ·ε is not calibrated at c2.
 
 The two conditions:
 
@@ -433,14 +456,19 @@ The two conditions:
 - **(b) is self-consistent.** When it holds, holes are repaired within κ loops and H_old = 0. When it fails, unrepaired
   holes age and H_old grows. That is `store-law.md` §3.4's "binds = old holes accumulate".
   - With ε_eff = 4.5·10⁻³ (c8, rate-weighted), the (b) edge is n_h = 20/(κ·ε_eff) ≈ 2 200 (κ = 2) to 3 000 (κ = 1.5).
-  - That is consistent with §3.4's measured P_h(20) ∈ (1.9 k, 2.5 k), between B1024 (no old holes) and B2048 (1 289).
+  - §3.4 measured P_h(20) ∈ (1.9 k, 2.5 k), between B1024 (no old holes) and B2048 (1 289). Only κ ≈ 2 is consistent
+    with that: at κ = 1.5 `gapfit.py` puts B2048's G_loss at 17.0, below 20, while B2048 has old holes. So κ is
+    taken as 2 for (b) below. A gauge for the hole lifetime (`[SUCC] rep_p50` ÷ loop) should fix it per cell.
 - **(a) is the half §3.4 left implicit.**
   - §3.4 noted that "reports are truncated at every arm (visibility 0.30 even at W = 1 280) while H′ ≈ 0.09": (a)
     failing while (b) holds.
-  - When (a) fails, the received seqs above the 64th run stay in the store. They are slots holding delivered data, so
-    the sender's loop and the in-order wait both lengthen, with no loss involved.
-- **The owner's sentence** ("the holes outstanding under the law fit in one report") **is (a) ∧ (b).** That is
-  stronger than §3.4's binding definition.
+  - **Read in code:** when (a) fails, the store gate still releases the received seqs past the prefix by count
+    (`received_above`, §4.1). What fails is per-seq visibility. A loss hole past the 64th run cannot be named by
+    `sack_to_gaps` until the prefix advances, and the per-seq marks stop growing.
+  - **Hypothesis, not read:** that this delays repair of holes past the prefix, and so adds to c8's in-order wait
+    (§2.3). No gauge separates it from the horizon's old holes.
+- **The status entry's condition** ("the holes outstanding under the law fit in one report") **is (a) ∧ (b).** That
+  is stronger than §3.4's binding definition.
 - **The model against the map** (`gapfit.py`, with no fitted constant, but two choices made: the return-path split,
   and κ = 1.5):
 
@@ -461,29 +489,31 @@ The two conditions:
 
 - **c8, n* ≈ 510.** The coupled target sets the forward-delay gap:
   - Δd*_fwd = (Φ₁ + A₁) − (Φ₀ + A₀) − Δd_ret = 14.3 + 7.4 − 15 ≈ 6.7 ms, so G_re ≈ 1 824 × 0.0067 ≈ 12.
-  - G_loss ≈ 1.5 × 4.5·10⁻³ × 510 ≈ 3.4, so G ≈ 16. The map at W 512 reads 20.2.
-  - **(a) holds about 3×, (b) about 6×.**
+  - G_loss ≈ κ × 4.5·10⁻³ × 510 ≈ 3.4 (κ 1.5) to 4.6 (κ 2), so G ≈ 16–17. The map at W 512 reads 20.2.
+  - **(a) holds about 3×, (b) 4–6×.**
   - **The coupling term is what keeps the report small.** Without the ½ (a per-leg target) the fast leg would not
     queue toward the slow leg's floor, the forward gap would be ≈ 21 ms and G_re ≈ 38. That still fits, at 1.7×.
 - **c2, n* ≈ 190:** G ≈ 1.3 measured, so (a) holds about 50× and (b) about 25× (G_loss ≈ 0.7).
 - **Shipped pool, W 4 096:** (a) is pinned at 63.4–63.6 and (b) fails (1 289 old holes at Bulk).
 - **So under the candidate neither 64 nor 20 is load-bearing at c2 or c8.**
   - The 64 is already derived from the datagram size.
-  - The 20 needs only M_N ≥ κ·Σε·n*, about 4 at c8, so it has a margin of about 5× rather than being tuned.
+  - The 20 needs only M_N ≥ κ·Σε·n*, about 3.4–4.6 at c8, so it has a margin of 4–6× rather than being tuned.
   - Both become witnesses: a cell where a gauge below binds is outside the law's domain, and it is reported as a
     defect finding, not fixed by raising the constant.
 
 ### 4.5 The two bind gauges (owed; neither exists)
 
 1. **SACK-prefix bind fraction**, receiver side, in `received_sack_ranges` (`sack.rs:545`): the share of WindowAcks
-   that stop at `MAX_SACK_RANGES`, plus the count of received seqs above the last listed range.
+   that stop at `MAX_SACK_RANGES`, plus the count of gaps above the last listed range (the holes the sender cannot
+   name).
    - This is (a)'s witness.
    - Predicted at the candidate: ≈ 0 at c2, and a minority of reports at c8 (mean 20 of 64; the tail is unknown).
 2. **Horizon ripe-overflow fraction**, sender side, in `sack_to_gaps` (`sack.rs:79`): the share of reports cut at
    `MAX_NACK_GAPS` with at least one *ripe* loss hole beyond the 20th gap.
    - This is (b)'s witness.
-   - It refines `store-law.md` §8's "truncation share", which counts visibility, not binding. At c8 W 512 the 20 cut
-     happens on many reports while every cut gap is a young cross-leg gap.
+   - It refines `store-law.md` §8's "truncation share", which counts visibility, not binding.
+   - *Prediction, not a reading:* at c8 W 512 the 20 cut happens on many reports (mean 20 gaps), while the cut gaps
+     are young cross-leg gaps, which sit at the high-seq end of the window.
    - Predicted ≈ 0 at both cells. The existing server `[RANK]` old holes and the `[HOLD] ripe_frac` stay as its
      cross-checks.
 
@@ -497,7 +527,11 @@ All three of the plan's questions have an answer on record, so none is re-asked 
 - **U3:** decision 2 (2026-11-16): a small Bulk cost is accepted for about 10× lower delay.
 - **U2:** decision 8 (2026-11-17): g(δ)·S_F + q(δ)·F̂, g(Bulk) = 1.
 
-Decision 8 is unsettled since §61a, and decision 2 was priced at c2 and c8 only. What remains open is below.
+Decision 8 is unsettled since §61a, and decision 2 was priced at c2 and c8 only. Of what remains open:
+- **A** is the one live owner question.
+- **B** is not askable yet: status records that the owner's question "waits for M1". It is the critical-path item,
+  not a question.
+- **C** is a premise flag for the coordinator, not an owner question.
 
 **§54b, the anchor every question rests on** (c8-100, 600 MB, n = 6 per arm, store bind 0.997–1.000; ranges per
 report from `sacki.py`):
@@ -512,7 +546,7 @@ report from `sacki.py`):
 | L640 | 640 (1 280) | 107.3 | 0.32 / 0.30 | 98 | 0 | 53.2 |
 | *candidate (this doc)* | *≈ 255 (≈ 510)* | *≈ 106 (§56 W 512)* | *late ≈ 0.09 (§56 W 512)* | *≈ 39 (§56)* | *0 predicted* | *≈ 16–20* |
 
-**Q1. δ's term after §61a: which allowance does the law carry?**
+**B (critical path, not asked now). δ's term after §61a: which allowance does the law carry?**
 - *History:*
   - W1 asked U2 (q's 5–10 % band, or A(c) with an unsourced c_B ≈ 2.7 ms).
   - §60/r68 measured the band 1.69 ms short at the c2 knee (F07), and r68 offered (a) a δ-free spread, (b) δ scaling a
@@ -527,27 +561,31 @@ report from `sacki.py`):
   - With g ≡ 1, δ's authority over the candidate is ≈ 1.5 % of T* (§3.4).
   - Whether g(Realtime) is near 1 or near 0 moves the c2 store 3–4× (194 against 51).
   - So the allowance's form *is* the δ dial, and nothing in this doc settles it.
-- *Asked:* run M1 now as the store law's next measurement (the coordinator's default), and take the sampler-design
-  question after it? Or pick a branch on present evidence?
+- *Next step (no question):* M1 is the store law's next measurement: four RTT-dump rows on prebuilt `e410d640`,
+  about 1 h, no build, needing a tools-only plan that widens the dump arm. The sampler-design question goes to the
+  owner after it, as status already records.
 
-**Q2. The c1s/c1d price under decision 2.**
+**A (live owner question). The c1s/c1d price under decision 2.**
 - *History:*
   - W1's U3 priced the store's cost at ≈ 2 % at c2 (§43b).
   - Decision 2 accepted "a small Bulk goodput cost … for about 10× lower delay", citing c2 W 256 (no cost) and
     c8 W 512 (≈ 1 %), and noted that "the price sits at c1s, where §56 found that every pool cut pays".
   - `store-law.md` §0 predicted c1s −10 to −20 % and c1d failing guard v2.
 - *What this doc adds:*
-  - On honest inputs the candidate lands near W 300–350 at c1s, where §56 reads 0.79–0.89 of control: about −11 to −21 %.
+  - On honest inputs the candidate lands near W 300–350 at c1s. That is below §56's smallest arm (W 384, 0.79 of
+    control), so the cost is at least −21 % and unbracketed.
   - c1d lands at or below W 384, where §57b reads 0.79–0.86.
   - c1 is receiver-bound (R6.1): goodput keeps rising with standing queue, so there is no knee for the margin to sit
     on.
-- *Asked:* does decision 2's "small" cost extend to a −10 to −20 % Bulk cost on the 1 Gbit/s cells? If not, the
+- *Asked:* does decision 2's "small" cost extend to a Bulk cost of −20 % or more on the 1 Gbit/s cells? If not, the
   receiver-bound regime needs its own term in the one formula. That is a derivation item, not a branch, and it comes
   before any engine form.
 
-**Q3. Does a rate-free update meet "a formula in that path's measured rate and delay"?**
+**C (premise flag for the coordinator). Does a rate-free update meet "a formula in that path's measured rate and
+delay"?**
 - *History:*
-  - The owner's sentence of 2026-11-19 names the path's measured rate.
+  - The status entry for the owner decision of 2026-11-19 phrases the fix as "a formula in that path's measured rate
+    and delay and in δ". The owner's own words quoted there are only "we want the proper solution".
   - `store-law.md` §2 derived that the law needs no rate input: the update is a ratio of times, and its fixed point
     is n* = Σλᵢ·T*ᵢ + H.
   - Every rate source on record failed (§23, §24, §27, §34, §36, §40, §43b), and E04 over-reads 6–19× here (§3.2).
@@ -555,9 +593,10 @@ report from `sacki.py`):
   - The rate-free update and the rate × delay fixed point are one law. The rate appears in the fixed point, but the
     engine never reads it.
   - Reading it would bring back E04 and the (1 + r) units (§2.4).
-- *Asked:* confirm the time-law form, with the rate only in the fixed point and its gauge? Or must the engine read an
-  explicit per-path rate? The latter makes E04's open input design (an honest delivered-rate sampler on a store-bound
-  sender) a prerequisite.
+- *Flag:* the derivation reads the time-law form (the rate only in the fixed point and its gauge) as meeting that
+  phrasing. If the coordinator reads it as requiring the engine to read an explicit per-path rate, E04's open input
+  design (an honest delivered-rate sampler on a store-bound sender) becomes a prerequisite. That premise should be
+  settled before the engine form is designed.
 
 ---
 
@@ -567,20 +606,28 @@ report from `sacki.py`):
 
 > **Store-law state (2026-11-19; `store-law-state` `<sha>`; docs and logs only).** The derived law is a rate-free
 > time law, fixed point n* = Σλᵢ·T*ᵢ + H; none of T*'s inputs has an engine source (sampler, F̂, brake, allowance:
-> E13, E14, F07; decision 8 unsettled since §61a). In the 152 sweep rows the store sits at N·2048 on 99–100 % of
-> LATE ticks at every δ, and q multiplies an ask 3–34× above it, so δ moves nothing; c2 in-order delay is
+> E13, E14, F07; decision 8 unsettled since §61a). In the 152 sweep rows the store sits at N·2048 on 97–100 % of
+> LATE ticks (arm medians) at every δ, and q multiplies an ask 3–34× above it, so δ moves nothing; c2 in-order delay is
 > 1.49–1.60 × W/λ_src on every arm, named Realtime included (512 B symbols halve the store's time). On honest
 > inputs the candidate lands at c8 ≈ 510 (≈ 255 per path, inside §54b/§56's working region) and c2 ≈ 190–200; on
 > the engine's logged inputs it asks 6 300–57 700 (`btlbw` 6–19× the link, `rtp` 5–25× the floor). The (1 + r)
 > mismatch is still on main. Report fit is (a) all gaps in the 64-range prefix and (b) all ripe loss holes in the
-> 20-gap horizon; at the candidate both hold (c8 about 3× and 6×). Three owner questions.
+> 20-gap horizon; at the candidate both hold (c8 about 3× and 4–6×). Next: M1 (the sampler-design measurement); one
+> owner question (the c1s/c1d price, at least −21 % at c1s).
 
 **Law ledger** (row edits):
-- **F01:** add "δ inert: at every sweep point the cap is the ceiling and (1 + q) scales an ask 3–34× above it (§51
-  block 51, `store-law-state.md` §2); in-order delay tracks W/λ_src". Add "units: wire-unit Σ max_bw·min_rtt against
-  a source-unit store, ×1.03 (Bulk) to ×1.32 (Auto)".
-- **C02:** add "report fit, (b): κ·Σε_run·n* ≤ 20. A witness under the store law, with the ripe-overflow gauge". Add
-  a new line for `MAX_SACK_RANGES`, status `OK` (derived from the datagram), with clause (a) and the prefix-bind gauge.
+- **F01:**
+  - Item 5 (measured in regime): add "δ inert: at every §51 sweep point the LATE cap is the ceiling and (1 + q)
+    scales an ask 3–34× above it (`store-law-state.md` §2); in-order delay tracks W/λ_src".
+  - Item 6: the c8 `pin=` range 0.74–0.98 is the whole row. From the first pin at t ≈ 10.3 s it is 0.88–1.00.
+  - Item 7: add "units: wire-unit Σ max_bw·min_rtt against a source-unit store, ×1.03 (Bulk) to ×1.32 (Auto)".
+- **C02:**
+  - Item 4 (derivation): add "20 is bounded below by report fit (b), κ·Σε_run·n* ≤ 20 (`store-law-state.md` §4); a
+    witness under the store law".
+  - Item 6 (clamp bind): add "the ripe-overflow gauge (§4.5 item 2)".
+  - Item 6's pending SACK-cap paragraph ("needs its own derivation or a verdict"): answer it with clause (a) and the
+    prefix-bind gauge. `MAX_SACK_RANGES` is derived from the datagram and its binding is the store's (§4.2: 20 ranges
+    at W 512, 55–64 from W 1 280), so it is a witness, not a constant to tune.
 - **E03, E04:** add the §3.2 over-read factors on the sweep rows.
 
 **Paper `fec-arq-model.md` §6.1** (a paragraph after `store-law.md` §11's draft):
@@ -592,7 +639,8 @@ report from `sacki.py`):
 > together.
 
 **Roadmap** `store-law-derivation` notes: append "2026-11-19: state doc `store-law-state.md` (branch
-`store-law-state`): candidate evaluated on committed data, report-fit condition derived, three owner questions". Add
+`store-law-state`): candidate evaluated on committed data, report-fit condition derived; next M1; one owner question
+(c1s/c1d price)". Add
 a node for the two report gauges (§4.5) under the store track, `kind: instrument`, depending on
 `store-law-derivation`.
 
