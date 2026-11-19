@@ -266,7 +266,7 @@ So Auto pays −15 % goodput, +18 % (c2) / +16 % (c8) delay and +39 % / +27 % cl
 8. **R07 W = 201 on 95–100 % (clip 200), with the NACK-budget floor (item 4).** Together with D06 NG this means **target_tail_loss has no live reader at the default except the anchor term's z.** It also has no perf flag.
    - Covered: `rate-user-rate-law` (flag sweep, perf pass-through). R07's bind fraction is new.
 9. **C04: the N = 1 age gate never suppresses** (0 of every tick, all c2 arms and E). The shipped single-path recovery law is the constant `true`.
-   - Effect: every judged gap fires once cooldown allows. `[RFA] false_frac` is 0.08 at c2 A (6.4k of 80.6k fires land at a receiver that has the seq).
+   - Effect: every judged gap fires once cooldown allows. `[RFA] false_frac` is 0.08 at c2 A (6.4k of 80.6k), but whether that counts these fires was not verified.
    - Covered: `rec-fix-perleg-clock-n1`. This answers Addendum 4's open question.
 10. **C06 / C07 / E10 / S05 pinned on seeds or clamps.**
     - Tail sweep at its 100 ms cap on every c2/c8 row.
