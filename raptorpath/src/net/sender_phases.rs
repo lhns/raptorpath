@@ -823,7 +823,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     .get(&seq)
                     .copied()
                     .or_else(|| {
-                        st.retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
+                        st.retransmit_buffer.get(&seq).map(|&(t, p)| (t, p))
                     });
                 hold_echo.on_reported(
                     seq,
@@ -848,7 +848,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     if st.shed_seqs.contains(&seq) {
                         continue;
                     }
-                    if let Some(&(send_time_us, _, _)) = st.retransmit_buffer.get(&seq) {
+                    if let Some(&(send_time_us, _)) = st.retransmit_buffer.get(&seq) {
                         let age = now_repair_us.saturating_sub(send_time_us);
                         if shed_allowed(
                             age,
@@ -890,7 +890,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     .get(&seq)
                     .copied()
                     .or_else(|| {
-                        st.retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
+                        st.retransmit_buffer.get(&seq).map(|&(t, p)| (t, p))
                     });
                 // Which channel let this seq through (`[SNAPV]` split).
                 let mut fired_by_pt = false;
@@ -958,7 +958,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     // is merely late, not lost — only repair symbols old
                     // enough that an in-flight copy would already have been
                     // sacked.
-                    if let Some(&(send_time_us, _, _)) = st.retransmit_buffer.get(&seq) {
+                    if let Some(&(send_time_us, _)) = st.retransmit_buffer.get(&seq) {
                         if !legacy_age_ripe(now_repair_us, send_time_us, srtt_us) {
                             if pol.diag_on {
                                 dg.mpd_supp_age += 1;

@@ -165,8 +165,8 @@ pub(crate) struct DiagState {
     // Gap-report volume, per-cause suppression, fired-retransmit age
     // attribution (young = the law's spurious class), per-flight-path and
     // per-retx-path emission. Cumulative; printed as `mpr[..]`. The
-    // P_lost-branch retransmit count (`mpd_plost_retx`) lives in
-    // `SenderState` — the emission step writes it.
+    // taper-copy count (`mpd_plost_retx`, always 0 since ADR-0079) lives in
+    // `SenderState`.
     pub mpd_gap_reports: u64,
     pub mpd_gap_seqs: u64,
     pub mpd_supp_cool: u64,

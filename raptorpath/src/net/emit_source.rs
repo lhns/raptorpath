@@ -83,10 +83,10 @@ pub(crate) struct SenderState {
     /// recovered by a targeted retransmit of exactly this symbol. Bounded by
     /// RELIABLE_STORE_MAX via TUN-read backpressure, never by eviction.
     pub sent_store: SeqRing<WireSymbol>,
-    /// Retransmit buffer: maps seq → (send_time_us, epsilon_at_send, path_id).
-    /// Used for P_lost-based retransmit decisions. Symbols are removed on ACK.
+    /// Retransmit buffer: maps seq → (send_time_us, path_id). Feeds the NACK
+    /// path, the shed law and the tail sweep. Symbols are removed on ACK.
     /// Metadata only — under EVICT the source bytes die with window eviction.
-    pub retransmit_buffer: SeqRing<(u64, f64, u32)>,
+    pub retransmit_buffer: SeqRing<(u64, u32)>,
     /// Maps source seq → path it was sent on (for cross-path retransmission).
     /// Ordered (not HashMap) so the per-path ack attribution can range-query
     /// the seqs in a SACK / cumulative-ack span.
@@ -181,7 +181,8 @@ pub(crate) struct SenderState {
     pub c8c_src_placed: std::collections::HashMap<u32, u64>,
     /// Last ~500 ms span-law trace stamp.
     pub span_diag_last_us: u64,
-    /// Recovery-suppression trace: the P_lost-branch retransmit channel.
+    /// The taper-copy count under `RWM_DIAG` (`plost=`): always 0 since
+    /// ADR-0079. Kept so `[DIAG] plost=` parses.
     pub mpd_plost_retx: u64,
 
     /// Reused scratch for `window_source_paths_into` (the repair placement's
@@ -495,19 +496,13 @@ pub(crate) fn emit_source(
         percap_charge(&mut st.percap_acct, &mut st.percap_out, wire_sym.block_id, source_path);
     }
 
-    // Add to retransmit buffer for P_lost-based retransmit decisions.
+    // Add to the retransmit buffer (NACK, shed, tail sweep).
     // Generation coding disables per-seq ARQ entirely — no retransmit
-    // buffer (so the P_lost retransmit branch never fires and the tail
-    // ARQ sweep never arms) and no per-seq deficit accounting. Recovery
-    // is generation-level (more coded symbols for a short generation).
+    // buffer (so the tail ARQ sweep never arms) and no per-seq deficit
+    // accounting. Recovery is generation-level (more coded symbols for a
+    // short generation).
     if !pol.generation {
-        let epsilon = {
-            let sched = &*ctx.scheduler;
-            super::worst_eps_estimator(&sched)
-                .map(|e| e.loss_rate())
-                .unwrap_or(0.0)
-        };
-        st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path));
+        st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, source_path));
     }
 
     // Redundant send for Realtime: duplicate source on second-best path

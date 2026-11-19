@@ -60,18 +60,6 @@ pub fn channel_worst_loss_rate(sched: &Scheduler) -> f64 {
         .fold(0.0f64, f64::max)
 }
 
-/// The P_lost inputs `(srtt_s, rttvar_s, ε)` from the worst-ε channel path;
-/// `(0.05, 0.005, 0.0)` only when the channel has no path at all.
-pub fn p_lost_inputs(sched: &Scheduler) -> (f64, f64, f64) {
-    match worst_eps_channel_path(sched) {
-        Some((_, p)) => {
-            let srtt = p.estimator.rtt().as_secs_f64();
-            (srtt, srtt * 0.1, p.estimator.loss_rate())
-        }
-        None => (0.05, 0.005, 0.0),
-    }
-}
-
 /// The NACK congestion inputs `(loss, copa min-RTT)` from the worst-ε
 /// channel path; `(0.0, None)` only when the channel has no path at all.
 pub fn nack_congestion_inputs(sched: &Scheduler) -> (f64, Option<Duration>) {
