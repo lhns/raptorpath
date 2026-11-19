@@ -97,3 +97,7 @@ required-features = ["test-seams"]
 [[test]]
 name = "f2_realtime_packed"
 required-features = ["test-seams"]
+
+[[test]]
+name = "s06_reactive"
+required-features = ["test-seams"]

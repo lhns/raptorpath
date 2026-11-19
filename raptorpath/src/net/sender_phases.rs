@@ -861,10 +861,14 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             st.nack_retx_at.remove(&seq);
                             st.shed_seqs.insert(seq);
                             st.shed_total += 1;
+                            #[cfg(feature = "test-seams")]
+                            crate::test_seams::on_shed(seq, age, st.shed_deadline_us_live);
                             continue;
                         }
                         if st.shed_deadline_us_live > 0 && age > st.shed_deadline_us_live {
                             st.shed_denied += 1;
+                            #[cfg(feature = "test-seams")]
+                            crate::test_seams::on_denied(seq);
                         }
                     }
                 }

@@ -1386,6 +1386,8 @@ pub(crate) async fn run_receiver(
                                 symbol.block_id < highest_seen_seq,
                             )
                         });
+                        #[cfg(feature = "test-seams")]
+                        crate::test_seams::on_recv(symbol.block_id, symbol.is_repair);
                         let rxp_t = rxp.begin();
                         let recovered = if fdiag_on {
                             let t_dec = Instant::now();
