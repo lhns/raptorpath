@@ -1,6 +1,6 @@
 # Liveness audit: never executed, pinned, or decided but not wired
 
-Read-only audit (2026-11-19), against main `44f54b94`. Its engine tree equals the §51 block 51 binary's base `d9dd18dd`: `git diff d9dd18dd 44f54b94 -- raptorpath raptorpath-math raptorpath-core gf256` is empty. Block E ran on `e-tree` `a271e0bb`, which is main plus `slaw-gauge` and the pacer. Committed logs only: no VM, no cargo, no fixes. The scripts are in the method section. Nothing here is a ledger verdict. Every PINNED or NEVER-RUNS reading below is a candidate for one (MEASUREMENT DISCIPLINE 17/18).
+Read-only audit (2026-11-19), against main `44f54b94`. Its engine tree equals the §51 block 51 binary's base `d9dd18dd`: `git diff d9dd18dd 44f54b94 -- raptorpath raptorpath-math raptorpath-core gf256` is empty. Block E's session ran on `e-tree-f2-pace` `8899fef8` (`BINSHA.txt` commit, bin_sha `a6a7e7e6…`, §51 Amendments 3–5). That is the F2 fix, now merged on main (Amendment 3: same patch-id), plus the measurement-only additions: `slaw-gauge` (`net/slaw.rs`), the spare-clamp gauge and the app-side pacer (`perf.rs`). Its engine diff against main is 18 files, +18/−2128, all of it gauge or pacer code (`slaw.rs`, `diag.rs`, `perf.rs`, `sender_phases.rs` hooks). So E's law paths are main's, read through extra gauges. Committed logs only: no VM, no cargo, no fixes. The scripts are in the method section. Nothing here is a ledger verdict. Every PINNED or NEVER-RUNS reading below is a candidate for one (MEASUREMENT DISCIPLINE 17/18).
 
 **Seats.**
 - **c2**: c2-100, single path. **c8**: two legs. Both ran at ρ = 1, 600 MB, one perf object per row, six rows per arm. **B / A / R** are the named hints H-B / H-A / H-R (`docs/l1-raw/s51b/full/b51c{2,8}-full.tgz`).
@@ -30,7 +30,7 @@ Shares are per sender `[DIAG]` / `[SPAN]` tick (t ≥ 2 s, src > 0), pooled over
 | E07 | EX | EX | EX | EX | EX | EX | EX | `plu` c2 A 0.0015–0.70 (p50 0.019) |
 | E08 | NG | NG | NG | NG | NG | NG | EX | σ² and burst are not printed on main; E K4 inputs `sigma2` 3.07–3.65 (PL) |
 | E09 | NG | NG | NG | NG | NG | NG | NG | the stand-in is not printed; only the unused candidates `rvar/qsp/msd/tlag` are |
-| E10 | EX | EX | EX | PIN | PIN | EX | NR | `[QCLK] site=receiver srtt_us_mean`: c2 7.5–14 ms, which is the reverse leg's own srtt; c8 B/A **50 000 µs seed on every row**; c8 R 35.7–46.1 ms; E has no receiver QCLK (refresh is reliable-only) |
+| E10 | PIN | PIN | PIN | PIN | PIN | PIN | NR | `[QCLK] site=receiver`: one latched value per row (`w_us_min = w_us_max`, `sigma_us_mean=…/n0`). c2 7.5–14 ms across rows (the reverse leg's own srtt); c8 B/A the **50 000 µs seed** on every row; c8 R 35.7–46.1 ms, also latched. E has no receiver QCLK (refresh is reliable-only) |
 | E11 | EX | EX | EX | EX | EX | EX | EX | `[QCLK] site=sender srtt_us_mean` c2 A 212–218 ms, c8 A 596–660 ms, E 14.3 ms |
 | E12 | NG | NG | NG | NG | NG | NG | NG | no anchor gauge; both clamps have no bind gauge |
 | E13 | n/a | n/a | n/a | n/a | n/a | n/a | NR | branch-only on main; on the E tree `[SLAW] W=0 nk=0`, so no window closed at the evicting seat |
@@ -41,7 +41,7 @@ Shares are per sender `[DIAG]` / `[SPAN]` tick (t ≥ 2 s, src > 0), pooled over
 | D04 | EX | EX | EX | EX | EX | EX | EX | β = 1 at B is seen as rr = 0 on 100 % of ticks; β = 0 at A/R (rr > 0) |
 | D05 | NR | NR | NR | NG | NG | NG | NR | N = 1 placement is trivial; at c8 nothing prints w_bw's effect |
 | D06 | NR | NG | NG | NR | NG | NG | NG | at B the anchor term is weighted 0; elsewhere t_tail is not printed, and perf pins the base at 1e-5 (`main.rs:282-301`) |
-| F01 | EX | EX | EX | EX | EX | **PIN** | NR | `[SUMCAP] pin` c2 0.78 / 0.83 / 0.86, c8 0.74 / 0.82 / **0.93** (ceiling N·2048 = 4096); E has no `[SUMCAP]` |
+| F01 | EX\* | EX\* | EX\* | EX\* | EX\* | **PIN** | NR | `[SUMCAP] pin` c2 0.78 / 0.83 / 0.86, c8 0.74 / 0.82 / **0.93** (ceiling N·2048 = 4096); E has no `[SUMCAP]` |
 | F02 | EX | EX | EX | EX | EX | EX | **PIN** | ρ = 1 takes the reliable branch. E: store cap `win=…/1024` on 100 % of ticks, a constant (the live MODE-SWITCH) |
 | F03 | PIN | PIN | NR | PIN | PIN | NR | NR | the law is the constant 64. `eb_end cap:` ends 0.1–0.2 % of bursts at c2 and 4–14 % at c8; `store:` ends the rest. R and E do not batch (`eb_bursts` 0) |
 | F04 | NR | NR | NR | NR | NR | NR | NR | `[GATES] RWM_THREE_TERM=0`; control arms off |
@@ -61,7 +61,7 @@ Shares are per sender `[DIAG]` / `[SPAN]` tick (t ≥ 2 s, src > 0), pooled over
 | S02 | PIN | PIN | PIN | PIN | PIN | PIN | EX | `a_star ≥ wsize` on c2 98 / 98 / 100 %, c8 97 / 97 / 100 % (span = W); E PM 59–123 < W on 100 %, PL 4–9 |
 | S03 | PIN | PIN | PIN | PIN | PIN | PIN | PIN | `[SPAN] delta=Some(1)` on 100 % of lines, every seat (floor 1) |
 | S04 | NR | NR | NR | NR | NR | NR | PIN | shed inert at ρ = 1. E `score.txt` ROW51E: `bud=0.0000` on all 10 PM/PL rows, yet `shed=181–1992` (VM: which budget admits them) |
-| S05 | PIN | PIN | PIN | PIN | PIN | EX | PIN | receiver `[SHEDH]`: c2 `floor_frac=1` (60 ms); c8 B/A `mean_us=200000` exactly on every row (= f(50 ms seed), E10); c8 R 143–185 ms; E PM `floor_frac=1` (`dial_frac` 0.11). At ρ = 1 nothing consumes it |
+| S05 | PIN | PIN | PIN | PIN | PIN | PIN | PIN | receiver `[SHEDH]`: c2 `floor_frac=1` (60 ms); c8 B/A `mean_us=200000` exactly on every row (= f(50 ms seed), E10); c8 R 143–185 ms across rows, a function of E10's latched srtt; E PM `floor_frac=1` (`dial_frac` 0.11). At ρ = 1 nothing consumes it |
 | S06 | NR | EX | EX | NR | PIN | EX | EX | `plost=taper`: c2 A 47.9k–63.4k copies per row; c8 A ≈ 119k, P_lost ≈ 1 on the blocker, copy share 0.98 (Addendum 2); c8 R 640; E PM 10 197; B 0 (no debt at r = 0) |
 | S07 | NG | NG | NG | NG | NG | NG | NG | no refresh-cause tally |
 | S08 | NR | NR | NR | NR | NR | EX | NR | hint-keyed; needs N ≥ 2. c8 R p1 in-flight > 9 000 on 82.5 % of ticks |
@@ -73,17 +73,17 @@ Shares are per sender `[DIAG]` / `[SPAN]` tick (t ≥ 2 s, src > 0), pooled over
 | C04 | **PIN** | **PIN** | **PIN** | NR | NR | NR | **PIN** | **`mpr supp=…/age/…` = 0 on 100 % of ticks**, c2 all arms and E, against ~13.5k fires per c2 row. The N = 1 age gate never suppresses (it always passes). It is NR at N = 2 (mp law) |
 | C05 | EX | EX | EX | EX | EX | EX | EX | `supp=cool/…` c2 A p50 339k cumulative |
 | C06 | PIN | PIN | PIN | PIN | PIN | PIN | EX | `[QCLK] site=sender w_us_p05=p95=100000` on every c2/c8 row (100 ms cap); E 25.6–31.2 ms |
-| C07 | PIN | PIN | PIN | PIN | PIN | EX | NR | `[QCLK] site=receiver w_us`: c2 25 000 µs (floor) on every row; c8 B/A 100 000 (cap, from the 50 ms seed); c8 R 71–92 ms; E reliable-only |
+| C07 | PIN | PIN | PIN | PIN | PIN | PIN | NR | `[QCLK] site=receiver w_us`, `p05 = p95` within every row: c2 25 000 µs (floor); c8 B/A 100 000 (cap, from the 50 ms seed); c8 R 71–92 ms (2·latched srtt); E is reliable-only |
 | C08 | PIN | PIN | PIN | PIN | PIN | PIN | PIN | `[LATE] sampler_bind` c2 1.0, c8 0.92–0.95, E 0.98 (2 ms floor) |
 | C09 | EX\* | EX\* | EX\* | EX\* | EX\* | EX\* | PIN | `nbud=10` on c2 87.6 / 89.4 / 83.0 %, c8 79.9 / 86.4 / 70.0 %, E PM 93.8 %, PL 97.3 %. E-tree `[SLAWC] c09_frac` 0.063 (the per-report cap) |
 | C10 | NG | NG | NG | NG | NG | NG | NG | no margin gauge |
 | C11 | NR | EX | EX | NR | EX | EX | EX | `[SPAN] debt` non-zero on c2 A 14 %, R 54 %; c8 A 7 %, R 31 %; E 46 %; B 0 on 100 % |
 | C12 | NR | NR | NR | NR | NR | NR | NR | `[REQS] on=0`, `[REQ] on=0` |
 | C13, M01–M04 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | wasm model |
-| K01 | EX | EX | EX | EX | EX | EX | EX | `cwnd=10000` (MAX_CWND) on c2 59 / 70 / 76 %; c8 sum = 20 000 on 0 / 21 / 79 % (per-leg NG); E PM 509–1884 |
+| K01 | EX | EX\* | EX\* | EX | EX | EX\* | EX | `cwnd=10000` (MAX_CWND) on c2 59 / 70 / 76 %; c8 sum = 20 000 on 0 / 21 / 79 % (per-leg NG); E PM 509–1884 |
 | K02 | NR | NR | NR | NR | NR | NR | NR | wire mode off; the constant 0.5 is used |
 | K03 | NR | NR | NR | NR | NR | NR | NR | opt-in off |
-| K04 | PIN | PIN | PIN | NG | NG | PIN | PIN | c2 slack: `s51-evict` bracket s = 0 on 0.4–0.5 % and s < 0.5 on 2–5 % of ticks, so `min()` takes window_rate on ≥ 95 %. c8 B/A: no per-leg cwnd (bracket MISSING). c8 R pinned at spare 0.000–0.002. E SLACK φ = ζ = 0 (1 105 windows) |
+| K04 | PIN(slack) | PIN(slack) | PIN(slack) | NG | NG | PIN(0) | PIN(slack) | c2 slack: `s51-evict` bracket s = 0 on 0.4–0.5 % and s < 0.5 on 2–5 % of ticks, so `min()` takes window_rate on ≥ 95 %. c8 B/A: no per-leg cwnd (bracket MISSING). c8 R pinned at spare 0.000–0.002. E SLACK φ = ζ = 0 (1 105 windows) |
 | K05 | NR | NR | NR | EX | EX | EX | NR | `[ETA] cold_r=0` everywhere (cold clamp never binds); c8 p1 gets 17.5k of 490k placements |
 | K06 | NR | NR | NR | NG | NG | NG | NR | constant T; no gauge of its effect |
 | K07 | NR | NR | NR | NG | NG | NG | NR | repairs only, and coded is ~0.004/src at c8 |
@@ -95,22 +95,33 @@ Shares are per sender `[DIAG]` / `[SPAN]` tick (t ≥ 2 s, src > 0), pooled over
 
 | class | cells | share |
 |---|---|---|
-| EX (incl. 13 EX\*) | 169 | 38 % |
-| PIN | 81 | 18 % |
+| EX (incl. 21 EX\*) | 163 | 37 % |
+| PIN | 87 | 20 % |
 | NR | 121 | 27 % |
 | NG | 72 | 16 % |
 
-At the default hint (the c2 A and c8 A columns, 126 classified cells): EX 49 (4 EX\*), PIN 25, NR 28, NG 24. Only 45 of 126 law cells at the default hint execute and vary clearly.
+At the default hint (the c2 A and c8 A columns, 126 classified cells): EX 48 (7 EX\*), PIN 26, NR 28, NG 24. Only 41 of 126 law cells at the default hint execute and vary clearly (below the 70 % line).
 
 **Where a "never fires / inert" reading exists, did its precondition hold where it was read?**
 - **S06's withdrawn DEGENERATE(L1: never fires).** It was read on Bulk-only cells, where r = 0, so the copy branch's precondition (debt > 0) never held. Off Bulk it fires on every row. The withdrawal is right.
 - **R01 / R05 / S10 / C11 "r ≈ 0 on every measured cell".** Bulk only (β = 1). The precondition held nowhere they were read. Off Bulk, R01 and C11 execute. S10 is PIN (owed = 0) even with rr ≈ 0.25, so S10's DEGENERATE(r = 0) is the wrong reason: it is pinned at every r.
-- **C04 "inert at c1" (§3.4) and Addendum 4's open question** (can the srtt/2 age gate ever hold at N = 1?). The precondition (N = 1, diag on) holds on all 42 c2 rows plus 10 E rows, and the suppression count is 0 on every tick. The gate never holds. That answers the question with a count, not a code read: the shipped N = 1 recovery law is a constant `true`.
+- **C04 "inert at c1" (§3.4) and Addendum 4's open question** (can the srtt/2 age gate ever hold at N = 1?). The precondition (N = 1, diag on) holds on the 24 c2 rows read (H-B, H-A, H-R, R−) and the 12 E rows (PM, PL, U), and the suppression count is 0 on every tick. The gate never holds. That answers the question with a count, not a code read: the shipped N = 1 recovery law is a constant `true`.
 - **K02 "inert by default".** Wire mode is off on every seat, so the precondition held. Correct.
 - **R05 "χ = 0 on the tunnel".** It holds in perf too (`[CHI] n=0` on all 152 + 12 rows). Correct.
 - **K04 DEGENERATE(paced c2).** Read at E (PM/PL SLACK). It also holds unpaced at c2 (≤ 5 % of ticks). It binds only when a leg is overdriven (c8 R, E U). The reading generalizes.
 - **M04 "ρ inert at Auto and Realtime"** is model-only; no engine reading exists.
 - **F03 "binds 0.005 at c2".** It holds: 0.1–0.2 % of bursts end on the cap. The store, not the burst bound, ends bursts at c2 (99.9 %).
+- **D06 "never exercised on a measured cell".** That was Bulk-only (anchor weighted 0). Off Bulk the anchor term runs, but t_tail has no gauge and perf pins its base, so it is still unread (NG), not inert.
+- **E06 "reorder credit never exercised on L1".** The precondition (reordering) still does not hold: netem is FIFO in every cell read here, with c8's two legs reordering only across paths. Still unread.
+- **D05 / K05 "INERT-AS-DERIVED on latency" (Track A).** At N = 1 the precondition (a placement choice) does not exist (NR at c2 and E). At c8 placement executes (p1 gets 3–4 % of placements), but nothing prints w_bw's effect. Unresolved.
+- **F01 knee "inert at c7/c8 under the δ-cap".** The ledger already says it is pinned. Here it is at the ceiling on 74–82 % of c8 B/A ticks and 93 % at c8 R, so it is binding, not inert.
+- **The nine "OK, not measured in regime" rows** (D01–D06, R06, R08, C12), now read off Bulk:
+  - D01–D04 execute as dials;
+  - D05 and D06 are NR or NG;
+  - R06 is NG;
+  - **R08 is PIN** (5 ms cap, inferred) on every c2/c8 seat;
+  - C12 is NR (off).
+  - None of them is newly verified OK.
 
 ## 2. Wiring table
 
@@ -147,7 +158,7 @@ Paths are under `raptorpath/src` unless named.
 | 0041 | SIMD gf256 | `gf256/src/lib.rs:97-113` | WIRED | |
 | 0050 | NackAck message | none; RX loss from data batches | SUPERSEDED (code-only) | |
 | 0050 | nack_effectiveness = (1 − ε_rx)² | `estimator.rs:130`, read only at `net/mod.rs:3316` | PARTIAL | ε_rx ≈ 1 in a one-way flow (inferred); it feeds only the floored NACK budget |
-| 0050 | spare-capacity clamp | `net/emit_source.rs:574-580,589` | WIRED | `compute_repair_rate_capped` (`fec_rate.rs:561`) has no caller. Live: **PIN-slack at c2 and E** (K04), because spare reads PathState cwnd, which sits at MAX_CWND (K01) |
+| 0050 | spare-capacity clamp | `net/emit_source.rs:574-580,589` | WIRED | `compute_repair_rate_capped` (`fec_rate.rs:561`) has no caller. Live: **PIN-slack at c2 and E** (K04); it binds only on an overdriven leg (c8 R, E U) |
 | 0050 | "BBR reduces source rate first when spare < needed" | none | UNWIRED | |
 | 0050 | BOCD replaces EWMA + margin + PI | `estimator.rs:520` → `fec_rate.rs:491` | WIRED | |
 | 0050 | PI is a no-op | `fec_rate.rs:411-414` | WIRED | dead call at `tx_inputs.rs:183`; `enable_pi_feedback` has no reader |
@@ -190,13 +201,16 @@ Paths are under `raptorpath/src` unless named.
 | 0079 | delete the taper copy branch | `emit_source.rs:743-822` | UNWIRED (pending) | live: `plost=taper` 48k–172k copies/row off Bulk; writes no `nack_retx_at` |
 | 0079 | shed kept at the NACK site | `sender_phases.rs:846-869` | WIRED | inert at ρ = 1 |
 
-**Counts:** WIRED 40, WIRED-OFF 7, PARTIAL 9, UNWIRED 7, SUPERSEDED 5 (two code-only), n/a 5.
+**Counts** (65 rows, script over this table): WIRED 36, WIRED-OFF 7, PARTIAL 10, UNWIRED 7, SUPERSEDED 5 (two code-only); n/a 5 ADRs not tabled.
 
 **Recovery channels that ignore each other** (code-read):
 - **A decode close does not cancel the pending NACK resend.** The gap-fire path (`sender_phases.rs:789-962`) checks shed, cooldown, the hole law or age gate, and `sent_store`. It never checks decoder or SACK state.
 - **NACK spend is never credited to the rate law** (0050 Phase 3).
 - **The taper copy and the NACK cooldown never see each other.** The copy writes no `nack_retx_at`.
-- **The NACK budget is its floor by construction.** `nack_cap · source_symbols_this_period` resets every 10 acked seqs. The code's own comment says it "would truncate it to 0 almost always", so `.max(MAX_NACK_REPAIRS_PER_NACK)` (`net/mod.rs:3331-3333`) is the law. That answers Addendum 4's open question: the 10 is `MAX_NACK_REPAIRS_PER_NACK` used as a floor, and the 1 − target quantile feeding it is dead weight.
+- **The NACK budget sits at its floor.** `nack_cap · source_symbols_this_period` resets every 10 acked seqs. The code's own comment says it "would truncate it to 0 almost always", so `.max(MAX_NACK_REPAIRS_PER_NACK)` (`net/mod.rs:3331-3333`) sets the value whenever a worst-path estimator exists.
+  - This answers Addendum 4's question: the 10 is `MAX_NACK_REPAIRS_PER_NACK` used as a floor.
+  - The printed `nbud` also reads 0–9 (p10 8) and up to 1 319 on some ticks. Those values come from the `None` branch (`cached_max_repairs`) or from the nack_cap term exceeding the floor; which one was not read.
+  - The 1 − target quantile reaches the value only on those minority ticks.
 
 ### 2b. Config fields and CLI flags
 
@@ -242,6 +256,8 @@ So Auto pays −15 % goodput, +18 % (c2) / +16 % (c8) delay and +39 % / +27 % cl
 
 **Coverage.** "Covered" names an existing roadmap node or ledger row. **New** means no node or ledger reading found.
 
+**Numbering is the global rank (1 = largest expected effect at the default).** It is grouped under the patterns only where the ranks fall together. Items 1–3 are measured or arithmetic estimates. Items 4–15 are mostly unquantified pins whose rank follows how directly they sit on the Auto data path. Items 16–22 have no behaviour effect at the default.
+
 ### Pattern A: recovery channels that ignore each other
 
 1. **S06 / ADR-0079: the copy branch is live.** Copies are 64 % (c2) and 98 % (c8) of proactive slots, at 4.5–7.3 copies per true loss.
@@ -253,14 +269,15 @@ So Auto pays −15 % goodput, +18 % (c2) / +16 % (c8) delay and +39 % / +27 % cl
 3. **A decode close does not cancel the pending NACK resend.** Resends run at 1.02–1.03 per source loss while decode closes 42–46 % of holes at c2 Auto. retx/GB is 22.1k at Auto against 23.1k at Bulk.
    - **Estimate:** about 0.44 × retx/src 0.026 ≈ 1.1 % of wire is redundant at c2 Auto. More importantly, it is why coded repair buys no bandwidth.
    - **New** (status Addendum 4 text only).
-4. **The NACK budget is its own floor** (C09, `nbud=10` on 70–97 % of ticks). It is constant by construction (`net/mod.rs:3331-3333`), so neither the target nor nack_effectiveness reaches it. Effect at Auto: unknown, and needs a VM arm with the floor removed.
+4. **The NACK budget sits at its floor** (C09, `nbud=10` on 70–97 % of ticks; `.max(MAX_NACK_REPAIRS_PER_NACK)` at `net/mod.rs:3331-3333`). The target and nack_effectiveness reach it only on the minority of ticks off the floor. Effect at Auto: unknown, and needs a VM arm with the floor removed.
    - Covered: `rec-fix-nack-throttle` (no gauge yet; this gives the reading).
 
 ### Pattern B: never executed or pinned
 
-5. **K01: the scheduler cwnd sits at MAX_CWND 10 000 on 59–76 % of c2 ticks** (21 % / 79 % at c8 A / R, both legs). Because spare = cwnd − in-flight reads that cwnd, this pin is **why the spare clamp is slack at c2** (K04 PIN-slack, s < 0.5 on ≤ 5 % of ticks).
-   - Effect: the "never hurts" clamp of ADR-0050 is inert at the default and binds only on an overdriven leg (c8 R finding 2, E U).
-   - **New** for K01's bind. K04 is covered by `rate-spare-clamp-verdict`.
+5. **K01 / K04: the scheduler cwnd sits at MAX_CWND 10 000 on 59–76 % of c2 ticks** (both legs at MAX on 21 % / 79 % at c8 A / R), and the spare clamp is slack (s < 0.5 on ≤ 5 % of c2 ticks).
+   - The MAX_CWND pin is not the cause of the slack: E's PM/PL rows have cwnd 205–1 884 (`MAX_CWND-share` 0) and are SLACK too. The ledger reads the cwnd as inflated and not enforced (K01; `rate-spare-cwnd` done: NOT-ENFORCED).
+   - Effect: the "never hurts" clamp of ADR-0050 is inert at the default. It binds only on an overdriven leg (c8 R finding 2, E U).
+   - Covered: K01 ledger row and `rate-spare-clamp-verdict`. Only the MAX_CWND bind fraction (59–76 %) is new.
 6. **S03 Δ = 1 on 100 % of lines, every seat.** Covered: `rate-delta-jitter-fix`.
 7. **S02 A\* ≥ W on 96–100 % of ticks**, so the span is the whole 201-window off E, and the A\* law is pinned at W wherever W is the clip. **New** (the ledger has no bind fraction). Effect on decode-close latency unknown; needs a VM arm.
 8. **R07 W = 201 on 95–100 % (clip 200), with the NACK-budget floor (item 4).** Together with D06 NG this means **target_tail_loss has no live reader at the default except the anchor term's z.** It also has no perf flag.
