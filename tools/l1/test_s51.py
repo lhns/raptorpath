@@ -266,6 +266,36 @@ check("section 3.2 readouts: saturated-tick share 1 / 3 (only the tick with infl
       abs(tm["tau_sat"] - 1 / 3) < 1e-12 and tm["evict_share"] == 0.0 and abs(tm["dgev_over_hand"] - 2 / 3000) < 1e-12 and abs(tm["maxcwnd_share"] - 1 / 3) < 1e-12 and abs(tm["spare_lo"] - 1 / 3) < 1e-12 and abs(tm["spare_hi"] - 1 / 3) < 1e-12, tm)
 tm8 = sc.row_metrics(cli, [], [], 3000 * 1182, "c8-100", "NA", 88.0)
 check("the c8 spare-clamp bracket is MISSING ([DIAG] prints no per-leg scheduler cwnd): None, never a number", tm8["spare_lo"] is None and tm8["spare_hi"] is None)
+# the c8 gauge defects (status 51 block 51 Result): `cwnd=` / `infl=` are sums over the paths, MAX_CWND is per path
+with open(os.path.join(HERE, "fixtures", "s51b_c8_client.log"), encoding="utf-8") as fh:
+    c8_real = fh.read().splitlines()      # 8 [DIAG] ticks of a committed c8 client log (s51b-diag-cited.tgz, HR s42 r1): two legs, no scw=
+tr = sc.row_metrics(c8_real, [], [], 3000 * 1182, "c8-100", "HR", 88.0)
+check("a committed c8 row (two legs, no scw=) reads n/a for the MAX_CWND bind and the spare bracket, not the aggregate-vs-per-path 0.000", tr["maxcwnd_share"] is None and tr["spare_lo"] is None and tr["tau_leg"] is None, (tr["maxcwnd_share"], tr["spare_lo"]))
+
+
+class _Rv:
+    def __init__(self, cell, t):
+        self.cell, self.t = cell, t
+
+
+check("the printed gauge says n/a (no per-leg cwnd) for that row, and keeps the aggregate for a one-leg row",
+      sc._leg_gauge([_Rv("c8-100", tr)], "maxcwnd_share", "maxcwnd_leg") == sc.NO_LEG_CWND and sc._leg_gauge([_Rv("c2-100", tm)], "maxcwnd_share", "maxcwnd_leg") == "0.333"
+      and sc._leg_gauge([_Rv("c8-100", {"maxcwnd_share": 0.0})], "maxcwnd_share", "maxcwnd_leg") == sc.NO_LEG_CWND, sc._leg_gauge([_Rv("c2-100", tm)], "maxcwnd_share", "maxcwnd_leg"))
+
+
+def dg2(t, a, b):
+    """A two-leg tick; a, b = (infl, scw) of p0, p1."""
+    leg = lambda i, x: f" p{i}:infl={x[0]}/sinfl=0 qcwnd=125000 pl=0.0 | ANCHOR sent=0 plu=0.0140 plc=0.0260 wpl_us=3000 scw={x[1]}"
+    return (f"[DIAG] t={t:.2f}s win=100/200 paused=0% good=1.0Mbit cwnd={a[1] + b[1]} infl={a[0] + b[0]} np=2 np_act=2 rtt=15.8ms dgq0[hand=1 tx=1 full=0 err=0 sp=1] dgev0=0 src=5000sym/s cod=0sym/s "
+            f"cum=1000/30/900 retx=7 mpr[rep=1 seqs=2 fired=3 supp=0/0/0 taper=5]" + leg(0, a) + leg(1, b))
+
+
+cl2 = ['{"seconds":0.01,"warmup":true}', dg2(1.0, (100, 10000), (50, 200)), dg2(2.0, (600, 600), (40, 100)), dg2(3.0, (20, 5000), (30, 10000)), dg2(4.0, (10, 100), (0, 10000))]
+t2 = sc.row_metrics(cl2, [], [], 3000 * 1182, "c8-100", "HR", 88.0)
+check("two legs with scw=: MAX_CWND bind = ticks where ANY leg is at 10000 = 3 / 4, per leg p0 1 / 4 and p1 2 / 4; tau per leg (infl >= scw) p0 1 / 4, p1 0; spare bracket min over legs with infl > 0: 3, 0, 249, 9 -> 1 / 4, 1 / 4",
+      t2["leg_cwnd"] and t2["maxcwnd_share"] == 3 / 4 and t2["maxcwnd_leg"] == {"0": 1 / 4, "1": 2 / 4} and t2["tau_leg"] == {"0": 1 / 4, "1": 0.0} and t2["spare_lo"] == 1 / 4 and t2["spare_hi"] == 1 / 4, t2)
+check("the per-leg gauge prints the any-leg share and each leg", sc._leg_gauge([_Rv("c8-100", t2)], "maxcwnd_share", "maxcwnd_leg") == "0.750 (any leg; p0 0.250, p1 0.500)" and sc._leg_gauge([_Rv("c8-100", t2)], None, "tau_leg") == "p0 0.250, p1 0.000",
+      sc._leg_gauge([_Rv("c8-100", t2)], "maxcwnd_share", "maxcwnd_leg"))
 check("plu / plc of the leg the rate read (last tick plc 0.026, plu median 0.014) are carried", abs(tm["plc_last"]["0"] - 0.026) < 1e-12 and abs(tm["plu_med"]["0"] - 0.014) < 1e-12)
 
 # ═══ 7. the smoke: the not-overdriven witness ═══
