@@ -7,7 +7,10 @@ item B. It runs first once the owner clears the Ceph cluster.
 
 **Answer.**
 - Eight rows (four `D` dump rows, each with its `G` twin) plus one smoke row, Bulk, static pools, one replicate.
-- The binary is prebuilt `e410d640` (the §60–§62 gauge binary). **Main's binary (`8104fa02`) cannot run it.**
+- **The binary decision is to keep prebuilt `e410d640`** (the §60–§62 gauge binary), with the carry-over to main
+  stated as an explicit assumption (§A, Binary). M1's scored reading, g_R, divides by frozen §60/§61 numbers, which
+  were measured on that binary.
+- **Main's binary (`8104fa02`) cannot run it.**
   Main has the dump switch `RWM_RTT_DUMP` (`net/rttdump.rs`) but no `RWM_SLAW` gate and no `[SLAW]` window line.
   The P60/P61/P62 gate family preflights both and aborts (`loopdiag_battery.sh` :257–261, `ABORT-SHA ... not the
   gauge build`).
@@ -17,6 +20,10 @@ item B. It runs first once the owner clears the Ceph cluster.
   - The battery writes `UNKNOWN-CELL` for any other cell under P62.
   - §B gives the exact spec for a Sonnet worker: one new plan module, and P66 branches beside P62's in the battery
     and run_all.
+- **Rows against status.** Status records M1 as "four RTT-dump rows". That is shorthand: sampler-design §4.1, which
+  M1 implements, gives every dump row a G twin ("Each dump row has a G twin in the same session") and costs it as
+  "smoke + 8 rows". The plan is right and the status line is the one to amend. Proposed status text: "four RTT-dump
+  rows with their four gauge twins and a smoke row (sampler-design §4.1), about 1 h, no build".
 - **Budget:** about 1 h typical (tools tests ≈ 15 min, rows ≈ 15–20 min, staging and scoring), 1 h worst on the
   rows' guard.
 
@@ -53,8 +60,25 @@ M1 reads both from raw samples, with no build.
 **Binary:**
 - `LD_BIN_PREBUILT` = the staged gauge binary, checked against `LD_BIN_SHA_EXPECT` =
   `e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d` (the run_all default for P60/P62).
-- No build. Bulk is untouched by F2 (F2 hits Realtime receivers), and every frozen input below was measured on this
-  binary.
+- No build.
+- **Why `e410d640`, not the post-F2 gauge binary `a6a7e7e6`.** Block E's `a6a7e7e6`, from `e-tree-f2-pace`
+  `8899fef8`, carries both `RWM_RTT_DUMP` and `RWM_SLAW`. The choice turns on what M1 compares.
+  - Its in-session pairs (D against G) and its count-freeness test are within-row and would run on either binary.
+  - **Its scored reading is g_R = (need₅₀ − q_R·F̂₅₀)/IQR_F, whose need₅₀ and F̂₅₀ are frozen from §61 (c3: 61c / 61a)
+    and §60/§61b (c2) rows on `e410d640`.** The registered IQR bands come from those rows' p90 − p10 too.
+  - Re-measuring them in-session on `a6a7e7e6` needs a knee bracket per cell (§61's shape, several hours), so it is
+    not M1.
+  - So M1 keeps `e410d640`.
+- **The F2 correction.** The earlier "Bulk is untouched by F2" was wrong. Status §51 Amendment 6 records that F2
+  changed the per-symbol framing at every hint (one little-endian framing for every source symbol, wire v10).
+- **Carry-over assumption (explicit):** the floor's echo-loop location, spread and IQR, and the knee need, are the
+  same on post-F2 main as on `e410d640`, within M1's registered bands.
+  - The reason it is plausible: F2 changes bytes per symbol and the receiver's framing path, not the store or the
+    netem queue. At c3's 20 Mbit/s, 10 extra bytes per datagram is 4 µs of serialization, against bands 0.6–1.1 ms
+    wide.
+  - **It is a reading still owed, not a fact.** Owed before any engine form ships, and not part of M1: one post-F2
+    pair on `a6a7e7e6` (c2-100 G16/D16), IQR_F against M1's, inside M1's c2 band.
+  - If it falls outside, the sampler's g_R must be re-read on the post-F2 engine with its own knee bracket.
 - If the staged copy is gone with the Ceph trouble, rebuild `s60-tree` `cb88df3a` on the VM by the decision-9
   precedent, and require the same sha.
 
@@ -160,3 +184,22 @@ tests stay byte-equal.
      plan 62's tests unchanged, and the bash tests that run on the host.
    - Report the branch sha and the tools-manifest sha.
    - No VM contact and no engine file touched.
+
+## C. The c1s arm set in the same session (`66c`; optional, after M1)
+
+This serves `store-law-state.md` §7.1 (b) and (d): it measures T̂min′ and τ_rel′ at c1s, where §60 logged no window
+minima for W 384–1 024. The τ_rel hypothesis's stability gate needs exactly that.
+
+- **Table `66c` in the same `plan66.py`:**
+  - cell `c1s-400` (`cell_spec` exists: `c1 c1 single`);
+  - arms `G256`, `G384`, `G640`, `G1024`, n = 3 each (seeds 42 / 7 / 42, reps 1–3), 12 rows, no dump;
+  - bytes `plan60.BYTES_DEFAULT["c1s-400"]` (5 GB), timeout 210 s, `LATE_T` 5 s (plan 60's c1s values);
+  - plan 60's c1s quinn-collapse flag reported per row, not voiding, so a collapsed row stays in the ledger flagged.
+- **Launch:** `LD_PLAN=66c`, right after `66` on the same staged `e410d640`, with no tools-test rerun on a
+  byte-identical `tools/l1` (P62's reuse rule). Worst case 12 × 225 s ≈ 45 min; guard 3 000 s.
+- **Readouts:**
+  - per arm, the LATE `[SLAW]` window T̂min, p50 and p90, and the release interval (d `wake[ack]`/dt);
+  - T̂min′ and τ′ by OLS over the four arms, and G = n*·(T̂min′ − τ′)/T̂ at the candidate's landing (§7.1 (b));
+  - goodput against §56's c1s map.
+- **Worker addition to §B:** `CELLS` and the arm grammar extended for `c1s-400` in the `66c` table only; the tests
+  extended to it.

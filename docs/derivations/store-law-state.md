@@ -32,15 +32,16 @@ law ledger or the roadmap; §6 proposes that text.
   - (a) Every gap fits the 64-range SACK prefix.
   - (b) Every ripe loss hole fits the 20-gap horizon.
   - On §56's map, c8 carries 20 ranges per report at W 512 against 55–64 at W ≥ 1 280. At the candidate's point
-    (a) holds about 3× and (b) 4–6× (κ = 2 to 1.5), so both constants become witnesses with two named bind gauges.
+    (a) holds about 3× and (b) about 7× on the measured κ (§7.3), so both constants become witnesses with two named bind gauges.
 - **Owner question** (§5): one is live, the c1s/c1d price under decision 2.
   - The allowance's form (decision 8) waits on M1 by status's own record, so M1 is the critical-path item.
   - Whether a rate-free update meets the status entry's "formula in rate and delay" is a premise flag for the
     coordinator.
 
 - **Follow-up (§7):** the c1s cost is real, ≈ −20 % at Bulk by the law's own fixed point (not an input artefact),
-  and the receiver-bound regime needs one release interval τ_rel in T* (≈ −9 % with it). Every cap is restated per
-  path (c8 254–257 against the knee's 170 and the flat region's 256). κ is checked independently on §56's map
+  and the receiver-bound term is open. τ_rel, one release interval, is a hypothesis only: as measured it is mostly
+  an engine timer (LOOP_WAKE_US 1 ms, with the 2 ms gap-report floor behind it). Every cap is restated per
+  path (c8 254–257 against the knee's 170; it sits at the lower edge of §56's flat region, 256–640 per path). κ is checked independently on §56's map
   (1.23 at W 512, rising to 1.9–3.1 at the edge). M1's plan is `m1-plan.md`.
 
 Rules followed: FORMULA-FIRST (formulas stated with a provenance per symbol and a shape check before any number);
@@ -440,7 +441,7 @@ The gaps below `seen` in one report are:
 | d_fwd,ᵢ | forward one-way delay incl. queue. **No engine source:** the echo is a loop. On symmetric netem it is the loop minus the return propagation; returns travel on their own leg (5 and 20 ms), as `store-law.md` §6 reads |
 | βᵢ | mean run of consecutive seqs placed on leg i; ≈ 1 fits the map below; not gauged |
 | ε_run,ᵢ | loss runs per datagram: `lib.sh` calibration 0.027/8 (c8 leg 0), 0.0407/4 (leg 1), 0.026/10 (c2) |
-| κ | hole lifetime in loops: ≈ 1.5 (`store-law.md` §1, `[SUCC] rep_p50`); measured, not derived. Reproducing §54b's old holes needs κ ≈ 2 (below) |
+| κ | hole lifetime in loops, **read per row, never a constant**: κ = `[SUCC] rep_mean` ÷ the LATE rate-weighted echo loop (§7.3; 1.1–2.5 below the edge, 3.1 and 13 at and past it). (b) is evaluated with each row's own κ |
 
 **Shape check.**
 - **Units:** counts (rate × time).
@@ -462,8 +463,9 @@ The two conditions:
   holes age and H_old grows. That is `store-law.md` §3.4's "binds = old holes accumulate".
   - With ε_eff = 4.5·10⁻³ (c8, rate-weighted), the (b) edge is n_h = 20/(κ·ε_eff) ≈ 2 200 (κ = 2) to 3 000 (κ = 1.5).
   - §3.4 measured P_h(20) ∈ (1.9 k, 2.5 k), between B1024 (no old holes) and B2048 (1 289). Only κ ≈ 2 is consistent
-    with that: at κ = 1.5 `gapfit.py` puts B2048's G_loss at 17.0, below 20, while B2048 has old holes. So κ is
-    taken as 2 for (b) below. A gauge for the hole lifetime (`[SUCC] rep_p50` ÷ loop) should fix it per cell.
+    with that: at κ = 1.5 `gapfit.py` puts B2048's G_loss at 17.0, below 20, while B2048 has old holes. The
+    measured κ settles this without a fit: B1024 reads 3.1, so G_loss ≈ 3.1 × 4.5·10⁻³ × 2 048 ≈ 29 > 20. That is
+    the edge, consistent with §3.4. So (b) is read as a gauge with measured κ (§7.3), not with a fitted constant.
 - **(a) is the half §3.4 left implicit.**
   - §3.4 noted that "reports are truncated at every arm (visibility 0.30 even at W = 1 280) while H′ ≈ 0.09": (a)
     failing while (b) holds.
@@ -494,15 +496,16 @@ The two conditions:
 
 - **c8, n* ≈ 510.** The coupled target sets the forward-delay gap:
   - Δd*_fwd = (Φ₁ + A₁) − (Φ₀ + A₀) − Δd_ret = 14.3 + 7.4 − 15 ≈ 6.7 ms, so G_re ≈ 1 824 × 0.0067 ≈ 12.
-  - G_loss ≈ κ × 4.5·10⁻³ × 510 ≈ 3.4 (κ 1.5) to 4.6 (κ 2), so G ≈ 16–17. The map at W 512 reads 20.2.
-  - **(a) holds about 3×, (b) 4–6×.**
+  - G_loss ≈ κ × 4.5·10⁻³ × 510 with the measured κ = 1.23 at W 512 (§7.3) ≈ 2.8, so G ≈ 15. The map at W 512 reads
+    20.2.
+  - **(a) holds about 3×, (b) about 7×.**
   - **The coupling term is what keeps the report small.** Without the ½ (a per-leg target) the fast leg would not
     queue toward the slow leg's floor, the forward gap would be ≈ 21 ms and G_re ≈ 38. That still fits, at 1.7×.
 - **c2, n* ≈ 190:** G ≈ 1.3 measured, so (a) holds about 50× and (b) about 25× (G_loss ≈ 0.7).
 - **Shipped pool, W 4 096:** (a) is pinned at 63.4–63.6 and (b) fails (1 289 old holes at Bulk).
 - **So under the candidate neither 64 nor 20 is load-bearing at c2 or c8.**
   - The 64 is already derived from the datagram size.
-  - The 20 needs only M_N ≥ κ·Σε·n*, about 3.4–4.6 at c8, so it has a margin of 4–6× rather than being tuned.
+  - The 20 needs only M_N ≥ κ·Σε·n*, about 2.8 at c8 on the measured κ, so it has a margin of about 7× rather than being tuned.
   - Both become witnesses: a cell where a gauge below binds is outside the law's domain, and it is reported as a
     defect finding, not fixed by raising the constant.
 
@@ -689,7 +692,7 @@ a node for the two report gauges (§4.5) under the store track, `kind: instrumen
 |---|---|---|---|
 | candidate, A = S_F + q·F̂ (0.67 ms) | 0.10 | ≈ 398 | ≈ 0.80 |
 | candidate | 0.05 | < 384 (T̂min(384) ≈ 2.99 > target 2.93) | ≤ 0.79 |
-| candidate + τ_rel (below) | 0.10 / 0.05 | ≈ 630 / ≈ 610 | ≈ 0.91 |
+| candidate + τ_rel (hypothesis, below) | 0.10 / 0.05 | ≈ 630 / ≈ 610 | ≈ 0.91 |
 
 - **c1d:** there is no floor calibration.
   - By §57b's c1s-matching q_ℓ relation, the candidate's ≈ 0.7 ms above the floor lands at or below c1d's smallest
@@ -703,44 +706,83 @@ Realtime.**
 - netem truth makes the margin smaller, not larger.
 - The earlier "≥ 21 %, unbracketed" (§3.5) came from the static form; the fixed-point reading puts it at ≈ 0.80.
 
-**The term a receiver-bound regime needs: one release interval, τ_rel,ᵢ.**
+**A hypothesis for the receiver-bound term, not the missing term: one release interval, τ_rel** (amended after
+review). It was added after the candidate failed at c1s, it still costs ≈ 9 % there, and its landing rests on a
+window minimum that §60 never logged at c1s for W 384–1 024. It is recorded as a hypothesis with four checks below,
+and it is not part of the candidate.
 
 ```text
-   T*ᵢ  =  Φᵢ + g(δ)·S_F,ᵢ + q(δ)·F̂ᵢ + τ_rel,ᵢ + Ŝᵢ          τ_rel,ᵢ = 1 / (rate of report-driven releases on leg i)
+   T*ᵢ  =  Φᵢ + g(δ)·S_F,ᵢ + q(δ)·F̂ᵢ + τ_rel,ᵢ + Ŝᵢ          τ_rel = 1 / (rate of sender wakes ended by an ack)
 ```
 
-- *Sentence:* the sender refills the store only when a report releases slots. Between two releases the bottleneck
-  is fed only from what the store already holds beyond the loop, so the target must cover one release interval.
-  The other allowance terms are link-FIFO terms (the jitter spread and CoDel's setpoint), and none of them names
-  this.
-- *Provenance:* measured. It is the `[DIAG] wake[ack]` counter's rate, an engine quantity already logged, and it
-  needs no new estimator.
+- *The hypothesis's sentence:* the sender refills the store only when a report releases slots. Between two
+  releases the bottleneck is fed only from what the store already holds beyond the loop.
+- *Measured* (`wakes.py`, sender-global; sweep HB 1.15 ms):
 
-| cell | τ_rel (ms) | where it is read |
-|---|---|---|
-| c1s | 1.00 / 1.20 / 1.68 / 1.48 / 2.34 at W 384 / 512 / 768 / 1 024 / 2 048 | §56 |
-| c2 | 1.17–1.31, flat in W | §56 W 128–2 048; sweep HB 1.15 |
-| c8 | 0.82–1.22, flat in W | §56 |
+  | cell | τ_rel (ms) by store W (total) |
+  |---|---|
+  | c2 (§56) | 1.31 / 1.26 / 1.21 / 1.19 / 1.18 / 1.17 at W 128 / 160 / 192 / 256 / 384 / 2 048 |
+  | c8 (§56) | 1.22 / 1.04 / 0.89 / 0.82 / 0.85 / 0.87 at W 160 / 224 / 320 / 512 / 768 / 1 280 |
+  | c1s (§56) | 1.00 / 1.20 / 1.68 / 1.48 / 2.34 at W 384 / 512 / 768 / 1 024 / 2 048 |
+  | **c1d (§57b, total W)** | **0.93 / 1.11 / 1.40 / 1.73 / 1.96 / 2.24 at W 384 / 512 / 768 / 1 024 / 1 536 / 4 096** |
 
-- *Shape:* it is in ms; order 0 in N (per leg); one expression with no regime branch.
-  - It matters only where it is comparable to the rest of the allowance: at c1s it is 1.5–3.5× the 0.67 ms margin,
-    while at c2 it is ≈ 20 % of the 5.95 ms margin.
-  - So "receiver-bound" is a magnitude, not a mode.
-- *Gates (estimated, on the T̂min estimate above):*
-  - **Uniqueness holds:** T̂min rises ≈ 2.0 ms per 256 slots against τ_rel's ≈ 0.48.
-  - **The R-sign gate holds at the c1s control:** the target is 3.05 + 2.34 = 5.39 ms, below §60's measured T̂min
-    of 6.57 at W 2 048, so R < 1.
-  - **Self-funding risk:** τ_rel grows with W at c1s (larger stores release in larger, rarer batches; release batch /
-    W ≈ 0.2, `c1srows.out`). This is W80's warning class, and uniqueness is the gate that must be measured, not
-    estimated.
-- *Price elsewhere:*
-  - c2: +1.2 ms of loop, ≈ +11 slots (188 → ≈ 200; replay 198 → ≈ 210 per path, inside §56's flat region).
-  - c8: ≈ +1 ms per leg, ≈ +6 slots per path.
-- *Predicted c1s with the term:* W ≈ 610–630 per path, ≈ 0.91 of control (≈ −9 %), at both ends of the dial.
-- *Not established:* T̂min at c1s for W 384–1 024 (estimated, not logged), the release interval's statistic (a mean
-  is used), and whether the release clock is the receiver's batching or the sender's ack handling.
-- *The measurement that settles it:* a c1s gauge arm set (W 256–1 024) on `e410d640`. It is not in M1, and it is
-  proposed as M1's follow-on.
+**(a) What the counter is, and whether an engine constant sets it.**
+- `[DIAG] wake[ack]` counts the **sender loop's wakes ended by an ack arriving on its input channel**, cumulative
+  (`net/diag.rs` :116–134, rendered by `wake_line` :1033). It is not a count of reports: several queued acks can end
+  one wake.
+- What the receiver sends:
+  - under the ack merge, one WindowAck per data message (`window_ack_emission`, `net/sack.rs:482–489`: emit =
+    advertise ∨ ack_merge);
+  - gap-advertising reports at most once per **`GAP_ACK_MIN_INTERVAL` = 2 ms** (`net/mod.rs:236`; the gate is
+    `receiver.rs:1956–1957`).
+- **That 2 ms floor binds on every report:** `[LATE] sampler_bind=1.0000` on c2 HB s42 r1, c1s P512 s42 r3 and
+  c1d P256 (server logs).
+- The receiver loop's own timer is **`LOOP_WAKE_US` = 1 000 µs** (`net/recovery_laws.rs:29`, used at
+  `receiver.rs:453`).
+- On c2 and c8, τ_rel reads 0.8–1.3 ms across a 16× change in the store. That flatness is a clock's signature, and its
+  value sits at LOOP_WAKE_US. The receiver's wake path has not been traced end to end, so the identification is not
+  proven by reading. It is the likely reading.
+- **Consequence: as measured, τ_rel is mostly an engine timer (1 ms, with the 2 ms gap-report floor behind it).**
+  A store law that adds it absorbs an engine constant into the formula. That is the workaround shape the owner
+  rejected on 2026-11-19 (a constant carried into the law instead of derived).
+  - The part that is not a clock is c1s's and c1d's growth above 1 ms with W (1.0 → 2.3 ms). That is the receiver
+    taking longer per batch as batches grow.
+  - The defensible form, if any, is that growth, read with the timer's floor separated out. The 2 ms floor itself
+    is a ledger item to add beside C02: a threshold that binds on 100 % of reports (`[LATE]`'s own comment says it
+    turns its law into a constant).
+
+**(b) Stability of the fixed point when τ_rel grows with the store.** One leg, window update n′ = n·R(n), with
+R(n) = (F̂ + A + τ(n) + Ŝ) / (T̂min(n) + Ŝ) and Ŝ taken locally flat. The fixed point is T̂min(n*) = F̂ + A + τ(n*), and
+
+```text
+   dn′/dn |_{n*}  =  1 − G ,      G  =  (1 − H′) · n*/(n* − H) · n* · ( T̂min′(n*) − τ′(n*) ) / T̂(n*)
+
+   stable and unique   ⟺   0  <  G  <  2       (lower edge: T̂min′ > τ′, R6.2's uniqueness; upper edge: no period-2 overshoot)
+```
+
+- **At c1s, on the estimates of the table above:** T̂min′ ≈ 2.02 / 256 ms per slot and τ′ ≈ 0.48 / 256 (W 512–768);
+  n* ≈ 630, T̂ ≈ 6 ms and H′ ≈ 0. That gives G ≈ 630 × 0.0060 / 6.1 ≈ 0.62, stable.
+- G falls toward 0 as τ′ approaches T̂min′. A store law with τ in it at c1s is *closer* to losing its restoring force
+  than one without: G ≈ 0.85 without τ.
+- This, not the landing, is the gate τ_rel must pass on measured T̂min′, because c1s's τ′ is the receiver's batching
+  response to the store itself.
+
+**(c) c1d:** τ_rel = 0.93 ms at W 384 total (192 per path), rising to 2.24 ms at the control. This is sender-global;
+per leg it is about 2×, if the legs' acks interleave. It has the same shape as c1s: a ≈ 1 ms floor, then growth with the
+store.
+
+**(d) The c1s arm set in M1's session.**
+- **Not in M1's launch with no plan code.** `plan60.py` validates slots against a fixed grid (`VALID`), and its c1s
+  arms are W 64 / 128 / 192 / 2 048 only. One launch also runs one `LD_PLAN`.
+- **The same binary in the same session: yes,** as a second table in `plan66.py` (`66c`) launched right after M1 on the
+  same staged `e410d640`:
+  - cell `c1s-400`, `LATE_T` 5 s, bytes `plan60.BYTES_DEFAULT[c1s]` (5 GB), timeout 210 s, gauge on, no dump;
+  - plan 60's c1s collapse flag reported per row, not voiding;
+  - arms placed per the placement rule (item 3, §7.2): **W 384** (≈ the candidate's landing, 398), **W 640** (the
+    working-constant reference, and also where the τ_rel hypothesis lands), plus **W 256 and W 1 024** to bracket
+    T̂min′ for (b). c1s has no knee to place an arm at (§56: no plateau).
+  - n = 3 each (a third of §56's c1s rows collapsed), so 12 rows at ≤ 210 s, about +45 min.
+- The spec is `m1-plan.md` §C.
 
 ### 7.2 Every predicted cap in one unit: per path
 
@@ -750,23 +792,38 @@ rate.
 
 | point | candidate n* per path (S60, g = 1) | c8 per-leg split (leg 0 / leg 1) | knee per path | flat region per path | working per path (§54b) | shipped |
 |---|---|---|---|---|---|---|
-| c8 Bulk (§54b B640, sweep HB) | **254–257** (NETEM 270) | 385 / 122 | §56 0.95 point W 340 total → **170** | to W 512 total → **256** (106.0 against 106.5 Mbit/s) | 640–1 024 | 2 048 |
+| c8 Bulk (§54b B640, sweep HB) | **254–257** (NETEM 270) | 385 / 122 | §56 0.95 point W 340 total → **170** | W 512–1 280 total → **256–640** (lower edge 106.0 against 106.5 Mbit/s) | 640–1 024 | 2 048 |
 | c8 Auto / δ 51 | 196–200 | ≈ 300 / ≈ 97 | ≈ 133 (rescaled by λ_src 0.78) | — | — | 2 048 |
 | c2 Bulk | 188 (replay 198–203) | — | 168 | 192–256 | — | 2 048 |
 | c2 Auto / δ 51 | 151–156 | — | ≈ 142 / 138 | — | — | 2 048 |
-| c1s Bulk | ≈ 398 by the fixed point (§7.1); +τ_rel ≈ 630 | — | none (no plateau) | — | — | 2 048 |
-| c1d Bulk | ≤ 192 (§57b's smallest store-bound pool); +τ_rel: not evaluated | — | none found (§57b) | — | — | 2 048 |
+| c1s Bulk | ≈ 398 by the fixed point (§7.1); the τ_rel hypothesis ≈ 630 | — | none (no plateau) | — | — | 2 048 |
+| c1d Bulk | ≤ 192 (§57b's smallest store-bound pool); the τ_rel hypothesis: not evaluated | — | none found (§57b) | — | — | 2 048 |
 
 - **The c8 comparison, redone in one unit:** the candidate sits at 254–257 per path. That is 1.5× §56's knee of 170
-  per path, exactly at the end of the flat region (256), and 2.5–4× below §54b's working 640–1 024.
+  per path, at the **lower edge** of §56's flat region (256–640 per path; nothing below 256 is flat), and 2.5–4× below §54b's working 640–1 024.
 - So the earlier statement holds, now in matching units: the candidate lands above the knee and below the working
   constants, and §56's W 512 point gives its outcome (goodput −0.5 %, in-order 0.09 s).
 - The per-leg split shows the slow leg holding only ≈ 122. That is why §56's knee is leg 1 starving (r₁ falls from
   1 853 to 188 below W 320 in total): the coupled floor Φ₀ is what keeps leg 0 from taking the whole store.
 
+**Placement of future pool arms** (amended after review): at the knee, the candidate and 640 per path.
+- The candidate is at the flat region's lower edge, so its margin to the knee is the measured quantity.
+- Off Bulk the knee is *rescaled* by λ_src here, not measured, so the knee arm off Bulk is a placement estimate whose
+  measured knee is the readout.
+
+| cell, dial point | knee arm (per path) | candidate arm | reference arm | source of the knee value |
+|---|---|---|---|---|
+| c8 Bulk | 170 (W 340 total) | 256 (W 512) | 640 (W 1 280) | §56, measured |
+| c8 Auto | ≈ 133 (W 266), estimate | 200 (W 400) | 640 | rescaled, **to be measured** |
+| c2 Bulk | 168 | 192 (replay 198–203; §56 has 192) | 640 | §60 W₉₅, measured |
+| c2 Auto | ≈ 142, estimate | 160 | 640 | rescaled, **to be measured** |
+| c1s Bulk | none (no plateau) | 384 (landing ≈ 398) | 640 | — (plus 256 and 1 024 to bracket T̂min′, §7.1 (d)) |
+| c1d Bulk | none found (§57b) | 192 | 640 | — |
+
 ### 7.3 κ: an independent check exists, and it agrees (`kappa.py`)
 
-κ ≈ 2 was read from §54b's old-hole onset. An independent reading comes from committed data:
+κ ≈ 2 was first read from §54b's old-hole onset, a fit. It is now withdrawn as a constant: (b) uses κ as measured
+per row. An independent reading comes from committed data:
 - the hole lifetime itself, `[SUCC] rep_mean` (server, holes closed by repair, measured from receiver detection to
   fill);
 - over the LATE rate-weighted echo loop, on §56's c8 map, which has no old holes at any arm and was never used for
