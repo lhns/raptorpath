@@ -292,7 +292,7 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_closed()
 // ── T3, mid-object ───────────────────────────────────────────────────────
 
 /// A stall in the MIDDLE of the object (evicting seat, k = 2000 of ~12 000):
-/// every wire send from k's first send is swallowed for 1.5 s, while the
+/// every wire send from k's first send is swallowed for a short blackout, while the
 /// sender keeps emitting behind k, so k leaves the 200-symbol coding window.
 /// On the evicting seat the NACK site clamps a gap to that window
 /// (`sender_phases.rs`), so it never judges k. Before ADR-0079 the proactive
@@ -306,10 +306,14 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_closed()
 /// the link returns, within the hold plus one RTT-scale slack.
 #[test]
 fn past_deadline_blocker_mid_object_stall_evicting() {
+    // Blackout length: `RWM_S06_MID_DEAD_MS` (default 100 ms ~ 400 symbols at
+    // 40 Mbit: more than the 200-symbol coding window, so k leaves it).
+    let dead_ms = std::env::var("RWM_S06_MID_DEAD_MS").unwrap_or_else(|_| "100".into());
+    let dead_us = dead_ms.parse::<u64>().expect("RWM_S06_MID_DEAD_MS") * 1000;
     let run = evicting_run(
         K,
         "12000000",
-        &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", "1500")],
+        &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", dead_ms.as_str())],
         Duration::from_secs(25),
         |_, rx| first(rx, "pass").is_some() || first(rx, "fill").is_some(),
     );
@@ -346,7 +350,7 @@ fn past_deadline_blocker_mid_object_stall_evicting() {
         .map(|e| e.t)
         .min()
         .unwrap_or_else(|| panic!("k={K} neither passed nor filled at the receiver:\n{}", run.srv));
-    let bound = 1_500_000 + HOLD_MAX_US + 2 * TICK_US + SLACK_US + 300_000;
+    let bound = dead_us + HOLD_MAX_US + 2 * TICK_US + SLACK_US + 300_000;
     assert!(
         resolved.saturating_sub(t0) <= bound,
         "k resolved {} us after its send; bound {bound}",
