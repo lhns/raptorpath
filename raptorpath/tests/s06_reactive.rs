@@ -91,6 +91,12 @@ fn dump(run: &Run, tag: &str) {
     }
 }
 
+/// k left the receiver: a hold-expiry pass, a capacity force-drain pass, or
+/// a fill.
+fn resolved(rx: &[Ev]) -> bool {
+    rx.iter().any(|e| matches!(e.ev.as_str(), "pass" | "pass_force" | "fill"))
+}
+
 fn first(evs: &[Ev], name: &str) -> Option<Ev> {
     evs.iter().find(|e| e.ev == name).cloned()
 }
@@ -177,6 +183,7 @@ struct Run {
 fn evicting_run(
     seq: &str,
     reliable: bool,
+    runs: &str,
     bytes: &str,
     cli_ts: &[(&str, &str)],
     timeout: Duration,
@@ -200,7 +207,7 @@ fn evicting_run(
     let mut cli = loopback::spawn_perf_client(
         &binds,
         &cenv,
-        &[&["--bytes", bytes, "--runs", "1", "--protocol-hint", "realtime"][..], if reliable { &["--window-reliable"][..] } else { &[][..] }].concat(),
+        &[&["--bytes", bytes, "--runs", runs, "--protocol-hint", "realtime"][..], if reliable { &["--window-reliable"][..] } else { &[][..] }].concat(),
     );
     let deadline = std::time::Instant::now() + timeout;
     while std::time::Instant::now() < deadline {
@@ -223,7 +230,7 @@ fn evicting_run(
 /// hold of the first arrival above k.
 #[test]
 fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_arrivals_continue() {
-    let run = evicting_run(K, false, "12000000", &[("RWM_TEST_TS_DROP", "all")], Duration::from_secs(30), |_, rx| {
+    let run = evicting_run(K, false, "1", "12000000", &[("RWM_TEST_TS_DROP", "all")], Duration::from_secs(30), |_, rx| {
         first(rx, "above").is_some()
             && (first(rx, "pass").is_some() || first(rx, "fill").is_some())
     });
@@ -248,7 +255,7 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_arrivals_continue() {
 /// D + one sweep + one tick of its send.
 #[test]
 fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_open() {
-    let run = evicting_run(K_TAIL, false, BYTES_TAIL, &[("RWM_TEST_TS_DROP", "dead")], Duration::from_secs(30), |c, _| {
+    let run = evicting_run(K_TAIL, false, "1", BYTES_TAIL, &[("RWM_TEST_TS_DROP", "dead")], Duration::from_secs(30), |c, _| {
         first(c, "shed").is_some()
     });
     dump(&run, "open");
@@ -282,6 +289,7 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_closed()
     let run = evicting_run(
         K_TAIL,
         false,
+        "1",
         BYTES_TAIL,
         &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", "1500"), ("RWM_TEST_TS_BUDGET_CLOSED", "1")],
         Duration::from_secs(30),
@@ -341,10 +349,11 @@ fn mid_object_stall(reliable: bool) {
     let run = evicting_run(
         K,
         reliable,
+        "1",
         "12000000",
         &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", dead_ms.as_str())],
         Duration::from_secs(25),
-        |_, rx| first(rx, "pass").is_some() || first(rx, "fill").is_some(),
+        |_, rx| resolved(rx),
     );
     dump(&run, if reliable { "mid_rel" } else { "mid" });
     let sent = events(&run.cli);
@@ -361,7 +370,7 @@ fn mid_object_stall(reliable: bool) {
             .unwrap_or(0)
     };
     let (g_slot, g_nack) = (gauge("shed_slot="), gauge("shed_nack="));
-    let pass = first(&rx, "pass");
+    let pass = first(&rx, "pass").or_else(|| first(&rx, "pass_force"));
     let fill = first(&rx, "fill");
     let above = first(&rx, "above");
     let rel = |e: &Option<Ev>| e.as_ref().map(|e| e.t as i64 - t0 as i64);
@@ -386,10 +395,13 @@ fn mid_object_stall(reliable: bool) {
 /// from k's send until well after the object's last symbol, and k sits ~346
 /// symbols before the end (6 MB / 494 B = 12 146 chunks), so the lost tail is
 /// longer than the 200-symbol coding window. Contrast:
-/// `..._stall_budget_open` (k = 12080, inside the window) is shed by the tail
-/// sweep. Here every sweep's gap is clamped out of the window before the shed
-/// judgement, nothing above k ever arrives, and the receiver has no pending
-/// entry to give up against: k is neither resent, shed, passed nor filled.
+/// the condition is not k's own position but the cumulative blocker's (the
+/// lowest un-acked seq, which the tail sweep targets): when emission stops
+/// with it below the coding window's start, every sweep's gap is clamped out
+/// before the shed judgement, nothing above k ever arrives, and the receiver
+/// has no pending entry to give up against: k is neither resent, shed, passed
+/// nor filled. (`..._stall_budget_open`, k = 12080, is red on main + seam for
+/// the same reason: its blocker sat at ack + 1 = 11176, below the window.)
 /// Asserts the wedge (it reproduces on main); flip the asserts when fixed.
 #[test]
 #[ignore = "diagnosis: reproduces the lost-tail-beyond-window wedge"]
@@ -397,10 +409,11 @@ fn lost_tail_longer_than_window_strands_k_evicting() {
     let run = evicting_run(
         "11800",
         false,
+        "1",
         BYTES_TAIL,
         &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", "1500")],
         Duration::from_secs(6),
-        |_, rx| first(rx, "pass").is_some() || first(rx, "fill").is_some(),
+        |_, rx| resolved(rx),
     );
     dump(&run, "tail");
     let sent = events(&run.cli);
@@ -409,7 +422,7 @@ fn lost_tail_longer_than_window_strands_k_evicting() {
     let sweeps = max_field(&run.cli, "sweeps=");
     let resent = sent.iter().filter(|e| e.ev == "send" && e.n > 1).count();
     let shed = sent.iter().filter(|e| e.ev.starts_with("shed")).count();
-    let resolved = rx.iter().any(|e| matches!(e.ev.as_str(), "pass" | "pass_force" | "fill"));
+    let resolved = resolved(&rx);
     println!(
         "[s06 tail] sweeps={sweeps} resends of k={resent} sheds of k={shed} above={:?} resolved={resolved}",
         first(&rx, "above").map(|e| e.n)
@@ -419,4 +432,35 @@ fn lost_tail_longer_than_window_strands_k_evicting() {
     assert_eq!(shed, 0, "k was shed");
     assert!(first(&rx, "above").is_none(), "an arrival above k got through");
     assert!(!resolved, "k was resolved at the receiver");
+}
+
+/// The stranded tail of `lost_tail_longer_than_window_strands_k_evicting`,
+/// followed by a second object (`--runs 2`, client run timeout 3 s, so the
+/// second object starts ~3 s in, after the 1.5 s blackout): does later
+/// traffic resolve k? Records only.
+#[test]
+#[ignore = "diagnosis: does the next object unstick the evicting frontier"]
+fn lost_tail_then_next_object_evicting() {
+    let run = evicting_run(
+        "11800",
+        false,
+        "2",
+        BYTES_TAIL,
+        &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", "1500"), ("RWM_PERF_TIMEOUT_S", "3")],
+        Duration::from_secs(25),
+        |_, rx| resolved(rx),
+    );
+    dump(&run, "next");
+    let sent = events(&run.cli);
+    let rx = events(&run.srv);
+    let t0 = first(&sent, "send").unwrap_or_else(|| panic!("k never sent:
+{}", run.cli)).t;
+    let rel = |name: &str| first(&rx, name).map(|e| e.t as i64 - t0 as i64);
+    println!(
+        "[s06 next] us after k's send: above {:?} pass {:?} pass_force {:?} fill {:?}",
+        rel("above"),
+        rel("pass"),
+        rel("pass_force"),
+        rel("fill")
+    );
 }

@@ -237,3 +237,21 @@ pub fn on_denied_slot(seq: u64) {
         eprintln!("[TSEAM] ev=denied_slot seq={seq} t_us={}", t_us());
     }
 }
+
+/// Evicting NACK site: a gap wholly outside the coding window was dropped
+/// before any per-seq judgement (resend or shed). Every 100 ms.
+pub fn on_gap_clamped(gap_start: u64, gap_end: u64, win_start: u64, win_end: u64) {
+    static N: AtomicU64 = AtomicU64::new(0);
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    if cfg().k == u64::MAX {
+        return;
+    }
+    let n = N.fetch_add(1, Relaxed) + 1;
+    let now = t_us();
+    let last = LAST.load(Relaxed);
+    if now.saturating_sub(last) >= 100_000 && LAST.compare_exchange(last, now, Relaxed, Relaxed).is_ok() {
+        eprintln!(
+            "[TSEAM] ev=gap_clamped n={n} gap=[{gap_start},{gap_end}] win=[{win_start},{win_end}] t_us={now}"
+        );
+    }
+}

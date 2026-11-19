@@ -798,6 +798,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 (gap_start.max(win_start), gap_end.min(win_end))
             };
             if clamped_start > clamped_end {
+                #[cfg(feature = "test-seams")]
+                crate::test_seams::on_gap_clamped(gap_start, gap_end, win_start, win_end);
                 continue;
             }
             nacked_count += clamped_end - clamped_start + 1;
