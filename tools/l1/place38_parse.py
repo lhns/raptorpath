@@ -1065,6 +1065,11 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         # with its last tick before 30 s is VOID-SHORT (also replaced once); a DNF is kept and ranked worst. The readouts (s51_score.row_metrics) are reported / scored later and never void a row.
         import s51_score
         p.extend(plan51.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA"), row.get("bytes"), bool(row.get("dnf"))))
+        if (row.get("pipe_cli") == ["window", "Rlc", "realtime"] and row.get("pipe_srv") == ["window", "Rlc", "realtime"]
+                and any(REALTIME_ECHO59 in ln for ln in cli) and any(REALTIME_ECHO59 in ln for ln in srv) and "window-line-missing-on-window" in row["problems"]):
+            row["problems"].remove("window-line-missing-on-window")      # the HR arm (Realtime at rho = 1): a Realtime row never prints the reliable-window line (plan 59's rule, as plans 51e / 64 apply it); the §65 rows read WITNESS-FAIL on it without this
+            if row["status"] == "WITNESS-FAIL" and not row["problems"]:
+                row["status"] = "LIVE"
         row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA"))
         row["tick_span_s"] = last_tick_s(cli)
         if not row.get("dnf") and int(rc) == 0 and row["tick_span_s"] < plan51.MIN_ROW_S:

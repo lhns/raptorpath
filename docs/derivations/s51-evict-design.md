@@ -162,6 +162,7 @@ Per row, reported. These enter neither T1 nor T2.
 - The last tick with src > 0 is at t ≥ T_e − 2 s.
 - `achieved_mbit` is within ± 2 % of λ, and `late` ≤ 1 % of chunks.
 - Failing any of these makes the row VOID (`pace-*`), re-run once.
+- *(2026-11-18) The `late` ≤ 1 % clause above is superseded by status §51 Amendment 4 (2026-11-18); this section's text is kept as registered.*
 
 ### 5.3 The existing engine knob, and why it is not used
 

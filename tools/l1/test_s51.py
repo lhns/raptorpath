@@ -307,5 +307,25 @@ rc, txt = smk(rr_)
 check("a witness problem on a row (a missing batching echo) FAILS the smoke on the batching criterion", rc == 1 and "FAIL the emission-batching echo" in txt, txt[-600:])
 rc, txt = smk(good[:3])
 check("a missing smoke slot (no N-A row) FAILS 'one row per smoke slot ran'", rc == 1 and "FAIL one row per smoke slot ran" in txt, txt[-300:])
+# ── a real HR row: status 65's fixed-binary Realtime row (100 MB, binary 8104fa02) through make_row at plan 51 ──
+import tarfile  # noqa: E402
+TGZ65 = os.path.join(HERE, "..", "..", "docs", "l1-raw", "s65", "s65-session.tgz")
+if os.path.exists(TGZ65):
+    import place38_parse as pp65  # noqa: E402
+    _tf = tarfile.open(TGZ65)
+    _rd = lambda suf: _tf.extractfile("session/rt65/diag-ld/c2-100@def-RC-s42-r1-a1-" + suf).read().decode("utf-8", "replace").splitlines()  # noqa: E731
+    _sha = "8104fa027c9dea559c9ffdb0d5630117e70ffcd97a092e73700441446771be5b"
+    _old = {k: os.environ.get(k) for k in ("LD_PLAN", "LD_SHA", "LD_BASE_SHA", "LD_CELL", "LD_ROW_BYTES")}
+    os.environ.update({"LD_PLAN": "51", "LD_SHA": _sha, "LD_BASE_SHA": "d" * 40, "LD_CELL": "c2-100", "LD_ROW_BYTES": "100000000"})
+    _short = plan51.MIN_ROW_S
+    plan51.MIN_ROW_S = 0.0      # the s65 rows are 100 MB (11.8 s), plan 51's are 600 MB: only the short-row witness differs
+    try:
+        _row = pp65.make_row("c2-100", "HR", "42", 1, 0, 40, _rd("drv.out"), _rd("c.log"), _rd("s.log"), 0, _sha)
+    finally:
+        plan51.MIN_ROW_S = _short
+        for _k, _v in _old.items():
+            os.environ.pop(_k, None) if _v is None else os.environ.__setitem__(_k, _v)
+    check("a real Realtime row (s65 RC s42 r1) reads LIVE as plan 51's HR arm: the Realtime row's missing reliable-window line is not a witness failure",
+          _row["status"] == "LIVE" and not _row["problems"] and _row.get("t51"), (_row["status"], _row["problems"]))
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

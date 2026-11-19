@@ -1306,13 +1306,48 @@ def _cpu_gb(rv):
     return (cpu / (b / 1e9)) if (cpu and b) else None
 
 
-def evict_stats(rv, rule_ab=False):
+def _bracket_window(out, fails, rows, w, wt, i, t, st, sa, sd_, rule_ab, skip):
+    """One LATE window under the bracket rule (see evict_stats): every clause is evaluated and counted independently; the window is steady iff it fails none."""
+    bad = {}
+    bad["n"] = not ((w["fecn"][i] or 0) >= 1) or i == 0 or i + 1 >= len(wt)
+    if bad["n"]:
+        fails["n"] += 1
+        return                                  # no neighbours / no accruals: the other clauses are not defined
+    bad["ab"] = bool(rule_ab) and not all((w.get("ab") or [None] * len(wt))[j] == 0 for j in (i - 1, i, i + 1))
+    dt = ((w["tw"][i] or 250.0) / 1000.0)
+    lo, hi = wt[i - 1] - dt, wt[i + 1]
+    inside = [j for j, s_ in enumerate(st) if lo < s_ <= hi]
+    prev = [j for j, s_ in enumerate(st) if s_ <= lo]
+    nxt = [j for j, s_ in enumerate(st) if s_ >= hi]
+    js = sorted(set(inside + prev[-1:] + nxt[:1]))
+    bad["untested"] = len(js) < 2 or any(sa[j] is None or sd_[j] is None for j in js)
+    bad["a_star"] = (not bad["untested"]) and len({sa[j] for j in js}) != 1
+    bad["delta"] = (not bad["untested"]) and len({sd_[j] for j in js}) != 1
+    bad["off-load"] = skip is not None and bool(skip(t))
+    for k, v in bad.items():
+        fails[k] += 1 if v else 0
+    if any(bad.values()):
+        return
+    a_star, delta = sa[js[0]], sd_[js[0]]
+    if w["astar"][i] is not None and abs(w["astar"][i] - a_star) > 0.01:
+        out["astar_bad"] += 1
+    rows.append((w["eps"][i], w["sigma2"][i], w["r"][i], w["astar"][i], delta, w["dbt_share"][i]))
+
+
+def evict_stats(rv, rule_ab=False, skip=None, bracket=False):
     """s60 section 6 from the stored extras: m-bar and its witness, the row W1 and its witness, the steady windows and the K4 input means. `rule_ab` (s51-evict-design section 6.3, plan 51e): a steady window also
-    needs ab = 0 (the spare clamp never bound) in the window and both neighbours, from the `ab` column of the stored wstore; default off = the s60 rule."""
+    needs ab = 0 (the spare clamp never bound) in the window and both neighbours, from the `ab` column of the stored wstore; default off = the s60 rule.
+    `skip(t)` (plan 51e, status 51 Amendment 4): a window whose time `skip` accepts is NOT scored as steady (an off-load window); they are counted in out["n_skipped"].
+    `bracket` (plan 51e, status 51 Amendment 5): the phase-independent form of "one a_star and one delta across the window and both neighbours". The [SPAN] line is the only printed INTEGER a_star / delta (the [WSTORE]
+    `fec=` A* is a continuous per-window estimate that differs from it, so it cannot be compared for equality), and it is a POINT sample every 0.5 s. The legacy form reads only the samples INSIDE the window's 0.75 s span, so a
+    window holding a single sample passes vacuously (about half of them, by sample phase). The bracket form adds the last sample at or before the span's start and the first at or after its end, so EVERY window is tested by at
+    least two samples; a window with fewer (the ends of the record) is `untested`, never steady. The limit: point samples, so the rule shows "no change observed at the samples", not "constant". out["fails"] counts, per clause and
+    independently, the LATE windows failing it: n (fec n < 1 or a record end), ab, untested, a_star, delta, off-load (skip); a window is steady iff it fails none. Default off = the s60 rule, byte for byte."""
     e = rv.t.get("evict") or {}
     cum, w, sp, m59 = e.get("cum") or {}, e.get("wstore") or {}, e.get("span") or {}, e.get("mbar59") or {}
     out = {"mbar": None, "mbar_lo": m59.get("mbar_lo"), "mbar_ok": None, "w1": None, "w1_lo": m59.get("w1_lo"), "w1_hi": m59.get("w1_hi"), "w1_ok": None,
-           "n_late": 0, "n_steady": 0, "astar_bad": 0, "means": {}, "unscoreable": True}
+           "n_late": 0, "n_steady": 0, "n_skipped": 0, "astar_bad": 0, "means": {}, "unscoreable": True}
+    fails = {"n": 0, "ab": 0, "untested": 0, "a_star": 0, "delta": 0, "off-load": 0}
     late = [(t, a) for t, s, a in zip(cum.get("t", []), cum.get("src", []), cum.get("ack", [])) if t is not None and t >= EVICT_LATE_T and (s or 0) > 0 and a is not None]
     wt = w.get("t") or []
     if len(late) >= 2:
@@ -1333,6 +1368,9 @@ def evict_stats(rv, rule_ab=False):
         if t is None or t < EVICT_LATE_T:
             continue
         out["n_late"] += 1
+        if bracket:
+            _bracket_window(out, fails, rows, w, wt, i, t, st, sa, sd_, rule_ab, skip)
+            continue
         if not ((w["fecn"][i] or 0) >= 1) or i == 0 or i + 1 >= len(wt):
             continue
         if rule_ab and not all((w.get("ab") or [None] * len(wt))[j] == 0 for j in (i - 1, i, i + 1)):
@@ -1342,19 +1380,25 @@ def evict_stats(rv, rule_ab=False):
         js = [j for j, s in enumerate(st) if lo < s <= hi]
         if not js or any(sa[j] is None or sd_[j] is None for j in js) or len({sa[j] for j in js}) != 1 or len({sd_[j] for j in js}) != 1:
             continue
+        if skip is not None and skip(t):
+            out["n_skipped"] += 1
+            continue
         a_star, delta = sa[js[0]], sd_[js[0]]
         if w["astar"][i] is not None and abs(w["astar"][i] - a_star) > 0.01:
             out["astar_bad"] += 1
         rows.append((w["eps"][i], w["sigma2"][i], w["r"][i], w["astar"][i], delta, w["dbt_share"][i]))
     out["n_steady"] = len(rows)
+    if bracket:
+        out["fails"] = fails
+        out["n_skipped"] = fails["off-load"]
     out["unscoreable"] = len(rows) < STEADY_MIN
     for j, k in enumerate(("eps", "sigma2", "r", "astar", "delta", "dbt_share")):
         out["means"][k] = mean([r[j] for r in rows])
     return out
 
 
-def evict_line(rv, rule_ab=False):
-    s = evict_stats(rv, rule_ab)
+def evict_line(rv, rule_ab=False, bracket=False):
+    s = evict_stats(rv, rule_ab, bracket=bracket)
     mm = s["means"]
     return (f"EVICT s{rv.seed}r{rv.rep}: m-bar={f(s['mbar'], 3)} (witness mbar_lo {f(s['mbar_lo'], 3)} <= m-bar: {'ok' if s['mbar_ok'] else ('FAIL' if s['mbar_ok'] is False else 'n/a')}); "
             f"row W1={f(s['w1'], 4)} in [{f(s['w1_lo'], 4)}, {f(s['w1_hi'], 4)}]: {'ok' if s['w1_ok'] else ('FAIL' if s['w1_ok'] is False else 'n/a')}; "

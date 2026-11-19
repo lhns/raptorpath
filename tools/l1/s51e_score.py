@@ -122,6 +122,7 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=plan51e.CELL, arm="PM", mbps=No
     out["evict_share"] = (last[-1]["hand"] - last[-1]["tx"]) / last[-1]["hand"] if last else None
     out["src_med_late"] = med([k["src"] for k in send if k["t"] >= LATE_T])
     out["last_src_t"] = max((k["t"] for k in send), default=None)
+    out["tick_src"] = [[k["t"], k["src"] or 0] for k in ticks if LATE_T <= k["t"] <= plan51e.T_E]      # the offer-window ticks (LATE up to the end of emission): the per-window off-load reading
     # the gauge windows
     g = {k: [] for k in ("t", "tw", "ab", "az", "an", "rb", "rn", "r0", "wr", "fr", "fec_n", "fec_r")}
     ab_col = []
@@ -157,7 +158,7 @@ def _close(a, b, rel):
 
 def pace_problems(arm, t):
     """Section 5.2's pacing witness (rule 1: prove the mechanism executes): a paced row needs both echoes, the median LATE src within +-5 % of rate_sym, the last sending tick at t >= T_e - 2 s, achieved_mbit within
-    +-2 % of lambda and late <= 1 % of the chunks; an unpaced row (U) must read RWM_PERF_RATE_MBIT=unset, with no echo and no pace line. Any failure is a VOID (pace-*), re-run once."""
+    +-2 % of lambda and late_max_ms <= 250 (status 51 Amendment 4; `late` itself is only reported); an unpaced row (U) must read RWM_PERF_RATE_MBIT=unset, with no echo and no pace line. Any failure is a VOID (pace-*), re-run once."""
     p = []
     cli, srv = t["gate_rate"]["cli"], t["gate_rate"]["srv"]
     if arm not in plan51e.PACED:
@@ -187,9 +188,11 @@ def pace_problems(arm, t):
             # the spec writes the field as <8 x bytes / feed_s> (bits/s) under the name achieved_mbit: either unit is accepted (an assumed format, see the module doc)
             if not (_close(ach, lam, plan51e.PACE_ACH_TOL) or _close(ach, lam * 1e6, plan51e.PACE_ACH_TOL)):
                 p.append(f"pace-achieved={d.get('achieved_mbit')} (want {lam} Mbit/s or {lam * 1e6:g} bit/s, +-{plan51e.PACE_ACH_TOL:.0%})")
-            ch, late = _num(d.get("chunks")), _num(d.get("late"))
-            if not ch or late is None or late > plan51e.PACE_LATE_MAX * ch:
-                p.append(f"pace-late={d.get('late')}/{d.get('chunks')} (want <= {plan51e.PACE_LATE_MAX:.0%})")
+            # status 51 Amendment 4: `late` / `late_max_ms` are ENQUEUE lateness (the pacer's offer into the 8192-chunk feed queue: did the harness offer the load on schedule) and are REPORTED (row_view); only a stall
+            # longer than one reading window voids the row. It is a harness-fault detector and claims NO protection below 250 ms.
+            lm = _num(d.get("late_max_ms"))
+            if lm is None or lm > plan51e.PACE_STALL_MAX_MS:
+                p.append(f"pace-stall=late_max {d.get('late_max_ms')} ms (want <= {plan51e.PACE_STALL_MAX_MS:g})")
     if t["src_med_late"] is None or not _close(t["src_med_late"], rs, plan51e.PRED_RATE_BAND):
         p.append(f"pace-src-median={t['src_med_late']} (want {rs} +-{plan51e.PRED_RATE_BAND:.0%})")
     if t["last_src_t"] is None or t["last_src_t"] < plan51e.T_E - plan51e.LAST_TICK_SLACK_S:
@@ -255,9 +258,27 @@ class RV:
         g = (self.t.get("gw") or {})
         return [i for i, (tt, an) in enumerate(zip(g.get("t", []), g.get("an", []))) if an and an > 0 and (self.arm == "U" or (tt is not None and tt >= LATE_T))]
 
+    def offload(self):
+        """The ENGINE-side reading (status 51 Amendment 4): of the offer-window ticks (LATE, t <= T_e) of a PACED row, the share whose src is off rate_sym by more than 5 % (the per-window version of gate (c)'s median src
+        check; an empty tick, src = 0, is off). A reading, never a void: an engine falling behind the offered load is the thing under test. -> {"n", "off", "share", "off_t"}; U has no offered load."""
+        rs = plan51e.rate_sym(self.arm)
+        ts = self.t.get("tick_src") or []
+        if rs is None or not ts:
+            return {"n": len(ts), "off": 0, "share": None, "off_t": []}
+        off = [t for t, s_ in ts if not _close(s_, rs, plan51e.OFFLOAD_BAND)]
+        return {"n": len(ts), "off": len(off), "share": len(off) / len(ts), "off_t": off}
+
     def steady(self):
-        """K4 steady windows, the full rule (section 6.3): n >= 1, one a_star and one delta over the window and both neighbours, ab = 0 in the window and both neighbours."""
-        return s60.evict_stats(self, rule_ab=True)
+        """K4 steady windows, the full rule (section 6.3): n >= 1, one a_star and one delta over the window and both neighbours, ab = 0 in the window and both neighbours. The a_star / delta equality is read with the
+        [SPAN] samples that BRACKET the span (s60_score.evict_stats bracket=True, status 51 Amendment 5): phase-independent, every window tested by at least two point samples; a window without them is untested, not steady.
+        The limit: the samples are points 0.5 s apart, so a steady window shows "no change observed at the samples", not "constant". The per-clause failure counts are in st["fails"] and printed.
+        REGISTERED (status 51 Amendment 4): a window that passes that rule but whose offer-window tick is OFF-LOAD (src off rate_sym by more than 5 %) may NOT be scored: it is excluded from n_steady (and from the K4 input
+        means) and counted in n_offload_excluded, which is printed. A steady window can be off-load: the rule reads the engine's own n, a_star and delta, not the offered load. U has no offered load and excludes nothing."""
+        off = self.offload()
+        offs = off["off_t"]
+        st = s60.evict_stats(self, rule_ab=True, skip=(lambda tw: any(abs(tw - o) <= 0.13 for o in offs)) if offs else None, bracket=True)
+        st["n_offload_excluded"] = st["fails"]["off-load"]
+        return st
 
 
 def gauge_sums(rvs):
@@ -337,6 +358,19 @@ def pl_calibration(rv):
     return bool(why), why, plan51e.calibrate(a)
 
 
+def pace_view(rv):
+    """Reported per paced row (status 51 Amendment 4): the pacer's ENQUEUE lateness (late / chunks, late_max_ms: the harness's offer into the feed queue; a stall > 250 ms voids, below it nothing is claimed), the engine's off-load
+    share of the offer-window ticks, and the K4 steady windows scored / excluded as off-load."""
+    if rv.arm not in plan51e.PACED:
+        return ""
+    pl = (rv.t.get("pace") or [{}])[-1]
+    ch, late = _num(pl.get("chunks")), _num(pl.get("late"))
+    off, st = rv.offload(), rv.steady()
+    return (f"enqueue-late={pl.get('late')}/{pl.get('chunks')} ({_f(100.0 * late / ch if ch and late is not None else None, 2)} %) enqueue-late-max={pl.get('late_max_ms')} ms "
+            f"offload={off['off']}/{off['n']} ({_f(100.0 * off['share'] if off['share'] is not None else None, 1)} % of the offer-window ticks) steady={st['n_steady']}/{st['n_late']} (excluded off-load: {st['n_offload_excluded']}; windows failing each clause: "
+            + " ".join(f"{k}={v}" for k, v in st["fails"].items()) + ")")
+
+
 def row_view(rv):
     """The one-line reading of a row (ROW51E): the registered readouts beside their predictions."""
     t = rv.t
@@ -348,7 +382,7 @@ def row_view(rv):
             f"A*={_f(m.get('a_star'), 1)} [{pr.get('astar', '-')}] Delta={_f(m.get('delta'), 2)} [{pr.get('delta', '-')}] W={_f((t.get('span') or {}).get('wsize'), 0)} rr={_f(m.get('rr'), 3)} [{pr.get('rr')}] "
             f"rr=0.500 share={_f((t.get('span') or {}).get('rr500'), 3)} shed={m.get('shed_total')}/bud={_f(m.get('bud'), 4)} evict-share={_f(t.get('evict_share'), 4)} [{pr.get('evict')}] "
             f"tau_x={_f(t.get('tau_x'), 3)} [{pr.get('tau')}] tau(3.2)={_f(t.get('tau_sat'), 3)} MAX_CWND-share={_f(t.get('maxcwnd_share'), 3)} qcwnd/(cwnd*512)={_f(t.get('qcwnd_ratio'), 2)} "
-            f"phi={_f(gs['phi'], 4)} zeta={_f(gs['zeta'], 4)} pi={_f(gs['pi'], 4)} deficit={_f(gs['deficit'], 5)} windows={gs['windows']} [{pr.get('phi')}]")
+            f"phi={_f(gs['phi'], 4)} zeta={_f(gs['zeta'], 4)} pi={_f(gs['pi'], 4)} deficit={_f(gs['deficit'], 5)} windows={gs['windows']} [{pr.get('phi')}] " + pace_view(rv))
 
 
 def score(paths, out=print):
@@ -413,7 +447,7 @@ def score(paths, out=print):
             out(f"  {a}: dropped by amendment")
             continue
         for rv in by[a]:
-            out("  " + s60.evict_line(rv, rule_ab=True).replace("EVICT ", f"{a} ", 1))
+            out("  " + s60.evict_line(rv, rule_ab=True, bracket=True).replace("EVICT ", f"{a} ", 1))
         steady = [rv.steady()["n_steady"] for rv in by[a]]
         lab(f"K4-{a}", f"steady={','.join(str(x) for x in steady)} {'SCOREABLE' if steady and all(x >= STEADY_MIN for x in steady) else 'K4-UNSCOREABLE'}")
     if "PL" in plan51e.active_arms() and by["PL"]:
@@ -477,7 +511,7 @@ def smoke(path, which, out=print):
     crit("(a) every row ran the one seat's binary (LD_SHA; the registered bin_sha and the manifest HIT are the launch's gates)", [f"{rv.arm}: {x}" for rv in rvs for x in probs(rv, ("bin-sha",))], bool(rvs))
     crit("(b) plan 59's liveness: the shed echo, shed= on [SPAN], RWM_UNIFIED / RWM_UNIFIED_SHED on both ends, no retain-until-acked echo, the Realtime echo; RWM_SLAW=1 and RWM_DIAG=1 on both ends",
          [f"{rv.arm}: {' '.join(probs(rv, ('evict-', 'gate-unified', 'no-realtime-echo', 'gate-slaw', 'gate-diag', 'gate-three-term')))}" for rv in rvs if probs(rv, ('evict-', 'gate-unified', 'no-realtime-echo', 'gate-slaw', 'gate-diag', 'gate-three-term'))], bool(rvs))
-    crit("(c) the pacing witness (section 5.2): both echoes, median LATE src within +-5 % of rate_sym, the last sending tick at t >= T_e - 2 s, achieved_mbit within +-2 % of lambda, late <= 1 %; U reads unset with no echo / pace line",
+    crit("(c) the pacing witness (section 5.2): both echoes, median LATE src within +-5 % of rate_sym, the last sending tick at t >= T_e - 2 s, achieved_mbit within +-2 % of lambda, late_max_ms <= 250 (pace-stall; late is reported); U reads unset with no echo / pace line",
          [f"{rv.arm}: {x}" for rv in rvs for x in pace_problems(rv.arm, rv.t)], bool(rvs))
     rr = lambda rv: ((rv.t.get("evict") or {}).get("mbar59") or {}).get("rr")      # noqa: E731
     crit("(d) the debt loop runs: the median LATE [SPAN] rr > 0 on PL and PM (Amendment 2's go/no-go)", [f"{rv.arm}: rr median {rr(rv)}" for rv in paced if not ((rr(rv) or 0) > 0)], bool(paced))
