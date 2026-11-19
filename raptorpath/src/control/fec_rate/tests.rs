@@ -366,6 +366,38 @@ fn test_continuous_rate_no_fec_when_target_met() {
 }
 
 #[test]
+fn test_snapshot_r_sat_is_the_value_fed_to_soft_saturate() {
+    // `[SPAN] rsat=`: the snapshot's r_sat is r_saturation of the inputs the
+    // rate law reads, and 1.0 (no cap) when the cap is off or t_sym is unknown.
+    let mut est = LossEstimator::new();
+    for _ in 0..100 {
+        est.record_batch(100, 95);
+        est.record_rtt(std::time::Duration::from_millis(210));
+    }
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+    assert_eq!(ctrl.rate_snapshot(&est, 64).r_sat(), 1.0, "no throughput: no cap");
+    for _ in 0..100 {
+        est.record_throughput(2_500_000.0);
+    }
+    let snap = ctrl.rate_snapshot(&est, 64);
+    let r_sat = snap.r_sat();
+    assert!(r_sat > 0.0 && r_sat < 1.0, "binding cap reads a real r_sat: {r_sat}");
+    let ge = est.ge_estimator();
+    let sigma2 = if ge.is_valid() { raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg()) } else { 1.0 };
+    let want = raptorpath_math::r_saturation(
+        est.predictive_loss_upper(0.95),
+        sigma2,
+        64.0,
+        est.rtt().as_secs_f64(),
+        1200.0 / est.throughput(),
+    );
+    assert_eq!(r_sat, want);
+    let mut off = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+    off.set_saturation_cap(false);
+    assert_eq!(off.rate_snapshot(&est, 64).r_sat(), 1.0);
+}
+
+#[test]
 fn test_saturation_cap_binds_with_throughput() {
     // C4-like estimator state: 5% loss, long RTT, known throughput.
     // Realtime's aggressive request must be capped at r_sat; without

@@ -169,6 +169,18 @@ impl RateSnapshot {
         let beta = self.beta;
         (1.0 - beta) * r_anchor + beta * r_bulk
     }
+
+    /// The r_sat `controller_rate` feeds `soft_saturate` for these inputs
+    /// (diagnostic read, `[SPAN] rsat=`). 1.0 = no cap: the cap is off, or
+    /// `r_saturation`'s degenerate-input value.
+    pub fn r_sat(&self) -> f64 {
+        let i = &self.inputs;
+        if i.saturation_cap && i.t_sym > 0.0 && i.srtt > 0.0 {
+            raptorpath_math::r_saturation(i.p_upper, i.sigma2, i.window, i.srtt, i.t_sym)
+        } else {
+            1.0
+        }
+    }
 }
 
 /// Upper bound (µs) on the repair-rate cadence: the sender's derived

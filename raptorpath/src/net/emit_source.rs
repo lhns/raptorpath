@@ -702,8 +702,9 @@ pub(crate) fn emit_source(
                 } else {
                     String::new()
                 };
+                let rsat = diag_r_sat(ctx.fec_controller, ctx.scheduler, st.encoder.window_size());
                 crate::readout!(
-                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{}",
+                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{} rsat={:.4}",
                     dnow.saturating_sub(pol.span_diag_start_us) as f64 / 1e6,
                     ack,
                     ws,
@@ -719,6 +720,7 @@ pub(crate) fn emit_source(
                     ah,
                     transit,
                     dg,
+                    rsat,
                 );
             }
         }
@@ -900,6 +902,19 @@ pub(crate) fn emit_source(
         }
     }
 
+}
+
+/// The live r_sat of the worst-ε path (`[SPAN] rsat=`), read from the same
+/// snapshot the rate mix evaluates. 1.0 when there is no path (= no cap).
+fn diag_r_sat(
+    fec_controller: &FecRateController,
+    scheduler: &crate::scheduler::Scheduler,
+    window: usize,
+) -> f64 {
+    match worst_eps_path(scheduler) {
+        Some((_, est)) => fec_controller.rate_snapshot(est, window).r_sat(),
+        None => 1.0,
+    }
 }
 
 /// The worst-ε channel path and its estimator — the path every window-path
