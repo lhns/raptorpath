@@ -9,6 +9,11 @@ per-row logs (`s51b-ledger/x/b51c2|b51c8/run/rep51/diag-ld`, not committed) with
 
 ## 0. Answer in plain words
 
+> **Round 2 (§9) supersedes this section and §5–§6 where they differ.** The tail base is a declared
+> dial (ADR-0050), not an underived default. The third D_arq/d reading is replaced by the in-session
+> close times. The fractile is a candidate, **not adopted**.
+
+
 - **Against its own target, r is not over-provisioned; it is short.** At Auto, the law's own target
   t_tail/ε = 4·10⁻⁴ per window needs r ≈ 0.32 at c2 and 0.36 at c8 (two-leg window) on the
   honest channel. The law gives 0.22 and 0.27.
@@ -25,7 +30,7 @@ per-row logs (`s51b-ledger/x/b51c2|b51c8/run/rep51/diag-ld`, not committed) with
   - The break-even for any r > 0 at Auto is D_arq/d ≈ 6. §4.9's own words apply: "one gauge field
     decides it" (d is echoed nowhere).
 - **The term that makes it so is the z·S margin** of the core term, z = Φ⁻¹(1 − t_tail/ε̂), with
-  t_tail = 10⁻⁵·ζ(δ). Its base 10⁻⁵ has no price provenance. The margin is about 85–90 % of r;
+  t_tail = 10⁻⁵·ζ(δ). Its base is the declared `target_tail_loss` dial (ADR-0050; §9 item 0), but no derivation ties the dial to a price for a hole falling to ARQ. The margin is about 85–90 % of r;
   the information floor ε̂/(1−ε̂) is about 0.02. Nothing in the law credits the NACK channel.
 - **The fix** replaces the per-window allowance t_tail/ε̂ with a critical fractile
   m = min(1, 1/c_hole(δ, ρ)), where c_hole is the price of one hole falling to ARQ. It is continuous
@@ -53,7 +58,7 @@ r_sat    = argmin_{r∈[0.01,1], step .005} (1−P_fec(r))·1.5·srtt + B̂·t_s
 | worst path | argmax of `loss_rate()` (`pl=`, the per-ack EWMA, fed per WindowAck counter delta into `record_batch(d_expected, d_received)`, `control_msg.rs:626–636`) | declared (§4.4) | c8 source-phase ticks: strictly p0 10–12 %, strictly p1 30–34 %, **printed tie (both < 5·10⁻⁵) 54–59 %**. The logs cannot resolve ties (S06 doc §2.1), so §2 brackets both picks. Single path at c2, where `pl` prints 0 on 82–86 % of ticks. |
 | σ², B̂ | GE estimator, per-batch lumped feed | cited (GE), lumping undeclared (E08) | not printed. The netem truth gives an honest dispersion g·σ²_skb = 13.0 (c2) / 12.0 (c8 p1); the per-datagram GE fit of that channel gives 16.5 / 14.2. |
 | W | `encoder.window_size()` | derived, clipped at 200 (R07) | 201 on every off-Bulk tick |
-| t_tail base 10⁻⁵ | `config.rs:337` | **none**: a config default | it sets z |
+| t_tail base 10⁻⁵ | `target_tail_loss`: `--target-tail-loss` (`main.rs:59`, `:362`), `config.rs:337` (default 10⁻⁵), Home 10⁻⁴ / Datacenter 10⁻⁶ (`config.rs:130–150`) | **a declared dial** (ADR-0050, Accepted) | it sets z. The perf path does not read it: 10⁻⁵ on all 152 rows (§9 item 1) |
 | ζ(δ) = δ_A/δ | the dial | declared (§4.1) | yes |
 | srtt | `estimator.rtt()` (EWMA, dwell-inclusive) | E01 | **no**: 206–251 ms at c2 and 264–600 ms on c8's p1, against 10 / 40 ms of netem delay |
 | 1.5, C_DILUTION 0.5, grid, SAT_SOFTNESS 0.1 | `r_saturation` / `soft_saturate` | none (R04) | — |
@@ -191,7 +196,8 @@ c_hole(δ, ρ) = P_arq(ρ)·δ·D_arq/d  +  (1 − P_arq(ρ))·c_loss
   with c_hole in symbol-equivalents, Copa's currency (§4.9: a delay enters as δ·Δd/d).
 - **No branch is needed.** The same statistic and solver exist today: `r_star_mass` takes exactly
   this allowance as `delta_wf`, and its normal form is `compute_r_star_with_z(ε̂, σ², W, Φ⁻¹(1−m))`.
-  So the fix replaces t_tail/ε̂ with m(δ, ρ) in both, and **deletes the base 10⁻⁵**.
+  So the candidate replaces t_tail/ε̂ with m(δ, ρ) in both. It must also say what the declared
+  `target_tail_loss` dial then does (§9 item 0).
 - **The A1 check is measured, at the coded count.**
   - Under A1 the marginal yield above *is* P(K > R) at the coded count actually sent, about
     0.075–0.10 per source (copies take the rest of the slots).
@@ -237,7 +243,7 @@ c_hole(δ, ρ) = P_arq(ρ)·δ·D_arq/d  +  (1 − P_arq(ρ))·c_loss
 | row | verdict now | proposed |
 |---|---|---|
 | R01 (mix) | DEGENERATE(L1: Bulk, χ = 0) | **OK (shape), measured**: r > 0 off Bulk, continuous across all three presets (T1 PASS ×6); carries R02's defects. DEGENERATE withdrawn for the off-Bulk cells. |
-| R02 (anchor body) | UNDERIVED | **UNDERIVED(t_tail base 10⁻⁵ has no price; no NACK credit; why max), DISHONEST-INPUT(ε̂ per E07, σ² per E08, srtt per E01 via r_burst and r_sat)**. Core wins at every off-Bulk point (inferred; no gauge). The z·S margin is 85–90 % of r. Over-provisioned against the δ dial at ρ = 1, short of its own target. max_overhead binds on 6–16 % of ticks. |
+| R02 (anchor body) | UNDERIVED | **UNDERIVED(no derivation ties the declared tail dial to the delivered quantity; why max), DIVERGENT(ADR-0050 Phase 3 credits the NACK channel, `proactive_budget = total − nack_expected`; the code never wires it into r), DISHONEST-INPUT(ε̂ per E07, σ² per E08, srtt per E01 via r_burst and r_sat)**. Core wins at every off-Bulk point (inferred; no gauge). The z·S margin is 85–90 % of r. Over-provisioned against the δ dial at ρ = 1, short of its own target. max_overhead binds on 6–16 % of ticks. |
 | R03 | unchanged | Measured on the P_fec > 0 side from I2 up in both cells. Read only by r_sat at ρ = 1. |
 | S10 (TaperBudget) | DIVERGENT, DEGENERATE(r = 0) | **DIVERGENT, DEGENERATE(identity: the grant is min(r, spare) by construction; the re-timing never acts unless spare binds)**. r = 0 is withdrawn off Bulk. Measured: owed = 0.00 on 16 843 / 16 843 `[SPAN]` lines. |
 | R04 (r_sat) | UNDERIVED, DIVERGENT | **+ DISHONEST-INPUT(srtt = E01)**. Measured: slack at c2 (pressure ≤ 0.06, inferred), pressure 0.45–0.62 at c8 R± (inferred). Live r_sat ≈ 0.32 at c8, not the design's 0.245; no gauge, so not PINNED. |
@@ -248,7 +254,7 @@ c_hole(δ, ρ) = P_arq(ρ)·δ·D_arq/d  +  (1 − P_arq(ρ))·c_loss
 
 No MODE-SWITCH: no hint or δ/ρ threshold selects a law here.
 
-## 6. Fix direction (a law change, formula first)
+## 6. Fix direction: the fractile candidate (NOT ADOPTED; superseded in part by §9)
 
 ```text
 r_anchor(δ, ρ) = clamp( soft_sat( max(r_core(m), r_burst(m), r_mass(m)), r_sat ), 0, r_max )
@@ -387,3 +393,221 @@ r_core(m)      = max(0, ε̂/(1−ε̂) + Φ⁻¹(1−m)·S) [+codec],  r_burst 
 - "Fix direction: the hole-price fractile (`docs/derivations/rate-overprovision.md` §6), pending
   owner questions 1–3."
 - "Gauges missing: term-win, r_sat bind, mass stats."
+
+## 9. Round 2 (coordinator review): the tail dial, units, profiles, close times, registration
+
+### 9.0 Correction: `target_tail_loss` is a declared dial
+
+- **Where it is declared:**
+  - the `--target-tail-loss` flag (`main.rs:59`, `:362`);
+  - `config.rs:337` (default 10⁻⁵);
+  - two profiles (`config.rs:130–150`): Home is 10⁻⁴ with max_fec_overhead 0.3 and hint auto;
+    Datacenter is 10⁻⁶ with 0.5 and bulk;
+  - ADR-0050 (Accepted), "Protocol Hint → Tail Reliability".
+- **What this changes in §0, §1 and §5.** "Base with no provenance" is withdrawn. The defect is that
+  no derivation ties the dial to what the engine delivers (§9.2), plus a code-against-ADR divergence:
+  ADR-0050 Phase 3 decides `proactive_budget = total_budget − nack_expected`, and the code never
+  feeds that into r (`BudgetAllocator::proactive_rate` has test callers only).
+- **The fractile (§6) is a candidate, NOT ADOPTED.** If it were adopted, the flag needs a meaning.
+  Two options:
+  - **(A) The flag stays a lateness contract:** r = max(r_price(m), r_flag(t/ε̂)), one continuous
+    max with no branch. The default 10⁻⁵ then keeps today's r, so the over-provision against the
+    dial persists unless the default becomes "no contract" (t = ε̂, r_flag ≡ 0).
+  - **(B) The flag is superseded into the price unit:** for example `--target-tail-loss` maps to
+    c_hole = 1/m. That needs a new ADR superseding ADR-0050's hint → tail mapping.
+  - §9.6's registration decides between them.
+
+### 9.1 Does the flag reach the sweep's path? No. All 152 rows ran at 10⁻⁵.
+
+- **The perf path ignores the flag.** `cmd_perf` (`main.rs:268–300`) builds its `RaptorpathConfig`
+  from `PerfArgs` with `..Default::default()`. `PerfArgs` has no `target_tail_loss` (or
+  `max_fec_overhead`, or profile), and `cmd_perf` reads no config file, so `config::resolve`
+  applies `unwrap_or(1e-5)` (`config.rs:337`).
+- **Confirmed in the logs.** The `perf configuration` line reads `target_tail_loss: 1e-5,
+  max_fec_overhead: 0.5` on 152 of 152 client and server logs in each cell.
+- **So the flag-sweep arms need a new binary.** That means a `--target-tail-loss` (and
+  `--max-fec-overhead`) pass-through on `perf`, and the harness passing it on both ends. This is a
+  tools/CLI change, not engine behaviour, but it changes the binary sha.
+
+### 9.2 The unit, and the delivered residual in that unit
+
+- **What the target bounds.** Paper §4.2 and §3.5: target_tail_loss bounds the **per-source-symbol
+  probability of being late**, P(late) = ε·(1 − P_fec) ≤ t_tail(δ). "Late" means delivered by ARQ
+  rather than by in-window FEC; at ρ = 1 nothing is lost. The law enforces it through the
+  **per-window** allowance t_tail/ε̂ = P(window deficit). It does not bound anything per object.
+- **The delivered residual at c2 Auto, per source symbol.** Source losses ≈ 0.025 (netem rate; the
+  resends, 0.026, agree). Decode closes are 0.0107–0.0117 (`recov-c2.out`). So
+  **P(late) ≈ 0.013–0.014**. With `[TRUTH] lost=` (0.0315, which includes lost copies and coded
+  datagrams) the upper end is 0.021, matching main's 0.014–0.021.
+- **Against the target:** 10⁻⁵, so the miss is **1 300–2 100×**.
+- **Per hole:** 54–58 % of holes fall to ARQ, against the law's assumed 1 − P_fec of about 4·10⁻⁴.
+- **Per window** (W = 200): 2.7–4.2 late holes per window.
+- **Per 600 MB object** (507 616 source symbols): about 6 600–10 700 late holes, against 5.
+- **R± (target 10⁻⁷):** P(late) ≈ 0.012–0.014. The delivered lateness barely moves with the dial.
+
+### 9.3 The profiles, and whether the target is meetable
+
+- **The exact requirement.** `need.py` gives the exact requirement at honest inputs, with
+  m = t_tail(δ)/ε (c2 ε 0.025; c8's two-leg window at the worst-leg ε 0.048).
+
+| case | t_tail at the law | per-window m (c2 / c8) | exact r needed c2 / c8 | cap | law today | meetable? |
+|---|---|---|---|---|---|---|
+| Datacenter: 10⁻⁶, bulk | 10⁻⁴ (×ζ = 100) | — | — | 0.5 | **0 exactly** (β = 1; the anchor term is weighted 0) | **The target is inert in the rate law.** P(late) = ε by design (late is fine). The sweep's 0 reading is this, not a miss. |
+| Home: 10⁻⁴, auto | 10⁻⁴ | 4·10⁻³ / 2.1·10⁻³ | 0.225 / 0.285 | 0.3 | ≈ 0.16 / 0.20 | Feasible under the cap. The law gives about 0.7× of it. |
+| default 10⁻⁵, auto | 10⁻⁵ | 4·10⁻⁴ / 2.1·10⁻⁴ | 0.32 / 0.395 | 0.5 | 0.20–0.22 / 0.25–0.27 | Feasible under the cap. The law gives 0.65–0.7×. |
+| default, Realtime (×0.01) | 10⁻⁷ | 4·10⁻⁶ / 2.1·10⁻⁶ | 0.505 / > 0.58 | 0.5 (r_sat ≈ 0.3–0.4 soft) | 0.25–0.29 | **No.** Infeasible in-window under max_overhead at both cells, and below r_sat's soft cap well before that. |
+
+- **So the dial's target is met nowhere it is live.**
+  - At Bulk it is inert by design.
+  - At Auto the law under-provisions its own target (0.65–0.7×), and the realized decode yield then
+    misses it by 10³.
+  - At Realtime it is infeasible under the declared caps on these channels.
+- **In the delivered unit the dial is close to flat:** P(late) is 0.013–0.014 at Auto and
+  0.012–0.014 at R±.
+
+### 9.4 Where the base enters, other than base·ζ(δ)
+
+It enters nowhere else. All three readers read the one clamped product
+`ctrl.target_tail_loss() = clamp(base·ζ(δ), 10⁻⁹, 0.1)` (`fec_rate.rs:331–333`):
+1. **The rate law:** z = Φ⁻¹(1 − t/ε̂), the burst fraction (1 − t/ε̂)⁺, and the mass solve's
+   δ_wf = t/ε̂ (`fec_rate.rs:504`). This is live.
+2. **W\*:** `derive_window(t, …)` (`fec_rate.rs:546`, called at `sender_phases.rs:1316`). W_over
+   reads z(t/ε̂). It is **inert on these rows**: the keep-behind clamp to 200 binds (`wsize=201` on
+   every off-Bulk tick, R07).
+3. **The NACK budget's confidence:** `predictive_loss_upper(1 − t)` (`net/mod.rs:3315`). It is
+   **inert on these rows**: the per-pass budget sits at its floor `MAX_NACK_REPAIRS_PER_NACK`,
+   `nbud=10`, on 29 287 of 34 785 `[DIAG]` ticks (84 %). This is the one place ADR-0050's "the BOCD
+   quantile at the adjusted confidence level IS the entire control mechanism" survives, and it is
+   floor-bound.
+
+### 9.5 Items owed from the review
+
+**(a) What d is, and the in-session D_arq/d.**
+- **What d is.** d is Copa's delay normaliser: the operating delay that a delay increment Δd is
+  priced against, in L = bandwidth fraction + δ·Δd/d (§4.9). The paper's three readings are d =
+  Copa's operating delay (D_arq/d ≈ 1.03), a propagation-scale reference (2.2), and a third whose
+  δ_exit column back-solves to D_arq/d ≈ 94 / 24. Those are the paper's cells and binary, not this
+  session.
+- **In this session.** The quantity a decode close saves is D_arq − t_fec, not D_arq. `[SUCC]` (6
+  rows per arm, server logs):
+  - **c2 Auto:** resend-resolved p50 229–246 ms, decode-resolved p50 9–13 ms, saving 220–235 ms.
+  - **c2 H-B:** both are 197 ms; the margin's coded repair is not faster.
+  - **c2 R±:** the same as Auto.
+  - **c8 Auto and R±:** resend p50 0.25–0.46 s, **decode p50 0.65–6.3 s**. At c8 a decode close is
+    *slower* than a resend (the "present or isolating" race of §3.7, and coded symbols there are
+    only 0.004 per source).
+- **So the in-session ratio (D_arq − t_fec)/d is:**
+  - about **0.9–1.0** with d = the operating delay (srtt 245 ms, dwell-inclusive): reading 1;
+  - about **22–24** with d = the propagation RTT (netem 2 × 5 ms): reading 3′, replacing 94;
+  - **≤ 0 at c8** on any d.
+- **The candidate's c_hole uses (D_arq − t_fec)⁺**, a continuous clamp, and that changes §6's table.
+
+| point | c2 r, readings 1 / 2 / 3′ (today) | c2 goodput 1 / 2 / 3′ (today) | c8 r, any reading (today) | c8 goodput (today) |
+|---|---|---|---|---|
+| I1–I3 | 0 / 0 / 0 (0.008–0.080) | 90.0 (84.0–90.0) | 0 (0.017–0.115) | 97.6 (93.2–98.7) |
+| Auto | 0 / 0 / 0.09 (0.195) | 90.0 / 90.0 / 82.8 (76.1) | 0 (0.242) | 97.6 (82.9) |
+| I4 | 0.05 / 0.09 / 0.19 (0.214) | 85.8 / 82.8 / 76.0 (75.1) | 0 (0.249) | 97.6 (81.4) |
+| R± | 0.155 / 0.19 / 0.29 (0.221) | 78.2 / 76.0 / 70.2 (74.6) | 0 (0.26) | 97.6 (81.2) |
+
+- **c8 is conditional.** t_fec was measured with copies starving the coded channel (S06). After the
+  no-copy fix it must be re-read before any c8 number stands. c8 goodput is ±5 % (§6).
+
+**(b) Why the resend still fires after a decode close (code read).**
+- **Nothing cancels it.**
+  - The receiver sends a gap report as soon as a higher seq arrives past a hole, rate-limited to one
+    per `GAP_ACK_MIN_INTERVAL` = 2 ms (`receiver.rs:1954–1957`, the dupack analog). The trailing-span
+    repair covering the hole lands after that report, at a p50 of 9 ms.
+  - The sender serves every seq of a judged gap list (`sender_phases.rs:789–803`).
+  - At N = 1 its only gates are the per-seq cooldown (`:871–879`, which applies only after a first
+    resend) and the age gate, original age ≥ srtt/2 (`recovery_laws.rs:266–268`).
+    `RWM_RECOV_SP=0` on these rows, so there is no RFC 9002 time threshold at N = 1 (`gates.rs:371`).
+  - There is no decoder or "since received" check between the report and the fire. The report
+    predates the decode, so the resend fires about srtt/2 later anyway, stamped at `:1091`.
+- **A decode close only suppresses later re-resends.** The receiver inserts the decoded seq into
+  `received_seqs` (`receiver.rs:1482`), so later SACKs omit it.
+- **Consistent with the counters:**
+  - `preempt_src` (a source arrival for an already decoded seq) is about 0.0036 per source at c2
+    Auto, about a third of decode closes. Some of those are copies, not resends.
+  - Resends per source stay flat.
+
+**(c) The loss feed, and why `pl=` prints 0 (replacing "lumps").**
+- **An empty delta never reaches the estimator.**
+  - Timer and hold-expiry acks carry `cum_expected: 0` (`receiver.rs:945`, `:1042`, `:1086`).
+  - `ack_merge_counter_delta` returns (0, 0) for those and for an unchanged counter
+    (`path.rs:370–378`).
+  - `record_batch` is called only `if le > 0` (`control_msg.rs:635–637`).
+  - So an empty delta does not decay the EWMA.
+- **The counters ride every data ack.** Under `RWM_ACK_MERGE=1` (on, per `[GATES]`) the WindowAck
+  "must go out once per data message" (`receiver.rs:1966–1975`). The (expected, received) totals
+  ride every one (`receiver.rs:1304–1312`), and a window batch carries about one symbol. So the
+  estimator gets about one sample per received datagram: about 9.3 k/s at c2.
+- **What that does to `pl`.** A netem burst (two skbs, about 9 datagrams) is revealed in one delta,
+  for example (10 expected, 1 received). That gives a batch loss of 0.9, so the EWMA jumps to
+  0.1·0.9 = 0.09. It then falls below the print resolution 5·10⁻⁵ after ln(5.6·10⁻⁴)/ln 0.9 ≈
+  71 samples, about 7.6 ms.
+- **The arithmetic matches the reading.** Bursts arrive at 1 750 per 62 s, about 28/s, one per
+  36 ms. So `pl` is nonzero about 7.6/36 ≈ 21 % of the time: **predicted 79 % printed zero,
+  measured 82–86 % at c2.** A 10-sample memory at 9 k samples/s is a ≈ 1 ms memory on a channel
+  whose losses are 36 ms apart.
+- **plu is fed the same samples.** `record_counts_at` feeds the BOCD per delta. That is consistent
+  with its low median and 10× spikes, but the BOCD trace is not printed, so that part is inference.
+- **c8:** per-path samples at about 9 k/s (p0) and 2 k/s (p1). `pl` reads 0 on both legs on 55–59 %
+  of ticks.
+
+### 9.6 Registration input: a two-sided flag sweep at fixed δ (no-copy VM session)
+
+- **Question:** does a tighter `target_tail_loss` buy less resend latency (ADR-0050), at a bandwidth
+  cost, on the measured cells?
+- **Binary:** ADR-0079's no-copy engine plus the §9.1 perf pass-through. The term-win and bind gauge
+  `rlaw=` (§7 test 3) is strongly wanted, since without it the r movement is read only from `rr`.
+- **Arms.**
+  - The cells are c2-100 and c8-100, hint auto (δ = 0.5, β = 0), and `RWM_DELTA` is unset.
+  - The flag takes 10⁻³, 10⁻⁴, 10⁻⁵ (control, equal to the default; an A/A against an
+    unset-flag arm), 10⁻⁶ and 10⁻⁷.
+  - max_fec_overhead stays 0.5 on all arms, so the cap is not confounded. Home's 0.3 is a separate
+    arm if wanted.
+  - n = 6 per arm, in interleaved blocks as in §51.
+- **Witnesses:**
+  - The `perf configuration` line shows each arm's value on both ends, or the row is VOID.
+  - `rr` must move with the flag. If it does not, the session reads NO VERDICT (wiring).
+- **Readouts:**
+  - consumed r and coded per source;
+  - P(late) per source, measured as (source losses − `fill_coded`)/src, with the resend count beside it;
+  - `[SUCC]` resend and decode p50;
+  - in-order delay;
+  - goodput;
+  - CPU/GB.
+- **Predicted under ADR-0050** (the law ported at the fitted σ²; arithmetic, with goodput from the
+  §6 identity):
+
+| flag | c2 r | c8 r | c2 goodput | c8 goodput |
+|---|---|---|---|---|
+| 10⁻³ | 0.11 | 0.15 | 81.2 | 85.3 |
+| 10⁻⁴ | 0.16 | 0.20 | 77.8 | 82.2 |
+| 10⁻⁵ | 0.20 | 0.23 | 75.3 | 80.0 |
+| 10⁻⁶ | 0.23 | 0.25 | 73.4 | 78.6 |
+| 10⁻⁷ | 0.26 | 0.27 | 71.8 | 77.7 |
+
+- **ADR-0050's direction:**
+  - as the flag tightens, P(late) and in-order delay fall, and goodput falls;
+  - P(late) should track the flag value by orders of magnitude: 10⁻³ to 10⁻⁷ is a factor 10⁴.
+- **Outcomes (two-sided, resolution at the in-session A/A: c2 in-order d80 about 12 %; c8 about
+  50 %, so c8 is secondary):**
+  1. **The dial works.** P(late) falls monotonically with the flag by at least an order of magnitude
+     across the sweep, and in-order delay falls beyond resolution at c2.
+     - Keep the dial (option A in §9.0).
+     - Make the law deliver its own target: exact mass tail, honest ε̂ and σ².
+     - Price the default, not the dial.
+  2. **The dial is inert.** P(late) moves by less than 2× and delay is flat (or rises) while goodput
+     falls.
+     - On these cells the dial buys bandwidth loss and no latency.
+     - Supersede ADR-0050's hint → tail mapping with a priced form (option B, or the §6 candidate
+       after re-measuring t_fec without copies).
+     - The flag is remapped or deprecated in the same ADR.
+  3. **Mixed.** P(late) falls but delay does not, which is the §3.7 race: decode is faster per hole,
+     but the in-order frontier is held elsewhere (dwell or store).
+     - Keep the dial's semantics, and report the delay holder as its own finding.
+     - The dial is not the lever for delay on these cells.
+  4. **r does not move with the flag:** NO VERDICT (wiring).
+- **What it cannot test:** ρ < 1 (that is block E's seat), and Realtime's infeasibility (§9.3 says
+  10⁻⁷ is infeasible by arithmetic, so the 10⁻⁷ arm tests only the cap regime).
