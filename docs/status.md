@@ -1943,7 +1943,7 @@ The launch sha is pinned by an amendment.
 - **Over-provisioned against what, and by how much:**
   - **Against the δ dial at ρ = 1:** yes. ARQ delivers every byte, so delivery alone needs r = 0, and r ≈ 0.20–0.26 costs the 15 % of goodput.
   - **Against the law's own tail target (10⁻⁵ residual per window):** the exact-tail arithmetic says r is too low (0.32 / 0.36 needed). But that arithmetic assumes every slot is coded, and today 64 % (c2) and 98 % (c8) are copies.
-  - **Measured residual today at c2 Auto:** about 0.014–0.021 holes per source still fall to resends. That is source losses of 0.026 (from NACK resends) to 0.032 (wire losses, an upper bound), minus decode closes of 0.011–0.012 per source. The target bounds a per-window residual, so the two figures are not yet in the same unit; the conversion is owed.
+  - **Measured residual today at c2 Auto:** about 0.014–0.021 holes per source still fall to resends. That is source losses of 0.026 (from NACK resends) to 0.032 (wire losses, an upper bound), minus decode closes of 0.011–0.012 per source. The target bounds P(late) per source symbol (late = delivered by ARQ, not FEC; the law enforces it per window as the allowance t/ε̂), so the comparison is in one unit: 0.013–0.014 against 10⁻⁵, a miss of 1 300–2 100× (Addendum 4).
   - So **the size of any r fix waits for a reading without copies.** The copy-branch deletion and the rate arms can share one VM session: reported-only arms over the tail base on the no-copy binary, if the base is settable at launch (to be checked).
 - **The fix direction is not adopted.** The rate doc's candidate replaces t_tail/ε̂ with a critical fractile priced by the cost of a hole falling to ARQ. On two of its three readings it is clamp-bound from Bulk through Auto (r = 0), which is a defect by FORMULA-FIRST. Its D_arq/d of 94 at c2 does not match the measured close times. It goes back for a definition of d.
 - **Ledger** (evidence and verdicts, `law-ledger.md`):
@@ -1958,6 +1958,36 @@ The launch sha is pinned by an amendment.
   - **Kept unchanged for now.** Removing or redefining it needs an ADR superseding ADR-0050, and that is the owner's call.
   - **The deciding test is ADR-0050's own claim:** a tighter target buys less resend latency. It is registered two-sided for the no-copy VM session as a sweep of the flag at fixed δ, which separates it from β. If in-order delay falls as the target tightens, the dial is kept and r is derived to meet it. If it does not fall, the dial is superseded.
   - **Erratum:** an earlier line in this addendum (and ledger R02) called the base "a config default with no derivation", and the coordinator told the owner the rate was "set too high". Both are withdrawn. Against the δ dial at ρ = 1 the rate is more than delivery needs; against its declared target it under-delivers. Option (b) stands as an investigation, not a verdict that r is too high.
+
+**§51 block 51 Result, Addendum 4 (2026-11-19, post hoc, code and the committed logs only; Fable-reviewed): four code reads on the repair and loss path, the tail target's unit and reach, and the full sweep logs committed.**
+- **Full logs committed:** `docs/l1-raw/s51b/full/b51c2-full.tgz` and `b51c8-full.tgz` (23 MB, scrubbed, export-ignored). Addenda 2–4, ADR-0079 and both derivation branches rest on them. The VM copies sit on the cluster the owner reported unstable.
+- **ADR-0050's Phase 3 split is decided but not wired (code-verified).** ADR-0050 (Accepted) decides `proactive_budget = total_budget − nack_expected`. `BudgetAllocator::proactive_rate` is called only from tests (`control/fec_rate/tests.rs:629–650`); the rate law never subtracts the NACK channel.
+- **A decode close does not cancel the pending NACK resend** (code read, `rate-overprovision` round 2).
+  - The receiver reports the gap within about 2 ms (`receiver.rs:1954–1957`), and the covering coded symbol lands at about 9 ms.
+  - The sender serves judged gaps (`sender_phases.rs:789–803`). Its only gates at N = 1 are the per-seq cooldown after a first resend and the age gate age ≥ srtt/2 (`recovery_laws.rs:266`). Nothing checks decoder state before the fire.
+  - A decode close suppresses only later re-resends, via `received_seqs` (`receiver.rs:1482`).
+  - Its size is a ratio, not a count: resends stay at about 1.0–1.09 per source loss on every arm while decoding closes 42–52 % of holes.
+  - **Open:** whether the srtt/2 age gate can ever hold at N = 1. Age runs from the original send, and the first report cannot arrive much sooner than one dwell-inclusive srtt. A gate that always passes needs a ledger verdict. Any fix is a candidate law, not work started.
+- **The loss estimate `loss_rate()` averages per-ack loss fractions unweighted** (code-verified, `control/estimator.rs:342–351`): `tx_ewma = α·(lost/sent) + (1−α)·tx_ewma` per call, α = 0.1, whatever `sent` is.
+  - Under `ACK_MERGE` the counters ride every data ack, about one sample per received datagram. A burst arrives as one sample, so the mean is about bursts per ack, not losses per datagram. That gives about 0.003 against a true 0.026, and it matches the "0.003 when non-zero" reading.
+  - It falls below the 4-decimal print within about 8 ms, against one burst every about 36 ms. That predicts about 79 % printed-zero ticks; 82–86 % were measured at c2.
+  - Empty deltas never reach it: sentinel acks carry `cum_expected: 0` and `record_batch` runs only when the delta is positive (`control_msg.rs:635–637`).
+  - **This is a wrong shape, not only a fast decay:** DISHONEST-INPUT for every reader that takes it as a per-datagram loss probability. After the S06 deletion its one live rate-law use is picking the worst path. plu (E07) is fed the same samples.
+- **The tail target: unit, reach, profiles.**
+  - **Unit:** per source symbol. It bounds P(late), where late means delivered by ARQ rather than FEC. At c2 Auto P(late) is 0.013–0.014 (54–58 % of holes fall to ARQ) against 10⁻⁵. At R± it is 0.012–0.014, so the delivered lateness is nearly flat in δ.
+  - **Reach:** `--target-tail-loss` does not reach the perf client the sweep ran. `cmd_perf` builds its config with `..Default::default()` (`main.rs:268–300`), and all 152 rows log 1e-5. A flag sweep needs a perf pass-through, which means a new binary.
+  - **Profiles (arithmetic from the exact-tail script, ideal code, not measurement):**
+    - **Datacenter** (10⁻⁶ with hint bulk): inert in the rate law, because β = 1 weights the anchor term 0. That is the sweep's H-B rr = 0.
+    - **Home** (10⁻⁴, cap 0.3): needs about 0.225 / 0.285 (c2 / c8), against a law that gives about 0.7× that.
+    - **Realtime** (target × 0.01): its need sits at the 0.5 cap within grid error, and above r_sat (about 0.3–0.4). So it is not meetable under the soft cap.
+    - **Still owed:** the arithmetic at the coded rate actually sent (about 0.075 at c2 Auto), which splits the miss between the law, the copies and the code. Which of c8's two default figures is right (0.36 or 0.395) also needs settling.
+  - **The base's other readers are pinned off:**
+    - the window W\* clip reads `wsize` 201 on every row;
+    - the NACK budget's confidence reads `nbud=10` on 84 % of ticks.
+    - Both are clamp readings for their ledger rows, still to be added. Whether 10 is a floor or `MAX_NACK_REPAIRS_PER_NACK` (10, `net/mod.rs:227`) is not yet read.
+- **Flag-sweep registration: a draft, not registered.** It lives in `docs/derivations/rate-overprovision.md` §9 on `rate-overprovision` `c6035a28`, and needs the perf pass-through, derived outcome thresholds, and two more readouts (the stalled-time share, and redundant source arrivals per resend).
+  - **The tight arms already ran, with copies.** t_tail = base·0.5/δ, so I4 and R± are about the 10⁻⁶ and 10⁻⁷ arms, if β ≈ 0 from Auto up and the clamp does not bind (both to be checked).
+  - From Auto to R±, P(late) and in-order delay stayed flat and goodput fell about 2 %. That is the with-copies baseline.
 
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
