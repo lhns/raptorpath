@@ -91,7 +91,14 @@ impl ReorderBuffer {
             return self.force_drain_oldest();
         }
 
-        self.drain_contiguous()
+        let out = self.drain_contiguous();
+        #[cfg(feature = "test-seams")]
+        crate::test_seams::on_frontier(
+            self.next_deliver_seq,
+            self.pending.len(),
+            self.timeout.as_micros() as u64,
+        );
+        out
     }
 
     /// Drain the contiguous prefix starting from `next_deliver_seq`.
@@ -151,6 +158,8 @@ impl ReorderBuffer {
 
     /// Force-drain the oldest entries to get back under capacity.
     pub fn force_drain_oldest(&mut self) -> Vec<(u64, Bytes, Instant)> {
+        #[cfg(feature = "test-seams")]
+        let before = self.next_deliver_seq;
         let mut result = Vec::new();
         while self.pending.len() > self.max_buffered / 2 {
             if let Some((&seq, _)) = self.pending.iter().next() {
@@ -163,6 +172,11 @@ impl ReorderBuffer {
             } else {
                 break;
             }
+        }
+        #[cfg(feature = "test-seams")]
+        {
+            let d: Vec<u64> = result.iter().map(|(s, _, _)| *s).collect();
+            crate::test_seams::on_force_drain(before, self.next_deliver_seq, &d);
         }
         result.extend(self.drain_contiguous());
         result

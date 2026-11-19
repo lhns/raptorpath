@@ -83,6 +83,13 @@ fn max_field_f64(log: &str, key: &str) -> f64 {
         .fold(0.0, f64::max)
 }
 
+/// k left by any mechanism: the receiver filled it, passed it (hold expiry or
+/// capacity force-drain), or the sender shed it (slot site or NACK site).
+fn resolved_any(c: &[Ev], rx: &[Ev]) -> bool {
+    ["fill", "pass", "pass_force"].iter().any(|n| first(rx, n).is_some())
+        || ["shed", "shed_slot"].iter().any(|n| first(c, n).is_some())
+}
+
 fn first(evs: &[Ev], name: &str) -> Option<Ev> {
     evs.iter().find(|e| e.ev == name).cloned()
 }
@@ -201,6 +208,11 @@ fn evicting_run(
     std::thread::sleep(Duration::from_millis(300));
     let c = cli.finish();
     let s = srv.log.text();
+    // Raw logs for offline parsing: `RWM_S06_DUMP=<dir>` + `RWM_S06_TAG=<tag>`.
+    if let (Ok(dir), Ok(tag)) = (std::env::var("RWM_S06_DUMP"), std::env::var("RWM_S06_TAG")) {
+        let _ = std::fs::write(format!("{dir}/{tag}.cli.log"), &c);
+        let _ = std::fs::write(format!("{dir}/{tag}.srv.log"), &s);
+    }
     Run { cli: c, srv: s }
 }
 
@@ -315,8 +327,8 @@ fn past_deadline_blocker_mid_object_stall_evicting() {
         K,
         "12000000",
         &[("RWM_TEST_TS_DROP", "dead"), ("RWM_TEST_TS_DEAD_MS", dead_ms.as_str())],
-        Duration::from_secs(25),
-        |_, rx| first(rx, "pass").is_some() || first(rx, "fill").is_some(),
+        Duration::from_secs(12),
+        |c, rx| resolved_any(c, rx),
     );
     let sent = events(&run.cli);
     let rx = events(&run.srv);
@@ -349,4 +361,20 @@ fn past_deadline_blocker_mid_object_stall_evicting() {
     // never passed nor filled at the receiver within 25 s, so there is no
     // bound to assert yet; the wedge is identical before and after ADR-0079.
     let _ = dead_us;
+}
+
+/// Control for the mid-object case: no blackout, k's every send swallowed
+/// (one lost source symbol mid-object, arrivals above it continue), evicting
+/// seat. Records only; read the raw logs (`RWM_S06_DUMP`).
+#[test]
+#[ignore = "diagnosis control: records, does not gate"]
+fn past_deadline_blocker_mid_object_no_blackout_evicting() {
+    let run = evicting_run(
+        K,
+        "12000000",
+        &[("RWM_TEST_TS_DROP", "all")],
+        Duration::from_secs(12),
+        |c, rx| resolved_any(c, rx),
+    );
+    println!("[s06 T3-ctl] cli {} bytes, srv {} bytes", run.cli.len(), run.srv.len());
 }
