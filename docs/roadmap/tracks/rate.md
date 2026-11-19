@@ -29,8 +29,9 @@ flowchart TB
     rate_spare_cwnd["✔ Is spare's cwnd<br/>enforced?"]
     rate_evict_epre["✔ Evicting-seat test<br/>suites and binary"]
     rate_evict_session["✔ Evicting-seat test,<br/>rehearsal and runs"]
+    rate_k4_input_checks>"✔ Two checks before<br/>the repair-share<br/>comparison"]
     rate_spare_clamp_verdict[/"○ Spare clamp on<br/>Realtime: verdict"/]
-    rate_k4_input_checks>"⚠ Two checks before<br/>the repair-share<br/>comparison"]
+    rate_delta_jitter_fix["○ Jitter margin reads<br/>wrong direction"]
     rate_fix_rate_readout["○ Repair-rate readout"]
     rate_law_reconcile[/"⛔ Rate-law<br/>reconciliation"/]
     rate_fix_estimators[/"⛔ Loss estimator<br/>approximations"/]
@@ -58,13 +59,15 @@ flowchart TB
     rate_evict_registration ~~~ rate_evict_epre
     rate_spare_cwnd ~~~ rate_evict_session
     rate_evict_epre ~~~ rate_evict_session
-    rate_evict_session ~~~ rate_spare_clamp_verdict
     rate_evict_session ~~~ rate_k4_input_checks
-    rate_evict_session ~~~ rate_fix_rate_readout
+    rate_evict_session ~~~ rate_spare_clamp_verdict
+    rate_k4_input_checks ~~~ rate_delta_jitter_fix
+    rate_spare_clamp_verdict ~~~ rate_fix_rate_readout
     rate_spare_clamp_verdict ~~~ rate_law_reconcile
-    rate_k4_input_checks ~~~ rate_fix_estimators
+    rate_delta_jitter_fix ~~~ rate_fix_estimators
     rate_fix_rate_readout ~~~ rate_fix_estimators
-    rate_law_reconcile ~~~ rate_fix_term_gauge
+    rate_law_reconcile ~~~ rate_fix_estimators
+    rate_fix_estimators ~~~ rate_fix_term_gauge
     rate_fix_estimators ~~~ rate_fix_rho_realtime
     rate_saturation_rstar -.-> rate_defect_pfec
     rate_ge_hmm --> rate_rstar_window_mass
@@ -77,13 +80,14 @@ flowchart TB
     rate_pfec_continuous --> rate_pfec_oracle
     rate_evict_registration --> rate_evict_epre
     rate_evict_epre --> rate_evict_session
-    rate_evict_session --> rate_spare_clamp_verdict
     rate_evict_session --> rate_k4_input_checks
+    rate_evict_session --> rate_spare_clamp_verdict
+    rate_k4_input_checks --> rate_delta_jitter_fix
     rate_pfec_oracle --> rate_law_reconcile
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
-    linkStyle 30,33 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 32,35 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -97,14 +101,14 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_dials_made_real succ
+    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_dials_made_real,rate_k4_input_checks succ
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
-    class rate_defect_pfec,rate_defect_taper_inert,rate_k4_input_checks defect
+    class rate_defect_pfec,rate_defect_taper_inert defect
     class rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_pfec_oracle waiting
-    class rate_spare_clamp_verdict,rate_fix_rate_readout next
+    class rate_spare_clamp_verdict,rate_delta_jitter_fix,rate_fix_rate_readout next
     class rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
 ```
 <!-- END GENERATED: track-rate -->
@@ -135,7 +139,8 @@ flowchart TB
 | `rate-evict-epre` | Evicting-seat test suites and binary | done | unrated |  | status §51 (E-pre, its failure rule); status §51 Amendment 1; status §51 Amendment 2; status §63 Result ("Next"); status §64 Result (the limit at ρ < 1); branch e-tree-f2 11213363 | rate-evict-registration, rec-f2-merge-guard |
 | `rate-evict-session` | Evicting-seat test, rehearsal and runs | done | unrated | Repair cap never binds at paced loads; overload cwnd not enforced | status §51 block E Result; docs/l1-raw/s51e; status §51; status §51 Amendment 2; status §63 Result; docs/derivations/s51-evict-design.md | rate-evict-epre, meas-blocke-pacing-gate, meas-blocke-steady-rule |
 | `rate-spare-clamp-verdict` | Spare clamp on Realtime: verdict | next | unrated |  | status §51 block E Result; status §60 Amendment 2 | rate-evict-session |
-| `rate-k4-input-checks` | Two checks before the repair-share comparison | next | unrated |  | status §51 block E Result | rate-evict-session |
+| `rate-k4-input-checks` | Two checks before the repair-share comparison | done | unrated | Jitter input reads the wrong direction; the bound was miscounted | status §51 block E Result; status "The two K4 input checks, post hoc" | rate-evict-session |
+| `rate-delta-jitter-fix` | Jitter margin reads wrong direction | next | unrated |  | status "The two K4 input checks, post hoc"; law ledger S03 | rate-k4-input-checks |
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | done | unrated | Not enforced: 0.81 and 0.89 of the overload rows | status §51 block E Result; status §60 Amendment 2; status §51 (choice 5; design §7); status §51 Amendment 2 |  |
 | `rate-fix-rate-readout` | Repair-rate readout | next | unrated |  | docs/derivations/s51-design.md §8 P2 |  |
 | `rate-user-rate-law` | Owner calls on rate law | blocked | n/a |  | plan user decision 11; status §3.10 item 2 (conflict for the owner) | model-paper-recon, rate-defect-pfec, meas-s51-session |
@@ -169,7 +174,8 @@ flowchart TB
 | `rate-evict-epre` | Evicting-seat test suites and binary | Block E's E-pre on e-tree-f2 11213363 (e-tree plus F2 commits 1-8 and harness63 16a6ed17, the set -e fix that every E-pre must take): suites_run.sh and binid_run.sh on one git archive under both locks, then the Linux shell tests (the §51 Amendment 1 pattern; §51 Amendment 2: the E tree is rebuilt on the fix, then a new E-pre, then the rehearsal; §63 Result 'Next'). E-pre's failure rule is §51's. It is also the first VM run of F2 commit 8's rewritten evicting branch, which the merge guard did not cover (§64 Result, the limit at ρ < 1). The pacer late-send finding (meas-blocke-pacing-gate) does not touch it. Done when: the suites read TESTS-OK and the bin_sha and reference manifest are pinned by a §51 amendment. | status §51 (E-pre, its failure rule); status §51 Amendment 1; status §51 Amendment 2; status §63 Result ("Next"); status §64 Result (the limit at ρ < 1); branch e-tree-f2 11213363 |
 | `rate-evict-session` | Evicting-seat test, rehearsal and runs | Status §51 block E: the E rehearsal (LD_HARD + 1 h), then the E battery (+ 1.5 h), on the tree and bin_sha that rate-evict-epre pins. The first rehearsal (§51 Amendment 2, e-tree a271e0bb) was NO-GO from engine defect F2: U passed its gates, PL and PM died in the warm-up; per §10 those rows are not re-run. PL and PM's gates (b)-(h) have never been read (§63 Result). Paced rows DNF by design (timeout = emission + 15 s). The pacer and the spare-clamp gauge stay on the measurement tree (§51 choice 4). Done when: the registered rows run after a rehearsal GO, and m̄ (adv), W1 (dbt_share) and K4's inputs (fec=) are recorded for rate-pfec-oracle, with the spare-clamp bind fraction for rate-spare-clamp-verdict. | status §51 block E Result; docs/l1-raw/s51e; status §51; status §51 Amendment 2; status §63 Result; docs/derivations/s51-evict-design.md |
 | `rate-spare-clamp-verdict` | Spare clamp on Realtime: verdict | §60 Amendment 2 (one rehearsal row, n = 1, an observation): flat_rate = window_rate.min(spare) read r = 0 in 46 of 53 sending windows, with spare = 0 on every saturated tick; the unclamped window_rate is not printed. FORMULA-FIRST: every clamp gets a bind-fraction gauge. Done when: the bind fraction is reported on a row that is not overdriven and the clamp's ledger verdict is recorded. | status §51 block E Result; status §60 Amendment 2 |
-| `rate-k4-input-checks` | Two checks before the repair-share comparison | W1 0.856-0.860 against the upper bracket (cod/src)/rr 0.738-0.788 on all five PM rows; the two use different tick sets (cod/src only where src > 1 000 sym/s). At PL the bracket is empty (lower 0, upper n/a), so PL's W1 is untested. Delta = clamp(ceil(rate_sym*J), 1, 64) reads 1 on PL, PM and U (J <= 11 us implied at U); J is the receive-side estimator and is not printed. Code and ledger reads only. Done when: both have a recorded cause, and K4's inputs are either cleared or re-scoped. | status §51 block E Result |
+| `rate-k4-input-checks` | Two checks before the repair-share comparison | Delta: J is the sender endpoint's own receive-side jitter (reverse direction); the forward jitter from WindowAck reaches only the monitor stat; every committed SPAN line reads Delta 1, including §61's 5 ms-jitter c3 rows (law ledger S03). W1: debt slots are counted emitted before being spent as a coded repair or a P_lost retransmit; cod counts only the first. With plost added the bound holds on all ten rows (scorer-formula fix in mbar59_score). | status §51 block E Result; status "The two K4 input checks, post hoc" |
+| `rate-delta-jitter-fix` | Jitter margin reads wrong direction | Engine change: read the peer-reported forward jitter (WindowAck.jitter_us, today stored only in ps.jitter_us) into the estimator Delta reads; fix the WindowAck builds that send 0; print J. Paper derivation first (FORMULA-FIRST), then a guard. | status "The two K4 input checks, post hoc"; law ledger S03 |
 | `rate-spare-cwnd` | Is spare's cwnd enforced? | §60 Amendment 2, pending item 3: on the rehearsal row cwnd jumped from 1 159 to 10 000 at t ≈ 10.3 s and the source was not held to it. Done when: it is settled, by reading or a test, whether the cwnd that Scheduler::spare_capacity reads is enforced on the evicting seat under quinn's BBR. Settled: the s51-evict design read the code and found the clamp's cwnd enforced at neither seat (design §7, status §51 choice 5), and the E rehearsal's U row read NOT-ENFORCED (§51 Amendment 2, one row, reported only). The clamp's verdict (DEGENERATE-AS-WIRED is a defect finding) is rate-spare-clamp-verdict. | status §51 block E Result; status §60 Amendment 2; status §51 (choice 5; design §7); status §51 Amendment 2 |
 | `rate-fix-rate-readout` | Repair-rate readout | Without it §51 reads only the granted r and reports the law's r, the clamps and the channel split as missing. rate-fix-term-gauge (R02) can merge into it if controller_rate returns its argmax bit-identically. Done when: a behaviour-neutral [RATE] readout on the [DIAG] cadence carries the law's r (mean, p50), r_anchor, r_late and β, the tail target, the spare-clamped rate with a per-leg bind fraction, the soft-saturation, overhead and W* clip bind fractions, the fraction of evaluations on the P_fec > 0 side, cod split by channel (proactive, margin, request), and a one-time echo of the resolved dial on both ends; a bit-identical test shows behaviour unchanged. | docs/derivations/s51-design.md §8 P2 |
 | `rate-user-rate-law` | Owner calls on rate law | Needs the off-Bulk session's reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). | plan user decision 11; status §3.10 item 2 (conflict for the owner) |

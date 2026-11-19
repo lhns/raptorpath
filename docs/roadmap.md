@@ -135,6 +135,7 @@ flowchart TB
         rate_evict_epre["rate · ✔ Evicting-seat<br/>test suites and binary"]
         rec_realtime_delay_recheck["rec · ✔ Realtime delay<br/>re-check"]
         rate_evict_session["rate · ✔ Evicting-seat<br/>test, rehearsal and<br/>runs"]
+        rate_k4_input_checks>"rate · ✔ Two checks<br/>before the repair-<br/>share comparison"]
     end
     subgraph bd_5["Now (in progress)"]
         cc_bbrrs_r2["cc · ⏳ bbr_rs round 2<br/>fixes"]
@@ -143,7 +144,7 @@ flowchart TB
     subgraph bd_6["Next"]
         store_defect_b0p_brake>"store · ⚠ Boot-time<br/>brake estimate latches<br/>transients"]
         store_sampler_design[/"store · ○ Store-law<br/>delay sampler design"/]
-        rate_k4_input_checks>"rate · ⚠ Two checks<br/>before the repair-<br/>share comparison"]
+        rate_delta_jitter_fix["rate · ○ Jitter margin<br/>reads wrong direction"]
         meas_s51_session["meas · ○ Off-Bulk<br/>baseline and δ sweep"]
     end
     subgraph bd_7["Later (blocked or parked)"]
@@ -181,14 +182,15 @@ flowchart TB
     rec_f2_merge_guard ~~~ rec_realtime_delay_recheck
     rate_evict_epre ~~~ rate_evict_session
     rec_realtime_delay_recheck ~~~ rate_evict_session
-    rate_evict_session ~~~ cc_bbrrs_r2
-    rate_evict_session ~~~ store_law_derivation
+    rate_evict_session ~~~ rate_k4_input_checks
+    rate_k4_input_checks ~~~ cc_bbrrs_r2
+    rate_k4_input_checks ~~~ store_law_derivation
     cc_bbrrs_r2 ~~~ store_defect_b0p_brake
     store_law_derivation ~~~ store_defect_b0p_brake
     store_defect_b0p_brake ~~~ store_sampler_design
-    store_defect_b0p_brake ~~~ rate_k4_input_checks
+    store_defect_b0p_brake ~~~ rate_delta_jitter_fix
     store_sampler_design ~~~ meas_s51_session
-    rate_k4_input_checks ~~~ meas_s51_session
+    rate_delta_jitter_fix ~~~ meas_s51_session
     meas_s51_session ~~~ store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     cod_block_pipeline -.-> cod_one_pipeline
@@ -199,16 +201,17 @@ flowchart TB
     store_s62_j0 --> store_count_rule
     rec_f2_merge_guard --> rate_evict_epre
     rate_evict_epre --> rate_evict_session
+    rate_evict_session --> rate_k4_input_checks
     cc_bbrrs_r1 --> cc_bbrrs_r2
     model_law_ledger --> store_law_derivation
     store_count_rule --> store_defect_b0p_brake
     store_defect_b0p_brake --> store_sampler_design
-    rate_evict_session --> rate_k4_input_checks
+    rate_k4_input_checks --> rate_delta_jitter_fix
     rec_f2_merge_guard --> meas_s51_session
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 42 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 43 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -223,13 +226,13 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cod_block_pipeline,rate_r_battery,store_power_law,place_daps dead
-    class cod_unified_span,cod_one_pipeline,rec_reliable_window,store_adr72_one_law,meas_blocke_pacing_gate,rec_defect_realtime_framing,place_wire_price,cc_bbr_default,meas_formula_first,meas_guard_41c,model_vis_continuum succ
+    class cod_unified_span,cod_one_pipeline,rec_reliable_window,rate_k4_input_checks,store_adr72_one_law,meas_blocke_pacing_gate,rec_defect_realtime_framing,place_wire_price,cc_bbr_default,meas_formula_first,meas_guard_41c,model_vis_continuum succ
     class rec_snapver_law,rate_evict_epre,rate_evict_session,store_count_rule,rec_realtime_delay_recheck,model_law_ledger unrated
     class rate_est_cadence,rec_f2_merge_guard,perf_emit_batch_law0,perf_io_owner vsucc
-    class rate_k4_input_checks,store_defect_b0p_brake,cc_quinn_bbr_collapse defect
+    class rate_delta_jitter_fix,store_sampler_design,meas_s51_session next
     class store_law_derivation inprog
     class store_s60a,store_s62_j0 mixed
-    class store_sampler_design,meas_s51_session next
+    class store_defect_b0p_brake,cc_quinn_bbr_collapse defect
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2 waiting
     class store_engine_form_impl,store_fix_maxbw_minrtt blocked
@@ -278,7 +281,8 @@ flowchart TB
 | Evicting-seat test suites and binary | ✔ done · unrated | Running the engine's full test suites on the fixed test tree and recording the exact program build that every later step of the evicting-seat test must use. |
 | Evicting-seat test, rehearsal and runs | ✔ done · unrated | Measuring the repair loop on a low-latency path that may drop late data, with the sender paced below the link rate: a rehearsal, then the measured runs, to feed the repair-rate oracle. |
 | Spare clamp on Realtime: verdict | ○ next | Deciding, from a run that does not overload the link, whether the cap that zeroes the repair rate on a full path is a defect. |
-| Two checks before the repair-share comparison | ⚠ open defect | Before the measured repair share is compared with the model, two readings need explaining: at the higher load it sits above a bound it should never exceed, and the jitter allowance read its minimum on every run, which may mean its input is never fed. |
+| Two checks before the repair-share comparison | ✔ fixed | Two readings from the paced repair test needed explaining before the comparison with the model. The jitter allowance reads the jitter of the wrong direction, so it always sits at its minimum (an engine defect to fix). The repair share only looked too high because the bound it was checked against forgot one kind of repair slot. |
+| Jitter margin reads wrong direction | ○ next | The sender sizes a jitter safety margin from the jitter of traffic coming back to it, not of the traffic it sends, so the margin is always at its minimum. The fix reads the jitter the receiver reports, with a derivation and a guard. |
 | Repair-rate readout | ○ next | Adding a readout of how much repair data the formula asks for and which limit is in control, without changing behaviour. |
 | Owner calls on rate law | ⛔ blocked | Owner decision on five mismatches between the paper and the code in how much repair data to send. |
 | Rate-law reconciliation | ⛔ blocked | Making the paper and the code agree on how much repair data to send, with a test for every remaining difference. |
@@ -327,6 +331,7 @@ flowchart TB
 | Per-path I/O owner | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
+| Repair-share bound counts every slot | ○ next | The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model's definition is checked to mean the same thing. |
 | Pacer late-send check replaced | ✔ fixed | The planned test of loss repair on a low-latency link required its rate pacer to send almost nothing late, against a limit set without data. Lateness turned out to be ordinary timer delay on both programs, so the limit was replaced by a check for gross stalls, and lateness is now reported instead of voiding runs. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
 | Formula-first review | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
@@ -373,6 +378,7 @@ flowchart TB
 
 **host-cargo**
 
+- `rate-delta-jitter-fix`: Jitter margin reads wrong direction
 - `rate-fix-rate-readout`: Repair-rate readout
 - `meas-guard-resolution`: Guard CPU and lag resolution
 - `meas-test-hygiene`: Test hygiene fixes
@@ -382,7 +388,7 @@ flowchart TB
 **no-cargo**
 
 - `rate-spare-clamp-verdict`: Spare clamp on Realtime: verdict
-- `rate-k4-input-checks`: Two checks before the repair-share comparison
+- `meas-w1-bracket-fix`: Repair-share bound counts every slot
 - `store-defect-b0p-brake`: Boot-time brake estimate latches transients
 - `store-sampler-design`: Store-law delay sampler design
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
@@ -503,12 +509,12 @@ Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 53 nodes (22 done, 6 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 29 nodes (14 done, 3 in progress, 3 next, 5 blocked, 1 parked, 3 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 30 nodes (15 done, 3 in progress, 3 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 55 nodes (40 done, 4 in progress, 6 next, 4 blocked, 1 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 56 nodes (40 done, 4 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 1 next, 2 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (12 done, 2 in progress, 1 next)

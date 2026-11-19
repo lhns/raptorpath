@@ -1651,23 +1651,67 @@ nodes:
   title: Two checks before the repair-share comparison
   track: rate
   kind: defect-verdict
-  state: next
+  state: done
   outcome: unrated
   evidence:
   - status §51 block E Result
+  - status "The two K4 input checks, post hoc"
+  verdict_quote: ''
+  headline: 'Jitter input reads the wrong direction; the bound was miscounted'
+  depends_on:
+  - rate-evict-session
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-19'
+  end: '2026-11-19'
+  folded: []
+  overview: true
+  plain: 'Two readings from the paced repair test needed explaining before the comparison with the model. The jitter allowance reads the jitter of the wrong direction, so it always sits at its minimum (an engine defect to fix). The repair share only looked too high because the bound it was checked against forgot one kind of repair slot.'
+  notes: 'Delta: J is the sender endpoint''s own receive-side jitter (reverse direction); the forward jitter from WindowAck reaches only the monitor stat; every committed SPAN line reads Delta 1, including §61''s 5 ms-jitter c3 rows (law ledger S03). W1: debt slots are counted emitted before being spent as a coded repair or a P_lost retransmit; cod counts only the first. With plost added the bound holds on all ten rows (scorer-formula fix in mbar59_score).'
+- id: rate-delta-jitter-fix
+  title: Jitter margin reads wrong direction
+  track: rate
+  kind: mechanism
+  state: next
+  outcome: unrated
+  evidence:
+  - status "The two K4 input checks, post hoc"
+  - law ledger S03
   verdict_quote: ''
   headline: ''
   depends_on:
-  - rate-evict-session
+  - rate-k4-input-checks
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: true
+  plain: 'The sender sizes a jitter safety margin from the jitter of traffic coming back to it, not of the traffic it sends, so the margin is always at its minimum. The fix reads the jitter the receiver reports, with a derivation and a guard.'
+  notes: 'Engine change: read the peer-reported forward jitter (WindowAck.jitter_us, today stored only in ps.jitter_us) into the estimator Delta reads; fix the WindowAck builds that send 0; print J. Paper derivation first (FORMULA-FIRST), then a guard.'
+- id: meas-w1-bracket-fix
+  title: Repair-share bound counts every slot
+  track: meas
+  kind: infra
+  state: next
+  outcome: unrated
+  evidence:
+  - status "The two K4 input checks, post hoc"
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rate-k4-input-checks
   replaced_by: []
   qualified_by: []
   lane: no-cargo
   start: ''
   end: ''
   folded: []
-  overview: true
-  plain: 'Before the measured repair share is compared with the model, two readings need explaining: at the higher load it sits above a bound it should never exceed, and the jitter allowance read its minimum on every run, which may mean its input is never fed.'
-  notes: 'W1 0.856-0.860 against the upper bracket (cod/src)/rr 0.738-0.788 on all five PM rows; the two use different tick sets (cod/src only where src > 1 000 sym/s). At PL the bracket is empty (lower 0, upper n/a), so PL''s W1 is untested. Delta = clamp(ceil(rate_sym*J), 1, 64) reads 1 on PL, PM and U (J <= 11 us implied at U); J is the receive-side estimator and is not printed. Code and ledger reads only. Done when: both have a recorded cause, and K4''s inputs are either cleared or re-scoped.'
+  overview: false
+  plain: 'The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model''s definition is checked to mean the same thing.'
+  notes: 'mbar59_score w1_hi = (cod + plost)/(r*src), red-first on the block E rows; then confirm the oracle''s W1 counts a debt slot whichever symbol it buys, before K4.'
 - id: rate-spare-cwnd
   title: Is spare's cwnd enforced?
   track: rate

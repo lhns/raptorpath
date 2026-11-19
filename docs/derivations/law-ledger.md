@@ -154,7 +154,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [K04](#k04) | spare capacity and the active_paths saturation filter | DISHONEST-INPUT, DEGENERATE(paced c2) | P3 | 47 | K01 |
 | [E02](#e02) | Copa srtt / PathState::srtt() | DISHONEST-INPUT | P3 | 48 | E01 |
 | [S02](#s02) | span width A* | DISHONEST-INPUT | P3 | 49 | S01, E12 |
-| [S03](#s03) | trailing offset Delta | UNDERIVED | P3 | 50 | - |
+| [S03](#s03) | trailing offset Delta | UNDERIVED, DISHONEST-INPUT, PINNED(floor 1) | P3 | 50 | - |
 | [S07](#s07) | taper-cache staleness 50 ms | UNDERIVED | P3 | 51 | - |
 | [R06](#r06) | r*_mass burst-tail provisioning (RWM_RSTAR_TAIL) | OK | P3 | 52 | E08 |
 | [C08](#c08) | gap-report minimum interval GAP_ACK_MIN_INTERVAL = 2 ms | UNDERIVED | P3 | 53 | - |
@@ -1226,13 +1226,13 @@ a branch.
 
 - *3. paper:* A.4, §5.3, §11.2 'Delta cap 64'
 - *4. derivation:* floor 1 structural; 64 none
-- *5. measured in regime?:* not measured
-- *6. clamp bind:* 64: no gauge
-- *7. inputs honest?:* jitter of the worst-eps path (cited RFC 3550)
+- *5. measured in regime?:* yes (status "The two K4 input checks, post hoc", 2026-11-19): `[SPAN] delta=Some(1)` on every line of §51 block E, §60, §61 (c3, 5 ms forward netem jitter), §62, §63, §65
+- *6. clamp bind:* floor 1 binds on every measured line; 64: no gauge
+- *7. inputs honest?:* **no**: the sender reads its own endpoint's receive-side arrival jitter (the reverse direction, `Scheduler::sync_rx` mirror), 0 on one-way runs; the peer-reported forward jitter (`WindowAck.jitter_us`) reaches only the monitor stat
 - *8. NO-MODE-SWITCH:* none
-- *9. verdict:* **UNDERIVED**: the 64 has no provenance and no bind gauge (§11.2)
-- *10. fix class, priority:* gauge; **P3**, rank 50
-- *flags:* measured no, gauge no
+- *9. verdict:* **UNDERIVED**: the 64 has no provenance and no bind gauge (§11.2). **DISHONEST-INPUT, PINNED(floor 1)**: wrong-direction jitter, so Δ sits at its floor on every measured run
+- *10. fix class, priority:* input fix (read the peer-reported forward jitter) + gauge (print J); **P3**, rank 50
+- *flags:* measured yes, gauge no
 
 
 ### Area: shed

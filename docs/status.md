@@ -1714,7 +1714,7 @@ The launch sha is pinned by an amendment.
   - **PL m̄ 2.04–2.07 against a predicted 1–2: missed.** Witness m̄ ≥ mbar_lo 0.52 ok.
   - PL W1 0.511–0.521, **never tested:** the lower bracket is 0 (rr·mbar_lo ≈ 0.21 < 1) and the upper is n/a by construction (cod/src is read over ticks with src > 1 000 sym/s, and PL runs 700).
   - PM m̄ 9.75–10.19, witness ok. **W1 0.856–0.860 against an upper bracket (cod/src)/rr of 0.738–0.788: FAIL on all five rows.** The bracket is built to over-count (cod includes margin and request repairs), so W1 above it means either the W1 reading or the bracket's premise is wrong at PM.
-    - Both read the same rr (the LATE `[SPAN] rr` median in `mbar59_score`), but over different tick sets: cod/src only over ticks with src > 1 000 sym/s, W1 over every LATE window. Whether that difference explains the gap is not checked.
+    - Explained post hoc (below): the bracket omitted debt slots spent on P_lost retransmits.
     - The design (§8.1, §10) gives the W1 bracket no void or label rule, so the failure enters no label; it does block K4, which compares the oracle against this same W1.
 - **Other predictions:**
   - src PL 700, PM 8 854–8 856 (±5 %), last tick 62 s: hit. Eviction share PL/PM 0.0000: hit. τ_x PM 0.000: hit. PM rr 0.234–0.250 (0.15–0.32): hit. PL A\* 6.0 (3–7): hit; PM A\* 75.5–78 (49–133): hit.
@@ -1732,7 +1732,26 @@ The launch sha is pinned by an amendment.
 - **What follows:**
   - `rate-spare-clamp-verdict` has its input: DEGENERATE-AS-WIRED, a defect finding (law ledger K04). The fix is a law change with its own derivation.
   - `rate-spare-cwnd` is settled NOT-ENFORCED on two rows.
-  - **K4 waits on two diagnoses, code and ledger only:** the PM W1 bracket failure (tick sets, then the bracket's premise) and Δ pinned at 1 (whether J is fed). Only then do PL's K4 inputs go to the oracle off-VM.
+  - **K4 waited on two diagnoses, code and ledger only:** the PM W1 bracket failure and Δ pinned at 1. Both are settled in the post-hoc entry below.
+
+**The two K4 input checks, post hoc (2026-11-19, code and committed ledgers only; Fable-reviewed).**
+- **Δ is fed the wrong direction's jitter: a DISHONEST-INPUT finding (law ledger K09).**
+  - **The wiring (code):**
+    - Δ = clamp(⌈rate_sym·J⌉, 1, 64) (`emit_source.rs:634`) sizes the jitter guard of the trailing-span repair placement (`end = newest + 1 − Δ`, `:860`).
+    - J is `est.jitter_us()` of the worst-ε channel path's sender-side estimator. That value is the TX half's mirror of its own endpoint's receive-side estimator (`Scheduler::sync_rx`, `scheduler/mod.rs:454`), fed by `record_arrival` on received data batches (`net/receiver.rs:1245`, `:1249`). So J is the jitter of data the SENDER's endpoint receives: the reverse direction.
+    - The forward path's jitter, measured by the receiver, rides back in `WindowAck.jitter_us`. It lands only in the monitoring stat `ps.jitter_us` (`net/control_msg.rs:461`, `:696`), and several WindowAck builds send 0 (`net/receiver.rs:938`, `:1038`, `:1082`).
+  - **Witness (committed ledgers):** every `[SPAN]` line in §51 block E, §60, §61, §62, §63 and §65 reads `delta=Some(1)`, including §61's c3 rows (netem jitter 5 ms on the forward path; about 19 000 lines). With the forward jitter, any rate above 200 sym/s on c3 gives Δ ≥ 2.
+  - **Scope:** on one-way runs J stays at its initial 0. On two-way traffic J is nonzero, but it is still the reverse direction's.
+  - **Fix:** read the peer-reported forward jitter. That is an engine change with its own derivation and a guard.
+- **The W1 upper bracket was wrong, not W1 (a scorer-formula defect; the engine is unaffected).**
+  - **Aligned counts** over the same LATE interval (4.76–74.0 s) on all ten paced rows:
+    - Σ fec n / Δcum src = 0.995, so the denominators agree.
+    - The debt ledger closes: Σ`dbt_acc` = Σ(`dbt_em` + `dbt_rm_ack` + `dbt_rm_nack`) to under one symbol.
+    - Σ`dbt_em` exceeds Δcum cod by 6–9 % (PM) and 4–5 % (PL).
+  - **Cause (code):** every debt slot is counted as emitted (`note_debt_emitted`, `emit_source.rs:765`) before the slot is spent on either a coded repair or a P_lost retransmit of an old source. Only the first is in `cod` (`total_repair_symbols`). The P_lost branch is `mpd_plost_retx`, printed as `[DIAG] plost=`.
+  - **Witness:** Δcod + Δplost ≥ Σ`dbt_em` on every row (PM 99 926 against 98 131 on s42 r1; PL 8 661 against 8 148). The corrected bound (cod + plost)/(r·src) holds W1: PM s42 r1 0.872 ≥ 0.860, PL s42 r1 0.542 ≥ 0.512.
+  - **Consequence:** `mbar59_score`'s upper bracket must count the P_lost slots. A K4 comparison must read the oracle's W1 with the same meaning (a debt slot, whichever symbol it buys) before W1 is compared.
+- **K4 after both:** W1's bracket failure is explained, with the meaning question owed to the oracle side. Δ is at its floor by wiring, so K4 on these rows tests the loop only at Δ = 1. PL's K4 inputs can go to the oracle labelled that way, once the oracle's W1 definition is checked against "debt slot".
 
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
