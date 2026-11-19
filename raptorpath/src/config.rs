@@ -212,6 +212,39 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
     }
 }
 
+/// The object-delivery modes the TCP tunnel can never use: it needs an
+/// in-order byte stream. A config file (which `merge` lets survive the CLI
+/// overlay) must not enable them.
+pub fn reject_tunnel_object_modes(config: &RaptorpathConfig) -> anyhow::Result<()> {
+    for (set, flag) in [
+        (config.window_out_of_order, "window_out_of_order"),
+        (config.window_coded_only, "window_coded_only"),
+        (config.window_generation_coding, "window_generation_coding"),
+        (config.window_systematic_repair, "window_systematic_repair"),
+    ] {
+        if set == Some(true) {
+            anyhow::bail!(
+                "{flag} is a perf/native-object mode; the tunnel always delivers in order:                  remove it from the config file"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Resolve the TCP tunnel's config: `base` (profile + TOML file) overlaid
+/// with the CLI. Object modes in `base` are an error; all four are pinned false.
+pub fn tunnel_config(
+    base: RaptorpathConfig,
+    mut cli_overlay: RaptorpathConfig,
+) -> anyhow::Result<RaptorpathConfig> {
+    reject_tunnel_object_modes(&base)?;
+    cli_overlay.window_out_of_order = Some(false);
+    cli_overlay.window_coded_only = Some(false);
+    cli_overlay.window_generation_coding = Some(false);
+    cli_overlay.window_systematic_repair = Some(false);
+    Ok(merge(base, cli_overlay))
+}
+
 /// Convert resolved config into PeerConfig + optional status address.
 pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<SocketAddr>)> {
     let bind_addrs: Vec<SocketAddr> = config
@@ -703,5 +736,62 @@ mod tests {
         assert_eq!(peer_config.tun_addr, "10.99.0.1/24");
         assert!(!peer_config.is_server);
         assert!(status_addr.is_none());
+    }
+
+    fn tunnel_base(field: &str) -> RaptorpathConfig {
+        let mut c = RaptorpathConfig::default();
+        match field {
+            "window_out_of_order" => c.window_out_of_order = Some(true),
+            "window_coded_only" => c.window_coded_only = Some(true),
+            "window_generation_coding" => c.window_generation_coding = Some(true),
+            "window_systematic_repair" => c.window_systematic_repair = Some(true),
+            _ => unreachable!(),
+        }
+        c
+    }
+
+    const TUNNEL_MODES: [&str; 4] = [
+        "window_out_of_order",
+        "window_coded_only",
+        "window_generation_coding",
+        "window_systematic_repair",
+    ];
+
+    #[test]
+    fn tunnel_rejects_object_modes_from_config_file() {
+        for f in TUNNEL_MODES {
+            let err = tunnel_config(tunnel_base(f), RaptorpathConfig::default())
+                .expect_err(f)
+                .to_string();
+            assert!(err.contains(f) && err.contains("in order"), "{f}: {err}");
+        }
+    }
+
+    #[test]
+    fn tunnel_accepts_false_and_pins_all_four_false_when_unset() {
+        let resolved_all_false = |c: &RaptorpathConfig| {
+            let (p, _) = resolve(c).unwrap();
+            assert!(!p.window_out_of_order);
+            assert!(!p.window_coded_only);
+            assert!(!p.window_generation_coding);
+            assert!(!p.window_systematic_repair);
+        };
+        let unset = tunnel_config(RaptorpathConfig::default(), RaptorpathConfig::default()).unwrap();
+        resolved_all_false(&unset);
+        assert_eq!(unset.window_out_of_order, Some(false));
+        assert_eq!(unset.window_coded_only, Some(false));
+        assert_eq!(unset.window_generation_coding, Some(false));
+        assert_eq!(unset.window_systematic_repair, Some(false));
+        for f in TUNNEL_MODES {
+            // explicit false in the file is fine
+            let mut base = RaptorpathConfig::default();
+            match f {
+                "window_out_of_order" => base.window_out_of_order = Some(false),
+                "window_coded_only" => base.window_coded_only = Some(false),
+                "window_generation_coding" => base.window_generation_coding = Some(false),
+                _ => base.window_systematic_repair = Some(false),
+            }
+            resolved_all_false(&tunnel_config(base, RaptorpathConfig::default()).unwrap());
+        }
     }
 }

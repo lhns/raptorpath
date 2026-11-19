@@ -395,7 +395,7 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         // Systematic+repair is a bulk-object mode; tunnel stream stays systematic.
         window_systematic_repair: None,
     };
-    let final_config = config::merge(base_config, cli_overlay);
+    let final_config = config::tunnel_config(base_config, cli_overlay)?;
     let (peer_config, status_addr) = config::resolve(&final_config)?;
 
     info!(?peer_config, "resolved configuration");
