@@ -139,7 +139,7 @@ export STUB_TMP="$(cygpath -m "${LD_TMPD:?}" 2>/dev/null || echo "$LD_TMPD")"
 [ -n "${STUB_DRVLOG:-}" ] && echo "$1 $2 $4 timeout=${RWM_PERF_TIMEOUT_S-unset}" >> "$STUB_DRVLOG"
 [ -n "${STUB_DRVLOG3:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} slaw=${RWM_SLAW-unset} pool=${RWM_STORE_PATH_POOL-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} rtobs=${RWM_RTOBS-unset} diag=${RWM_DIAG-unset} bin=$(basename "${RWM_BIN:-?}")" >> "$STUB_DRVLOG3"      # plans 60a / 60b: the whole per-row run spec
 [ -n "${STUB_DRVLOG4:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} delta=${RWM_DELTA-unset} rate=${RWM_PERF_RATE_MBIT-unset} slaw=${RWM_SLAW-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} rtobs=${RWM_RTOBS-unset} diag=${RWM_DIAG-unset} gen=${RWM_GEN-unset} minr=${RWM_MIN_R-unset} ccpace=${RWM_CC_PACE-unset} copadelta=${RWM_COPA_DELTA-unset} copawire=${RWM_COPA_WIRE-unset} cexp=${RWM_COMPLETION_EXPOSURE-unset}" >> "$STUB_DRVLOG4"      # plans 51e / 51: the per-row run spec incl. every scrubbed knob
-[ -n "${STUB_DRVLOG5:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} slaw=${RWM_SLAW-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG5"      # plan 63: which seat's binary ran
+[ -n "${STUB_DRVLOG6:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} slaw=${RWM_SLAW-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG6"      # plan 63: which seat's binary ran
 [ -n "${STUB_DRVLOG2:-}" ] && echo "$3 reliable=${RWM_C_RELIABLE-unset} unified=${RWM_UNIFIED-unset} gen=${RWM_GEN-unset}" >> "$STUB_DRVLOG2"      # plan 59: hint + the evicting-seat env (a separate log: drv.log's lines are compared whole)
 [ -n "${STUB_DRVLOG5:-}" ] && echo "$3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} reliable=${RWM_C_RELIABLE-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG5"      # plan 64: hint, bytes, mode, timeout, reliability, the seat's binary dir
 python3 ./stubrun_gen.py "$@" || { echo "stub driver failed"; exit 1; }
@@ -277,7 +277,7 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
 
 def run_launch(sb, plan, base_sha, rehearse=False, prior=None, p46_suites=False, timeout=3600, guard_set=None, extra_env=None):
     """Run loopdiag_run_all.sh in the sandbox; -> (rc, stdout, rowlog lines, cargo log lines)."""
-    for n in ("rows.log", "cargo.log", "drv.log", "drv2.log", "drv3.log", "drv4.log", "drv5.log", "tests.log"):
+    for n in ("rows.log", "cargo.log", "drv.log", "drv2.log", "drv3.log", "drv4.log", "drv5.log", "drv6.log", "tests.log"):
         open(os.path.join(sb["logs"], n), "w").close()
     env = dict(os.environ)
     for k in [k for k in env if k.startswith(("LD_", "RWM_", "STUB_"))]:
@@ -2456,13 +2456,13 @@ def stub_bin_pair(sb):
     return out[0], out[1]
 
 
-def drv5_lines(sb):
-    p = os.path.join(sb["logs"], "drv5.log")
+def drv6_lines(sb):
+    p = os.path.join(sb["logs"], "drv6.log")
     return [ln.split() for ln in open(p).read().splitlines()] if os.path.exists(p) else []
 
 
 def expect_calls63(rows):
-    """The driver lines (drv5.log): scenario a, b, hint, bytes, mode, timeout, rate, RWM_SLAW, RWM_C_RELIABLE, RWM_RDIAG, RWM_DIAG, the binary's directory (bin-base = CONTROL, bin = CAND)."""
+    """The driver lines (drv6.log): scenario a, b, hint, bytes, mode, timeout, rate, RWM_SLAW, RWM_C_RELIABLE, RWM_RDIAG, RWM_DIAG, the binary's directory (bin-base = CONTROL, bin = CAND)."""
     import plan63
     out = []
     for cell, _, arm, _, _ in rows:
@@ -2483,7 +2483,7 @@ def case63(plan, path):
     try:
         sb = make_sandbox(root, plan, None)
         (cand_bin, cand_sha), (ctl_bin, ctl_sha) = stub_bin_pair(sb)
-        extra = {"STUB_BIN_FILE": px(cand_bin), "LD_BIN_CONTROL": px(ctl_bin), "LD_BIN_SHA_CONTROL": ("0" * 64 if path == "control-sha-mismatch" else ctl_sha), "STUB_DRVLOG5": px(sb["logs"]) + "/drv5.log"}
+        extra = {"STUB_BIN_FILE": px(cand_bin), "LD_BIN_CONTROL": px(ctl_bin), "LD_BIN_SHA_CONTROL": ("0" * 64 if path == "control-sha-mismatch" else ctl_sha), "STUB_DRVLOG6": px(sb["logs"]) + "/drv6.log"}
         if path in ("full", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt", "control-sha-mismatch"):
             extra["LD_BIN_SHA_CAND"] = cand_sha
         if path == "cand-sha-mismatch":
@@ -2503,7 +2503,7 @@ def case63(plan, path):
         failed = os.path.exists(os.path.join(run_dir, "FAILED-ALL"))
         builds = [c for c in cargo if "|build " in c]
         tests = [c for c in cargo if "|test " in c]
-        calls = drv5_lines(sb)
+        calls = drv6_lines(sb)
         if path in ("cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-prebuilt"):
             if path == "cand-prebuilt":
                 check(f"{tag}: a prebuilt CAND is refused before anything runs (ABORT-BUILD, rc 3: no build, no lock, no row): the CAND is a plain release build from the launch archive",

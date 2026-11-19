@@ -409,9 +409,11 @@ fi
 # Plans 62r0 / 62a: the tools-test reuse. EVERY python and bash tools test of a launch (the pre-build gates below and the suites stage's full set) is skipped iff the rehearsal's passed on a byte-identical tools/l1: tools_manifest is the sha256 of every file under tools/l1 (C-locale path
 # order, no __pycache__), recorded at the rehearsal (suites/TOOLS-MANIFEST.sha256, with TOOLS-TESTS-OK) and compared at the launch (LD_REHEARSAL62 = the rehearsal's run dir). Only 62a reuses; any difference RUNS the tests (a MISS is
 # not an abort: the tests are the fallback, not the gate). The engine suites follow the reference-manifest rule above.
+# The identity of what the tools tests ran on: sha256 of every file under tools/l1 (the tests, the scorers, the scripts, testdata), in C-locale path order; __pycache__ / *.pyc (the parser gate runs python in this tree
+# before the suites stage, so the rehearsal's and the launch's trees differ in them without any source difference) are not part of it.
 tools_manifest() {
-  ( cd "$HERE" || exit 1
-    find . -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | LC_ALL=C sort | xargs -r sha256sum )
+  ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
+    find tools/l1 -type f ! -name '*.pyc' ! -path '*/__pycache__/*' | LC_ALL=C sort | xargs -r sha256sum | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /' )
 }
 tools_reuse_ok() {      # reads $RUN/TOOLS-MANIFEST.now (tools_manifest, taken before any test ran)
   local d="${LD_REHEARSAL62:-}/suites"
@@ -796,12 +798,6 @@ src_manifest() {
   ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
     { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
       find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-core/src raptorpath-wasm/src gf256/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
-}
-# The identity of what the tools tests ran on: sha256 of every file under tools/l1 (the tests, the scorers, the scripts, testdata), in C-locale path order; __pycache__ / *.pyc (the parser gate runs python in this tree
-# before the suites stage, so the rehearsal's and the launch's trees differ in them without any source difference) are not part of it.
-tools_manifest() {
-  ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
-    find tools/l1 -type f ! -name '*.pyc' ! -path '*/__pycache__/*' | LC_ALL=C sort | xargs -r sha256sum | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /' )
 }
 # LD_PRIOR_TESTS (plan 34's amendment 2, now plans 41c / 46 / 47 / 48 too): a green suite run of a BYTE-IDENTICAL tree (see src_manifest) may stand in for
 # this session's suites. "Same tree" is the src_manifest paths above. LD_PRIOR_TESTS is that run's dir (or its parent: the suites/ subdir of a plan 47 / 48 run is found too); it must hold TESTS-OK
