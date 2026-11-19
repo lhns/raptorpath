@@ -137,7 +137,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [S01](#s01) | span deadline D | DIVERGENT, DISHONEST-INPUT | P2 | 30 | E01, E03 |
 | [S04](#s04) | shed budget | DIVERGENT, DISHONEST-INPUT | P2 | 31 | R03, S01 |
 | [S05](#s05) | receiver shed hold | DIVERGENT, UNDERIVED | P2 | 32 | E10 |
-| [S06](#s06) | taper copy decision (P_lost) | DISHONEST-INPUT, DEGENERATE(L1: never fires) | P2 | 33 | E01, E09 |
+| [S06](#s06) | taper copy decision (P_lost) | DISHONEST-INPUT, DEGENERATE(L1: never fires; fires on paced Realtime) | P2 | 33 | E01, E09 |
 | [S08](#s08) | Realtime duplicate source send | MODE-SWITCH(live), UNDERIVED | P2 | 34 | - |
 | [S09](#s09) | symbol packing and emission-batching scope (use_packing, emit_batch_on) | MODE-SWITCH(live), UNDERIVED | P2 | 35 | - |
 | [K05](#k05) | placement cost (place_costs) | DIVERGENT, UNDERIVED | P2 | 36 | - |
@@ -1295,7 +1295,7 @@ a branch.
 
 - *3. paper:* A.2 P_lost, §3.2-3.3; §11.3 P_lost row
 - *4. derivation:* §3.2; rttvar stand-in E09
-- *5. measured in regime?:* measured waste is zero; why it never fires is undecided (§11.2 taper row)
+- *5. measured in regime?:* measured waste is zero; why it never fires is undecided (§11.2 taper row). It does fire on the paced Realtime rows of status §51 block E (ρ < 1, r ≈ 0.23–0.41): `plost` = `taper` = 10 197 on PM s42 r1, about a tenth of the debt slots (status "The two K4 input checks, post hoc")
 - *6. clamp bind:* [0,1]
 - *7. inputs honest?:* srtt = E01 of the worst-eps path (dwell-inclusive), rttvar = 0.1*srtt
 - *8. NO-MODE-SWITCH:* none

@@ -1668,7 +1668,7 @@ nodes:
   folded: []
   overview: true
   plain: 'Two readings from the paced repair test needed explaining before the comparison with the model. The jitter allowance reads the jitter of the wrong direction, so it always sits at its minimum (an engine defect to fix). The repair share only looked too high because the bound it was checked against forgot one kind of repair slot.'
-  notes: 'Delta: J is the sender endpoint''s own receive-side jitter (reverse direction); the forward jitter from WindowAck reaches only the monitor stat; every committed SPAN line reads Delta 1, including §61''s 5 ms-jitter c3 rows (law ledger S03). W1: debt slots are counted emitted before being spent as a coded repair or a P_lost retransmit; cod counts only the first. With plost added the bound holds on all ten rows (scorer-formula fix in mbar59_score).'
+  notes: 'Delta: J is the sender endpoint''s own receive-side jitter (reverse direction); the forward jitter from WindowAck reaches only the monitor stat; every committed SPAN line reads Delta 1, including §61''s 5 ms-jitter c3 rows (law ledger S03). W1: debt slots are counted emitted before being spent as a coded repair or a P_lost retransmit; cod counts only the first. With plost added, in count form (Δcod + Δplost)/Σdbt_acc, the bound holds on all ten rows; the rate form with the SPAN rr median still fails three PM rows. The oracle spec''s K4 target cod/(rr*src) needs reconciling.'
 - id: rate-delta-jitter-fix
   title: Jitter margin reads wrong direction
   track: rate
@@ -1711,7 +1711,7 @@ nodes:
   folded: []
   overview: false
   plain: 'The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model''s definition is checked to mean the same thing.'
-  notes: 'mbar59_score w1_hi = (cod + plost)/(r*src), red-first on the block E rows; then confirm the oracle''s W1 counts a debt slot whichever symbol it buys, before K4.'
+  notes: 'mbar59_score w1_hi in count form (Δcod + Δplost)/Σdbt_acc, red-first on the block E rows; then one W1 definition for K4 on both sides (pfec-oracle-spec §6.2 uses cod/(rr*src)).'
 - id: rate-spare-cwnd
   title: Is spare's cwnd enforced?
   track: rate
