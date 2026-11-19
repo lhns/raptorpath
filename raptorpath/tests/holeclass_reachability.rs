@@ -187,8 +187,7 @@ fn the_audit_classes_reach_the_engine_and_cross_path_is_zero_on_one_path() {
         "the ungated `taper=` and the DIAG-gated `plost=` count the SAME \
          branch and must agree — one of them is mis-wired:\n{cli}"
     );
-    assert_eq!(taper, 0, "the taper copy is deleted (ADR-0079); taper={taper}:
-{cli}");
+    assert_eq!(taper, 0, "the taper copy is deleted (ADR-0079); taper={taper}:\n{cli}");
     for l in cli.lines().filter(|l| l.contains(" mpr[")) {
         assert!(l.contains(" taper="), "a `[DIAG]` line without `taper=`: {l}");
     }
