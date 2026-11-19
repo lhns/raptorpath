@@ -398,6 +398,24 @@ fn test_snapshot_r_sat_is_the_value_fed_to_soft_saturate() {
 }
 
 #[test]
+fn test_snapshot_rlaw_executes_and_follows_the_inputs() {
+    let mut est = LossEstimator::new();
+    for _ in 0..100 {
+        est.record_batch(100, 95);
+        est.record_rtt(std::time::Duration::from_millis(210));
+        est.record_throughput(2_500_000.0);
+    }
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+    let on = ctrl.rate_snapshot(&est, 64).rlaw();
+    assert!(on.ends_with("/sat") || on.ends_with("/cap"), "aggressive request under a binding cap: {on}");
+    let mut off = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+    off.set_saturation_cap(false);
+    let free = off.rate_snapshot(&est, 64).rlaw();
+    assert!(!free.ends_with("/sat"), "cap off cannot read sat: {free}");
+    assert_ne!(on, free, "the gauge changes with the inputs");
+}
+
+#[test]
 fn test_saturation_cap_binds_with_throughput() {
     // C4-like estimator state: 5% loss, long RTT, known throughput.
     // Realtime's aggressive request must be capped at r_sat; without

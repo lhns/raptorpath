@@ -170,6 +170,16 @@ impl RateSnapshot {
         (1.0 - beta) * r_anchor + beta * r_bulk
     }
 
+    /// Which term of the rate law won and what bound it, for the term that
+    /// carries the larger weight in the mix (`[SPAN] rlaw=core|burst|mass/sat|cap|free`).
+    /// Diagnostic read: it never feeds the rate.
+    pub fn rlaw(&self) -> String {
+        let mut inputs = self.inputs;
+        inputs.bulk_late_is_fine = self.beta > 0.5;
+        let t = raptorpath_math::controller_rate_trace(&inputs);
+        format!("{}/{}", t.winner, t.bound)
+    }
+
     /// The r_sat `controller_rate` feeds `soft_saturate` for these inputs
     /// (diagnostic read, `[SPAN] rsat=`). 1.0 = no cap: the cap is off, or
     /// `r_saturation`'s degenerate-input value.

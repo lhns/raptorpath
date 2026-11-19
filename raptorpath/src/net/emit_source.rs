@@ -707,9 +707,9 @@ pub(crate) fn emit_source(
                 } else {
                     String::new()
                 };
-                let rsat = diag_r_sat(ctx.fec_controller, ctx.scheduler, st.encoder.window_size());
+                let (rsat, rlaw) = diag_r_sat(ctx.fec_controller, ctx.scheduler, st.encoder.window_size());
                 crate::readout!(
-                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{} rsat={:.4}",
+                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{} rsat={:.4} rlaw={}",
                     dnow.saturating_sub(pol.span_diag_start_us) as f64 / 1e6,
                     ack,
                     ws,
@@ -726,6 +726,7 @@ pub(crate) fn emit_source(
                     transit,
                     dg,
                     rsat,
+                    rlaw,
                 );
             }
         }
@@ -917,10 +918,13 @@ fn diag_r_sat(
     fec_controller: &FecRateController,
     scheduler: &crate::scheduler::Scheduler,
     window: usize,
-) -> f64 {
+) -> (f64, String) {
     match worst_eps_path(scheduler) {
-        Some((_, est)) => fec_controller.rate_snapshot(est, window).r_sat(),
-        None => 1.0,
+        Some((_, est)) => {
+            let snap = fec_controller.rate_snapshot(est, window);
+            (snap.r_sat(), snap.rlaw())
+        }
+        None => (1.0, "-".to_string()),
     }
 }
 
