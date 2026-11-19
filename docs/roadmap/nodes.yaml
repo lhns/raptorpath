@@ -6803,8 +6803,8 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: The standard merge guard runs only Bulk rows, which send no repair slots, so it cannot see any change to the repair path; give it off-Bulk stages.
-  notes: 'Found by the S06 deletion plan: the 41d guard rows run hint=bulk (no proactive slots), so Stage G only checks Bulk did not regress. The plan adds Stage A (Auto at c2 / c8 with per-row execution witnesses) and Stage R (paced evicting seat). Done when: the guard has off-Bulk stages with witnesses as a reusable plan, not per-change additions.'
+  plain: No engine merge on a Bulk-only guard from now on. The standard merge guard runs only Bulk rows, which send no repair slots, so it cannot see any change to the repair path; give it off-Bulk stages.
+  notes: 'Found by the S06 deletion plan: the 41d guard rows run hint=bulk (no proactive slots), so Stage G only checks Bulk did not regress. The plan adds Stage A (Auto at c2 / c8 with per-row execution witnesses) and Stage R (paced evicting seat). Process rule (2026-11-19, Fable review): no engine merge on a Bulk-only guard; an inert / never-fires reading needs a witness that its precondition held; an accepted ADR needs a non-test call site or a not-implemented status. The repair half of the engine first ran in scored rows this week. Done when: the guard has off-Bulk stages with witnesses as a reusable plan, not per-change additions.'
 - id: meas-s51-c8-gauges
   title: Per-leg clamp and saturation gauges
   track: meas
