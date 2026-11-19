@@ -1907,7 +1907,7 @@ The launch sha is pinned by an amendment.
 - **Evidence:** `docs/l1-raw/s51b/recopy/`: the scripts (`acct.py`, `red.py`, `wire.py`, `age.py`), the two tables, and `recopy-extract.tgz`, which holds the lines the scripts read from all 152 rows and reproduces both tables byte for byte.
 - **Order:** the S06 derivation goes into the paper first (`rate-s06-plost-derivation`, running). It is followed by a red-first host test counting copies per seq. S06 goes before the jitter fix (`rate-delta-jitter-fix`), because Δ places coded symbols that c8 never sends. The spare-clamp verdict and the S08 fix are held until S06 lands, since all three edit the proactive-slot path.
 
-**§51 block 51 Result, Addendum 3 (2026-11-19, post hoc, code and ledgers only; the findings Fable-reviewed, this text not yet): the owner deletes the taper copy branch (S06), and the repair-rate law (R02) is recorded as over-provisioned against what the δ dial needs at ρ = 1. The new rate formula waits for a reading without copies.**
+**§51 block 51 Result, Addendum 3 (2026-11-19, post hoc, code and ledgers only; Fable-reviewed, corrected the same day): the owner deletes the taper copy branch (S06), and the repair-rate law (R02) is recorded as not derived to its declared target and not delivering it, with the direction of any fix open. The new rate formula waits for a reading without copies.**
 - **Owner decision 2026-11-19, S06:** delete the copy branch, so every proactive slot carries a coded symbol. The alternative, S06′, was a posterior over resends in flight (`docs/derivations/s06-plost-resend.md` on `s06-derivation` `5ebf41a5`). It kept "copy with probability π", which that derivation calls UNDERIVED, so it would have needed a FORMULA-FIRST waiver.
   - **Why delete:** at ρ = 1 a copy adds no degree of freedom the NACK resend does not send. It is only a second, earlier trigger for the same correction.
   - **What it keeps:** ADR-0064's shed law and budget. The NACK path applies the same `shed_allowed` test to every judged gap seq (`sender_phases.rs:846–869`), a superset of the slot path's `first()`.
@@ -1936,14 +1936,14 @@ The launch sha is pinned by an amendment.
 
   - **c8:** the margin z·S is 85–90 % of r, and the floor ε̂/(1−ε̂) is only 0.015–0.04. Inferred from a tick-level port of the law, since no term-win gauge exists.
   - **c2: which term wins is undecided.** The core term reproduces r only at σ² ≈ 30 against an honest 13, so the window-mass term cannot be excluded without the gauge.
-  - **The 10⁻⁵ base has no derivation.** The law gives the NACK channel no credit at ρ = 1, and the `max` has no stated reason.
+  - **The 10⁻⁵ base is a declared dial**, not a constant (erratum below): `--target-tail-loss`, the Home / Datacenter profiles, ADR-0050. What is missing is the margin's derivation to that target and a gauge of the delivered tail. The law gives the NACK channel no credit at ρ = 1, and the `max` has no stated reason.
   - `TaperBudget` passes the rate straight through: `owed=0.00` on all 16 843 `[SPAN]` lines.
   - The 0.5 cap binds on 6–8 % of ticks at c2 Auto and above and 12–16 % at c8. These are plu spikes; the figure is inferred, not yet checked on a row.
   - c8's consumed r above the predicted r_sat comes from r_sat's dwell-inclusive srtt (564–600 ms against the design's 250), not from a breach of the cap.
 - **Over-provisioned against what, and by how much:**
   - **Against the δ dial at ρ = 1:** yes. ARQ delivers every byte, so delivery alone needs r = 0, and r ≈ 0.20–0.26 costs the 15 % of goodput.
   - **Against the law's own tail target (10⁻⁵ residual per window):** the exact-tail arithmetic says r is too low (0.32 / 0.36 needed). But that arithmetic assumes every slot is coded, and today 64 % (c2) and 98 % (c8) are copies.
-  - **Measured residual today at c2 Auto:** about 0.014 holes per source still fall to resends (losses 0.032 minus decode closes 0.011–0.012 per source), against the 10⁻⁵ target.
+  - **Measured residual today at c2 Auto:** about 0.014–0.021 holes per source still fall to resends. That is source losses of 0.026 (from NACK resends) to 0.032 (wire losses, an upper bound), minus decode closes of 0.011–0.012 per source. The target bounds a per-window residual, so the two figures are not yet in the same unit; the conversion is owed.
   - So **the size of any r fix waits for a reading without copies.** The copy-branch deletion and the rate arms can share one VM session: reported-only arms over the tail base on the no-copy binary, if the base is settable at launch (to be checked).
 - **The fix direction is not adopted.** The rate doc's candidate replaces t_tail/ε̂ with a critical fractile priced by the cost of a hole falling to ARQ. On two of its three readings it is clamp-bound from Bulk through Auto (r = 0), which is a defect by FORMULA-FIRST. Its D_arq/d of 94 at c2 does not match the measured close times. It goes back for a definition of d.
 - **Ledger** (evidence and verdicts, `law-ledger.md`):
@@ -1953,7 +1953,11 @@ The launch sha is pinned by an amendment.
   - R01 is measured off Bulk;
   - S10 gets the pass-through evidence;
   - **C02 gains the SACK encoding cap:** `MAX_SACK_RANGES` = 64 binds on every c8 report (63.7 ranges per report on c8 HA s42 r1, 1 754 631 / 27 557, against 3.7 at c2). Which holes a c8 report can name is set by the cap, not by the loss pattern.
-- **Owner question:** is the 10⁻⁵ residual per window a promise to keep, or a default? Today's delivered residual at c2 Auto is about 0.014 holes per source to resends, against 10⁻⁵. Every byte still arrives, by ARQ.
+- **Owner question, answered by delegation to Fable (2026-11-19), then corrected the same day.** `target_tail_loss` is neither a promise nor a bare default. It is a **declared dial** that the engine does not deliver and that no gauge reads.
+  - It is the `--target-tail-loss` flag, the Home (10⁻⁴) and Datacenter (10⁻⁶) profiles, and ADR-0050 (Accepted): "the protocol hint maps to target_tail_loss … the BOCD quantile at the adjusted confidence level IS the entire control mechanism".
+  - **Kept unchanged for now.** Removing or redefining it needs an ADR superseding ADR-0050, and that is the owner's call.
+  - **The deciding test is ADR-0050's own claim:** a tighter target buys less resend latency. It is registered two-sided for the no-copy VM session as a sweep of the flag at fixed δ, which separates it from β. If in-order delay falls as the target tightens, the dial is kept and r is derived to meet it. If it does not fall, the dial is superseded.
+  - **Erratum:** an earlier line in this addendum (and ledger R02) called the base "a config default with no derivation", and the coordinator told the owner the rate was "set too high". Both are withdrawn. Against the δ dial at ρ = 1 the rate is more than delivery needs; against its declared target it under-delivers. Option (b) stands as an investigation, not a verdict that r is too high.
 
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
