@@ -1,7 +1,8 @@
 # rate-overprovision: is the proactive rate r over-provisioned off Bulk, and by which term?
 
 Status: DIAGNOSIS and derivation direction. No engine change, no VM, no cargo. The status, paper
-and ledger texts are proposals (§8), not edits. Code read at `github/main` `3f07a4cd`. Evidence: the
+and ledger texts are proposals (§8), not edits. Code read at `github/main` `3f07a4cd`, the base of
+this branch; the scripts and their outputs are committed beside this note. Evidence: the
 152 rows of the off-Bulk sweep (status "§51 block 51 Result" and Addenda 1–2), read from the full
 per-row logs (`s51b-ledger/x/b51c2|b51c8/run/rep51/diag-ld`, not committed) with the scripts in
 `rate-overprovision/` (outputs committed beside them as `*.out`).
@@ -9,21 +10,28 @@ per-row logs (`s51b-ledger/x/b51c2|b51c8/run/rep51/diag-ld`, not committed) with
 ## 0. Answer in plain words
 
 - **Against its own target, r is not over-provisioned; it is short.** At Auto, the law's own target
-  t_tail/ε = 4·10⁻⁴ per window needs r ≈ 0.32 at c2 and 0.39 at c8's slow leg on the honest
-  channel. The law gives 0.22 and 0.27.
-- **Against what the δ dial needs at ρ = 1, it is over-provisioned, at Auto entirely.** At ρ = 1
-  delivery needs no proactive repair at all (§3.5: P_arq = 1), so r buys only lateness. The NACK
-  path still resends every loss about once on every arm, so each coded symbol is pure extra
-  bandwidth that buys an earlier close for about 0.14 holes. Priced the way paper §4.9 prices a
-  late symbol, the critical fractile at Auto is ≥ 1, so r = 0 is the optimum there.
+  t_tail/ε = 4·10⁻⁴ per window needs r ≈ 0.32 at c2 and 0.36 at c8 (two-leg window) on the
+  honest channel. The law gives 0.22 and 0.27.
+- **Against what the δ dial needs at ρ = 1, it is over-provisioned at Auto on all three of the
+  paper's readings of the late price. How much depends on the reading.**
+  - At ρ = 1 delivery needs no proactive repair at all (§3.5: P_arq = 1), so r buys only lateness.
+  - The NACK path still resends every source loss about once on every arm. So each coded symbol is
+    pure extra bandwidth that buys an earlier close for about 0.14 holes.
+  - Priced as paper §4.9 prices a late symbol, with D_arq/d = 1.03 or 2.2, the critical fractile
+    at Auto is ≥ 0.9, and r = 0 is the optimum there.
+  - With §4.9's third reading, D_arq = the measured repair delivery delay (D_arq/d ≈ 94 at c2, 24
+    at c8), Auto is interior at r ≈ 0.155 (c2) and 0.105 (c8). The shipped r is 1.3× and 2.3× that,
+    but short at Realtime.
+  - The break-even for any r > 0 at Auto is D_arq/d ≈ 6. §4.9's own words apply: "one gauge field
+    decides it" (d is echoed nowhere).
 - **The term that makes it so is the z·S margin** of the core term, z = Φ⁻¹(1 − t_tail/ε̂), with
   t_tail = 10⁻⁵·ζ(δ). Its base 10⁻⁵ has no price provenance. The margin is about 85–90 % of r;
   the information floor ε̂/(1−ε̂) is about 0.02. Nothing in the law credits the NACK channel.
 - **The fix** replaces the per-window allowance t_tail/ε̂ with a critical fractile
   m = min(1, 1/c_hole(δ, ρ)), where c_hole is the price of one hole falling to ARQ. It is continuous
-  in δ and ρ, has no branch, keeps Bulk at exactly 0, and gives r = 0 at Auto and roughly today's r
-  at Realtime. Predicted goodput at Auto is 90 Mbit/s at c2 (76 today) and about 97.6 at c8 (83
-  today).
+  in δ and ρ, has no branch, and keeps Bulk at exactly 0. Predicted goodput at Auto:
+  - c2: 90.0 Mbit/s on readings 1–2, or 78.2 on reading 3 (76.1 today).
+  - c8: 97.6 or 88.6 (82.9 today).
 
 ## 1. The shipped law, with provenance
 
@@ -42,7 +50,7 @@ r_sat    = argmin_{r∈[0.01,1], step .005} (1−P_fec(r))·1.5·srtt + B̂·t_s
 | symbol | read from | provenance | honest at s51b? |
 |---|---|---|---|
 | ε̂ | `predictive_loss_upper(0.95)` (`plu=`) of the worst path | cited (BOCD) as an upper quantile | **no**: below the wire truth on 54–65 % of source-phase ticks and above 2× truth on 15–25 %; plu/truth p10–p90 = 0.12–2.9 (c2), 0.15–4.2 (c8). An upper 95 % quantile should sit above truth on ~95 % of ticks. |
-| worst path | argmax of `loss_rate()` (`pl=`, the per-ack EWMA) | declared (§4.4) | `pl` prints 0.0000 on both legs on 55–59 % of c8 ticks; the pick is p1 on 86–92 %, which is the true worst leg. Single path at c2. |
+| worst path | argmax of `loss_rate()` (`pl=`, the per-ack EWMA, fed per WindowAck counter delta into `record_batch(d_expected, d_received)`, `control_msg.rs:626–636`) | declared (§4.4) | c8 source-phase ticks: strictly p0 10–12 %, strictly p1 30–34 %, **printed tie (both < 5·10⁻⁵) 54–59 %**. The logs cannot resolve ties (S06 doc §2.1), so §2 brackets both picks. Single path at c2, where `pl` prints 0 on 82–86 % of ticks. |
 | σ², B̂ | GE estimator, per-batch lumped feed | cited (GE), lumping undeclared (E08) | not printed. The netem truth gives an honest dispersion g·σ²_skb = 13.0 (c2) / 12.0 (c8 p1); the per-datagram GE fit of that channel gives 16.5 / 14.2. |
 | W | `encoder.window_size()` | derived, clipped at 200 (R07) | 201 on every off-Bulk tick |
 | t_tail base 10⁻⁵ | `config.rs:337` | **none**: a config default | it sets z |
@@ -52,11 +60,28 @@ r_sat    = argmin_{r∈[0.01,1], step .005} (1−P_fec(r))·1.5·srtt + B̂·t_s
 | r_max = 0.5 | `config.rs:338` | declared | — |
 | r_mass | `r_star_mass(mass, W, t_tail/ε̂, ε̂/ε_mass)` | derived (§4.3) | mass stats not printed |
 
-**Wiring check.** `TaperBudget::accrue` is the identity: `owed=0.00` on all 16 843 `[SPAN]` lines
-of both cells, so the grant is min(rate, spare) and `rr` is the law r after the spare clamp. Its
-bank, taper shape and expiry cap never bind (its sentence promises a re-timing; it does none at
-this cadence). Mean `rr` tracks the consumed r per arm (c2 Auto 0.22 / 0.195, c8 Auto 0.26 /
+**Wiring check.** `TaperBudget::accrue` is the identity, **by construction**: owed starts at 0, is
+raised by `rate`, and then pays out min(owed, max(desire, rate), spare, 1). Since
+max(desire, rate) ≥ rate = owed, the grant is min(rate, spare) and owed returns to 0. The re-timing
+its sentence promises can act only on a tick where spare binds. It is confirmed measured:
+`owed=0.00` on 16 843 of 16 843 `[SPAN]` lines in both cells. So `rr` is the law r after the spare
+clamp. Mean `rr` tracks the consumed r per arm (c2 Auto 0.22 / 0.195, c8 Auto 0.26 /
 0.24, `inputs-*.out`). Spare is slack off Bulk: c2 infl ≈ 100 against cwnd 10 000.
+
+**Which loss estimate the law reads.**
+- **The sample is the per-path WindowAck counter delta.** Each ack's (d_expected, d_received)
+  goes to `record_batch` (`control_msg.rs:626–636`). That call updates the per-ack EWMA
+  `loss_rate()` (α = 0.1), the Beta posterior, the BOCD and the lumped GE feed.
+- **The rate law never reads `loss_rate()` as ε̂.** It reads it only to choose the worst path. Its
+  ε̂ is plu, the BOCD from the same feed.
+- **Two other readers of `loss_rate()`**, outside this law:
+  - the shed budget `residual_loss_after_fec`, inert at ρ = 1;
+  - S06's `eps_at_send`.
+- **The cumulative `plc` matches the wire truth** (0.0242–0.0246 at c2 against 0.0245), so the
+  losses do reach the feed.
+- **Why `pl` prints 0 and plu misreads (inference, not counted):** the losses arrive in lumps, a
+  few ack deltas each carrying a burst, so a 10-ack memory spends most ticks below print
+  resolution and the BOCD alternates between "no loss" and a changepoint.
 
 **The formula against its sentence.** The sentence is "provision so that a symbol is late (falls to
 ARQ) with probability ≤ t_tail" (§4.2). The shape agrees (r rises in 1/δ and in ε̂, is continuous,
@@ -85,7 +110,10 @@ Per-arm terms at the median inputs (`law.out`):
 - **The core term wins at every off-Bulk point in both cells.** The burst term is 0.003–0.018,
   far below it. The IT floor ε̂/(1−ε̂) is 0.015–0.04. **The margin z·S is 0.13–0.25, i.e.
   85–90 % of r_anchor.**
-- **c8 is reproduced by the core term at about the per-datagram GE σ²** (within 7 % at 14.2).
+- **c8 is reproduced by the core term at about the per-datagram GE σ².**
+  - At σ² = 14.2 the law's Auto mean is 0.252 with printed ties sent to p1 (the code's tie rule),
+    and 0.237 with ties sent to p0. Measured is 0.271, so the law is 7–13 % low.
+  - At R± it is 0.278 / 0.264 against 0.287.
 - **c2 is not.** It needs σ² ≈ 30, about 2.3× the honest dispersion. Either the lumped batch feed
   inflates the GE fit (E08, consistent with "overestimates burstiness" in `record_batch`'s own
   comment), or the mass term wins by about 0.04 at Auto. **Which one is not decidable without the
@@ -110,8 +138,10 @@ Per-arm terms at the median inputs (`law.out`):
 2. **The law's own lateness target, on the honest channel: r is short.** `need.py` computes the
    exact window loss-mass tail of the netem process: GE per skb (p, q from the qdisc line), each
    lost skb taking its g datagrams (g = the measured GSO mean). It applies §4.3's exact criterion
-   K_N > R over N = W + R. At Auto (m = t_tail/ε = 4·10⁻⁴) it needs r = 0.32 at c2 and 0.39 on
-   c8's p1. The law gives 0.22 and 0.27. This is the §4.2 "known limitation" (the closed form
+   K_N > R over N = W + R.
+   - At Auto (m = t_tail/ε = 4·10⁻⁴) it needs r = 0.32 at c2, and 0.36 on c8's two-leg window
+     (0.39 on p1 alone).
+   - The law gives 0.22 and 0.27. This is the §4.2 "known limitation" (the closed form
    under-provisions on bursty channels), here measured at 0.65–0.70× of the requirement.
 3. **A target that prices the late hole and credits ARQ.** See §3.3.
 
@@ -131,8 +161,10 @@ the re-check of c2 HA s42 r1 gives fill_coded 6 335 on cod 48 592 (0.13 per code
 | R± | 0.087–0.102 | 0.026 | 0.011–0.013 | 0.13 | 0.14 |
 | c8 Auto | 0.004 | 0.027 | 0.0017 | 0.42 | 0.45 |
 
-- **Resends do not fall.** They stay at 0.026–0.0275 per source on every arm, about 1.0–1.09 per
-  source loss. So a decode close is an earlier close of a hole that is resent anyway, never a saved
+- **Resends do not fall.** They stay at 0.026–0.0275 per source symbol on every arm.
+  - Per *source* loss (ε ≈ 0.025 of source symbols, the netem rate) that is 1.04–1.10.
+  - Per `[TRUTH] lost=` it is 0.83 at Auto. That counter also counts lost copies and lost coded
+    datagrams, which rise with r (0.026 → 0.032 per source). So a decode close is an earlier close of a hole that is resent anyway, never a saved
   resend.
 - **The earlier close is real per hole.** On c2 HA s42 r1 (`[SUCC]`), decode-resolved holes close
   at p50 9 ms, against 229 ms for resend-resolved ones.
@@ -160,13 +192,22 @@ c_hole(δ, ρ) = P_arq(ρ)·δ·D_arq/d  +  (1 − P_arq(ρ))·c_loss
 - **No branch is needed.** The same statistic and solver exist today: `r_star_mass` takes exactly
   this allowance as `delta_wf`, and its normal form is `compute_r_star_with_z(ε̂, σ², W, Φ⁻¹(1−m))`.
   So the fix replaces t_tail/ε̂ with m(δ, ρ) in both, and **deletes the base 10⁻⁵**.
-- **The A1 check is measured.** Under A1 the marginal yield above *is* P(K > R). The shipped r is
-  optimal only if c_hole ≥ 1/0.14 ≈ 7 at Auto and ≥ 12.5 at R±.
+- **The A1 check is measured, at the coded count.**
+  - Under A1 the marginal yield above *is* P(K > R) at the coded count actually sent, about
+    0.075–0.10 per source (copies take the rest of the slots).
+  - At that count it demands c_hole ≥ 1/0.14 ≈ 7 at Auto and ≥ 12.5 at R±.
+- **At the slot count the bar is far higher.**
+  - The law's output is the slot count, 0.20–0.26.
+  - Once S06 turns the copies into coded symbols, the marginal slot sits at P(K_N > R) for
+    r ≈ 0.22. That is about 4·10⁻³ at c2 (`need.out`) and about 2.5·10⁻³ on c8's two-leg window.
+  - **So the shipped slot count is optimal only if c_hole ≳ 250 (c2) or 400 (c8).**
+  - The §4.9 readings give c_hole(Auto) = 0.5–1.1 (readings 1–2), or 47 at c2 and 12 at c8
+    (reading 3).
 
 | symbol | provenance |
 |---|---|
 | D_arq | measured: one resend round, e.g. `[SUCC] orig_p50`, or 1.5·srtt on an honest srtt (E01) |
-| d | Copa's delay normaliser, already the dial's currency (§4.9); not echoed by any gauge today |
+| d | Copa's delay normaliser, already the dial's currency (§4.9); not echoed by any gauge today. §4.9 gives three readings of D_arq/d: 1.03, 2.2, and "at measured". Its δ_exit column implies ≈ 94 (c2) / 24 (c8) for the last, as 1.03 × δ_exit(1.03)/δ_exit(measured) |
 | δ | the declared dial |
 | P_arq(ρ) | §3.5 (1 at ρ = 1) |
 | c_loss | declared at ρ < 1 (owner question 1) |
@@ -198,6 +239,7 @@ c_hole(δ, ρ) = P_arq(ρ)·δ·D_arq/d  +  (1 − P_arq(ρ))·c_loss
 | R01 (mix) | DEGENERATE(L1: Bulk, χ = 0) | **OK (shape), measured**: r > 0 off Bulk, continuous across all three presets (T1 PASS ×6); carries R02's defects. DEGENERATE withdrawn for the off-Bulk cells. |
 | R02 (anchor body) | UNDERIVED | **UNDERIVED(t_tail base 10⁻⁵ has no price; no NACK credit; why max), DISHONEST-INPUT(ε̂ per E07, σ² per E08, srtt per E01 via r_burst and r_sat)**. Core wins at every off-Bulk point (inferred; no gauge). The z·S margin is 85–90 % of r. Over-provisioned against the δ dial at ρ = 1, short of its own target. max_overhead binds on 6–16 % of ticks. |
 | R03 | unchanged | Measured on the P_fec > 0 side from I2 up in both cells. Read only by r_sat at ρ = 1. |
+| S10 (TaperBudget) | DIVERGENT, DEGENERATE(r = 0) | **DIVERGENT, DEGENERATE(identity: the grant is min(r, spare) by construction; the re-timing never acts unless spare binds)**. r = 0 is withdrawn off Bulk. Measured: owed = 0.00 on 16 843 / 16 843 `[SPAN]` lines. |
 | R04 (r_sat) | UNDERIVED, DIVERGENT | **+ DISHONEST-INPUT(srtt = E01)**. Measured: slack at c2 (pressure ≤ 0.06, inferred), pressure 0.45–0.62 at c8 R± (inferred). Live r_sat ≈ 0.32 at c8, not the design's 0.245; no gauge, so not PINNED. |
 | R05 | UNDERIVED, DEGENERATE(tunnel) | unchanged (χ = 0 on every row) |
 | R06 (mass) | OK (unverified) | unchanged; **cannot be excluded as the c2 winner** (a 0.04 gap at Auto). Gauge needed before any verdict. |
@@ -220,35 +262,55 @@ r_core(m)      = max(0, ε̂/(1−ε̂) + Φ⁻¹(1−m)·S) [+codec],  r_burst 
   at N = 2, and its argmax-EWMA pick. At N = 1 it is exactly §4.2/§4.3.
 - **Shape checks.**
   - **Continuous in δ.** c_hole is linear in δ. The min(1, ·) clamp is a kink, not a step, at
-    δ_k = d/D_arq, which is near Auto (0.45–0.97 on the paper's two D_arq/d readings). It needs a
+    δ_k = d/D_arq: 0.45–0.97 on readings 1–2, and 0.011 (c2) / 0.04 (c8) on reading 3. It needs a
     bind-fraction gauge (CLAUDE.md FORMULA-FIRST), and the ±2 % nudge gates must include δ_k.
+  - **The proposed law is itself clamp-bound over part of the dial.**
+    - On readings 1–2, m = 1 from Bulk through Auto. The default hint is then pure ARQ, and the
+      clamp's bind fraction is 1 there.
+    - That is the pinned-over-range pattern CLAUDE.md flags. Here it is the law's answer, not a
+      hidden constant. But it is a consequence the owner chooses with question 1, and the gauge
+      must report it.
   - **Continuous in ρ** through P_arq(ρ). There is no `reliable` branch.
   - **Bulk.** β = 1 and m = 1 both give exactly 0, so the H-B bytes are unchanged.
   - **The presets move at Auto and Realtime** (a deliberate model change).
   - **ε → 0:** P(K_N > 0) → 0 < m, so r → 0. It is exactly 0 at ε = 0.
   - **N = 1** gives §4.2. **N = 2 with identical legs** equals N = 1 at the combined rate.
   - **Units:** m is a probability, and c_hole is in symbol-equivalents by construction.
-- **Predictions.** Exact tail at honest inputs (`need.py`), two readings of D_arq/d (1.03 / 2.2,
-  §4.9). Goodput from G = G_Bulk·(1 + x_B)/(1 + x_B + r), with x_B = resends + margin at H-B
-  (c2 0.031, c8 0.035).
-  - The identity reproduces today's c2 rows to within 1 % (Auto 75.8 against 76.1 measured, R−
-    74.2 against 74.7, I3 83.5 against 84.0).
-  - At c8 it reads 5 % low (Auto 79.1 against 82.9), because c8 is not purely wire-bound. Treat
-    the c8 goodput numbers as ±5 %.
+- **Predictions.**
+  - **The tail.** Exact window-mass tail at honest inputs (`need.py`). c8 uses the two-leg window
+    convolved at the measured 0.82 / 0.18 egress split (the N = 2 formula), not the worst leg
+    alone.
+  - **The price.** Three readings of D_arq/d (§4.9): (1) 1.03, (2) 2.2, (3) measured, 94 at c2 and
+    24 at c8.
+  - **Goodput.** From G = G_Bulk·(1 + x_B)/(1 + x_B + r), with x_B = resends + margin at H-B (c2
+    0.031, c8 0.035).
+    - It reproduces today's c2 rows to within 1 %: Auto 75.8 against 76.1 measured, R− 74.2 against
+      74.7, I3 83.5 against 84.0.
+    - At c8 it reads 5 % low (Auto 79.1 against 82.9), because c8 is not purely wire-bound. Treat
+      the c8 goodput numbers as ±5 %.
+  - **`need.py` self-check.** At the paper's WiFi channel (per symbol, W = 50, m = 10⁻²) it gives
+    0.180, against §4.7's exact 0.170. That is within one repair of its grid step (0.02 at W = 50).
+    The {⌊g⌋, ⌈g⌉} skb-size mix is a model of GSO, not a measurement.
 
-| point | m | c2 r (today 0.195–0.22) | c2 goodput (today) | c8 r (today 0.24–0.26) | c8 goodput (today) |
-|---|---|---|---|---|---|
-| I1–I3 | 1 | 0 | 90.0 (90.0 / 87.7 / 84.0) | 0 | 97.6 (98.7 / 95.6 / 93.2) |
-| Auto | 1 / 0.91 | 0 / 0 | 90.0 (76.1) | 0 / ≈ 0.005 | 97.6 (82.9) |
-| I4 (δ 5) | 0.19 / 0.09 | 0.05 / 0.09 | 85.8 / 82.8 (75.1) | 0.095 / 0.135 | 89.4 / 86.3 (81.4) |
-| R± (δ 50) | 0.019 / 0.009 | 0.155 / 0.19 | 78.2 / 76.0 (74.6) | 0.215 / 0.25 | 80.8 / 78.6 (81.5 / 80.8) |
+| point | c2 r, readings 1 / 2 / 3 (today) | c2 goodput 1 / 2 / 3 (today) | c8 r, 1 / 2 / 3 (today) | c8 goodput 1 / 2 / 3 (today) |
+|---|---|---|---|---|
+| I1, I2 | 0 / 0 / 0 (0.008, 0.032) | 90.0 (90.0, 87.7) | 0 / 0 / 0 (0.017, 0.054) | 97.6 (98.7, 95.6) |
+| I3 (β ½) | 0 / 0 / 0.022 (0.080) | 90.0 / 90.0 / 88.1 (84.0) | 0 / 0 / 0 (0.115) | 97.6 (93.2) |
+| Auto | 0 / 0 / 0.155 (0.195) | 90.0 / 90.0 / 78.2 (76.1) | 0 / 0 / 0.105 (0.242) | 97.6 / 97.6 / 88.6 (82.9) |
+| I4 (δ 5) | 0.05 / 0.09 / 0.255 (0.214) | 85.8 / 82.8 / 72.2 (75.1) | 0.06 / 0.10 / 0.215 (0.249) | 92.3 / 89.0 / 80.8 (81.4) |
+| R± (δ 50) | 0.155 / 0.19 / 0.35 (0.221) | 78.2 / 76.0 / 67.2 (74.6) | 0.18 / 0.215 / 0.33 (0.26) | 83.1 / 80.8 / 74.0 (81.2) |
 
-**Over-provision factor** (consumed r ÷ fixed r):
-- **Auto:** unbounded in both cells (0.195 / 0.24 against 0).
-- **I4:** c2 2.4–4.3×, c8 1.8–2.6×.
-- **R±:** c2 1.16–1.43×, c8 1.04–1.2×.
+**Over-provision factor** (consumed r ÷ fixed r, readings 1 / 2 / 3):
 
-Against the law's own target, the factor is 0.6–0.7 (short).
+| cell | Auto | I4 | R± |
+|---|---|---|---|
+| c2 | ∞ / ∞ / 1.26 | 4.3 / 2.4 / 0.84 | 1.43 / 1.16 / 0.63 |
+| c8 | ∞ / ∞ / 2.3 | 4.2 / 2.5 / 1.16 | 1.44 / 1.21 / 0.79 |
+
+- **Against the law's own target** the factor is 0.69 at c2 and 0.67–0.75 at c8 (worst leg / two-leg
+  window: need 0.39 / 0.36 against 0.27). That is short.
+- **Against the dial, r is over-provisioned at Auto on every reading.** The price question decides
+  by how much, and whether Realtime is short.
 
 **This sits on two premises an owner must accept:**
 - **A1** (fungible repair). It is checked by the marginal yield.
@@ -292,12 +354,15 @@ Against the law's own target, the factor is 0.6–0.7 (short).
 - M03's wasm β-guard (`if bulkness > 0`) stays a separate debt.
 
 **Owner questions (at most three).**
-1. **Which late-hole price?**
-   - **(a) §4.9 per symbol, δ·D_arq/d.** This makes Auto a corner, r = 0.
-   - **(b) Head-of-line weighted.** Auto becomes interior.
-   - And what is c_loss at ρ < 1?
+1. **Which late-hole price, and which d?**
+   - **(a) §4.9 per symbol, δ·D_arq/d.**
+     - With d = Copa's operating delay (D_arq/d 1–2), Auto is a corner: r = 0.
+     - With D_arq = the measured repair delay (D_arq/d 24–94), Auto is interior: r ≈ 0.1–0.16.
+   - **(b) Head-of-line weighted.**
+   - The break-even for r > 0 at Auto is D_arq/d ≈ 6.
+   - Also: what is c_loss at ρ < 1?
 2. **Is t_tail = 10⁻⁵·ζ(δ) a user-facing contract to keep?** If yes, r is short at Auto, not
-   over, and the exact tail needs 0.32 / 0.39. That is the opposite fix.
+   over, and the exact tail needs 0.32 / 0.36. That is the opposite fix.
 3. **Should a decode close cancel the pending NACK resend?** That would give c_hole one resend
    symbol of bandwidth credit. Today it never does.
 
@@ -305,7 +370,7 @@ Against the law's own target, the factor is 0.6–0.7 (short).
 
 **Paper, §4.4 (new paragraph "What the margin buys at ρ = 1").**
 - At ρ = 1 a hole the margin misses is delivered one ARQ round late, and the resend is sent whatever
-  the decoder did. Measured at s51b c2, resends stay at 1.0–1.09 per loss from H-B to R±, while
+  the decoder did. Measured at s51b c2, resends stay at 1.04–1.10 per source loss from H-B to R±, while
   coded closes 0.14 holes per symbol at Auto.
 - The per-window allowance should therefore be the critical fractile m = min(1, 1/c_hole), with
   c_hole = P_arq(ρ)·δ·D_arq/d + (1−P_arq(ρ))·c_loss, not t_tail/ε̂. The base 10⁻⁵ then has no role.
@@ -314,7 +379,7 @@ Against the law's own target, the factor is 0.6–0.7 (short).
 **Ledger.** The §5 table rows, as written there.
 
 **status.md (§51 Addendum 3, proposed).**
-- "The off-Bulk r is not over-provisioned against its own target (exact need 0.32 / 0.39 against
+- "The off-Bulk r is not over-provisioned against its own target (exact need 0.32 / 0.36 against
   0.22 / 0.27 at Auto). It is over-provisioned against the δ dial at ρ = 1: the z·S margin on an
   unpriced base 10⁻⁵ is 85–90 % of r, and the law credits no NACK capacity. Resends stay at about
   one per loss on every arm, and coded closes 0.14 holes per symbol."
