@@ -146,7 +146,7 @@ flowchart TB
         store_defect_b0p_brake>"store · ⚠ Boot-time<br/>brake estimate latches<br/>transients"]
         store_sampler_design[/"store · ○ Store-law<br/>delay sampler design"/]
         rate_delta_jitter_fix["rate · ○ Jitter margin<br/>reads wrong direction"]
-        rate_c8_frontier_recopy["rate · ○ c8 repair<br/>budget re-copies"]
+        rate_s06_plost_derivation["rate · ○ Delete the<br/>taper copy branch"]
     end
     subgraph bd_7["Later (blocked or parked)"]
         store_fix_maxbw_minrtt[/"store · ⛔ Honest rate<br/>and delay inputs"/]
@@ -191,9 +191,9 @@ flowchart TB
     store_law_derivation ~~~ store_defect_b0p_brake
     store_defect_b0p_brake ~~~ store_sampler_design
     store_defect_b0p_brake ~~~ rate_delta_jitter_fix
-    store_sampler_design ~~~ rate_c8_frontier_recopy
-    rate_delta_jitter_fix ~~~ rate_c8_frontier_recopy
-    rate_c8_frontier_recopy ~~~ store_fix_maxbw_minrtt
+    store_sampler_design ~~~ rate_s06_plost_derivation
+    rate_delta_jitter_fix ~~~ rate_s06_plost_derivation
+    rate_s06_plost_derivation ~~~ store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt ~~~ store_engine_form_impl
     cod_block_pipeline -.-> cod_one_pipeline
     cc_bbr_default -.-> cc_quinn_bbr_collapse
@@ -210,7 +210,6 @@ flowchart TB
     store_count_rule --> store_defect_b0p_brake
     store_defect_b0p_brake --> store_sampler_design
     rate_k4_input_checks --> rate_delta_jitter_fix
-    meas_s51_session --> rate_c8_frontier_recopy
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
@@ -232,7 +231,7 @@ flowchart TB
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,rate_k4_input_checks,store_adr72_one_law,meas_blocke_pacing_gate,rec_defect_realtime_framing,place_wire_price,cc_bbr_default,meas_formula_first,meas_guard_41c,model_vis_continuum,meas_s51_session succ
     class rec_snapver_law,rate_evict_epre,rate_evict_session,store_count_rule,rec_realtime_delay_recheck,model_law_ledger unrated
     class rate_est_cadence,rec_f2_merge_guard,perf_emit_batch_law0,perf_io_owner vsucc
-    class rate_delta_jitter_fix,store_sampler_design,rate_c8_frontier_recopy next
+    class rate_delta_jitter_fix,store_sampler_design,rate_s06_plost_derivation next
     class store_law_derivation inprog
     class store_s60a,store_s62_j0 mixed
     class store_defect_b0p_brake,cc_quinn_bbr_collapse defect
@@ -287,7 +286,8 @@ flowchart TB
 | Two checks before the repair-share comparison | ✔ fixed | Two readings from the paced repair test needed explaining before the comparison with the model. The jitter allowance reads the jitter of the wrong direction, so it always sits at its minimum (an engine defect to fix). The repair share only looked too high because the bound it was checked against forgot one kind of repair slot. |
 | Jitter margin reads wrong direction | ○ next | The sender sizes a jitter safety margin from the jitter of traffic coming back to it, not of the traffic it sends, so the margin is always at its minimum. The fix reads the jitter the receiver reports, with a derivation and a guard. |
 | Repair-rate readout | ○ next | Adding a readout of how much repair data the formula asks for and which limit is in control, without changing behaviour. |
-| c8 repair budget re-copies | ○ next | Most repair slots re-send old data instead of sending a coded repair symbol (about two thirds on one path, nearly all on two); find out why and whether it is a defect. |
+| Repair rate over-provision verdict | ⚠ open defect | The repair rate spends about a fifth of the link on repair where real loss is about 3 %; decide whether that is a defect and derive the fix, in parallel with the re-send fix, since this is where the lost throughput is. |
+| Delete the taper copy branch | ○ next | Remove the re-send-copy branch so every repair slot sends coded repair, after a new ADR and the paper change, with tests that no copies are sent and that dropping past-deadline packets still works. |
 | Owner calls on rate law | ⛔ blocked | Owner decision on five mismatches between the paper and the code in how much repair data to send. |
 | Rate-law reconciliation | ⛔ blocked | Making the paper and the code agree on how much repair data to send, with a test for every remaining difference. |
 | Rate-law term-win gauge | ⛔ blocked | Adding a readout that shows which part of the repair-rate formula is actually in control. |
@@ -399,7 +399,7 @@ flowchart TB
 - `store-sampler-design`: Store-law delay sampler design
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `rec-framing-followups`: Framing fix leftovers
-- `rate-c8-frontier-recopy`: c8 repair budget re-copies
+- `rate-s06-plost-derivation`: Delete the taper copy branch
 - `meas-harness-robustness`: Harness robustness for every plan
 - `infra-tech-tree-skill`: tech-tree skill PR
 - `rec-retx-behind-source`: Retransmits queued behind source?
@@ -516,7 +516,7 @@ Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 53 nodes (22 done, 6 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 31 nodes (15 done, 3 in progress, 4 next, 5 blocked, 1 parked, 3 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 33 nodes (16 done, 4 in progress, 4 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)

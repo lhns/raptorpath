@@ -1860,7 +1860,7 @@ The launch sha is pinned by an amendment.
   - Steal was 0.28–0.34 % and iowait well under 0.1 % across both cells (`steal.txt`). Whether the VM shares the Ceph cluster that another session was restarting is unanswered by the owner.
 - **Ledger:** `docs/l1-raw/s51b/` (scrubbed): per cell `ld.log` (sufficient to re-score), `score-vm.txt`, `score-host.txt`, `launch.out`, `BINSHA.txt`, `smoke.log`, `steal.txt`; plus the rehearsal tarball. `s51b-diag-cited.tgz` holds the client and server logs of every row the findings cite (c8 HR ×6; c8 RM, RP, HA s42 r1; c2 HA, HR s42 r1), and `scripts/` holds the three read-only scripts behind the findings' numbers (`rows.py`, `spare.py`, `hr.py`; each takes a `diag-ld` directory, and `hr.py` also takes the `ld.log`). The full per-row logs (53–70 MB per cell) are not committed. They stay on the VM in `~/b51c2/run` and `~/b51c8/run` until `rate-c8-frontier-recopy` has read them. The VM's `src` / `target` trees, `/dev/shm/b51*` and the unscrubbed tarballs are removed.
 
-**§51 block 51 Result, Addendum 1 (2026-11-19, after the owner's report that the Ceph cluster was unstable; ledgers only, no VM; on Fable's advice, text not yet reviewed): the labels stand. The VM saw no I/O signal in this session, in block E or in §65.**
+**§51 block 51 Result, Addendum 1 (2026-11-19, after the owner's report that the Ceph cluster was unstable; ledgers only, no VM; Fable-reviewed): the labels stand. The VM saw no I/O signal in this session, in block E or in §65.**
 - **Owner report:** "ceph was unstable" during the session. When it started and whether it has ended is asked; no scored VM session runs until the owner says it is over.
 - **Why the labels survive by design.**
   - Every PASS is stated at the in-session A/A resolution, which absorbs any disturbance that hit both arms.
@@ -1875,6 +1875,85 @@ The launch sha is pinned by an amendment.
   - **CPU steal** across block 51 was 0.28–0.34 %.
 - **The limit:** PSI and steal see only what reaches the guest. A hypervisor-side stall that delays the netem qdisc or the clock without blocking guest I/O would not show here.
 - **One pushed sentence is withdrawn pending a check:** Finding 1's "most copies do not land as duplicates". It assumed `rx_dup` counts every duplicate arrival at the receiver, and nobody had read that counter. The copy diagnosis (`rate-c8-frontier-recopy`) reads the counter and bounds copies by true wire losses instead.
+
+**§51 block 51 Result, Addendum 2 (2026-11-19, post hoc, the 152 sweep rows and the code only; Fable-reviewed): the proactive copies are a defect in the taper copy decision (law ledger S06). Every proactive slot between two cumulative-ack advances copies the same blocking seq on its original send age, so copies run at 4–7× the true losses and mostly land at a receiver that already has the seq.**
+- **In plain words:** the sender's "is this old packet probably lost?" check always looks at the same packet, the oldest unacknowledged one, and never counts the copies it has already sent. On a two-path link that packet is seconds old, so the check always says yes, and the repair budget goes into copies of a packet the receiver already has. The normal loss-driven resend already covers each real loss about once.
+- **Code** (read in full at main, `net/emit_source.rs:739–822`):
+  - Each debt slot evaluates `p_lost(age, eps_at_send, srtt, rttvar)` on `retransmit_buffer.first()` (:757–759), the lowest unacked seq, which is the cumulative-ack blocker.
+  - `age` is from the original send stamp. A copy (`rand < p`) sends `sent_store[seq]` and re-stamps nothing. It writes no `nack_retx_at` (the NACK path's once-per-SRTT cooldown, `sender_phases.rs:871–878`), and nothing conditions on copies in flight.
+  - Entries leave the buffer only at `prune_below(ack+1)` (`sender_phases.rs:1403`). SACK and the bitmap mark seqs released but leave the buffer untouched (`sack.rs:140–150`), and the shed branch is inert at ρ = 1.
+  - **The formula against its sentence:** the paper's P_lost is a posterior for a symbol sent once, over "a spread of symbol ages in the buffer" (§3.2). The code evaluates it on one seq per slot and never conditions on its resends.
+- **Accounting on all 152 rows** (per-arm medians; `docs/l1-raw/s51b/recopy/acct-c2.txt`, `acct-c8.txt`):
+  - Losses are the sum of the driver's `[TRUTH] lost=` over the legs, which is an upper bound on source losses. NACK resends are `[DIAG] retx=`, equal to `mpr fired=` on every row.
+  - (taper + retx) / lost is 1.0 at H-B, 4.5–5.0 at c2 Auto and above, and 6.8–7.3 at c8.
+  - retx/src stays at 0.026–0.029 on every arm, about the loss rate (0.026–0.039). So each loss already gets its NACK resend, and the copies come on top of it.
+  - **Arrivals balance at the receiver** (c8 HA s42 r1): `src_n` 622 531 = first deliveries 507 043 + `dup` 24 055 + `below_floor` 91 719, within about 300.
+  - Below-floor arrivals are already-received seqs that land more than about 400 seqs behind the cumulative point (`decode_inert_floor`, `receiver.rs:666–671`).
+  - They come to at least about 70 % of the copies in both cells: c2 Auto 57–65k against 58–68k copies, c8 Auto 90–97k against 120–131k. NACK resends do not explain them: H-B, with NACK resends and no copies, has under 1k below-floor arrivals (854 at c2, 122 at c8).
+- **Copies per blocker:** about 6 per true loss on average, and up to about 137 per long stall at c8 (c8 HA: 2 067 copies/s, mean gap between cumulative advances 65 ms).
+  - A "stall" (`[C8CONV-S] st=`) is the time between two cumulative advances of 5 ms or more (`sender_phases.rs:1259–1272`).
+  - Between two advances the code copies the same seq by construction. So the 137 is that determinism counted, not an independent check: no per-copy seq is printed. `ptgt=` / `pmax=` counters are being added on `c8-gauges`.
+- **c8 consequence:** the blocker's age is 5–7 s against a worst-path srtt of 0.26–0.6 s, so P_lost is pinned at about 1 and the copy share of slots is 0.98. **No proactive coded repair is sent on two paths at any measured δ above Bulk.**
+  - The seconds-long frontier is not new: H-B reads 4.7 s in-order with no copies at all. It is the c8 completion-tail line of work (plan W3.6b / the c8 tail diagnosis).
+  - At c2 the age is about 0.4 s against srtt 0.21–0.25 s, giving a predicted copy share of about 0.78 per tick against 0.61–0.64 observed (0.5 s tick resolution).
+- **Goodput (arithmetic, not measurement):**
+  - The rows run wire-bound: c2 at 99.9 of 100 Mbit on every arm, so goodput ≈ wire rate / (wire bytes per payload byte).
+  - **Copy slots not sent:** c2 Auto would be about 85 Mbit/s instead of 76, and c8 Auto near Bulk's 97–98.
+  - **The same slots spent on coded repair:** goodput is unchanged, because the slot count is the consumed r (the rate law, R02 / R04).
+  - So fixing S06 alone turns waste into protection. Getting goodput back also needs r to come down.
+  - `RWM_TAPER_R=0` is not this counterfactual: it switches the debt accrual to per ack cycle and does not route copy slots to coded repair.
+- **Erratum:** Addendum 1 withdrew a Finding 1 sentence pending this check, and the check refutes it. `rx_dup` (`[C8CONV-R] dup=`, `receiver.rs:1366–1373`) counts only duplicates within about 400 seqs of the frontier. The about 92k below-floor copies per c8 Auto row are invisible to it. So "rx_dup … does not support repeated copies of one stalled seq" is **wrong**: the copies are repeated copies of the blocker.
+- **Ledger:** S06 reads PINNED(c8: P_lost ≈ 1 on the blocker), UNDERIVED(no resend in flight in the posterior), DISHONEST-INPUT. Its DEGENERATE(never fires) is withdrawn and P1 is proposed (the owner's call). E01 / E09 are contributing inputs, not the cause.
+- **Evidence:** `docs/l1-raw/s51b/recopy/`: the scripts (`acct.py`, `red.py`, `wire.py`, `age.py`), the two tables, and `recopy-extract.tgz`, which holds the lines the scripts read from all 152 rows and reproduces both tables byte for byte.
+- **Order:** the S06 derivation goes into the paper first (`rate-s06-plost-derivation`, running). It is followed by a red-first host test counting copies per seq. S06 goes before the jitter fix (`rate-delta-jitter-fix`), because Δ places coded symbols that c8 never sends. The spare-clamp verdict and the S08 fix are held until S06 lands, since all three edit the proactive-slot path.
+
+**§51 block 51 Result, Addendum 3 (2026-11-19, post hoc, code and ledgers only; the findings Fable-reviewed, this text not yet): the owner deletes the taper copy branch (S06), and the repair-rate law (R02) is recorded as over-provisioned against what the δ dial needs at ρ = 1. The new rate formula waits for a reading without copies.**
+- **Owner decision 2026-11-19, S06:** delete the copy branch, so every proactive slot carries a coded symbol. The alternative, S06′, was a posterior over resends in flight (`docs/derivations/s06-plost-resend.md` on `s06-derivation` `5ebf41a5`). It kept "copy with probability π", which that derivation calls UNDERIVED, so it would have needed a FORMULA-FIRST waiver.
+  - **Why delete:** at ρ = 1 a copy adds no degree of freedom the NACK resend does not send. It is only a second, earlier trigger for the same correction.
+  - **What it keeps:** ADR-0064's shed law and budget. The NACK path applies the same `shed_allowed` test to every judged gap seq (`sender_phases.rs:846–869`), a superset of the slot path's `first()`.
+  - **What it loses:** the slot-time shed trigger between gap batches.
+  - **Open:** delay at c8. NACK fires at a run-mean age of 3.0–3.6 s there (C02), and the first copy per stall may be the only early trigger today.
+  - **Order:** a new ADR (no accepted ADR decides §3.2's FEC-to-ARQ transition), then the paper amendment, then code. The wasm model has its own P_lost retransmit (`raptorpath-wasm/src/lib.rs:1266–1300`), which needs a bounding test or a deliberate golden re-capture.
+  - **Red-first tests:** zero copies with slots above zero on both seats; shed conservation on the evicting seat, which needs a split shed counter.
+- **What a coded slot buys** (c2 medians; `[RFA] fill_coded`, a seq rebuilt by the decoder instead of received as source, `net/report.rs:51–69`, `receiver.rs:1470–1480`):
+
+| c2 arm | coded / src | closed by decode / src | per coded symbol | share of source losses | NACK per source loss |
+|---|---|---|---|---|---|
+| H-B, BM, BP | 0.0038 | 0.0013 | 0.34 | 5 % | 1.09 |
+| I3 | 0.029 | 0.0068 | 0.23 | 27 % | 1.08 |
+| HA, NA, AM, AP | 0.072–0.082 | 0.0107–0.0117 | 0.14 | 42–46 % | 1.02–1.03 |
+| RM, RP | 0.087–0.102 | 0.0113–0.0131 | 0.13 | 44–52 % | 1.01–1.03 |
+
+  - Coded symbols close holes, a median 9 ms after the loss against 229 ms for the resend. But the resend still fires about once per loss, so no bandwidth is saved. Why it fires after a decode close is a code read still owed.
+  - At c8 coded is only 0.004–0.006 per source, so nothing can be read about what r buys on two paths.
+- **The rate law, as shipped and as read** (`docs/derivations/rate-overprovision.md` on `rate-overprovision` `f073e81a`):
+
+  ```text
+  off Bulk:  r = (1 − β)·r_anchor        (χ = 0 on the tunnel, so r_late = 0)
+  r_anchor = clamp( soft_sat( max(r_core, r_burst, r_mass), r_sat ), 0, 0.5 )
+  r_core   = ε̂/(1 − ε̂) + z·S + codec,  z = Φ⁻¹(1 − t_tail/ε̂),  S = √( ε̂σ² / (W(1 − ε̂)) ),  t_tail = 10⁻⁵ · 0.5/δ
+  ```
+
+  - **c8:** the margin z·S is 85–90 % of r, and the floor ε̂/(1−ε̂) is only 0.015–0.04. Inferred from a tick-level port of the law, since no term-win gauge exists.
+  - **c2: which term wins is undecided.** The core term reproduces r only at σ² ≈ 30 against an honest 13, so the window-mass term cannot be excluded without the gauge.
+  - **The 10⁻⁵ base has no derivation.** The law gives the NACK channel no credit at ρ = 1, and the `max` has no stated reason.
+  - `TaperBudget` passes the rate straight through: `owed=0.00` on all 16 843 `[SPAN]` lines.
+  - The 0.5 cap binds on 6–8 % of ticks at c2 Auto and above and 12–16 % at c8. These are plu spikes; the figure is inferred, not yet checked on a row.
+  - c8's consumed r above the predicted r_sat comes from r_sat's dwell-inclusive srtt (564–600 ms against the design's 250), not from a breach of the cap.
+- **Over-provisioned against what, and by how much:**
+  - **Against the δ dial at ρ = 1:** yes. ARQ delivers every byte, so delivery alone needs r = 0, and r ≈ 0.20–0.26 costs the 15 % of goodput.
+  - **Against the law's own tail target (10⁻⁵ residual per window):** the exact-tail arithmetic says r is too low (0.32 / 0.36 needed). But that arithmetic assumes every slot is coded, and today 64 % (c2) and 98 % (c8) are copies.
+  - **Measured residual today at c2 Auto:** about 0.014 holes per source still fall to resends (losses 0.032 minus decode closes 0.011–0.012 per source), against the 10⁻⁵ target.
+  - So **the size of any r fix waits for a reading without copies.** The copy-branch deletion and the rate arms can share one VM session: reported-only arms over the tail base on the no-copy binary, if the base is settable at launch (to be checked).
+- **The fix direction is not adopted.** The rate doc's candidate replaces t_tail/ε̂ with a critical fractile priced by the cost of a hole falling to ARQ. On two of its three readings it is clamp-bound from Bulk through Auto (r = 0), which is a defect by FORMULA-FIRST. Its D_arq/d of 94 at c2 does not match the measured close times. It goes back for a definition of d.
+- **Ledger** (evidence and verdicts, `law-ledger.md`):
+  - R02 gains DISHONEST-INPUT, with its UNDERIVED parts named;
+  - R04 gains DISHONEST-INPUT (srtt);
+  - E07 gains DISHONEST-INPUT (plu reads below the truth on 54–65 % of ticks);
+  - R01 is measured off Bulk;
+  - S10 gets the pass-through evidence;
+  - **C02 gains the SACK encoding cap:** `MAX_SACK_RANGES` = 64 binds on every c8 report (63.7 ranges per report on c8 HA s42 r1, 1 754 631 / 27 557, against 3.7 at c2). Which holes a c8 report can name is set by the cap, not by the loss pattern.
+- **Owner question:** is the 10⁻⁵ residual per window a promise to keep, or a default? Today's delivered residual at c2 Auto is about 0.014 holes per source to resends, against 10⁻⁵. Every byte still arrives, by ARQ.
 
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
