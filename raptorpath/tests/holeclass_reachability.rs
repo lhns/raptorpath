@@ -16,10 +16,8 @@
 //! 4. `xp_n ≡ 0` on a single path, a property of the wire.
 //! 5. `xp_n > 0` on two paths (`c2,c3`) — the same field moved by topology
 //!    alone, so clause 4 is a measured zero, not an unreached path.
-//! 6. The proactive taper copy (a correction slot spent on a copy of the
-//!    oldest un-acked seq, landing as `[RFA] dup_src`) is counted: the
-//!    ungated `[DIAG] taper=` equals the DIAG-gated `plost=` on every line.
-//!    Its value is printed, not asserted: over the `c3` loopback it is zero.
+//! 6. The taper copy is deleted (ADR-0079): the ungated `[DIAG] taper=` and
+//!    the DIAG-gated `plost=` still print, agree on every line, and read 0.
 //!
 //! No class fraction, ripeness fraction or goodput value is asserted. The
 //! audit adds no gate and edits no law.
@@ -179,8 +177,7 @@ fn the_audit_classes_reach_the_engine_and_cross_path_is_zero_on_one_path() {
         );
     }
 
-    // Clause 6: the taper counter is present, ungated, and agrees with the
-    // DIAG-gated counter of the same branch.
+    // Clause 6: the taper counters are present, agree, and read 0 (ADR-0079).
     let taper = max_field(&cli, "taper=");
     let plost = max_field(&cli, "plost=");
     println!("[holeclass] single-path c3: taper_copy={taper} plost={plost}");
@@ -190,6 +187,8 @@ fn the_audit_classes_reach_the_engine_and_cross_path_is_zero_on_one_path() {
         "the ungated `taper=` and the DIAG-gated `plost=` count the SAME \
          branch and must agree — one of them is mis-wired:\n{cli}"
     );
+    assert_eq!(taper, 0, "the taper copy is deleted (ADR-0079); taper={taper}:
+{cli}");
     for l in cli.lines().filter(|l| l.contains(" mpr[")) {
         assert!(l.contains(" taper="), "a `[DIAG]` line without `taper=`: {l}");
     }

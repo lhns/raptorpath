@@ -38,7 +38,7 @@ use super::seq_ring::SeqRing;
 use super::{
     BatchCounter,
     CopaFeed, create_window_encoder, now_pair, now_us, percap_charge, select_repair_path,
-    select_source_path, shed_allowed, shed_deadline_us, window_source_paths_into,
+    select_source_path, shed_deadline_us, window_source_paths_into,
 };
 use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBudget};
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
@@ -755,118 +755,37 @@ pub(crate) fn emit_source(
             st.repair_debt -= 1.0;
             ctx.stats.fec.proactive_slots.fetch_add(1, Ordering::Relaxed);
 
-            // P_lost-based correction symbol decision:
-            // Check oldest un-ACKed symbol in retransmit buffer.
-            // If P_lost is high enough, retransmit it (immediate decode).
-            // Otherwise, generate a new repair symbol (FEC).
-            let (correction_sym, correction_kind) = {
-                let now = now_us();
-                let (srtt_secs, rttvar_secs, epsilon) =
-                    super::p_lost_inputs(&*ctx.scheduler);
-
-                // Find oldest retransmit candidate and compute P_lost
-                let mut use_retransmit = false;
-                let mut retransmit_seq = 0u64;
-                let oldest = st.retransmit_buffer
-                    .first()
-                    .map(|(s, &v)| (s, v));
-                if let Some((seq, (send_time_us, eps_at_send, _path))) = oldest {
-                    let age_secs = (now.saturating_sub(send_time_us)) as f64 / 1_000_000.0;
-                    let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);
-                    // P(retransmit) = P_lost(t_k) (paper §3.2):
-                    // probabilistic — a smooth transition from FEC to ARQ.
-                    if rand::random::<f64>() < p {
-                        // δ-honest shed: a candidate older than D(δ) arrives
-                        // after the receiver's δ-horizon give-up —
-                        // retransmitting it only serializes the stream
-                        // behind a missed deadline. Shed it (within the ρ
-                        // budget) and let this correction slot do fresh
-                        // span-repair work instead.
-                        let age_us_c = now.saturating_sub(send_time_us);
-                        if pol.shed_on
-                            && shed_allowed(
-                                age_us_c,
-                                st.shed_deadline_us_live,
-                                st.shed_total,
-                                ctx.stats.fec.total_source_symbols.load(Ordering::Relaxed),
-                                st.shed_budget_frac,
-                            )
-                        {
-                            st.retransmit_buffer.remove(&seq);
-                            st.nack_retx_at.remove(&seq);
-                            st.shed_seqs.insert(seq);
-                            st.shed_total += 1;
-                            st.shed_slot += 1;
-                            #[cfg(feature = "test-seams")]
-                            crate::test_seams::on_shed(seq, age_us_c, st.shed_deadline_us_live);
-                        } else {
-                            if pol.shed_on
-                                && st.shed_deadline_us_live > 0
-                                && age_us_c > st.shed_deadline_us_live
-                            {
-                                // Past deadline but ρ-budget-refused: the
-                                // serialize arm (visible in DIAG).
-                                st.shed_denied += 1;
-                            }
-                            use_retransmit = true;
-                            retransmit_seq = seq;
-                        }
-                    }
-                }
-
-                if use_retransmit {
-                    // The taper copy, counted on every arm: this correction
-                    // slot carries a copy of an already-sent seq rather than
-                    // a fresh coded symbol.
-                    ctx.stats.fec.taper_copy.fetch_add(1, Ordering::Relaxed);
-                }
-                if use_retransmit && pol.diag_on {
-                    // Recovery-suppression trace: the P_lost-branch
-                    // retransmit channel (fed by eps_at_send).
-                    st.mpd_plost_retx += 1;
-                }
-                // A taper copy (`use_retransmit`) is a source COPY, not coded.
-                let kind = if use_retransmit {
-                    crate::monitor::stats::CorrectionKind::SourceCopy
-                } else {
-                    crate::monitor::stats::CorrectionKind::Coded
-                };
-                let sym = if use_retransmit {
-                    // Retransmit: exact source symbol — from the sent-data
-                    // store (reliable: survives window eviction) or the
-                    // encoder window (EVICT).
-                    st.sent_store
-                        .get(&retransmit_seq)
-                        .cloned()
-                        .or_else(|| st.encoder.get_source(retransmit_seq))
+            // Every proactive slot carries a coded symbol (ADR-0079): the
+            // trailing span when the window allows it, otherwise the leading
+            // window. A named hole is recovered reactively (NACK, the
+            // receiver's refresh, the tail sweep) or by decoding; no slot
+            // copies a source symbol.
+            let correction_kind = crate::monitor::stats::CorrectionKind::Coded;
+            let correction_sym = if let Some((a_star, delta)) = span_params {
+                // Trailing solvable-span placement (paper §5.3): code
+                // over [max(ws, end−A*), end) with end = newest+1−Δ —
+                // every member has already landed when the repair does
+                // (FIFO + jitter guard), so the receiver's incremental GE
+                // solves a covered hole at arrival instead of entangling
+                // it with in-flight symbols. Falls back to the
+                // leading-window repair when the window is too young to
+                // trail.
+                let (ws, we) = st.encoder.window_span();
+                let end = (we + 1).saturating_sub(delta);
+                let start = end.saturating_sub(a_star).max(ws);
+                if end > start {
+                    st.encoder
+                        .generate_repair_range(
+                            start,
+                            (end - start).min(u16::MAX as u64) as u16,
+                        )
                         .unwrap_or_else(|| st.encoder.generate_repair())
-                } else if let Some((a_star, delta)) = span_params {
-                    // Trailing solvable-span placement (paper §5.3): code
-                    // over [max(ws, end−A*), end) with end = newest+1−Δ —
-                    // every member has already landed when the repair does
-                    // (FIFO + jitter guard), so the receiver's incremental GE
-                    // solves a covered hole at arrival instead of entangling
-                    // it with in-flight symbols. Falls back to the
-                    // leading-window repair when the window is too young to
-                    // trail.
-                    let (ws, we) = st.encoder.window_span();
-                    let end = (we + 1).saturating_sub(delta);
-                    let start = end.saturating_sub(a_star).max(ws);
-                    if end > start {
-                        st.encoder
-                            .generate_repair_range(
-                                start,
-                                (end - start).min(u16::MAX as u64) as u16,
-                            )
-                            .unwrap_or_else(|| st.encoder.generate_repair())
-                    } else {
-                        st.encoder.generate_repair()
-                    }
                 } else {
-                    // Repair: a new FEC symbol over the leading window.
                     st.encoder.generate_repair()
-                };
-                (sym, kind)
+                }
+            } else {
+                // Repair: a new FEC symbol over the leading window.
+                st.encoder.generate_repair()
             };
 
             // Reliable multipath places the correction by the law with the
