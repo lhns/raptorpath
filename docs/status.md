@@ -1907,6 +1907,54 @@ The launch sha is pinned by an amendment.
 - **Evidence:** `docs/l1-raw/s51b/recopy/`: the scripts (`acct.py`, `red.py`, `wire.py`, `age.py`), the two tables, and `recopy-extract.tgz`, which holds the lines the scripts read from all 152 rows and reproduces both tables byte for byte.
 - **Order:** the S06 derivation goes into the paper first (`rate-s06-plost-derivation`, running). It is followed by a red-first host test counting copies per seq. S06 goes before the jitter fix (`rate-delta-jitter-fix`), because Δ places coded symbols that c8 never sends. The spare-clamp verdict and the S08 fix are held until S06 lands, since all three edit the proactive-slot path.
 
+**§51 block 51 Result, Addendum 3 (2026-11-19, post hoc, code and ledgers only; Fable-reviewed): the owner deletes the taper copy branch (S06), and the repair-rate law (R02) is recorded as over-provisioned against what the δ dial needs at ρ = 1. The new rate formula waits for a reading without copies.**
+- **Owner decision 2026-11-19, S06:** delete the copy branch, so every proactive slot carries a coded symbol. The alternative, S06′, was a posterior over resends in flight (`docs/derivations/s06-plost-resend.md` on `s06-derivation` `5ebf41a5`). It kept "copy with probability π", which that derivation calls UNDERIVED, so it would have needed a FORMULA-FIRST waiver.
+  - **Why delete:** at ρ = 1 a copy adds no degree of freedom the NACK resend does not send. It is only a second, earlier trigger for the same correction.
+  - **What it keeps:** ADR-0064's shed law and budget. The NACK path applies the same `shed_allowed` test to every judged gap seq (`sender_phases.rs:846–869`), a superset of the slot path's `first()`.
+  - **What it loses:** the slot-time shed trigger between gap batches.
+  - **Open:** delay at c8. NACK fires at a run-mean age of 3.0–3.6 s there (C02), and the first copy per stall may be the only early trigger today.
+  - **Order:** a new ADR (no accepted ADR decides §3.2's FEC-to-ARQ transition), then the paper amendment, then code. The wasm model has its own P_lost retransmit (`raptorpath-wasm/src/lib.rs:1266–1300`), which needs a bounding test or a deliberate golden re-capture.
+  - **Red-first tests:** zero copies with slots above zero on both seats; shed conservation on the evicting seat, which needs a split shed counter.
+- **What a coded slot buys** (c2 medians; `[RFA] fill_coded`, a seq rebuilt by the decoder instead of received as source, `net/report.rs:51–69`, `receiver.rs:1470–1480`):
+
+| c2 arm | coded / src | closed by decode / src | per coded symbol | share of source losses | NACK per source loss |
+|---|---|---|---|---|---|
+| H-B, BM, BP | 0.0038 | 0.0013 | 0.34 | 5 % | 1.09 |
+| I3 | 0.029 | 0.0068 | 0.23 | 27 % | 1.08 |
+| HA, NA, AM, AP | 0.072–0.082 | 0.0107–0.0117 | 0.14 | 42–46 % | 1.02–1.03 |
+| RM, RP | 0.087–0.102 | 0.0113–0.0131 | 0.13 | 44–52 % | 1.01–1.03 |
+
+  - Coded symbols close holes, a median 9 ms after the loss against 229 ms for the resend. But the resend still fires about once per loss, so no bandwidth is saved. Why it fires after a decode close is a code read still owed.
+  - At c8 coded is only 0.004–0.006 per source, so nothing can be read about what r buys on two paths.
+- **The rate law, as shipped and as read** (`docs/derivations/rate-overprovision.md` on `rate-overprovision` `f073e81a`):
+
+  ```text
+  off Bulk:  r = (1 − β)·r_anchor        (χ = 0 on the tunnel, so r_late = 0)
+  r_anchor = clamp( soft_sat( max(r_core, r_burst, r_mass), r_sat ), 0, 0.5 )
+  r_core   = ε̂/(1 − ε̂) + z·S + codec,  z = Φ⁻¹(1 − t_tail/ε̂),  S = √( ε̂σ² / (W(1 − ε̂)) ),  t_tail = 10⁻⁵ · 0.5/δ
+  ```
+
+  - **c8:** the margin z·S is 85–90 % of r, and the floor ε̂/(1−ε̂) is only 0.015–0.04. Inferred from a tick-level port of the law, since no term-win gauge exists.
+  - **c2: which term wins is undecided.** The core term reproduces r only at σ² ≈ 30 against an honest 13, so the window-mass term cannot be excluded without the gauge.
+  - **The 10⁻⁵ base has no derivation.** The law gives the NACK channel no credit at ρ = 1, and the `max` has no stated reason.
+  - `TaperBudget` passes the rate straight through: `owed=0.00` on all 16 843 `[SPAN]` lines.
+  - The 0.5 cap binds on 6–8 % of ticks at c2 Auto and above and 12–16 % at c8. These are plu spikes; the figure is inferred, not yet checked on a row.
+  - c8's consumed r above the predicted r_sat comes from r_sat's dwell-inclusive srtt (564–600 ms against the design's 250), not from a breach of the cap.
+- **Over-provisioned against what, and by how much:**
+  - **Against the δ dial at ρ = 1:** yes. ARQ delivers every byte, so delivery alone needs r = 0, and r ≈ 0.20–0.26 costs the 15 % of goodput.
+  - **Against the law's own tail target (10⁻⁵ residual per window):** the exact-tail arithmetic says r is too low (0.32 / 0.36 needed). But that arithmetic assumes every slot is coded, and today 64 % (c2) and 98 % (c8) are copies.
+  - **Measured residual today at c2 Auto:** about 0.014 holes per source still fall to resends (losses 0.032 minus decode closes 0.011–0.012 per source), against the 10⁻⁵ target.
+  - So **the size of any r fix waits for a reading without copies.** The copy-branch deletion and the rate arms can share one VM session: reported-only arms over the tail base on the no-copy binary, if the base is settable at launch (to be checked).
+- **The fix direction is not adopted.** The rate doc's candidate replaces t_tail/ε̂ with a critical fractile priced by the cost of a hole falling to ARQ. On two of its three readings it is clamp-bound from Bulk through Auto (r = 0), which is a defect by FORMULA-FIRST. Its D_arq/d of 94 at c2 does not match the measured close times. It goes back for a definition of d.
+- **Ledger** (evidence and verdicts, `law-ledger.md`):
+  - R02 gains DISHONEST-INPUT, with its UNDERIVED parts named;
+  - R04 gains DISHONEST-INPUT (srtt);
+  - E07 gains DISHONEST-INPUT (plu reads below the truth on 54–65 % of ticks);
+  - R01 is measured off Bulk;
+  - S10 gets the pass-through evidence;
+  - **C02 gains the SACK encoding cap:** `MAX_SACK_RANGES` = 64 binds on every c8 report (63.7 ranges per report on c8 HA s42 r1, 1 754 631 / 27 557, against 3.7 at c2). Which holes a c8 report can name is set by the cap, not by the loss pattern.
+- **Owner question:** is the 10⁻⁵ residual per window a promise to keep, or a default? Today's delivered residual at c2 Auto is about 0.014 holes per source to resends, against 10⁻⁵. Every byte still arrives, by ARQ.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).
