@@ -6735,6 +6735,29 @@ nodes:
   overview: false
   plain: Most repair slots re-send old data instead of sending a coded repair symbol (about two thirds on one path, nearly all on two); find out why and whether it is a defect.
   notes: 'c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained.'
+- id: rate-overprovision-verdict
+  title: Repair rate over-provision verdict
+  track: rate
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status §51 block 51 Result (r(δ) table, goodput against δ)
+  - status §51 block 51 Result, Addendum 2 (goodput arithmetic)
+  - owner decision 2026-11-19 ("do b")
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - meas-s51-session
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-19'
+  end: ''
+  folded: []
+  overview: false
+  plain: The repair rate spends about a fifth of the link on repair where real loss is about 3 %; decide whether that is a defect and derive the fix, in parallel with the re-send fix, since this is where the lost throughput is.
+  notes: 'Owner decision 2026-11-19: treat the over-provisioned rate as a defect now, in parallel with rate-s06-plost-derivation (option b). Consumed r 0.19-0.21 (c2) and 0.24-0.26 (c8) from Auto up against wire loss 0.026-0.039; goodput c2 90 to 76, c8 98 to 83 Mbit/s, wire-bound. Fixing S06 alone changes what fills the slots, not how many. Diagnosis on branch rate-overprovision (docs/derivations/rate-overprovision.md); law-ledger rows R01, R02, R04. Done when: a ledger verdict is recorded and a derived fix direction is reviewed.'
 - id: rate-s06-plost-derivation
   title: P_lost given resends in flight
   track: rate

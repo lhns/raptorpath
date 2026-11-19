@@ -99,6 +99,7 @@ gantt
     Two checks before the repair-share comp… :rate_k4_input_checks, 2026-11-19, 2026-11-19
     Is spare's cwnd enforced? :rate_spare_cwnd, 2026-11-16, 2026-11-19
     c8 repair budget re-copies :rate_c8_frontier_recopy, 2026-11-19, 2026-11-19
+    Repair rate over-provision verdict :rate_overprovision_verdict, 2026-11-19, 2026-11-19
     section store - store law
     Path-scaled pool ×N :crit, store_xn_pool, 2026-07-14, 2026-08-19
     Per-path store accounts :crit, store_percap_family, 2026-07-18, 2026-07-19
