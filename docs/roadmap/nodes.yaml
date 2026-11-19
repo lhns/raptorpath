@@ -7113,7 +7113,7 @@ nodes:
   title: Gap horizon guard, then merge
   track: rec
   kind: mechanism
-  state: next
+  state: in-progress
   outcome: unrated
   evidence:
   - plan Live state item 4
@@ -7124,7 +7124,6 @@ nodes:
   - rec-s54-session
   - meas-guard-v2-impl
   - rec-gap-horizon
-  - store-law-derivation
   replaced_by: []
   qualified_by: []
   lane: vm
@@ -7133,7 +7132,7 @@ nodes:
   folded: []
   overview: false
   plain: Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait.
-  notes: 'Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out. Owner decision 2026-11-19: re-guard lever B now (the liveness audit ranks c8 in-order delay 4.7-6.1 s as the largest delay effect; the snapshot-order filter C03 is on main since §54). Re-base gaphorizon on current main; its guard gets an off-Bulk stage (meas-guard-bulk-blind) and registers the c8 receiver-duplicate cost and the leg answer for the merge question; needs the VM once the owner clears Ceph.'
+  notes: 'Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out. Owner decision 2026-11-19: re-guard lever B now (the liveness audit ranks c8 in-order delay 4.7-6.1 s as the largest delay effect; the snapshot-order filter C03 is on main since §54). Re-base gaphorizon on current main; its guard gets an off-Bulk stage (meas-guard-bulk-blind) and registers the c8 receiver-duplicate cost and the leg answer for the merge question; needs the VM once the owner clears Ceph. The wait on store-law-derivation is lifted by this decision.'
 - id: meas-s51-session
   title: Off-Bulk baseline and δ sweep
   track: meas
