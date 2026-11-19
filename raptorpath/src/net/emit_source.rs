@@ -180,6 +180,8 @@ pub(crate) struct SenderState {
     pub span_diag_last_us: u64,
     /// Recovery-suppression trace: the P_lost-branch retransmit channel.
     pub mpd_plost_retx: u64,
+    /// `[DIAG] ptgt=` / `pmax=`: how the taper copies spread over seqs.
+    pub copy_tally: CopyTally,
 
     /// Reused scratch for `window_source_paths_into` (the repair placement's
     /// covered-path list), so a correction symbol allocates nothing for it.
@@ -261,6 +263,7 @@ impl SenderState {
             c8c_src_placed: std::collections::HashMap::new(),
             span_diag_last_us: 0,
             mpd_plost_retx: 0,
+            copy_tally: CopyTally::default(),
             covered_scratch: Vec::new(),
             wire_arena: bytes::BytesMut::new(),
             tx: crate::transport::TxBatch::new(),
@@ -805,6 +808,7 @@ pub(crate) fn emit_source(
                     // slot carries a copy of an already-sent seq rather than
                     // a fresh coded symbol.
                     ctx.stats.fec.taper_copy.fetch_add(1, Ordering::Relaxed);
+                    st.copy_tally.record(retransmit_seq);
                 }
                 if use_retransmit && pol.diag_on {
                     // Recovery-suppression trace: the P_lost-branch
@@ -902,6 +906,47 @@ pub(crate) fn emit_source(
         }
     }
 
+}
+
+/// Taper-copy spread gauge (`[DIAG] ptgt=` / `pmax=`), O(1): the copy path
+/// always copies the oldest un-ACKed seq, so repeats are consecutive. `ptgt`
+/// counts runs of one seq (distinct seqs ever copied, bar a seq copied again
+/// after another one); `pmax` is the longest run, the most copies of one seq.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CopyTally {
+    last: Option<u64>,
+    run: u64,
+    pub ptgt: u64,
+    pub pmax: u64,
+}
+
+impl CopyTally {
+    pub fn record(&mut self, seq: u64) {
+        if self.last == Some(seq) {
+            self.run += 1;
+        } else {
+            self.last = Some(seq);
+            self.run = 1;
+            self.ptgt += 1;
+        }
+        self.pmax = self.pmax.max(self.run);
+    }
+}
+
+#[cfg(test)]
+mod copy_tally_tests {
+    use super::CopyTally;
+
+    #[test]
+    fn counters_move() {
+        let mut t = CopyTally::default();
+        assert_eq!((t.ptgt, t.pmax), (0, 0));
+        for seq in [7, 7, 7, 9, 9, 12] {
+            t.record(seq);
+        }
+        // 7 x3, 9 x2, 12 x1: three distinct seqs, at most three copies of one.
+        assert_eq!((t.ptgt, t.pmax), (3, 3));
+    }
 }
 
 /// The live r_sat of the worst-ε path (`[SPAN] rsat=`), read from the same
