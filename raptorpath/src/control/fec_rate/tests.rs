@@ -407,11 +407,20 @@ fn test_snapshot_rlaw_executes_and_follows_the_inputs() {
     }
     let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
     let on = ctrl.rate_snapshot(&est, 64).rlaw();
-    assert!(on.ends_with("/sat") || on.ends_with("/cap"), "aggressive request under a binding cap: {on}");
+    // Both terms are always reported: a:<w>/<b>,l:<w>/<b>,b=<beta>.
+    let shape = |s: &str| s.starts_with("a:") && s.contains(",l:") && s.contains(",b=");
+    assert!(shape(&on), "{on}");
+    assert!(on.split(",l:").next().unwrap().ends_with("/sat") || on.split(",l:").next().unwrap().ends_with("/cap"), "anchor term under a binding cap: {on}");
     let mut off = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
     off.set_saturation_cap(false);
     let free = off.rate_snapshot(&est, 64).rlaw();
-    assert!(!free.ends_with("/sat"), "cap off cannot read sat: {free}");
+    assert!(shape(&free) && !free.contains("/sat"), "cap off cannot read sat: {free}");
+    // beta is only printed: every hint's gauge has the same shape, and the beta
+    // field moves with the contract.
+    let bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200).rate_snapshot(&est, 64).rlaw();
+    let rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200).rate_snapshot(&est, 64).rlaw();
+    assert!(shape(&bulk) && shape(&rt));
+    assert_ne!(bulk.rsplit(",b=").next(), rt.rsplit(",b=").next(), "beta differs between presets: {bulk} vs {rt}");
     assert_ne!(on, free, "the gauge changes with the inputs");
 }
 
