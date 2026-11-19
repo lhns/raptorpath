@@ -112,7 +112,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [E14](#e14) | boot brake b-hat0+ (WinSampler::close; gauge branch github/slaw-gauge, not on main) | UNDERIVED, DISHONEST-INPUT | P0 | 5 | - |
 | [F07](#f07) | store-law candidate allowance sigma + q(delta)*l-hat (R6.2 / R6.7 line; derivation only, not built) | UNDERIVED, DISHONEST-INPUT | P0 | 6 | E13 |
 | [C02](#c02) | packet threshold 3 and the 20-gap report horizon | UNDERIVED, DEGENERATE(c8: the law sees only old holes) | P0 | 7 | - |
-| [C03](#c03) | snapshot-order filter (branch github/snapver-law, not on main) | OK | P0 | 8 | - |
+| [C03](#c03) | snapshot-order filter (on main since §54, merge 516dc13a) | OK | P0 | 8 | - |
 | [K09](#k09) | quinn BBR (the default substrate CC) | DISHONEST-INPUT | P1 | 9 | - |
 | [E01](#e01) | app-echo RTT EWMA (est.rtt()) | DISHONEST-INPUT | P1 | 10 | - |
 | [E11](#e11) | pooled recovery srtt (max over live paths of est.rtt()) | DISHONEST-INPUT | P1 | 11 | E01 |
