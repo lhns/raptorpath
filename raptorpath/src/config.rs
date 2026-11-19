@@ -224,7 +224,7 @@ pub fn reject_tunnel_object_modes(config: &RaptorpathConfig) -> anyhow::Result<(
     ] {
         if set == Some(true) {
             anyhow::bail!(
-                "{flag} is a perf/native-object mode; the tunnel always delivers in order:                  remove it from the config file"
+                "{flag} is a perf/native-object mode; the tunnel always delivers in order: remove it from the config file"
             );
         }
     }
@@ -763,7 +763,12 @@ mod tests {
             let err = tunnel_config(tunnel_base(f), RaptorpathConfig::default())
                 .expect_err(f)
                 .to_string();
-            assert!(err.contains(f) && err.contains("in order"), "{f}: {err}");
+            assert_eq!(
+                err,
+                format!(
+                    "{f} is a perf/native-object mode; the tunnel always delivers in order: remove it from the config file"
+                )
+            );
         }
     }
 

@@ -417,6 +417,8 @@ async fn cmd_check(config_path: Option<PathBuf>) -> anyhow::Result<()> {
         let file_config = config::load_config(path)?;
         base_config = config::merge(base_config, file_config);
     }
+    // `run` rejects these; `check` must agree.
+    config::reject_tunnel_object_modes(&base_config)?;
     let (peer_config, status_addr) = config::resolve(&base_config)?;
 
     println!("Preflight checks:");
