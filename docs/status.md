@@ -1860,7 +1860,7 @@ The launch sha is pinned by an amendment.
   - Steal was 0.28–0.34 % and iowait well under 0.1 % across both cells (`steal.txt`). Whether the VM shares the Ceph cluster that another session was restarting is unanswered by the owner.
 - **Ledger:** `docs/l1-raw/s51b/` (scrubbed): per cell `ld.log` (sufficient to re-score), `score-vm.txt`, `score-host.txt`, `launch.out`, `BINSHA.txt`, `smoke.log`, `steal.txt`; plus the rehearsal tarball. `s51b-diag-cited.tgz` holds the client and server logs of every row the findings cite (c8 HR ×6; c8 RM, RP, HA s42 r1; c2 HA, HR s42 r1), and `scripts/` holds the three read-only scripts behind the findings' numbers (`rows.py`, `spare.py`, `hr.py`; each takes a `diag-ld` directory, and `hr.py` also takes the `ld.log`). The full per-row logs (53–70 MB per cell) are not committed. They stay on the VM in `~/b51c2/run` and `~/b51c8/run` until `rate-c8-frontier-recopy` has read them. The VM's `src` / `target` trees, `/dev/shm/b51*` and the unscrubbed tarballs are removed.
 
-**§51 block 51 Result, Addendum 1 (2026-11-19, after the owner's report that the Ceph cluster was unstable; ledgers only, no VM; on Fable's advice, text not yet reviewed): the labels stand. The VM saw no I/O signal in this session, in block E or in §65.**
+**§51 block 51 Result, Addendum 1 (2026-11-19, after the owner's report that the Ceph cluster was unstable; ledgers only, no VM; Fable-reviewed): the labels stand. The VM saw no I/O signal in this session, in block E or in §65.**
 - **Owner report:** "ceph was unstable" during the session. When it started and whether it has ended is asked; no scored VM session runs until the owner says it is over.
 - **Why the labels survive by design.**
   - Every PASS is stated at the in-session A/A resolution, which absorbs any disturbance that hit both arms.
@@ -1876,7 +1876,7 @@ The launch sha is pinned by an amendment.
 - **The limit:** PSI and steal see only what reaches the guest. A hypervisor-side stall that delays the netem qdisc or the clock without blocking guest I/O would not show here.
 - **One pushed sentence is withdrawn pending a check:** Finding 1's "most copies do not land as duplicates". It assumed `rx_dup` counts every duplicate arrival at the receiver, and nobody had read that counter. The copy diagnosis (`rate-c8-frontier-recopy`) reads the counter and bounds copies by true wire losses instead.
 
-**§51 block 51 Result, Addendum 2 (2026-11-19, post hoc, the 152 sweep rows and the code only; the diagnosis Fable-reviewed, this text not yet): the proactive copies are a defect in the taper copy decision (law ledger S06). Every proactive slot between two cumulative-ack advances copies the same blocking seq on its original send age, so copies run at 4–7× the true losses and mostly land at a receiver that already has the seq.**
+**§51 block 51 Result, Addendum 2 (2026-11-19, post hoc, the 152 sweep rows and the code only; Fable-reviewed): the proactive copies are a defect in the taper copy decision (law ledger S06). Every proactive slot between two cumulative-ack advances copies the same blocking seq on its original send age, so copies run at 4–7× the true losses and mostly land at a receiver that already has the seq.**
 - **In plain words:** the sender's "is this old packet probably lost?" check always looks at the same packet, the oldest unacknowledged one, and never counts the copies it has already sent. On a two-path link that packet is seconds old, so the check always says yes, and the repair budget goes into copies of a packet the receiver already has. The normal loss-driven resend already covers each real loss about once.
 - **Code** (read in full at main, `net/emit_source.rs:739–822`):
   - Each debt slot evaluates `p_lost(age, eps_at_send, srtt, rttvar)` on `retransmit_buffer.first()` (:757–759), the lowest unacked seq, which is the cumulative-ack blocker.
@@ -1893,7 +1893,7 @@ The launch sha is pinned by an amendment.
 - **Copies per blocker:** about 6 per true loss on average, and up to about 137 per long stall at c8 (c8 HA: 2 067 copies/s, mean gap between cumulative advances 65 ms).
   - A "stall" (`[C8CONV-S] st=`) is the time between two cumulative advances of 5 ms or more (`sender_phases.rs:1259–1272`).
   - Between two advances the code copies the same seq by construction. So the 137 is that determinism counted, not an independent check: no per-copy seq is printed. `ptgt=` / `pmax=` counters are being added on `c8-gauges`.
-- **c8 consequence:** the blocker's age is 5–7 s against a worst-path srtt of 0.26–0.6 s, so P_lost is pinned at about 1 and the copy share of slots is 0.98. **No proactive coded repair is sent on two paths at any δ.**
+- **c8 consequence:** the blocker's age is 5–7 s against a worst-path srtt of 0.26–0.6 s, so P_lost is pinned at about 1 and the copy share of slots is 0.98. **No proactive coded repair is sent on two paths at any measured δ above Bulk.**
   - The seconds-long frontier is not new: H-B reads 4.7 s in-order with no copies at all. It is the c8 completion-tail line of work (plan W3.6b / the c8 tail diagnosis).
   - At c2 the age is about 0.4 s against srtt 0.21–0.25 s, giving a predicted copy share of about 0.78 per tick against 0.61–0.64 observed (0.5 s tick resolution).
 - **Goodput (arithmetic, not measurement):**
