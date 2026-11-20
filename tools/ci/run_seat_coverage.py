@@ -32,11 +32,21 @@ def main():
         print(f"::group::seat group {name}: {g['seat']}", flush=True)
         run(BASE + ["clean", "--profraw-only"])
         steps, t0 = [], time.time()
-        sel = [["--lib"]] if g.get("lib") else [["--test", e["test"]] + (["--"] + e["filters"] if e["filters"] else []) for e in g["tests"]]
+        if g.get("single"):
+            # lib: one non-split run; `report` after a --lib-only --no-report run found no object files
+            rc0, secs = run(BASE + ["--no-fail-fast"] + PROF + ["--lib", "--lcov", "--ignore-filename-regex", IGNORE, "--output-path", str(out / f"{name}.lcov")])
+            runs[name] = {"seat": g["seat"], "steps": [{"sel": "--lib", "rc": rc0, "secs": secs}], "report_rc": rc0, "wall_s": secs}
+            print("::endgroup::", flush=True)
+            continue
+        sel = []
+        for e in g["tests"]:
+            s = ["--test", e["test"]]
+            if e.get("features"):
+                s = ["--features", e["features"]] + s
+            sel.append(s + (["--"] + e["filters"] if e["filters"] else []))
         for s in sel:
-            head = s[:2]
-            tail = s[2:]
-            rc, secs = run(BASE + ["--no-report", "--no-fail-fast"] + PROF + head + tail)
+            n = s.index("--test") + 2
+            rc, secs = run(BASE + ["--no-report", "--no-fail-fast"] + PROF + s[:n] + s[n:])
             steps.append({"sel": " ".join(s), "rc": rc, "secs": secs})
         rc, _ = run(BASE + ["report", "--release", "--lcov", "--ignore-filename-regex", IGNORE, "--output-path", str(out / f"{name}.lcov")])
         runs[name] = {"seat": g["seat"], "steps": steps, "report_rc": rc, "wall_s": round(time.time() - t0, 1)}

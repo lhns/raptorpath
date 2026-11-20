@@ -159,15 +159,18 @@
    "tests": [
     {
      "test": "f2_realtime_packed",
-     "filters": []
+     "filters": [],
+     "features": "test-seams"
     },
     {
      "test": "f2_unframable_closes",
-     "filters": []
+     "filters": [],
+     "features": "test-seams"
     },
     {
      "test": "f2_mixed_symbol_size",
-     "filters": []
+     "filters": [],
+     "features": "test-seams"
     }
    ]
   },
@@ -269,7 +272,8 @@
     },
     {
      "test": "f2_realtime_packed",
-     "filters": []
+     "filters": [],
+     "features": "test-seams"
     },
     {
      "test": "f2_window_start_lost",
@@ -369,7 +373,8 @@
   "lib": {
    "seat": "lib unit tests (no seat: each test builds its own config in-process)",
    "lib": true,
-   "tests": []
+   "tests": [],
+   "single": true
   }
  }
 }

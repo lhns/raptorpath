@@ -116,7 +116,7 @@ def audit_says(cells, cols):
 def find_sites(cfg, lcovs, root):
     res = {}
     for s in cfg["sites"]:
-        res[s["id"]] = {"desc": s["desc"], "line": None, "by_group": {}}
+        res[s["id"]] = {"desc": s["desc"], "line": None, "by_group": {}, "audit": s.get("audit"), "audit_says": s.get("audit_says", {})}
         lines = (root / s["file"]).read_text(encoding="utf-8", errors="replace").splitlines()
         c = [i + 1 for i, l in enumerate(lines) if re.search(s["regex"], l) and abs(i + 1 - s["near"]) <= 80]
         if not c:
@@ -207,6 +207,13 @@ def render(groups, runs, stz, table):
         if g in groups:
             ids = [r["id"] for r in table if r["flags"].get(g) == "FAIL"]
             o.append(f"- **{g}** ({len(ids)}): {', '.join(ids) or 'none'}")
+    ex = [(k, s) for k, s in stz.items() if s.get("audit")]
+    if ex:
+        o += ["", "## Branch sites vs the liveness audit", "", "| site | audit row says | " + " | ".join(groups) + " | agrees |", "|---|---|" + "---|" * len(groups) + "---|"]
+        for k, s in ex:
+            cells = ["n/a" if s["by_group"].get(g) is None else ("HIT" if s["by_group"][g] else "MISS") for g in groups]
+            ag = ["%s %s" % (g, "yes" if (says == "NR") == (cells[groups.index(g)] == "MISS") else "NO") for g, says in s["audit_says"].items() if g in groups]
+            o.append(f"| {k} (line {s['line']}) | {s['audit']}: " + ", ".join(f"{g} {v}" for g, v in s["audit_says"].items()) + " | " + " | ".join(cells) + " | " + "; ".join(ag) + " |")
     if "bulk_rho1" in groups:
         g = "bulk_rho1"
         red = [r["id"] for r in table if r["flags"].get(g) == "AGREE" and r["groups"][g]["status"] == "MISS"]
