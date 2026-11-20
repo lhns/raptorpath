@@ -109,3 +109,7 @@ required-features = ["sim", "test-seams"]
 [[test]]
 name = "sim_lost_tail"
 required-features = ["sim", "test-seams"]
+
+[[test]]
+name = "sim_shed_reach"
+required-features = ["sim", "test-seams"]

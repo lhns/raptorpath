@@ -1,0 +1,144 @@
+//! Reach and liveness of the sender's shed sites, deterministically (ADR-0082).
+//! Realtime hint, one path, 5 % client-to-server loss, seed 42, 30 MB.
+//! Run with
+//! `RUSTFLAGS="--cfg tokio_unstable" cargo test -p raptorpath --features sim,test-seams --test sim_shed_reach`
+//! (`-- --ignored` for the known-defect liveness test).
+//!
+//! Two seams make the sites reachable in the sim (`src/test_seams.rs`):
+//! * `RWM_TEST_TS_SHED_ALL=1` prints every shed / denied / frontier event.
+//! * `RWM_TEST_TS_BUDGET_FRAC=0.05` fixes the 1 - rho budget. The sim sender
+//!   hands the whole object to the link in ~1 s, before the loss estimator has
+//!   a sample, so the derived budget reads 0.0000 for the whole run and no
+//!   hole is ever shed (`denied` fires instead, `witness_*` pins that too).
+//!   0.05 is the loss rate of the link, i.e. a budget a warm estimator at
+//!   this loss would be allowed to approach.
+//!
+//! Sites: the NACK-path shed (`sender_phases.rs`, ev=`shed`) is reached.
+//! The slot-site shed (`emit_source.rs`, ev=`shed_slot`) is NOT: in every
+//! cell explored (loss 2-20 %, 1-300 MB, budget forced open, epsilon at send
+//! forced to 0.9) it read 0; see `slot_site_is_not_reached_here`.
+
+mod sim_support;
+use sim_support::{run, ChildRun, Scenario};
+
+#[test]
+fn child() {
+    sim_support::child();
+}
+
+/// One child at a time: every scenario uses the same port (a different port
+/// perturbs the run, so the witness and the liveness test must share one).
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+const PORT: u16 = 47_400;
+
+fn scenario(reliable: bool) -> ChildRun {
+    let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    run(&Scenario {
+        seed: 42,
+        paths: 1,
+        bytes: 30_000_000,
+        hint: "realtime",
+        reliable: Some(reliable),
+        loss: 0.05,
+        jitter_ms: 4,
+        limit_s: 40,
+        port: PORT,
+        env: vec![
+            // A seq that never exists: the per-seq seams stay quiet but `gap_clamped`
+            // is armed; SHED_ALL opens the shed trace.
+            ("RWM_TEST_TS_SEQ", "999999999".into()),
+            ("RWM_TEST_TS_SHED_ALL", "1".into()),
+            ("RWM_TEST_TS_BUDGET_FRAC", "0.05".into()),
+        ],
+    })
+}
+
+fn field(l: &str, k: &str) -> u64 {
+    l.split(' ').find_map(|f| f.strip_prefix(k)).and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("no {k} in {l}"))
+}
+
+fn counts(r: &ChildRun) -> String {
+    let shed_seqs: Vec<u64> = r.tseam("shed").into_iter().chain(r.tseam("shed_slot")).map(|l| field(l, "seq=")).collect();
+    let (min_shed, max_shed) = (shed_seqs.iter().min(), shed_seqs.iter().max());
+    let last_next = r.tseam("frontier").last().map(|l| field(l, "next="));
+    let last_diag = r.log.lines().rev().find(|l| l.starts_with("[DIAG]")).unwrap_or("");
+    let tok = |k: &str| last_diag.split(' ').find(|w| w.starts_with(k)).unwrap_or("?").to_string();
+    // Shape: `sweeps` frozen with the frontier below the shed seqs = the sender
+    // is stuck on its first retransmit-buffer entry; a frontier past every
+    // shed seq with no completion would be the other shape.
+    format!(
+        "shed_seq_range=[{min_shed:?}..{max_shed:?}] last_frontier_next={last_next:?} diag[{} {} {}] outcome={} virt_s={:.2} shed(nack)={} shed_slot={} denied={} denied_slot={} clamped_lines={} frontier_lines={}",
+        tok("cum="),
+        tok("sweeps="),
+        tok("shed="),
+        r.outcome,
+        r.virt_s,
+        r.tseam("shed").len(),
+        r.tseam("shed_slot").len(),
+        r.tseam("denied").len(),
+        r.tseam("denied_slot").len(),
+        r.tseam("gap_clamped").len(),
+        r.tseam("frontier").len()
+    )
+}
+
+/// Liveness: the transfer completes, and every shed hole is passed by the
+/// receiver's in-order frontier within a bound derived from the deadline.
+///
+/// Bound for a hole shed at t_s: the sender sheds only at age > D (`d_us` on
+/// the event), after which nothing serves the hole, so the receiver must
+/// resolve it by itself (force-drain or hold expiry). Hold expiry is at most
+/// H_max (the largest `hold_us` in force, REORDER_MAX_HOLD = 300 ms), the
+/// frontier is sampled every 100 ms, and the shed to receiver delay is at
+/// most the largest observed D-scale term, so
+///     t_pass(s) <= t_s + H_max + 100 ms + d_us,
+/// where t_pass(s) is the first frontier sample with next > s.
+fn assert_live(r: &ChildRun, what: &str) {
+    let c = counts(r);
+    assert_eq!(r.outcome, "client_ok", "{what}: transfer did not complete: {c}");
+    let frontier: Vec<(u64, u64, u64)> =
+        r.tseam("frontier").iter().map(|l| (field(l, "t_us="), field(l, "next="), field(l, "hold_us="))).collect();
+    let h_max = frontier.iter().map(|f| f.2).max().unwrap_or(0).max(300_000);
+    for l in r.tseam("shed").into_iter().chain(r.tseam("shed_slot")) {
+        let (s, t_s, d) = (field(l, "seq="), field(l, "t_us="), field(l, "d_us="));
+        let by = t_s + h_max + 100_000 + d;
+        let passed = frontier.iter().find(|f| f.1 > s).map(|f| f.0);
+        assert!(passed.is_some_and(|t| t <= by), "{what}: frontier never passed shed seq {s} by t_us={by} (passed at {passed:?}): {c}");
+    }
+}
+
+/// Witness (green): the NACK-path shed site runs at rho < 1.
+#[test]
+fn witness_nack_site_sheds_at_rho_below_1() {
+    let r = scenario(false);
+    let c = counts(&r);
+    println!("rho<1: {c}");
+    assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
+    assert!(!r.tseam("gap_clamped").is_empty(), "the evicting NACK site never clamped a gap: {c}");
+}
+
+/// Witness (green): the slot site stays at 0 in this scenario. When a change
+/// makes it reachable, this fails: flip it to `> 0` and add a liveness arm.
+#[test]
+fn slot_site_is_not_reached_here() {
+    let r = scenario(false);
+    let c = counts(&r);
+    assert_eq!(r.tseam("shed_slot").len(), 0, "slot site now reached (flip this test): {c}");
+}
+
+/// KNOWN DEFECT `rec-evict-blocker-unresolved` (ADR-0079 Amendment 1).
+#[test]
+#[ignore = "rec-evict-blocker-unresolved: at rho < 1 a hole below the coding window is neither resent nor resolved; the transfer never completes"]
+fn liveness_after_shed_at_rho_below_1() {
+    let r = scenario(false);
+    println!("rho<1: {}", counts(&r));
+    assert_live(&r, "rho<1");
+}
+
+/// Control (not ignored): the same scenario at rho = 1 is live.
+#[test]
+fn control_liveness_at_rho_1() {
+    let r = scenario(true);
+    println!("rho=1: {}", counts(&r));
+    assert_live(&r, "rho=1");
+}
