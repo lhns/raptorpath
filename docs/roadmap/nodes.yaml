@@ -8458,10 +8458,11 @@ nodes:
   title: Coverage per seat
   track: infra
   kind: instrument
-  state: blocked
-  outcome: unrated
+  state: done
+  outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
+  - docs/derivations/coverage-by-seat.md
   verdict_quote: ''
   headline: ''
   depends_on: [infra-test-ci-gate]
@@ -8469,11 +8470,11 @@ nodes:
   qualified_by: []
   lane: none
   start: '2026-11-20'
-  end: ''
+  end: '2026-11-20'
   folded: []
   overview: false
   plain: 'Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up.'
-  notes: 'Plan S5.'
+  notes: 'Plan S5, report-only baseline (seat-coverage run 44678200818, 57 min, nightly and on dispatch). The NACK and slot shed sites are MISS in every seat, the evicting seat included: its two tests run clean links, and the heavier shed tests are ignored. Auto has one test, the evicting seat two. Row hits mean the function ran, not the law branch; branch sites exist only for S08 and R05. Open: no lib unit-test column (no lcov from a --lib run); some ledger loc lines have drifted from main.'
 - id: infra-test-mutation
   title: Mutation testing of the laws
   track: infra
