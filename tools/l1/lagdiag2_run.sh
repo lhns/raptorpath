@@ -61,7 +61,7 @@ LB_TAG="lagdiag2_run:$$"
 LB_LOG="$RUN/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 cotenants() { echo "cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg)"; }
 era "LG2 start commit=$(cat "$ROOT/src/COMMIT" 2>/dev/null) hard=$LG2_HARD_DEADLINE soft=$SOFT $(cotenants)"
 

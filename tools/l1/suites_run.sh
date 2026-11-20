@@ -29,7 +29,7 @@ LB_TAG="suites_run:$$"
 LB_LOG="$ROOT/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 trap release_locks EXIT
 era "SUITES start src=$SRC commit=$(cat "$SRC/COMMIT" 2>/dev/null) $(iostate)"
 

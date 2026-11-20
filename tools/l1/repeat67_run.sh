@@ -34,7 +34,7 @@ LB_TAG="repeat67_run:$$"
 LB_LOG="$ROOT/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 trap release_locks EXIT
 CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 : > "$OUT"

@@ -29,7 +29,7 @@ LB_TAG="q3diag_run:$$"
 LB_LOG="$RUN/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 trap 'release_locks; touch "$RUN/FAILED"' INT TERM
 fail() { era "FAILED: $*"; touch "$RUN/FAILED"; release_locks; exit 5; }
 
