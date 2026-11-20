@@ -61,7 +61,7 @@ impl ReorderBuffer {
     /// delivery instant itself, so its wait is exactly 0. Read by the gauge
     /// and by nothing else.
     pub fn push(&mut self, seq: u64, data: Bytes) -> Vec<(u64, Bytes, Instant)> {
-        self.push_with_time(seq, data, Instant::now())
+        self.push_with_time(seq, data, crate::clock::now())
     }
 
     /// Push a recovered symbol with an explicit timestamp (for MockClock-driven tests).

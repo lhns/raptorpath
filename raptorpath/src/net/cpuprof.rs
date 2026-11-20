@@ -189,7 +189,7 @@ impl Default for CpuProfGauge {
 impl CpuProfGauge {
     pub fn new() -> Self {
         CpuProfGauge {
-            armed_at: Instant::now(),
+            armed_at: crate::clock::now(),
             armed_cpu_ns: proc_cpu_ns().unwrap_or(u64::MAX),
             ns: std::array::from_fn(|_| AtomicU64::new(0)),
             n: std::array::from_fn(|_| AtomicU64::new(0)),
@@ -206,7 +206,7 @@ impl CpuProfGauge {
     /// The run's reading. `None` when the gauge has no wall-clock span at all
     /// (rather than a 0/0).
     pub fn report(&self) -> Option<CpuProfReading> {
-        let run_ns = self.armed_at.elapsed().as_nanos() as u64;
+        let run_ns = self.armed_at.clock_elapsed().as_nanos() as u64;
         if run_ns == 0 {
             return None;
         }
@@ -276,9 +276,9 @@ pub fn timed<T>(seam: Seam, f: impl FnOnce() -> T) -> T {
     match gauge() {
         None => f(),
         Some(g) => {
-            let t0 = Instant::now();
+            let t0 = crate::clock::now();
             let out = f();
-            g.charge(seam, t0.elapsed().as_nanos() as u64);
+            g.charge(seam, t0.clock_elapsed().as_nanos() as u64);
             out
         }
     }
@@ -533,3 +533,6 @@ mod tests {
         }
     }
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;
