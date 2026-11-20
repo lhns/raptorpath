@@ -1,3 +1,2 @@
 # Known failures skipped by tier-A CI (tools/ci/run_py_tests.py).
 # <test file> | <cause> | <date>   Remove a line when the cause is fixed.
-test_stubrun.py | nightly only, report-only; fails in a full run on GitHub runners (ubuntu-latest and 24.04, also with STUBRUN_JOBS=1): 93 FAIL checks, all downstream of the plan 62r0 rehearsal, whose smoke-check.txt is never written (62r0's own failure not read); STUBRUN_ONLY=63 alone passes | 2026-11-20
