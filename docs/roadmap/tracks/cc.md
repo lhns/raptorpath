@@ -13,6 +13,7 @@ flowchart TB
     cc_aimd_v1["↷ AIMD congestion<br/>control (first CC)"]
     cc_early_delay_cc["✔ Delay-based CC<br/>replaces AIMD"]
     cc_copa_lite["✔ Production Copa-lite<br/>port"]
+    cc_btlbw_recovery["✖ BtlBw-anchored<br/>window recovery"]
     cc_copa_sole_substrate["↷ Copa per path as<br/>substrate"]
     cc_copa_wire_signal["✔ Copa wire signal,<br/>compete mode"]
     cc_bbr_default["✔ BBR as substrate<br/>default"]
@@ -32,11 +33,13 @@ flowchart TB
     cc_copa_consumers["⛔ Copa consumers onto<br/>per-leg state"]
     cc_cubic_substrate ~~~ cc_early_delay_cc
     cc_aimd_v1 ~~~ cc_copa_lite
-    cc_aimd_v1 ~~~ cc_copa_sole_substrate
-    cc_early_delay_cc ~~~ cc_copa_wire_signal
-    cc_copa_lite ~~~ cc_bbr_default
+    cc_aimd_v1 ~~~ cc_btlbw_recovery
+    cc_early_delay_cc ~~~ cc_copa_sole_substrate
+    cc_copa_lite ~~~ cc_copa_wire_signal
+    cc_btlbw_recovery ~~~ cc_copa_wire_signal
     cc_copa_sole_substrate ~~~ cc_bbr_default
-    cc_copa_wire_signal ~~~ cc_adr68_fusion
+    cc_copa_wire_signal ~~~ cc_bbr_default
+    cc_bbr_default ~~~ cc_adr68_fusion
     cc_bbr_default ~~~ cc_bbrrs_v1
     cc_bbr_default ~~~ cc_quinn_bbr_collapse
     cc_adr68_fusion ~~~ cc_s48_host_gate
@@ -73,7 +76,7 @@ flowchart TB
     cc_s48d_session --> cc_bbrrs_promote
     cc_bbrrs_promote --> cc_hybrid
     cc_pacing_audit --> cc_hybrid
-    linkStyle 25,28 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 27,30 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -87,7 +90,7 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class cc_cubic_substrate,cc_aimd_v1,cc_copa_sole_substrate dead
+    class cc_cubic_substrate,cc_aimd_v1,cc_btlbw_recovery,cc_copa_sole_substrate dead
     class cc_early_delay_cc,cc_bbrrs_v1,cc_s48_host_gate unrated
     class cc_copa_lite,cc_copa_wire_signal,cc_bbr_default succ
     class cc_adr68_fusion,cc_hybrid parked
@@ -128,13 +131,14 @@ flowchart TB
 | `cc-bbrrs-promote` | bbr_rs promotion | blocked | unrated |  | plan W1.5 | cc-user-bbrrs-promotion |
 | `cc-hybrid` | BBR/Copa hybrid build | parked | unrated |  | plan W2.4 | cc-adr68-fusion, cc-bbrrs-promote, meas-adversarial-cells-run, cc-user-adr68-direction |
 | `cc-aimd-v1` | AIMD congestion control (first CC) | abandoned | superseded |  | ADR-0009 |  |
+| `cc-btlbw-recovery` | BtlBw-anchored window recovery | abandoned | dead-end |  | commit fa433ac7; paper §12.6 |  |
 
 ### Details per node
 
 | id | title | notes | evidence |
 |---|---|---|---|
 | `cc-early-delay-cc` | Delay-based CC replaces AIMD | Direct landings (ADR-0019 not in the raw set); paper §10 recommended Copa. | commit cbbbfdbd; ADR-0024 |
-| `cc-copa-lite` | Production Copa-lite port | P1 hint-coupled queue target, P2 honest floor, P7 Copa-lite with fixes, P-CC BtlBw-anchored recovery, the BBR-lessons note (2026-07-02 to 07-04). | branch P7 |
+| `cc-copa-lite` | Production Copa-lite port | P1 hint-coupled queue target, P2 honest floor, P7 Copa-lite with fixes, P-CC BtlBw-anchored recovery, the BBR-lessons note (2026-07-02 to 07-04). P-CC is its own node since 2026-11-20 (cc-btlbw-recovery). | branch P7 |
 | `cc-copa-sole-substrate` | Copa per path as substrate | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Copa per path as the substrate default (the original design) |
 | `cc-cubic-substrate` | Quinn stock Cubic substrate | Cubic was quinn's default from the start; named as the hidden ceiling 2026-07-13. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Quinn's stock Cubic under the engine |
 | `cc-copa-wire-signal` | Copa wire signal, compete mode | ADR date is the 2026-07-21 migration; built 2026-07-13, compete mode 2026-07-19. RWM_COPA_COMPETE is a §3.3 debt. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0062 |
@@ -157,4 +161,53 @@ flowchart TB
 | `cc-bbrrs-promote` | bbr_rs promotion | Law ledger: K09 (rank 9, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054's default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS. | plan W1.5 |
 | `cc-hybrid` | BBR/Copa hybrid build | The forward build of the cc-adr68-fusion design. Done when: a registration with falsifiable per-cell targets (ADR-0068 bars: shal8 >= 75 Mbit, jit0-jit25 >= 0.9x without the standing queue) is committed before any build. | plan W2.4 |
 | `cc-aimd-v1` | AIMD congestion control (first CC) | ADR-0009 closed the missing-CC gap with AIMD on 2026-03-12; replaced by BBR-style delay-based CC (ADR-0019) on 2026-03-13. End date is the replacement's start. | ADR-0009 |
+| `cc-btlbw-recovery` | BtlBw-anchored window recovery | Split 2026-11-20 from cc-copa-lite, where it was folded as branch P-CC (own refuted verdict). | commit fa433ac7; paper §12.6 |
+
+### Folded items per node
+
+- `cc-early-delay-cc`: Delay-based CC replaces AIMD
+  - commit 78aa7d4a
+  - commit 628fdb1c
+  - BBR-style delay-based congestion control (2026-03-13, commit cbbbfdbda9)
+  - Copa recommended over BBR for the paper; ECN and L4S set aside (2026-03-21, session record)
+- `cc-copa-lite`: Production Copa-lite port
+  - branch feat/p1-hint-delay-target
+  - branch feat/p2-estimated-floor
+  - branch P7 follow-up
+  - branch P7 fix
+  - commit b000e443
+  - Jitter-robust Copa queue signal and window-level jitter headroom (2026-07-04, commit d5f89ce2, commit a7c20d72)
+- `cc-copa-sole-substrate`: Copa per path as substrate
+  - branch feat/copa-sole-cc
+  - branch feat/copa-sole-clean
+  - Copa-sole on the clean substrate (2026-07-27, commit 7652ccb8)
+- `cc-cubic-substrate`: Quinn stock Cubic substrate
+  - commit 0d9f26e7
+- `cc-copa-wire-signal`: Copa wire signal, compete mode
+  - commit f203d6e7
+  - commit 386979d8
+  - branch feat/copa-compete
+  - branch meas/competitive-baseline
+  - Copa wire-signal fixes (2026-07-13, commit 9f4fa450, commit aaabd5c5, commit d7eac012, commit 4d9927bf, commit c9f73e0d, commit 7b224ad6)
+- `cc-bbr-default`: BBR as substrate default
+  - commit 519467e0
+- `cc-bbrrs-v1`: bbr_rs first version
+  - commit c319ef91
+  - commit 2eb88de3
+- `cc-adr68-fusion`: Copa-BBR fusion
+  - branch meas/adversarial-cells
+  - paper §11.1 open question 12
+  - commit 6c8c3d38
+  - commit 754139c3
+  - commit 9840854b
+  - ADR-0068 Copa-BBR fusion proposal (2026-07-22, commit 2ce25d14)
+- `cc-s48-host-gate`: bbr_rs host gate
+  - commit 0daf1452
+  - commit 35c24444
+- `cc-aimd-v1`: AIMD congestion control (first CC)
+  - commit dc672631
+  - commit cbbbfdbd
+  - ACK delivery, AIMD congestion control and channel backpressure (2026-03-12, commit 8857788d)
+- `cc-btlbw-recovery`: BtlBw-anchored window recovery
+  - branch P-CC
 <!-- END GENERATED: table-cc -->

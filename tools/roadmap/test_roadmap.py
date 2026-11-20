@@ -519,6 +519,39 @@ class BuildTests(unittest.TestCase):
             self.assertIn(f"`{i}`", out)
         self.assertNotIn("rec-d", out)
 
+    def test_done_by_month_includes_abandoned_with_its_tag(self):
+        out = self.region(built([
+            node("rec-a", state="done", overview=False, start="2026-07-02"),
+            node("rec-b", state="abandoned", outcome="dead-end", overview=False, start="2026-07-03"),
+            node("rec-c", state="abandoned", outcome="superseded", replaced_by=["rec-a"], overview=False, start="2026-07-04"),
+        ]), "done-by-month")
+        self.assertIn("<b>Jul 2026</b>: 1 done, 2 abandoned", out)
+        self.assertIn("- `rec-b`: T rec-b (✖ dead end)", out)
+        self.assertIn("- `rec-c`: T rec-c (↷ superseded)", out)
+
+    def test_done_by_month_lists_labelled_folded_items_only(self):
+        folded = ["Reorder buffer (2026-03-17, commit ed1854de)",
+                  "Two shas (2026-07-04, commit 02edf367, commit beda623b)",
+                  "Owner rule (2026-07-02, session record)",
+                  "commit 1234abcd", "branch P7 fix", "paper §11.1 open question 7",
+                  "not a label (2026-07-02, commit xyz)"]
+        out = self.region(built([node("rec-a", state="done", overview=False, start="2026-07-02", folded=folded)]),
+                          "done-by-month")
+        lines = out.splitlines()
+        i = lines.index("- `rec-a`: T rec-a (✔ done · unrated)")
+        self.assertEqual(lines[i + 1:i + 4], ["  - Reorder buffer (2026-03-17)", "  - Two shas (2026-07-04)",
+                                              "  - Owner rule (2026-07-02)"])
+        for bare in ("1234abcd", "P7 fix", "open question 7", "not a label"):
+            self.assertNotIn(bare, out)
+
+    def test_track_page_lists_every_folded_item(self):
+        tb = self.region(tfile([node("rec-a", folded=["commit 1234abcd", "Fix | it (2026-07-02, commit 1234abcd)"]),
+                                node("rec-b")], "rec"), "table-rec")
+        part = tb.split("### Folded items per node")[1]
+        self.assertIn("- `rec-a`: T rec-a\n  - commit 1234abcd\n  - Fix \\| it (2026-07-02, commit 1234abcd)", part)
+        self.assertNotIn("rec-b", part)
+        self.assertNotIn("### Folded items", self.region(tfile([node("rec-b")], "rec"), "table-rec"))
+
     def test_region_order(self):
         order = build.REGION_ORDER
         self.assertEqual(order[:10], ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting",

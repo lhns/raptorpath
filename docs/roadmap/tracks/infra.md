@@ -162,4 +162,74 @@ flowchart TB
 | `infra-test-pub-narrowing` | Narrow pub so dead code warns | Plan S10, at a quiet point. | docs/derivations/test-detection-plan.md |
 | `infra-dead-code-batch` | Remove 24 dead functions | D list in audits.rs on static-audits 86b5208f (callers deleted in dacfd7cc / ADR-0069 and others). Tests that exercise a dead copy instead of the live path: compute_repair_rate_capped, get_or_eval, pooled_recovery_srtt_of, Scheduler::schedule, compute_repair_count, compute_gap_ranges. Release-binary hash check; guard only if bytes change. Stale docs to fix with it: net/tests.rs:3807, fec_rate.rs:46, paper 8.1, loss_clamp_witness doc. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
 | `infra-test-sim-engine` | Deterministic simulation of the engine | Plan S8, ADR-0082 (Accepted 2026-11-20, owner on Fable's review). Phase 1 merged (squash of sim-engine c907d207): release binary byte-identical to main on Linux; same-seed traces identical on 1 and 2 paths; lost tail at rho < 1 stalls (known defect), rho = 1 recovers; 0.1-0.3 s per scenario. Phase 2 owed: Gilbert-Elliott and Weibull links, a CPU-cost model for senders with no backpressure, porting the flaky timing tests, the 3 SystemTime reads. Branches carrying their own test_seams.rs (s06-delete, wedge-diag) must switch to the main copy: s06-delete's copy uses eprintln! and likely fails the no_eprintln gate; merging it also leaves a duplicate pub mod test_seams line that git merges silently. 2026-11-20: the seed-fixes-the-run claim is in doubt: tests/sim_shed_reach.rs saw the shed count change with the port, and a 30 MB scenario shed 17 on Windows and 0 on Linux. Diagnosed: (1) the port was hashed into the link RNG streams (sim.rs:214), fixed and merged with a red-first two-port test; (2) the OS is still an input: shutdown_signal (net/mod.rs:3838-3855) runs a select! over two signal listeners on unix and one on Windows, which shifts tokio's per-thread RNG and so every later unbiased select! (proved by CI runs 44726235078 and 44727373869: with unix running the Windows body under sim, all 7 scenarios match across OSes and Linux reproduces the 17 sheds). Fixed and merged (sim-cross-os): shutdown_signal runs one body under sim on every OS; connection ids, reset key, initial dcid and certificate are seeded; a CI job compares 7 cells byte for byte on Linux and Windows (red control on the reverted change); release binary identical. Still unseeded: rustls randomness and the NEW_TOKEN key (content only, never a length), 3 diagnostic SystemTime reads; platform float differences not ruled out beyond the 7 cells. ADR-0082 scope: a seed fixes the run for a given tokio version, on Linux and Windows. | docs/derivations/sim-engine.md; raptorpath/tests/sim_lost_tail.rs |
+
+### Folded items per node
+
+- `infra-early-platform`: Tunnel platform: handshake, TLS, migration
+  - commit 6f2852f1
+  - Optional TLS certificate pinning (2026-03-13, commit 3c9f1ae8)
+  - Runtime connection migration with path management API (2026-03-13, commit 8d9e272a)
+  - MTU-aware symbol sizing from path discovery (2026-03-13, commit 8e541e7b)
+  - Production-grade test suite for FEC, pipeline, shutdown and congestion (2026-03-13, commit bf539e65)
+  - RTCP-style keepalive, jitter tracking and dead path detection (2026-03-13, commit 4aca529a)
+  - Automatic routing, DNS management and wintun setup (2026-03-13, commit d9bcc70c)
+- `infra-mtu-floor`: MTU floor 1350 (PMTU wedge)
+  - commit ea746b83
+  - commit 049e7463
+- `infra-consolidation`: Deprecation register and consolidation
+  - commit 3bcf8690
+  - commit be878cc6
+  - ADR migration and vision triage (2026-07-21, commit 7387ad9d)
+  - Scar cleanup after deletions (2026-07-27, commit 04d25177)
+  - Consolidation 2 wrap-up (2026-07-28, commit 7a3aff69)
+  - Deprecation register: removal schedule for three closed A/B arms (2026-08-09, commit a993629d)
+  - Scheduler snapshot adjudication and its register row (2026-08-10, commit dd53215d)
+- `infra-net-seams`: Net seams and dead-code refactor
+  - branch refactor/net-seams-3
+  - branch refactor/dead-code-2
+  - branch refactor/net-seams-1
+  - branch refactor/dead-code-1
+  - commit 125844f4
+  - commit 814b0152
+  - commit dd53215d
+  - Net seams 3/3: control-message handler split (2026-08-08, commit 6fd97d4e)
+  - Dead-code batch 1: delete unused accessors and BackendSelector (2026-08-08, commit 6948a645, commit f3db9f63)
+  - Shared-worktree collision: net-seams-3 work-in-progress rescued (2026-08-09, commit 0109ecc6)
+  - Net seams 2: send macro and resolve-once policy become functions (2026-08-09, commit 6dc90cfc, commit 9d75ceda)
+- `infra-cleanup-0927`: Whole-project cleanup pass
+  - branch cleanup/wasm-tidy
+  - branch cleanup/paper-pass2
+  - branch cleanup/a7-comments
+  - branch cleanup/a3-structure
+  - branch cleanup/a5b-tests
+  - branch cleanup/a2-refuted-arms
+  - branch cleanup/docrefs
+  - branch cleanup/a1-engine-bugs
+  - branch cleanup/a5a-tools
+  - branch cleanup/a0-hygiene
+  - branch cleanup/a6b-paper
+  - branch cleanup/a6c-adr
+  - branch cleanup/a6a-docs
+  - Cleanup: DESIGN, README, status and discipline docs, CLAUDE.md (2026-09-27, commit 1639ea28, commit 22b56d9f, commit cddb43aa, commit 1f8be7cf)
+  - Cleanup: re-point comments and research docs to the renumbered paper (2026-09-27, commit 8f3fd7c5, commit 3a6b1627, commit 792914b6, commit 79ccafae, commit e9afdfa0, commit 2a52e84f)
+- `infra-fix-program`: Defect fix program
+  - branch fix/loss-feed
+  - branch fix/v9-dual-cpu
+  - branch fix/small-items
+  - branch fix/block-retention-backpressure
+  - branch fix/cpu-rate-hotpath
+  - branch fix/sack-truncation
+  - branch fix/block-retention-bytes
+  - branch fix/reliable-delivery-drop
+  - Loss-estimator feed: receiver incoming loss and its laws (2026-09-30, commit 487ca7b6, commit 7362745e)
+  - Chi feed remaining-drain count (reachability flake) (2026-09-30, commit f16faad8)
+- `infra-simplify-batch1`: Simplify batch 1
+  - branch simplify-2
+- `infra-simplify-batch2`: Later simplify batches
+  - branch simplify-5
+- `infra-restructure`: Workspace restructure
+  - branch restructure-3
+  - branch restructure phase 0+2
+- `infra-defect-recorded-not-fixed`: Recorded, not fixed
+  - Fix-program status: fixed items and recorded-not-fixed findings (2026-09-30, commit 46f53904)
 <!-- END GENERATED: table-infra -->

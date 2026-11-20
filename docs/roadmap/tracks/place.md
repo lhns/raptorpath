@@ -12,10 +12,13 @@ flowchart TB
     place_early_window_sched["↷ Loss-ranked<br/>multipath window<br/>scheduling"]
     place_marginal_cost[/"✔ Marginal-cost<br/>placement law"/]
     place_frozen_echo["↷ Frozen app-echo srtt<br/>price"]
+    place_spare_repair["✖ Proactive repair on<br/>the spare path"]
     place_daps["↷ DAPS queue-<br/>management chain"]
     place_rate_sample["↷ Per-path rate-sample<br/>estimator"]
     place_submax_anchor["✖ Sub-max quantile<br/>rate anchor"]
+    place_anchor_consolidate["✔ Slow-path anchor<br/>consolidation (#167;16.14)"]
     place_slack["✖ Place-slack"]
+    place_quad_lockin>"✔ Four-path lock-in<br/>defect retracted"]
     place_wdiv["⏳ Derived diversity<br/>weight, leg choice"]
     place_stage2_battery["✔ Placement battery"]
     place_hol["✖ Placement frontier<br/>term"]
@@ -29,13 +32,16 @@ flowchart TB
     place_per_leg_impl["⛔ Per-leg state<br/>implementation"]
     place_early_window_sched ~~~ place_marginal_cost
     place_early_window_sched ~~~ place_frozen_echo
-    place_early_window_sched ~~~ place_daps
-    place_marginal_cost ~~~ place_rate_sample
-    place_frozen_echo ~~~ place_submax_anchor
-    place_daps ~~~ place_slack
-    place_rate_sample ~~~ place_wdiv
-    place_submax_anchor ~~~ place_stage2_battery
+    place_early_window_sched ~~~ place_spare_repair
+    place_marginal_cost ~~~ place_daps
+    place_frozen_echo ~~~ place_rate_sample
+    place_spare_repair ~~~ place_submax_anchor
+    place_daps ~~~ place_anchor_consolidate
+    place_rate_sample ~~~ place_slack
+    place_submax_anchor ~~~ place_quad_lockin
+    place_anchor_consolidate ~~~ place_wdiv
     place_slack ~~~ place_stage2_battery
+    place_quad_lockin ~~~ place_stage2_battery
     place_wdiv ~~~ place_hol
     place_stage2_battery ~~~ place_t_derived
     place_stage2_battery ~~~ place_s38_wire
@@ -71,8 +77,8 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class place_early_window_sched,place_frozen_echo,place_daps,place_rate_sample,place_submax_anchor,place_slack,place_hol,place_t_derived dead
-    class place_marginal_cost,place_stage2_battery,place_wire_price succ
+    class place_early_window_sched,place_frozen_echo,place_spare_repair,place_daps,place_rate_sample,place_submax_anchor,place_anchor_consolidate,place_slack,place_hol,place_t_derived dead
+    class place_marginal_cost,place_quad_lockin,place_stage2_battery,place_wire_price succ
     class place_wdiv,place_per_leg_state,place_per_leg_relocate waiting
     class place_s38_wire bad
     class place_s41_iteration mixed
@@ -105,6 +111,9 @@ flowchart TB
 | `place-user-perleg-questions` | Owner calls on per-leg design | next | n/a |  | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 | place-per-leg-state |
 | `place-per-leg-impl` | Per-leg state implementation | blocked | unrated |  | plan W3.2, W3.6a | place-per-leg-relocate, place-per-leg-state, place-user-perleg-questions |
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | abandoned | superseded |  | ADR-0026 |  |
+| `place-spare-repair` | Proactive repair on the spare path | abandoned | dead-end |  | commit ea20927f; commit 6c938427 |  |
+| `place-quad-lockin` | Four-path lock-in defect retracted | done | unrated |  | commit 0128bb5c |  |
+| `place-anchor-consolidate` | Slow-path anchor consolidation (§16.14) | done | dead-end |  | commit d63ffce7 |  |
 
 ### Details per node
 
@@ -129,4 +138,52 @@ flowchart TB
 | `place-user-perleg-questions` | Owner calls on per-leg design | Q4 reseed (2026-11-16); Q1 queue_target_mult = 1 + q(delta) (2026-11-17). Q2-3 and 5-8 belong to Phase B / W3.3. Done when: those are answered. | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 |
 | `place-per-leg-impl` | Per-leg state implementation | Done when: one per-leg struct (m̂, b̂, RTT σ, app-echo spread, idle rule) replaces the two srtt copies, with the store-cap units bounding test and migration step A1 tests green in the VM pre-flight. The relocation (Phase A) is its own node, place-per-leg-relocate; this node is Phase B and W3.3, which wait on the remaining per-leg questions (2-3, 5-8). | plan W3.2, W3.6a |
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it. | ADR-0026 |
+| `place-spare-repair` | Proactive repair on the spare path | Its merge ea20927f carries the aggregation arc's 2026-07-08 "final verdict" (meas-c8-aggregation-arc). | commit ea20927f; commit 6c938427 |
+| `place-quad-lockin` | Four-path lock-in defect retracted | Split 2026-11-20 from store-cap-law-cluster (sweep item 6, a placement verdict). | commit 0128bb5c |
+| `place-anchor-consolidate` | Slow-path anchor consolidation (§16.14) | Was folded in place-submax-anchor (2026-07-13). | commit d63ffce7 |
+
+### Folded items per node
+
+- `place-marginal-cost`: Marginal-cost placement law
+  - branch L2-ws1
+  - Owner rule: no equal-weight striping (2026-07-06, session record)
+  - RWM Phase B: multipath striping with the placement law (2026-07-06, commit 4cf6b9b1, commit dfba099e)
+  - Placement as one marginal-cost law, not regimes (2026-07-06, commit 8c6c7e2d, commit ee1ae3e0)
+- `place-daps`: DAPS queue-management chain
+  - branch DAPS queue-mgmt
+  - branch feat/daps-rightsized-fec
+  - commit 68d6b6c5
+  - commit 9b48286e
+  - commit 7387ad9d
+  - Pace all per-path traffic at BtlBw (2026-07-12, commit 344499771756689d)
+  - DAPS queue management with per-path cap and pacing (2026-07-12, commit cd2882e1, commit dfc7fbe3)
+  - DAPS and BDP glossary entries (2026-07-12, commit f3112dc6, commit 707015c8)
+- `place-rate-sample`: Per-path rate-sample estimator
+  - branch per-path rate estimator
+- `place-slack`: Place-slack
+  - branch feat/c8-conversion
+- `place-stage2-battery`: Placement battery
+  - branch the placement arms
+  - branch meas/place-score
+  - branch meas/place-run
+  - branch meas/place-prep
+  - Placement battery: four default-absent placement arms (2026-09-08, commit c8c1a774, commit 6d76c7e4, commit 6bdd8c3a, commit dc05dc73, commit ad69d1e3)
+- `place-hol`: Placement frontier term
+  - paper §10 row Placement frontier term (`RWM_PLACE_HOL`)
+- `place-t-derived`: Derived placement temperature
+  - paper §10 row Derived placement temperature (`RWM_PLACE_T_DERIVED`)
+- `place-s38-wire`: Wire-clocked placement base
+  - commit 432b4740
+- `place-wire-price`: Wire-RTT placement price
+  - branch diag36
+- `place-submax-anchor`: Sub-max quantile rate anchor
+  - Delete RATE_WIRE and RATE_Q (2026-07-27, commit f1f32c5b)
+- `place-early-window-sched`: Loss-ranked multipath window scheduling
+  - commit 86e1f0f3
+  - commit 628fdb1c
+  - Multipath simulation test suite with dynamic paths (2026-03-13, commit 5e6074ee)
+  - Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths (2026-03-21, session record)
+- `place-quad-lockin`: Four-path lock-in defect retracted
+  - branch sweep item 6 REFUTED
+  - Placement cold-start defect does not exist (retracted) (2026-08-17, session record)
 <!-- END GENERATED: table-place -->

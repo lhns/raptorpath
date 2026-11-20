@@ -484,6 +484,13 @@ def r_table(code):
             rows = ["| id | title | notes | evidence |", "|---|---|---|---|"]
             rows += [f"| `{n['id']}` | {cell(n['title'])} | {cell(n['notes'])} | {cell('; '.join(n['evidence']))} |" for n in noted]
             parts += ["### Details per node", "\n".join(rows)]
+        withf = [n for n in sel if n["folded"]]
+        if withf:
+            lines = []
+            for n in withf:
+                lines.append(f"- `{n['id']}`: {cell(n['title'])}")
+                lines += [f"  - {cell(f)}" for f in n["folded"]]
+            parts += ["### Folded items per node", "\n".join(lines)]
         return "\n\n".join(parts)
     return render
 
@@ -618,9 +625,22 @@ def r_vmqueue(nodes, today):
         for i, n in enumerate(q, 1)) or "_The VM queue is empty._"
 
 
+# A folded item written "<title> (<date>, commit <sha>[, commit <sha>...])" or "<title> (<date>, session record)"
+# is a labelled record; the older bare refs ("commit <sha>", "branch <name>", ...) are not.
+LABELLED_RE = re.compile(r"^(?P<title>.+) \((?P<date>\d{4}-\d{2}-\d{2}), "
+                         r"(?:commit [0-9a-f]{7,40}(?:, commit [0-9a-f]{7,40})*|session record)\)$")
+
+
+def labelled(item):
+    """(title, date) of a labelled folded item, else None."""
+    m = LABELLED_RE.match(item)
+    return (m.group("title"), m.group("date")) if m else None
+
+
 def r_done_by_month(nodes, today):
-    """Every done node, grouped by the month it ended (else started), newest month first; undated last."""
-    sel = [n for n in nodes if n["state"] == "done"]
+    """Every finished node (done or abandoned), grouped by the month it ended (else started), newest month
+    first, undated last; each node's labelled folded records follow as sub-bullets."""
+    sel = [n for n in nodes if n["state"] in ("done", "abandoned")]
     if not sel:
         return "_Nothing done yet._"
     groups = {}
@@ -630,8 +650,14 @@ def r_done_by_month(nodes, today):
     for ym in sorted((k for k in groups if k), reverse=True) + ([""] if "" in groups else []):
         group = sorted(groups[ym], key=lambda n: (n["end"] or n["start"], n["id"]))
         head = month_name(ym) if ym else "Undated"
-        lines = "\n".join(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})" for n in group)
-        parts.append(f"<details><summary><b>{head}</b>: {len(group)} done</summary>\n\n{lines}\n\n</details>")
+        done = sum(1 for n in group if n["state"] == "done")
+        count = f"{done} done" + (f", {len(group) - done} abandoned" if len(group) > done else "")
+        lines = []
+        for n in group:
+            lines.append(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})")
+            lines += [f"  - {cell(t)} ({d})" for t, d in filter(None, map(labelled, n["folded"]))]
+        body = "\n".join(lines)
+        parts.append(f"<details><summary><b>{head}</b>: {count}</summary>\n\n{body}\n\n</details>")
     return "\n\n".join(parts)
 
 
