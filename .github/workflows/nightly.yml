@@ -1,0 +1,69 @@
+# Tier B: the full suites, the stub run, and the repeat job (ADR-0080, S1).
+name: nightly
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: "iterations for the repeat job"
+        default: "30"
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+permissions:
+  contents: read
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: release, cmd: "cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2" }
+          - { name: doc, cmd: "cargo test --doc -p raptorpath --release" }
+          - { name: debug, cmd: "cargo test -p raptorpath --no-fail-fast -- --test-threads=2" }
+          - { name: seams, cmd: "cargo test -p raptorpath --release --features test-seams --test f2_unframable_closes --test f2_mixed_symbol_size --test f2_realtime_packed -- --test-threads=1" }
+          - { name: wasm-core, cmd: "cargo test -p raptorpath-wasm && cargo test -p raptorpath-core" }
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: "nightly-${{ matrix.name }}" }
+      - run: ${{ matrix.cmd }}
+  stubrun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - name: stub run (whole, fast mode)
+        run: |
+          start=$(date +%s)
+          rc=0
+          python tools/l1/test_stubrun.py || rc=$?
+          echo "stubrun wall: $(( $(date +%s) - start )) s, rc=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit $rc
+  py-quarantined:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - run: pip install pyyaml
+      - name: tools/l1 tests including quarantined (report only)
+        run: python tools/ci/run_py_tests.py --include-quarantined || true
+  repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: nightly-repeat }
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - run: pip install pyyaml
+      - run: bash tools/ci/repeat_tier_a.sh "${{ github.event.inputs.repeats || '30' }}"

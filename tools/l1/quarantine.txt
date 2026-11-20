@@ -1,0 +1,2 @@
+# Known failures skipped by tier-A CI (tools/ci/run_py_tests.py).
+# <test file> | <cause> | <date>   Remove a line when the cause is fixed.

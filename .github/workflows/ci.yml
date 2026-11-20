@@ -1,0 +1,67 @@
+# Tier A: fast gates on every push and PR (ADR-0080, S1). The full suites run in nightly.yml.
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+permissions:
+  contents: read
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: debug }
+      - run: cargo test -p raptorpath --lib gates
+  math-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: debug-math }
+      - run: cargo test -p raptorpath-math
+      - run: cargo test -p raptorpath-core
+  lib-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: release }
+      - run: cargo test -p raptorpath --lib --release
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - run: pip install pyyaml
+      - name: tools/l1 tests (not the stub run; quarantine list in tools/l1/quarantine.txt)
+        run: python tools/ci/run_py_tests.py
+      - name: roadmap
+        run: |
+          python tools/roadmap/build.py
+          python tools/roadmap/check.py | tee check.out
+          grep -q '^check: OK' check.out
+  visualizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: wasm }
+      - uses: actions/setup-node@v4.4.0
+        with: { node-version: "22" }
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - uses: taiki-e/install-action@v2
+        with: { tool: wasm-pack }
+      - name: build visualizer and run both .mjs gates
+        run: bash raptorpath-visualizer/build_visualizer.sh
