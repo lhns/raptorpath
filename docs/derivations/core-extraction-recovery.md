@@ -92,7 +92,7 @@ on both targets (`usize` is 32-bit on wasm32).
 |---|---|---|
 | input: the gap | `:790` loop over `judged_gaps(..)` (`:782`) | `(gap_start, gap_end)`, inclusive |
 | input: the window | `:759` | `(win_start, win_end) = st.encoder.window_span()`; `(0, 0)` when the window is empty (`fec/rlc_window.rs:192–197`) |
-| input: the seat | `:587`, `:617` | `reliable: bool` (= `pol.reliable`, set at `net/mod.rs:2007`) |
+| input: the seat | `:587`, `:617` | `reliable: bool` (= `pol.reliable`; `run_window_sender`'s parameter `net/mod.rs:1533`) |
 | decision | `:795–799` | `if reliable { (gap_start, gap_end) } else { (gap_start.max(win_start), gap_end.min(win_end)) }` |
 | output | `:800–803` | empty when start > end: the test-seams hook `on_gap_clamped` fires, then `continue`; else `nacked_count += e − s + 1` and the per-seq loop `:805` |
 
@@ -411,8 +411,10 @@ stated as one.
 ```text
 gauge (cfg(any(test, feature = "test-seams")), fed in serve_gaps per judged gap):
   calls        every judged gap at ρ = 1
-  binds        gaps where servable_span's (f, c) narrows the seat map's (0, u64::MAX)
-  binds_live   binds that would drop a seq present in sent_store or the window
+  binds        gaps where the RESULT differs: clamp_gap(s, e, servable_span(..)) != (s, e),
+               today's ρ = 1 span (the bounds themselves differ on almost every gap;
+               what counts is whether they cut the gap)
+  binds_live   binds that drop a seq present in sent_store or the window
                (must never happen; §3.1 says it cannot under the invariants)
 
 test bound_clamp_never_binds_at_rho_1   (integration, test-seams)
@@ -422,14 +424,17 @@ test bound_clamp_never_binds_at_rho_1   (integration, test-seams)
   assert binds == 0 and binds_live == 0
   report binds/calls per run                         -- the bind fraction
 
-red control: an injected gap report below the cumulative ack (a test-seams
-  hook appends (ack, ack) to one judged batch); the gauge must read binds = 1,
-  binds_live = 0, and the run must still complete identically on the wire
+red control: an injected gap report for a seq q < min(w_s, ack + 1), i.e. below
+  BOTH the window start and the store (a test-seams hook appends (q, q) to one
+  judged batch, only once the window has moved past the ack; an injected
+  (ack, ack) while the window still holds ack would not bind and would read
+  green); the gauge must read binds = 1, binds_live = 0, and the run must
+  still complete identically on the wire
 ```
 
-- **At ρ < 1** the same gauge must read binds == calls − (gaps inside the
-  window). Equivalently, the store-span bound equals the window clamp on
-  every gap, which is the step-4 claim on the evicting seat.
+- **At ρ < 1** a second counter compares the store-span result with
+  today's window clamp on every judged gap: differences == 0 and calls > 0.
+  That is the step-4 claim on the evicting seat.
 - **Generation at ρ = 1** keeps no `sent_store` (`net/emit_source.rs:347`),
   so there the store-span bound is the window. If any suite drives
   `serve_gaps` in generation mode at ρ = 1, it is a gauge cell. If none
@@ -445,9 +450,12 @@ test intake_seat_map_is_redundant_on_the_shipped_arm   (integration, test-seams)
     assert iterations > 0
   so intake_paused(store_len, cap, cwnd_full) == intake_paused(0, u64::MAX, false)
   on every iteration: the model's map-free call reproduces the engine's
-red control: the same run with RWM_LATE_BRAKE=1 must make the assertion fail
-  (cwnd_full true at some iteration), which shows the map is load-bearing on
-  the C arms and why it stays
+red control: the same run with RWM_INFL_CAP=1 must make the assertion fail.
+  The global in-flight brake (net/mod.rs:2430–2435, as read) is then armed,
+  and cwnd_full is true as soon as one symbol is in flight. That shows the map
+  is load-bearing on the C arms and why it stays. (RWM_LATE_BRAKE=1 is not
+  used: it closes only when every live path reaches its cwnd, which the
+  scenario need not do.)
 ```
 
 ## 4. Steps, one commit each, and the open branches
@@ -512,7 +520,7 @@ ADR-0077 stop rule is met.
 
 | model step (`raptorpath-model/src/lib.rs` on `recovery-model`) | after this work |
 |---|---|
-| `judge_gap`'s clamp (`if self.seat.reliable { .. } else { max/min }`) | `hole::clamp_gap(s, e, f, c)`. (f, c) comes from the model's copy of the engine seat map after step 2, and from `hole::servable_span(window_span, retained_span)` after step 4. The model then tracks `retained`, the `sent_store` keys: filled at emission only where the engine fills it, and pruned at the frontier |
+| `judge_gap`'s clamp (`if self.seat.reliable { .. } else { max/min }`) | `hole::clamp_gap(s, e, f, c)`. (f, c) comes from the model's copy of the engine seat map after step 2, and from `hole::servable_span(window_span, retained_span)` after step 4. The model gains `retained`, the `sent_store` keys, in step 5 whichever bound the clamp uses (the intake call below needs it): filled at emission only where the engine fills it, and pruned at the frontier |
 | the intake pause (`self.seat.reliable && outstanding ≥ store_cap`) | `hole::intake_paused(retained_outstanding, store_cap, false)`, with no seat map. The model has no in-flight brake (a C arm), and its retained count is 0 at ρ < 1. §3.3 is the engine-side proof that this equals the engine's mapped call on the shipped arm |
 | the tail sweep target (`lowest(outstanding)`) | `hole::tail_sweep_gap(lowest(outstanding))`, whose gap then goes through `judge_gap`, so D1c comes from composing the two real functions |
 | the shed check (`shed_allowed`, a cited copy of `net/shed.rs:39`) | `raptorpath_core`'s `shed_allowed` once shared-core 2.2 moves it. The model's `past` flag maps to (age, D) = (D + 1, D) or (0, D) |
@@ -565,6 +573,12 @@ ADR-0077 stop rule is met.
    for it before step 4. It is a definition, not a law with constants.
    *Default: one paragraph in §7.1 and the row-13 edit, before step 4.*
 
+6. **ADR-0083's wording.** Its decision 3 says the functions take "the
+   window bounds and ρ as numbers". This design passes no ρ into the core:
+   the seat enters only as bounds the engine computes (§0 item 6).
+   *Default: amend decision 3 to "the window bounds and the store state as
+   numbers" (decision 7's own wording) when the ADR is accepted.*
+
 Shared-core owner question 1 (the path-count laws) is not needed for these
 steps. It stays open for 3.1 and for S9's channel verdicts.
 
@@ -580,3 +594,9 @@ steps. It stays open for 3.1 and for S9's channel verdicts.
   2026-11-20 and may change before it lands.
 - The line-count-preserving layout of each step-2 edit is designed, not
   written.
+- That the window ends at the newest sent seq at ρ = 1, which the
+  hull-equals-union argument (§1.1) rests on. As read: eviction is front-only
+  and size-only on both seats (`net/mod.rs:3594–3603`). That every emitted
+  source enters the encoder at ρ = 1 was assumed, not traced.
+- recovery-counters' edits in `net/sender_phases.rs` were not read; the diff
+  printed nothing for that file. Only its new `net/account.rs` was read.
