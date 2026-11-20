@@ -161,7 +161,7 @@ else:
     print("skip the perf script's F2 line on real logs: no bash here")
 check("battery: plan 63 accepted (P63, single binary family per seat), the CONTROL seat is the BASE binary (LD_BIN_BASE / LD_SHA_BASE) for the C<arm> rows, a row runs ONCE (TRIES=1), nothing is replaced, plan 51e's scrub and instrument env ride",
       'P63=0; [ "$PLAN" = "63" ] && { P63=1; P38=1; PCAND=1; TRIES=1; }' in battery and 'case "$arm" in C*) RBIN="$BIN_BASE"; RWANT="$WANT_BASE" ;; esac' in battery and 'python3 ./plan63.py armspec "$cell" "$arm"' in battery
-      and '[ "$P63" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)' in battery and "|| [ \"$P63\" = 1 ]; } && SCRUB_EXTRA=" in battery and "run_slot63" not in battery and "plan63.py replace" not in battery)
+      and '[ "$P63" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)' in battery and "|| [ \"$P63\" = 1 ] || [ \"$P67\" = 1 ]; } && SCRUB_EXTRA=" in battery and "run_slot63" not in battery and "plan63.py replace" not in battery)
 check("battery: the rehearsal is two rows (CONTROL PL s42, CAND PL s42), the smoke one", "ABORT-PLAN63 rehearsal table has" in battery and "plan63.py plan 63 rehearsal" in battery)
 check("battery: both seats are preflighted (the E-block tokens), must be different files with different shas, and the CONTROL must equal LD_SHA_BASE; the table-size asserts are 10 / 1",
       'preflight_binary "$BIN_BASE" "RWM_SLAW" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE" "RWM_PERF_RATE_MBIT"' in battery and "ABORT-SHA start (CONTROL)" in battery and "ABORT-SHA CONTROL and CAND binaries are identical" in battery
