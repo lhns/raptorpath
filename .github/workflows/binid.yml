@@ -2,7 +2,7 @@
 # out of the release binary. It runs on every push and PR whose diff touches clock.rs, sim.rs,
 # test_seams.rs, net/account.rs, raptorpath/Cargo.toml (or this file), builds `raptorpath` in
 # release on the base and on HEAD, and FAILS if the binary, .text or .rodata differ. Base: the
-# merge base with origin/main; HEAD~1 on a push to main. The base is built twice as a control: if
+# merge base with origin/main; the pre-push head (github.event.before) on a push to main, so a push of several commits is compared as a whole. The base is built twice as a control: if
 # base and base2 differ the job is broken, not the candidate.
 # A diff that means to change the binary says so in a commit message of the range, on a line
 #     binid: expected-change <reason>
@@ -52,10 +52,11 @@ jobs:
           INPUT_BASE: ${{ inputs.base }}
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
           base="$INPUT_BASE"
           if [ -z "$base" ]; then
-            if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then base=$(git rev-parse HEAD~1)
+            if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then base=$BEFORE; git cat-file -e "$base^{commit}" 2>/dev/null || base=$(git rev-parse HEAD~1)
             else base=$(git merge-base HEAD origin/main); fi
           fi
           base=$(git rev-parse "$base")
