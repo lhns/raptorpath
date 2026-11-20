@@ -64,22 +64,22 @@ Class: (a) equivalent, (b) missing test, now killed, (c) dead code or constant w
 | `bulkness_of_delta` | lib.rs:199:9 | - with +; - with / | killed | b | `bulkness_is_the_log_position_between_the_anchors` |
 | `bulkness_of_delta` | lib.rs:199:14 | / with %; / with * | killed | b | `bulkness_is_the_log_position_between_the_anchors` |
 | `bulkness_of_delta` | lib.rs:199:19 | - with +; - with / | killed | b | `bulkness_is_the_log_position_between_the_anchors` |
-| `burst_variance_factor` | lib.rs:87:17 | || with && | killed | b | `burst_variance_factor_anchors_and_guards` |
+| `burst_variance_factor` | lib.rs:87:17 | \|\| with && | killed | b | `burst_variance_factor_anchors_and_guards` |
 | `burst_variance_factor` | lib.rs:89:12 | < with <=; < with == | killed | b | `burst_variance_factor_anchors_and_guards` |
-| `compute_delta` | lib.rs:1230:23 | || with && | killed | b | `compute_delta_closed_form_and_guards` |
+| `compute_delta` | lib.rs:1230:23 | \|\| with && | killed | b | `compute_delta_closed_form_and_guards` |
 | `compute_delta` | lib.rs:1233:17 | < with == | killed | b | `compute_delta_closed_form_and_guards` |
 | `compute_delta` | lib.rs:1233:17 | < with <= | survives | a | fec_miss == 1e-15 to the bit is unconstructible (miss = eps x a multiple of 2^-53) |
 | `compute_delta` | lib.rs:1235:22 | / with %; / with * | killed | b | `compute_delta_closed_form_and_guards` |
 | `compute_r_star` | lib.rs:100:5 | whole function -> f64 with 1.0 | killed | b | `r_star_closed_form_and_domain_guards` |
-| `compute_r_star_exact` | lib.rs:1192:25 | || with && | killed | b | `p_fec_exact_anchors_and_search_ties` |
-| `compute_r_star_with_z` | lib.rs:111:23 | || with && | killed | b | `r_star_closed_form_and_domain_guards` |
+| `compute_r_star_exact` | lib.rs:1192:25 | \|\| with && | killed | b | `p_fec_exact_anchors_and_search_ties` |
+| `compute_r_star_with_z` | lib.rs:111:23 | \|\| with && | killed | b | `r_star_closed_form_and_domain_guards` |
 | `compute_r_star_with_z` | lib.rs:113:33 | > with >= | killed | b | `r_star_closed_form_and_domain_guards` |
 | `compute_repair_rate` | fec_rate_controller.rs:33:62 | * with +; * with / | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
 | `compute_repair_rate` | fec_rate_controller.rs:33:66 | / with %; / with * | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
 | `compute_repair_rate` | fec_rate_controller.rs:33:73 | - with +; - with / | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
 | `compute_repair_rate` | fec_rate_controller.rs:47:47 | > with <; > with == | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
 | `compute_repair_rate` | fec_rate_controller.rs:47:47 | > with >= | survives | a | `codec_overhead >= 0` admits 0, and 0 x P(decoder) = 0: same value |
-| `compute_repair_rate` | fec_rate_controller.rs:47:53 | && with || | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
+| `compute_repair_rate` | fec_rate_controller.rs:47:53 | && with \|\| | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
 | `compute_repair_rate` | fec_rate_controller.rs:47:68 | > with <; > with == | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
 | `compute_repair_rate` | fec_rate_controller.rs:47:68 | > with >= | survives | a | `window_size >= 0` admits 0, and P(decoder) = 1-(1-eps)^0 = 0: same value |
 | `compute_repair_rate` | fec_rate_controller.rs:48:33 | - with + | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
@@ -88,14 +88,14 @@ Class: (a) equivalent, (b) missing test, now killed, (c) dead code or constant w
 | `compute_triangle` | fec_rate_controller.rs:71:73 | - with +; - with / | killed | b | `controller_without_ge_data_uses_the_iid_fallback_transition` |
 | `controller_rate` | lib.rs:737:10 | < with <=; < with == | killed | b | `controller_rate_* (five tests)` |
 | `controller_rate` | lib.rs:756:58 | > with >= | survives | a | codec_overhead = 0 gives 0 x P(decoder) = 0 |
-| `controller_rate` | lib.rs:756:64 | && with || | killed | b | `controller_rate_* (five tests)` |
+| `controller_rate` | lib.rs:756:64 | && with \|\| | killed | b | `controller_rate_* (five tests)` |
 | `controller_rate` | lib.rs:756:78 | > with >= | survives | a | window = 0 gives P(decoder) = 0 |
-| `controller_rate` | lib.rs:786:43 | && with || | killed | b | `controller_rate_* (five tests)` |
+| `controller_rate` | lib.rs:786:43 | && with \|\| | killed | b | `controller_rate_* (five tests)` |
 | `controller_rate` | lib.rs:791:21 | > with >= | survives | a+c | eps_mass > 0 whenever mass.is_valid() (nz, m1 > 0): the else branch is dead; at denormal underflow r_star_mass(level = inf) returns 0 as well |
 | `controller_rate` | lib.rs:814:10 | > with >= | survives | a | w = 0 contributes 0 x floor = 0 to a max against rate >= 0 |
-| `controller_rate` | lib.rs:824:27 | && with || | killed | b | `controller_rate_* (five tests)` |
+| `controller_rate` | lib.rs:824:27 | && with \|\| | killed | b | `controller_rate_* (five tests)` |
 | `controller_rate` | lib.rs:824:40 | > with >= | killed | b | `controller_rate_* (five tests)` |
-| `controller_rate` | lib.rs:824:46 | && with || | killed | b | `controller_rate_* (five tests)` |
+| `controller_rate` | lib.rs:824:46 | && with \|\| | killed | b | `controller_rate_* (five tests)` |
 | `controller_rate` | lib.rs:824:58 | > with >= | killed | b | `controller_rate_* (five tests)` |
 | `inner_feedback_floor` | lib.rs:622:14 | > with >= | survives | a | p = 0: stall(0) = 0 <= theta returns 0 anyway |
 | `inner_feedback_floor` | lib.rs:623:14 | < with <= | killed | b | `inner_feedback_floor_solves_its_defining_equation` |
@@ -104,14 +104,14 @@ Class: (a) equivalent, (b) missing test, now killed, (c) dead code or constant w
 | `inner_feedback_floor` | lib.rs:642:23 | / with % | killed | b | `inner_feedback_floor_solves_its_defining_equation` |
 | `inner_feedback_floor` | lib.rs:648:21 | > with ==; > with >= | survives | a+c | the infeasible early return is redundant: the bisection keeps hi = r_cap and returns it |
 | `inner_feedback_floor` | lib.rs:655:23 | > with >= | survives | a | a tie stall(mid) == theta to the bit is unconstructible |
-| `p_fec_exact` | lib.rs:1130:25 | || with && | survives | a+c | the callee `p_fec_exact_repairs` returns 1.0 for the same inputs: the guard is duplicated |
-| `p_fec_exact_repairs` | lib.rs:1144:15 | || with && | survives | a+c | both callers (`p_fec_exact`, `compute_r_star_exact`) guard first: the callee guard is unreachable |
+| `p_fec_exact` | lib.rs:1130:25 | \|\| with && | survives | a+c | the callee `p_fec_exact_repairs` returns 1.0 for the same inputs: the guard is duplicated |
+| `p_fec_exact_repairs` | lib.rs:1144:15 | \|\| with && | survives | a+c | both callers (`p_fec_exact`, `compute_r_star_exact`) guard first: the callee guard is unreachable |
 | `p_fec_exact_repairs` | lib.rs:1174:39 | - with +; - with / | survives | a+c | `.min(dmax-1)` never binds: at most W source losses, so d+1 <= off+W = dmax-1 |
-| `p_fec_normal` | lib.rs:886:27 | || with && | killed | b | `p_fec_normal_closed_form_and_domain_guards` |
-| `p_fec_normal` | lib.rs:886:45 | || with && | killed | b | `p_fec_normal_closed_form_and_domain_guards` |
-| `p_fec_normal` | lib.rs:886:63 | || with && | survives | a | eps >= 1 alone or r <= 0 alone already leaves numerator <= 0, which returns 0 |
+| `p_fec_normal` | lib.rs:886:27 | \|\| with && | killed | b | `p_fec_normal_closed_form_and_domain_guards` |
+| `p_fec_normal` | lib.rs:886:45 | \|\| with && | killed | b | `p_fec_normal_closed_form_and_domain_guards` |
+| `p_fec_normal` | lib.rs:886:63 | \|\| with && | survives | a | eps >= 1 alone or r <= 0 alone already leaves numerator <= 0, which returns 0 |
 | `p_fec_normal` | lib.rs:890:20 | < with <=; < with == | survives | a+c | `denominator < 1e-300` is redundant: denominator 0 gives z = inf, survival 0, P_fec 1.0 anyway; exactly 1e-300 is unreachable (the radicand underflows first) |
-| `p_fec_recovery_by_time` | lib.rs:1370:23 | || with && | killed | b | `p_fec_recovery_by_time_is_the_poisson_tail` |
+| `p_fec_recovery_by_time` | lib.rs:1370:23 | \|\| with && | killed | b | `p_fec_recovery_by_time_is_the_poisson_tail` |
 | `p_fec_recovery_by_time` | lib.rs:1371:24 | * with / | killed | b | `p_fec_recovery_by_time_is_the_poisson_tail` |
 | `p_fec_recovery_by_time` | lib.rs:1371:31 | - with + | killed | b | `p_fec_recovery_by_time_is_the_poisson_tail` |
 | `p_fec_recovery_by_time` | lib.rs:1371:42 | / with * | killed | b | `p_fec_recovery_by_time_is_the_poisson_tail` |
