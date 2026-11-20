@@ -26,3 +26,57 @@ jobs:
           cargo mutants --list -p raptorpath-math -p raptorpath-core > mutants.list
           wc -l mutants.list | tee -a "$GITHUB_STEP_SUMMARY"
           cut -d: -f1 mutants.list | sort | uniq -c | sort -rn | tee -a "$GITHUB_STEP_SUMMARY"
+  shard:
+    needs: list
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: mutants }
+      - uses: taiki-e/install-action@v2
+        with: { tool: "cargo-mutants@25.3.1,cargo-nextest@0.9.100" }
+      # --timeout caps one mutant's test run (a mutant that loops is "timeout" = caught);
+      # --minimum-test-timeout floors the auto timeout (5x the unmutated run).
+      - name: cargo mutants shard ${{ matrix.shard }}/20
+        run: |
+          start=$(date +%s)
+          cargo mutants -p raptorpath-math -p raptorpath-core --shard ${{ matrix.shard }}/20             --test-tool nextest --minimum-test-timeout 60 --timeout 900 --no-times || true
+          echo "shard ${{ matrix.shard }} wall $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+          cat mutants.out/outcomes.json | python3 -c "import json,sys; o=json.load(sys.stdin); print({k:o[k] for k in o if k!='outcomes'})" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: |
+            mutants.out/missed.txt
+            mutants.out/caught.txt
+            mutants.out/timeout.txt
+            mutants.out/unviable.txt
+            mutants.out/outcomes.json
+  compare:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/download-artifact@v4.3.0
+        with: { pattern: mutants-shard-*, path: shards }
+      - name: compare survivors with tools/ci/mutants-baseline.txt
+        run: |
+          python3 tools/ci/mutants_compare.py --write all-missed.txt shards/*/missed.txt
+          cat shards/*/caught.txt shards/*/timeout.txt 2>/dev/null | wc -l | sed 's/^/caught+timeout: /' | tee -a "$GITHUB_STEP_SUMMARY"
+          wc -l all-missed.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          cut -d: -f1 all-missed.txt | grep -v '^#' | sort | uniq -c | sort -rn | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -f tools/ci/mutants-baseline.txt ]; then
+            python3 tools/ci/mutants_compare.py tools/ci/mutants-baseline.txt shards/*/missed.txt
+          else
+            echo "no baseline yet"
+          fi
+      - uses: actions/upload-artifact@v4.6.2
+        with: { name: mutants-all-missed, path: all-missed.txt }
