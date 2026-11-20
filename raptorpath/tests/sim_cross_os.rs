@@ -33,6 +33,10 @@ fn scenarios() -> Vec<(&'static str, Scenario)> {
         ("auto_2path", Scenario::basic(5, 2, 47_510)),
         ("realtime_2path_5pct", Scenario { env: shed.clone(), ..realtime(2, 6_000_000, 0.05, 47_520) }),
         ("realtime_1path_5pct_30mb", Scenario { env: shed.clone(), ..realtime(1, 30_000_000, 0.05, 47_530) }),
+        // Two 1-path cells that go red without the one-body shutdown_signal
+        // (the other 1-path cells happen not to: CI 44737688400).
+        ("realtime_1path_5pct_s1", Scenario { seed: 1, env: shed.clone(), ..realtime(1, 6_000_000, 0.05, 47_550) }),
+        ("realtime_1path_5pct_s2", Scenario { seed: 2, env: shed.clone(), ..realtime(1, 6_000_000, 0.05, 47_551) }),
         (
             "realtime_1path_blackout",
             Scenario {
