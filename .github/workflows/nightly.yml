@@ -3,8 +3,6 @@ name: nightly
 on:
   schedule:
     - cron: "17 3 * * *"
-  push:
-    branches: [sim-engine]  # temporary: pre-merge full suites for sim-engine
   workflow_dispatch:
     inputs:
       repeats:

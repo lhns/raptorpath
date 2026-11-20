@@ -12,8 +12,6 @@ on:
       base:
         description: "base ref (default: merge base with origin/main)"
         default: ""
-  push:
-    branches: [sim-engine]  # temporary: the sim-engine branch's own gate
 env:
   CARGO_TERM_COLOR: never
   CARGO_INCREMENTAL: "0"
