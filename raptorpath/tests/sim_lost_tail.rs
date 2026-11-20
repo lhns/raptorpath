@@ -119,7 +119,7 @@ fn account_is_clean_after_lost_tail_at_rho_below_1() {
     let a = r.acct();
     println!("rho<1 account:{}", a.0);
     assert!(a.violations().is_empty(), "account: {:?}\n{}", a.violations(), a.0);
-    assert_eq!(r.outcome, "client_ok", "transfer did not complete: {}", summary(&r));
+    // No client_ok gate at rho < 1: the perf server needs every chunk and the link abandons some by design.
 }
 
 /// Control: the account at rho = 1 is clean after the same lost tail, and its
