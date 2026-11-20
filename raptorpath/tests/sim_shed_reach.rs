@@ -13,8 +13,9 @@
 //!   hole is ever shed (the refusal `denied` fires instead). 0.05 is twice the
 //!   link's loss rate.
 //! The natural 5 % scattered-loss scenario (30 MB) sheds on Windows (17) but
-//! not on Linux: the same seed is not the same run across platforms (see
-//! `docs/derivations/sim-engine.md`), so the blackout is the trigger.
+//! not on Linux: the OS is an input of the run (tokio's select RNG is drawn
+//! a different number of times per OS, `docs/derivations/sim-engine.md`
+//! "What a seed fixes"), so the blackout is the trigger.
 //!
 //! Sites: the NACK-path shed (`sender_phases.rs`, ev=`shed`) is reached.
 //! The slot-site shed (`emit_source.rs`, ev=`shed_slot`) is NOT: in every

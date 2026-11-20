@@ -42,6 +42,15 @@ Runs 44674646726, 44675108300, 44675848279, 44676399042. The last 8 `.text` byte
 - Jitter witness: recovery-clock sigma 4799 µs with 4 ms uniform jitter, 757 µs with jitter off (queueing and retransmits, not 0).
 - Wall: under 0.3 s per child run on CI.
 
+## What a seed fixes
+
+Measured 2026-11-20 (Windows 11 host, `windows-latest` and `ubuntu-24.04` runners, rustc 1.95.0 and 1.100.0), comparing socket traces line by line:
+
+- **Same seed, same port, same OS: identical**, including the 6 MB blackout and 30 MB 5 % scenarios of `sim_shed_reach`.
+- **The server port was an input** until the link's loss and jitter streams were keyed by server index (`sim.rs`, `SimNet::send`); before, the first c>s datagram already arrived at a different virtual time. Now pinned by `sim_determinism::same_seed_two_ports_*`.
+- **The OS is an input.** The traces agree for a while, then the same events at the same virtual millisecond run in a different task order (first seen as a 24-byte DATAGRAM frame coalesced into a different packet). Cause: tokio's `select!` start branch and its `watch` channel draw from one per-thread RNG, and `net::shutdown_signal` draws a different number of times per OS (unix: `select!` over `ctrl_c` and SIGTERM, two `watch` listeners; Windows: one `ctrl_c`), so every later draw is shifted. Running the Windows body on unix under `sim` (experiment only, not merged) made every compared trace and filtered log identical across the two OSes. Compiler version (1.95.0 vs 1.100.0) and machine speed changed nothing.
+- **Not fixed by the seed, masked so far:** quinn-proto's connection IDs (`rand::rng()` in `cid_generator.rs`) and the per-run certificate (Handshake CRYPTO length 655 vs 656 bytes between two runs, absorbed by padding). Neither changed a trace in any run compared.
+
 ## Hash order in production
 
 On two or more paths, which path the first control datagrams take depends on `HashMap`/`DashMap` iteration order (`sim-spike.md` blocker 3: 2 classes, 14/11 of 25 runs before the fix). The sim fixes that order only under `sim`. In production (no `sim`) it stays per-process random: the 2-path first-control-datagram path is hash-order dependent, and a test or measurement that depends on it is not repeatable on the real engine.

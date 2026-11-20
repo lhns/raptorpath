@@ -118,16 +118,6 @@ pub fn run(sc: &Scenario) -> ChildRun {
     run
 }
 
-// TEMPORARY (determinism diagnosis): virtual µs since the runtime started.
-static T0: std::sync::OnceLock<tokio::time::Instant> = std::sync::OnceLock::new();
-struct VirtUs;
-impl tracing_subscriber::fmt::time::FormatTime for VirtUs {
-    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
-        let us = T0.get().map_or(0, |t| t.elapsed().as_micros());
-        write!(w, "{us}")
-    }
-}
-
 fn env<T: std::str::FromStr>(k: &str) -> T {
     std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("child env {k}"))
 }
@@ -151,16 +141,6 @@ pub fn child() {
     let out: String = env("SIM_OUT");
 
     let _ = rustls::crypto::ring::default_provider().install_default();
-    // TEMPORARY (determinism diagnosis): frame-level tracing to a file.
-    if let Ok(f) = std::env::var("SIM_TRACE") {
-        let file = std::fs::File::create(std::env::var("SIM_TRACE_OUT").unwrap()).unwrap();
-        tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::new(f))
-            .with_timer(VirtUs)
-            .with_ansi(false)
-            .with_writer(std::sync::Mutex::new(file))
-            .init();
-    }
     let wall0 = std::time::Instant::now();
     // Runaway guard: a scenario that stops advancing virtual time would
     // otherwise hang CI.
@@ -174,7 +154,6 @@ pub fn child() {
     let srv_addrs: Vec<std::net::SocketAddr> =
         (0..npaths).map(|i| std::net::SocketAddr::from(([127, 0, 0, 1], port + i))).collect();
     let (outcome, virt_s, net) = rt.block_on(async move {
-        let _ = T0.set(tokio::time::Instant::now());
         let jitter = if jitter_ms == 0 { Jitter::None } else { Jitter::Uniform { max: Duration::from_millis(jitter_ms) } };
         let link = |loss: f64| LinkCfg { jitter, ..LinkCfg::default_40m(loss) };
         let net = SimNet::install(seed, srv_addrs.clone(), link(loss), link(0.0), None);
