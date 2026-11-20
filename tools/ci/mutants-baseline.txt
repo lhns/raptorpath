@@ -102,7 +102,6 @@ raptorpath-math/src/estimator.rs: replace LossEstimator::loss_rate_upper -> f64 
 raptorpath-math/src/estimator.rs: replace LossEstimator::loss_variance -> f64 with -1.0
 raptorpath-math/src/estimator.rs: replace LossEstimator::loss_variance -> f64 with 0.0
 raptorpath-math/src/estimator.rs: replace LossEstimator::loss_variance -> f64 with 1.0
-raptorpath-math/src/estimator.rs: replace LossEstimator::record_counts with ()
 raptorpath-math/src/estimator.rs: replace LossEstimator::record_in_order_arrival with ()
 raptorpath-math/src/estimator.rs: replace LossEstimator::record_reorder with ()
 raptorpath-math/src/estimator.rs: replace LossEstimator::record_symbol with ()
@@ -331,9 +330,6 @@ raptorpath-math/src/lib.rs: replace > with >= in r_star_mass
 raptorpath-math/src/lib.rs: replace > with >= in soft_saturate
 raptorpath-math/src/lib.rs: replace >= with < in find_t_cut
 raptorpath-math/src/lib.rs: replace boost_params -> (f64, f64) with (1.0, 1.0)
-raptorpath-math/src/lib.rs: replace bulkness_of_delta -> f64 with -1.0
-raptorpath-math/src/lib.rs: replace bulkness_of_delta -> f64 with 0.0
-raptorpath-math/src/lib.rs: replace bulkness_of_delta -> f64 with 1.0
 raptorpath-math/src/lib.rs: replace compute_buffer_max -> f64 with -1.0
 raptorpath-math/src/lib.rs: replace compute_buffer_max -> f64 with 0.0
 raptorpath-math/src/lib.rs: replace compute_buffer_max -> f64 with 1.0

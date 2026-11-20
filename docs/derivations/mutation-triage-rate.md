@@ -9,12 +9,12 @@ taper, the delta dial and the three-variable solvers. Line numbers are those of 
 
 | | before | after |
 |---|---|---|
-| survivors in these functions | 134 | 32 |
-| baseline file (all of raptorpath-math/core, 1 721 mutants) | 486 | 384 |
+| survivors in these functions | 137 | 32 |
+| baseline file (all of raptorpath-math/core, 1 721 mutants) | 486 | 380 |
 
-102 killed by 28 new tests (`raptorpath-math/tests/mutation_triage_rate.rs`). The 32 left are all
+105 killed by 28 new tests (`raptorpath-math/tests/mutation_triage_rate.rs`). The 32 left are all
 class (a): equivalent mutants. None is class (b) any more. Of those, 15 also point at dead or redundant code
-(a+c, listed below). Not triaged here (next pass): `find_t_cut`, `p_recovered_within`, `boost_params`,
+(a+c, listed below). One mutant outside the scope also left the baseline: `LossEstimator::record_counts -> ()` (the controller test drives it). Not triaged here (next pass): `find_t_cut`, `p_recovered_within`, `boost_params`,
 `derive_window`, `compute_buffer_max`, `beta_quantile`, and the estimators.
 
 | function | before | after |
@@ -22,7 +22,7 @@ class (a): equivalent mutants. None is class (b) any more. Of those, 15 also poi
 | FecRateController::compute_repair_rate | 14 | 2 |
 | FecRateController::compute_triangle | 6 | 0 |
 | TaperFunction::should_generate | 6 | 0 |
-| bulkness_of_delta | 6 | 0 |
+| bulkness_of_delta | 9 | 0 |
 | burst_variance_factor | 3 | 0 |
 | compute_delta | 5 | 1 |
 | compute_r_star | 1 | 0 |
@@ -42,7 +42,7 @@ class (a): equivalent mutants. None is class (b) any more. Of those, 15 also poi
 | solve_r_from_time_budget | 17 | 1 |
 | solve_rho_from_r_delta | 7 | 1 |
 | zeta_of_delta | 5 | 0 |
-| **total** | **134** | **32** |
+| **total** | **137** | **32** |
 
 ## How the tests are absolute
 
@@ -61,6 +61,7 @@ Class: (a) equivalent, (b) missing test, now killed, (c) dead code or constant w
 
 | function | site | mutants | status | class | test / reason |
 |---|---|---|---|---|---|
+| `bulkness_of_delta` | lib.rs:196:5 | whole function -> -1.0; 0.0; 1.0 | killed | b | `bulkness_is_the_log_position_between_the_anchors` |
 | `bulkness_of_delta` | lib.rs:199:9 | - with +; - with / | killed | b | `bulkness_is_the_log_position_between_the_anchors` |
 | `bulkness_of_delta` | lib.rs:199:14 | / with %; / with * | killed | b | `bulkness_is_the_log_position_between_the_anchors` |
 | `bulkness_of_delta` | lib.rs:199:19 | - with +; - with / | killed | b | `bulkness_is_the_log_position_between_the_anchors` |
