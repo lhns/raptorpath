@@ -9,6 +9,9 @@ Scope: threading and per-packet cost: threading redesign, I/O owner, receiver co
 <!-- BEGIN GENERATED: track-perf -->
 ```mermaid
 flowchart TB
+    perf_liveness_split["✔ Path liveness split<br/>from capacity"]
+    perf_native_geometry["✔ Inner-TCP geometry<br/>hypothesis"]
+    perf_rtt_rescan["✔ Per-ACK RTT minimum<br/>rescan removed"]
     perf_parallelisation["✖ Engine or receiver<br/>parallelisation"]
     perf_emit_batch_v1["↷ Emission batching,<br/>first attempt"]
     perf_recv_msg_wall["✔ Receiver per-message<br/>wall battery"]
@@ -37,6 +40,9 @@ flowchart TB
     perf_bbrrs_ring_fix["⏳ bbr_rs send-record<br/>ring fix"]
     perf_fix_burst_bound[/"○ Emission burst bound<br/>derivation"/]
     perf_config_dropped>"⚠ Perf ignores the<br/>config file"]
+    perf_liveness_split ~~~ perf_parallelisation
+    perf_native_geometry ~~~ perf_emit_batch_v1
+    perf_rtt_rescan ~~~ perf_recv_msg_wall
     perf_parallelisation ~~~ perf_ack_merge
     perf_emit_batch_v1 ~~~ perf_rcvbuf
     perf_recv_msg_wall ~~~ perf_rcvbuf
@@ -100,11 +106,11 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class perf_parallelisation,perf_emit_batch_v1,perf_quic_feeder,perf_threading_p2a,perf_q3_investigation,perf_receiver_r1,perf_threading_r3 dead
+    class perf_liveness_split,perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_d9_attribution,perf_sched_split,perf_s20_r1_collapse,perf_receiver_r2,perf_s26_long_polls,perf_receiver_followups succ
+    class perf_native_geometry,perf_parallelisation,perf_emit_batch_v1,perf_quic_feeder,perf_threading_p2a,perf_q3_investigation,perf_receiver_r1,perf_threading_r3 dead
+    class perf_rtt_rescan,perf_c8_lag,perf_s33_timer,perf_bbrrs_ns_cost unrated
     class perf_recv_msg_wall mixed
     class perf_ack_merge,perf_emit_batch_law0,perf_io_owner,perf_incremental_sack,perf_decoder_prune vsucc
-    class perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_d9_attribution,perf_sched_split,perf_s20_r1_collapse,perf_receiver_r2,perf_s26_long_polls,perf_receiver_followups succ
-    class perf_c8_lag,perf_s33_timer,perf_bbrrs_ns_cost unrated
     class perf_bbrrs_ring_fix waiting
     class perf_fix_burst_bound next
     class perf_config_dropped defect
@@ -144,6 +150,9 @@ flowchart TB
 | `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | in-progress | unrated |  | plan W3.6e; branch bbrrs-r4 (fa9947dd) | perf-bbrrs-ns-cost |
 | `perf-fix-burst-bound` | Emission burst bound derivation | next | unrated |  | law ledger rows F03 | model-law-ledger |
 | `perf-config-dropped` | Perf ignores the config file | next | unrated |  | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |  |
+| `perf-liveness-split` | Path liveness split from capacity | done | successful |  | commit becc6121; commit b57a202b |  |
+| `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | done | unrated | clean single-path 3–5.6× faster | commit 6302798c; commit 99926477 |  |
+| `perf-native-geometry` | Inner-TCP geometry hypothesis | done | dead-end |  | commit 020d34d5 |  |
 
 ### Details per node
 
@@ -177,4 +186,7 @@ flowchart TB
 | `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | Built on branch bbrrs-r4 (fa9947dd): the send-record map is a fixed-bound ring; the ns gate (db2cb4f4) went red at baseline (7.72x) and green after the fix (net ratio 7.7x -> 1.3-1.7x). Kept in-progress, not done, because it merges with the round-2 session. Done when: the send-record map is a fixed ring (or sampled) and a red-first ns gate holds bbr_rs at <= 2x quinn BBR per packet on the VM release bench. | plan W3.6e; branch bbrrs-r4 (fa9947dd) |
 | `perf-fix-burst-bound` | Emission burst bound derivation | Law ledger: F03. Done when: the 64-symbol burst bound is derived as a CPU/latency quantum in the paper, or swept and recorded as a declared constant with its bind fraction. | law ledger rows F03 |
 | `perf-config-dropped` | Perf ignores the config file | main.rs:263 cmd_perf gets no config though --config is global (main.rs:12) and the README documents it. Blocks the tail-target flag sweep (VM queue 4) and rho < 1 at Bulk/Auto in perf. Also: ge_burst_factor and realtime_burst_extra have no consumer anywhere (config.rs:64-67). Done when: the S2c round-trip cells for perf move, red first. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
+| `perf-liveness-split` | Path liveness split from capacity | L1 phase 3 (2026-07-03); the ack-path debug logging added while diagnosing it is folded in. | commit becc6121; commit b57a202b |
+| `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | Found in the session record (2026-07-07); the fix is commit 6302798c and its merge 99926477, whose subject carries the headline. Unrated: the extracted verdict quote did not validate. | commit 6302798c; commit 99926477 |
+| `perf-native-geometry` | Inner-TCP geometry hypothesis | L2 workstream 3 (2026-07-04); measured with the native object mode folded in meas-l1-harness. | commit 020d34d5 |
 <!-- END GENERATED: table-perf -->

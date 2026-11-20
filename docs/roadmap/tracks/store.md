@@ -33,6 +33,7 @@ flowchart TB
     store_composed_cap[/"✖ Composed cap"/]
     store_deadwall_modehunt["✔ Deadwall and mode-<br/>hunt batteries"]
     store_sf_latency_feedback["✔ SF latency feedback"]
+    store_queue_fix_premise["✔ Queue fix premise<br/>refuted"]
     store_cap_law_cluster["✔ Cap-law cluster:<br/>formulas first"]
     store_sum_cap[/"✔ Ladder battery: ×N<br/>deletion"/]
     store_delta_cap[/"✔ Derived setpoint 1 +<br/>q(δ)"/]
@@ -103,9 +104,10 @@ flowchart TB
     store_latency_lever ~~~ store_composed_cap
     store_cap_unification ~~~ store_deadwall_modehunt
     store_composed_cap ~~~ store_sf_latency_feedback
-    store_composed_cap ~~~ store_cap_law_cluster
-    store_deadwall_modehunt ~~~ store_sum_cap
-    store_sf_latency_feedback ~~~ store_sum_cap
+    store_composed_cap ~~~ store_queue_fix_premise
+    store_deadwall_modehunt ~~~ store_cap_law_cluster
+    store_sf_latency_feedback ~~~ store_cap_law_cluster
+    store_queue_fix_premise ~~~ store_cap_law_cluster
     store_cap_law_cluster ~~~ store_sum_cap
     store_sum_cap ~~~ store_delta_cap
     store_delta_cap ~~~ store_s18_one_law
@@ -221,7 +223,7 @@ flowchart TB
     store_engine_form_impl --> store_engine_form_guard
     store_engine_form_impl --> store_delta_seat
     store_delta_seat --> store_s48c_session
-    linkStyle 86,98,100,104 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 87,99,101,105 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -235,7 +237,7 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class store_sack_flowctl,store_sack_prune,store_reasm_bdp,store_src_bp,store_xn_pool,store_percap_family,store_borrow,store_honest_cap_family,store_plain_rs,store_capw,store_sender_decoupling,store_pool_deliv,store_slack_clock,store_three_term,store_coverage_term,store_composed_cap,store_sf_latency_feedback,store_s18_one_law,store_s24_inputs,store_power_law,store_s27_premises,store_probe_gain,store_dw_window,store_s34_input dead
+    class store_sack_flowctl,store_sack_prune,store_reasm_bdp,store_src_bp,store_xn_pool,store_percap_family,store_borrow,store_honest_cap_family,store_plain_rs,store_capw,store_sender_decoupling,store_pool_deliv,store_slack_clock,store_three_term,store_coverage_term,store_composed_cap,store_sf_latency_feedback,store_queue_fix_premise,store_s18_one_law,store_s24_inputs,store_power_law,store_s27_premises,store_probe_gain,store_dw_window,store_s34_input dead
     class store_anchor_hygiene,store_sack_release,store_honest_inputs,store_sum_cap,store_adr72_one_law,store_defect_delta_nan,store_s60_pre,store_s61b succ
     class store_pool_anchor_flip,store_s61a bad
     class store_latency_lever,store_cap_unification,store_s60a,store_s60b,store_s61a_rerun,store_law_g_rederive,store_s62_j0 mixed
@@ -324,6 +326,7 @@ flowchart TB
 | `store-fix-maxbw-minrtt` | Honest rate and delay inputs | blocked | unrated |  | law ledger rows E04, E03; store-input-search (§23, §24, §27, §34); store-engine-form (§36, §40, §42, §43b) | model-law-ledger, cc-bbrrs-r2 |
 | `store-latency-lever` | Three-term cap as latency control | done | mixed |  | commit f6d95c99; commit ec6a5ec7 | store-three-term |
 | `store-sf-latency-feedback` | SF latency feedback | done | dead-end |  | commit c0fb1d79; commit 4320fc48 | store-cap-unification |
+| `store-queue-fix-premise` | Queue fix premise refuted | done | dead-end |  | commit 9ae50ee6 |  |
 
 ### Details per node
 
@@ -350,10 +353,10 @@ flowchart TB
 | `store-composed-cap` | Composed cap | Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'. Removed 2026-11-10 (simplification batch 1); the brake survives as RWM_LATE_BRAKE. Tag archived 2026-11-10 (tag date not used for end). | tag archive/RWM_COMPOSED_CAP; paper §10 row Composed cap (`RWM_COMPOSED_CAP`); commit 161b4eae |
 | `store-cap-unification` | Store-cap unification over live paths | Shipped unconditionally; folds the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. The dead-wall and mode-hunt batteries (store-deadwall-modehunt) and the cap-law cluster (store-cap-law-cluster) are their own nodes since 2026-11-16. | status §3.5 item 3; paper §10 row Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`) |
 | `store-deadwall-modehunt` | Deadwall and mode-hunt batteries | Split 2026-11-16 from 'Store-cap unification over live paths'. Paper status: unscored. The mitigations list mapped onto the recovery plane built nothing (79d2fa83). | paper §10 row The dead-wall and mode-hunt batteries; commit d583593a; commit cfc1793f |
-| `store-cap-law-cluster` | Cap-law cluster: formulas first | Split 2026-11-16 from 'Store-cap unification' and 'Sum cap'. The formulas and adjudications went into the paper before the code (6335e206); the sweep items: K adjudicated into the formula, the slack-clock charge refuted, the floor derived to 10 (items 1+2+4), un-metered channels charged (5), the quad lock-in refuted (6). | commit 7e302e2a; commit 6335e206 |
+| `store-cap-law-cluster` | Cap-law cluster: formulas first | Split 2026-11-16 from 'Store-cap unification' and 'Sum cap'. The formulas and adjudications went into the paper before the code (6335e206); the sweep items: K adjudicated into the formula, the slack-clock charge refuted, the floor derived to 10 (items 1+2+4), un-metered channels charged (5), the quad lock-in refuted (6). Item 6 is its own node since 2026-11-20 (place-quad-lockin). | commit 7e302e2a; commit 6335e206 |
 | `store-honest-inputs` | Honest inputs and O(1) anchor | HONEST INPUTS battery (2026-08-10/11): the -35 % was an O(rate^2) fold under the scheduler lock; RWM_HONEST_ANCHOR shipped. Flip commit 9f6e56ba (RWM_HONEST_ANCHOR default on, 2026-08-11). | commit 9f6e56ba |
 | `store-sum-cap` | Ladder battery: ×N deletion | The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner's formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits. | branch RWM_SUM_CAP DEFAULT ON |
-| `store-delta-cap` | Derived setpoint 1 + q(δ) | RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19). | paper §10 row Pool gain 2.0 (N ≥ 2) |
+| `store-delta-cap` | Derived setpoint 1 + q(δ) | RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19). Tier-0 and Tier-1 are their own nodes since 2026-11-20 (model-tier0-corrections, model-tier1-rescores). | paper §10 row Pool gain 2.0 (N ≥ 2) |
 | `store-s18-one-law` | One store law, first session | Split 2026-11-16 from 'One store law (ADR-0072)'. The lead's ruling: it stands as scored, REFUTED; the cross-session control reference is a design weakness (7e13dc06). §19 re-read the law against a same-session main. | status §18; commit 48ee42a3 |
 | `store-adr72-one-law` | One store law | ADR-0072 accepted on §19, the same-session control (§18 is store-s18-one-law). Dates: ADR end dates in the raw set equal their start (placeholder). | ADR-0072; status §19; commit bdb37b40 |
 | `store-input-search` | Single-path anchor over-read | Split 2026-11-16 from 'Store-law input search (8 inputs)': the inputs are now one node per session or paper row (store-s24-inputs, store-s27-premises, store-probe-gain, store-dw-window, store-s34-input). §23 found the c1 over-read is the 1 ms ack-interval floor (4ed22f38). | status §23; commit 4ed22f38 |
@@ -398,5 +401,6 @@ flowchart TB
 | `store-delta-seat` | δ seat on the store | Done when: the store time term carries δ (W1.2 candidate A) with absolute tests continuous and monotone through every preset (±2 %), in cc_sim. | plan W1.2 RESULT, W1.3, W1 round 2 (iii) |
 | `store-fix-maxbw-minrtt` | Honest rate and delay inputs | Law ledger: E04, E03. Ranks 1-2, ships with F01 (store-engine-form-impl). OPEN RESEARCH PROBLEM. Seven failed attempts, all already in the tree: the send-interval sampler under-reads x0.1-0.5 (§23) and the quinn-rate and loop-time options fail (§24, both store-input-search); bbr_rs's delivered rate is circular at c2 (§27, store-input-search); the derivation from committed ledgers NONE-CLOSES (§34, store-input-search); receiver dispersion is NOT-YET (§36, §40, store-engine-form); the netem-oracle L converges only at c2 (§43b, store-engine-form); the power-seeking law is not viable (§29, store-power-law). Untested candidates: for RTprop, quinn's wire rtt.min() and bbr_rs's m-hat; for the rate, bbr_rs's b-hat or a law that needs no rate. The bbr_rs estimates come from the round-2 work, hence the edge to cc-bbrrs-r2. Fallback if no honest input is found: ship the law with the N·pool ceiling as a declared resource bound outside the law (FORMULA-FIRST provenance class), its bind fraction gauged and reported on every battery, and the inputs marked DISHONEST-INPUT in the ledger with the store law left open. Done when: a derivation in the paper names a link-rate source the store cap does not itself set (or a law that needs none) and an RTprop from a wire clock, each with a test that it reads the link at c8 within a stated bound; or, failing that, the fallback above is written into the paper and the ledger. Ships in one change and one battery with the store-law fix. | law ledger rows E04, E03; store-input-search (§23, §24, §27, §34); store-engine-form (§36, §40, §42, §43b) |
 | `store-latency-lever` | Three-term cap as latency control | Pre-registration ec6a5ec7; scored by lat_report.py (fc860371). Mapped to mixed: works, no default. Track store: the battery tested the three-term cap as a latency control (follows the three-term battery's specification failure, f334471e). Was titled 'Latency Lever battery'. | commit f6d95c99; commit ec6a5ec7 |
-| `store-sf-latency-feedback` | SF latency feedback | REFUTED: dead-end. Track store: its verdict re-attributes the c8 collapse to dead wall, which the paper places in the store-cap-unification arm. | commit c0fb1d79; commit 4320fc48 |
+| `store-sf-latency-feedback` | SF latency feedback | REFUTED: dead-end. Track store: its verdict re-attributes the c8 collapse to dead wall, which the paper places in the store-cap-unification arm. Its merge 99514afb (latency-feedback REFUTED) moved here from meas-pipeline-verification on 2026-11-20. | commit c0fb1d79; commit 4320fc48 |
+| `store-queue-fix-premise` | Queue fix premise refuted | Split 2026-11-20 from meas-pipeline-verification (own refuted verdict). | commit 9ae50ee6 |
 <!-- END GENERATED: table-store -->

@@ -654,10 +654,11 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 
 </details>
 
-<details><summary><b>Sep 2026</b>: 13 done</summary>
+<details><summary><b>Sep 2026</b>: 14 done</summary>
 
 - `meas-attribution-audit`: Attribution audit (✔ done · unrated)
 - `meas-5h-cap`: Owner rule: 5 h measurement cap (✔ done · n/a)
+- `meas-crown-spot-v8`: Crown no-regression spot (wire v8) (✔ done · unrated)
 - `rate-dials-made-real`: The dials made real (✔ done · successful)
 - `meas-wire-v8`: Wire v8 instruments and owed findings (✔ done · successful)
 - `place-stage2-battery`: Placement battery (✔ done · successful)
@@ -672,55 +673,76 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 
 </details>
 
-<details><summary><b>Aug 2026</b>: 31 done</summary>
+<details><summary><b>Aug 2026</b>: 43 done</summary>
 
 - `cod-wire-compact`: Compact v5 DATA framing (✔ done · very-successful)
 - `meas-adversarial-b1`: Adversarial policer map (✔ done · unrated)
+- `model-user-no-mode-switch`: Owner rule: no mode switches (✔ done · n/a)
 - `cc-bbrrs-v1`: bbr_rs first version (✔ done · unrated)
 - `perf-recv-msg-wall`: Receiver per-message wall battery (✔ done · mixed)
 - `store-pool-anchor-flip`: Composed store flip (✔ done · bad)
 - `meas-adr52-discipline`: Measurement discipline (✔ done · successful)
 - `perf-ack-merge`: One control datagram per message (✔ done · very-successful)
+- `rec-recovery-bench`: Recovery-plane component bench (✔ done · unrated)
 - `obs-gates-echo`: Gate-setting liveness echo (✔ done · unrated)
 - `infra-net-seams`: Net seams and dead-code refactor (✔ done · successful)
 - `store-latency-lever`: Three-term cap as latency control (✔ done · mixed)
+- `meas-ack-cadence`: Ack-cadence over-read checks (✔ done · unrated)
+- `meas-anchor-era-suspect`: Anchor-era suspect ruled out (✔ done · dead-end)
 - `meas-sf-accounting`: SF accounting axis (✔ done · mixed)
 - `store-honest-inputs`: Honest inputs and O(1) anchor (✔ done · successful)
 - `meas-coupling-model`: Coupling model (frontier span) (✔ done · dead-end)
 - `meas-pipeline-verification`: Pipeline verification matrix (✔ done · unrated)
 - `store-deadwall-modehunt`: Deadwall and mode-hunt batteries (✔ done · unrated)
+- `store-queue-fix-premise`: Queue fix premise refuted (✔ done · dead-end)
 - `store-sf-latency-feedback`: SF latency feedback (✔ done · dead-end)
+- `place-quad-lockin`: Four-path lock-in defect retracted (✔ fixed)
 - `store-cap-law-cluster`: Cap-law cluster: formulas first (✔ done · unrated)
 - `meas-c9-battery`: Four-path validation battery (✔ done · unrated)
 - `meas-cpuprof`: cpuprof: the sender's CPU ceiling (✔ done · unrated)
+- `meas-defect-shared-seed`: Shared loss seed across legs (✔ fixed)
 - `meas-eppen-c8`: Eppen's condition on unequal paths (✔ done · unrated)
 - `meas-gap-phases`: Gap battery phases 1 and 2 (✔ done · unrated)
 - `meas-goal-0819`: Era battery: cumulative shipped effect (✔ done · unrated)
 - `meas-latency-truth`: Latency Truth battery (✔ done · unrated)
 - `meas-sigma-c8`: Measured σ on unequal paths (✔ done · unrated)
 - `meas-span-run`: Span run: span instrument, anchors (✔ done · unrated)
+- `model-tier0-corrections`: Tier-0 paper claim corrections (✔ done · successful)
+- `model-tier1-rescores`: Tier-1 literature re-scores (✔ done · unrated)
 - `store-delta-cap`: Derived setpoint 1 + q(δ) (✔ done · very-successful)
 - `store-sum-cap`: Ladder battery: ×N deletion (✔ done · successful)
+- `meas-defect-31mbit`: 31 Mbit/s cap: generation coding on (✔ fixed)
 - `rec-alpha-sweep`: Alpha-sweep of the recovery clock (✔ done · unrated)
 - `rec-cost-ratio-decision`: Cost-ratio decision (owner ruling) (✔ done · n/a)
+- `rate-rho-not-input`: ρ not an engine input (✔ fixed)
+- `rec-fire-cause`: Recovery fire cause table (✔ done · unrated)
 - `rec-goal100`: Recovery primitives and σ (✔ done · successful)
 - `rec-successor-arrival`: Successor-arrival distribution measured (✔ done · unrated)
 
 </details>
 
-<details><summary><b>Jul 2026</b>: 27 done</summary>
+<details><summary><b>Jul 2026</b>: 36 done</summary>
 
 - `meas-adr51-scenarios`: Canonical scenarios and goal gate (✔ done · successful)
+- `perf-liveness-split`: Path liveness split from capacity (✔ done · successful)
 - `cc-copa-lite`: Production Copa-lite port (✔ done · successful)
+- `cod-rlc-index`: RLC decoder recovered-symbol index (✔ done · successful)
 - `meas-l1-harness`: Network-namespace harness and baselines (✔ done · unrated)
 - `meas-l2-multipath`: Multipath and tail evaluation (✔ done · unrated)
+- `model-s16-fountain`: Fountain aggregation claim (paper §16) (✔ done · dead-end)
+- `perf-native-geometry`: Inner-TCP geometry hypothesis (✔ done · dead-end)
 - `rec-bulk-arq`: Bulk ARQ and batch acknowledgements (✔ done · successful)
 - `model-wasm-l0`: raptorpath-math and wasm model (✔ done · successful)
 - `place-marginal-cost`: Marginal-cost placement law (✔ done · successful)
 - `rate-retention-is-rho`: Retention is the ρ dial (✔ done · n/a)
 - `rec-reliable-window`: Reliable window (✔ done · successful)
+- `perf-rtt-rescan`: Per-ACK RTT minimum rescan removed (✔ done · unrated)
+- `rate-deadline-rstar`: Deadline-constrained r* for N paths (✔ done · successful)
 - `rate-ge-hmm`: Gilbert-Elliott loss model (✔ done · successful)
 - `rate-saturation-rstar`: Saturation-aware r* and window (✔ done · successful)
+- `rec-c2-collapse-diag`: Single-path loss collapse diagnosis (✔ done · unrated)
+- `cod-gen-decoder-fix`: Generation decoder late-source fix (✔ done · successful)
+- `meas-user-consolidate-arc`: Owner call: consolidate aggregation arc (✔ done · n/a)
 - `rec-fec-vs-arq`: Proactive FEC versus ARQ frontier (✔ done · unrated)
 - `cod-systematic-wire`: Systematic wire, sparse decoder (✔ done · successful)
 - `infra-mtu-floor`: MTU floor 1350 (PMTU wedge) (✔ done · successful)
@@ -750,7 +772,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 
 </details>
 
-<details><summary><b>Mar 2026</b>: 11 done</summary>
+<details><summary><b>Mar 2026</b>: 12 done</summary>
 
 - `obs-status-endpoint`: Runtime status endpoint (✔ done · successful)
 - `infra-early-platform`: Tunnel platform: handshake, TLS, migration (✔ done · successful)
@@ -761,6 +783,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `meas-matrix-bench`: Matrix benchmark, audit and dashboard (✔ done · unrated)
 - `rec-early-arq`: Early ACK, NACK and repair (✔ done · successful)
 - `rec-nack-congestion`: Congestion-aware NACK throttle (first form) (✔ done · unrated)
+- `model-user-three-dials`: Owner call: three dials (✔ done · n/a)
 - `rate-fec-rate-v1`: BOCD FEC rate control (✔ done · successful)
 - `cc-early-delay-cc`: Delay-based CC replaces AIMD (✔ done · unrated)
 
@@ -781,15 +804,15 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 <!-- BEGIN GENERATED: tracks -->
 Each track has its own page with its tree, node table and per-node details.
 
-- [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 54 nodes (22 done, 7 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 35 nodes (16 done, 4 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
-- [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
-- [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
-- [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
-- [perf - performance](roadmap/tracks/perf.md): 28 nodes (18 done, 1 in progress, 2 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
+- [cod - coding core](roadmap/tracks/cod.md): 21 nodes (10 done, 2 parked, 9 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 57 nodes (25 done, 7 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 37 nodes (18 done, 4 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
+- [store - store law](roadmap/tracks/store.md): 71 nodes (37 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
+- [place - placement](roadmap/tracks/place.md): 21 nodes (7 done, 3 in progress, 1 next, 1 blocked, 9 abandoned)
+- [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 4 abandoned)
+- [perf - performance](roadmap/tracks/perf.md): 31 nodes (21 done, 1 in progress, 2 next, 7 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 64 nodes (47 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 34 nodes (24 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (16 done, 8 in progress, 2 next, 2 blocked)
 <!-- END GENERATED: tracks -->

@@ -23,6 +23,8 @@ flowchart TB
     meas_pipeline_verification["✔ Pipeline<br/>verification matrix"]
     meas_coupling_model["✔ Coupling model<br/>(frontier span)"]
     meas_sf_accounting["✔ SF accounting axis"]
+    meas_anchor_era_suspect["✔ Anchor-era suspect<br/>ruled out"]
+    meas_ack_cadence["✔ Ack-cadence over-<br/>read checks"]
     meas_formula_first["✔ Formula-first review"]
     meas_goal_0819["✔ Era battery:<br/>cumulative shipped<br/>effect"]
     meas_latency_truth["✔ Latency Truth<br/>battery"]
@@ -32,8 +34,11 @@ flowchart TB
     meas_span_run["✔ Span run: span<br/>instrument, anchors"]
     meas_sigma_c8["✔ Measured σ on<br/>unequal paths"]
     meas_eppen_c8["✔ Eppen's condition on<br/>unequal paths"]
+    meas_defect_shared_seed>"✔ Shared loss seed<br/>across legs"]
+    meas_defect_31mbit>"✔ 31 Mbit/s cap:<br/>generation coding on"]
     meas_attribution_audit["✔ Attribution audit"]
     meas_wire_v8["✔ Wire v8 instruments<br/>and owed findings"]
+    meas_crown_spot_v8["✔ Crown no-regression<br/>spot (wire v8)"]
     meas_defect_eta_witness>"⚠ ETA route and σ<br/>witness mismatch"]
     meas_defect_c8_bimodal>"⚠ Two-path control<br/>bimodal collapse"]
     meas_defect_diag_rtp_ms>"⚠ Delay readout prints<br/>whole milliseconds"]
@@ -78,26 +83,31 @@ flowchart TB
     meas_adr52_discipline ~~~ meas_pipeline_verification
     meas_adversarial_b1 ~~~ meas_coupling_model
     meas_pipeline_verification ~~~ meas_sf_accounting
-    meas_pipeline_verification ~~~ meas_formula_first
-    meas_coupling_model ~~~ meas_goal_0819
-    meas_sf_accounting ~~~ meas_latency_truth
+    meas_pipeline_verification ~~~ meas_anchor_era_suspect
+    meas_coupling_model ~~~ meas_ack_cadence
+    meas_sf_accounting ~~~ meas_formula_first
+    meas_anchor_era_suspect ~~~ meas_goal_0819
+    meas_ack_cadence ~~~ meas_latency_truth
     meas_formula_first ~~~ meas_c9_battery
     meas_goal_0819 ~~~ meas_gap_phases
     meas_latency_truth ~~~ meas_cpuprof
     meas_c9_battery ~~~ meas_span_run
     meas_gap_phases ~~~ meas_sigma_c8
     meas_cpuprof ~~~ meas_eppen_c8
-    meas_span_run ~~~ meas_attribution_audit
-    meas_sigma_c8 ~~~ meas_wire_v8
-    meas_eppen_c8 ~~~ meas_defect_eta_witness
-    meas_attribution_audit ~~~ meas_defect_c8_bimodal
-    meas_wire_v8 ~~~ meas_defect_diag_rtp_ms
+    meas_span_run ~~~ meas_defect_shared_seed
+    meas_sigma_c8 ~~~ meas_defect_31mbit
+    meas_eppen_c8 ~~~ meas_attribution_audit
+    meas_defect_shared_seed ~~~ meas_wire_v8
+    meas_defect_31mbit ~~~ meas_crown_spot_v8
+    meas_attribution_audit ~~~ meas_defect_eta_witness
+    meas_wire_v8 ~~~ meas_defect_c8_bimodal
+    meas_crown_spot_v8 ~~~ meas_defect_diag_rtp_ms
     meas_defect_eta_witness ~~~ meas_gso_truth
     meas_defect_c8_bimodal ~~~ meas_v4_verification
     meas_defect_diag_rtp_ms ~~~ meas_guard_41c
     meas_gso_truth ~~~ meas_harness_consolidation
     meas_v4_verification ~~~ meas_defect_rtp_floor
-    meas_guard_41c ~~~ meas_guard_clause_dry
+    meas_guard_41c ~~~ meas_defect_rtp_floor
     meas_harness_consolidation ~~~ meas_guard_clause_dry
     meas_defect_rtp_floor ~~~ meas_guard_clause_dry
     meas_guard_clause_dry ~~~ meas_guard_v2_impl
@@ -129,6 +139,7 @@ flowchart TB
     meas_c8_aggregation_arc -.-> meas_regime_map
     meas_pipeline_verification --> meas_coupling_model
     meas_pipeline_verification --> meas_sf_accounting
+    meas_wire_v8 -.-> meas_defect_eta_witness
     meas_defect_rtp_floor --> meas_guard_clause_dry
     meas_guard_clause_dry --> meas_guard_v2_impl
     meas_guard_clause_dry --> meas_s51_design
@@ -139,6 +150,7 @@ flowchart TB
     meas_s51_session --> meas_s51_c8_gauges
     meas_adversarial_cells_build --> meas_adversarial_cells_run
     meas_s51_session --> meas_fix_gauges_p3
+    linkStyle 70 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -152,9 +164,9 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_adversarial_b1,meas_pipeline_verification,meas_goal_0819,meas_latency_truth,meas_c9_battery,meas_gap_phases,meas_cpuprof,meas_span_run,meas_sigma_c8,meas_eppen_c8,meas_attribution_audit,meas_guard_v2_impl,meas_s51_design,meas_s51_harness,meas_adversarial_cells_build unrated
-    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session,meas_harness_reuse,meas_s51_session,meas_blocke_pacing_gate,meas_blocke_steady_rule succ
-    class meas_c8_aggregation_arc,meas_coupling_model dead
+    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_adversarial_b1,meas_pipeline_verification,meas_ack_cadence,meas_goal_0819,meas_latency_truth,meas_c9_battery,meas_gap_phases,meas_cpuprof,meas_span_run,meas_sigma_c8,meas_eppen_c8,meas_attribution_audit,meas_crown_spot_v8,meas_guard_v2_impl,meas_s51_design,meas_s51_harness,meas_adversarial_cells_build unrated
+    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_defect_shared_seed,meas_defect_31mbit,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session,meas_harness_reuse,meas_s51_session,meas_blocke_pacing_gate,meas_blocke_steady_rule succ
+    class meas_c8_aggregation_arc,meas_coupling_model,meas_anchor_era_suspect dead
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool defect
     class meas_w1_bracket_fix inprog
@@ -226,6 +238,12 @@ flowchart TB
 | `meas-fix-gauges-p3` | Gauges for the remaining constants | blocked | unrated |  | law ledger rows S03, S07, R06, K06, K07, C11, F04 | rate-fix-estimators, model-fix-paper-p2, meas-s51-session, store-engine-form-impl |
 | `meas-transport-comparison` | QUIC/MPTCP comparison and overhead taxonomy | done | unrated |  | ADR-0036; ADR-0038 | meas-l0-sim-bench |
 | `meas-matrix-bench` | Matrix benchmark, audit and dashboard | done | unrated |  | ADR-0044; ADR-0045; ADR-0049 | meas-l0-sim-bench |
+| `meas-user-consolidate-arc` | Owner call: consolidate aggregation arc | done | n/a |  | commit a8dd8675 |  |
+| `meas-defect-shared-seed` | Shared loss seed across legs | done | unrated |  | commit e1fb2f64 |  |
+| `meas-anchor-era-suspect` | Anchor-era suspect ruled out | done | dead-end |  | commit cc8e3c01 |  |
+| `meas-ack-cadence` | Ack-cadence over-read checks | done | unrated |  | commit c0d93050; commit f1dc8ac5 |  |
+| `meas-defect-31mbit` | 31 Mbit/s cap: generation coding on | done | unrated |  | commit 38050959 |  |
+| `meas-crown-spot-v8` | Crown no-regression spot (wire v8) | done | unrated |  | commit b5e94b32; commit f671f61d |  |
 
 ### Details per node
 
@@ -247,7 +265,7 @@ flowchart TB
 | `meas-adr52-discipline` | Measurement discipline | Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
 | `meas-adversarial-b1` | Adversarial policer map | Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design. | commit 754139c3 |
 | `meas-formula-first` | Formula-first review | Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27). | branch ADR-0070 |
-| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16. | branch PIPELINE VERIFICATION MATRIX |
+| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16. Split 2026-11-20: the anchor-era suspect, the queue fix and the ack-cadence checks are their own nodes; the latency-feedback merge moved to store-sf-latency-feedback. | branch PIPELINE VERIFICATION MATRIX |
 | `meas-coupling-model` | Coupling model (frontier span) | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: dead-end). cb422e2d: 'frontier span REAL but NEUTRALIZED at the gate by ADR-0060'. | commit 7ad65ef1; commit cb422e2d |
 | `meas-sf-accounting` | SF accounting axis | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: mixed): the cell reproduces, the level at c7 does not. | commit 4f67ba7d; commit 4131d254 |
 | `meas-goal-0819` | Era battery: cumulative shipped effect | Era ledger item 1 (2026-08-19; owner: 'fix the ping probe in there. we cannot mislead ourselves'): the arc's cumulative shipped effect on two binaries (pre-registration 1d7094ef). The day's other items are their own nodes since 2026-11-16: meas-latency-truth, meas-c9-battery, meas-gap-phases, meas-cpuprof, meas-span-run, meas-sigma-c8, meas-eppen-c8. | commit f605f925; branch THE ERA LEDGER, SCORED |
@@ -259,7 +277,7 @@ flowchart TB
 | `meas-sigma-c8` | Measured σ on unequal paths | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 5's measurement clause: 'the delta agreement is DEAD by 75x' (b5d8a14c). | commit d20b0863; commit b5d8a14c |
 | `meas-eppen-c8` | Eppen's condition on unequal paths | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL. | commit 33528562 |
 | `meas-attribution-audit` | Attribution audit | §2 row is undated; dates from the 2026-09-07 merges. | status §2 row "Attribution audit (D0)" |
-| `meas-wire-v8` | Wire v8 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. | status §2 row "Crown no-regression spot (wire v8 merges)" |
+| `meas-wire-v8` | Wire v8 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. The crown spot is its own node since 2026-11-20 (meas-crown-spot-v8). | status §2 row "Crown no-regression spot (wire v8 merges)" |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: "continue your measurements but they cannot take over 5 hours". | commit 3eb28db6 |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | §3.8 is undated in the raw record; dates from harness/datagram-truth (2026-09-30). Folds paper §11.1 open question 10. Fixed: the harness measures per-datagram truth ([TRUTH]). | status §3.8 |
 | `meas-v4-verification` | Verification of the new main | Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'V4 verification of new main'. | status §6 |
@@ -289,4 +307,9 @@ flowchart TB
 | `meas-fix-gauges-p3` | Gauges for the remaining constants | Law ledger: S03, S07, R06, K06, K07, C11, F04. Done when: each listed constant has a gauge or a derivation: the trailing offset, the taper-cache staleness, the burst-tail provisioning bind, the placement temperature, the diversity weight, the repair-debt reduction, and the store-cap control arm (deleted once the store-law fix lands). | law ledger rows S03, S07, R06, K06, K07, C11, F04 |
 | `meas-transport-comparison` | QUIC/MPTCP comparison and overhead taxonomy | ADR-0036 (Accepted) benchmark; ADR-0038 (Accepted) overhead taxonomy: five layers behind the 38-50% overhead. | ADR-0036; ADR-0038 |
 | `meas-matrix-bench` | Matrix benchmark, audit and dashboard | ADR-0044 methodology audit (LinkModel, CorrelatedFading); ADR-0045 matrix of 189 cells x 30 trials; ADR-0049 single-file HTML dashboard. Outcome unrated: no later node clearly replaced it. | ADR-0044; ADR-0045; ADR-0049 |
+| `meas-user-consolidate-arc` | Owner call: consolidate aggregation arc | Owner 2026-07-08 (session record: "consolidate"); the consolidated verdict is a8dd8675, folded in meas-c8-aggregation-arc. | commit a8dd8675 |
+| `meas-anchor-era-suspect` | Anchor-era suspect ruled out | Split 2026-11-20 from meas-pipeline-verification (one of its suspects, with its own refuted verdict). | commit cc8e3c01 |
+| `meas-ack-cadence` | Ack-cadence over-read checks | Split 2026-11-20 from meas-pipeline-verification: the gauge (c0d93050) and the wire measurement (f1dc8ac5), one suspect with its own verdict. | commit c0d93050; commit f1dc8ac5 |
+| `meas-defect-31mbit` | 31 Mbit/s cap: generation coding on | Split 2026-11-20 from rec-goal100 (a measurement defect, not a goal item). | commit 38050959 |
+| `meas-crown-spot-v8` | Crown no-regression spot (wire v8) | Split 2026-11-20 from meas-wire-v8 (pre-registration b5e94b32 and scored result f671f61d). | commit b5e94b32; commit f671f61d |
 <!-- END GENERATED: table-meas -->

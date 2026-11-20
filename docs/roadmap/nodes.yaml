@@ -33,6 +33,8 @@ nodes:
   - commit dc672631
   - commit e2de447d
   - commit c1a39caf
+  - commit 6f2852f1
+  - commit a72151eb
   overview: true
   plain: The original design sent data in fixed blocks of error-correcting code; it was replaced by one sliding window for every kind of traffic.
   notes: 'The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); the §4 re-test (cod-s4-block-retest) found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13.'
@@ -54,7 +56,8 @@ nodes:
   lane: vm
   start: '2026-09-27'
   end: '2026-09-27'
-  folded: []
+  folded:
+  - commit 4e5c3af0
   overview: false
   notes: Split 2026-11-16 from the block pipeline node (own status section and verdict). Discharges ADR-0069's re-test clause; the Stage-3 baseline (§5) then read WINDOW-NOT-WORSE and the window became the only pipeline (cod-one-pipeline).
 - id: cod-mettle
@@ -79,6 +82,7 @@ nodes:
   - commit 65d7b1b8
   - commit 375708ff
   - commit 10ac80fc
+  - commit ae66266b
   overview: false
   notes: 'Removal was the owner''s call (user 2026-08-07). Dates: paper §10 rows carry an end (removal) date only.'
   plain: An experimental lighter error-correcting code that needed more spare data than the standard one, so it was dropped.
@@ -127,6 +131,9 @@ nodes:
   - commit cf164aa9
   - commit bf748653
   - commit bccb32a2
+  - commit cad99bf0
+  - commit 7f200577
+  - commit 8cf2b6f5
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
   plain: A two-layer code built for real-time traffic, made unnecessary by the single unified design.
@@ -149,6 +156,7 @@ nodes:
   folded:
   - commit e43e87b2
   - commit 544f4d82
+  - 'session record 2026-10-02: AVX and SIMD for the sender ruled out'
   overview: false
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cod-rlc-all-profiles
@@ -171,6 +179,9 @@ nodes:
   folded:
   - commit c8fcc910
   - commit 4663c38c
+  - 'session record 2026-07-05: Reliable windowed RLC for bulk breaks: 10 of 10 to 0 of 10'
+  - commit 59fc7c03
+  - 'session record 2026-07-06: RLC encode and decode throughput against bulk needs'
   overview: false
 - id: cod-generation-coding
   title: Generation cross-path fungible coding
@@ -196,6 +207,15 @@ nodes:
   - branch systematic+repair build
   - branch C8-final
   - branch feat/gen-on-ablation
+  - commit 704ae730
+  - commit 4f12d4b0
+  - commit e4bdfa63
+  - commit 715ed4d9
+  - commit 35cb17aa
+  - commit 95bc2a0f
+  - commit f5a097a7
+  - commit 8e1c4f1f
+  - commit 9d642b41
   overview: false
   plain: An optional feature that codes data across paths in groups has never been switched on by default, and nobody has yet decided whether to keep it.
   notes: 'Owner greenlit generation coding 2026-07-06 (user-requests). §3.2: opt-in, never default, no keep-or-remove decision (plan user decision 4).'
@@ -238,6 +258,7 @@ nodes:
   end: '2026-07-13'
   folded:
   - commit 2122481b
+  - commit da926a5f
   overview: false
   notes: 'End 2026-07-21 was a placeholder (ADR-0056: last edit or migration date); date from merge 2122481b. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cod-fungible-window
@@ -258,6 +279,8 @@ nodes:
   end: '2026-07-07'
   folded:
   - branch fungible coded window
+  - commit a0bcd4ae
+  - commit bb18de13
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: cod-fmtcp
@@ -279,6 +302,13 @@ nodes:
   end: '2026-07-28'
   folded:
   - branch FMTCP-class aggregation
+  - 'session record 2026-07-08: Literature map for the recovery-latency findings'
+  - commit 3145c15c
+  - commit 2e01e534
+  - commit 0ce6cd34
+  - commit 4220aa06
+  - commit 56353d25
+  - 'session record 2026-07-27: FMTCP re-test and deletion'
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: cod-legacy-rlc
@@ -331,6 +361,9 @@ nodes:
   - commit c3a9d768
   - branch diag/unified-collapse
   - paper §11.1 open question 4
+  - commit c8fcc910
+  - commit 961e23d4
+  - 'session record 2026-07-08: Window advance derived from the latency budget (planned)'
   overview: true
   plain: Merged two separate decoders into one machine that slides smoothly from low-delay to bulk traffic, with no switch between modes.
   notes: 'Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
@@ -356,6 +389,14 @@ nodes:
   - commit 17f7fa91
   - branch exec/adr-0069-window-default
   - branch meas/stage3-baseline
+  - commit b3c6923b
+  - commit 32578b43
+  - commit b074267a
+  - commit d091e8a8
+  - commit bc049ce5
+  - commit 37d3f06c
+  - commit 78ca2ae5
+  - commit 140e3a9f
   overview: true
   plain: Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere.
   notes: 'ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file''s last edit, not the verdict date.'
@@ -396,6 +437,7 @@ nodes:
   end: '2026-10-28'
   folded:
   - branch §31 debug-suite 300 s stall FIXED
+  - commit 686aadf1
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: rec-early-arq
@@ -424,6 +466,8 @@ nodes:
   - commit d8925b4f
   - commit f2cba2b7
   - commit b255271c
+  - commit e2de447d
+  - commit ed1854de
   overview: false
   notes: 'March 2026 direct landings: ACK feedback, echo RTT, NACK retransmit, cross-path repair, tapered repair interleaving (ADR-0003/5/7/29/37/42-47). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
   plain: The first ways to acknowledge packets and ask for the missing ones to be sent again.
@@ -450,6 +494,12 @@ nodes:
   folded:
   - commit 68ea7e6e
   - commit 06ccbf12
+  - commit 34443073
+  - commit f305634b
+  - commit 0ac8a4b1
+  - 'session record 2026-03-21: Refuted: current burst-state loss in the repair/retransmit choice'
+  - 'session record 2026-03-21: Concurrent-loss divisor for the retransmit probability refuted'
+  - 'session record 2026-03-21: Refuted: hard retransmit-timeout cutover between repair and retransmit'
   overview: false
   plain: Mixing repairs and resends by measured loss, plus selective acknowledgements.
   notes: 'The paper''s design built in phases (2026-04-03..07): Phase 1a TaperFunction and p_lost in the rate controller (1a6a8154), 1b P_lost wired into the window sender (ee867a1a), Phase 2 SACK-extended WindowAck replaces NACK sending (0c3bd4c5), phases 3-6 (27a7fcf0). The P_lost(t) model replaced the hard T_retx threshold (5b9f6def, 2026-03-21). No recorded verdict.'
@@ -474,6 +524,10 @@ nodes:
   - branch P6
   - branch P10b
   - branch idle-tail-recovery fix
+  - commit fdac5f5e
+  - commit edd35301
+  - commit cb66b934
+  - commit e989e0e9
   overview: false
   notes: P4/P6/P8/P10b of the July wave. P10a is its own node (rec-p10a-repair-floor).
 - id: rec-reliable-window
@@ -495,6 +549,8 @@ nodes:
   folded:
   - branch §16 Fountain Multipath Aggregation
   - branch §16 rewrite
+  - commit 4c901536
+  - commit 2699dd94
   overview: true
   plain: Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode.
   notes: 'Paper §16 (fountain multipath aggregation, then Reliable Windowed Multipath) and Phase A: retain-until-acked window, auto-switch removed.'
@@ -523,6 +579,10 @@ nodes:
   - branch FEC parity
   - branch transport store-bloat fix
   - branch per-symbol perf fix
+  - commit e74d005c
+  - commit 9ec5793c
+  - commit 11c205cf
+  - commit e9c7749b
   overview: false
   notes: 2026-07-07/08 arc; folds the FEC recovery bug fix, transport sender fixes, the store-bloat fix and the O(n^2) per-symbol fix found along the way.
 - id: rec-proactive-repair
@@ -567,6 +627,8 @@ nodes:
   end: '2026-07-08'
   folded:
   - branch present-at-stall
+  - commit 663d3ec9
+  - commit 6f2b084f
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Proactive repair timing (3 arms)''. Paper row: presence rises, throughput does not; a saturated single path has no spare bandwidth for a repair that buys back a round trip. Archived 2026-11-10 (ADR-0073).'
 - id: rec-inline-repair
@@ -590,6 +652,7 @@ nodes:
   folded:
   - commit 067f660a
   - commit 1c2fcfb0
+  - commit e6b0cf2b
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Proactive repair timing (3 arms)''. Start from 067f660a (''Proactive frontier FEC decode: diagnosed, built, REFUTED at L1 (gated off)''), the earliest frontier-repair commit; deleted in bede4a32 (''superseded on geometry''), and the trailing-span geometry is the unified span machine''s (owner-side decision 2026-11-13).'
 - id: rec-per-path-clocks
@@ -635,6 +698,8 @@ nodes:
   end: '2026-07-27'
   folded:
   - commit ade48ad6
+  - commit 2c632c05
+  - commit a0dbd986
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-clock-candidates
@@ -680,6 +745,9 @@ nodes:
   end: '2026-08-08'
   folded:
   - commit 0f287553
+  - commit a29f0c44
+  - commit 3d932c24
+  - commit 5cabca2f
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Derived recovery-timing candidates (4 arms)''. Unlock The Default part 2 (part 1, ack-merge, is perf-ack-merge): both premises refuted before the battery (4307a6cc); battery 65e92b3a: ''c7 fails both seeds with patience DEMONSTRABLY derived; NO FLIP; the goal closes as a STRUCTURAL BOUND''.'
 - id: rec-rack-clocks
@@ -773,6 +841,9 @@ nodes:
   - branch the quantile-native clock
   - commit ab545cfe
   - commit 0183cf96
+  - commit 993cdfa3
+  - commit ff3e1651
+  - commit a3d35377
   overview: false
   notes: 'Goal #101 arm (split 2026-11-16). The order statistic survives as qnative_window_n in net/recovery_clock.rs (paper row).'
 - id: rec-holddown-clock
@@ -797,6 +868,12 @@ nodes:
   - branch holddown sweep SCORED
   - branch the hold-down clock DERIVED (16.77) + sweep launched
   - commit 2b9918d2
+  - commit 4e7d2e25
+  - commit 491872e9
+  - commit 6e81463a
+  - commit fef547db
+  - commit 7e18d04f
+  - commit cf725bfe
   overview: false
   notes: 'Goal #101 arm (split 2026-11-16). Removed in simplification batch 4 (§50); the [HOLD] gauge stays as an observation-only instrument; re-ask once the store law sets H.'
 - id: rec-refresh-floor
@@ -823,6 +900,7 @@ nodes:
   - branch the refresh-floor lift (16.78) + the (q,refresh) sweep launched
   - commit d7daceb5
   - commit 528351c3
+  - commit 5be078d0
   overview: false
   notes: 'Goal #101 arm (split 2026-11-16). Removed in simplification batch 4 (§50); hole_nack_refresh is the shipped clamp directly.'
 - id: rec-dispersion-est
@@ -851,6 +929,13 @@ nodes:
   - branch estimator battery launched
   - commit 2ba1f1d5
   - commit d4d2007e
+  - commit ef94db3d
+  - commit 303b8e84
+  - commit ff093d5a
+  - commit edbf5815
+  - commit 66ca0b45
+  - commit 30ad6e15
+  - commit a3709af7
   overview: false
   plain: Estimators of the delay spread that a derived recovery clock would need; all failed their bar, and the paper keeps the question open.
   notes: 'Goal #100 named the σ estimator as the missing instrument (6e1e356a); goal #101 item 2: the Sigma Estimator battery ''ALL FOUR FAIL CLAUSE S'' (9ba3aef7), the τ-lag form ''mechanism CONFIRMED, bar still missed'' (89d79464). Paper §10 status: open. Done when: the paper §10 row is closed, by an estimator that passes its bar or by a ruling.'
@@ -896,15 +981,18 @@ nodes:
   end: '2026-08-21'
   folded:
   - branch item 2 local half
-  - branch item 1 CLOSED UNREADABLE
   - branch item 4 DELIVERED (paper 16.74) + item 5 closed by its own condition
   - branch item 3's condition DERIVED
   - branch primitives RE-MEASURED on the sweep's machine
   - branch the [RFA] instrument
-  - branch the 31 Mbit/s cap DIAGNOSED
   - 'branch goal #100 item 1'
+  - commit 8c464bbe
+  - commit 90540408
+  - commit f391f320
+  - commit 4d693bc5
+  - commit 578156f4
   overview: false
-  notes: 'Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep).'
+  notes: 'Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep). Split 2026-11-20: item 1 (rate-rho-not-input) and the 31 Mbit/s diagnosis (meas-defect-31mbit) are their own nodes.'
 - id: rec-goal101
   title: Recovery clock verdict battery
   track: rec
@@ -934,7 +1022,6 @@ nodes:
   - branch ITEM 4 RUN AGAINST THE DERIVED-ALPHA CLOCK
   - branch ITEM 4 RUN
   - branch 16.79 DECIDES the formula + item 4's battery prereg; battery running
-  - branch THE FIRE-CAUSE TABLE
   - commit 6cf2328e
   - commit 146d8b18
   - commit 76c0b077
@@ -947,7 +1034,7 @@ nodes:
   - paper §16.79
   overview: false
   plain: A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed.
-  notes: 'The closure of goal #101 (2026-08-21): item 4''s verdict battery decided the formula in paper §16.79 and the shipped clamp ''survives on merit''. Its arms are now their own nodes (split 2026-11-16 from ''Recovery clock law family (4 arms)''): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime.'
+  notes: 'The closure of goal #101 (2026-08-21): item 4''s verdict battery decided the formula in paper §16.79 and the shipped clamp ''survives on merit''. Its arms are now their own nodes (split 2026-11-16 from ''Recovery clock law family (4 arms)''): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime. The fire-cause table is its own node since 2026-11-20 (rec-fire-cause).'
 - id: rec-receiver-law
   title: Receiver request law
   track: rec
@@ -971,6 +1058,10 @@ nodes:
   - branch feat/recvlaw-arms
   - branch meas/recvlaw-score
   - branch meas/recvlaw-run
+  - commit 6e3434fa
+  - commit 0afb38b8
+  - commit 2dd53535
+  - commit b15a8e8c
   overview: false
   notes: 'Folds §3.1 item 1 (the self-heal estimator counted retransmits; fixed, battery not re-run). Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-cost-ratio-decision
@@ -991,6 +1082,8 @@ nodes:
   end: '2026-08-20'
   folded:
   - branch the cost-ratio decision memo
+  - commit 6751fb7d
+  - commit d1552335
   overview: false
 - id: rec-wire-v9
   title: Wire v9 per-path sequence
@@ -1171,6 +1264,7 @@ nodes:
   end: '2026-07-07'
   folded:
   - branch real-trace validation
+  - 'session record 2026-07-06: Real-trace check of the Gilbert-Elliott loss model'
   overview: false
   notes: 'Real-trace validation (2026-07-07) found GE inadequate for real loss (G217); the burst multiplier was superseded by ADR-0050. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: rate-fec-rate-v1
@@ -1219,6 +1313,11 @@ nodes:
   - branch feat/p5-saturation-cap
   - branch soft saturation + end-of-stream taper completion
   - branch window derivation
+  - commit 0e27a4af
+  - commit 3a823943
+  - commit 38c3428e
+  - commit 0a67497c
+  - 'session record 2026-07-06: Normal-approximation r* under-provisions on bursty channels'
   overview: false
   notes: P5 saturation-aware r*, soft saturation, derive_window (paper 8.8), unified deadline-constrained r* (paper §8.9).
 - id: rate-rstar-window-mass
@@ -1325,6 +1424,8 @@ nodes:
   end: '2026-07-21'
   folded:
   - commit 120d8f89
+  - commit 8e77ba67
+  - commit 5daceabf
   overview: false
   notes: Pre-registered 2026-07-21; RWM_UNIFIED_SHED on by default (status §1).
 - id: rate-est-cadence
@@ -1349,6 +1450,8 @@ nodes:
   folded:
   - commit 224b9159
   - branch flip/est-cadence
+  - 'session record 2026-10-02: Sender CPU profile with call graphs'
+  - commit 116753b5
   overview: true
   plain: Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU.
   notes: Built 2026-08-06 (default off) and pre-registered in the receiver per-message wall battery (perf-recv-msg-wall); first composed flip with the pool anchor reverted 2026-08-07 (store-pool-anchor-flip); shipped alone on status §5 (d), flipped in 83462ae. Folds §3.7 row 234 (BOCD plu floor, not fixed).
@@ -1370,6 +1473,7 @@ nodes:
   end: '2026-08-19'
   folded:
   - branch sweep item 3 FIXED
+  - commit 58b77962
   overview: false
   notes: 'G142 (2026-08-18) shipped "loss estimator rides sender truth"; the paper row and status §3.8 record it refuted (27e36e3) and off. Dates: paper §10 rows carry an end (removal) date only.'
 - id: rate-r-battery
@@ -1396,6 +1500,12 @@ nodes:
   - branch meas/r-battery-score
   - commit 2e2db5a7
   - commit 259ebbc0
+  - commit b0ade0b4
+  - commit 48d0cf9f
+  - commit fa3368f9
+  - commit 51edcd46
+  - commit 35c843fd
+  - commit 8f484be8
   overview: true
   plain: Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand.
   notes: 'Stage-2 Track B (2026-09-08), truncated at n = 4 by the 5 h cap. Folds §3.1 item 7 and the cod= counter note. Dates: paper §10 rows carry an end (removal) date only.'
@@ -1439,6 +1549,7 @@ nodes:
   folded:
   - branch paper 16.81-16.83
   - paper §11.1 open question 3
+  - commit 1dd546f1
   overview: false
   notes: RWM_DELTA, the χ arm, EVICT instruments; three invariant repairs bit-exact at every preset. Folds paper §11.1 open question 3.
 - id: rate-defect-pfec
@@ -1784,6 +1895,7 @@ nodes:
   - commit d190b296
   - commit 689b9f1b
   - paper §11.1 open question 5
+  - commit ae83022e
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. Per-path accounts (d190b296) and the delay-aware redirect guard (689b9f1b; ''halves the c8 percap regression'', 4bb5b28f) share one paper row. Siblings: store-borrow, store-capw. Folds paper §11.1 open question 5.'
 - id: store-borrow
@@ -1825,7 +1937,8 @@ nodes:
   lane: vm
   start: '2026-07-27'
   end: '2026-07-27'
-  folded: []
+  folded:
+  - commit 080073c4
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Per-path store accounts family (4 arms)''. C8-Aware Pool Law results (4fb5b15): ''capacity-weighted pool REFUTED at c8, the binder renamed (slow-path conversion)''. Was titled ''Capacity-weighted pool (C8-aware)''.'
 - id: store-honest-cap-family
@@ -1903,6 +2016,7 @@ nodes:
   - commit 8e9b489c
   - branch feat/pool-delivery-anchor
   - commit 47fdf550
+  - commit a43bab82
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Honest floor-clock cap family (6 arms)''. One battery, two arms (8afd4dd7: ''arm A''s MECHANISM lands completely and c7 gets WORSE ...; arm B fails both its clauses; NO FLIP''): arm A the delivery-clocked pool anchor (RWM_POOL_DELIV), arm B the floor-bound anchor (RWM_FLOOR_BOUND; paper: −14 % at c1). Attempt 2 after the composed flip (store-pool-anchor-flip). Was titled ''Ship The Wins 1b: pool anchors''.'
 - id: store-pool-anchor-flip
@@ -1971,6 +2085,7 @@ nodes:
   folded:
   - commit 7145fcc6
   - commit a52105d0
+  - commit ff7acb4c
   overview: false
   notes: 'Pre-registered 2026-07-21 (discipline 11) and flipped the same day. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: store-sender-decoupling
@@ -1994,6 +2109,11 @@ nodes:
   - commit b03b3ad8
   - commit 3e7f43af
   - commit 354461af
+  - commit 7ebba0eb
+  - commit 2ea195f0
+  - commit 8b77abc6
+  - commit 282e6aae
+  - commit 44fe5aa0
   overview: false
   notes: Split 2026-11-16 from the former family node 'Sender decoupling attempts (4 arms)'; siblings store-sack-flowctl, store-reasm-bdp, store-src-bp. Window Decoupling + MTU Scaling, part 1 (pre-registration b03b3ad8); part 2, compact framing, shipped (cod-wire-compact).
 - id: store-sack-flowctl
@@ -2110,6 +2230,7 @@ nodes:
   - commit c7cc6bca
   - branch three-term law L1 battery
   - branch the binder is the LINK
+  - commit f36a758b
   overview: false
   plain: Candidate formulas for the in-flight allowance that were tested and did not earn a place.
   notes: 'Split 2026-11-16 from the former family node ''Three-term and composed caps (5 arms)''; siblings store-coverage-term, store-slack-clock, store-composed-cap; the latency battery is store-latency-lever. Paper status ''off'': the gate stays because scheduler/place.rs reads it (placement H term, fenced).'
@@ -2157,6 +2278,7 @@ nodes:
   folded:
   - commit 530bbaa2
   - commit 0e187521
+  - commit aa947d5a
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Three-term and composed caps (5 arms)''. Slack-bench (pre-registration 530bbaa2; results 7e03ef9b: ''the three-term model SURVIVES; the CLOCK is what fails it''); the slack-clock charge refuted in the cap-law cluster ledger (7e302e2a). Refuted, never shipped.'
 - id: store-composed-cap
@@ -2183,6 +2305,8 @@ nodes:
   - branch the composed cap law lands INTERIOR everywhere on the bench; the [WALL] instrument; two catches by the new discipline
   - 'paper §10 row Composed cap (`RWM_COMPOSED_CAP`): three-term pool law plus the per-path cwnd brake'
   - commit d408b7ee
+  - commit 56569b57
+  - commit 1f440db0
   overview: false
   notes: Split 2026-11-16 from the former family node 'Three-term and composed caps (5 arms)'. Removed 2026-11-10 (simplification batch 1); the brake survives as RWM_LATE_BRAKE. Tag archived 2026-11-10 (tag date not used for end).
 - id: store-cap-unification
@@ -2207,6 +2331,7 @@ nodes:
   - branch store-cap unification battery
   - branch the c8 SF mechanism
   - branch fix/live-path-membership
+  - 'session record 2026-08-09: Store-cap triplication: unify the honest cap law'
   overview: false
   plain: Using one in-flight allowance rule across all live paths.
   notes: Shipped unconditionally; folds the e1ce7e7 live-path fix (§3.5 item 3). HONEST INPUTS phase 3 named the active_paths() store-cap cliff that the unification battery measured. The dead-wall and mode-hunt batteries (store-deadwall-modehunt) and the cap-law cluster (store-cap-law-cluster) are their own nodes since 2026-11-16.
@@ -2263,9 +2388,9 @@ nodes:
   - commit 8bab64c3
   - branch sweep item 5
   - branch sweep items 1+2+4
-  - branch sweep item 6 REFUTED
+  - commit 94a6e6c3
   overview: false
-  notes: 'Split 2026-11-16 from ''Store-cap unification'' and ''Sum cap''. The formulas and adjudications went into the paper before the code (6335e206); the sweep items: K adjudicated into the formula, the slack-clock charge refuted, the floor derived to 10 (items 1+2+4), un-metered channels charged (5), the quad lock-in refuted (6).'
+  notes: 'Split 2026-11-16 from ''Store-cap unification'' and ''Sum cap''. The formulas and adjudications went into the paper before the code (6335e206); the sweep items: K adjudicated into the formula, the slack-clock charge refuted, the floor derived to 10 (items 1+2+4), un-metered channels charged (5), the quad lock-in refuted (6). Item 6 is its own node since 2026-11-20 (place-quad-lockin).'
 - id: store-honest-inputs
   title: Honest inputs and O(1) anchor
   track: store
@@ -2321,6 +2446,12 @@ nodes:
   - commit 27e36e3f
   - commit 6a653802
   - commit 923aa9dc
+  - commit 6794dec9
+  - commit fb85f8b0
+  - commit 41296b7c
+  - commit 07aedebd
+  - commit 6f14ccdb
+  - commit 62f078bf
   overview: false
   plain: Removing a multiplier from the in-flight allowance that grew with path count without reason.
   notes: 'The 2026-08-18 cap-law sweep and ladder, ADR-0071 (successor candidates, for review). Owner''s formula request 2026-08-18 (user-requests). Folded: the RWM_SUM_CAP merge, the Ladder Battery (pre-registration 2026-08-18, RESULTS 2026-08-19: the xN deletion DELIVERED) and the flip commits.'
@@ -2346,13 +2477,14 @@ nodes:
   - branch RWM_DELTA_CAP DEFAULT ON
   - branch CANDIDATES RESULTS
   - branch the derived-setpoint laws
-  - branch Tier-1 re-scores
-  - branch Tier-0 corrections
   - branch the literature cross-check
   - commit e9c6b242
+  - commit 036dbab3
+  - commit 70777c78
+  - commit 0055c5da
   overview: false
   plain: Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput.
-  notes: 'RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19).'
+  notes: 'RWM_DELTA_CAP default on (2026-08-19); CoDel derivation transferred; the literature cross-check and Tier-0/1 re-scores folded in. Dates: paper §10 rows carry an end (removal) date only. Flip commit e9c6b242 (RWM_DELTA_CAP default on, 2026-08-19). Tier-0 and Tier-1 are their own nodes since 2026-11-20 (model-tier0-corrections, model-tier1-rescores).'
 - id: store-s18-one-law
   title: One store law, first session
   track: store
@@ -2423,6 +2555,9 @@ nodes:
   end: '2026-10-26'
   folded:
   - branch §23 store-cap input diagnosis
+  - commit 3982bd10
+  - commit 025bc526
+  - commit 1b8ef4b9
   overview: false
   notes: 'Split 2026-11-16 from ''Store-law input search (8 inputs)'': the inputs are now one node per session or paper row (store-s24-inputs, store-s27-premises, store-probe-gain, store-dw-window, store-s34-input). §23 found the c1 over-read is the 1 ms ack-interval floor (4ed22f38).'
 - id: store-s24-inputs
@@ -2533,6 +2668,8 @@ nodes:
   end: '2026-10-28'
   folded:
   - branch §30 store law D with a noise-sized window DOES-NOT-CLOSE
+  - commit 9133507d
+  - commit 71aa3ee5
   overview: false
   notes: 'Split 2026-11-16 from ''Power-seeking store law D''. Status §2: DOES-NOT-CLOSE; §34''s R2 re-read it after the receiver change (CLOSED).'
 - id: store-s34-input
@@ -2561,6 +2698,7 @@ nodes:
   folded:
   - branch §34 static-cap grid result
   - branch §34 store-law input NONE-CLOSES on committed ledgers
+  - commit a48f25fb
   overview: false
   notes: 'Split 2026-11-16 from ''Store-law input search (8 inputs)''. One derivation (NONE-CLOSES) closed the four candidates (b1)–(b4), then a static-cap diagnostic R1–R4 at c1s and c1d: R1 knee 1 024 at both, R2 D-W CLOSED, R3 AMBIGUOUS with the fixed point MISSES (457), R4 QUINN-SHARES.'
 - id: store-s36-dispersion
@@ -3633,6 +3771,9 @@ nodes:
   - commit 8c6c7e2d
   - commit ee1ae3e0
   - branch L2-ws1
+  - 'session record 2026-07-06: Owner rule: no equal-weight striping'
+  - commit 4cf6b9b1
+  - commit dfba099e
   overview: false
   notes: 'Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06).'
 - id: place-daps
@@ -3660,6 +3801,10 @@ nodes:
   - commit 68d6b6c5
   - commit 9b48286e
   - commit 7387ad9d
+  - commit cd2882e1
+  - commit dfc7fbe3
+  - commit f3112dc6
+  - commit 707015c8
   overview: true
   plain: A delay-aware way of picking which path carries each packet, which failed when retested.
   notes: '2026-07-12 arc, deleted 2026-07-27 (9b48286e). The DAPS queue management, its read-ahead depth bound (68d6b6c5: ''correct lever, but bulk C8 aggregation is BOUNDED'') and pace-all at BtlBw_i (34449977) share one paper row; the per-path rate-sample estimator is its own node (place-rate-sample, split 2026-11-16), and so is the sub-max quantile anchor (place-submax-anchor).'
@@ -3727,6 +3872,11 @@ nodes:
   - branch meas/place-score
   - branch meas/place-run
   - branch meas/place-prep
+  - commit c8c1a774
+  - commit 6d76c7e4
+  - commit 6bdd8c3a
+  - commit dc05dc73
+  - commit ad69d1e3
   overview: false
   notes: Verdict "First readout MIXED" is the battery's own word, not the outcome scale's mixed.
 - id: place-hol
@@ -3949,6 +4099,7 @@ nodes:
   folded:
   - commit 78aa7d4a
   - commit 628fdb1c
+  - 'session record 2026-03-21: Copa recommended over BBR for the paper; ECN and L4S set aside'
   overview: false
   notes: Direct landings (ADR-0019 not in the raw set); paper §10 recommended Copa.
   plain: The first congestion control was replaced by one that reacts to delay instead of waiting for loss.
@@ -3974,10 +4125,11 @@ nodes:
   - branch feat/p2-estimated-floor
   - branch P7 follow-up
   - branch P7 fix
-  - branch P-CC
   - commit b000e443
+  - commit d5f89ce2
+  - commit a7c20d72
   overview: false
-  notes: P1 hint-coupled queue target, P2 honest floor, P7 Copa-lite with fixes, P-CC BtlBw-anchored recovery, the BBR-lessons note (2026-07-02 to 07-04).
+  notes: P1 hint-coupled queue target, P2 honest floor, P7 Copa-lite with fixes, P-CC BtlBw-anchored recovery, the BBR-lessons note (2026-07-02 to 07-04). P-CC is its own node since 2026-11-20 (cc-btlbw-recovery).
 - id: cc-copa-sole-substrate
   title: Copa per path as substrate
   track: cc
@@ -3998,6 +4150,7 @@ nodes:
   folded:
   - branch feat/copa-sole-cc
   - branch feat/copa-sole-clean
+  - commit 7652ccb8
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: cc-cubic-substrate
@@ -4043,6 +4196,12 @@ nodes:
   - commit 386979d8
   - branch feat/copa-compete
   - branch meas/competitive-baseline
+  - commit 9f4fa450
+  - commit aaabd5c5
+  - commit d7eac012
+  - commit 4d9927bf
+  - commit c9f73e0d
+  - commit 7b224ad6
   overview: false
   notes: 'ADR date is the 2026-07-21 migration; built 2026-07-13, compete mode 2026-07-19. RWM_COPA_COMPETE is a §3.3 debt. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cc-bbr-default
@@ -4112,6 +4271,7 @@ nodes:
   - commit 6c8c3d38
   - commit 754139c3
   - commit 9840854b
+  - commit 2ce25d14
   overview: false
   plain: A proposed design for a controller that blends the speed of BBR with the low queues of Copa; prerequisite measurements are done but nothing is built.
   notes: 'Owner asked for a fusion ADR 2026-07-21 ("a better copa would be best"); prerequisite battery (adversarial cells) complete; plan W2 future track. Folds paper §11.1 open question 12. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. Folded the Adversarial cells B1 commits (2026-08 audit; mapped outcome there: unrated).'
@@ -4364,6 +4524,14 @@ nodes:
   - commit 75cbd012
   - commit 1313841b
   - commit 52b4fff6
+  - commit aa2fcbfa
+  - commit 2367a519
+  - commit c639d56f
+  - commit 8a71ed89
+  - commit bc500aff
+  - commit 47b04ed6
+  - commit 97bc6eaf
+  - 'session record 2026-07-27: Dual-path emission bursting'
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: perf-ack-merge
@@ -4387,6 +4555,14 @@ nodes:
   - commit bb8ab286
   - commit ea037575
   - commit 38e533b5
+  - commit 8e0c866c
+  - commit 3169b248
+  - commit 43ccb40e
+  - commit 1c1867f1
+  - commit 4171b584
+  - commit c2bfab73
+  - commit 06f0b3e0
+  - commit b505fdba
   overview: false
   notes: First battery NO FLIP (2026-08-07); re-registered and flipped 2026-08-08.
 - id: perf-recv-msg-wall
@@ -4409,6 +4585,7 @@ nodes:
   folded:
   - commit 1ce8ba25
   - commit 774e28a3
+  - commit d27ce30d
   overview: false
   notes: 'Split 2026-11-16 from ''Batched BOCD estimator cadence'' (2026-08 audit outcome: mixed). Its pre-build amendment pre-registered RWM_EST_CADENCE (774e28a3).'
 - id: perf-rcvbuf
@@ -4430,6 +4607,12 @@ nodes:
   end: '2026-10-05'
   folded:
   - branch fix/rcvbuf
+  - commit 927bb00d
+  - commit 3100c53a
+  - commit 13d8ecd5
+  - commit b52dc861
+  - commit 31d5a522
+  - commit 10b9d78d
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-emit-batch-law0
@@ -4455,6 +4638,14 @@ nodes:
   - branch flip/emit-batch
   - branch meas/emit-rerun
   - branch feat/emit-batch-scope
+  - commit 788d2efb
+  - commit 1671cae0
+  - commit 5e954dbd
+  - commit c3e80db4
+  - commit 3d552c12
+  - commit 06ee1fb9
+  - commit aa1aafb5
+  - commit bf3a6365
   overview: true
   plain: Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere.
   notes: 'Its registered feed clause is "fed loss vs truth unchanged at every leg", read on the per-datagram [TRUTH] counter. Dates: status-section end dates are the section file''s last edit, not the verdict date; paper §10 rows carry an end (removal) date only.'
@@ -4477,7 +4668,8 @@ nodes:
   lane: vm
   start: '2026-10-05'
   end: '2026-10-05'
-  folded: []
+  folded:
+  - commit dc388014
   overview: false
   notes: '§10 is headed "superseded by the threading redesign"; the per-path I/O owner (Q1) is that redesign''s delivered piece. Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/quic-feeder archived 2026-10-05 (tag date not used for end); archive/quic-feeder-v2 archived 2026-10-05 (tag date not used for end).'
 - id: perf-threading-p0
@@ -4498,6 +4690,11 @@ nodes:
   end: '2026-10-05'
   folded:
   - branch threading P0
+  - commit 08d93e5e
+  - commit a50fa033
+  - commit a37ccee8
+  - commit d465adcf
+  - commit f7180092
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-threading-p1
@@ -4542,6 +4739,9 @@ nodes:
   - commit 39a97f3e
   - commit 52da7db0
   - commit 69fd846b
+  - commit 3fb277ae
+  - commit a27625fd
+  - commit 0c91753c
   overview: false
   plain: Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted.
   notes: 'Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: "i rather think your impl is shit... rethink". Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end). Was titled ''Threading P2a logic actor''.'
@@ -4564,6 +4764,10 @@ nodes:
   end: '2026-10-06'
   folded:
   - branch threading Q1
+  - commit 881cca2a
+  - commit 272d0012
+  - commit 0e2c0516
+  - commit e76b11a9
   overview: true
   plain: Gave each network path its own input and output task, which raised single-path throughput by about half.
   notes: §13 DELIVERED (SHIP-SHARED); the D9 attribution (§15) is its own node (perf-d9-attribution).
@@ -4587,6 +4791,9 @@ nodes:
   end: '2026-10-06'
   folded:
   - branch §15 D9 attribution
+  - commit 602a1147
+  - commit fe4ee50b
+  - commit e059e304
   overview: false
   notes: 'Split 2026-11-16 from ''Per-path I/O owner (Q1)'': §13 re-scoped §12''s c1s collapse to D9, and §15 tested D9 alone.'
 - id: perf-sched-split
@@ -4608,6 +4815,10 @@ nodes:
   end: '2026-10-06'
   folded:
   - branch threading Q2
+  - commit 84f6c90c
+  - commit dbdfefb5
+  - commit bc6429a3
+  - commit e9e315aa
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-q3-investigation
@@ -4629,6 +4840,8 @@ nodes:
   end: '2026-10-06'
   folded:
   - branch §16 Q3 investigation
+  - commit 81b53352
+  - commit 18d6ad51
   overview: false
   notes: 'End 2026-10-26 was a placeholder (status §16: last edit or migration date); date from merge ce600796. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-receiver-r1
@@ -4652,6 +4865,7 @@ nodes:
   end: '2026-10-26'
   folded:
   - commit a2625113
+  - commit ae54b9f7
   overview: false
   notes: §17 REFUTED-WITH-RECORD; §20 (perf-s20-r1-collapse) traced the collapse to R1's [LAT] pending store; R2 is R1 with that fix. Tag archive/thread-r1 archived 2026-10-26.
 - id: perf-s20-r1-collapse
@@ -4698,6 +4912,8 @@ nodes:
   end: '2026-10-26'
   folded:
   - branch threading R2 DELIVERED (status §21)
+  - commit b30d80f9
+  - commit acc0ed03
   overview: false
   notes: 'Same-session result (§21): c1s goodput WITHIN (720.8 vs 717.3 Mbit/s, +0.5 %), c1d TREND-BETTER (+7.3 %); the larger gap to MAIN 621 in §17 is cross-session. End 2026-10-27 was a placeholder (status §21: last edit or migration date); date from merge 0972c3c4. Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-threading-r3
@@ -4720,7 +4936,9 @@ nodes:
   lane: vm
   start: '2026-10-26'
   end: '2026-10-27'
-  folded: []
+  folded:
+  - commit 42b074c1
+  - commit 25d913c0
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-r3 archived 2026-10-27 (tag date not used for end). Was titled ''Threading R3 receiver re-profile''.'
 - id: perf-c8-lag
@@ -4742,6 +4960,10 @@ nodes:
   end: '2026-10-26'
   folded:
   - branch §25/§26 c8 lag diagnosis + RWM_RTOBS instruments ([LAG] min_us, [OSLAG], [TXSEC], [LPOLL])
+  - commit ef614d69
+  - commit adb48f8a
+  - commit e0062407
+  - commit b4b64748
   overview: false
   notes: Split 2026-11-16 from 'c8 client lag diagnosis' (§25, §26, §33; rated successful as a family, a rating that now sits on §26, perf-s26-long-polls). Diagnostic, 30 rows, placement step 1.
 - id: perf-s26-long-polls
@@ -4784,6 +5006,7 @@ nodes:
   end: '2026-10-27'
   folded:
   - branch §28 incremental SACK marking SHIPS
+  - commit 320668ce
   overview: false
   notes: 'Dates: status-section end dates are the section file''s last edit, not the verdict date.'
 - id: perf-decoder-prune
@@ -4925,6 +5148,9 @@ nodes:
   - commit 5ae9f04d
   - commit 344714c3
   - branch feat/p3-simquic
+  - commit 3180d4ab
+  - commit 389d570e
+  - commit 09c1940d
   overview: false
   notes: 'Owner 2026-07-02: "define a goal that we want to surpass tcp and that the model reacts correctly in our defined scenarios". Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: meas-l1-harness
@@ -4951,6 +5177,22 @@ nodes:
   - commit 86ad98fc
   - branch rp-native perf
   - paper §11.1 open question 11
+  - commit 6da3c2ba
+  - commit c2d366cb
+  - commit 13337b6f
+  - commit 02edf367
+  - commit beda623b
+  - commit 4f97f858
+  - commit 83fb81fd
+  - commit 47d2af18
+  - commit e96f1810
+  - commit 3a32ffa0
+  - commit 2607a5d8
+  - commit 2bac6cd9
+  - commit ef41dd2c
+  - commit bd139857
+  - commit dada6eca
+  - commit b317983b
   overview: false
   notes: VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350).
 - id: meas-l2-multipath
@@ -4974,6 +5216,14 @@ nodes:
   - commit 651f93cb
   - commit b0f039c9
   - branch window-liveness fix
+  - commit dff2d7a3
+  - commit e168fcc5
+  - commit bc2d118e
+  - commit 33d5a79c
+  - commit 68681807
+  - commit 9814d79c
+  - commit 6f7cb6fa
+  - commit 4cf5697d
   overview: false
   notes: C7 validated (23.9 vs MPTCP 15.4), C8 refuted (8.81); tail claim validated at C2; window-mode path-liveness bug fixed. Was titled 'L2/L3 multipath and tail evaluation'.
 - id: meas-c8-aggregation-arc
@@ -5001,6 +5251,13 @@ nodes:
   - branch C8 cross-path repair
   - commit a8dd8675
   - branch bench/full-rerun-20260708
+  - commit c775f7fb
+  - commit 70393f92
+  - commit 1412f280
+  - commit 5930083a
+  - commit 18ee6606
+  - commit caa22760
+  - 'session record 2026-07-08: Full benchmark re-run, 2026-07-08'
   overview: false
   plain: Early attempts to add up the speed of a fast and a slow path were judged a failure, but the tests were later shown to be blocked by three hidden problems.
   notes: 'RWM Phase C refuted C8 aggregation at L1 (2026-07-06); "final verdict" 2026-07-08 later shown to be measured under three hidden binders. Dates: paper §10 rows carry an end (removal) date only.'
@@ -5024,6 +5281,9 @@ nodes:
   folded:
   - commit 161aff14
   - commit 7387ad9d
+  - commit 02d240c8
+  - commit 50071d80
+  - commit d82600ef
   overview: false
   notes: 'The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only.'
   plain: A period when tests silently ran with a key feature switched off, so those results cannot be trusted.
@@ -5046,6 +5306,8 @@ nodes:
   folded:
   - branch diag/lossy-residual
   - paper §11.1 open question 0
+  - commit 1e2cb9e5
+  - commit 14d69271
   overview: false
   notes: Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read).
 - id: meas-adr52-discipline
@@ -5066,6 +5328,11 @@ nodes:
   end: '2026-08-08'
   folded:
   - commit dd1319b4
+  - commit 729327e7
+  - commit a8dfbf9d
+  - commit 17c52efe
+  - 'session record 2026-10-26: Measurement runs moved to in-memory storage'
+  - commit db8221d1
   overview: false
   plain: Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run.
   notes: 'Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
@@ -5109,6 +5376,9 @@ nodes:
   folded:
   - branch the law-shape prevention kit
   - commit 1f8be7cf
+  - commit 2f01dafa
+  - commit 77cde4ac
+  - commit 6a3f3b87
   overview: true
   plain: After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded.
   notes: Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27).
@@ -5129,16 +5399,11 @@ nodes:
   start: '2026-08-11'
   end: '2026-08-12'
   folded:
-  - branch anchor-era suspect REFUTED
-  - branch the ack-cadence gauge
-  - branch ack-cadence measurement
   - branch SF bench on measured inputs
   - branch cap-refresh warmth
-  - branch the queue fix
-  - branch latency-feedback REFUTED (no inner TCP exists)
   - branch paper refresh
   overview: false
-  notes: 'Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16.'
+  notes: 'Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16. Split 2026-11-20: the anchor-era suspect, the queue fix and the ack-cadence checks are their own nodes; the latency-feedback merge moved to store-sf-latency-feedback.'
 - id: meas-coupling-model
   title: Coupling model (frontier span)
   track: meas
@@ -5212,6 +5477,7 @@ nodes:
   - commit 6460ae73
   - commit a24d5a48
   - commit 97bd690e
+  - commit 9f41591b
   overview: false
   notes: 'Era ledger item 1 (2026-08-19; owner: ''fix the ping probe in there. we cannot mislead ourselves''): the arc''s cumulative shipped effect on two binaries (pre-registration 1d7094ef). The day''s other items are their own nodes since 2026-11-16: meas-latency-truth, meas-c9-battery, meas-gap-phases, meas-cpuprof, meas-span-run, meas-sigma-c8, meas-eppen-c8.'
 - id: meas-latency-truth
@@ -5235,6 +5501,7 @@ nodes:
   - branch LATENCY TRUTH scored
   - branch LATENCY TRUTH launch
   - commit 4b094d26
+  - commit 446852f5
   overview: false
   notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 1's delivered-latency reading withdrawn.
 - id: meas-c9-battery
@@ -5259,6 +5526,8 @@ nodes:
   - branch the topo-ping repair + the c9 battery's launch step
   - branch the c9 quad cell
   - commit 07028110
+  - commit de7189d6
+  - commit b0316e82
   overview: false
   notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). 07028110: every abort now says why.'
 - id: meas-gap-phases
@@ -5287,6 +5556,7 @@ nodes:
   - branch gap battery phase 1 launched
   - commit c2e20beb
   - commit 99193218
+  - commit 77c95efe
   overview: false
   notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 3: phase 1 ''the drift is real, the ratio SURVIVED it'' (decf67a8), phase 2 ''no interaction to name'' (4323b2c7).'
 - id: meas-cpuprof
@@ -5310,6 +5580,7 @@ nodes:
   - branch cpuprof SCORED
   - branch cpuprof battery launched
   - branch items 2+3 local prep
+  - commit c7bb09c9
   overview: false
   notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 2, phase 1: ''the biggest thing in the sender is not on the wire path'' (4eb2306c).'
 - id: meas-span-run
@@ -5332,6 +5603,7 @@ nodes:
   - branch the span run
   - branch the span field + the clock prerequisites (items 4+5 local halves)
   - commit 6d4c3548
+  - commit 01c2d388
   overview: false
   notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). The [CCAP] span field the c9 battery missed, closed locally (6d4c3548).
 - id: meas-sigma-c8
@@ -5373,6 +5645,7 @@ nodes:
   end: '2026-08-19'
   folded:
   - branch Eppen at c8
+  - commit b98d5377
   overview: false
   notes: Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL.
 - id: meas-attribution-audit
@@ -5395,6 +5668,10 @@ nodes:
   - branch THE ATTRIBUTION AUDIT
   - branch 16.80 on measured pi0
   - branch paper 16.80
+  - 'session record 2026-09-06: Three plans for false repairs and the formula that came out'
+  - commit 67a090b4
+  - commit 971bda19
+  - commit 6edf0c60
   overview: false
   notes: §2 row is undated; dates from the 2026-09-07 merges.
 - id: meas-wire-v8
@@ -5416,10 +5693,9 @@ nodes:
   end: '2026-09-09'
   folded:
   - branch wire v8 + the Track A/C instruments
-  - branch THE CROWN SPOT
   - commit ac1aed10
   overview: false
-  notes: Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes.
+  notes: Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. The crown spot is its own node since 2026-11-20 (meas-crown-spot-v8).
 - id: meas-5h-cap
   title: 'Owner rule: 5 h measurement cap'
   track: meas
@@ -5482,6 +5758,10 @@ nodes:
   - branch meas/verify4
   - branch perf/sender-alloc-clock
   - branch fix/tick-sampling-tests
+  - commit 602ac563
+  - commit d32146db
+  - commit 7d8cec2b
+  - commit 82366b29
   overview: false
   notes: 'Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file''s last edit, not the verdict date. Was titled ''V4 verification of new main''.'
 - id: meas-guard-41c
@@ -5635,6 +5915,16 @@ nodes:
   - commit 34e9a3bb
   - commit 828d3f7c
   - commit ac8b3e60
+  - commit b6e2c6c3
+  - commit d6c77ae8
+  - commit 529e4066
+  - commit 1cd108b6
+  - commit fe711ff7
+  - 'session record 2026-03-21: Refuted: Poisson derivation of the repair-rate formula'
+  - commit 6a1be38e
+  - commit d7903a4d
+  - commit cefdc94b
+  - commit 9f68c477
   overview: false
   plain: The first full write-up of the error-correction and resend model.
   notes: 'Direct landings 2026-03-21 to 2026-04-12: the rewrite (fc5867a3), multipath scheduling (Section 11), the taper function, PDF build and Section 14 (future directions). The open-points audit and its resolutions (2026-04-01..02) are their own node (model-open-points).'
@@ -5689,6 +5979,7 @@ nodes:
   - commit 1d29f454
   - commit 9381d945
   - commit 9a30f408
+  - commit 43951807
   overview: false
   notes: 23 tests, three paper errors found (2026-04-12). Folded the remaining April commits (2026-04-01..12), no separate development.
 - id: model-visualizer-v1
@@ -5715,6 +6006,7 @@ nodes:
   - commit 4a0890ac
   - commit 9b922b5f
   - commit 72258063
+  - commit 96145766
   overview: false
   notes: 'Split 2026-11-16 from ''raptorpath-math and wasm L0 model'': the first interactive visualizer (2026-04-07..10), connected to the triangle (4cd3abc3), with per-symbol P_lost mixing and T_cut stop (4a0890ac), adaptive r (BOCD) and the real RLC codec in wasm (468b7580), a calibrated channel (aa56ef51).'
 - id: model-wasm-l0
@@ -5746,6 +6038,15 @@ nodes:
   - commit 8f18b907
   - commit 21d44b4c
   - commit 96145766
+  - commit 3fcb2c45
+  - commit bc94478d
+  - commit 9edc5493
+  - commit b09158ca
+  - commit c328d222
+  - commit 74301e83
+  - commit 15674b37
+  - commit 5426274e
+  - commit aa87d818
   overview: false
   plain: A browser simulator that runs the same math as the real code.
   notes: Folds paper §11.1 open question 6 (do the three channel implementations agree). raptorpath-math and raptorpath-wasm crates (da837ee9, 2026-04-08) so the visualizer runs the real Rust code; the April visualizer itself is model-visualizer-v1.
@@ -5774,6 +6075,9 @@ nodes:
   - commit 149a0e48
   - commit 61dc8a18
   - commit 867d1976
+  - commit 6ae44967
+  - commit c84c10f8
+  - commit addb23e2
   overview: true
   plain: Rebuilt the visualizer around one smooth law across the latency dial, with an automatic test that forbids any mode switch.
   notes: '2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434).'
@@ -5824,6 +6128,7 @@ nodes:
   folded:
   - paper §11.1 open question 8
   - paper §11.1 open question 9
+  - commit de9b91e3
   overview: false
   plain: 'Open problem: about twenty numbers in the code were picked by hand and have no derivation behind them.'
   notes: '21 unprovenanced constants (FORMULA-FIRST); undated raw record. Folds paper §11.1 open questions 8 and 9. Open: no constant is provenanced yet.'
@@ -5995,6 +6300,10 @@ nodes:
   end: '2026-08-09'
   folded:
   - commit b30bf932
+  - commit 2aeea9d7
+  - commit 689f9e89
+  - commit 7014ba19
+  - commit 451ecfa6
   overview: false
 - id: obs-readout-macro
   title: Readouts as one write
@@ -6086,6 +6395,9 @@ nodes:
   - commit 8e541e7b
   - commit 8d9e272a
   - commit 3c9f1ae8
+  - commit bf539e65
+  - commit 4aca529a
+  - commit d9bcc70c
   overview: false
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: infra-mtu-floor
@@ -6132,6 +6444,9 @@ nodes:
   - commit 7387ad9d
   - commit be878cc6
   - commit 7a3aff69
+  - commit 04d25177
+  - commit a993629d
+  - commit dd53215d
   overview: false
   notes: 'Owner 2026-07-21: move the experiments into ADRs and decide what to keep. Two-stage deprecation register, ADR migration (ADR-0052..0067), gates.rs, consolidations 1 and 2.'
   plain: A cleanup that retired refuted features and made the best-measured settings the default.
@@ -6159,6 +6474,12 @@ nodes:
   - commit 125844f4
   - commit 814b0152
   - commit dd53215d
+  - commit 6fd97d4e
+  - commit 6948a645
+  - commit f3db9f63
+  - commit 0109ecc6
+  - commit 6dc90cfc
+  - commit 9d75ceda
   overview: false
   notes: 2026-08-08 to 2026-08-10; recovery-plane pure functions, SchedSnapshot deleted unmeasured.
 - id: infra-cleanup-0927
@@ -6191,6 +6512,16 @@ nodes:
   - branch cleanup/a6b-paper
   - branch cleanup/a6c-adr
   - branch cleanup/a6a-docs
+  - commit 1639ea28
+  - commit 22b56d9f
+  - commit cddb43aa
+  - commit 1f8be7cf
+  - commit 8f3fd7c5
+  - commit 3a6b1627
+  - commit 792914b6
+  - commit 79ccafae
+  - commit e9afdfa0
+  - commit 2a52e84f
   overview: false
   notes: 'Owner 2026-09-26: review and clean up duplication, dead code, complexity and "yapping". Its two open known issues are their own nodes.'
 - id: infra-fix-program
@@ -6221,6 +6552,9 @@ nodes:
   - branch fix/sack-truncation
   - branch fix/block-retention-bytes
   - branch fix/reliable-delivery-drop
+  - commit 487ca7b6
+  - commit 7362745e
+  - commit f16faad8
   overview: false
   notes: 'Owner 2026-09-29: "finding self-caused issues is not uncomfortable. analyze and find the cause". §3.6 table, §3.7 rows 235/237 (recorded, not fixed). §3.6 and §3.7 rows are undated; dates from the 2026-09-29/30 merges.'
 - id: infra-simplify-review
@@ -6369,6 +6703,7 @@ nodes:
   end: '2026-07-27'
   folded:
   - commit f1f32c5b
+  - commit d63ffce7
   overview: false
   notes: 'Split from place-daps (its parent). The row says the windowed max is the correct statistic for decode-clocked samples; it names no replacing node. Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-recov-sp
@@ -6387,7 +6722,8 @@ nodes:
   lane: vm
   start: '2026-07-21'
   end: '2026-07-27'
-  folded: []
+  folded:
+  - 'session record 2026-07-27: Lossy-single residual accounting'
   overview: false
   plain: A switched-off option that suppresses some loss reports on single paths gave a tiny gain on one test and a tie on another, and is kept but unused.
   notes: 'Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only.'
@@ -6470,7 +6806,8 @@ nodes:
   lane: none
   start: '2026-09-09'
   end: ''
-  folded: []
+  folded:
+  - commit d6c1c414
   overview: false
   plain: 'Open problem: the script that checks the finish-time prediction uses a different delay than the formula itself, and one of its checks fails.'
   notes: 'Status §3.1 item 3: exit flush fixed, but eta_s4.py uses RTprop where the law uses SRTT and the σ̂ witness fails at c7/sc3. Undated raw record; date approximate (Stage-2 close).'
@@ -6532,7 +6869,8 @@ nodes:
   lane: none
   start: '2026-09-30'
   end: ''
-  folded: []
+  folded:
+  - commit 46f53904
   overview: false
   plain: 'Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much.'
   notes: 'Status §3.7 rows: the BOCD predictive_loss_upper floor (≈ 0.0354 on clean links, unverified), balanced v9 striping at ≈ 1.34x sender kernel CPU at the dual c1 cell, and the per-batch Ack arm releasing more than was sent under reorder. Undated raw records; date approximate (fix-program VM runs).'
@@ -8174,6 +8512,8 @@ nodes:
   folded:
   - commit 86e1f0f3
   - commit 628fdb1c
+  - commit 5e6074ee
+  - 'session record 2026-03-21: Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths'
   overview: false
   plain: An early way of picking paths that ranked them by loss rate, later replaced by pricing each path's marginal cost.
   notes: ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it.
@@ -8198,6 +8538,7 @@ nodes:
   folded:
   - commit ec62d02e
   - commit e508adf4
+  - commit cf002bbf
   overview: false
   plain: A benchmark comparing the system with reliable QUIC and MPTCP, and a breakdown of where its 38-50% overhead came from.
   notes: 'ADR-0036 (Accepted) benchmark; ADR-0038 (Accepted) overhead taxonomy: five layers behind the 38-50% overhead.'
@@ -8251,6 +8592,8 @@ nodes:
   folded:
   - commit f2cba2b7
   - commit 98d02dfb
+  - commit 7019be4d
+  - commit 24db6085
   overview: false
   plain: One benchmark grid covering every backend and scenario, an audit of its methods, and a page to browse the results.
   notes: 'ADR-0044 methodology audit (LinkModel, CorrelatedFading); ADR-0045 matrix of 189 cells x 30 trials; ADR-0049 single-file HTML dashboard. Outcome unrated: no later node clearly replaced it.'
@@ -8327,9 +8670,10 @@ nodes:
   - commit 4320fc48
   - commit 2b14cc60
   - commit c0fb1d79
+  - branch latency-feedback REFUTED (no inner TCP exists)
   overview: false
   plain: Tested whether delay feedback explains a collapse; it does not, the cause is idle time at the end.
-  notes: 'REFUTED: dead-end. Track store: its verdict re-attributes the c8 collapse to dead wall, which the paper places in the store-cap-unification arm.'
+  notes: 'REFUTED: dead-end. Track store: its verdict re-attributes the c8 collapse to dead wall, which the paper places in the store-cap-unification arm. Its merge 99514afb (latency-feedback REFUTED) moved here from meas-pipeline-verification on 2026-11-20.'
 - id: infra-test-ci-gate
   title: CI on every push
   track: infra
@@ -8618,6 +8962,543 @@ nodes:
   overview: false
   plain: 'Run both ends of a transfer in one process on a virtual clock, so a stall or timeout test replays exactly and runs in a fraction of a second.'
   notes: 'Plan S8, ADR-0082 (Proposed, awaiting the owner). Phase 1 merged (squash of sim-engine c907d207): release binary byte-identical to main on Linux; same-seed traces identical on 1 and 2 paths; lost tail at rho < 1 stalls (known defect), rho = 1 recovers; 0.1-0.3 s per scenario. Phase 2 owed: Gilbert-Elliott and Weibull links, a CPU-cost model for senders with no backpressure, porting the flaky timing tests, the 3 SystemTime reads. Branches carrying their own test_seams.rs (s06-delete, wedge-diag) must switch to the main copy: s06-delete''s copy uses eprintln! and likely fails the no_eprintln gate; merging it also leaves a duplicate pub mod test_seams line that git merges silently. 2026-11-20: the seed-fixes-the-run claim is in doubt: tests/sim_shed_reach.rs saw the shed count change with the port, and a 30 MB scenario shed 17 on Windows and 0 on Linux. Diagnosed: (1) the port was hashed into the link RNG streams (sim.rs:214), fixed and merged with a red-first two-port test; (2) the OS is still an input: shutdown_signal (net/mod.rs:3838-3855) runs a select! over two signal listeners on unix and one on Windows, which shifts tokio''s per-thread RNG and so every later unbiased select! (proved by CI runs 44726235078 and 44727373869: with unix running the Windows body under sim, all 7 scenarios match across OSes and Linux reproduces the 17 sheds). Fix owed: two cfg lines in net/mod.rs, needs the release-binary identity proof. Also unseeded under sim: quinn-proto connection ids (cid_generator.rs:80) and the per-run certificate. ADR-0082 scope until then: a seed fixes the run for a given OS and tokio version.'
+- id: model-user-three-dials
+  title: 'Owner call: three dials'
+  track: model
+  kind: user-decision
+  state: done
+  outcome: n/a
+  evidence:
+  - commit 0a55b65c
+  verdict_quote: Fix any two, the third is determined by the channel.
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: user
+  start: '2026-03-21'
+  end: '2026-03-21'
+  folded: []
+  overview: false
+  plain: 'The owner made reliability a third dial beside bandwidth and tail latency: the use case fixes two of them and the channel decides the third.'
+  notes: Owner decision 2026-03-21 (session record), written into the paper the same day as a new §6.10 with worked examples.
+- id: model-user-no-mode-switch
+  title: 'Owner rule: no mode switches'
+  track: model
+  kind: user-decision
+  state: done
+  outcome: n/a
+  evidence:
+  - commit ee51b9c4
+  - commit f2f1c782
+  - CLAUDE.md
+  verdict_quote: we dont want a protocol switch anymore
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: user
+  start: '2026-07-02'
+  end: '2026-08-06'
+  folded:
+  - 'session record 2026-07-02: Owner rule: no hard cutoffs'
+  - 'session record 2026-07-06: Owner rule: no mid-stream protocol switch'
+  overview: false
+  plain: 'The owner ruled out hard cutoffs and any switch between codes or pipeline modes in mid-stream: behaviour has to change smoothly out of one set of formulas. This became the standing no-mode-switch rule.'
+  notes: Owner statements 2026-07-02 (no hard cutoffs) and 2026-07-06 (no protocol switch between codes or between window and block mode), from the session record. Codified in CLAUDE.md; its provenance text was corrected on 2026-07-28 and a wrong attribution reverted on 2026-08-06 (the two commits in evidence).
+- id: perf-liveness-split
+  title: Path liveness split from capacity
+  track: perf
+  kind: mechanism
+  state: done
+  outcome: successful
+  evidence:
+  - commit becc6121
+  - commit b57a202b
+  verdict_quote: 'Result: zero path deaths.'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-03'
+  end: '2026-07-03'
+  folded: []
+  overview: false
+  plain: A saturated path stopped sending its heartbeats and was declared dead; heartbeats now go out whatever the spare capacity, which ended the path deaths on the real link.
+  notes: L1 phase 3 (2026-07-03); the ack-path debug logging added while diagnosing it is folded in.
+- id: rec-c2-collapse-diag
+  title: Single-path loss collapse diagnosis
+  track: rec
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit ac3bc9d1
+  - commit ae7f3a86
+  verdict_quote: 'Merge loss-recovery diagnosis: CC cleared, bufferbloat fixed; in-order frontier is the cap'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-07'
+  end: '2026-07-07'
+  folded: []
+  overview: false
+  plain: Throughput collapsed on a lossy single path; congestion control was ruled out as the cause, a buffer bloat in the reliable window was fixed, and the in-order delivery frontier was left as the limit.
+  notes: 'Unrated: a diagnosis whose refuted hypothesis (congestion control) and shipped fix (bufferbloat) point different ways; the owner rates it.'
+- id: rate-deadline-rstar
+  title: Deadline-constrained r* for N paths
+  track: rate
+  kind: law
+  state: done
+  outcome: successful
+  evidence:
+  - commit fcae9c05
+  - commit addf9eff
+  - paper §8.9
+  verdict_quote: N=1→§8.4 reduction, oracle-verified
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-07-07'
+  end: '2026-07-07'
+  folded: []
+  overview: false
+  plain: One repair-rate formula covers one or many paths and reduces exactly to the single-path formula when there is one path.
+- id: perf-rtt-rescan
+  title: Per-ACK RTT minimum rescan removed
+  track: perf
+  kind: mechanism
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 6302798c
+  - commit 99926477
+  verdict_quote: ''
+  headline: clean single-path 3–5.6× faster
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-07'
+  end: '2026-07-07'
+  folded:
+  - 'session record 2026-07-07: Per-ACK RTT minimum rescan removed from the sender'
+  overview: false
+  plain: The sender rescanned its whole window of round-trip samples on every acknowledgement; keeping the minimum incrementally removed a large per-packet CPU cost.
+  notes: 'Found in the session record (2026-07-07); the fix is commit 6302798c and its merge 99926477, whose subject carries the headline. Unrated: the extracted verdict quote did not validate.'
+- id: meas-user-consolidate-arc
+  title: 'Owner call: consolidate aggregation arc'
+  track: meas
+  kind: user-decision
+  state: done
+  outcome: n/a
+  evidence:
+  - commit a8dd8675
+  verdict_quote: 'docs: final consolidated verdict for the aggregation/throughput arc'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: user
+  start: '2026-07-08'
+  end: '2026-07-08'
+  folded:
+  - 'session record 2026-07-08: Owner decision to consolidate the aggregation arc'
+  overview: false
+  plain: The owner stopped the chase for aggregating two unequal paths and asked for the results to be consolidated into one verdict.
+  notes: 'Owner 2026-07-08 (session record: "consolidate"); the consolidated verdict is a8dd8675, folded in meas-c8-aggregation-arc.'
+- id: cod-gen-decoder-fix
+  title: Generation decoder late-source fix
+  track: cod
+  kind: mechanism
+  state: done
+  outcome: successful
+  evidence:
+  - commit 3701e10d
+  - commit 88852b4f
+  verdict_quote: THE bug behind all 5 refutations, found + fixed in the receiver decoder
+  headline: repairs_useful 0.15%→66%
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-08'
+  end: '2026-07-08'
+  folded: []
+  overview: false
+  plain: The receiver ignored source packets that arrived after the first repair, so the sender kept sending useless repair; fixing it made proactive repair useful again.
+  notes: The five earlier aggregation refutations were measured on the broken decoder (2026-07-08).
+- id: rec-recovery-bench
+  title: Recovery-plane component bench
+  track: rec
+  kind: instrument
+  state: done
+  outcome: unrated
+  evidence:
+  - commit dd1319b4
+  - commit 9898359b
+  - commit 125844f4
+  - docs/measurement-discipline.md
+  verdict_quote: PATIENCE is set by the argument, not the constants
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-08-08'
+  end: '2026-08-08'
+  folded: []
+  overview: false
+  plain: A deterministic bench drives the recovery logic on its own, after its formulas were moved into pure functions; it showed recovery patience is set by the clock input, not by the constants being tuned.
+  notes: Brought the standing component-bench rule (measurement discipline item 14). The law extraction commit 125844f4 is also folded in infra-net-seams.
+- id: meas-defect-shared-seed
+  title: Shared loss seed across legs
+  track: meas
+  kind: defect-verdict
+  state: done
+  outcome: unrated
+  evidence:
+  - commit e1fb2f64
+  verdict_quote: One is a DEFECT that silently pinned a correlation at +1 for a whole harness
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded: []
+  overview: false
+  plain: Both paths of the test harness drew packet loss from the same random seed, so their losses were perfectly correlated for a whole era of runs; each path now has its own seed.
+- id: cod-rlc-index
+  title: RLC decoder recovered-symbol index
+  track: cod
+  kind: mechanism
+  state: done
+  outcome: successful
+  evidence:
+  - commit 7f6d1057
+  - commit 28cd99a4
+  verdict_quote: 'Measured on 2000 sym + 6000 repairs: W=64 486->85ms'
+  headline: 4.6-5.7x faster decode
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-07-04'
+  end: '2026-07-04'
+  folded: []
+  overview: false
+  plain: The sliding-window decoder found recovered symbols by linear scan; a hash index made decoding about five times faster and removed the visualizer slowdown at high load.
+- id: perf-native-geometry
+  title: Inner-TCP geometry hypothesis
+  track: perf
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit 020d34d5
+  verdict_quote: the remaining ~4.5x to quinn (0.20s) is the rp pipeline itself.
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-04'
+  end: '2026-07-04'
+  folded: []
+  overview: false
+  plain: Removing the inner TCP connection moved completion time only about 13 percent, so the gap to native QUIC lies in the pipeline itself, not in the tunnel geometry.
+  notes: L2 workstream 3 (2026-07-04); measured with the native object mode folded in meas-l1-harness.
+- id: model-s16-fountain
+  title: Fountain aggregation claim (paper §16)
+  track: model
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit 065ccbdd
+  - commit e24541c6
+  - commit 88b7432f
+  - paper §16
+  verdict_quote: The real lever isn't abandoning in-order delivery.
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-07-04'
+  end: '2026-07-04'
+  folded: []
+  overview: false
+  plain: The first multipath section of the paper claimed out-of-order delivery was the key to combining unequal paths; the owner challenged it, per-path affinity turned out to be the real limit, and the section was rewritten two days later.
+  notes: The 2026-07-06 rewrite as reliable windowed multipath is folded in meas-c8-aggregation-arc.
+- id: place-spare-repair
+  title: Proactive repair on the spare path
+  track: place
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - commit ea20927f
+  - commit 6c938427
+  verdict_quote: 'Verdict: C8 bar (>15.7, factor>1) NOT met by any arm.'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-08'
+  end: '2026-07-08'
+  folded: []
+  overview: false
+  plain: Proactive repair was sent on the slower spare path to keep the fast path for new data; it lowered throughput in every arm and stayed off by default.
+  notes: Its merge ea20927f carries the aggregation arc's 2026-07-08 "final verdict" (meas-c8-aggregation-arc).
+- id: cc-btlbw-recovery
+  title: BtlBw-anchored window recovery
+  track: cc
+  kind: mechanism
+  state: abandoned
+  outcome: dead-end
+  evidence:
+  - commit fa433ac7
+  - paper §12.6
+  verdict_quote: 'CC: BtlBw-anchored recovery — cwnd reaches BDP, completion refuted (§12.6)'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-07-04'
+  end: '2026-07-04'
+  folded:
+  - branch P-CC
+  overview: false
+  plain: After a backoff the congestion window was pulled back toward the bandwidth-delay product; the window recovered, but transfer completion time did not improve.
+  notes: Split 2026-11-20 from cc-copa-lite, where it was folded as branch P-CC (own refuted verdict).
+- id: meas-anchor-era-suspect
+  title: Anchor-era suspect ruled out
+  track: meas
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit cc8e3c01
+  verdict_quote: 'merge: anchor-era suspect REFUTED - the anchor cancels on both sides of the saturation ratio'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-11'
+  end: '2026-08-11'
+  folded:
+  - branch anchor-era suspect REFUTED
+  overview: false
+  plain: 'A suspect from the pipeline review, that the rate-anchor change caused the regression, was checked and ruled out: the anchor cancels out of the saturation ratio.'
+  notes: Split 2026-11-20 from meas-pipeline-verification (one of its suspects, with its own refuted verdict).
+- id: store-queue-fix-premise
+  title: Queue fix premise refuted
+  track: store
+  kind: research
+  state: done
+  outcome: dead-end
+  evidence:
+  - commit 9ae50ee6
+  verdict_quote: 'merge: the queue fix - premise refuted twice over; the wire queues MORE (5.8-10.5x RTprop) and the store cap is NOT the brake at the duals'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-12'
+  end: '2026-08-12'
+  folded:
+  - branch the queue fix
+  overview: false
+  plain: A proposed queue fix assumed the store cap limits queueing on two-path links; measurement refuted that twice, because the wire itself queues more.
+  notes: Split 2026-11-20 from meas-pipeline-verification (own refuted verdict).
+- id: meas-ack-cadence
+  title: Ack-cadence over-read checks
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit c0d93050
+  - commit f1dc8ac5
+  verdict_quote: 'merge: ack-cadence measurement - NO aggregation on the wire (drecv=1, 857k acks); the 4.6-7.4 band is one cell''s property'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-11'
+  end: '2026-08-11'
+  folded:
+  - branch the ack-cadence gauge
+  - branch ack-cadence measurement
+  overview: false
+  plain: Two checks on acknowledgement timing found that the rate over-read comes from the estimator's floor clocking, not from acknowledgements bunching on the wire.
+  notes: 'Split 2026-11-20 from meas-pipeline-verification: the gauge (c0d93050) and the wire measurement (f1dc8ac5), one suspect with its own verdict.'
+- id: place-quad-lockin
+  title: Four-path lock-in defect retracted
+  track: place
+  kind: defect-verdict
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 0128bb5c
+  verdict_quote: 'merge: sweep item 6 REFUTED - the quad lock-in was the bench''s own pid<2 gauge guards; placement is fine; RWM_COLD_PLACE kept gated for the unmeasured late-join regime'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-08-17'
+  end: '2026-08-18'
+  folded:
+  - branch sweep item 6 REFUTED
+  - 'session record 2026-08-17: Placement cold-start defect does not exist (retracted)'
+  overview: false
+  plain: A suspected placement lock-in on four-path links turned out to be the bench's own gauge guards; placement was fine, and the cold-start gate stays off for the unmeasured late-join case.
+  notes: Split 2026-11-20 from store-cap-law-cluster (sweep item 6, a placement verdict).
+- id: model-tier1-rescores
+  title: Tier-1 literature re-scores
+  track: model
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 80376c63
+  verdict_quote: 'merge: Tier-1 re-scores - the CoDel rung SUPPORTED by every clean contrast; the RFC 6675 hypothesis REFUTED on the code; the rectifier clamp named'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch Tier-1 re-scores
+  overview: false
+  plain: 'Two readings suggested by the literature were re-scored on existing data: the CoDel-derived setpoint was supported but reached in no arm, and an explanation for the loss estimator''s error failed on the code.'
+  notes: 'Split 2026-11-20 from store-delta-cap. Unrated: one reading supported, one refuted.'
+- id: model-tier0-corrections
+  title: Tier-0 paper claim corrections
+  track: model
+  kind: research
+  state: done
+  outcome: successful
+  evidence:
+  - commit 46c3e6a6
+  verdict_quote: 'merge: Tier-0 corrections - three over-strong claims weakened to their sources; the span decomposition claimed as ours'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-08-19'
+  end: '2026-08-19'
+  folded:
+  - branch Tier-0 corrections
+  overview: false
+  plain: Three paper claims that were stronger than their sources were weakened, as dated corrections at every place they appeared.
+  notes: Split 2026-11-20 from store-delta-cap.
+- id: meas-defect-31mbit
+  title: '31 Mbit/s cap: generation coding on'
+  track: meas
+  kind: defect-verdict
+  state: done
+  outcome: unrated
+  evidence:
+  - commit 38050959
+  verdict_quote: 'merge: the 31 Mbit/s cap DIAGNOSED - generation coding was ON; zero VM runs needed'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-08-20'
+  end: '2026-08-20'
+  folded:
+  - branch the 31 Mbit/s cap DIAGNOSED
+  - 'session record 2026-08-20: 31 Mbit/s throughput anomaly: generation coding left on'
+  overview: false
+  plain: Two measurement passes capped at about 31 Mbit/s on every cell because a missing setting left generation coding on; they measured a different machine and were set aside.
+  notes: Split 2026-11-20 from rec-goal100 (a measurement defect, not a goal item).
+- id: rate-rho-not-input
+  title: ρ not an engine input
+  track: rate
+  kind: defect-verdict
+  state: done
+  outcome: unrated
+  evidence:
+  - commit b181fa54
+  - commit 5d14dd53
+  verdict_quote: 'merge: item 1 CLOSED UNREADABLE - rho is not an input anywhere in the shipped engine'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-08-20'
+  end: '2026-08-21'
+  folded:
+  - branch item 1 CLOSED UNREADABLE
+  overview: false
+  plain: The retention dial turned out to be an input nowhere in the shipped engine, so the recovery goals could not read it; wiring it in was left to the owner.
+  notes: 'Split 2026-11-20 from rec-goal100 (item 1). Goal #101 recorded the same impasse on 2026-08-21. Later finding on the same dial: model-defect-rho-inert (2026-11-14).'
+- id: rec-fire-cause
+  title: Recovery fire cause table
+  track: rec
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit d9cc9cca
+  verdict_quote: 'merge: THE FIRE-CAUSE TABLE - 0.59% of fires are timer-driven; the measurand is named'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-08-21'
+  end: '2026-08-21'
+  folded:
+  - branch THE FIRE-CAUSE TABLE
+  - 'session record 2026-08-21: Recovery fire cause: timer versus gap reports'
+  overview: false
+  plain: Counting what triggers each recovery repair showed that under one percent come from the sender's timer and the rest from the receiver's gap reports, so tuning the timer moved almost nothing.
+  notes: Split 2026-11-20 from rec-goal101.
+- id: meas-crown-spot-v8
+  title: Crown no-regression spot (wire v8)
+  track: meas
+  kind: research
+  state: done
+  outcome: unrated
+  evidence:
+  - commit b5e94b32
+  - commit f671f61d
+  verdict_quote: 'crown spot v8: THE SCORED RESULT — the repairs are INERT on the crown'
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-09-08'
+  end: '2026-09-08'
+  folded:
+  - branch THE CROWN SPOT
+  - 'session record 2026-09-08: Crown spot: invariant repairs inert at the presets'
+  overview: false
+  plain: A pre-registered check confirmed that the newly merged repair changes left the best historic single-path results unchanged.
+  notes: Split 2026-11-20 from meas-wire-v8 (pre-registration b5e94b32 and scored result f671f61d).
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere

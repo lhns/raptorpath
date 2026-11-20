@@ -14,7 +14,10 @@ flowchart TB
     model_visualizer_v1["✔ First visualizer:<br/>triangle and BOCD"]
     model_wasm_l0["✔ raptorpath-math and<br/>wasm model"]
     model_math_verification["✔ Mathematical<br/>verification of the<br/>model"]
+    model_s16_fountain["✔ Fountain aggregation<br/>claim (paper #167;16)"]
     model_vis_continuum["✔ Visualizer as one<br/>continuum law"]
+    model_tier1_rescores["✔ Tier-1 literature<br/>re-scores"]
+    model_tier0_corrections["✔ Tier-0 paper claim<br/>corrections"]
     model_mode_switch_debts>"⚠ Engine NO-MODE-<br/>SWITCH debts"]
     model_open_constants>"⚠ Open-constants<br/>register"]
     model_review_37["✔ Model review"]
@@ -40,13 +43,17 @@ flowchart TB
     model_paper_v1 ~~~ model_visualizer_v1
     model_open_points ~~~ model_wasm_l0
     model_visualizer_v1 ~~~ model_math_verification
+    model_visualizer_v1 ~~~ model_s16_fountain
     model_wasm_l0 ~~~ model_vis_continuum
-    model_math_verification ~~~ model_mode_switch_debts
-    model_math_verification ~~~ model_open_constants
-    model_vis_continuum ~~~ model_review_37
+    model_math_verification ~~~ model_tier1_rescores
+    model_s16_fountain ~~~ model_tier0_corrections
+    model_vis_continuum ~~~ model_mode_switch_debts
+    model_tier1_rescores ~~~ model_open_constants
+    model_tier0_corrections ~~~ model_review_37
     model_mode_switch_debts ~~~ model_paper_recon
     model_open_constants ~~~ model_paper_recon
-    model_review_37 ~~~ model_bound_tests
+    model_review_37 ~~~ model_paper_recon
+    model_paper_recon ~~~ model_bound_tests
     model_paper_recon ~~~ model_wasm_audit
     model_bound_tests ~~~ model_defect_tcut
     model_wasm_audit ~~~ model_defect_dead_machine
@@ -85,7 +92,7 @@ flowchart TB
     model_giveup_law --> model_defect_rho_inert
     model_endspeed --> model_warm_start
     model_law_ledger --> model_fix_paper_p2
-    linkStyle 32,34,35,37,44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 36,38,39,41,48 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -99,8 +106,9 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class model_paper_v1,model_open_points,model_visualizer_v1,model_math_verification,model_bound_tests,model_law_ledger unrated
-    class model_wasm_l0,model_vis_continuum,model_review_37,model_wasm_audit,model_defect_tcut,model_defect_dead_machine,model_shared_core_0,model_endspeed,model_giveup_law,model_viz_fix,model_warm_start succ
+    class model_paper_v1,model_open_points,model_visualizer_v1,model_math_verification,model_tier1_rescores,model_bound_tests,model_law_ledger unrated
+    class model_wasm_l0,model_vis_continuum,model_tier0_corrections,model_review_37,model_wasm_audit,model_defect_tcut,model_defect_dead_machine,model_shared_core_0,model_endspeed,model_giveup_law,model_viz_fix,model_warm_start succ
+    class model_s16_fountain dead
     class model_mode_switch_debts,model_open_constants,model_bound_tests_unrun,model_defect_rho_inert defect
     class model_paper_recon waiting
     class model_shared_core,model_wasm_fixes inprog
@@ -143,6 +151,11 @@ flowchart TB
 | `model-wasm-fixes` | Wasm model fixes | in-progress | unrated |  | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 | model-user-wasm-calls, rate-law-reconcile, store-engine-form-impl |
 | `model-fix-paper-p2` | Paper text for placement and bbr_rs | next | unrated |  | law ledger rows K05, K10 | model-law-ledger |
 | `model-fix-paper-p3` | Paper-only law records | blocked | unrated |  | law ledger rows S10, C08, C10, E12 | meas-s51-session, store-fix-maxbw-minrtt |
+| `model-user-three-dials` | Owner call: three dials | done | n/a |  | commit 0a55b65c |  |
+| `model-user-no-mode-switch` | Owner rule: no mode switches | done | n/a |  | commit ee51b9c4; commit f2f1c782; CLAUDE.md |  |
+| `model-s16-fountain` | Fountain aggregation claim (paper §16) | done | dead-end |  | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16 |  |
+| `model-tier1-rescores` | Tier-1 literature re-scores | done | unrated |  | commit 80376c63 |  |
+| `model-tier0-corrections` | Tier-0 paper claim corrections | done | successful |  | commit 46c3e6a6 |  |
 
 ### Details per node
 
@@ -176,4 +189,9 @@ flowchart TB
 | `model-wasm-fixes` | Wasm model fixes | Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. Progress 2026-11-14: viz-fix (model-viz-fix) removed the dead machine and the W11 guard; the give-up law (ii) (model-giveup-law) replaced the cartoon shed choice and T_cut. | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 |
 | `model-fix-paper-p2` | Paper text for placement and bbr_rs | Law ledger: K05, K10. Done when: the paper carries the placement cost lines (A.4) and the bbr_rs minimum-filter sign, checked against the code. | law ledger rows K05, K10 |
 | `model-fix-paper-p3` | Paper-only law records | Law ledger: S10, C08, C10, E12. Done when: the taper grant law, the gap-report minimum interval, the reactive repair margin and the send-rate anchor each have a paper line with provenance. | law ledger rows S10, C08, C10, E12 |
+| `model-user-three-dials` | Owner call: three dials | Owner decision 2026-03-21 (session record), written into the paper the same day as a new §6.10 with worked examples. | commit 0a55b65c |
+| `model-user-no-mode-switch` | Owner rule: no mode switches | Owner statements 2026-07-02 (no hard cutoffs) and 2026-07-06 (no protocol switch between codes or between window and block mode), from the session record. Codified in CLAUDE.md; its provenance text was corrected on 2026-07-28 and a wrong attribution reverted on 2026-08-06 (the two commits in evidence). | commit ee51b9c4; commit f2f1c782; CLAUDE.md |
+| `model-s16-fountain` | Fountain aggregation claim (paper §16) | The 2026-07-06 rewrite as reliable windowed multipath is folded in meas-c8-aggregation-arc. | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16 |
+| `model-tier1-rescores` | Tier-1 literature re-scores | Split 2026-11-20 from store-delta-cap. Unrated: one reading supported, one refuted. | commit 80376c63 |
+| `model-tier0-corrections` | Tier-0 paper claim corrections | Split 2026-11-20 from store-delta-cap. | commit 46c3e6a6 |
 <!-- END GENERATED: table-model -->

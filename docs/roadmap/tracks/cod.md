@@ -17,10 +17,12 @@ flowchart TB
     cod_gf256_simd["✔ SIMD GF(2^8) and<br/>gf256 crate"]
     cod_overhead_reduction["✔ Overhead reduction<br/>(packing, repair<br/>alignment)"]
     cod_rlc_all_profiles["↷ Windowed RLC for<br/>every profile"]
+    cod_rlc_index["✔ RLC decoder<br/>recovered-symbol index"]
     cod_generation_coding["⏸ Generation cross-<br/>path fungible coding"]
     cod_coded_only_wire["↷ Coded-only<br/>generation wire"]
     cod_fungible_window["✖ Coded-only fungible<br/>window"]
     cod_fmtcp["✖ FMTCP-class decode-<br/>on-total"]
+    cod_gen_decoder_fix["✔ Generation decoder<br/>late-source fix"]
     cod_systematic_wire["✔ Systematic wire,<br/>sparse decoder"]
     cod_unified_span["✔ Unified span machine"]
     cod_wire_compact["✔ Compact v5 DATA<br/>framing"]
@@ -32,14 +34,15 @@ flowchart TB
     cod_streaming_code ~~~ cod_gf256_simd
     cod_legacy_rlc ~~~ cod_overhead_reduction
     cod_backend_switch ~~~ cod_rlc_all_profiles
-    cod_gf256_simd ~~~ cod_generation_coding
-    cod_overhead_reduction ~~~ cod_coded_only_wire
-    cod_rlc_all_profiles ~~~ cod_fungible_window
+    cod_gf256_simd ~~~ cod_rlc_index
+    cod_overhead_reduction ~~~ cod_generation_coding
+    cod_rlc_all_profiles ~~~ cod_coded_only_wire
+    cod_rlc_index ~~~ cod_fungible_window
     cod_generation_coding ~~~ cod_fmtcp
-    cod_coded_only_wire ~~~ cod_systematic_wire
+    cod_coded_only_wire ~~~ cod_gen_decoder_fix
     cod_fungible_window ~~~ cod_systematic_wire
-    cod_fmtcp ~~~ cod_systematic_wire
-    cod_systematic_wire ~~~ cod_unified_span
+    cod_fmtcp ~~~ cod_unified_span
+    cod_gen_decoder_fix ~~~ cod_wire_compact
     cod_systematic_wire ~~~ cod_wire_compact
     cod_unified_span ~~~ cod_one_pipeline
     cod_wire_compact ~~~ cod_s4_block_retest
@@ -65,7 +68,7 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class cod_block_pipeline,cod_mettle,cod_streaming_code,cod_legacy_rlc,cod_backend_switch,cod_rlc_all_profiles,cod_coded_only_wire,cod_fungible_window,cod_fmtcp dead
-    class cod_gf256_simd,cod_systematic_wire,cod_unified_span,cod_one_pipeline,cod_debug_stall succ
+    class cod_gf256_simd,cod_rlc_index,cod_gen_decoder_fix,cod_systematic_wire,cod_unified_span,cod_one_pipeline,cod_debug_stall succ
     class cod_overhead_reduction,cod_s4_block_retest unrated
     class cod_generation_coding parked
     class cod_wire_compact vsucc
@@ -96,6 +99,8 @@ flowchart TB
 | `cod-debug-stall` | Decoder re-delivery stall fix | done | successful | 0 of 40 iterations stalled | status §31 |  |
 | `cod-user-generation-seat` | Owner call: keep generation coding | parked | n/a |  | plan user decision 4, W4.4; status §3.2 | cod-generation-coding |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | done | unrated |  | ADR-0039; ADR-0040; ADR-0047; ADR-0048 | meas-transport-comparison |
+| `cod-gen-decoder-fix` | Generation decoder late-source fix | done | successful | repairs_useful 0.15%→66% | commit 3701e10d; commit 88852b4f |  |
+| `cod-rlc-index` | RLC decoder recovered-symbol index | done | successful | 4.6-5.7x faster decode | commit 7f6d1057; commit 28cd99a4 |  |
 
 ### Details per node
 
@@ -119,4 +124,5 @@ flowchart TB
 | `cod-debug-stall` | Decoder re-delivery stall fix | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §31 |
 | `cod-user-generation-seat` | Owner call: keep generation coding | 2026-11-16: stays parked with no disposition; it unblocks nothing in the current chain (Owner decisions 2026-11-16, item 7). Law ledger F05, R09 (P3) wait on it. | plan user decision 4, W4.4; status §3.2 |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | ADR-0047 raised timer resolution and fixed LTE recovery (1% to 100%) and WiFi overhead (39.6% to 21.4%); ADR-0048 reduced window-backend overhead further. | ADR-0039; ADR-0040; ADR-0047; ADR-0048 |
+| `cod-gen-decoder-fix` | Generation decoder late-source fix | The five earlier aggregation refutations were measured on the broken decoder (2026-07-08). | commit 3701e10d; commit 88852b4f |
 <!-- END GENERATED: table-cod -->

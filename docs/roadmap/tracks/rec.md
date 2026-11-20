@@ -17,12 +17,14 @@ flowchart TB
     rec_p10a_repair_floor["✖ Inner-feedback<br/>repair floor"]
     rec_fec_vs_arq["✔ Proactive FEC versus<br/>ARQ frontier"]
     rec_inline_repair["↷ Frontier-anchored<br/>proactive repair"]
+    rec_c2_collapse_diag["✔ Single-path loss<br/>collapse diagnosis"]
     rec_proactive_repair["✖ Repair-wait before<br/>ARQ"]
     rec_present_at_stall["✖ Present-at-stall<br/>proactive pacer"]
     rec_per_path_clocks["✔ Per-path recovery<br/>clocks"]
     rec_mp_serial["↷ Global loss serials<br/>under striping"]
     rec_recov_sp["⏸ Singles hole<br/>suppression"]
     rec_patience_derived[/"✖ Unlock The Default<br/>2: patience"/]
+    rec_recovery_bench["✔ Recovery-plane<br/>component bench"]
     rec_clock_candidates[/"✖ Derived recovery<br/>sweep"/]
     rec_rack_clocks[/"✖ RACK-shaped recovery<br/>clocks"/]
     rec_cantelli_clock[/"✖ Cantelli quantile<br/>recovery clock"/]
@@ -34,6 +36,7 @@ flowchart TB
     rec_dispersion_est["⏸ σ dispersion<br/>estimators (fixed lag)"]
     rec_successor_arrival["✔ Successor-arrival<br/>distribution measured"]
     rec_goal101[/"✖ Recovery clock<br/>verdict battery"/]
+    rec_fire_cause["✔ Recovery fire cause<br/>table"]
     rec_receiver_law[/"✖ Receiver request law"/]
     rec_wire_v9["✔ Wire v9 per-path<br/>sequence"]
     rec_gap_horizon["⏳ Gap horizon"]
@@ -66,28 +69,32 @@ flowchart TB
     rec_plost_sack ~~~ rec_p10a_repair_floor
     rec_bulk_arq ~~~ rec_fec_vs_arq
     rec_reliable_window ~~~ rec_inline_repair
-    rec_p10a_repair_floor ~~~ rec_proactive_repair
-    rec_fec_vs_arq ~~~ rec_present_at_stall
-    rec_inline_repair ~~~ rec_per_path_clocks
+    rec_p10a_repair_floor ~~~ rec_c2_collapse_diag
+    rec_fec_vs_arq ~~~ rec_proactive_repair
+    rec_inline_repair ~~~ rec_present_at_stall
+    rec_c2_collapse_diag ~~~ rec_per_path_clocks
     rec_proactive_repair ~~~ rec_mp_serial
     rec_present_at_stall ~~~ rec_recov_sp
     rec_per_path_clocks ~~~ rec_patience_derived
-    rec_mp_serial ~~~ rec_clock_candidates
-    rec_recov_sp ~~~ rec_rack_clocks
-    rec_patience_derived ~~~ rec_cantelli_clock
+    rec_mp_serial ~~~ rec_recovery_bench
+    rec_recov_sp ~~~ rec_clock_candidates
+    rec_patience_derived ~~~ rec_rack_clocks
+    rec_recovery_bench ~~~ rec_cantelli_clock
     rec_clock_candidates ~~~ rec_alpha_sweep
-    rec_rack_clocks ~~~ rec_goal100
-    rec_cantelli_clock ~~~ rec_qnative_clock
+    rec_rack_clocks ~~~ rec_alpha_sweep
+    rec_cantelli_clock ~~~ rec_goal100
+    rec_alpha_sweep ~~~ rec_qnative_clock
     rec_alpha_sweep ~~~ rec_holddown_clock
     rec_goal100 ~~~ rec_refresh_floor
     rec_qnative_clock ~~~ rec_dispersion_est
     rec_holddown_clock ~~~ rec_successor_arrival
     rec_refresh_floor ~~~ rec_goal101
-    rec_dispersion_est ~~~ rec_receiver_law
-    rec_successor_arrival ~~~ rec_wire_v9
-    rec_goal101 ~~~ rec_gap_horizon
+    rec_dispersion_est ~~~ rec_fire_cause
+    rec_successor_arrival ~~~ rec_receiver_law
+    rec_goal101 ~~~ rec_wire_v9
+    rec_fire_cause ~~~ rec_gap_horizon
     rec_receiver_law ~~~ rec_gap_horizon
-    rec_wire_v9 ~~~ rec_gap_horizon
+    rec_wire_v9 ~~~ rec_snapver_filter
     rec_gap_horizon ~~~ rec_snapver_filter
     rec_snapver_filter ~~~ rec_snapver_law
     rec_snapver_filter ~~~ rec_defect_qclk_clamp
@@ -147,7 +154,7 @@ flowchart TB
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 55,56,57,67 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 59,60,61,71 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -162,7 +169,7 @@ flowchart TB
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter,rec_defect_realtime_framing succ
-    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_alpha_sweep,rec_successor_arrival,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean,rec_realtime_delay_recheck unrated
+    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_c2_collapse_diag,rec_recovery_bench,rec_alpha_sweep,rec_successor_arrival,rec_fire_cause,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean,rec_realtime_delay_recheck unrated
     class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
     class rec_recov_sp,rec_dispersion_est,rec_realtime_srv_lag_lean,rec_leverb_guard parked
     class rec_gap_horizon waiting
@@ -232,6 +239,9 @@ flowchart TB
 | `rec-retx-behind-source` | Retransmits queued behind source? | next | unrated |  | plan W3.6d (unanswered); status §55 Erratum 1 ("plan item 6d, unanswered") |  |
 | `rec-nack-congestion` | Congestion-aware NACK throttle (first form) | done | unrated |  | ADR-0046 | meas-matrix-bench |
 | `rec-evict-blocker-unresolved` | Evicting seat strands a stalled blocker | in-progress | unrated |  | status "S06 deletion review and an evicting-seat defect (2026-11-20)"; branch wedge-diag bc383f29 |  |
+| `rec-c2-collapse-diag` | Single-path loss collapse diagnosis | done | unrated |  | commit ac3bc9d1; commit ae7f3a86 |  |
+| `rec-recovery-bench` | Recovery-plane component bench | done | unrated |  | commit dd1319b4; commit 9898359b; commit 125844f4; docs/measurement-discipline.md |  |
+| `rec-fire-cause` | Recovery fire cause table | done | unrated |  | commit d9cc9cca |  |
 
 ### Details per node
 
@@ -257,8 +267,8 @@ flowchart TB
 | `rec-refresh-floor` | Refresh-floor lift (q, refresh) sweep | Goal #101 arm (split 2026-11-16). Removed in simplification batch 4 (§50); hole_nack_refresh is the shipped clamp directly. | tag archive/RWM_REFRESH_FLOOR_US; paper §10 row Refresh-floor lift (`RWM_REFRESH_FLOOR_US`); commit a8bcce05; paper §16.78 |
 | `rec-dispersion-est` | σ dispersion estimators (fixed lag) | Goal #100 named the σ estimator as the missing instrument (6e1e356a); goal #101 item 2: the Sigma Estimator battery 'ALL FOUR FAIL CLAUSE S' (9ba3aef7), the τ-lag form 'mechanism CONFIRMED, bar still missed' (89d79464). Paper §10 status: open. Done when: the paper §10 row is closed, by an estimator that passes its bar or by a ruling. | paper §10 row Dispersion estimators (fixed-sample-lag, fixed-time-lag); commit 89d79464; commit 9ba3aef7 |
 | `rec-successor-arrival` | Successor-arrival distribution measured | Goal #101 measurement (split 2026-11-16): 'the anchor is refuted; the boundary is a LEVEL, and the level is 98%' (5481a0b9). | commit 821de6ae |
-| `rec-goal100` | Recovery primitives and σ | Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep). | commit 6e1e356a |
-| `rec-goal101` | Recovery clock verdict battery | The closure of goal #101 (2026-08-21): item 4's verdict battery decided the formula in paper §16.79 and the shipped clamp 'survives on merit'. Its arms are now their own nodes (split 2026-11-16 from 'Recovery clock law family (4 arms)'): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime. | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 |
+| `rec-goal100` | Recovery primitives and σ | Goal #100 (2026-08-20): primitives re-measured, [RFA] instrument, the 287x estimator spread; closed NEEDS-MORE with the σ estimator named as the instrument. The alpha-sweep is its own node (rec-alpha-sweep). Split 2026-11-20: item 1 (rate-rho-not-input) and the 31 Mbit/s diagnosis (meas-defect-31mbit) are their own nodes. | commit 6e1e356a |
+| `rec-goal101` | Recovery clock verdict battery | The closure of goal #101 (2026-08-21): item 4's verdict battery decided the formula in paper §16.79 and the shipped clamp 'survives on merit'. Its arms are now their own nodes (split 2026-11-16 from 'Recovery clock law family (4 arms)'): rec-qnative-clock, rec-holddown-clock, rec-refresh-floor, rec-dispersion-est, plus the successor-arrival measurement (rec-successor-arrival). Folds paper §11.1 open question 7 and the fire-cause table. Later verdict: status §3.10 item 4 (2026-11-13) finds the clamp always binds at c8, so its survival was never tested in its operating regime. The fire-cause table is its own node since 2026-11-20 (rec-fire-cause). | commit 146d8b18; commit 6cf2328e; commit f2e71443; paper §16.79 |
 | `rec-receiver-law` | Receiver request law | Folds §3.1 item 1 (the self-heal estimator counted retransmits; fixed, battery not re-run). Dates: paper §10 rows carry an end (removal) date only. | status §2 row "Receiver-law battery (Track C)"; status §3.1 item 1; paper §10 row Receiver request law (`RWM_RECV_REQUEST_LAW`) |
 | `rec-wire-v9` | Wire v9 per-path sequence | fix/wire-v9 (7825196): per-path path_seq, next_expected, received_above. | status §3.5 item 2 |
 | `rec-gap-horizon` | Gap horizon | §52 guard PASS; c8 600 MB tail 4.19 -> 0.40 s with receiver duplicates x2.1 beyond BASE; the merge went to the owner. Plan 2026-11-13: lever B re-guarded on the new main, cand52 superseded. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §52; branch gaphorizon; branch cand52; branch base52 |
@@ -289,4 +299,7 @@ flowchart TB
 | `rec-retx-behind-source` | Retransmits queued behind source? | §55 Erratum 1: at c8 the recovery lever is the dwell, i.e. the store fix and this question. Done when: a diagnosis from the code path (transport.send_symbols to the per-path I/O owner) and the committed §48b/§53 ledgers says whether retransmits wait behind source symbols in quinn's per-path send buffer, with the measured dwell, and names the fix (a priority seam in the I/O owner) if they do. | plan W3.6d (unanswered); status §55 Erratum 1 ("plan item 6d, unanswered") |
 | `rec-nack-congestion` | Congestion-aware NACK throttle (first form) | ADR-0046 (Accepted), prompted by the ADR-0045 matrix run. The ledger's defect on NackCongestionState is rec-fix-nack-throttle. | ADR-0046 |
 | `rec-evict-blocker-unresolved` | Evicting seat strands a stalled blocker | Local runs on main (unpaced source ~5x an emulated 40 Mbit link): no source-rate bound on the evicting seat (intake pause reliable-only, net/mod.rs:2473); the NACK site clamps gaps to the 200-symbol window before the shed check (sender_phases.rs:790-805), so resend and shed act only while the blocker is inside it; the tail sweep re-targets a below-window first() (net/mod.rs:2789, :3035). Stalled-blocker case unresolved 19/30 (main-equivalent) and 15/30 (s06-delete). Owed: which site produced block E's 1 934 sheds; whether paced VM rows show it. Fix direction (owner 2026-11-20, on Fable's recommendation): one rule, every abandoned seq gets a verdict and the receiver is told. (1) The shed verdict is judged on the unclamped gap; the clamp bounds only what is served (identity at rho = 1). (2) Every verdict removes the seq from the sender and reaches the receiver, even when no data follows. (3) A rho-continuous source-rate bound replaces the reliable-only intake pause, keeping H + E inside 1 - rho. Eviction from the window is itself a verdict. The 1 - rho budget law (reads no rho, 0 on a cold estimator) is part of the same derivation. Paper derivation first (FORMULA-FIRST), after the prechecks on branch evict-prechecks; the engine change waits on the VM guard. Done when: a red-first test of the lost tail and the stalled blocker goes green, with the S4 counters as the oracle. 2026-11-20: tests/sim_shed_reach.rs liveness test (ignored, red) shows the second shape only under a forced shed budget (RWM_TEST_TS_BUDGET_FRAC=0.05): the NACK site sheds all 60 tail seqs, the transfer never completes (the frontier sample 10856 is stale: ev=frontier prints only on arrival; the receiver ack shows 12087). Sender ends clean is inferred (sheds cover the unacked range), not logged. The frontier-bound assertion has never executed: the red arm fails earlier on completion, the rho = 1 control sheds nothing. With the natural budget the sim sender only counts denials: the shed budget reads 0 for a transfer shorter than the loss estimator first report (liveness audit item 4; the sim has no source-rate bound). 2026-11-20 prechecks (docs/derivations/evict-fix-prechecks.md): (1) a below-window seq cannot be resent at rho < 1 (the window is the only copy; sent_store fills only when reliable), so the clamp is a correct serve bound but wrongly gates the verdict, and eviction must itself be the verdict; eviction never prunes retransmit_buffer, so first() stays stuck. (2) Nothing tells the receiver: no message carries the sender window start, and sheds and evictions send nothing. (3) The failure starts at the source: at rho < 1 the whole object enters the encoder in ~44 ms and the link drops ~1 100 datagrams on queue overflow; the budget is refreshed only on source emission, so it and the shed deadline (13 ms against an 844 ms RTT) freeze. Consequences for the fix: the floor message needs a repeat or ack rule; the rho-continuous source-rate bound is the only part that reduces abandonment; the 1 - rho budget must bound sheds, evictions and overflow losses and be enforced on the source rate. client_ok cannot be the rho < 1 liveness oracle (perf needs every chunk); the red-first test must assert the frontier and the ack, so sim_shed_reach's assert_live must be rewritten. | status "S06 deletion review and an evicting-seat defect (2026-11-20)"; branch wedge-diag bc383f29 |
+| `rec-c2-collapse-diag` | Single-path loss collapse diagnosis | Unrated: a diagnosis whose refuted hypothesis (congestion control) and shipped fix (bufferbloat) point different ways; the owner rates it. | commit ac3bc9d1; commit ae7f3a86 |
+| `rec-recovery-bench` | Recovery-plane component bench | Brought the standing component-bench rule (measurement discipline item 14). The law extraction commit 125844f4 is also folded in infra-net-seams. | commit dd1319b4; commit 9898359b; commit 125844f4; docs/measurement-discipline.md |
+| `rec-fire-cause` | Recovery fire cause table | Split 2026-11-20 from rec-goal101. | commit d9cc9cca |
 <!-- END GENERATED: table-rec -->
