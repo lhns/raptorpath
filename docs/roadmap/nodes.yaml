@@ -9737,6 +9737,47 @@ nodes:
   - branch real-trace validation
   overview: false
   plain: On five real cellular traces the loss model under-provisioned repair by up to 12.8 times the target; a better channel model was recommended and not built.
+- id: model-rho-step-sites
+  title: Make all twelve ρ splits continuous
+  track: model
+  kind: mechanism
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - ADR-0084 Amendment 1 (branch adr84-amend)
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rec-evict-blocker-unresolved
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Twelve places in the engine behave one way when no data may be dropped (ρ = 1) and another way below it. Each is checked for a reason; each split is replaced by one formula continuous in ρ that keeps today''s ρ = 1 behaviour, and the reliable flag is deleted.'
+  notes: 'Owner decision 2026-11-20: option B (rewrite all twelve), not grandfathered; framing: ask whether each split has a reason, work only on behaviour we can derive. Derivation on branch rho-step-sites (docs/derivations/rho-step-sites.md), then one commit per site stacked on the ADR-0084 fix. Done when: the reader count of the derived bit is 0, the field is deleted, and the acceptance test (one seed at rho = 1, 0.9999, 0.999, 0.99; runs below 1 differ only by give-ups within (1 - rho) S) is green.'
+- id: rec-mixed-rho-stall
+  title: Mixed retention settings stall a transfer
+  track: rec
+  kind: defect-verdict
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - raptorpath/tests/sim_mixed_rho.rs (branch adr84-amend)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish.'
+  notes: 'Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation.'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere

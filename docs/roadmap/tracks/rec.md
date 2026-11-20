@@ -59,6 +59,7 @@ flowchart TB
     rec_f2_merge_guard["✔ Framing fix<br/>regression test"]
     rec_s64_delay_lean["✔ Realtime delay lean,<br/>post-hoc read"]
     rec_realtime_delay_recheck["✔ Realtime delay re-<br/>check"]
+    rec_mixed_rho_stall>"⚠ Mixed retention<br/>settings stall a<br/>transfer"]
     rec_realtime_srv_lag_lean["⏸ Possible extra<br/>server delay after fix"]
     rec_framing_followups["○ Framing fix<br/>leftovers"]
     rec_w0_leg_question["⛔ Which path carries<br/>retransmissions"]
@@ -120,9 +121,10 @@ flowchart TB
     rec_s63_f2_first_contact ~~~ rec_f2_merge_guard
     rec_f2_merge_guard ~~~ rec_s64_delay_lean
     rec_s64_delay_lean ~~~ rec_realtime_delay_recheck
+    rec_s64_delay_lean ~~~ rec_mixed_rho_stall
     rec_realtime_delay_recheck ~~~ rec_realtime_srv_lag_lean
-    rec_realtime_delay_recheck ~~~ rec_framing_followups
-    rec_realtime_delay_recheck ~~~ rec_w0_leg_question
+    rec_mixed_rho_stall ~~~ rec_framing_followups
+    rec_mixed_rho_stall ~~~ rec_w0_leg_question
     rec_realtime_srv_lag_lean ~~~ rec_leverb_guard
     rec_framing_followups ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_fix_perleg_clock_n1
@@ -163,7 +165,7 @@ flowchart TB
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 63,64,65,75 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 64,65,66,76 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -183,7 +185,7 @@ flowchart TB
     class rec_rwm_phase_c mixed
     class rec_recov_sp,rec_dispersion_est,rec_realtime_srv_lag_lean,rec_leverb_guard parked
     class rec_gap_horizon waiting
-    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_evict_blocker_unresolved defect
+    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_mixed_rho_stall,rec_evict_blocker_unresolved defect
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
     class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
     class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
@@ -257,6 +259,7 @@ flowchart TB
 | `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | done | mixed |  | commit c775f7fb; commit 70393f92 |  |
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | done | successful |  | commit 663d3ec9; commit 6f2b084f |  |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | done | unrated |  | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |  |
+| `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | in-progress | unrated |  | raptorpath/tests/sim_mixed_rho.rs (branch adr84-amend) |  |
 
 ### Details per node
 
@@ -324,6 +327,7 @@ flowchart TB
 | `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | Phase C of the reliable windowed multipath plan (2026-07-06); Phase A is rec-reliable-window, Phase B place-marginal-cost. | commit c775f7fb; commit 70393f92 |
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | Was folded in rec-present-at-stall, whose dead-end verdict is about the pacer, not this fix. | commit 663d3ec9; commit 6f2b084f |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | Split 2026-11-20 from meas-attribution-audit. Three parallel plans (session record 2026-09-06) led to it. | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |
+| `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation. | raptorpath/tests/sim_mixed_rho.rs (branch adr84-amend) |
 
 ### Folded items per node
 

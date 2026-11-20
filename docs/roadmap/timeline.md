@@ -87,6 +87,7 @@ gantt
     Out-of-order object delivery (Phase C) :rec_rwm_phase_c, 2026-07-06, 2026-07-06
     Bounded ARQ over-request :rec_arq_overrequest_bound, 2026-07-08, 2026-07-08
     Sequential-classification repair law (§… :rec_seqclass_law, 2026-09-06, 2026-09-07
+    Mixed retention settings stall a transf… :active, rec_mixed_rho_stall, 2026-11-20, 2026-11-20
     section rate - rate law
     Gilbert-Elliott loss model :rate_ge_hmm, 2026-03-14, 2026-07-07
     First automatic repair-rate control :rate_fec_rate_v1, 2026-03-18, 2026-03-21
@@ -338,6 +339,7 @@ gantt
     Tier-1 literature re-scores :model_tier1_rescores, 2026-08-19, 2026-08-19
     Tier-0 paper claim corrections :model_tier0_corrections, 2026-08-19, 2026-08-19
     Concise rewrite of the model paper :model_paper_rewrite, 2026-09-27, 2026-09-27
+    Make all twelve ρ splits continuous :active, model_rho_step_sites, 2026-11-20, 2026-11-20
     section obs - observability
     Runtime status endpoint :obs_status_endpoint, 2026-03-12, 2026-03-12
     Gate-setting liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09

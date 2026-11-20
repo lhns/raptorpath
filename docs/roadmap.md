@@ -336,6 +336,7 @@ flowchart TB
 | Hidden re-send limit: measure, then justify | ○ next | First measuring how often a hidden rule that limits re-sends per loss report actually bites, then justifying it in the paper or removing it. |
 | Do re-sends wait behind new data | ○ next | Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets. |
 | Lost packet neither resent nor dropped | ⚠ open defect | When late data may be dropped (ρ below 1), a lost packet can be neither re-sent nor dropped, and the transfer then waits for the receiver to skip it; a lost final packet with nothing after it is never resolved. |
+| Mixed retention settings stall a transfer | ⚠ open defect | A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish. |
 | First automatic repair-rate control | ✔ done · successful | The first automatic way to decide how much error-correcting (FEC) data to send, driven by an estimator that detects changes in the loss rate (BOCD). |
 | Owner call: retention is ρ | ✔ done · n/a | The owner decided that how long data is kept for resending is the reliability dial ρ, one of the three main dials, not a separate setting. |
 | Loss estimator updates in batches | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
@@ -448,6 +449,7 @@ flowchart TB
 | Four unstated rules added to paper | ⛔ blocked | Writing four small rules into the paper that the code uses but the paper never states. |
 | Owner call: three dials | ✔ done · n/a | The owner made reliability a third dial beside bandwidth and tail latency: the use case fixes two of them and the channel decides the third. |
 | Owner rule: no mode switches | ✔ done · n/a | The owner ruled out hard cutoffs and any switch between codes or pipeline modes in mid-stream: behaviour has to change smoothly out of one set of formulas. This became the standing no-mode-switch rule. |
+| Make all twelve ρ splits continuous | ▶ in progress | Twelve places in the engine behave one way when no data may be dropped (ρ = 1) and another way below it. Each is checked for a reason; each split is replaced by one formula continuous in ρ that keeps today's ρ = 1 behaviour, and the reliable flag is deleted. |
 | One metrics system: design | ⏳ waiting | A design for one metrics system that feeds the status page, the logs and standard monitoring tools, including a packet-level recorder. |
 | Observability implementation | ⛔ blocked | Building one metrics system that feeds the status page, the logs and standard monitoring tools. |
 | Base connection layer | ✔ done · successful | The base connection layer the engine runs on: handshake and versioning, TLS certificate pinning, moving a live connection between paths, packet sizes fitted to each path (MTU), keepalive and dead-path detection, and routing set-up through the Windows tunnel driver (wintun). |
@@ -523,6 +525,7 @@ flowchart TB
 
 - `meas-w1-bracket-fix`: Repair-share bound counts every slot
 - `store-law-derivation`: Deriving the in-flight data limit
+- `model-rho-step-sites`: Make all twelve ρ splits continuous
 
 **none**
 
@@ -1184,14 +1187,14 @@ History before November 2026 is reconstructed from commits, status sections and 
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 23 nodes (12 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 62 nodes (30 done, 7 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 63 nodes (30 done, 8 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 39 nodes (19 done, 5 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 71 nodes (37 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 22 nodes (8 done, 3 in progress, 1 next, 1 blocked, 9 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 66 nodes (49 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 35 nodes (24 done, 7 in progress, 2 next, 1 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 36 nodes (24 done, 8 in progress, 2 next, 1 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (17 done, 7 in progress, 2 next, 2 blocked)
 <!-- END GENERATED: tracks -->

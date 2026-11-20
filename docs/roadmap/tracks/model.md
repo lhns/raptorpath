@@ -40,6 +40,7 @@ flowchart TB
     model_wasm_fixes["▶ Visualizer model<br/>fixes"]
     model_fix_paper_p2["○ Paper fixes: path<br/>choice, our BBR"]
     model_fix_paper_p3["⛔ Four unstated rules<br/>added to paper"]
+    model_rho_step_sites["▶ Make all twelve ρ<br/>splits continuous"]
     model_paper_v1 ~~~ model_open_points
     model_paper_v1 ~~~ model_visualizer_v1
     model_open_points ~~~ model_wasm_l0
@@ -72,8 +73,8 @@ flowchart TB
     model_defect_rho_inert ~~~ model_wasm_fixes
     model_warm_start ~~~ model_fix_paper_p2
     model_fix_hint_keyed_paths ~~~ model_fix_paper_p3
-    model_wasm_fixes ~~~ model_fix_paper_p3
-    model_fix_paper_p2 ~~~ model_fix_paper_p3
+    model_wasm_fixes ~~~ model_rho_step_sites
+    model_fix_paper_p2 ~~~ model_rho_step_sites
     model_paper_v1 --> model_open_points
     model_visualizer_v1 --> model_wasm_l0
     model_wasm_l0 -.-> model_defect_tcut
@@ -112,7 +113,7 @@ flowchart TB
     class model_s16_fountain dead
     class model_mode_switch_debts,model_open_constants,model_bound_tests_unrun,model_defect_rho_inert defect
     class model_paper_recon waiting
-    class model_shared_core,model_wasm_fixes inprog
+    class model_shared_core,model_wasm_fixes,model_rho_step_sites inprog
     class model_fix_hint_keyed_paths,model_fix_paper_p2 next
     class model_fix_paper_p3 blocked
 ```
@@ -158,6 +159,7 @@ flowchart TB
 | `model-tier1-rescores` | Tier-1 literature re-scores | done | unrated |  | commit 80376c63 |  |
 | `model-tier0-corrections` | Tier-0 paper claim corrections | done | successful |  | commit 46c3e6a6; commit 515e4143 |  |
 | `model-paper-rewrite` | Concise rewrite of the model paper | done | unrated |  | commit e22920d5; docs/fec-arq-model.md |  |
+| `model-rho-step-sites` | Make all twelve ρ splits continuous | in-progress | unrated |  | ADR-0084 Amendment 1 (branch adr84-amend) | rec-evict-blocker-unresolved |
 
 ### Details per node
 
@@ -196,6 +198,7 @@ flowchart TB
 | `model-s16-fountain` | Fountain aggregation claim (paper §16) | The 2026-07-06 rewrite as reliable windowed multipath is folded in meas-c8-aggregation-arc. | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16; commit 1412f280 |
 | `model-tier1-rescores` | Tier-1 literature re-scores | Split 2026-11-20 from store-delta-cap. Unrated: one reading supported, one refuted. | commit 80376c63 |
 | `model-tier0-corrections` | Tier-0 paper claim corrections | Split 2026-11-20 from store-delta-cap. | commit 46c3e6a6; commit 515e4143 |
+| `model-rho-step-sites` | Make all twelve ρ splits continuous | Owner decision 2026-11-20: option B (rewrite all twelve), not grandfathered; framing: ask whether each split has a reason, work only on behaviour we can derive. Derivation on branch rho-step-sites (docs/derivations/rho-step-sites.md), then one commit per site stacked on the ADR-0084 fix. Done when: the reader count of the derived bit is 0, the field is deleted, and the acceptance test (one seed at rho = 1, 0.9999, 0.999, 0.99; runs below 1 differ only by give-ups within (1 - rho) S) is green. | ADR-0084 Amendment 1 (branch adr84-amend) |
 
 ### Folded items per node
 
