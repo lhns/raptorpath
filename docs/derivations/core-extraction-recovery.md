@@ -1,5 +1,10 @@
 # Core extraction for the recovery model check (design, no code)
 
+**Status (2026-11-20): superseded in part by ADR-0084** (`docs/adr/0084-every-verdict-reaches-the-receiver.md`; derivation `evict-verdict-law.md` §10). The rest of this design stands.
+- **Decision 3 and §1.3's redundancy pin (§3.3, step 3):** the intake pause runs at every ρ on `intake_paused(O, B, F)` with O counted from the receiver's frontier; the engine no longer maps ρ < 1 to (0, ∞, false), so the pin is retired.
+- **Decision 5:** the shed is judged before the clamp, on the unclamped gap, and `judge_seq` composes shed and serve.
+- **Step 4 (the store-span clamp bound):** not needed. With a store at every ρ, step 2's ρ = 1 bounds (0, `u64::MAX`) hold on both seats.
+
 Base: `github/main` at `0d885bbd`. Every file:line below refers to that
 commit and is relative to the repository root. Design only: no engine or
 model change, no cargo build, no VM.

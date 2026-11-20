@@ -1,6 +1,6 @@
 # ADR-0081: The sender accounts for every source seq, and every test checks the account
 
-## Status: Proposed (2026-11-20). Plan: `docs/derivations/test-detection-plan.md` S4.
+## Status: Proposed (2026-11-20). Plan: `docs/derivations/test-detection-plan.md` S4. Identity superseded in part by ADR-0084: `S_sent = A + H + E + |U|`, abandonment counted at the receiver.
 
 ## Context
 
