@@ -17,14 +17,18 @@ permissions:
 jobs:
   list:
     runs-on: ubuntu-24.04
+    outputs:
+      count: ${{ steps.list.outputs.count }}
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with: { tool: "cargo-mutants@25.3.1" }
-      - run: |
+      - id: list
+        run: |
           cargo mutants --list -p raptorpath-math -p raptorpath-core > mutants.list
-          wc -l mutants.list | tee -a "$GITHUB_STEP_SUMMARY"
+          wc -l < mutants.list | sed 's/^/mutants listed: /' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "count=$(wc -l < mutants.list)" >> "$GITHUB_OUTPUT"
           cut -d: -f1 mutants.list | sort | uniq -c | sort -rn | tee -a "$GITHUB_STEP_SUMMARY"
   shard:
     needs: list
@@ -46,7 +50,10 @@ jobs:
       - name: cargo mutants shard ${{ matrix.shard }}/20
         run: |
           start=$(date +%s)
-          cargo mutants -p raptorpath-math -p raptorpath-core --shard ${{ matrix.shard }}/20             --test-tool nextest --minimum-test-timeout 60 --timeout 900 --no-times || true
+          cargo mutants -p raptorpath-math -p raptorpath-core --shard ${{ matrix.shard }}/20 --test-tool nextest --minimum-test-timeout 60 --timeout 300 --no-times && rc=0 || rc=$?
+          # 0 all caught, 2 survivors, 3 timeouts; anything else (usage error, unmutated tests red) fails the shard
+          echo "cargo-mutants exit $rc"
+          case $rc in 0|2|3) ;; *) exit $rc ;; esac
           echo "shard ${{ matrix.shard }} wall $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
           cat mutants.out/outcomes.json | python3 -c "import json,sys; o=json.load(sys.stdin); print({k:o[k] for k in o if k!='outcomes'})" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4.6.2
@@ -60,7 +67,7 @@ jobs:
             mutants.out/unviable.txt
             mutants.out/outcomes.json
   compare:
-    needs: shard
+    needs: [list, shard]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -70,11 +77,12 @@ jobs:
       - name: compare survivors with tools/ci/mutants-baseline.txt
         run: |
           python3 tools/ci/mutants_compare.py --write all-missed.txt shards/*/missed.txt
+          outs=$(ls shards/*/outcomes.json | paste -sd,)
           cat shards/*/caught.txt shards/*/timeout.txt 2>/dev/null | wc -l | sed 's/^/caught+timeout: /' | tee -a "$GITHUB_STEP_SUMMARY"
           wc -l all-missed.txt | tee -a "$GITHUB_STEP_SUMMARY"
           cut -d: -f1 all-missed.txt | grep -v '^#' | sort | uniq -c | sort -rn | tee -a "$GITHUB_STEP_SUMMARY"
           if [ -f tools/ci/mutants-baseline.txt ]; then
-            python3 tools/ci/mutants_compare.py tools/ci/mutants-baseline.txt shards/*/missed.txt
+            python3 tools/ci/mutants_compare.py --outcomes ${{ needs.list.outputs.count }} "$outs" tools/ci/mutants-baseline.txt shards/*/missed.txt
           else
             echo "no baseline yet"
           fi

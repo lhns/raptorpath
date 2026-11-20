@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Compare surviving mutants against tools/ci/mutants-baseline.txt.
 
-usage: mutants_compare.py BASELINE MISSED.txt [MISSED.txt ...]
+usage: mutants_compare.py [--outcomes EXPECTED_TOTAL OUTCOMES.json,...] BASELINE MISSED.txt [...]
        mutants_compare.py --write BASELINE MISSED.txt [...]
+
+--outcomes first checks that the shards together ran every listed mutant
+(a cut-off shard would otherwise look like fewer survivors).
 
 Lines are normalised (":line:col" removed) so edits that only shift code do
 not churn the baseline. Entries are compared as a multiset (the same
@@ -25,7 +28,25 @@ def load(paths):
                     c[norm(l)] += 1
     return c
 
+def check_complete(expected, outcome_files):
+    import json
+    tot = {"total_mutants": 0, "caught": 0, "missed": 0, "timeout": 0, "unviable": 0}
+    for p in outcome_files:
+        o = json.load(open(p, encoding="utf-8"))
+        for k in tot:
+            tot[k] += o.get(k, 0)
+    done = tot["caught"] + tot["missed"] + tot["timeout"] + tot["unviable"]
+    print("outcomes:", tot, "expected", expected)
+    if tot["total_mutants"] != expected or done != expected:
+        print("INCOMPLETE: shards did not run every listed mutant")
+        return False
+    return True
+
 def main(argv):
+    if argv[:1] == ["--outcomes"]:
+        if not check_complete(int(argv[1]), argv[2].split(",")):
+            return 1
+        argv = argv[3:]
     write = argv[:1] == ["--write"]
     if write:
         argv = argv[1:]
