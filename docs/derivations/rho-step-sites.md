@@ -368,9 +368,12 @@ The digest cannot reach the inline sites: C1's four call sites, the hole law in 
   - `client_ok`: the perf server needs every chunk, and a ρ = 1 sender promises every chunk;
   - ack = S_src;
   - receiver passes = 0: `[SHED-R] holes=0` before v11, `G_rx = 0` after.
-- **Red on main.** The ρ < 1 receiver expires holes while the ρ = 1 sender discards each seq on the cumulative ack. That is a loss nothing counts, against a sender whose contract forbids it (Q11 in `evict-verdict-law.md` §9 already named this: "the contract can still break on the receiver").
+- **Red on `adr84-amend` (`381ab508`), run locally on Windows.** Scratch tests, not committed: seed 42, 6 MB, 2.5 % loss, one path, `RWM_DIAG=1`.
+  - **Reverse:** Bulk hint at both ends, server `SIM_SRV_RELIABLE=false`. Result: `outcome=virtual_limit`, `src=5078 ack=5078`, and the receiver's last `[SHED-R]` line reads `holes=72 frontier=3204 budget_open=true`.
+  - **What it shows:** the ack reaches S_src, so a test on the ack alone would be green. But the receiver passed at least 72 holes undelivered, and the ρ = 1 sender dropped each one from its store on the cumulative ack. The perf transfer therefore never completes.
+  - **So the red assertions are `client_ok` and passes = 0, not the ack.** That is a loss nothing counts, against a sender whose contract forbids it (Q11 in `evict-verdict-law.md` §9: "the contract can still break on the receiver").
 - **Green under R1:** no floor, no pass.
-- **Isolating the forward pairing.** The existing forward test (`mixed_realtime_sender_bulk_receiver_ack_reaches_src`, ack 49 of 12 147) changes the server's *hint* as well as its retention. A same-hint variant (`hint: realtime`, `SIM_SRV_RELIABLE=true`) isolates retention. The ADR's claim, "each end reads its own retention flag", rests on that variant.
+- **Isolating the forward pairing.** The existing forward test (`mixed_realtime_sender_bulk_receiver_ack_reaches_src`, ack 49 of 12 147) changes the server's *hint* as well as its retention. The same-hint variant (Realtime at both ends, server `SIM_SRV_RELIABLE=true`, same run as above) reads `outcome=virtual_limit src=12147 ack=49`, the same stall. So retention alone causes it, and the ADR's claim, "each end reads its own retention flag", holds. Add the variant beside the existing test.
 
 ## 5. The implementation plan
 
