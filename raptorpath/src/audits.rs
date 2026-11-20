@@ -429,8 +429,7 @@ fn strip_test_items(clean: &mut String, orig: &str) -> Vec<String> {
                 // (`x: u64, #[cfg(..)] pub acct: A,`), not an item: it ends at `,` or `;`,
                 // or at the close of a `{..}` block. Otherwise the scan would run on into
                 // the next `{` and blank the enclosing impl.
-                let inline = bytes[..i].iter().rev().take_while(|&&c| c != b'
-').any(|c| !c.is_ascii_whitespace());
+                let inline = bytes[..i].iter().rev().take_while(|&&c| c != b'\n').any(|c| !c.is_ascii_whitespace());
                 let mut d = 0i32;
                 let mut end = bytes.len();
                 let mut k = j;
@@ -1313,13 +1312,9 @@ fn scanner_keeps_the_impl_after_an_inline_cfg_gated_field_and_statement() {
     let s = fixture(&[
         (
             "lib.rs",
-            "pub struct S { n: u64, #[cfg(feature = \"test-seams\")] pub acct: u8, }
-impl S { pub fn live(&self) -> u64 { self.n } pub fn dead(&self) {} }
-pub fn go(s: &S) { #[cfg(feature = \"test-seams\")] { s.dead(); } s.live(); }
-",
+            "pub struct S { n: u64, #[cfg(feature = \"test-seams\")] pub acct: u8, }\nimpl S { pub fn live(&self) -> u64 { self.n } pub fn dead(&self) {} }\npub fn go(s: &S) { #[cfg(feature = \"test-seams\")] { s.dead(); } s.live(); }\n",
         ),
-        ("main.rs", "fn main() { lib::go(); }
-"),
+        ("main.rs", "fn main() { lib::go(); }\n"),
     ]);
     assert!(!s.uncalled.contains("lib.rs::S::live"), "the impl after the gated field must stay visible: {:?}", s.uncalled);
     assert!(s.uncalled.contains("lib.rs::S::dead"), "a call inside the gated block is test code: {:?}", s.uncalled);
