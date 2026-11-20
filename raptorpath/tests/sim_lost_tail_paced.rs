@@ -68,6 +68,8 @@ struct Row {
     src: u64,
     ack: u64,
     queue_drops: usize,
+    o_strand: u64,
+    inert_sweeps: u64,
     line: String,
 }
 
@@ -94,21 +96,62 @@ fn row(r: &ChildRun) -> Row {
         a.u("E"),
         a.f("bud"),
     );
-    Row { sends: sends.len(), first_dropped: sends.first().is_some_and(|l| l.contains(" dropped=1 ")), fills: ks("fill").len(), src, ack, queue_drops, line }
+    Row { sends: sends.len(), first_dropped: sends.first().is_some_and(|l| l.contains(" dropped=1 ")), fills: ks("fill").len(), src, ack, queue_drops, o_strand: a.u("O_strand"), inert_sweeps: a.u("inert_sweeps"), line }
 }
 
-/// The matrix: every rate and seed at rho < 1, and the rho = 1 control.
-/// Prints one row per run; the assertions encode what the numbers showed.
+/// Observed (CI run 44757846199, 3 seeds each, natural budget): at rho < 1 the
+/// lost tail stalls at BOTH 20 and 35 Mbit/s although the source is paced and
+/// the link's queue never overflows (0 drop_queue; unpaced `perf::client`
+/// overflows about 1 100): final cumulative ack stuck at k = 11 800 of 12 147,
+/// O = 347, O_strand = 147, inert_sweeps 386 to 735, outcome virtual_limit.
+/// k is resent 2 to 4 times at 20 Mbit/s (never at 35) and still never fills.
+/// So the defect does NOT need an over-driven source; a rate bound alone is
+/// not the fix. This test pins that, with the witness that the run was paced.
 #[test]
-fn paced_lost_tail_matrix() {
-    for reliable in [false, true] {
-        for mbit in RATES {
-            for seed in SEEDS {
-                let r = row(&paced_lost_tail(reliable, mbit, seed));
-                println!("MATRIX rho{} pace={mbit} seed={seed}: {}", if reliable { "=1" } else { "<1" }, r.line);
-                assert!(r.first_dropped, "seam did not swallow k's first send");
-                let _ = (r.sends, r.fills, r.src, r.ack, r.queue_drops);
-            }
+fn paced_lost_tail_still_stalls_at_rho_below_1() {
+    for mbit in RATES {
+        for seed in SEEDS {
+            let r = row(&paced_lost_tail(false, mbit, seed));
+            let w = format!("pace={mbit} seed={seed}: {}", r.line);
+            println!("rho<1 {w}");
+            assert!(r.first_dropped, "seam did not swallow k's first send: {w}");
+            assert_eq!(r.queue_drops, 0, "the source over-drove the link (not a paced run): {w}");
+            assert!(r.ack <= K && r.fills == 0, "k resolved (defect fixed? flip this test): {w}");
+            assert!(r.o_strand > 0 && r.inert_sweeps > 0, "account shows no stall (defect fixed? flip): {w}");
+        }
+    }
+}
+
+/// KNOWN DEFECT `rec-evict-blocker-unresolved`: once fixed, a paced lost tail
+/// at rho < 1 resolves: the cumulative ack passes k and the account is clean.
+#[test]
+#[ignore = "rec-evict-blocker-unresolved: at rho < 1 the lost tail stalls even with a paced source (no queue overflow): final cum ack stuck at k, O_strand=147, inert sweeps"]
+fn paced_lost_tail_resolves_at_rho_below_1() {
+    for mbit in RATES {
+        for seed in SEEDS {
+            let r = row(&paced_lost_tail(false, mbit, seed));
+            let w = format!("pace={mbit} seed={seed}: {}", r.line);
+            assert!(r.ack > K, "final cumulative ack did not pass k: {w}");
+            assert_eq!(r.o_strand, 0, "O_strand: {w}");
+            assert_eq!(r.inert_sweeps, 0, "inert sweeps: {w}");
+        }
+    }
+}
+
+/// Control: the same paced lost tail at rho = 1 recovers: k resent and filled,
+/// the cumulative ack passes k, the transfer completes, the account is clean.
+#[test]
+fn control_paced_lost_tail_recovers_at_rho_1() {
+    for mbit in RATES {
+        for seed in SEEDS {
+            let r = paced_lost_tail(true, mbit, seed);
+            let w = row(&r);
+            println!("rho=1 pace={mbit} seed={seed}: {}", w.line);
+            assert!(w.first_dropped, "seam did not swallow k's first send: {}", w.line);
+            assert!(w.sends >= 2 && w.fills >= 1, "k not resent and filled: {}", w.line);
+            assert!(w.ack > K, "final cumulative ack did not pass k: {}", w.line);
+            assert_eq!(r.outcome, "client_ok", "{}", w.line);
+            assert!(r.acct().violations().is_empty(), "account: {:?}", r.acct().violations());
         }
     }
 }
