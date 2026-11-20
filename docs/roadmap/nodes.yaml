@@ -8338,6 +8338,7 @@ nodes:
   outcome: unrated
   evidence:
   - docs/derivations/test-detection-plan.md
+  - .github/workflows/ci.yml
   verdict_quote: ''
   headline: ''
   depends_on: []
@@ -8349,7 +8350,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests.'
-  notes: 'Plan S1, ADR-0080 (Proposed). Done when the workflow is red on a branch at 0bf43c11 (main''s two failing gate tests) and green at e304921b. The flake-rule change in suites_run.sh waits until the repeat job has seeded the quarantine list.'
+  notes: 'Plan S1, ADR-0080 (Proposed). Done when the workflow is red on a branch at 0bf43c11 (main''s two failing gate tests) and green at e304921b. The flake-rule change in suites_run.sh waits until the repeat job has seeded the quarantine list. Merged ci-gate 1a785728: tier A about 5 min (gates, math+core, lib release, tools, visualizer), red on 0bf43c11 (run 44656256273), green on ci-gate (run 44658344625); nightly about 18 min with release 1151 and debug 1003 passing. Owed: the full stub run fails on Linux runners (93 checks downstream of plan 62r0''s rehearsal; passes on the Windows host), test_harness61/62/63 quarantined whole for stale frozen-base checks, then the flake-rule change.'
 - id: infra-test-static-audits
   title: Unwired-code and config audits
   track: infra
