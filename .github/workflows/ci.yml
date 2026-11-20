@@ -106,7 +106,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: sim }
-      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail --test sim_lost_tail_paced --test sim_shed_reach -- --nocapture
+      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail --test sim_lost_tail_paced --test sim_shed_reach --test sim_mixed_rho -- --nocapture
   sim-cross-os:
     # The same sim scenarios on Linux and Windows (sim_cross_os.rs); the
     # compare job diffs the traces and logs. A difference means the OS is

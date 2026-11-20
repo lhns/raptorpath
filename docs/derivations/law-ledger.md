@@ -94,10 +94,10 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 ## 2. Distribution
 
 <!-- BEGIN:dist -->
-- rows: 73
-- verdict tags (a row may carry several): OK 13, DIVERGENT 18, UNDERIVED 32, PINNED 4, DEGENERATE 10, DISHONEST-INPUT 20, MODE-SWITCH 7
+- rows: 84
+- verdict tags (a row may carry several): OK 13, DIVERGENT 18, UNDERIVED 32, PINNED 4, DEGENERATE 10, DISHONEST-INPUT 20, MODE-SWITCH 18
 - rows that are OK only: 13, of which not measured in regime (OK but unverified): 9 (D01, D02, D03, D04, D05, D06, R06, R08, C12)
-- priorities: P0 8, P1 10, P2 19, P3 36
+- priorities: P0 8, P1 10, P2 26, P3 40
 <!-- END:dist -->
 
 ## 3. Summary, in fix order (every row is ranked; rows with fix class "none" come last)
@@ -168,16 +168,27 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [F04](#f04) | store-cap control and off arms (RWM_STORE_PATHS=0, RWM_DELTA_CAP=0, RWM_SUM_CAP=0, RWM_THREE_TERM) | UNDERIVED | P3 | 61 | F01 |
 | [F05](#f05) | generation pipeline depth M* (opt-in seat) | UNDERIVED | P3 | 62 | E03 |
 | [R09](#r09) | generation repair floor 0.15 / 0.20 (opt-in seat) | UNDERIVED, DIVERGENT | P3 | 63 | - |
-| [E05](#e05) | quinn wire SRTT (wire_rtt mirror) | OK | P3 | 64 | - |
-| [E06](#e06) | per-path loss estimate eps-hat (tx EWMA) and its feed | OK | P3 | 65 | - |
-| [F06](#f06) | SACK-clocked release (store_gate_released) | OK | P3 | 66 | - |
-| [R08](#r08) | rate cadence min(5 ms, SRTT/4) | OK | P3 | 67 | - |
-| [D01](#d01) | delta(hint) named points / delta_price | OK | P3 | 68 | - |
-| [D02](#d02) | b(delta) span horizon | OK | P3 | 69 | - |
-| [D03](#d03) | q(delta) CoDel setpoint | OK | P3 | 70 | - |
-| [D04](#d04) | beta(delta) bulkness | OK | P3 | 71 | - |
-| [D05](#d05) | w_bw(delta) placement loss weight | OK | P3 | 72 | - |
-| [D06](#d06) | t_tail(delta) tail target | OK | P3 | 73 | - |
+| [G01](#g01) | placement split (place_symbol law vs best-goodput pick) | MODE-SWITCH(live) | P2 | 64 | - |
+| [G02](#g02) | SACK release scope (store_sack_release_on, sender_sack_tx) | MODE-SWITCH(live) | P2 | 65 | - |
+| [G03](#g03) | multipath hole law scope (recov_mp) | MODE-SWITCH(live) | P2 | 66 | - |
+| [G04](#g04) | single-path hole law scope (recov_sp, gate default off) | MODE-SWITCH(live) | P3 | 67 | - |
+| [G06](#g06) | receiver request arms scope (request_law_armed, request_arm; gates default off) | MODE-SWITCH(live) | P3 | 68 | - |
+| [G07](#g07) | Copa plain delivery feed scope (plain_inorder) | MODE-SWITCH(live) | P3 | 69 | - |
+| [G08](#g08) | object-corner domain refusal below rho = 1 | MODE-SWITCH(live) | P3 | 70 | - |
+| [G09](#g09) | receiver reorder buffer seat (never-pass buffer vs hold/expiry/force-drain) | MODE-SWITCH(live) | P2 | 71 | - |
+| [G10](#g10) | delivery on a full consumer channel (hold vs drop) | MODE-SWITCH(live) | P2 | 72 | - |
+| [G11](#g11) | receiver shed hold arm (recv_shed_on) | MODE-SWITCH(live) | P2 | 73 | - |
+| [G12](#g12) | receiver hole timer (refresh vs give-up) | MODE-SWITCH(live) | P2 | 74 | - |
+| [E05](#e05) | quinn wire SRTT (wire_rtt mirror) | OK | P3 | 75 | - |
+| [E06](#e06) | per-path loss estimate eps-hat (tx EWMA) and its feed | OK | P3 | 76 | - |
+| [F06](#f06) | SACK-clocked release (store_gate_released) | OK | P3 | 77 | - |
+| [R08](#r08) | rate cadence min(5 ms, SRTT/4) | OK | P3 | 78 | - |
+| [D01](#d01) | delta(hint) named points / delta_price | OK | P3 | 79 | - |
+| [D02](#d02) | b(delta) span horizon | OK | P3 | 80 | - |
+| [D03](#d03) | q(delta) CoDel setpoint | OK | P3 | 81 | - |
+| [D04](#d04) | beta(delta) bulkness | OK | P3 | 82 | - |
+| [D05](#d05) | w_bw(delta) placement loss weight | OK | P3 | 83 | - |
+| [D06](#d06) | t_tail(delta) tail target | OK | P3 | 84 | - |
 <!-- END:summary -->
 
 ## 4. Fix order
@@ -505,7 +516,7 @@ a branch.
 - *7. inputs honest?:* honest for what placement prices (wire transit); blind to quinn's send buffer, so placement cannot see p0's 1.5-3k datagram backlog (p0-dwell-diag §4)
 - *8. NO-MODE-SWITCH:* none. Code nit: the path.rs:28-35 field doc says 'written only while the arm is on', the code writes unconditionally
 - *9. verdict:* **OK**: the honest wire clock; the candidate replacement source for E03 and E11
-- *10. fix class, priority:* none (stale field doc); **P3**, rank 64
+- *10. fix class, priority:* none (stale field doc); **P3**, rank 75
 - *flags:* measured yes, gauge yes
 
 #### E06
@@ -526,7 +537,7 @@ a branch.
 - *7. inputs honest?:* honest (datagram-level truth match)
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: fed loss matches per-datagram truth 0.95-1.03x (§3.6, §3.8); reorder branch tested only in unit tests
-- *10. fix class, priority:* none; **P3**, rank 65
+- *10. fix class, priority:* none; **P3**, rank 76
 - *flags:* measured yes, gauge yes
 
 #### E07
@@ -718,7 +729,7 @@ a branch.
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* the one sanctioned hint read; everything downstream reads delta
 - *9. verdict:* **OK**: delta_budget_b_is_the_dial_not_a_mode pins 50/0.5/0.005 bit-exactly
-- *10. fix class, priority:* none; **P3**, rank 68
+- *10. fix class, priority:* none; **P3**, rank 79
 - *flags:* measured partial, gauge yes
 
 #### D02
@@ -739,7 +750,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial (formula_agreement.rs:556)
-- *10. fix class, priority:* none; **P3**, rank 69
+- *10. fix class, priority:* none; **P3**, rank 80
 - *flags:* measured partial, gauge yes
 
 #### D03
@@ -760,7 +771,7 @@ a branch.
 - *7. inputs honest?:* D02
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: formula provenanced and pinned (published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band); unverified because F01 is pinned
-- *10. fix class, priority:* none (see F01); **P3**, rank 70
+- *10. fix class, priority:* none (see F01); **P3**, rank 81
 - *flags:* measured no, gauge yes
 
 #### D04
@@ -781,7 +792,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: the_bulkness_weight_is_exact_at_the_presets_and_the_ablation_zeroes_it; flat over [Auto, Realtime] by construction
-- *10. fix class, priority:* none; **P3**, rank 71
+- *10. fix class, priority:* none; **P3**, rank 82
 - *flags:* measured partial, gauge no
 
 #### D05
@@ -802,7 +813,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: scheduling_weights_are_the_dial_not_a_mode pins {0, 0.5, 1}
-- *10. fix class, priority:* none; **P3**, rank 72
+- *10. fix class, priority:* none; **P3**, rank 83
 - *flags:* measured partial, gauge no
 
 #### D06
@@ -823,7 +834,7 @@ a branch.
 - *7. inputs honest?:* D01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: continuous and pinned; never exercised on a measured cell
-- *10. fix class, priority:* none; **P3**, rank 73
+- *10. fix class, priority:* none; **P3**, rank 84
 - *flags:* measured no, gauge no
 
 
@@ -867,8 +878,8 @@ a branch.
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the reliable bool selects whether any outstanding gate exists
-- *9. verdict:* **MODE-SWITCH(live)**: §3.3 last row; at rho < 1 there is no sent_store and no store gate (paper §6.1)
-- *10. fix class, priority:* law change (rho term from §6.1); **P2**, rank 28; depends on F01
+- *9. verdict:* **MODE-SWITCH(live)**: §3.3 last row; at rho < 1 there is no sent_store and no store gate (paper §6.1). Re-read on 060db8af: net/mod.rs:2473 and the burst copy :3219, net/sender_policy.rs:522 (docs/derivations/adr84-engine-brief.md §1, A4-A6)
+- *10. fix class, priority:* removed by the ADR-0084 engine change (pending): the pause and the pooled cap at every rho, no rho input (Amendment 1 group A); **P2**, rank 28; depends on F01
 - *flags:* measured no, gauge no
 
 #### F03
@@ -950,9 +961,9 @@ a branch.
 - *5. measured in regime?:* c8: on 20-gap rows the gate's released count is 28-75 k against 4-26 k SACK marks, so the received-above count does the work (p0-dwell-diag §1, srel= gauge)
 - *6. clamp bind:* outer min cannot bind (derived)
 - *7. inputs honest?:* honest (wire fields F, A); premise: the reliable receiver never evicts above its frontier (rho = 1 only)
-- *8. NO-MODE-SWITCH:* none (rho < 1 has no store gate: F02)
+- *8. NO-MODE-SWITCH:* none in the law; its scope is ADR-0084 Amendment 1 item C2 (release at rho = 1 only, until its option-B rewrite; G02)
 - *9. verdict:* **OK**: bounded by store_gate_released_never_exceeds_the_retained_received_truth and stalled_frontier_store_gate_converges_past_the_sack_cap
-- *10. fix class, priority:* none; **P3**, rank 66
+- *10. fix class, priority:* none; **P3**, rank 77
 - *flags:* measured yes, gauge yes
 
 #### F07
@@ -1144,7 +1155,7 @@ a branch.
 - *7. inputs honest?:* srtt = E01
 - *8. NO-MODE-SWITCH:* none
 - *9. verdict:* **OK**: rate_cadence_is_one_period_stale_and_bounded; r ~ 0 so staleness is moot on L1
-- *10. fix class, priority:* none; **P3**, rank 67
+- *10. fix class, priority:* none; **P3**, rank 78
 - *flags:* measured partial, gauge yes
 
 #### R09
@@ -1365,7 +1376,7 @@ a branch.
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): hint equality and the reliable bool
-- *9. verdict:* **MODE-SWITCH(live), UNDERIVED**: §3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime
+- *9. verdict:* **MODE-SWITCH(live), UNDERIVED**: §3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime. ADR-0084 Amendment 1 item C5: after the flag leaves, the reliable conjunct reads the mid-stack scaffolding bit rho1_debt (rho >= 1) until its option-B rewrite, counted by tests/rho_deny_list.rs and bounded by rho1_debt_bounds::c05_emit_batch_scope_steps_only_at_rho_1 (owed)
 - *10. fix class, priority:* law (a continuous packing/batching quantum) or owner call; **P2**, rank 35
 - *flags:* measured no, gauge yes
 
@@ -1977,5 +1988,239 @@ a branch.
 - *9. verdict:* **DEGENERATE(rho inert at Auto and Realtime under the shipped R), DIVERGENT**: giveup_law_tests + UI gate; sim gives up 4-10 (was 23-28) on the harsh cells, 0 at rho = 1; diverges from the engine only for 0 < 1 - rho < R
 - *10. fix class, priority:* done (model); the engine seat switch stays (W3.2 if-reliable debt); rho-inert reading conditional on R03; **P3**, rank 40; depends on R03; ships with C13
 - *flags:* measured n/a, gauge yes
+
+
+### Area: seat
+
+#### G01
+
+**placement split (place_symbol law vs best-goodput pick)** (rho < 1 (Realtime default) and any declared rho < 1)
+
+- *1. location:* net/emit_source.rs:356 source, :863 correction; net/sender_phases.rs:973 NACK resend, :1118 repair margin (main 060db8af)
+- *2. formula (code):* 
+
+  ```text
+  rho = 1: place_symbol(.., fate paths) ; rho < 1: select_source_path / select_repair_path[_avoiding]
+  ```
+
+- *3. paper:* §11.3 row C1; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c01_placement_split_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* law: place_symbol at every rho after a Realtime N = 2 battery; **P2**, rank 64
+- *flags:* measured no, gauge no
+
+#### G02
+
+**SACK release scope (store_sack_release_on, sender_sack_tx)** (rho < 1 (Realtime default) and any declared rho < 1)
+
+- *1. location:* net/sender_policy.rs:628; net/mod.rs:1103
+- *2. formula (code):* 
+
+  ```text
+  released = SACK-released seqs at rho = 1 ; released = empty at rho < 1
+  ```
+
+- *3. paper:* §11.3 row C2; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: the step reaches decision 3's pause through its input |released| (identically 0 at rho < 1), Delta O in [0, received_above]; bounded by T7c sack_release_step_is_bounded and rho1_debt_bounds::c02_sack_release_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* derive store_gate_released under give-up advances (ADR-0084 question 8), then release at every rho; **P2**, rank 65
+- *flags:* measured no, gauge no
+
+#### G03
+
+**multipath hole law scope (recov_mp)** (rho < 1 (Realtime default) and any declared rho < 1)
+
+- *1. location:* net/sender_policy.rs:692
+- *2. formula (code):* 
+
+  ```text
+  recov_mp = gate && rho1 && !generation
+  ```
+
+- *3. paper:* §11.3 row C3; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c03_recov_mp_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* battery: run at every rho (the law reads no rho); **P2**, rank 66
+- *flags:* measured no, gauge no
+
+#### G04
+
+**single-path hole law scope (recov_sp, gate default off)** (opt-in (RWM_RECOV_SP))
+
+- *1. location:* net/sender_policy.rs:705
+- *2. formula (code):* 
+
+  ```text
+  recov_sp = gate && rho1 && !generation
+  ```
+
+- *3. paper:* §11.3 row C4; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c04_recov_sp_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* battery: run at every rho; **P3**, rank 67
+- *flags:* measured no, gauge no
+
+#### G06
+
+**receiver request arms scope (request_law_armed, request_arm; gates default off)** (opt-in (RWM_RECV_REQUEST_LAW, rank feedback))
+
+- *1. location:* net/mod.rs:1049, :1058 via net/sack.rs:36; net/mod.rs:1752
+- *2. formula (code):* 
+
+  ```text
+  armed = rho1 && !generation && gate
+  ```
+
+- *3. paper:* §11.3 row C6; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c06_request_arms_step_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* law: a request law that skips holes the rho < 1 receiver already passed; **P3**, rank 68
+- *flags:* measured no, gauge no
+
+#### G07
+
+**Copa plain delivery feed scope (plain_inorder)** (opt-in (RWM_QUIC_CC=passthrough, RWM_COPA_FEED))
+
+- *1. location:* net/mod.rs:938
+- *2. formula (code):* 
+
+  ```text
+  fed iff rho1 && plain && in-order && gate
+  ```
+
+- *3. paper:* §11.3 row C7; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c07_copa_plain_feed_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* law: attribution net of give-up advances (G_rx passes); **P3**, rank 69
+- *flags:* measured no, gauge no
+
+#### G08
+
+**object-corner domain refusal below rho = 1** (config only (no runtime reader))
+
+- *1. location:* config.rs:304 (main 060db8af); runtime conjuncts net/mod.rs:632, :646, :647, :1207 deleted as redundant
+- *2. formula (code):* 
+
+  ```text
+  out_of_order | coded_only | generation | systematic refused iff rho < 1 (config time)
+  ```
+
+- *3. paper:* §11.3 row C8; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): a config-time refusal on rho < 1 (check_window_rho, allowlisted; no runtime reader, no rho1_debt bit; on main the window_reliable flag)
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c08_corner_refusal_is_config_only (owed); allowlisted once in tests/rho_deny_list.rs
+- *10. fix class, priority:* derivation: define each corner at rho < 1, then drop the refusal; **P3**, rank 70
+- *flags:* measured no, gauge no
+
+#### G09
+
+**receiver reorder buffer seat (never-pass buffer vs hold/expiry/force-drain)** (rho < 1 (Realtime default) and any declared rho < 1)
+
+- *1. location:* net/receiver.rs:163; net/reorder.rs:88, :118, :182
+- *2. formula (code):* 
+
+  ```text
+  rho = 1: never pass, never expire, never force-drain ; rho < 1: hold H, expiry, force-drain at max_buffered
+  ```
+
+- *3. paper:* §11.3 row C9; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c09_reorder_buffer_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* derivation: receiver budget (1 - rho)*frontier, memory bound by the sender's pooled B (ADR-0084 question 5); **P2**, rank 71
+- *flags:* measured no, gauge no
+
+#### G10
+
+**delivery on a full consumer channel (hold vs drop)** (rho < 1 (Realtime default) and any declared rho < 1)
+
+- *1. location:* net/receiver.rs:172; net/delivery.rs:66
+- *2. formula (code):* 
+
+  ```text
+  rho = 1: hold ; rho < 1: drop (not counted in G_rx)
+  ```
+
+- *3. paper:* §11.3 row C10; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c10_delivery_drop_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* law: count a drop in G_rx and admit it within 1 - rho, else hold; **P2**, rank 72
+- *flags:* measured no, gauge no
+
+#### G11
+
+**receiver shed hold arm (recv_shed_on)** (rho < 1 (Realtime default) and any declared rho < 1)
+
+- *1. location:* net/receiver.rs:183
+- *2. formula (code):* 
+
+  ```text
+  armed iff !rho1 && in-order && reorder buffer && unified shed gate; hold = SRTT/2 within eps_recv budget
+  ```
+
+- *3. paper:* §11.3 row C11; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c11_receiver_shed_hold_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* follows G09; SRTT/2 becomes b(delta)*SRTT; **P2**, rank 73
+- *flags:* measured no, gauge no
+
+#### G12
+
+**receiver hole timer (refresh vs give-up)** (rho < 1 (Realtime default) and any declared rho < 1)
+
+- *1. location:* net/receiver.rs:734, :860
+- *2. formula (code):* 
+
+  ```text
+  rho = 1: re-advertise at hole_nack_refresh ; rho < 1: hold expiry
+  ```
+
+- *3. paper:* §11.3 row C12; §5.1 'The flag leaves'; ADR-0084 Amendment 1 item 4
+- *4. derivation:* none: no rho-continuous form exists yet
+- *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
+- *6. clamp bind:* n/a
+- *7. inputs honest?:* n/a
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
+- *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c12_hole_timer_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
+- *10. fix class, priority:* follows G09: refresh at every rho, expiry inside the receiver budget; **P2**, rank 74
+- *flags:* measured no, gauge no
 
 <!-- END:rows -->

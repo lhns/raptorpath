@@ -9772,7 +9772,7 @@ nodes:
   state: in-progress
   outcome: unrated
   evidence:
-  - raptorpath/tests/sim_mixed_rho.rs (branch adr84-amend)
+  - raptorpath/tests/sim_mixed_rho.rs
   verdict_quote: ''
   headline: ''
   depends_on: []
