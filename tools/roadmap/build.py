@@ -544,7 +544,8 @@ LEGEND_STATUS = [
 LEGEND_ROWS = [("Done: colour is the rating", 0, 5), ("Closed", 5, 7), ("Open: colour is the state", 7, 13)]
 LEGEND_SHAPES = [_sample("law", kind="law", state="done", outcome="successful"),
                  _sample("mechanism, research, instrument", state="done", outcome="successful"),
-                 _sample("defect verdict", kind="defect-verdict", state="in-progress")]
+                 _sample("defect verdict", kind="defect-verdict", state="in-progress"),
+                 _sample("owner call (overview only)", kind="user-decision", state="done", outcome="n/a")]
 # (edge kind, from label, to label); drawn with EDGE_ARROWS and, for qual, QUAL_STYLE
 LEGEND_EDGES = [("dep", "prerequisite", "depends on it"), ("repl", "old design", "replaced by"),
                 ("qual", "rated node", "qualified by a later defect")]
@@ -647,7 +648,7 @@ def labelled(item):
 
 def r_done_by_month(nodes, today):
     """Every finished node (done or abandoned), grouped by the month it ended (else started), newest month
-    first, undated last; each line carries the node's plain sentence (else its headline), and the node's
+    first, undated last; each line carries the node's plain sentence (if it has one), and the node's
     labelled folded records follow as sub-bullets."""
     sel = [n for n in nodes if n["state"] in ("done", "abandoned")]
     if not sel:
@@ -663,8 +664,7 @@ def r_done_by_month(nodes, today):
         count = f"{done} done" + (f", {len(group) - done} abandoned" if len(group) > done else "")
         lines = []
         for n in group:
-            say = n["plain"] or n["headline"]
-            lines.append(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})" + (f". {cell(say)}" if say else ""))
+            lines.append(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})" + (f". {cell(n['plain'])}" if n["plain"] else ""))
             lines += [f"  - {cell(t)} ({d})" for t, d in filter(None, map(labelled, n["folded"]))]
         body = "\n".join(lines)
         parts.append(f"<details><summary><b>{head}</b>: {count}</summary>\n\n{body}\n\n</details>")
