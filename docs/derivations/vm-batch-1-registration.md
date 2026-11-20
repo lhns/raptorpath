@@ -10,10 +10,10 @@ Draft for the coordinator to register as its own status section. No row has run.
   - **guard 2:** the S06 deletion on top of guard 1's candidate.
   
   Each guard has a Bulk stage and stages off Bulk, with witnesses that show each change actually ran.
-- **S06 cannot merge on its own under the current text.** ADR-0084 Amendment 1 lifts the S06 merge hold "for this purpose only": `s06-delete` reaches main beneath the ADR-0084 engine change, not alone. That amendment is itself unmerged, and some of its marks wait on you. **The question for you:** if guard 2 passes, does S06 merge now, or wait under ADR-0084? (§7.) The guard runs either way, because it is ADR-0079's own guard (ADR-0084 Amendment 1, item 3, guard 1).
+- **S06 merges on its own guard-2 PASS (owner, 2026-11-20; Amendment 1 below).** It does not wait beneath the ADR-0084 engine change: a guard pass goes stale as main moves, and holding it would mean guarding it again. ADR-0084 Amendment 1's "not on its own" clause (item 3, and its Consequences line "lifted only for the stacked build") must be rewritten to match before S06 merges. The coordinator is doing that on `adr84-amend`.
 - **The c8 gap horizon (lever B, audit rank 2) is not in this batch.** You parked it: decision 6, re-affirmed on 2026-11-19 ("the fix is the store law"). Its branch is also 628 commits behind. §8 lists what it would need.
 - **Ceph.** Status still says no scored VM session runs until you say the Ceph instability is over. This batch waits for that word (§6, precondition P0).
-- **Cost:** four VM sessions: pre-flight, rehearsal, the two Bulk guards, the off-Bulk stages. Typical ≈ 4.3 + 1.2 + 2.0 + 2.8 ≈ 10.3 h, worst ≈ 15 h. Each session stays under the five-hour cap.
+- **Cost:** four VM sessions: pre-flight, rehearsal, the two Bulk guards, the off-Bulk stages. Typical ≈ 4.3 + 1.5 + 2.0 + 3.1 ≈ 10.9 h, worst ≈ 15.5 h. Each session stays under the five-hour cap.
 
 ## 1. Seats and pins
 
@@ -39,6 +39,7 @@ The binary embeds location data (§58 Part B), so merged main equals a guarded b
 | **S2** | `vmb-s2` = S1 + `git merge --no-ff s06-delete`, merged up (below) | CAND of guard 2. Merges to main if guard 2 passes and the owner says yes (§7) |
 | **P1** | S1 + `4ee1df9b` (cherry-pick) + the `RWM_PERF_RATE_MBIT` line in `tools/l1/lib.sh`'s `RWM_FORWARD` | Stage R2 only, never merges |
 | **P2** | S2 + the same two | Stage R2 only, never merges |
+| **P1T**, **P2T** | P1 and P2 built `--release --features test-seams` | R2's `[ACCT]` twins (Amendment 1), never merge |
 
 Main's `lib.sh` no longer forwards `RWM_PERF_RATE_MBIT`: `e304921b` removed the line, because the engine code that reads it is missing. So the pacer seats carry the line, and it stays out of `harness67`; otherwise `gates::forwarding_audit` goes red on B0, S1 and S2. The tools-diff witness of §1.3 exempts that one line on P1 and P2.
 
@@ -73,11 +74,10 @@ The `c8-gauges` side is taken as on `697eeb73`: `ptgt=` and `pmax=` were reverte
    - `threadp1_run_all.sh`, `threadpd_run_all.sh` and `threadq1_run_all.sh` carry the same old rule. This batch does not use them, so they are listed for a separate fix.
 3. **The S06 timing tests.**
    - **T3:** all of `s06_reactive.rs`'s T3 variants are `#[ignore]` with a "records, does not gate" reason, so they record only (checked at `a930a72b`: `arrivals_continue`, `stall_budget_open`, `stall_budget_closed`, `mid_object_stall_evicting`, `mid_object_no_blackout_evicting`). Nothing more is needed for them.
-   - **T2 (`stalled_blocker_recovered_by_nack`)** still gates, and it reads 9/10 on the candidate (status, 2026-11-20). **Required before the guard, one of:**
-     - (a) ported to the deterministic sim (`tests/sim_support`), with the decode-fill witness kept;
-     - (b) put on `quarantine.txt` and `#[ignore]`d, with its diagnosed reason (a decode fill of k, not a NACK) and an owner.
-     
-     The default is (a). Under (b), the S06 red-first evidence loses its gating NACK test, so that must be said in the merge question.
+   - **T2 (`stalled_blocker_recovered_by_nack`)** still gates, and it reads 9/10 on the candidate (status, 2026-11-20). **Hard precondition (Amendment 1): T2 is ported to the deterministic sim (`tests/sim_support`), with its decode-fill witness kept.**
+     - It must be shown red on S1's engine (copies of k sent through a proactive slot) and green on S2.
+     - The two-run digest equality must hold.
+     - Quarantine is not an alternative. Without the port, guard 2 does not pin.
 4. **The tunnel's red-first round trip** (`config_round_trip.rs`, `static-audits`). It exists only on `static-audits`, which already contains the guard. The trees:
    - **red tree:** main at the pin + cherry-picks of `4bbb2f96`, `41e37116` and `235994ac` only, so `resolve_tunnel` resolves `merge(base, cli)` as main's `cmd_run` does. The four `ForcedOff` cells (`window_out_of_order`, `window_coded_only`, `window_generation_coding`, `window_systematic_repair`) must fail with "the entry point's forced value moved: the file leaks through". Any other failure, or a pass, means the tree is wrong.
    - **green tree:** `static-audits` `05a94a06` (it contains `4d5c53d2` and `987b0360`). Every cell passes.
@@ -108,7 +108,7 @@ The tools tests (`tools/l1`, python and bash; ABORT-TESTS) run in session 1, the
 
 The account's invariants are covered by the debug suite (`recovery_bench` and the account tests) in §2.2, not by rows. So no `--features test-seams` release row is registered, and the shipped binary stays the only one the rows run.
 
-The one readout that would have needed it, how often R2's stalled blocker is left unresolved, is dropped from R2. If the owner wants it, the harness can add it as a reported-only twin per pacer seat on a `--features test-seams` release build with its own sha. The pacer seats never merge, so that changes no shipped binary.
+The one readout that needs it is R2's unresolved-blocker count. It comes from `--features test-seams` twins of the pacer seats (P1T, P2T; Amendment 1, §4.4). They never merge, so no shipped binary changes.
 
 ## 3. Guard 1: B0 against S1 (c8 gauges + tunnel guard)
 
@@ -196,6 +196,14 @@ This is a deliberate behaviour change (plan §6). Its guard is a no-regression g
   - c2 in-order delay (d80 12 % at 6 v 6);
   - `cpu_cli/GB` and `cpu_srv/GB`. Coded repair costs an encode where a copy cost a store read, so the sender's CPU may rise. **Owner flag:** S2 worse than §51's d80 (8 % c2, 12 % c8) with rank p ≤ 0.05;
   - `[DIAG] retx=` per source, `[RFA] fill_coded` per source, `cod=` / `pslot=`, and the gauge prints.
+  - **The repair-rate readouts (Amendment 1), on S1 and S2, every row.** The audit's largest cost is the repair rate r at ρ = 1 (item 1: c2 −15 % goodput, +39 % client CPU/GB). S2 is the first copy-free reading of it, so this stage is where that cost gets split. From `c8-gauges`' prints, per tick, pooled over rows as the shares and p10 / p50 / p90:
+    - **which term wins:** `[SPAN] rlaw=a:<core|burst|mass>/<sat|cap|free>,l:<…>/<…>,b=<β>`. The anchor term's winner and its binding bound are read as shares of ticks; the late-is-fine term and β are printed beside them (β = 0 at Auto);
+    - **the live r_sat:** `[SPAN] rsat=` (1.0 means no cap), beside the granted `rr=` and the consumed r (`(cod + taper) / src`, `s51_score.py`'s r_consumed). The share of ticks with `rlaw` bound `sat` is r_sat's bind fraction;
+    - **t_tail:** not printed. It is evaluated from the declared formula t_tail = 10⁻⁵·0.5/δ (Addendum 3) at the row's resolved δ, which the `[GATES]` echo carries: 1.0·10⁻⁵ at Auto. It is labelled DERIVED, not measured;
+    - **P_fec:** not printed by `c8-gauges` (its prints are `rsat=`, `rlaw=`, `plx=`, `scw=`, `shed_slot=` / `shed_nack=`), so it is `NOT-AVAILABLE` in this batch. Reading it needs either a `pfec=` print added to `c8-gauges` before the pin, which is gauge-only and goes through G1 and A1 like the rest, or the `rate-fix-rate-readout` node's `[RATE]` line. That is the coordinator's call at the pin; the default is not to add it, so the pin is not delayed;
+    - **the cost split**, printed per cell: S2's consumed r against S1's, with S2's coded share; S1's taper share (copies per slot, expected ≈ 0.64 at c2 and 0.98 at c8); goodput and CPU/GB per arm.
+
+      This says how much of item 1's cost is the copies (cause i) and how much is r itself (causes ii–iv). It is reported and decides no clause.
 - **Pool block (reported only; the first cut under the cap, §6):** c8-100 Auto, `RWM_STORE_PATH_POOL` = 170, 256 and 640, S1 and S2, n = 3 each, seed 42. That gives 18 rows, with in-order delay and hole-close time read per arm. It answers the store-law confound the status names. It decides nothing here.
 
 ### 4.3 Stage R1 (Realtime, ρ = 1, unpaced): completion scored
@@ -216,10 +224,18 @@ This is a deliberate behaviour change (plan §6). Its guard is a no-regression g
 
 - **Why paced seats:** an unpaced evicting row takes almost no slots (§60: rr = 0 on 46 of 53 windows), and the pacer is not on main (plan §6 item 4). So R2 runs on P1 and P2, which never merge. It shows the deletion on the seat where the slot site used to shed; the merging binaries are the subject of Stages A and R1.
 - Block E's PM shape: c2, Realtime, evicting (no `--window-reliable`), paced at 35 Mbit/s with `RWM_PERF_RATE_MBIT`. P1 6 + P2 6, seeds 42 and 7.
-- **Smoke witness before the stage:** P1 `taper=` > 0; P2 `pslot=` > 0 with `[SPAN]` median rr > 0; both print the pacer echo. A failure makes R2 VOID; it goes back to the coordinator and does not hold guard 2.
+- **Smoke witness before the stage:** P1 `taper=` > 0; P2 `pslot=` > 0 with `[SPAN]` median rr > 0; both print the pacer echo. A failure makes R2 VOID; it goes back to the coordinator, and guard 2 then waits for an R2 re-run (the HOLD flag below needs R2).
+- **Test-seams twins (Amendment 1, condition a):** P1T and P2T are P1 and P2 built `--release --features test-seams`, each with its own sha recorded in the pin amendment. They run the same PM rows, 6 + 6, with seeds 42 and 7, interleaved with R2.
+  - The witness per twin row is that the final `[ACCT] … fin` line and `[ACCT-RX] … final=1` are present on both ends. A row missing them is VOID and re-run once.
+  - **Unresolved blockers per row:** `U = O_serv + O_strand` on the sender's final `[ACCT]` line, with `O_strand` and `O_max` printed beside it, and the receiver's `holes_given_up` beside them.
+  - **R2-HOLD** (registered, holds the S06 merge) fires iff P2T is worse than P1T, meaning:
+    - the median U over P2T rows is above the median over P1T rows; or
+    - the count of P2T rows with U > 0 is above P1T's.
+
+    Ties are not worse. R2-HOLD is read and diagnosed before S06 merges. It is not a FAIL label, because n = 6 cannot resolve a small difference, and the defect is on main too (`rec-evict-blocker-unresolved`).
 - **Reported, read under ADR-0079 Amendment 1:** `shed_slot` (P2 = 0 by construction), `shed_nack`, `shed_denied`, `shed_total`, and the delivered fraction.
   - Conservation is no longer the expectation: the 2026-11-20 review measured the NACK site absorbing the slot sheds (245/90 vs 250/0 at a forced budget).
-  - **Printed:** `shed_total(P2) − shed_total(P1)` with its per-seed range. The unresolved-blocker count would need `[ACCT]`, so it is not read here (§2.2).
+  - **Printed:** `shed_total(P2) − shed_total(P1)` with its per-seed range, and the twins' account identity per row (`S_sent = A + H + E + O_serv + O_strand`).
   - In-order delay is undefined at ρ < 1 (§41d item 3), so it is not read.
 
 ### 4.5 Guard 2's decision rule
@@ -228,9 +244,10 @@ This is a deliberate behaviour change (plan §6). Its guard is a no-regression g
   - S2's suites and repeats are green (§2.2);
   - G2 PASS, AS PASS, and R1 PASS or `R1-BLIND`;
   - there are zero `S06-FAIL` rows in G2, A and R1;
-  - no below-floor hold flag is unread;
+  - no below-floor hold flag is unread, and R2-HOLD did not fire, or fired and was read with a verdict that clears it;
+  - T2's sim port is red on S1 and green on S2 (§2.1 item 3);
   - §5.3's binid check holds.
-- **Then the owner's question (§7).** On a yes, `s06-delete` merges (merged up, as S2) with `--no-ff` and a `binid: expected-change` line (ADR-0082). The paper's present tense comes in the same merge, because it is already inside `s06-delete`. ADR-0079's Status and its `docs/adr/README.md` row name the merge commit, and the paper's §10 row names the deletion hash.
+- **Then S06 merges on its own (owner, 2026-11-20).** Two things come first: ADR-0084 Amendment 1's "not on its own" clause is rewritten on `adr84-amend`, and the coordinator records the merge. Then `s06-delete` merges (merged up, as S2) with `--no-ff` and a `binid: expected-change` line (ADR-0082). The paper's present tense comes in the same merge, because it is already inside `s06-delete`. ADR-0079's Status and its `docs/adr/README.md` row name the merge commit, and the paper's §10 row names the deletion hash.
 - **G2 FAIL:** no merge. The failing Bulk clause is diagnosed. Bulk does not reach the deleted branch, so a FAIL points at the merge-up or the §1.3 cleanup (the ε slot removal).
 - **Any `S06-FAIL` or AS FAIL:** no merge. It is a finding against the deletion and is diagnosed first.
 - **Stage A's delay and hole-close readings decide nothing.** They travel with the owner's question.
@@ -308,16 +325,16 @@ In order: A (with A1), R1 (with A1-R), T, R2, the dump twins if needed, then the
 | session | content | typical | basis |
 |---|---|---|---|
 | 0 | check × 2 ≈ 15 min; gates on B0 ≈ 10 min; suites on S1 and S2 ≈ 2 × 55 min; repeats ≤ 60 min; visualizer ≈ 10 min; binid × 3 ≈ 50 min | **≈ 4.3 h** | suites 45–60 min (§58 Part A, 60-pre); binid ≈ 15–20 min per tree (§58 Part B) |
-| 1 | 5 builds ≈ 40 min; tools tests ≈ 8 min; 10 smoke rows plus T ≈ 25 min | **≈ 1.2 h** | builds 15 min per two (§64); smoke as §64 |
+| 1 | 7 builds (5 seats + 2 test-seams twins) ≈ 55 min; tools tests ≈ 8 min; 10 smoke rows plus T ≈ 25 min | **≈ 1.5 h** | builds 15 min per two (§64); smoke as §64 |
 | 2 | G1 96 rows ≈ 53 min; G2 ≈ 53 min; replacements and scoring ≈ 15 min | **≈ 2.0 h** | §64 Result: 96 rows in 53 min |
-| 3 | A 60 rows × ≈ 80 s ≈ 80 min; R1 30 ≈ 14 min; T ≈ 20 min; R2 12 ≈ 16 min; pool 18 ≈ 25 min; scoring ≈ 10 min; twins if needed + 11 min | **≈ 2.8 h** (≈ 2.2 h without the pool block) | block 51: 76 rows of 600 MB in 1 h 44 min; §64 stage R; block E rows ≈ 62 s |
-| **total** | | **≈ 10.3 h** (≈ 9.7 h with the pool block cut) | host cargo paused during each session |
+| 3 | A 60 rows × ≈ 80 s ≈ 80 min; R1 30 ≈ 14 min; T ≈ 20 min; R2 12 + twins 12 ≈ 32 min; pool 18 ≈ 25 min; scoring ≈ 10 min; twins if needed + 11 min | **≈ 3.1 h** (≈ 2.5 h without the pool block) | block 51: 76 rows of 600 MB in 1 h 44 min; §64 stage R; block E rows ≈ 62 s |
+| **total** | | **≈ 10.9 h** (≈ 10.3 h with the pool block cut) | host cargo paused during each session |
 
-**Worst case, about 15 h:** a rehearsal re-run (+1.2 h), a session-0 re-run after a fix (+4.3 h, only if a seat changes), and in session 2 a NO VERDICT re-run of one Stage G (+1 h) or the G1 bisection (+2 h). Every session stays under the five-hour cap.
+**Worst case, about 15.5 h:** a rehearsal re-run (+1.5 h), a session-0 re-run after a fix (+4.3 h, only if a seat changes), and in session 2 a NO VERDICT re-run of one Stage G (+1 h) or the G1 bisection (+2 h). Every session stays under the five-hour cap.
 
 ## 7. What goes back to the owner (asked once, with the Result)
 
-1. **S06 standalone.** If guard 2 is ELIGIBLE: merge `s06-delete` now, as S2, or hold it to land beneath the ADR-0084 engine change, as ADR-0084 Amendment 1 item 3 now reads ("not on its own")? A yes needs that sentence amended. With the question go Stage A's c8 delay (two-sided), the hole-close times, the CPU owner flag, the pool block, R2's shed table, and T2's form (sim port, or quarantined).
+1. **S06 (decided: merges on its own PASS).** The Result reports these with the merge: Stage A's c8 delay (two-sided), the hole-close times, the CPU owner flag, the repair-rate split, the pool block, R2's shed table, and R2-HOLD with its reading.
 2. **Guard 1:** no owner question beyond the Result, unless A1 shows a print cost above its resolution.
 3. **Ceph clearance** (P0) before session 0.
 4. **The VM queue order** (§11): this batch goes before M1, unlike the 2026-11-19 queue. That is the owner's call.
@@ -345,7 +362,8 @@ The plan tokens are `67` (rehearsal), `67g` and `67x`. It goes into all seats, n
    - a `[SUCC]` hole-close parser on every row, and the dump twins only if the summary line lacks the close times;
    - the pool block (`RWM_STORE_PATH_POOL` per row, as plan 54b).
 3. **R1:** plan 64's stage R row mechanism, with three arms (S1, S2, B0) and §4.3's witnesses and clauses (R1, A1-R).
-4. **R2:** plan 51e's paced PM rows on P1 and P2, with `RWM_PERF_RATE_MBIT` forwarded (main's `lib.sh` keeps it), and §4.4's readouts.
+4. **R2:** plan 51e's paced PM rows on P1 and P2, plus the test-seams twins P1T and P2T (built `--release --features test-seams`, own shas, an `[ACCT]` final-line parser, the R2-HOLD rule). `RWM_PERF_RATE_MBIT` is forwarded only through the pacer seats' own `lib.sh` line (§1.2). It carries §4.4's readouts.
+   - **The rate readouts:** an `rlaw=` / `rsat=` parser, shares and quantiles per arm, t_tail as DERIVED, P_fec as `NOT-AVAILABLE` unless a `pfec=` print lands, and the cost-split table (§4.2).
 5. **T:** `tun_bulk.sh` invocations, the refusal commands and `scoreT` (§3.3), parsed with `verify4_parse.py tun`.
 6. **Suites (session 0's envelope):** `run_suites` with ADR-0080's rule (§2.1 item 2) and `test_harness47.py` updated; the repeat stage of §2.2; `binid_run.sh` on three seats.
 7. **Reuse:** prebuilt binaries and the suite/tools manifests, as plan 64.
@@ -384,12 +402,29 @@ Fable reviewed twice.
 
 ## 11. Roadmap: proposed `vm_order` (proposal only; not edited here)
 
-| vm_order | node | lane change needed | reason |
+| vm_order | node | lane change needed | proposed `order_reason` (with the estimated gain) |
 |---|---|---|---|
-| 1 | `meas-s51-c8-gauges` | `host-cargo` → `vm` | guard 1 (S1), lowest in the stack |
-| 2 | `infra-tunnel-inorder-guard` | `host-cargo` → `vm` | guard 1 (S1); Stage T |
-| 3 | `rate-s06-plost-derivation` | `no-cargo` → `vm` | guard 2 (S2); merge on the owner's answer (§7) |
+| 1 | `meas-s51-c8-gauges` | `host-cargo` → `vm` | VM batch 1, guard 1, at the bottom of the stack. No product gain of its own (print sites only). It makes the repair rate readable: which term wins, and the live r_sat. That readout splits the audit's top cost (c2 Auto −15 % goodput, +39 % client CPU/GB) between the copies and r itself. |
+| 2 | `infra-tunnel-inorder-guard` | `host-cargo` → `vm` | VM batch 1, guard 1 (with the gauges). A correctness fix on the product path: a config file can no longer switch the tunnel to out-of-order or object delivery. Gain: every byte stays in order for anyone who sets one of the four keys; nothing changes for the default file. |
+| 3 | `rate-s06-plost-derivation` | `no-cargo` → `vm` | VM batch 1, guard 2; merges on its own PASS (owner, 2026-11-20). It turns the 64 % (c2) and 98 % (c8) of proactive slots that are copies into coded repair. Expected: goodput unchanged (same slot count), copy arrivals at the receiver from 57–97 k per row to roughly a decode-close level, decode closes at c2 from 42–46 % toward 63–83 % of source losses, and the first copy-free reading of r. It is the prerequisite for the rate fix that can recover up to the 15 % goodput and 39 % CPU. |
 
 - `rec-leverb-guard` gets no order (parked, §8).
 - `meas-guard-bulk-blind` stays `no-cargo`. This batch is its first per-change use. Its "reusable plan" done criterion is met only if `harness67`'s off-Bulk stages are kept as a plan.
 - `check.py` warns on a vm_order outside the vm lane, hence the lane changes. M1's place relative to these is the owner's call (§7 item 4).
+
+## Amendment 1 (2026-11-20, before the pin; owner decision and Fable's review)
+
+1. **S06 merges on its own guard-2 PASS (owner).** It is not held beneath ADR-0084: a pass goes stale as main moves, and holding it would mean guarding it again. §4.5, §7 and the owner block are updated.
+   - **Owed before the merge:** ADR-0084 Amendment 1 rewritten on `adr84-amend`. That covers item 3 ("lifts it for this purpose only … not on its own"), the Consequences line ("ADR-0079's merge hold is lifted only for the stacked build"), and ADR-0079's Status sentence that quotes it.
+   - Guard 2 of ADR-0084 then takes the merged S2 (main) as its BASE.
+2. **Conditions on that merge, registered here:**
+   - (a) **R2-HOLD:** the unresolved-blocker count from the test-seams twins P1T and P2T (§1.2, §4.4). S2 must be no worse than S1.
+   - (b) **T2 ported to the sim** is a hard precondition of guard 2's pin, not a choice (§2.1 item 3).
+3. **The repair-rate readouts in Stage A** (§4.2), reported only, on S1 and S2:
+   - `rlaw=` (the winning term and binding bound, plus β);
+   - `rsat=` (the live r_sat);
+   - t_tail, as DERIVED from its declared formula;
+   - P_fec, `NOT-AVAILABLE` unless a `pfec=` print joins `c8-gauges` before the pin;
+   - the copy-against-r cost split.
+4. **Order reasons** in §11.
+5. **Time:** two more builds and 12 more paced rows, so ≈ +0.6 h (typical ≈ 10.9 h).
