@@ -604,9 +604,9 @@ flowchart TB
 ## VM queue
 
 <!-- BEGIN GENERATED: vm-queue -->
-1. `meas-s51-c8-gauges`: Per-path readouts for two-path runs. VM batch 1 (docs/derivations/vm-batch-1-registration.md)
-2. `infra-tunnel-inorder-guard`: Tunnel must deliver in order. VM batch 1 (docs/derivations/vm-batch-1-registration.md)
-3. `rate-s06-plost-derivation`: Repair slots send only coded repair. VM batch 1 (docs/derivations/vm-batch-1-registration.md)
+1. `meas-s51-c8-gauges`: Per-path readouts for two-path runs. VM batch 1, guard 1. No product gain of its own (print sites only); it makes the repair rate readable (which term wins, live r_sat), which splits the audit's top cost (c2 Auto -15 % goodput, +39 % client CPU/GB) between the copies and r itself.
+2. `infra-tunnel-inorder-guard`: Tunnel must deliver in order. VM batch 1, guard 1 (with the gauges). Correctness fix on the product path: a config file can no longer switch the tunnel to out-of-order or object delivery; nothing changes for the default file.
+3. `rate-s06-plost-derivation`: Repair slots send only coded repair. VM batch 1, guard 2; merges on its own PASS (owner 2026-11-20). Turns the 64 % (c2) and 98 % (c8) of proactive slots that are copies into coded repair; goodput expected unchanged; first copy-free reading of r, the prerequisite for the rate fix (up to 15 % goodput, 39 % CPU).
 <!-- END GENERATED: vm-queue -->
 
 ## Timeline
