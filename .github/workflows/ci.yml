@@ -77,4 +77,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: sim }
-      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail -- --nocapture
+      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail --test sim_shed_reach -- --nocapture

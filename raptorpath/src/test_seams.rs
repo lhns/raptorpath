@@ -10,6 +10,10 @@
 //! * `RWM_TEST_TS_DEAD_MS=<ms>`: `dead` ends that long after k's first send
 //!   (default: never).
 //! * `RWM_TEST_TS_BUDGET_CLOSED=1`: the sender's shed budget fraction is forced to 0.
+//! * `RWM_TEST_TS_BUDGET_FRAC=<f>`: the sender's shed budget fraction is forced to f
+//!   (the sim's loss estimator is cold, so the derived fraction reads 0).
+//! * `RWM_TEST_TS_SHED_ALL=1`: the shed events (`shed`, `shed_slot`, `denied`,
+//!   `denied_slot`) print for every seq, and `frontier` prints without a seq k.
 //!
 //! Every event is printed on stderr as `[TSEAM] ev=<name> seq=<k> t_us=<µs>
 //! …` so a test reads it from the process log. Times are one process's own
@@ -31,6 +35,8 @@ struct Cfg {
     k: u64,
     drop: Mode,
     budget_closed: bool,
+    shed_all: bool,
+    budget_frac: Option<f64>,
     dead_us: u64,
 }
 
@@ -48,11 +54,13 @@ fn cfg() -> &'static Cfg {
             None => Mode::Off,
         };
         let budget_closed = std::env::var("RWM_TEST_TS_BUDGET_CLOSED").is_ok_and(|v| v == "1");
+        let budget_frac = std::env::var("RWM_TEST_TS_BUDGET_FRAC").ok().and_then(|v| v.parse().ok());
+        let shed_all = std::env::var("RWM_TEST_TS_SHED_ALL").is_ok_and(|v| v == "1");
         let dead_us = std::env::var("RWM_TEST_TS_DEAD_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .map_or(u64::MAX, |ms| ms * 1000);
-        Cfg { k, drop, budget_closed, dead_us }
+        Cfg { k, drop, budget_closed, shed_all, budget_frac, dead_us }
     })
 }
 
@@ -166,19 +174,24 @@ pub fn on_force_drain(before: u64, after: u64, drained: &[u64]) {
 /// The NACK-site shed of seq (`age_us` against deadline `d_us`).
 pub fn on_shed(seq: u64, age_us: u64, d_us: u64) {
     let c = cfg();
-    if seq == c.k {
+    if seq == c.k || c.shed_all {
         crate::readout!("[TSEAM] ev=shed seq={seq} age_us={age_us} d_us={d_us} t_us={}", t_us());
     }
 }
 
 /// `shed_budget_frac` override (`RWM_TEST_TS_BUDGET_CLOSED=1` ⇒ 0).
 pub fn budget_frac(frac: f64) -> f64 {
-    if cfg().budget_closed { 0.0 } else { frac }
+    match (cfg().budget_closed, cfg().budget_frac) {
+        (true, _) => 0.0,
+        (false, Some(f)) => f,
+        (false, None) => frac,
+    }
 }
 
 /// A shed-denied seq (`shed_denied += 1`) at the NACK site.
 pub fn on_denied(seq: u64) {
-    if seq == cfg().k {
+    let c = cfg();
+    if seq == c.k || c.shed_all {
         crate::readout!("[TSEAM] ev=denied seq={seq} t_us={}", t_us());
     }
 }
@@ -187,7 +200,7 @@ pub fn on_denied(seq: u64) {
 /// `next_deliver_seq`, pending entries, and the hold timeout in force.
 pub fn on_frontier(next_deliver: u64, pending: usize, hold_us: u64) {
     static LAST: AtomicU64 = AtomicU64::new(0);
-    if cfg().k == u64::MAX {
+    if cfg().k == u64::MAX && !cfg().shed_all {
         return;
     }
     let now = t_us();
@@ -224,14 +237,16 @@ pub fn on_give_up(before: u64, after: u64, held: &[u64]) {
 /// A slot-site shed (the deleted `P_lost` branch's shed; only the pre-ADR-0079
 /// tree calls it). Kept so one test file reads both trees.
 pub fn on_shed_slot(seq: u64, age_us: u64, d_us: u64) {
-    if seq == cfg().k {
+    let c = cfg();
+    if seq == c.k || c.shed_all {
         crate::readout!("[TSEAM] ev=shed_slot seq={seq} age_us={age_us} d_us={d_us} t_us={}", t_us());
     }
 }
 
 /// A slot-site shed refusal (past D, budget closed) of k.
 pub fn on_denied_slot(seq: u64) {
-    if seq == cfg().k {
+    let c = cfg();
+    if seq == c.k || c.shed_all {
         crate::readout!("[TSEAM] ev=denied_slot seq={seq} t_us={}", t_us());
     }
 }
