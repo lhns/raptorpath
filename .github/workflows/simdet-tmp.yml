@@ -8,19 +8,23 @@ permissions:
 jobs:
   traces:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        tc: ["1.95.0", stable]
     env:
       RUSTFLAGS: "--cfg tokio_unstable"
       CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with: { toolchain: "${{ matrix.tc }}" }
       - uses: Swatinem/rust-cache@v2.7.8
-        with: { shared-key: sim }
-      - run: cargo test -p raptorpath --features sim,test-seams --test sim_shed_reach --no-run
+        with: { shared-key: sim-${{ matrix.tc }} }
       - run: |
-          BIN=$(ls -t target/debug/deps/sim_shed_reach-* | grep -v '\.d$' | head -1)
+          BIN=$(cargo test -p raptorpath --features sim,test-seams --test sim_shed_reach --no-run --message-format=json | jq -r 'select(.executable != null) | .executable' | tail -1)
+          echo "BIN=$BIN"
           rustc -V; for s in "nat30 nat30 47400" "nat30_b nat30 47400" "shed6_a shed6 47400" "shed6_b shed6 47401" "basic_a basic 47100" "basic_b basic 47101"; do
             set -- $s; bash .github/simdet-tmp/child.sh $BIN out $1 $2 $3
           done
       - uses: actions/upload-artifact@v4
-        with: { name: simdet-linux, path: out/ }
+        with: { name: "simdet-linux-${{ matrix.tc }}", path: out/ }
