@@ -154,7 +154,9 @@ def stale_summary(summary):
         bad.append("summary is stale: pinned_gauges.py or plib.py changed (run pinned_summary.py --write)")
     for arch, sha in summary["archives"].items():
         p = os.path.join(ROOT, arch)
-        if os.path.exists(p) and ps.sha256(p) != sha:
+        if not os.path.exists(p):
+            print("%s: archive absent (export-ignored): sha check skipped" % arch)
+        elif ps.sha256(p) != sha:
             bad.append("summary is stale: %s changed (run pinned_summary.py --write)" % arch)
     return bad
 
