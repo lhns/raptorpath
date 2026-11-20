@@ -1483,3 +1483,25 @@ fn rate_cadence_is_keyed_on_age_only() {
     assert_eq!(RepairRateCache::period_us(std::time::Duration::ZERO), 0);
 }
 
+
+#[test]
+fn test_snapshot_p_fec_is_the_normal_p_fec_at_the_laws_rate() {
+    // `[SPAN] pfec=`: P_fec of paper §4.2 at r = the snapshot's own rate, with the law's
+    // epsilon-hat, window and sigma2. Absolute pin, and it must move with the rate.
+    let mut est = LossEstimator::new();
+    for _ in 0..100 {
+        est.record_batch(100, 95);
+        est.record_rtt(std::time::Duration::from_millis(210));
+        est.record_throughput(2_500_000.0);
+    }
+    let rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+    let snap = rt.rate_snapshot(&est, 64);
+    let ge = est.ge_estimator();
+    let sigma2 = if ge.is_valid() { raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg()) } else { 1.0 };
+    let want = raptorpath_math::p_fec_normal(snap.rate(), est.predictive_loss_upper(0.95), 64.0, sigma2);
+    assert!(want > 0.0 && want < 1.0, "the pin is not degenerate: {want}");
+    assert_eq!(snap.p_fec(), want);
+    // It follows the law's output: a different hint's rate gives that rate's P_fec.
+    let bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200).rate_snapshot(&est, 64);
+    assert_eq!(bulk.p_fec(), raptorpath_math::p_fec_normal(bulk.rate(), est.predictive_loss_upper(0.95), 64.0, sigma2));
+}
