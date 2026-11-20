@@ -458,7 +458,6 @@ flowchart TB
 | Workspace restructure | ⏳ waiting | Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open. |
 | Three known defects left unfixed | ⚠ open defect | Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much. |
 | Tunnel must deliver in order | ⚠ open defect | Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins. |
-| Roadmap tool packaged for reuse | ○ next | Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository. |
 | CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
 | Tests for unused code and config | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
 | Exhaustive check of resend logic | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
@@ -500,7 +499,6 @@ flowchart TB
 - `rate-adr50-split-unwired`: Decided repair-budget split never wired
 - `meas-guard-bulk-blind`: Merge check only tests bulk
 - `meas-harness-robustness`: Every test plan rehearsable offline
-- `infra-tech-tree-skill`: Roadmap tool packaged for reuse
 - `rec-retx-behind-source`: Do re-sends wait behind new data
 - `model-fix-paper-p2`: Paper fixes: path choice, our BBR
 - `perf-fix-burst-bound`: Deriving the send-burst size
@@ -622,7 +620,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 ## Done, by month
 
 <!-- BEGIN GENERATED: done-by-month -->
-<details><summary><b>Nov 2026</b>: 85 done, 2 abandoned</summary>
+<details><summary><b>Nov 2026</b>: 86 done, 2 abandoned</summary>
 
 - `perf-s33-timer`: Lag tail timer hand-off (✔ done · unrated)
 - `perf-receiver-followups`: Receiver follow-ups (✔ done · successful)
@@ -707,6 +705,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 - `rate-c8-frontier-recopy`: c8 repair budget re-copies (✔ done · successful). Most repair slots re-send old data instead of sending a coded repair symbol (about two thirds on one path, nearly all on two); find out why and whether it is a defect.
 - `rate-evict-session`: Repair test with droppable late data (✔ done · unrated). Measuring the repair loop on a low-latency path that may drop late data, with the sender paced below the link rate: a rehearsal, then the measured runs, to feed the reference test of repair success.
 - `rate-spare-cwnd`: Is spare's cwnd enforced? (✔ done · unrated). Checked whether the congestion window that the repair cap reads is enforced on the path that may drop late data: it is not, by reading the code and on both measured overload runs.
+- `infra-tech-tree-skill`: Roadmap tool packaged for reuse (✔ done · successful). Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository.
 - `infra-test-mutation`: Mutation testing of the laws (✔ done · successful). Weekly mutation runs on the maths crates on CI, to find laws no test pins.
 - `infra-test-pinned-law-check`: Pinned-law check from logs (✔ done · successful). A test over the committed logs that fails when a law reads pinned or never runs at a seat and the ledger has no verdict for it.
 - `infra-test-recovery-counters`: Recovery bookkeeping counters (✔ done · successful). Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing.
@@ -1198,6 +1197,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 66 nodes (49 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 36 nodes (24 done, 8 in progress, 2 next, 1 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (17 done, 7 in progress, 2 next, 2 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (18 done, 7 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->
 
