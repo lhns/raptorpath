@@ -247,7 +247,7 @@ WindowAck { .., passed_undelivered: u64 }     // §4: the receiver's abandonment
 ```
 
 - Both changes go in one bump, `PROTOCOL_VERSION` 10 → 11, with a v11 entry
-  in the version-history comment (`transport/protocol.rs:56–104`).
+  in the version-history comment (`transport/protocol.rs:25–104`).
 - The change extends **ADR-0010**, the version header and the hard refusal
   of a mismatch.
 - The rule itself, a new control message and a new ack field, is a
