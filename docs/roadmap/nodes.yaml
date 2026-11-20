@@ -6887,7 +6887,7 @@ nodes:
   folded: []
   overview: false
   plain: Fix the measurements that only work on one path, so the next two-path run can read the congestion-window clamp and saturation per path.
-  notes: 's51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows.'
+  notes: 's51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows. Tools half on main (scorer per-leg gauges fae17588, crlf continuation 2c6d8690, cherry-picked). Engine half (scw=, plx=, shed_slot/shed_nack, rsat=, rlaw=) on c8-gauges 311f8284, stub run ALL OK; joins the measurement build by cherry-pick, behind a guard.'
 - id: model-fix-hint-keyed-paths
   title: Hint-keyed engine paths made continuous
   track: model
