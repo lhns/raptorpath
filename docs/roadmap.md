@@ -382,7 +382,6 @@ flowchart TB
 | Model check of hole recovery | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
 | Recovery bookkeeping counters | ○ next | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
 | Coverage per seat | ⛔ blocked | Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up. |
-| Mutation testing of the laws | ⛔ blocked | Weekly mutation runs on the maths crates on CI, to find laws no test pins. |
 | Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
 | Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
 | Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
@@ -552,6 +551,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 27 nodes (14 done, 6 in progress, 3 next, 4 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 27 nodes (15 done, 6 in progress, 3 next, 3 blocked)
 <!-- END GENERATED: tracks -->
 

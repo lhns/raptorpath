@@ -8478,8 +8478,8 @@ nodes:
   title: Mutation testing of the laws
   track: infra
   kind: instrument
-  state: blocked
-  outcome: unrated
+  state: done
+  outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
   verdict_quote: ''
@@ -8489,11 +8489,11 @@ nodes:
   qualified_by: []
   lane: none
   start: '2026-11-20'
-  end: ''
+  end: '2026-11-20'
   folded: []
   overview: false
   plain: 'Weekly mutation runs on the maths crates on CI, to find laws no test pins.'
-  notes: 'Plan S6.'
+  notes: 'Plan S6. Merged mutation-ci 27202e2d: 1721 mutants, all in raptorpath-math (core is empty), ~7 s each, ~27 min over 20 shards; 486 survive (baseline, deterministic over two runs); the job fails only on new or stale survivors. Red: bulkness_of_delta (the dial''s shaping law) has no test in the math crate, so replacing its body survives (it is tested only from the engine crate). Owed: survivor triage; engine law files not yet in scope.'
 - id: infra-test-model-real-decisions
   title: Model check over the real code
   track: infra

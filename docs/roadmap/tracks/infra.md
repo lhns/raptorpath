@@ -30,7 +30,7 @@ flowchart TB
     infra_test_sim_spike["✔ Deterministic<br/>simulation spike"]
     infra_test_recovery_counters["○ Recovery bookkeeping<br/>counters"]
     infra_test_seat_coverage["⛔ Coverage per seat"]
-    infra_test_mutation["⛔ Mutation testing of<br/>the laws"]
+    infra_test_mutation["✔ Mutation testing of<br/>the laws"]
     infra_test_model_real_decisions["⛔ Model check over the<br/>real code"]
     infra_test_pub_narrowing["⛔ Narrow pub so dead<br/>code warns"]
     infra_tech_tree_skill["○ tech-tree skill PR"]
@@ -84,13 +84,13 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class infra_early_platform,infra_mtu_floor,infra_consolidation,infra_net_seams,infra_cleanup_0927,infra_fix_program,infra_simplify_review,infra_simplify_batch1,infra_simplify_batch2,infra_test_pinned_law_check,infra_test_sim_spike succ
+    class infra_early_platform,infra_mtu_floor,infra_consolidation,infra_net_seams,infra_cleanup_0927,infra_fix_program,infra_simplify_review,infra_simplify_batch1,infra_simplify_batch2,infra_test_pinned_law_check,infra_test_sim_spike,infra_test_mutation succ
     class infra_defect_recorded_not_fixed,infra_tunnel_inorder_guard defect
     class infra_restructure waiting
     class infra_inventory_merges,infra_derivation_merges unrated
     class infra_test_ci_gate,infra_test_static_audits,infra_test_recovery_model inprog
     class infra_test_recovery_counters,infra_tech_tree_skill,infra_dead_code_batch next
-    class infra_test_seat_coverage,infra_test_mutation,infra_test_model_real_decisions,infra_test_pub_narrowing blocked
+    class infra_test_seat_coverage,infra_test_model_real_decisions,infra_test_pub_narrowing blocked
 ```
 <!-- END GENERATED: track-infra -->
 
@@ -122,7 +122,7 @@ flowchart TB
 | `infra-test-sim-spike` | Deterministic simulation spike | done | successful |  | docs/derivations/test-detection-plan.md; branch sim-spike ed8405fb (docs/derivations/sim-spike.md) |  |
 | `infra-test-recovery-counters` | Recovery bookkeeping counters | next | unrated |  | docs/derivations/test-detection-plan.md |  |
 | `infra-test-seat-coverage` | Coverage per seat | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-ci-gate |
-| `infra-test-mutation` | Mutation testing of the laws | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-ci-gate, infra-test-pinned-law-check |
+| `infra-test-mutation` | Mutation testing of the laws | done | successful |  | docs/derivations/test-detection-plan.md | infra-test-ci-gate, infra-test-pinned-law-check |
 | `infra-test-model-real-decisions` | Model check over the real code | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-recovery-model |
 | `infra-test-pub-narrowing` | Narrow pub so dead code warns | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-static-audits |
 | `infra-dead-code-batch` | Remove 24 dead functions | next | unrated |  | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |  |
@@ -154,7 +154,7 @@ flowchart TB
 | `infra-test-sim-spike` | Deterministic simulation spike | Plan S8 spike, throwaway branch. Decides whether the full simulation (ADR-0082, Proposed) is feasible. No clock change goes to main from the spike. Verdict FEASIBLE with changes: both peers in one process on paused tokio time over an in-memory socket under quinn; same seed gives identical traces (20/20 one path, 32/32 two paths, 10/10 three paths, 2/2 for 140 MB); a 30 s stall runs in 0.7 s wall, a saturated bulk transfer only ~1.9x faster than real time. Blockers that bit: 114 Instant::now plus 44 elapsed sites, select! branch order (needs the runtime rng seed, --cfg tokio_unstable), hash order with 2+ paths (4 sites), engine rand (3 sites), quinn rng seed (1). The lost-tail stall reproduces deterministically. Costs: virtual time quantised to 1 ms (srtt variance exactly 0 on a fixed-delay link), no CPU-cost model for unbacked senders, Linux not run. | docs/derivations/test-detection-plan.md; branch sim-spike ed8405fb (docs/derivations/sim-spike.md) |
 | `infra-test-recovery-counters` | Recovery bookkeeping counters | Plan S4, ADR-0081 (Proposed). Held: it shares files with the S06 deletion and the gauges, and its slow-link assertions wait on the owner's call on evicted packets. | docs/derivations/test-detection-plan.md |
 | `infra-test-seat-coverage` | Coverage per seat | Plan S5. | docs/derivations/test-detection-plan.md |
-| `infra-test-mutation` | Mutation testing of the laws | Plan S6. | docs/derivations/test-detection-plan.md |
+| `infra-test-mutation` | Mutation testing of the laws | Plan S6. Merged mutation-ci 27202e2d: 1721 mutants, all in raptorpath-math (core is empty), ~7 s each, ~27 min over 20 shards; 486 survive (baseline, deterministic over two runs); the job fails only on new or stale survivors. Red: bulkness_of_delta (the dial's shaping law) has no test in the math crate, so replacing its body survives (it is tested only from the engine crate). Owed: survivor triage; engine law files not yet in scope. | docs/derivations/test-detection-plan.md |
 | `infra-test-model-real-decisions` | Model check over the real code | Plan S9. Needs the extended shared-core extraction (owner question 1). | docs/derivations/test-detection-plan.md |
 | `infra-test-pub-narrowing` | Narrow pub so dead code warns | Plan S10, at a quiet point. | docs/derivations/test-detection-plan.md |
 | `infra-dead-code-batch` | Remove 24 dead functions | D list in audits.rs on static-audits 86b5208f (callers deleted in dacfd7cc / ADR-0069 and others). Tests that exercise a dead copy instead of the live path: compute_repair_rate_capped, get_or_eval, pooled_recovery_srtt_of, Scheduler::schedule, compute_repair_count, compute_gap_ranges. Release-binary hash check; guard only if bytes change. Stale docs to fix with it: net/tests.rs:3807, fec_rate.rs:46, paper 8.1, loss_clamp_witness doc. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
