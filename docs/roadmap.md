@@ -536,6 +536,246 @@ Generated from nodes.yaml on 2026-11-20.
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
 
+## Done, by month
+
+<!-- BEGIN GENERATED: done-by-month -->
+<details><summary><b>Nov 2026</b>: 85 done</summary>
+
+- `perf-s33-timer`: Lag tail timer hand-off (✔ done · unrated)
+- `perf-receiver-followups`: Receiver follow-ups (✔ done · successful)
+- `infra-adr73`: Promote or archive at verdict (✔ done · n/a)
+- `infra-simplify-review`: Simplification review (✔ done · successful)
+- `model-review-37`: Model review (✔ done · successful)
+- `place-path-event`: Path event after promotion (✔ done · unrated)
+- `place-s38-wire`: Wire-clocked placement base (✔ done · bad)
+- `place-s41-iteration`: Wire price, iteration once (✔ done · mixed)
+- `store-engine-form`: Oracle store law, closed loop (✔ done · unrated)
+- `store-s36-dispersion`: Receiver dispersion as link rate (✔ done · unrated)
+- `store-s40-p90`: p90 dispersion estimator (✔ done · unrated)
+- `store-s42-engine-path`: Engine path for dispersion (✔ done · unrated)
+- `store-s43b-retuned`: Oracle store law re-tuned (✔ done · unrated)
+- `cc-s48-host-gate`: bbr_rs host gate (✔ done · unrated)
+- `meas-guard-41c`: Rank-minp merge guard (✔ done · successful)
+- `cc-bbrrs-r1`: Fixed bbr_rs versus quinn BBR (✔ done · bad)
+- `cc-user-continue-bbrrs`: Owner call: continue bbr_rs (✔ done · n/a)
+- `cc-user-pacing-s3`: Owner call: vendored pacing seam (✔ done · n/a)
+- `infra-simplify-batch1`: Simplify batch 1 (✔ done · successful)
+- `infra-simplify-batch2`: Later simplify batches (✔ done · successful)
+- `meas-harness-consolidation`: Harness on main, rehearsal mode (✔ done · successful)
+- `model-bound-tests`: Bounding tests for divergences (✔ done · unrated)
+- `obs-user-otel-answers`: Owner answers on OTel design (✔ done · n/a)
+- `perf-bbrrs-ns-cost`: bbr_rs per-packet cost bench (✔ done · unrated)
+- `place-wire-price`: Wire-RTT placement price (✔ done · successful)
+- `infra-inventory-merges`: Inventory merges (first batch) (✔ done · unrated)
+- `meas-guard-clause-dry`: Guard clause dry run (✔ done · successful)
+- `meas-guard-v2`: Merge guard v2 accepted (✔ done · n/a)
+- `meas-guard-v2-impl`: Guard v2 implementation (✔ done · unrated)
+- `meas-s51-design`: Off-Bulk benchmark design (✔ done · unrated)
+- `model-law-ledger`: Law ledger (✔ done · unrated)
+- `rec-s54-session`: Snapshot filter guard, store budget (✔ done · unrated)
+- `rec-snapver-filter`: Stale gap reports, snapshot filter (✔ done · successful)
+- `rec-snapver-law`: Snapshot-order filter as law (✔ done · unrated)
+- `rec-wire-clock-derivation`: Recovery-clock derivation (wire clock) (✔ done · unrated)
+- `store-s54-budget`: Store-budget test design (✔ done · unrated)
+- `meas-s58-session`: Dial-pin fix suites, binary identity (✔ done · successful)
+- `model-defect-dead-machine`: Wasm dead second machine (✔ fixed)
+- `model-defect-tcut`: T_cut give-up law pinned (✔ fixed)
+- `model-endspeed`: Phase-6 forms and end-of-run speed (✔ done · successful)
+- `model-giveup-law`: Model give-up law (✔ done · successful)
+- `model-shared-core-0`: Shared core steps 0.1–0.3 (✔ done · successful)
+- `model-user-wasm-calls`: Owner calls on wasm audit (✔ done · n/a)
+- `model-viz-fix`: Visualizer fixes (✔ done · successful)
+- `model-wasm-audit`: Wasm mode-switch audit (✔ done · successful)
+- `rate-pfec-continuous`: Continuous P_fec derivation (✔ done · unrated)
+- `store-defect-delta-nan`: Latency-dial setting pinned the store cap (✔ fixed)
+- `store-s56-sweep`: Store-pool sweep (✔ done · unrated)
+- `store-s57a-burst`: Emission-burst test, 400 Mbit path (✔ done · unrated)
+- `store-s57b-c1d`: 400 Mbit two-path pool sweep (✔ done · unrated)
+- `model-warm-start`: Warm-started tail solve (visualizer) (✔ done · successful)
+- `store-law-r67`: Lowest-store floor candidate (✔ done · unrated)
+- `store-s60-pre`: Gauge suites and reference binary (✔ done · successful)
+- `store-s60a`: Queue-free floor on small stores (✔ done · mixed)
+- `store-s60b`: Floor sign test, 400 Mbit path (✔ done · mixed)
+- `meas-s51-harness`: Off-Bulk sweep harness and scorer (✔ done · unrated)
+- `rate-evict-registration`: Evicting-seat m̄ registration (✔ done · unrated)
+- `rec-s63-f2-first-contact`: Framing fix on failed rows (✔ done · very-successful)
+- `store-law-g-rederive`: Re-derive the knee-margin term (✔ done · mixed)
+- `store-s61a`: Slow-link knee sweep, first try (✔ done · bad)
+- `store-s61a-rerun`: Slow-link knee sweep, re-run (✔ done · mixed)
+- `store-s61b`: 100 Mbit price below the knee (✔ done · successful)
+- `store-user-jitter-sweep`: Owner call on the jitter sweep (✔ done · n/a)
+- `store-user-u1u3`: Owner calls on who sets latency (✔ done · n/a)
+- `meas-blocke-steady-rule`: Steady-window check passed untested windows (✔ fixed)
+- `meas-harness-reuse`: Cheaper sessions by reuse (✔ done · successful)
+- `meas-user-test-cost`: Owner call on test cost (✔ done · n/a)
+- `rate-evict-epre`: Evicting-seat test suites and binary (✔ done · unrated)
+- `rec-defect-realtime-framing`: Realtime receiver misread packets (fixed) (✔ fixed)
+- `rec-f2-merge-guard`: Framing fix regression test (✔ done · very-successful)
+- `rec-realtime-delay-recheck`: Realtime delay re-check (✔ done · unrated)
+- `rec-s64-delay-lean`: Realtime delay lean, post-hoc read (✔ done · unrated)
+- `rec-user-framing-fix`: Owner calls on the framing fix (✔ done · n/a)
+- `store-count-rule`: Sample-count rule derivation (✔ done · unrated)
+- `store-s62-j0`: Slow-link knee without jitter (✔ done · mixed)
+- `infra-derivation-merges`: Derivation and harness branches to main (✔ done · unrated)
+- `meas-s51-session`: Off-Bulk baseline and δ sweep (✔ done · successful)
+- `rate-c8-frontier-recopy`: c8 repair budget re-copies (✔ done · successful)
+- `rate-evict-session`: Evicting-seat test, rehearsal and runs (✔ done · unrated)
+- `rate-k4-input-checks`: Two checks before the repair-share comparison (✔ fixed)
+- `rate-spare-cwnd`: Is spare's cwnd enforced? (✔ done · unrated)
+- `infra-test-mutation`: Mutation testing of the laws (✔ done · successful)
+- `infra-test-pinned-law-check`: Pinned-law check from logs (✔ done · successful)
+- `infra-test-seat-coverage`: Coverage per seat (✔ done · successful)
+- `infra-test-sim-spike`: Deterministic simulation spike (✔ done · successful)
+
+</details>
+
+<details><summary><b>Oct 2026</b>: 20 done</summary>
+
+- `cod-one-pipeline`: One window pipeline (✔ done · successful)
+- `rate-est-cadence`: Batched BOCD estimator cadence (✔ done · very-successful)
+- `meas-v4-verification`: Verification of the new main (✔ done · successful)
+- `perf-emit-batch-law0`: Emission batching law (✔ done · very-successful)
+- `perf-rcvbuf`: Receive-buffer fix F-A (✔ done · successful)
+- `perf-threading-p0`: Named runtime and thread budget (✔ done · successful)
+- `perf-threading-p1`: Threading lock and wake fixes (✔ done · successful)
+- `perf-d9-attribution`: Attribution of one sender change (✔ done · successful)
+- `perf-io-owner`: Per-path I/O owner (✔ done · very-successful)
+- `perf-sched-split`: Scheduler split by direction (✔ done · successful)
+- `perf-c8-lag`: Two-path client lag spread (✔ done · unrated)
+- `perf-receiver-r2`: Receiver cost with floor fix (✔ done · successful)
+- `perf-s20-r1-collapse`: First receiver rewrite collapse diagnosis (✔ done · successful)
+- `store-adr72-one-law`: One store law (✔ done · successful)
+- `store-input-search`: Single-path anchor over-read (✔ done · unrated)
+- `store-s18-one-law`: One store law, first session (✔ done · superseded)
+- `perf-incremental-sack`: Incremental SACK marking (✔ done · very-successful)
+- `perf-s26-long-polls`: Lag tail and long polls (✔ done · successful)
+- `cod-debug-stall`: Decoder re-delivery stall fix (✔ done · successful)
+- `perf-decoder-prune`: Decoder prune per drain (✔ done · very-successful)
+
+</details>
+
+<details><summary><b>Sep 2026</b>: 13 done</summary>
+
+- `meas-attribution-audit`: Attribution audit (✔ done · unrated)
+- `meas-5h-cap`: Owner rule: 5 h measurement cap (✔ done · n/a)
+- `rate-dials-made-real`: The dials made real (✔ done · successful)
+- `meas-wire-v8`: Wire v8 instruments and owed findings (✔ done · successful)
+- `place-stage2-battery`: Placement battery (✔ done · successful)
+- `cod-s4-block-retest`: Block default re-test (✔ done · unrated)
+- `infra-cleanup-0927`: Whole-project cleanup pass (✔ done · successful)
+- `meas-formula-first`: Formula-first review (✔ done · successful)
+- `obs-readout-macro`: Readouts as one write (✔ done · unrated)
+- `infra-fix-program`: Defect fix program (✔ done · successful)
+- `meas-gso-truth`: Per-datagram loss truth (GSO) (✔ fixed)
+- `rec-wire-v9`: Wire v9 per-path sequence (✔ done · successful)
+- `store-cap-unification`: Store-cap unification over live paths (✔ done · mixed)
+
+</details>
+
+<details><summary><b>Aug 2026</b>: 31 done</summary>
+
+- `cod-wire-compact`: Compact v5 DATA framing (✔ done · very-successful)
+- `meas-adversarial-b1`: Adversarial policer map (✔ done · unrated)
+- `cc-bbrrs-v1`: bbr_rs first version (✔ done · unrated)
+- `perf-recv-msg-wall`: Receiver per-message wall battery (✔ done · mixed)
+- `store-pool-anchor-flip`: Composed store flip (✔ done · bad)
+- `meas-adr52-discipline`: Measurement discipline (✔ done · successful)
+- `perf-ack-merge`: One control datagram per message (✔ done · very-successful)
+- `obs-gates-echo`: Gate-setting liveness echo (✔ done · unrated)
+- `infra-net-seams`: Net seams and dead-code refactor (✔ done · successful)
+- `store-latency-lever`: Three-term cap as latency control (✔ done · mixed)
+- `meas-sf-accounting`: SF accounting axis (✔ done · mixed)
+- `store-honest-inputs`: Honest inputs and O(1) anchor (✔ done · successful)
+- `meas-coupling-model`: Coupling model (frontier span) (✔ done · dead-end)
+- `meas-pipeline-verification`: Pipeline verification matrix (✔ done · unrated)
+- `store-deadwall-modehunt`: Deadwall and mode-hunt batteries (✔ done · unrated)
+- `store-sf-latency-feedback`: SF latency feedback (✔ done · dead-end)
+- `store-cap-law-cluster`: Cap-law cluster: formulas first (✔ done · unrated)
+- `meas-c9-battery`: Four-path validation battery (✔ done · unrated)
+- `meas-cpuprof`: cpuprof: the sender's CPU ceiling (✔ done · unrated)
+- `meas-eppen-c8`: Eppen's condition on unequal paths (✔ done · unrated)
+- `meas-gap-phases`: Gap battery phases 1 and 2 (✔ done · unrated)
+- `meas-goal-0819`: Era battery: cumulative shipped effect (✔ done · unrated)
+- `meas-latency-truth`: Latency Truth battery (✔ done · unrated)
+- `meas-sigma-c8`: Measured σ on unequal paths (✔ done · unrated)
+- `meas-span-run`: Span run: span instrument, anchors (✔ done · unrated)
+- `store-delta-cap`: Derived setpoint 1 + q(δ) (✔ done · very-successful)
+- `store-sum-cap`: Ladder battery: ×N deletion (✔ done · successful)
+- `rec-alpha-sweep`: Alpha-sweep of the recovery clock (✔ done · unrated)
+- `rec-cost-ratio-decision`: Cost-ratio decision (owner ruling) (✔ done · n/a)
+- `rec-goal100`: Recovery primitives and σ (✔ done · successful)
+- `rec-successor-arrival`: Successor-arrival distribution measured (✔ done · unrated)
+
+</details>
+
+<details><summary><b>Jul 2026</b>: 27 done</summary>
+
+- `meas-adr51-scenarios`: Canonical scenarios and goal gate (✔ done · successful)
+- `cc-copa-lite`: Production Copa-lite port (✔ done · successful)
+- `meas-l1-harness`: Network-namespace harness and baselines (✔ done · unrated)
+- `meas-l2-multipath`: Multipath and tail evaluation (✔ done · unrated)
+- `rec-bulk-arq`: Bulk ARQ and batch acknowledgements (✔ done · successful)
+- `model-wasm-l0`: raptorpath-math and wasm model (✔ done · successful)
+- `place-marginal-cost`: Marginal-cost placement law (✔ done · successful)
+- `rate-retention-is-rho`: Retention is the ρ dial (✔ done · n/a)
+- `rec-reliable-window`: Reliable window (✔ done · successful)
+- `rate-ge-hmm`: Gilbert-Elliott loss model (✔ done · successful)
+- `rate-saturation-rstar`: Saturation-aware r* and window (✔ done · successful)
+- `rec-fec-vs-arq`: Proactive FEC versus ARQ frontier (✔ done · unrated)
+- `cod-systematic-wire`: Systematic wire, sparse decoder (✔ done · successful)
+- `infra-mtu-floor`: MTU floor 1350 (PMTU wedge) (✔ done · successful)
+- `meas-gen-inert-era`: Generation-inert measurement era (✔ fixed)
+- `rate-rstar-window-mass`: r* window-mass provisioning (✔ done · successful)
+- `rate-taper-r`: Taper emission budget law (✔ done · successful)
+- `cc-bbr-default`: BBR as substrate default (✔ done · successful)
+- `cod-unified-span`: Unified span machine (✔ done · successful)
+- `rate-unified-shed`: δ-honest overload shedding (✔ done · successful)
+- `rec-per-path-clocks`: Per-path recovery clocks (✔ done · successful)
+- `store-anchor-hygiene`: Anchor hygiene laws (✔ done · successful)
+- `store-sack-release`: SACK-clocked store release (✔ done · successful)
+- `cc-copa-wire-signal`: Copa wire signal, compete mode (✔ done · successful)
+- `meas-regime-map`: Hardware-honest regime map (✔ done · unrated)
+- `infra-consolidation`: Deprecation register and consolidation (✔ done · successful)
+- `model-vis-continuum`: Visualizer as one continuum law (✔ done · successful)
+
+</details>
+
+<details><summary><b>Apr 2026</b>: 5 done</summary>
+
+- `model-open-points`: Resolve the paper's open points (✔ done · unrated)
+- `rec-plost-sack`: Rearchitecture phases: P_lost and SACK (✔ done · unrated)
+- `model-visualizer-v1`: First visualizer: triangle and BOCD (✔ done · unrated)
+- `model-math-verification`: Mathematical verification of the model (✔ done · unrated)
+- `model-paper-v1`: Unified FEC/ARQ model paper (✔ done · unrated)
+
+</details>
+
+<details><summary><b>Mar 2026</b>: 11 done</summary>
+
+- `obs-status-endpoint`: Runtime status endpoint (✔ done · successful)
+- `infra-early-platform`: Tunnel platform: handshake, TLS, migration (✔ done · successful)
+- `cod-gf256-simd`: SIMD GF(2^8) and gf256 crate (✔ done · successful)
+- `meas-transport-comparison`: QUIC/MPTCP comparison and overhead taxonomy (✔ done · unrated)
+- `cod-overhead-reduction`: Overhead reduction (packing, repair alignment) (✔ done · unrated)
+- `meas-l0-sim-bench`: Netsim harness and ablation benches (✔ done · unrated)
+- `meas-matrix-bench`: Matrix benchmark, audit and dashboard (✔ done · unrated)
+- `rec-early-arq`: Early ACK, NACK and repair (✔ done · successful)
+- `rec-nack-congestion`: Congestion-aware NACK throttle (first form) (✔ done · unrated)
+- `rate-fec-rate-v1`: BOCD FEC rate control (✔ done · successful)
+- `cc-early-delay-cc`: Delay-based CC replaces AIMD (✔ done · unrated)
+
+</details>
+
+<details><summary><b>Undated</b>: 4 done</summary>
+
+- `cc-user-adr68-direction`: Owner call: hybrid controller direction (✔ done · n/a)
+- `meas-adversarial-cells-build`: Adversarial cells: build and validate (✔ done · unrated)
+- `meas-blocke-pacing-gate`: Pacer late-send check replaced (✔ fixed)
+- `model-user-weak-identity`: Owner call: weaker binary identity (✔ done · n/a)
+
+</details>
+<!-- END GENERATED: done-by-month -->
+
 ## Tracks
 
 <!-- BEGIN GENERATED: tracks -->
