@@ -379,7 +379,6 @@ flowchart TB
   - Discipline item 12: VM lock covers all VM activity (2026-08-06, commit a8dfbf9d)
   - Measurement discipline item 13: lock holder's own polling is co-tenancy (2026-08-07, commit 17c52efe)
   - Measurement runs moved to in-memory storage (2026-10-26, commit db8221d1)
-  - commit db8221d1
 - `meas-adversarial-b1`: Adversarial policer map
   - commit 6c8c3d38
   - commit 9840854b

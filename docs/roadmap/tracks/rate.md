@@ -120,8 +120,8 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_pfec_exact,rate_deadline_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_rho_not_input,rate_dials_made_real,rate_c8_frontier_recopy,rate_k4_input_checks succ
-    class rate_ge_real_trace,rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
+    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_deadline_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_rho_not_input,rate_dials_made_real,rate_c8_frontier_recopy,rate_k4_input_checks succ
+    class rate_pfec_exact,rate_ge_real_trace,rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
@@ -174,7 +174,7 @@ flowchart TB
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | blocked | unrated |  | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 | store-engine-form-impl, rate-law-reconcile, rec-fix-refresh-clock, rate-fix-estimators, store-fix-maxbw-minrtt |
 | `rate-deadline-rstar` | Deadline-constrained r* for N paths | done | successful |  | commit fcae9c05; commit addf9eff; paper §4.11 |  |
 | `rate-rho-not-input` | ρ not an engine input | done | unrated |  | commit b181fa54; commit 5d14dd53 |  |
-| `rate-pfec-exact` | Exact P_fec by transfer matrix | done | successful |  | commit c4daf2bb; commit b6170b77; paper §8.7 |  |
+| `rate-pfec-exact` | Exact P_fec by transfer matrix | done | unrated |  | commit c4daf2bb; commit b6170b77; paper §8.7 |  |
 | `rate-ge-real-trace` | Real-trace check of the loss model | done | unrated |  | commit 1ee87fa1; commit 229917fb |  |
 
 ### Details per node
@@ -279,7 +279,8 @@ flowchart TB
 - `rate-rho-not-input`: ρ not an engine input
   - branch item 1 CLOSED UNREADABLE
 - `rate-pfec-exact`: Exact P_fec by transfer matrix
-  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, session record)
+  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, commit a0484dab)
 - `rate-ge-real-trace`: Real-trace check of the loss model
   - branch real-trace validation
+  - Real-trace check of the Gilbert-Elliott loss model (2026-07-06, commit 229917fb)
 <!-- END GENERATED: table-rate -->

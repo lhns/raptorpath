@@ -685,6 +685,21 @@ class HiddenNodeTests(unittest.TestCase):
         self.assertIn("`rec-u`", BuildTests.region(out, "waiting-on-owner"))
         self.assertIn("`rec-h`", BuildTests.region(out, "running"))
 
+    def test_done_owner_call_drawn_in_overview_only(self):
+        nodes = [node("rec-a", state="done", outcome="successful", evidence=["e"], start="2026-01-01"),
+                 node("rec-d", kind="user-decision", state="done", outcome="n/a", evidence=["e"], lane="user",
+                      depends_on=["rec-a"], start="2026-02-01"),
+                 node("rec-u", kind="user-decision", lane="user", start="2026-02-01"),
+                 node("rec-b", depends_on=["rec-d"], start="2026-03-01", state="in-progress")]
+        ov = BuildTests.region(built(nodes), "overview")
+        self.assertIn('rec_d{{"rec · ✔ T rec-d"}}', ov)  # purple hexagon, as in the legend
+        self.assertIn("rec_a --> rec_d", ov)
+        self.assertIn("rec_d --> rec_b", ov)
+        self.assertNotIn("rec_u", ov)  # an open owner call stays out of the diagram
+        tr = BuildTests.region(tfile(nodes, "rec"), "track-rec")
+        self.assertNotIn("rec_d", tr)
+        self.assertIn("rec_a --> rec_b", tr)  # rewired around it in the tree
+
     def test_bypass_edges_connect_prerequisites_to_dependants(self):
         tr = BuildTests.region(tfile(self.NODES, "rec"), "track-rec")
         self.assertIn("rec_a --> rec_b", tr)

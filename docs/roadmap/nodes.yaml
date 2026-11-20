@@ -1022,7 +1022,7 @@ nodes:
   - branch the cost-ratio decision memo
   - Cost-ratio decision memo (2026-08-19, commit 6751fb7d, commit d1552335)
   overview: true
-  plain: The owner fixed the one number that prices a wasted repair against a late one.
+  plain: The owner ruled that the timer formula may use one shared machinery only if its key ratio is derived from what it depends on; both routes stay open until a measurement separates them.
 - id: rec-wire-v9
   title: Wire v9 per-path sequence
   track: rec
@@ -1483,7 +1483,7 @@ nodes:
   - Where bulk and auto sit for r above zero (2026-09-08, commit 1dd546f1)
   overview: true
   notes: RWM_DELTA, the χ arm, EVICT instruments; three invariant repairs bit-exact at every preset. Folds paper §11.1 open question 3.
-  plain: The latency and retention dials were wired through to where the engine reads them, so they act as real inputs.
+  plain: The engine's latency dial became a formula instead of a three-way switch on the preset, and the repair rate a blend of two always-computed terms; the three presets behave as before, and every setting between them is now defined.
 - id: rate-defect-pfec
   title: P_fec truncation divergence
   track: rate
@@ -3691,7 +3691,7 @@ nodes:
   - Placement as one marginal-cost law, not regimes (2026-07-06, commit 8c6c7e2d, commit ee1ae3e0)
   overview: true
   notes: 'Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06).'
-  plain: Each packet goes to the path with the lowest marginal cost, through one continuous law; water-filling and pull rules fall out of it as its equilibria.
+  plain: One continuous rule decides which path carries each packet, by the marginal cost of adding it there, instead of equal striping or load regimes.
 - id: place-daps
   title: DAPS queue-management chain
   track: place
@@ -4431,7 +4431,7 @@ nodes:
   - commit 52b4fff6
   - Sender-side emission burst (2026-07-27, commit aa2fcbfa, commit 2367a519, commit c639d56f)
   - Receiver-side emission batching arms (2026-07-27, commit 8a71ed89, commit bc500aff, commit 47b04ed6, commit 97bc6eaf)
-  - Dual-path emission bursting (2026-07-27, commit c639d56f)
+  - Dual-path emission bursting (2026-07-27, session record)
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: perf-ack-merge
@@ -4459,7 +4459,7 @@ nodes:
   - 'ack-merge flip: default ON after full battery (2026-08-08, commit 4171b584, commit c2bfab73, commit 06f0b3e0, commit b505fdba)'
   overview: true
   notes: First battery NO FLIP (2026-08-07); re-registered and flipped 2026-08-08.
-  plain: Each message now sends one control datagram instead of two, which raised single-path throughput by about 13 percent and cut receiver CPU.
+  plain: 'Sending one control datagram per message became the default after a full test: single-path throughput rose about 13 % and receiver CPU per bit fell about 9 %.'
 - id: perf-recv-msg-wall
   title: Receiver per-message wall battery
   track: perf
@@ -5010,7 +5010,7 @@ nodes:
   - LinkModel timeline made purely virtual (2026-07-02, commit 09c1940d)
   overview: true
   notes: 'Owner 2026-07-02: set the goal of beating TCP and of the model reacting correctly in the defined scenarios. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
-  plain: A fixed set of network scenarios with falsifiable win conditions against TCP and MPTCP, run as an executable goal gate.
+  plain: Fixed a set of standard test scenarios with falsifiable win conditions, and got the simulated gate suite to pass them.
 - id: meas-l1-harness
   title: Network-namespace harness and baselines
   track: meas
@@ -5047,7 +5047,7 @@ nodes:
   - Harness plumbing for queued batteries (2026-07-19, commit bd139857, commit dada6eca, commit b317983b)
   overview: true
   notes: VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350).
-  plain: A network-namespace test bed with emulated links, one-command sweeps and the first baselines on real kernel networking.
+  plain: A test rig with emulated links gave the first real-network numbers, with QUIC, MPTCP and CUBIC as baselines; over the first improvement loop the standard lossy transfer went from 7.97 s to 1.05 s.
 - id: meas-l2-multipath
   title: Multipath and tail evaluation
   track: meas
@@ -5145,7 +5145,7 @@ nodes:
   - Default-stack smoke and paper 17.7 (2026-07-21, commit 1e2cb9e5, commit 14d69271)
   overview: true
   notes: Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read).
-  plain: A map of which mechanism wins on which link, measured on the real hardware, that set the shipped default stack.
+  plain: After the picture of what works where had been overturned three times, the settled real-hardware evidence was consolidated into one verdict; its recommendation became the default settings.
 - id: meas-adr52-discipline
   title: Measurement discipline
   track: meas
@@ -5168,7 +5168,6 @@ nodes:
   - 'Discipline item 12: VM lock covers all VM activity (2026-08-06, commit a8dfbf9d)'
   - 'Measurement discipline item 13: lock holder''s own polling is co-tenancy (2026-08-07, commit 17c52efe)'
   - Measurement runs moved to in-memory storage (2026-10-26, commit db8221d1)
-  - commit db8221d1
   overview: true
   plain: Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run.
   notes: 'Owner 2026-07-21: many changes performed worse and are off by default, which in the owner''s view did not show a principled approach. Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
@@ -5502,7 +5501,7 @@ nodes:
   - branch 16.80 on measured pi0
   overview: true
   notes: §2 row is undated; dates from the 2026-09-07 merges. The §16.80 law is its own node since 2026-11-20 (rec-seqclass-law).
-  plain: 'An audit split the measured share of repaired holes into two mechanisms: on one path almost no holes heal by themselves, on two paths almost all do.'
+  plain: 'An audit of what actually closes each gap showed a headline counter averaged two mechanisms: on one path under 1 % of gaps heal by themselves, on two paths over 92 % do.'
 - id: meas-wire-v8
   title: Wire v8 instruments and owed findings
   track: meas
@@ -6215,7 +6214,7 @@ nodes:
   - Automatic routing, DNS management and wintun setup (2026-03-13, commit d9bcc70c)
   overview: true
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
-  plain: 'The first tunnel platform: peer handshake and version check, optional certificate pinning, adding and removing paths at run time, MTU-sized symbols, keepalives and dead-path detection, and route and DNS setup.'
+  plain: 'The first working tunnel: a versioned handshake, optional TLS certificate pinning, moving a live connection between paths, packet sizes fitted to each path, and dead-path detection.'
 - id: infra-mtu-floor
   title: MTU floor 1350 (PMTU wedge)
   track: infra
@@ -6330,7 +6329,7 @@ nodes:
   - 'Cleanup: re-point comments and research docs to the renumbered paper (2026-09-27, commit 8f3fd7c5, commit 3a6b1627, commit 792914b6, commit 79ccafae, commit e9afdfa0, commit 2a52e84f)'
   overview: true
   notes: 'Owner 2026-09-26: review and clean up duplication, dead code, complexity and "yapping". Its two open known issues are their own nodes.'
-  plain: 'A whole-project cleanup: design and project documents rewritten for the current machine, comments re-pointed to the renumbered paper, refuted arms removed.'
+  plain: 'A whole-project cleanup: refuted options and dead code removed, large files split, the paper cut from about 22,600 to 3,000 lines, and the running ledger replaced by a status document.'
 - id: infra-fix-program
   title: Defect fix program
   track: infra
@@ -6363,7 +6362,7 @@ nodes:
   - Chi feed remaining-drain count (reachability flake) (2026-09-30, commit f16faad8)
   overview: true
   notes: 'Owner 2026-09-29: finding self-caused issues is fine; analyse and find the cause. §3.6 table, §3.7 rows 235/237 (recorded, not fixed). §3.6 and §3.7 rows are undated; dates from the 2026-09-29/30 merges.'
-  plain: A programme that found and fixed defects the project had caused itself, and recorded the ones deliberately left unfixed.
+  plain: A two-day program fixed self-caused defects, including a clean single path that could not finish a transfer, truncated loss reports and wrong loss-estimator feeds; two findings were recorded but not fixed.
 - id: infra-simplify-review
   title: Simplification review
   track: infra
@@ -8319,7 +8318,7 @@ nodes:
   - commit 86e1f0f3
   - commit 628fdb1c
   - Multipath simulation test suite with dynamic paths (2026-03-13, commit 5e6074ee)
-  - 'Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths (2026-03-21, commit 749112b9)'
+  - 'Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths (2026-03-21, session record)'
   overview: false
   plain: An early way of picking paths that ranked them by loss rate, later replaced by pricing each path's marginal cost.
   notes: ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it.
@@ -9581,13 +9580,13 @@ nodes:
   end: '2026-09-27'
   folded: []
   overview: false
-  plain: The model paper was rewritten from about 22,700 to about 3,000 lines around one machine set by (δ, ρ, r), each law stated once with its provenance and the function that implements it.
+  plain: The paper was rewritten from about 22,600 lines of dated narrative to about 3,000 lines that state each law once; the earlier text stays in git.
 - id: rate-pfec-exact
   title: Exact P_fec by transfer matrix
   track: rate
   kind: law
   state: done
-  outcome: successful
+  outcome: unrated
   evidence:
   - commit c4daf2bb
   - commit b6170b77
@@ -9601,9 +9600,9 @@ nodes:
   start: '2026-07-02'
   end: '2026-07-02'
   folded:
-  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, session record)
+  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, commit a0484dab)
   overview: false
-  plain: An exact transfer-matrix computation of the decode-failure probability over the bursty loss chain went into the paper and the math crate, capturing the burst-correlated losses the normal approximation ignores.
+  plain: An exact calculation of how often repair data recovers a loss on a bursty link; it showed the closed form under-provisions the tail by 30–50 %.
   notes: The session-record finding that the normal approximation under-provisions on bursty channels (2026-07-06) is folded here.
 - id: rate-ge-real-trace
   title: Real-trace check of the loss model
@@ -9624,8 +9623,9 @@ nodes:
   end: '2026-07-07'
   folded:
   - branch real-trace validation
+  - Real-trace check of the Gilbert-Elliott loss model (2026-07-06, commit 229917fb)
   overview: false
-  plain: Replaying five real cellular capacity traces showed the Gilbert-Elliott loss model under-provisions single-path repair, by up to 12.8 times the target, while two-path aggregation held on the same traces.
+  plain: On five real cellular traces the loss model under-provisioned repair by up to 12.8 times the target; a better channel model was recommended and not built.
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere

@@ -182,7 +182,7 @@ flowchart TB
   - commit 86e1f0f3
   - commit 628fdb1c
   - Multipath simulation test suite with dynamic paths (2026-03-13, commit 5e6074ee)
-  - Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths (2026-03-21, commit 749112b9)
+  - Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths (2026-03-21, session record)
 - `place-spare-repair`: Proactive repair on the spare path
   - branch C8 cross-path repair
 - `place-quad-lockin`: Four-path lock-in defect retracted

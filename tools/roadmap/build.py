@@ -189,21 +189,28 @@ def precedence(nodes):
     return pre
 
 
-def hidden(n):
-    """Owner decisions (and nodes with `diagram: false`) are not drawn; tables and lists still carry them."""
-    return n["kind"] == "user-decision" or not n["diagram"]
+def hidden(n, owner_done=False):
+    """Owner decisions (and nodes with `diagram: false`) are not drawn; tables and lists still carry them.
+    With owner_done (the overview only) a done owner decision is drawn."""
+    if not n["diagram"]:
+        return True
+    return n["kind"] == "user-decision" and not (owner_done and n["state"] == "done")
 
 
-def diagram_view(nodes):
+def diagram_view(nodes, owner_done=False):
     """The nodes the diagrams draw: hidden ones removed, a dependency that ran through one rewired
-    from its prerequisites to its dependants. replaced_by / qualified_by into a hidden node are dropped."""
+    from its prerequisites to its dependants. replaced_by / qualified_by into a hidden node are dropped.
+    owner_done: also draw done owner decisions (the overview does; the track trees do not)."""
     by = {n["id"]: n for n in nodes}
     pre = precedence(nodes)
+
+    def hid(n):
+        return hidden(n, owner_done)
 
     def visible_pre(i, seen=()):
         out = []
         for p in pre[i]:
-            if hidden(by[p]):
+            if hid(by[p]):
                 out += [q for q in visible_pre(p, seen + (i,)) if p not in seen]
             else:
                 out.append(p)
@@ -211,12 +218,12 @@ def diagram_view(nodes):
 
     view = []
     for n in nodes:
-        if hidden(n):
+        if hid(n):
             continue
         m = dict(n)
-        m["depends_on"] = list(dict.fromkeys(d for x in n["depends_on"] for d in ([x] if not hidden(by[x]) else visible_pre(x))))
-        m["replaced_by"] = [r for r in n["replaced_by"] if not hidden(by[r])]
-        m["qualified_by"] = [q for q in n["qualified_by"] if not hidden(by[q])]
+        m["depends_on"] = list(dict.fromkeys(d for x in n["depends_on"] for d in ([x] if not hid(by[x]) else visible_pre(x))))
+        m["replaced_by"] = [r for r in n["replaced_by"] if not hid(by[r])]
+        m["qualified_by"] = [q for q in n["qualified_by"] if not hid(by[q])]
         view.append(m)
     return view
 
@@ -385,7 +392,7 @@ def overview_bands(sel, order):
 
 
 def r_overview(nodes, today):
-    nodes = diagram_view(nodes)
+    nodes = diagram_view(nodes, owner_done=True)
     sel = [n for n in nodes if n["overview"]]
     if not sel:
         return "_No nodes have `overview: true` yet._"
@@ -566,7 +573,8 @@ def r_legend(nodes, today):
     return "\n".join([
         fence(out),
         "",
-        "Owner calls (a purple hexagon) are not drawn in the trees; they are listed under *Waiting on the owner*. "
+        "Owner calls are a purple hexagon. A decided owner call is drawn in the overview only, never in the track "
+        "trees; an open one is listed under *Waiting on the owner*. "
         "The prefix on an overview box is its track. A prerequisite implied by a longer chain is not drawn; "
         "the node tables keep every edge.",
     ])

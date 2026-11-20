@@ -89,7 +89,7 @@ flowchart TB
     class lg_s12,lg_k2 defect
 ```
 
-Owner calls (a purple hexagon) are not drawn in the trees; they are listed under *Waiting on the owner*. The prefix on an overview box is its track. A prerequisite implied by a longer chain is not drawn; the node tables keep every edge.
+Owner calls are a purple hexagon. A decided owner call is drawn in the overview only, never in the track trees; an open one is listed under *Waiting on the owner*. The prefix on an overview box is its track. A prerequisite implied by a longer chain is not drawn; the node tables keep every edge.
 <!-- END GENERATED: legend -->
 
 ## Overview
@@ -103,17 +103,21 @@ flowchart TB
         rate_fec_rate_v1[/"rate · ✔ BOCD FEC rate<br/>control"/]
         rec_plost_sack["rec · ✔ Rearchitecture<br/>phases: P_lost and<br/>SACK"]
         model_paper_v1["model · ✔ Unified<br/>FEC/ARQ model paper"]
+        model_user_three_dials{{"model · ✔ Owner call:<br/>three dials"}}
     end
     subgraph bd_1["Apr 2026"]
         model_wasm_l0["model · ✔ raptorpath-<br/>math and wasm model"]
     end
     subgraph bd_2["Jul 2026"]
         meas_adr51_scenarios["meas · ✔ Canonical<br/>scenarios and goal<br/>gate"]
+        model_user_no_mode_switch{{"model · ✔ Owner rule:<br/>no mode switches"}}
         meas_l1_harness["meas · ✔ Network-<br/>namespace harness and<br/>baselines"]
         rec_reliable_window["rec · ✔ Reliable<br/>window"]
         place_marginal_cost[/"place · ✔ Marginal-<br/>cost placement law"/]
+        rate_retention_is_rho{{"rate · ✔ Retention is<br/>the ρ dial"}}
         meas_c8_aggregation_arc["meas · ↷ Unequal two-<br/>path aggregation arc"]
         meas_gen_inert_era>"meas · ✔ Generation-<br/>inert measurement era"]
+        meas_user_consolidate_arc{{"meas · ✔ Owner call:<br/>consolidate<br/>aggregation arc"}}
         cc_bbr_default["cc · ✔ BBR as<br/>substrate default"]
         cod_unified_span["cod · ✔ Unified span<br/>machine"]
         meas_regime_map["meas · ✔ Hardware-<br/>honest regime map"]
@@ -125,6 +129,7 @@ flowchart TB
         perf_ack_merge["perf · ✔ One control<br/>datagram per message"]
         cod_one_pipeline["cod · ✔ One window<br/>pipeline"]
         meas_formula_first["meas · ✔ Formula-first<br/>review"]
+        rec_cost_ratio_decision{{"rec · ✔ Cost-ratio<br/>decision (owner<br/>ruling)"}}
         store_delta_cap[/"store · ✔ Derived<br/>setpoint 1 + q(δ)"/]
         rec_goal101[/"rec · ✖ Recovery clock<br/>verdict battery"/]
     end
@@ -174,31 +179,35 @@ flowchart TB
     end
     cod_block_pipeline ~~~ rec_plost_sack
     infra_early_platform ~~~ model_paper_v1
-    rate_fec_rate_v1 ~~~ model_paper_v1
+    rate_fec_rate_v1 ~~~ model_user_three_dials
     rec_plost_sack ~~~ model_wasm_l0
     model_paper_v1 ~~~ model_wasm_l0
+    model_user_three_dials ~~~ model_wasm_l0
     model_wasm_l0 ~~~ meas_adr51_scenarios
+    model_wasm_l0 ~~~ model_user_no_mode_switch
     meas_adr51_scenarios ~~~ meas_l1_harness
-    meas_adr51_scenarios ~~~ rec_reliable_window
+    model_user_no_mode_switch ~~~ rec_reliable_window
     meas_l1_harness ~~~ place_marginal_cost
-    rec_reliable_window ~~~ place_marginal_cost
+    rec_reliable_window ~~~ rate_retention_is_rho
     place_marginal_cost ~~~ meas_c8_aggregation_arc
-    place_marginal_cost ~~~ meas_gen_inert_era
-    place_marginal_cost ~~~ cc_bbr_default
-    meas_c8_aggregation_arc ~~~ cod_unified_span
-    meas_gen_inert_era ~~~ meas_regime_map
+    rate_retention_is_rho ~~~ meas_gen_inert_era
+    rate_retention_is_rho ~~~ meas_user_consolidate_arc
+    meas_c8_aggregation_arc ~~~ cc_bbr_default
+    meas_gen_inert_era ~~~ cod_unified_span
+    meas_user_consolidate_arc ~~~ meas_regime_map
     cc_bbr_default ~~~ meas_adr52_discipline
     cod_unified_span ~~~ model_vis_continuum
     meas_regime_map ~~~ model_vis_continuum
-    meas_adr52_discipline ~~~ model_vis_continuum
-    model_vis_continuum ~~~ rate_est_cadence
+    meas_adr52_discipline ~~~ rate_est_cadence
     model_vis_continuum ~~~ perf_ack_merge
     model_vis_continuum ~~~ cod_one_pipeline
     rate_est_cadence ~~~ meas_formula_first
-    perf_ack_merge ~~~ store_delta_cap
-    cod_one_pipeline ~~~ rec_goal101
-    meas_formula_first ~~~ meas_attribution_audit
-    store_delta_cap ~~~ rate_dials_made_real
+    perf_ack_merge ~~~ rec_cost_ratio_decision
+    cod_one_pipeline ~~~ store_delta_cap
+    meas_formula_first ~~~ rec_goal101
+    rec_cost_ratio_decision ~~~ rec_goal101
+    store_delta_cap ~~~ rec_goal101
+    rec_goal101 ~~~ meas_attribution_audit
     rec_goal101 ~~~ rate_dials_made_real
     meas_attribution_audit ~~~ rate_r_battery
     rate_dials_made_real ~~~ infra_cleanup_0927
@@ -251,7 +260,6 @@ flowchart TB
     store_s62_j0 --> store_count_rule
     rec_f2_merge_guard --> meas_s51_session
     rate_evict_session --> rate_k4_input_checks
-    cc_bbrrs_r1 --> cc_bbrrs_r2
     model_law_ledger --> store_law_derivation
     store_count_rule --> store_defect_b0p_brake
     store_defect_b0p_brake --> store_sampler_design
@@ -259,7 +267,7 @@ flowchart TB
     model_law_ledger --> store_fix_maxbw_minrtt
     cc_bbrrs_r2 --> store_fix_maxbw_minrtt
     store_fix_maxbw_minrtt --> store_engine_form_impl
-    linkStyle 69 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 73 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -276,6 +284,7 @@ flowchart TB
     class cod_block_pipeline,rec_goal101,rate_r_battery,store_power_law,perf_threading_p2a,meas_c8_aggregation_arc dead
     class cod_unified_span,cod_one_pipeline,rec_reliable_window,rate_fec_rate_v1,rate_dials_made_real,rate_k4_input_checks,store_adr72_one_law,rec_defect_realtime_framing,place_marginal_cost,place_wire_price,cc_bbr_default,meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_guard_41c,model_wasm_l0,model_vis_continuum,infra_early_platform,infra_cleanup_0927,infra_fix_program,meas_s51_session succ
     class rec_plost_sack,rec_snapver_law,rate_evict_session,store_count_rule,meas_l1_harness,meas_regime_map,meas_attribution_audit,model_paper_v1,model_law_ledger unrated
+    class rec_cost_ratio_decision,rate_retention_is_rho,model_user_three_dials,model_user_no_mode_switch,meas_user_consolidate_arc userdec
     class rate_est_cadence,store_delta_cap,rec_f2_merge_guard,perf_ack_merge,perf_emit_batch_law0,perf_io_owner,perf_decoder_prune vsucc
     class rate_delta_jitter_fix,store_sampler_design,rate_s06_plost_derivation next
     class store_law_derivation inprog
@@ -301,7 +310,7 @@ flowchart TB
 | Reliable window | ✔ done · successful | Made the window keep every packet until the receiver confirms it, so one design can serve bulk transfers without a separate mode. |
 | σ dispersion estimators (fixed lag) | ⏸ parked | Estimators of the delay spread that a derived recovery clock would need; all failed their bar, and the paper keeps the question open. |
 | Recovery clock verdict battery | ✖ dead end | A search for a derived formula for the retransmit timer ended with the whole family of candidates refuted; the hand-set timer limit stayed. |
-| Cost-ratio decision (owner ruling) | ✔ done · n/a | The owner fixed the one number that prices a wasted repair against a late one. |
+| Cost-ratio decision (owner ruling) | ✔ done · n/a | The owner ruled that the timer formula may use one shared machinery only if its key ratio is derived from what it depends on; both routes stay open until a measurement separates them. |
 | Gap horizon | ⏳ waiting | Letting the sender hear about many more missing packets at once removed most of the end-of-transfer wait on the hardest test, but raised duplicate packets; the merge is still pending. |
 | Snapshot-order filter as law | ✔ done · unrated | Turned the fix for outdated loss reports into a permanent rule, written into the paper first, then passed its merge check. |
 | Tail-sweep timer pinned at clamp | ⚠ open defect | Open problem: on the hardest two-path test the retransmit timer always sits at its hand-set upper limit, so the formula behind it never acts. |
@@ -327,7 +336,7 @@ flowchart TB
 | Batched BOCD estimator cadence | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
 | Funded coding at r > 0 | ✖ dead end | Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand. |
 | DoF ledger feedback leg | ⏸ parked | An analysis found that feeding repair results back into the repair rate is sound in principle but cannot help measurably today, so it is on hold. |
-| The dials made real | ✔ done · successful | The latency and retention dials were wired through to where the engine reads them, so they act as real inputs. |
+| The dials made real | ✔ done · successful | The engine's latency dial became a formula instead of a three-way switch on the preset, and the repair rate a blend of two always-computed terms; the three presets behave as before, and every setting between them is now defined. |
 | P_fec truncation divergence | ⚠ open defect | Open problem: the code that estimates how often extra repair data helps jumps from zero to one half at one point, where the paper describes a smooth curve. |
 | Executed sliding P_fec oracle | ⏳ waiting | A test that runs the engine's real encoder and decoder to measure how often repair data recovers a loss, to settle the repair-rate formula. |
 | Repair taper shape inert as wired | ⚠ open defect | Open problem: the law that shapes when repairs are sent has no effect as the code calls it, so repairs go out at the flat rate. |
@@ -362,7 +371,7 @@ flowchart TB
 | Store-law engine form | ⛔ blocked | Rebuilding the in-flight data limit on measured link rate and delay, written as a derived formula first. |
 | δ seat on the store | ⛔ blocked | Making the in-flight data limit follow the latency dial smoothly, so lower-latency settings queue less. |
 | Honest rate and delay inputs | ⛔ blocked | An open research problem: nobody has yet found an honest way to measure link speed and minimum delay for the in-flight data limit, after seven failed attempts, so this node may end with a declared fallback instead of a fix. |
-| Marginal-cost placement law | ✔ done · successful | Each packet goes to the path with the lowest marginal cost, through one continuous law; water-filling and pull rules fall out of it as its equilibria. |
+| Marginal-cost placement law | ✔ done · successful | One continuous rule decides which path carries each packet, by the marginal cost of adding it there, instead of equal striping or load regimes. |
 | Derived diversity weight, leg choice | ⏳ waiting | A wiring change that lets retransmissions be spread across paths differently has been built but never fully measured. |
 | Wire-RTT placement price | ✔ done · successful | Fixed a bug where an idle path could stay priced too high and never be used again, by pricing each path on its measured network delay. |
 | One per-leg state design | ⏳ waiting | A design for keeping all of each path's measurements in one place instead of in several slightly different copies. |
@@ -383,7 +392,7 @@ flowchart TB
 | Copa consumers onto per-leg state | ⛔ blocked | Moving the parts that read the Copa controller onto the shared per-path measurements and replacing its per-setting table with one smooth rule. |
 | bbr_rs promotion | ⛔ blocked | Making our BBR controller the default, recorded as a new architecture decision. |
 | BBR/Copa hybrid build | ⏸ parked | Designing a controller that blends BBR's speed with Copa's low queues, with pass or fail targets fixed before anything is built. |
-| One control datagram per message | ✔ done · very-successful | Each message now sends one control datagram instead of two, which raised single-path throughput by about 13 percent and cut receiver CPU. |
+| One control datagram per message | ✔ done · very-successful | Sending one control datagram per message became the default after a full test: single-path throughput rose about 13 % and receiver CPU per bit fell about 9 %. |
 | Emission batching law | ✔ done · very-successful | Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere. |
 | Single logic-actor threading | ✖ dead end | Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted. |
 | Per-path I/O owner | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
@@ -393,14 +402,14 @@ flowchart TB
 | Perf ignores the config file | ⚠ open defect | The perf client and server never read --config, so the tail target, the overhead cap, certificate pinning and the slow-link setting cannot be set for a perf run. |
 | Repair-share bound counts every slot | ▶ in progress | The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model's definition is checked to mean the same thing. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
-| Canonical scenarios and goal gate | ✔ done · successful | A fixed set of network scenarios with falsifiable win conditions against TCP and MPTCP, run as an executable goal gate. |
-| Network-namespace harness and baselines | ✔ done · unrated | A network-namespace test bed with emulated links, one-command sweeps and the first baselines on real kernel networking. |
+| Canonical scenarios and goal gate | ✔ done · successful | Fixed a set of standard test scenarios with falsifiable win conditions, and got the simulated gate suite to pass them. |
+| Network-namespace harness and baselines | ✔ done · unrated | A test rig with emulated links gave the first real-network numbers, with QUIC, MPTCP and CUBIC as baselines; over the first improvement loop the standard lossy transfer went from 7.97 s to 1.05 s. |
 | Unequal two-path aggregation arc | ↷ superseded | Early attempts to add up the speed of a fast and a slow path were judged a failure, but the tests were later shown to be blocked by three hidden problems. |
 | Generation-inert measurement era | ✔ fixed | A period when tests silently ran with a key feature switched off, so those results cannot be trusted. |
-| Hardware-honest regime map | ✔ done · unrated | A map of which mechanism wins on which link, measured on the real hardware, that set the shipped default stack. |
+| Hardware-honest regime map | ✔ done · unrated | After the picture of what works where had been overturned three times, the settled real-hardware evidence was consolidated into one verdict; its recommendation became the default settings. |
 | Measurement discipline | ✔ done · successful | Wrote down the measurement rules every real-network result must follow, such as fixing predictions before a run. |
 | Formula-first review | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
-| Attribution audit | ✔ done · unrated | An audit split the measured share of repaired holes into two mechanisms: on one path almost no holes heal by themselves, on two paths almost all do. |
+| Attribution audit | ✔ done · unrated | An audit of what actually closes each gap showed a headline counter averaged two mechanisms: on one path under 1 % of gaps heal by themselves, on two paths over 92 % do. |
 | Rank-minp merge guard | ✔ done · successful ⚠ | Built the statistical check that every change must pass before merging, calibrated against identical runs. |
 | Start-up floor clause measures drain | ⚠ open defect | Open problem: one reading in the merge check measured the start or the end of a run rather than the network path, so it scored good fixes as worse. |
 | ETA route and σ witness mismatch | ⚠ open defect | Open problem: the script that checks the finish-time prediction uses a different delay than the formula itself, and one of its checks fails. |
@@ -436,9 +445,9 @@ flowchart TB
 | Owner rule: no mode switches | ✔ done · n/a | The owner ruled out hard cutoffs and any switch between codes or pipeline modes in mid-stream: behaviour has to change smoothly out of one set of formulas. This became the standing no-mode-switch rule. |
 | Metrics registry and OTel design | ⏳ waiting | A design for one metrics system that feeds the status page, the logs and standard monitoring tools, including a packet-level recorder. |
 | Observability implementation | ⛔ blocked | Building one metrics system that feeds the status page, the logs and standard monitoring tools. |
-| Tunnel platform: handshake, TLS, migration | ✔ done · successful | The first tunnel platform: peer handshake and version check, optional certificate pinning, adding and removing paths at run time, MTU-sized symbols, keepalives and dead-path detection, and route and DNS setup. |
-| Whole-project cleanup pass | ✔ done · successful | A whole-project cleanup: design and project documents rewritten for the current machine, comments re-pointed to the renumbered paper, refuted arms removed. |
-| Defect fix program | ✔ done · successful ⚠ | A programme that found and fixed defects the project had caused itself, and recorded the ones deliberately left unfixed. |
+| Tunnel platform: handshake, TLS, migration | ✔ done · successful | The first working tunnel: a versioned handshake, optional TLS certificate pinning, moving a live connection between paths, packet sizes fitted to each path, and dead-path detection. |
+| Whole-project cleanup pass | ✔ done · successful | A whole-project cleanup: refuted options and dead code removed, large files split, the paper cut from about 22,600 to 3,000 lines, and the running ledger replaced by a status document. |
+| Defect fix program | ✔ done · successful ⚠ | A two-day program fixed self-caused defects, including a clean single path that could not finish a transfer, truncated loss reports and wrong loss-estimator feeds; two findings were recorded but not fixed. |
 | Workspace restructure | ⏳ waiting | Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open. |
 | Recorded, not fixed | ⚠ open defect | Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much. |
 | Tunnel in-order guard | ⚠ open defect | Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins. |
@@ -766,13 +775,13 @@ History before November 2026 is reconstructed from commits, status sections and 
 
 <details><summary><b>Sep 2026</b>: 17 done, 4 abandoned</summary>
 
-- `meas-attribution-audit`: Attribution audit (✔ done · unrated). An audit split the measured share of repaired holes into two mechanisms: on one path almost no holes heal by themselves, on two paths almost all do.
+- `meas-attribution-audit`: Attribution audit (✔ done · unrated). An audit of what actually closes each gap showed a headline counter averaged two mechanisms: on one path under 1 % of gaps heal by themselves, on two paths over 92 % do.
 - `rec-seqclass-law`: Sequential-classification repair law (§16.80) (✔ done · unrated). The repair decision was written as one sequential test whose corner is a theorem with a bounded value; its two levers were specified as predictions and never built.
   - Three plans for false repairs and the formula that came out (2026-09-06)
 - `meas-5h-cap`: Owner rule: 5 h measurement cap (✔ done · n/a)
 - `meas-crown-spot-v8`: Crown no-regression spot (wire v8) (✔ done · unrated). A pre-registered check confirmed that the newly merged repair changes left the best historic single-path results unchanged.
   - Crown spot: invariant repairs inert at the presets (2026-09-08)
-- `rate-dials-made-real`: The dials made real (✔ done · successful). The latency and retention dials were wired through to where the engine reads them, so they act as real inputs.
+- `rate-dials-made-real`: The dials made real (✔ done · successful). The engine's latency dial became a formula instead of a three-way switch on the preset, and the repair rate a blend of two always-computed terms; the three presets behave as before, and every setting between them is now defined.
   - Where bulk and auto sit for r above zero (2026-09-08)
 - `rate-r-battery`: Funded coding at r > 0 (✖ dead end). Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand.
   - r greater than zero battery: pre-registration, harness, calibration and launch (2026-09-08)
@@ -788,15 +797,15 @@ History before November 2026 is reconstructed from commits, status sections and 
 - `place-t-derived`: Derived placement temperature (✖ dead end). 0.78–0.85×
 - `cod-s4-block-retest`: Block default re-test (✔ done · unrated)
   - Block re-test arm switch in the benchmark script (2026-09-27)
-- `infra-cleanup-0927`: Whole-project cleanup pass (✔ done · successful). A whole-project cleanup: design and project documents rewritten for the current machine, comments re-pointed to the renumbered paper, refuted arms removed.
+- `infra-cleanup-0927`: Whole-project cleanup pass (✔ done · successful). A whole-project cleanup: refuted options and dead code removed, large files split, the paper cut from about 22,600 to 3,000 lines, and the running ledger replaced by a status document.
   - Cleanup: DESIGN, README, status and discipline docs, CLAUDE.md (2026-09-27)
   - Cleanup: re-point comments and research docs to the renumbered paper (2026-09-27)
 - `meas-formula-first`: Formula-first review (✔ done · successful). After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded.
   - Law-shape prevention kit: shape tests, bind-fraction readout, four-path bench (2026-08-12)
-- `model-paper-rewrite`: Concise rewrite of the model paper (✔ done · unrated). The model paper was rewritten from about 22,700 to about 3,000 lines around one machine set by (δ, ρ, r), each law stated once with its provenance and the function that implements it.
+- `model-paper-rewrite`: Concise rewrite of the model paper (✔ done · unrated). The paper was rewritten from about 22,600 lines of dated narrative to about 3,000 lines that state each law once; the earlier text stays in git.
 - `obs-readout-macro`: Readouts as one write (✔ done · unrated)
 - `cod-s5-stage3-baseline`: Stage-3 baseline: block versus window (✔ done · unrated). A pre-registered noise floor and block-versus-window comparison found the window pipeline not worse, which licensed deleting the block pipeline.
-- `infra-fix-program`: Defect fix program (✔ done · successful). A programme that found and fixed defects the project had caused itself, and recorded the ones deliberately left unfixed.
+- `infra-fix-program`: Defect fix program (✔ done · successful). A two-day program fixed self-caused defects, including a clean single path that could not finish a transfer, truncated loss reports and wrong loss-estimator feeds; two findings were recorded but not fixed.
   - Loss-estimator feed: receiver incoming loss and its laws (2026-09-30)
   - Chi feed remaining-drain count (reachability flake) (2026-09-30)
 - `meas-gso-truth`: Per-datagram loss truth (GSO) (✔ fixed). Found that the network emulator undercounted lost packets several times over, and changed the harness to count every packet.
@@ -832,7 +841,7 @@ History before November 2026 is reconstructed from commits, status sections and 
   - Discipline item 12: VM lock covers all VM activity (2026-08-06)
   - Measurement discipline item 13: lock holder's own polling is co-tenancy (2026-08-07)
   - Measurement runs moved to in-memory storage (2026-10-26)
-- `perf-ack-merge`: One control datagram per message (✔ done · very-successful). Each message now sends one control datagram instead of two, which raised single-path throughput by about 13 percent and cut receiver CPU.
+- `perf-ack-merge`: One control datagram per message (✔ done · very-successful). Sending one control datagram per message became the default after a full test: single-path throughput rose about 13 % and receiver CPU per bit fell about 9 %.
   - ack-merge: density premise refuted; first battery no flip (2026-08-07)
   - ack-merge flip: default ON after full battery (2026-08-08)
 - `rec-patience-derived`: Unlock The Default 2: patience (✖ dead end)
@@ -906,7 +915,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 - `meas-defect-31mbit`: 31 Mbit/s cap: generation coding on (✔ fixed). Two measurement passes capped at about 31 Mbit/s on every cell because a missing setting left generation coding on; they measured a different machine and were set aside.
   - 31 Mbit/s throughput anomaly: generation coding left on (2026-08-20)
 - `rec-alpha-sweep`: Alpha-sweep of the recovery clock (✔ done · unrated)
-- `rec-cost-ratio-decision`: Cost-ratio decision (owner ruling) (✔ done · n/a). The owner fixed the one number that prices a wasted repair against a late one.
+- `rec-cost-ratio-decision`: Cost-ratio decision (owner ruling) (✔ done · n/a). The owner ruled that the timer formula may use one shared machinery only if its key ratio is derived from what it depends on; both routes stay open until a measurement separates them.
   - Cost-ratio decision memo (2026-08-19)
 - `rate-rho-not-input`: ρ not an engine input (✔ fixed). The retention dial turned out to be an input nowhere in the shipped engine, so the recovery goals could not read it; wiring it in was left to the owner.
 - `rec-fire-cause`: Recovery fire cause table (✔ done · unrated). Counting what triggers each recovery repair showed that under one percent come from the sender's timer and the rest from the receiver's gap reports, so tuning the timer moved almost nothing.
@@ -929,20 +938,20 @@ History before November 2026 is reconstructed from commits, status sections and 
 
 <details><summary><b>Jul 2026</b>: 46 done, 30 abandoned</summary>
 
-- `meas-adr51-scenarios`: Canonical scenarios and goal gate (✔ done · successful). A fixed set of network scenarios with falsifiable win conditions against TCP and MPTCP, run as an executable goal gate.
+- `meas-adr51-scenarios`: Canonical scenarios and goal gate (✔ done · successful). Fixed a set of standard test scenarios with falsifiable win conditions, and got the simulated gate suite to pass them.
   - ADR-0051 evaluation scenarios, win conditions and SimQuic class (2026-07-02)
   - L0 goal gate suite green, production bugs fixed (2026-07-02)
   - Quality sweep and per-improvement ablation table (2026-07-02)
   - quality_hint_sweep diagnostic across the hints (2026-07-02)
   - LinkModel timeline made purely virtual (2026-07-02)
-- `rate-pfec-exact`: Exact P_fec by transfer matrix (✔ done · successful). An exact transfer-matrix computation of the decode-failure probability over the bursty loss chain went into the paper and the math crate, capturing the burst-correlated losses the normal approximation ignores.
+- `rate-pfec-exact`: Exact P_fec by transfer matrix (✔ done · unrated). An exact calculation of how often repair data recovers a loss on a bursty link; it showed the closed form under-provisions the tail by 30–50 %.
   - Normal-approximation r* under-provisions on bursty channels (2026-07-06)
 - `perf-liveness-split`: Path liveness split from capacity (✔ done · successful). A saturated path stopped sending its heartbeats and was declared dead; heartbeats now go out whatever the spare capacity, which ended the path deaths on the real link.
 - `cc-btlbw-recovery`: BtlBw-anchored window recovery (✔ done · mixed). After a backoff the congestion window was pulled back toward the bandwidth-delay product; the window recovered, but transfer completion time did not improve.
 - `cc-copa-lite`: Production Copa-lite port (✔ done · successful)
   - Jitter-robust Copa queue signal and window-level jitter headroom (2026-07-04)
 - `cod-rlc-index`: RLC decoder recovered-symbol index (✔ done · successful). The sliding-window decoder found recovered symbols by linear scan; a hash index made decoding about five times faster and removed the visualizer slowdown at high load.
-- `meas-l1-harness`: Network-namespace harness and baselines (✔ done · unrated). A network-namespace test bed with emulated links, one-command sweeps and the first baselines on real kernel networking.
+- `meas-l1-harness`: Network-namespace harness and baselines (✔ done · unrated). A test rig with emulated links gave the first real-network numbers, with QUIC, MPTCP and CUBIC as baselines; over the first improvement loop the standard lossy transfer went from 7.97 s to 1.05 s.
   - C5 CUBIC median measured at 131 s (2026-07-03)
   - Detached phase-2 sweep: quinn and MPTCP runs (2026-07-03)
   - rp-native object mode without inner TCP (2026-07-04)
@@ -980,7 +989,7 @@ History before November 2026 is reconstructed from commits, status sections and 
   - Visualizer latency readouts and hover explanations (2026-07-02)
   - Visualizer overhead split into channel floor and excess (2026-07-03)
   - Visualizer Auto window slider and saturation-pressure gauge (2026-07-04)
-- `place-marginal-cost`: Marginal-cost placement law (✔ done · successful). Each packet goes to the path with the lowest marginal cost, through one continuous law; water-filling and pull rules fall out of it as its equilibria.
+- `place-marginal-cost`: Marginal-cost placement law (✔ done · successful). One continuous rule decides which path carries each packet, by the marginal cost of adding it there, instead of equal striping or load regimes.
   - Owner rule: no equal-weight striping (2026-07-06)
   - RWM Phase B: multipath striping with the placement law (2026-07-06)
   - Placement as one marginal-cost law, not regimes (2026-07-06)
@@ -996,7 +1005,8 @@ History before November 2026 is reconstructed from commits, status sections and 
   - Per-ACK RTT minimum rescan removed from the sender (2026-07-07)
 - `rate-deadline-rstar`: Deadline-constrained r* for N paths (✔ done · successful). One repair-rate formula covers one or many paths and reduces exactly to the single-path formula when there is one path.
 - `rate-ge-hmm`: Gilbert-Elliott loss model (✔ done · successful)
-- `rate-ge-real-trace`: Real-trace check of the loss model (✔ done · unrated). Replaying five real cellular capacity traces showed the Gilbert-Elliott loss model under-provisions single-path repair, by up to 12.8 times the target, while two-path aggregation held on the same traces.
+- `rate-ge-real-trace`: Real-trace check of the loss model (✔ done · unrated). On five real cellular traces the loss model under-provisioned repair by up to 12.8 times the target; a better channel model was recommended and not built.
+  - Real-trace check of the Gilbert-Elliott loss model (2026-07-06)
 - `rate-saturation-rstar`: Saturation-aware r* and window (✔ done · successful)
   - Soft saturation cap and continuous end-of-stream taper (2026-07-04)
   - Encoder window derived from the channel instead of hand-set (2026-07-04)
@@ -1049,7 +1059,7 @@ History before November 2026 is reconstructed from commits, status sections and 
   - Copa wire-signal fixes (2026-07-13)
 - `cc-copa-sole-substrate`: Copa per path as substrate (↷ superseded). 0.57–0.97×
   - Copa-sole on the clean substrate (2026-07-27)
-- `meas-regime-map`: Hardware-honest regime map (✔ done · unrated). A map of which mechanism wins on which link, measured on the real hardware, that set the shipped default stack.
+- `meas-regime-map`: Hardware-honest regime map (✔ done · unrated). After the picture of what works where had been overturned three times, the settled real-hardware evidence was consolidated into one verdict; its recommendation became the default settings.
   - Default-stack smoke and paper 17.7 (2026-07-21)
 - `perf-emit-batch-v1`: Emission batching, first attempt (↷ superseded). +10–16 %
   - Sender-side emission burst (2026-07-27)
@@ -1126,7 +1136,7 @@ History before November 2026 is reconstructed from commits, status sections and 
   - Platform setup UX and runtime status endpoint (2026-03-12)
 - `cc-aimd-v1`: AIMD congestion control (first CC) (↷ superseded). The first congestion control backed off on loss like classic TCP and was replaced a day later by a delay-based one.
   - ACK delivery, AIMD congestion control and channel backpressure (2026-03-12)
-- `infra-early-platform`: Tunnel platform: handshake, TLS, migration (✔ done · successful). The first tunnel platform: peer handshake and version check, optional certificate pinning, adding and removing paths at run time, MTU-sized symbols, keepalives and dead-path detection, and route and DNS setup.
+- `infra-early-platform`: Tunnel platform: handshake, TLS, migration (✔ done · successful). The first working tunnel: a versioned handshake, optional TLS certificate pinning, moving a live connection between paths, packet sizes fitted to each path, and dead-path detection.
   - Optional TLS certificate pinning (2026-03-13)
   - Runtime connection migration with path management API (2026-03-13)
   - MTU-aware symbol sizing from path discovery (2026-03-13)

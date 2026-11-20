@@ -206,7 +206,7 @@ flowchart TB
   - commit 52b4fff6
   - Sender-side emission burst (2026-07-27, commit aa2fcbfa, commit 2367a519, commit c639d56f)
   - Receiver-side emission batching arms (2026-07-27, commit 8a71ed89, commit bc500aff, commit 47b04ed6, commit 97bc6eaf)
-  - Dual-path emission bursting (2026-07-27, commit c639d56f)
+  - Dual-path emission bursting (2026-07-27, session record)
 - `perf-ack-merge`: One control datagram per message
   - commit 37c594a4
   - commit bb8ab286
