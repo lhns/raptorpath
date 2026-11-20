@@ -39,6 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
+        with: { fetch-depth: 0 }  # test_harness63 needs git history (a271e0bb)
       - uses: actions/setup-python@v5.6.0
         with: { python-version: "3.12" }
       - run: pip install pyyaml
