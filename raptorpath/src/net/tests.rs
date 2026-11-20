@@ -6594,7 +6594,7 @@ mod account_arith {
     fn buf_with(n: u64, acct: &mut Account) -> Buf {
         let mut b = Buf::new();
         for s in 0..n {
-            b.insert(s, (0, 0.0, 0));
+            b.insert(s, (0, 0));
             acct.on_sent(&b);
         }
         b
