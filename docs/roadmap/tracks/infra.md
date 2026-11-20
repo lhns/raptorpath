@@ -33,6 +33,7 @@ flowchart TB
     infra_test_mutation["✔ Mutation testing of<br/>the laws"]
     infra_test_model_real_decisions["⛔ Model check over the<br/>real code"]
     infra_test_pub_narrowing["⛔ Narrow pub so dead<br/>code warns"]
+    infra_test_sim_engine["▶ Deterministic<br/>simulation of the<br/>engine"]
     infra_tech_tree_skill["○ tech-tree skill PR"]
     infra_dead_code_batch["○ Remove 24 dead<br/>functions"]
     infra_early_platform ~~~ infra_net_seams
@@ -58,8 +59,8 @@ flowchart TB
     infra_test_sim_spike ~~~ infra_test_mutation
     infra_test_recovery_counters ~~~ infra_test_model_real_decisions
     infra_test_seat_coverage ~~~ infra_test_pub_narrowing
-    infra_test_mutation ~~~ infra_tech_tree_skill
-    infra_test_model_real_decisions ~~~ infra_dead_code_batch
+    infra_test_mutation ~~~ infra_test_sim_engine
+    infra_test_model_real_decisions ~~~ infra_tech_tree_skill
     infra_test_pub_narrowing ~~~ infra_dead_code_batch
     infra_fix_program -.-> infra_defect_recorded_not_fixed
     infra_simplify_review --> infra_simplify_batch1
@@ -69,6 +70,7 @@ flowchart TB
     infra_test_pinned_law_check --> infra_test_mutation
     infra_test_recovery_model --> infra_test_model_real_decisions
     infra_test_static_audits --> infra_test_pub_narrowing
+    infra_test_sim_spike --> infra_test_sim_engine
     infra_inventory_merges --> infra_tech_tree_skill
     linkStyle 26 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
@@ -88,7 +90,7 @@ flowchart TB
     class infra_defect_recorded_not_fixed,infra_tunnel_inorder_guard defect
     class infra_restructure waiting
     class infra_inventory_merges,infra_derivation_merges unrated
-    class infra_test_ci_gate,infra_test_static_audits,infra_test_recovery_model inprog
+    class infra_test_ci_gate,infra_test_static_audits,infra_test_recovery_model,infra_test_sim_engine inprog
     class infra_test_recovery_counters,infra_tech_tree_skill,infra_dead_code_batch next
     class infra_test_seat_coverage,infra_test_model_real_decisions,infra_test_pub_narrowing blocked
 ```
@@ -126,6 +128,7 @@ flowchart TB
 | `infra-test-model-real-decisions` | Model check over the real code | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-recovery-model |
 | `infra-test-pub-narrowing` | Narrow pub so dead code warns | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-static-audits |
 | `infra-dead-code-batch` | Remove 24 dead functions | next | unrated |  | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |  |
+| `infra-test-sim-engine` | Deterministic simulation of the engine | in-progress | unrated |  | docs/derivations/sim-engine.md; raptorpath/tests/sim_lost_tail.rs | infra-test-sim-spike |
 
 ### Details per node
 
@@ -158,4 +161,5 @@ flowchart TB
 | `infra-test-model-real-decisions` | Model check over the real code | Plan S9. Needs the extended shared-core extraction (owner question 1). | docs/derivations/test-detection-plan.md |
 | `infra-test-pub-narrowing` | Narrow pub so dead code warns | Plan S10, at a quiet point. | docs/derivations/test-detection-plan.md |
 | `infra-dead-code-batch` | Remove 24 dead functions | D list in audits.rs on static-audits 86b5208f (callers deleted in dacfd7cc / ADR-0069 and others). Tests that exercise a dead copy instead of the live path: compute_repair_rate_capped, get_or_eval, pooled_recovery_srtt_of, Scheduler::schedule, compute_repair_count, compute_gap_ranges. Release-binary hash check; guard only if bytes change. Stale docs to fix with it: net/tests.rs:3807, fec_rate.rs:46, paper 8.1, loss_clamp_witness doc. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
+| `infra-test-sim-engine` | Deterministic simulation of the engine | Plan S8, ADR-0082 (Proposed, awaiting the owner). Phase 1 merged (squash of sim-engine c907d207): release binary byte-identical to main on Linux; same-seed traces identical on 1 and 2 paths; lost tail at rho < 1 stalls (known defect), rho = 1 recovers; 0.1-0.3 s per scenario. Phase 2 owed: Gilbert-Elliott and Weibull links, a CPU-cost model for senders with no backpressure, porting the flaky timing tests, the 3 SystemTime reads. Branches carrying their own test_seams.rs (s06-delete, wedge-diag) must switch to the main copy: s06-delete's copy uses eprintln! and likely fails the no_eprintln gate; merging it also leaves a duplicate pub mod test_seams line that git merges silently. | docs/derivations/sim-engine.md; raptorpath/tests/sim_lost_tail.rs |
 <!-- END GENERATED: table-infra -->

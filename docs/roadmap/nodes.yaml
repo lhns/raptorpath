@@ -8595,6 +8595,28 @@ nodes:
   overview: false
   plain: 'Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies.'
   notes: 'D list in audits.rs on static-audits 86b5208f (callers deleted in dacfd7cc / ADR-0069 and others). Tests that exercise a dead copy instead of the live path: compute_repair_rate_capped, get_or_eval, pooled_recovery_srtt_of, Scheduler::schedule, compute_repair_count, compute_gap_ranges. Release-binary hash check; guard only if bytes change. Stale docs to fix with it: net/tests.rs:3807, fec_rate.rs:46, paper 8.1, loss_clamp_witness doc.'
+- id: infra-test-sim-engine
+  title: Deterministic simulation of the engine
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/sim-engine.md
+  - raptorpath/tests/sim_lost_tail.rs
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - infra-test-sim-spike
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Run both ends of a transfer in one process on a virtual clock, so a stall or timeout test replays exactly and runs in a fraction of a second.'
+  notes: 'Plan S8, ADR-0082 (Proposed, awaiting the owner). Phase 1 merged (squash of sim-engine c907d207): release binary byte-identical to main on Linux; same-seed traces identical on 1 and 2 paths; lost tail at rho < 1 stalls (known defect), rho = 1 recovers; 0.1-0.3 s per scenario. Phase 2 owed: Gilbert-Elliott and Weibull links, a CPU-cost model for senders with no backpressure, porting the flaky timing tests, the 3 SystemTime reads. Branches carrying their own test_seams.rs (s06-delete, wedge-diag) must switch to the main copy: s06-delete''s copy uses eprintln! and likely fails the no_eprintln gate; merging it also leaves a duplicate pub mod test_seams line that git merges silently.'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere

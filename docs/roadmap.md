@@ -385,6 +385,7 @@ flowchart TB
 | Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
 | Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
 | Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
+| Deterministic simulation of the engine | ▶ in progress | Run both ends of a transfer in one process on a virtual clock, so a stall or timeout test replays exactly and runs in a fraction of a second. |
 <!-- END GENERATED: plain-words -->
 
 ## Ready now
@@ -440,6 +441,7 @@ flowchart TB
 - `model-wasm-fixes`: Wasm model fixes
 - `infra-test-static-audits`: Unwired-code and config audits
 - `infra-test-recovery-model`: Model check of hole recovery
+- `infra-test-sim-engine`: Deterministic simulation of the engine
 
 **no-cargo**
 
@@ -551,6 +553,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 27 nodes (15 done, 6 in progress, 3 next, 3 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (15 done, 7 in progress, 3 next, 3 blocked)
 <!-- END GENERATED: tracks -->
 
