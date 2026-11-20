@@ -21,7 +21,8 @@ text. Nothing here changes code.
 - §9 now opens with two owner decisions. The first is the store fork (§3.6),
   with both branches spelled out. The second is the rate bound together
   with the overload answer.
-- D's RTT is settled from ADR-0064's derivation (§1.3).
+- D's RTT is traced to ADR-0064's derivation, RTprop (§1.3). The EWMA keeps
+  shipping until a battery reads the RTprop form (question 7).
 - The termination rule is bounded (§2.2).
 - The receiver now takes the newest floor from **any** path, not the minimum
   over paths, because a frozen idle leg would lock the minimum out (§2.3).
@@ -109,17 +110,42 @@ clamp only bounds what is served."
 - The shed arm is ADR-0064's `shed_allowed`. Only its budget operand changes
   (§4): `Ab` and `(1 − ρ)` replace `shed_total` and `ε̂·(1 − P_fec)`.
 
+**Where today's per-gap bookkeeping sits.** Today, after the clamp,
+`nacked_count += e′ − s′ + 1` is counted (`net/sender_phases.rs:803`; it
+reduces `repair_debt` at `:1171`). Then the per-seq loop stamps every seq
+first (the `[HOLD]` echo `hold_echo.on_reported`, `:812–830`), before any
+`continue`, and only then reaches the shed and the store miss (`mpd_stale`).
+The new order keeps both in place:
+- **`nacked_count`** stays on the clamped span, at the same line.
+- **The per-seq order** is: stamp (as today), then skip if `s ∉ U` (where
+  today's store miss and `mpd_stale` sit), then `judge_seq`, then serve.
+- **At ρ = 1 both are identical in both branches.** The clamp is the
+  identity there, so the span, the count and the stamps are today's. The
+  `s ∉ U` skip falls where today's store-miss skip already is.
+- **At ρ < 1, branch W:** `nacked_count` is unchanged (clamped). The stamps
+  now also cover below-window gap seqs, which are all `∉ U` and skipped.
+  This is a gauge change only.
+- **At ρ < 1, branch S:** the clamp bounds are `(0, u64::MAX)`, so
+  `nacked_count` counts the whole gap. That is a behaviour change: a larger
+  `repair_debt` reduction at ρ < 1. It is part of S's guard battery.
+
 The tail sweep target is unchanged: `tail_sweep_gap(min U)` (core-extraction
 §1.2). After §1.1, `min U` is always servable, so the D1c defect (a sweep
 aimed below the window) cannot occur. Its gap goes through §1.2.
 
-### 1.3 The deadline D: refreshed where verdicts are taken, on RTprop
+### 1.3 The deadline D: refreshed where verdicts are taken (operand: owner question 7)
 
 "D is the span law's own deadline, read when the verdict is taken."
 
 ```text
-   D  =  min( b(δ)·RTprop , 2·RTprop )        evaluated once per judged batch and per sweep fire
+   D  =  min( b(δ)·T , 2·T )        evaluated once per judged batch and per sweep fire
+   T  =  RTprop   (the derivation's operand)        T = EWMA RTT  (what ships under question 7's default, until a battery reads RTprop)
 ```
+
+**What ships under the default:** the refresh at the verdict sites, with the
+EWMA operand the engine uses today. The `D_rtprop / D_ewma` gauge logs
+beside it. The RTprop operand moves in its own change after a battery. The
+bullets below give the reasons.
 
 - **Refresh.** Today D is refreshed only inside `emit_source`
   (`net/emit_source.rs:630–633`), so it freezes at the last source emission.
@@ -146,7 +172,7 @@ aimed below the window) cannot occur. Its gap goes through §1.2.
   gives a longer deadline, more serialization and a larger queue. RTprop,
   the windowed-min RTT, excludes the standing queue by construction, which
   is why the span law uses it.
-- **The derivation's form is D on RTprop.** D reads the per-path
+- **The derivation's form is D on RTprop** (T = RTprop). D reads the per-path
   windowed-min RTT that the §6.1 cap law reads, taking the largest over live
   paths. The resend of a hole can go on any live path (the recovery plane
   uses `live_paths()`, §11.3). The deadline is when the slowest such resend
@@ -159,9 +185,10 @@ aimed below the window) cannot occur. Its gap goes through §1.2.
   value. A D on that anchor would read high, toward the EWMA. And ADR-0064's
   flip battery ran the EWMA call site: **the derived form has never been
   measured.** That is owner question 7.
-  - This is an engine behaviour change on the evicting seat: D shrinks under
-    queueing.
-  - With rate bound (b) in place, the standing queue is bounded near
+- **If and when D moves to RTprop:**
+  - it is an engine behaviour change on the evicting seat: D shrinks under
+    queueing;
+  - with rate bound (b) in place, the standing queue is bounded near
     q(δ)·RTprop, so the two forms differ by at most a factor (1 + q) ≤ 1.1
     in steady state. They diverge mainly in the overload transient, where
     the derivation's form is the δ-honest one.
@@ -176,8 +203,9 @@ aimed below the window) cannot occur. Its gap goes through §1.2.
   served. A seed (the estimator's 50 ms constructor value,
   `control/estimator.rs:527–533`) is not an anchor (MEASUREMENT DISCIPLINE
   rule 1).
-- **D does not bound the count.** Under queueing, every queued seq is past
-  `D = b·RTprop`. Only the budget term bounds how many are shed.
+- **D does not bound the count.** On the RTprop operand, every queued seq is
+  past `D = b·RTprop` under queueing. On the EWMA, the queue enters D
+  instead. Either way, only the budget term bounds how many are shed.
 
 ### 1.4 Provenance
 
@@ -263,7 +291,9 @@ it on the tail-sweep clock. The receiver's cumulative ack acknowledges it."
     receiver only logs `Shutdown`. So the final floor at shutdown goes on
     the **reliable** control stream (`send_control`, bounded by
     `io_owner::CONTROL_SEND_TIMEOUT`), the existing mechanism the reports
-    use, before `Shutdown`.
+    use, before `Shutdown`. **[I]**: that a `WindowFloor` arriving on the
+    reliable stream reaches the same receive arm as a datagram one was not
+    read. The control-stream reader is the place to confirm it.
     - The stream is not FIFO with the datagram lane. Seqs below F still in
       flight then arrive as late fills, as in §2.3's N ≥ 2 case. That is
       stated, not hidden.
@@ -323,7 +353,7 @@ seq F, under the same hold and the same expiry as a data arrival."
     the order received, each command's datagrams in order
     (`:1088–1106`).
   - **[I] quinn's datagram send queue and the links are FIFO** (not read
-    here). T5's single-path overtaking case tests it.
+    here). T5′ (single-path overtaking) tests it.
 - The hold H covers that reordering. It is the receiver's existing hold
   (`shed_recv_hold`: `SRTT/2` while the receiver's budget is open,
   `(4·SRTT).clamp(60, 300) ms` otherwise). No new constant is introduced.
@@ -614,7 +644,9 @@ closure and reads 0.
 
 The rate bound reads no ρ, so it enforces no part of the 1 − ρ budget
 directly. What it bounds is the *self-inflicted* term:
-- `O ≤ B` keeps the standing queue near q(δ)·RTprop (Little's law, §6.1).
+- `O ≤ B` would keep the standing queue near q(δ)·RTprop (Little's law,
+  §6.1) if B tracked the link. On the VM, B is pinned at N·2048
+  (§3.2 (b)), so the queue is bounded by that ceiling instead.
 - That removes most queue-overflow losses: 1 110 against 91 random losses in
   the precheck, direction only.
 - Those losses would otherwise become receiver abandonment (`G_rx`, §4) or
@@ -639,13 +671,13 @@ region of §3.5.
   one (owner question 4).
 - **`reliable` is not derived from ρ ≥ 1.** That would be the forbidden
   threshold. The seat bool stays the existing debt (`w3-per-leg-state.md`)
-  until (d) removes it. The consistency of the two config values is checked
+  until branch S removes it from the sender (decision 1). The consistency of the two config values is checked
   at config time, not in a runtime branch (owner question 11).
 - **The receiver** needs no ρ under this law: the sender does the counting
   (§4). Supplying ρ to the receiver's own give-up budget would need a
   handshake field, a second wire change (owner question 5).
 
-### 3.5 The overload region (owner question, not chosen here)
+### 3.5 The overload region (decision 2, not chosen here)
 
 Let C be the source rate the live paths carry after the rate law's
 correction share, `C = Σᵢ bwᵢ·(1 − ε̂ᵢ) / (1 + r)`. Let λ be the offered
@@ -746,6 +778,10 @@ defect. It buys, beyond sequencing:
 
 It costs:
 - forced verdicts on in-flight seqs that over-charge `Ab` (§0);
+- **shedding switched off mid-stream.** The pending term holds about
+  `(O − 200)⁺` forced verdicts while the source runs ahead, about 1 850 at
+  the pinned B. At ρ = 0.99 the budget covers that only after
+  `S_src ≈ 185 000`. Until then every shed is refused (§9 decision 1, T6);
 - a forced arm with its own gauges and tests (T8);
 - a step at ρ = 1 that every later ρ test must bound.
 
@@ -756,9 +792,10 @@ and it ships a known step.
 **A step remains on the receiver in both branches.** The reorder buffer's
 `reliable` never passes a hole at ρ = 1 (`net/reorder.rs:117–119`), while at
 ρ = 1 − ε the receiver still gives up on its ε̂_recv budget. Removing that
-step needs the receiver's give-up budget to read ρ: `G_rx + 1 ≤ (1 − ρ)·frontier`,
-which is 0 at ρ = 1. That needs ρ at the receiver, either a handshake field
-in the same v11 bump or the floor alone (owner question 5).
+step needs a receiver law that never passes a hole at ρ = 1. A spent
+budget today only lengthens the hold, and the hold still passes. So that
+law is a separate derivation, likely with ρ in the handshake (owner
+question 5, default: not in this change).
 
 ## 4. The 1 − ρ budget law
 
@@ -928,6 +965,18 @@ The tests:
     The sweep resends one seq per fire in the worst case (precheck
     `sr_evict`'s walk). NACK batches only make it faster.
   - Every term is fixed by the scenario; none is read from the run.
+  - **The scenario's limit must move.** `TAIL_SWEEP_MAX_US = 100 ms`
+    (`net/mod.rs:251`), so `347 × 100 ms = 34.7 s` exceeds today's
+    `limit_s: 30`, and the ack bound could never bind. T1 raises `limit_s`
+    to 40.
+  - **T1 needs the floor for the 2-sweep bound, not for liveness.** In the
+    floorless ablation control at ρ = 0.99 under branch S, the sweep sheds
+    k and then one seq per fire until about 121 are shed. The first resend
+    above k comes only after that. The control's own bound is therefore
+    `t_dead + 122·T_sweep_max + owd_max + H_max` for k's pass (about
+    12.2 s). Under branch W the forced verdicts spend the budget at once.
+    The first in-window seq is resent at the first sweep, and k passes in 2
+    sweeps without the floor.
   - k has a verdict (shed, or forced), or is filled.
   - `floor_sent ≥ 1` and `floor_passes ≥ 1`.
   - Red on main: the ack stays at 11 800.
@@ -983,7 +1032,10 @@ The tests:
 - **T6 budget.** At a declared ρ < 1:
   - sheds stop when `Ab + 1 > (1 − ρ)·S_src`, and further candidates are
     served (the refusal counter rises);
-  - R and `G_rx / S_src` are printed side by side.
+  - R and `G_rx / S_src` are printed side by side;
+  - under branch W, the pending term's size and the share of shed checks
+    refused while it alone exceeds the budget are reported. That is the
+    mid-stream shed-off cost of decision 1.
 - **T7 rate bound.**
   - At ρ < 1 with the unpaced source: the pause **executes**, as a
     paused-iteration share > 0 on the `O ≥ B` disjunct (an execution
@@ -1056,14 +1108,15 @@ anywhere in the engine (Section 11.1).":**
 > newest floor heard on any path and treats it as a payload-free arrival at
 > F under its ordinary hold, so it exposes no more than a data arrival at F
 > does. On one path, per-path FIFO makes every earlier seq arrive or be lost
-> first. On several paths, late seqs are late fills, as for data today. At ρ = 1 no verdict exists on any arm,
-> so F equals the acknowledged frontier and the floor is never sent.
+> first. On several paths, late seqs are late fills, as for data today.
+> At ρ = 1 no verdict exists on any arm, so F equals the acknowledged
+> frontier and the floor is never sent.
 
 **§5.6, replacing the law block and the paragraph after it ("R is derived;
 … (Section 11.3)."):**
 
 > ```text
->    D(δ)    =  min( b(δ)·RTprop , 2·RTprop )            read at the verdict (Section 11.3)
+>    D(δ)    =  min( b(δ)·RTprop , 2·RTprop )            read at the verdict; the engine reads the EWMA RTT until a battery measures RTprop (Section 11.3)
 >    G_rx    =  seqs the receiver passed undelivered     (measured at the receiver, on the ack)
 >    Ab      =  G_rx  +  #verdicts at or above the acknowledged frontier
 >    shed  ⇔  age > D(δ)   ∧   Ab + 1  ≤  (1 − ρ)·src_total
@@ -1082,8 +1135,8 @@ anywhere in the engine (Section 11.1).":**
 **§6.1, replacing the sentence "The engine also has no ρ < 1 seat for it:
 … never evicts above its frontier.":**
 
-> The source bound runs at every ρ on the count of unresolved seqs, sent and
-> neither acknowledged nor given a verdict:
+> The source bound runs at every ρ on the count of sent seqs that the
+> receiver's frontier has not yet passed, net of SACK-released ones:
 >
 > ```text
 >    pause  ⇔  O ≥ cap  ∨  cwnd_full ,      O = (hi + 1 − A_rx) − |released|
@@ -1163,6 +1216,14 @@ shape the engine change. The rest are smaller.
 - **Branch W, the storeless stage, as §1.1 is written.**
   - What it keeps: forced verdicts, with `E` over-charging `Ab` on in-flight
     seqs. It ships the ρ = 1 step as a defect bounded by T8.
+  - **Hidden cost: it switches shedding off mid-stream.** While the source
+    runs ahead, every in-flight seq the window passes takes a forced verdict
+    and sits in `Ab`'s pending term until the receiver passes it. With O up
+    to the pinned B = 2048 and a 200-symbol window, that is about
+    `(O − 200)⁺ ≈ 1 850` pending at steady state. At ρ = 0.99 the budget
+    `(1 − ρ)·S_src` reaches that only at `S_src ≈ 185 000` symbols, about
+    95 MB at 512 B. Until then every shed is refused, so δ-honest shedding
+    is effectively off on a W stream of that size.
   - What it buys: a smaller first diff and no per-symbol insert at Realtime.
 - **Default: branch S, in the same change.** The storeless stage buys only
   sequencing and one atomic increment per symbol, while it ships a defect
@@ -1264,6 +1325,6 @@ Superseded, pending the new ADR (proposed ADR-0084):
 
 Not superseded: ADR-0064's shed law keeps its form (age > D within a 1 − ρ
 budget). Its operands change: `Ab` replaces the cumulative shed count, and
-1 − ρ replaces R as the budget. D reads RTprop as its own derivation says
-(§1.3).
+1 − ρ replaces R as the budget. D's derivation reads RTprop. The engine
+keeps the EWMA until question 7's battery reads the derived form (§1.3).
 
