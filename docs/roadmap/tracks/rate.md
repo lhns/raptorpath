@@ -210,4 +210,65 @@ flowchart TB
 | `rate-fix-estimators` | Loss estimator approximations | Law ledger: E07, E08, E09. The measured RTTVAR per leg (E09) lives in the per-leg state, hence that prerequisite (the wire-clock node it used to wait on is dissolved). Done when: the BOCD quantile floor is explained in the paper or bounded, the Gilbert-Elliott batch lumping gets the bounding test paper-recon specified, and one measured RTTVAR per leg replaces the two stand-ins. | law ledger rows E07, E08, E09 |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | Law ledger: F02, S01, S02, S04, S05, S06. S01 and S02 read RTprop, which waits on the honest-input fix (E03), not on a recovery clock. The two hint equalities (S08, S09) moved to model-fix-hint-keyed-paths. Done when: the store gate carries the ρ term derived in the paper, the span deadline and shed budget read a wire clock, the receiver hold is b(δ)·SRTT, the taper-copy decision is diagnosed, each with continuity tests through every preset. | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 |
 | `rate-rho-not-input` | ρ not an engine input | Split 2026-11-20 from rec-goal100 (item 1). Goal #101 recorded the same impasse on 2026-08-21. Later finding on the same dial: model-defect-rho-inert (2026-11-14). | commit b181fa54; commit 5d14dd53 |
+
+### Folded items per node
+
+- `rate-ge-hmm`: Gilbert-Elliott loss model
+  - branch real-trace validation
+  - Real-trace check of the Gilbert-Elliott loss model (2026-07-06, session record)
+- `rate-fec-rate-v1`: BOCD FEC rate control
+  - commit 1e07bf79
+  - commit 05b576a7
+  - commit e508adf4
+  - commit f2cba2b7
+- `rate-saturation-rstar`: Saturation-aware r* and window
+  - branch feat/p5-saturation-cap
+  - branch soft saturation + end-of-stream taper completion
+  - branch window derivation
+  - Soft saturation cap and continuous end-of-stream taper (2026-07-04, commit 0e27a4af, commit 3a823943)
+  - Encoder window derived from the channel instead of hand-set (2026-07-04, commit 38c3428e, commit 0a67497c)
+  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, session record)
+- `rate-rstar-window-mass`: r* window-mass provisioning
+  - branch feat/rstar-bursty
+- `rate-retention-is-rho`: Retention is the ρ dial
+  - commit 62ffbb76
+  - paper §11.1 open question 2
+- `rate-unified-shed`: δ-honest overload shedding
+  - commit 120d8f89
+  - Shed law as built and consolidation battery (2026-07-21, commit 8e77ba67, commit 5daceabf)
+- `rate-est-cadence`: Batched BOCD estimator cadence
+  - commit 224b9159
+  - branch flip/est-cadence
+  - Sender CPU profile with call graphs (2026-10-02, session record)
+  - Batched estimator updates on by default (2026-10-04, commit 116753b5)
+- `rate-sender-truth-loss`: Sender-truth loss estimator
+  - branch sweep item 3 FIXED
+  - Per-path loss estimate stated as a formula, then fixed (paper 16.58) (2026-08-18, commit 58b77962)
+- `rate-r-battery`: Funded coding at r > 0
+  - branch meas/r-battery-score
+  - commit 2e2db5a7
+  - commit 259ebbc0
+  - r greater than zero battery: pre-registration, harness, calibration and launch (2026-09-08, commit b0ade0b4, commit 48d0cf9f, commit fa3368f9, commit 51edcd46)
+  - S4 first field point (single-path crown cells) (2026-09-08, commit 35c843fd)
+  - r-battery report: W7 void propagation (2026-09-30, commit 8f484be8)
+- `rate-dials-made-real`: The dials made real
+  - branch paper 16.81-16.83
+  - paper §11.1 open question 3
+  - Where bulk and auto sit for r above zero (2026-09-08, commit 1dd546f1)
+- `rate-pfec-continuous`: Continuous P_fec derivation
+  - branch pfec-derive
+  - commit 95820ef1
+  - commit f1243e4a
+  - commit 59a65af8
+  - commit ab9c6246
+- `rate-pfec-oracle`: Executed sliding P_fec oracle
+  - commit 7fd9dd25
+  - commit 2aa40a98
+  - commit 2a622525
+  - commit 08bdfa96
+- `rate-evict-registration`: Evicting-seat m̄ registration
+  - commit 4d200885
+  - commit b1af3fa4
+- `rate-rho-not-input`: ρ not an engine input
+  - branch item 1 CLOSED UNREADABLE
 <!-- END GENERATED: table-rate -->

@@ -12,14 +12,21 @@ flowchart TB
     rec_early_arq["✔ Early ACK, NACK and<br/>repair"]
     rec_nack_congestion["✔ Congestion-aware<br/>NACK throttle (first<br/>form)"]
     rec_plost_sack["✔ Rearchitecture<br/>phases: P_lost and<br/>SACK"]
+    rec_burst_state_loss["✖ Burst-state loss in<br/>retransmit choice"]
+    rec_loss_divisor["✖ Concurrent-loss<br/>divisor for P_retx"]
+    rec_hard_rto_cutover["✖ Hard retransmit-<br/>timeout cutover"]
     rec_bulk_arq["✔ Bulk ARQ and batch<br/>acknowledgements"]
     rec_reliable_window["✔ Reliable window"]
     rec_p10a_repair_floor["✖ Inner-feedback<br/>repair floor"]
+    rec_blockstart_orphan>"✔ Lost BlockStart<br/>orphans idle objects"]
+    rec_p10b_reactive_repair["✔ Window-mode reactive<br/>repair (P10b)"]
+    rec_rwm_phase_c["✔ Out-of-order object<br/>delivery (Phase C)"]
     rec_fec_vs_arq["✔ Proactive FEC versus<br/>ARQ frontier"]
     rec_inline_repair["↷ Frontier-anchored<br/>proactive repair"]
     rec_c2_collapse_diag["✔ Single-path loss<br/>collapse diagnosis"]
     rec_proactive_repair["✖ Repair-wait before<br/>ARQ"]
     rec_present_at_stall["✖ Present-at-stall<br/>proactive pacer"]
+    rec_arq_overrequest_bound["✔ Bounded ARQ over-<br/>request"]
     rec_per_path_clocks["✔ Per-path recovery<br/>clocks"]
     rec_mp_serial["↷ Global loss serials<br/>under striping"]
     rec_recov_sp["⏸ Singles hole<br/>suppression"]
@@ -37,6 +44,7 @@ flowchart TB
     rec_successor_arrival["✔ Successor-arrival<br/>distribution measured"]
     rec_goal101[/"✖ Recovery clock<br/>verdict battery"/]
     rec_fire_cause["✔ Recovery fire cause<br/>table"]
+    rec_seqclass_law[/"✔ Sequential-<br/>classification repair<br/>law (#167;16.80)"/]
     rec_receiver_law[/"✖ Receiver request law"/]
     rec_wire_v9["✔ Wire v9 per-path<br/>sequence"]
     rec_gap_horizon["⏳ Gap horizon"]
@@ -64,36 +72,43 @@ flowchart TB
     rec_fix_nack_throttle[/"○ NACK repair<br/>throttle: gauge, paper"/]
     rec_retx_behind_source["○ Retransmits queued<br/>behind source?"]
     rec_evict_blocker_unresolved>"⚠ Evicting seat<br/>strands a stalled<br/>blocker"]
-    rec_early_arq ~~~ rec_bulk_arq
-    rec_nack_congestion ~~~ rec_reliable_window
-    rec_plost_sack ~~~ rec_p10a_repair_floor
-    rec_bulk_arq ~~~ rec_fec_vs_arq
-    rec_reliable_window ~~~ rec_inline_repair
-    rec_p10a_repair_floor ~~~ rec_c2_collapse_diag
+    rec_early_arq ~~~ rec_burst_state_loss
+    rec_nack_congestion ~~~ rec_loss_divisor
+    rec_plost_sack ~~~ rec_hard_rto_cutover
+    rec_burst_state_loss ~~~ rec_bulk_arq
+    rec_loss_divisor ~~~ rec_reliable_window
+    rec_hard_rto_cutover ~~~ rec_p10a_repair_floor
+    rec_bulk_arq ~~~ rec_blockstart_orphan
+    rec_reliable_window ~~~ rec_p10b_reactive_repair
+    rec_p10a_repair_floor ~~~ rec_rwm_phase_c
+    rec_blockstart_orphan ~~~ rec_fec_vs_arq
+    rec_p10b_reactive_repair ~~~ rec_inline_repair
+    rec_rwm_phase_c ~~~ rec_c2_collapse_diag
     rec_fec_vs_arq ~~~ rec_proactive_repair
     rec_inline_repair ~~~ rec_present_at_stall
-    rec_c2_collapse_diag ~~~ rec_per_path_clocks
-    rec_proactive_repair ~~~ rec_mp_serial
-    rec_present_at_stall ~~~ rec_recov_sp
+    rec_c2_collapse_diag ~~~ rec_arq_overrequest_bound
+    rec_proactive_repair ~~~ rec_per_path_clocks
+    rec_present_at_stall ~~~ rec_mp_serial
+    rec_arq_overrequest_bound ~~~ rec_recov_sp
     rec_per_path_clocks ~~~ rec_patience_derived
     rec_mp_serial ~~~ rec_recovery_bench
     rec_recov_sp ~~~ rec_clock_candidates
     rec_patience_derived ~~~ rec_rack_clocks
     rec_recovery_bench ~~~ rec_cantelli_clock
     rec_clock_candidates ~~~ rec_alpha_sweep
-    rec_rack_clocks ~~~ rec_alpha_sweep
-    rec_cantelli_clock ~~~ rec_goal100
-    rec_alpha_sweep ~~~ rec_qnative_clock
+    rec_rack_clocks ~~~ rec_goal100
+    rec_cantelli_clock ~~~ rec_qnative_clock
     rec_alpha_sweep ~~~ rec_holddown_clock
     rec_goal100 ~~~ rec_refresh_floor
     rec_qnative_clock ~~~ rec_dispersion_est
     rec_holddown_clock ~~~ rec_successor_arrival
     rec_refresh_floor ~~~ rec_goal101
     rec_dispersion_est ~~~ rec_fire_cause
-    rec_successor_arrival ~~~ rec_receiver_law
-    rec_goal101 ~~~ rec_wire_v9
-    rec_fire_cause ~~~ rec_gap_horizon
-    rec_receiver_law ~~~ rec_gap_horizon
+    rec_successor_arrival ~~~ rec_seqclass_law
+    rec_goal101 ~~~ rec_receiver_law
+    rec_fire_cause ~~~ rec_wire_v9
+    rec_seqclass_law ~~~ rec_gap_horizon
+    rec_receiver_law ~~~ rec_snapver_filter
     rec_wire_v9 ~~~ rec_snapver_filter
     rec_gap_horizon ~~~ rec_snapver_filter
     rec_snapver_filter ~~~ rec_snapver_law
@@ -154,7 +169,7 @@ flowchart TB
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 59,60,61,71 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 66,67,68,78 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -168,9 +183,9 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter,rec_defect_realtime_framing succ
-    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_c2_collapse_diag,rec_recovery_bench,rec_alpha_sweep,rec_successor_arrival,rec_fire_cause,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean,rec_realtime_delay_recheck unrated
-    class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
+    class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_blockstart_orphan,rec_p10b_reactive_repair,rec_arq_overrequest_bound,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter,rec_defect_realtime_framing succ
+    class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_c2_collapse_diag,rec_recovery_bench,rec_alpha_sweep,rec_successor_arrival,rec_fire_cause,rec_seqclass_law,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean,rec_realtime_delay_recheck unrated
+    class rec_burst_state_loss,rec_loss_divisor,rec_hard_rto_cutover,rec_p10a_repair_floor,rec_rwm_phase_c,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
     class rec_recov_sp,rec_dispersion_est,rec_realtime_srv_lag_lean,rec_leverb_guard parked
     class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_evict_blocker_unresolved defect
@@ -242,6 +257,14 @@ flowchart TB
 | `rec-c2-collapse-diag` | Single-path loss collapse diagnosis | done | unrated |  | commit ac3bc9d1; commit ae7f3a86 |  |
 | `rec-recovery-bench` | Recovery-plane component bench | done | unrated |  | commit dd1319b4; commit 9898359b; commit 125844f4; docs/measurement-discipline.md |  |
 | `rec-fire-cause` | Recovery fire cause table | done | unrated |  | commit d9cc9cca |  |
+| `rec-burst-state-loss` | Burst-state loss in retransmit choice | abandoned | dead-end |  |  |  |
+| `rec-loss-divisor` | Concurrent-loss divisor for P_retx | abandoned | dead-end |  |  |  |
+| `rec-hard-rto-cutover` | Hard retransmit-timeout cutover | abandoned | dead-end |  |  |  |
+| `rec-blockstart-orphan` | Lost BlockStart orphans idle objects | done | unrated |  | commit fdac5f5e; commit edd35301 |  |
+| `rec-p10b-reactive-repair` | Window-mode reactive repair (P10b) | done | successful |  | commit cb66b934; commit e989e0e9 |  |
+| `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | done | dead-end |  | commit c775f7fb; commit 70393f92 |  |
+| `rec-arq-overrequest-bound` | Bounded ARQ over-request | done | successful |  | commit 663d3ec9; commit 6f2b084f |  |
+| `rec-seqclass-law` | Sequential-classification repair law (§16.80) | done | unrated |  | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |  |
 
 ### Details per node
 
@@ -249,7 +272,7 @@ flowchart TB
 |---|---|---|---|
 | `rec-early-arq` | Early ACK, NACK and repair | March 2026 direct landings: ACK feedback, echo RTT, NACK retransmit, cross-path repair, tapered repair interleaving (ADR-0003/5/7/29/37/42-47). Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0003; ADR-0005; ADR-0007; ADR-0025 |
 | `rec-plost-sack` | Rearchitecture phases: P_lost and SACK | The paper's design built in phases (2026-04-03..07): Phase 1a TaperFunction and p_lost in the rate controller (1a6a8154), 1b P_lost wired into the window sender (ee867a1a), Phase 2 SACK-extended WindowAck replaces NACK sending (0c3bd4c5), phases 3-6 (27a7fcf0). The P_lost(t) model replaced the hard T_retx threshold (5b9f6def, 2026-03-21). No recorded verdict. | commit 5b9f6def; commit 1a6a8154; commit ee867a1a; commit 0c3bd4c5; commit 27a7fcf0 |
-| `rec-bulk-arq` | Bulk ARQ and batch acknowledgements | P4/P6/P8/P10b of the July wave. P10a is its own node (rec-p10a-repair-floor). | branch P8 |
+| `rec-bulk-arq` | Bulk ARQ and batch acknowledgements | P4/P6/P8/P10b of the July wave. P10a is its own node (rec-p10a-repair-floor). P10b and the idle-tail-recovery fix are their own nodes since 2026-11-20 (rec-p10b-reactive-repair, rec-blockstart-orphan). | branch P8 |
 | `rec-reliable-window` | Reliable window | Paper §16 (fountain multipath aggregation, then Reliable Windowed Multipath) and Phase A: retain-until-acked window, auto-switch removed. | branch RWM Phase A |
 | `rec-fec-vs-arq` | Proactive FEC versus ARQ frontier | 2026-07-07/08 arc; folds the FEC recovery bug fix, transport sender fixes, the store-bloat fix and the O(n^2) per-symbol fix found along the way. | branch proactive-frontier diagnosis |
 | `rec-proactive-repair` | Repair-wait before ARQ | Split 2026-11-16 from the former family node 'Proactive repair timing (3 arms)'; its siblings are rec-present-at-stall and rec-inline-repair. Refuted 2026-07-08 (the covering repair was absent, not late: 7 useful of 4 600 fed); archived 2026-11-10 (simplification batch 1, ADR-0073; tag date not used for end). | tag archive/RWM_REPAIR_WAIT; paper §10 row Repair-wait / FEC-before-ARQ (`RWM_REPAIR_WAIT`); commit 3a0ca0c |
@@ -283,7 +306,7 @@ flowchart TB
 | `rec-realtime-srv-lag-lean` | Server delay lean, fixed build | Reported only, uncorrected for multiplicity: §65 +18.2 % (p 0.012, both seeds), §64 stage R +20.0 % (p 0.198). §64's Bulk guard read −10.1 % at c2-100. | status §65 Result; status §64 Result (stage R) |
 | `rec-user-framing-fix` | Owner calls on the framing fix | Decision 11: format A, one framing. Decision 12: fail closed; the receiver takes the sender's announced size. Decision 15: merge now (f36d9172), ADR-0078 Accepted, wire v10. | status Owner decisions (2026-11-17) items 11-12, 15 |
 | `rec-defect-realtime-framing` | Realtime receiver misread packets (fixed) | Found by the §51 E rehearsal; it blocked block E and block 51 (their Realtime rows). Before the fix: a red-first repro, an undeliverable-symbol counter, an audit of one-shot unreliable receiver state. Owner decisions 11-12: one framing for every symbol (format A), fail closed. Fixed on f2-impl (ADR-0078, wire v10), checked by §63 and the §64 guard, merged f36d9172 (decision 15). Leftovers: rec-framing-followups. | status "Engine defect F2"; status §51 Amendment 2; status §63 Result; status §64 Result; ADR-0078 |
-| `rec-framing-followups` | Framing fix leftovers | 1. Mixed-hint pairs still connect silently: they differ in the receiver's default ρ, which nothing on the wire checks (ADR-0078 Consequences, audit §6); owner decision 12 keeps them unsupported. Refusing them at the handshake is a wire change, so it is put to the owner first. 2. The sender still chooses packing by hint (use_packing, sender_policy.rs, status §3.3; ADR-0078 decision 2): a NO-MODE-SWITCH debt, counted in model-mode-switch-debts. 3. The receiver-timestamp field is now wire v11 (ADR-0078 decision 3); status §1's protocol line and the §42/§43 texts that call it v10 are owed (§64 Result, 'At the merge'). Done when: a short note puts the mixed-preset choice to the owner (refuse at the handshake, with a protocol bump, or accept and record the risk), and the status texts read v11. The refusal, if chosen, is its own change with a test. | ADR-0078; status Owner decisions (2026-11-17) item 12; status §64 Result (merge conditions); status §3.3 |
+| `rec-framing-followups` | Framing fix leftovers | 1. Mixed-hint pairs still connect silently: they differ in the receiver's default ρ, which nothing on the wire checks (ADR-0078 Consequences, audit §6); owner decision 12 keeps them unsupported. Refusing them at the handshake is a wire change, so it is put to the owner first. 2. The sender still chooses packing by hint (use_packing, sender_policy.rs, status §3.3; ADR-0078 decision 2): a NO-MODE-SWITCH debt, counted in model-mode-switch-debts. 3. The receiver-timestamp field is now wire v11 (ADR-0078 decision 3); status §1's protocol line and the §42/§43 texts that call it v10 are owed (§64 Result, 'At the merge'). Done when: a short note puts the mixed-preset choice to the owner (refuse at the handshake, with a protocol bump, or accept and record the risk), and the status texts read v11. The refusal, if chosen, is its own change with a test. 2026-11-20: protocol v11 is taken by ADR-0084 (WindowFloor, WindowAck.passed_undelivered); the receiver-timestamp field (ADR-0078 decision 3) moves to the next version. | ADR-0078; status Owner decisions (2026-11-17) item 12; status §64 Result (merge conditions); status §3.3 |
 | `rec-p10a-repair-floor` | Inner-feedback repair floor | Split from rec-bulk-arq (its parent). The source names no replacement; P10b (window-mode reactive repair, G236) merged the same day. | branch P10a |
 | `rec-recov-sp` | Singles hole suppression | Split from rec-per-path-clocks (its parent). Not refuted and not archived: the paper row reads "off (kept; open)" and status §1 keeps RWM_RECOV_SP as an off arm, so it is parked and unrated, not dead-end as the review asked. Dates are placeholders (the RECOV_MP work, 2026-07-21; paper row end 2026-07-27). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Singles hole suppression (`RWM_RECOV_SP`) |
 | `rec-leverb-c1d-cost` | Gap horizon two-path duplicate cost | No raw record (§53 open items are in the section text, not extracted as items). Goes with the lever-B merge question. | status §53 open item 2 |
@@ -302,4 +325,172 @@ flowchart TB
 | `rec-c2-collapse-diag` | Single-path loss collapse diagnosis | Unrated: a diagnosis whose refuted hypothesis (congestion control) and shipped fix (bufferbloat) point different ways; the owner rates it. | commit ac3bc9d1; commit ae7f3a86 |
 | `rec-recovery-bench` | Recovery-plane component bench | Brought the standing component-bench rule (measurement discipline item 14). The law extraction commit 125844f4 is also folded in infra-net-seams. | commit dd1319b4; commit 9898359b; commit 125844f4; docs/measurement-discipline.md |
 | `rec-fire-cause` | Recovery fire cause table | Split 2026-11-20 from rec-goal101. | commit d9cc9cca |
+| `rec-burst-state-loss` | Burst-state loss in retransmit choice | From the session record; no committed artifact. A rejected alternative in the P_lost derivation (2026-03-21); the shipped form is in rec-plost-sack. |  |
+| `rec-loss-divisor` | Concurrent-loss divisor for P_retx | From the session record; no committed artifact. A rejected alternative in the P_lost derivation (2026-03-21). |  |
+| `rec-hard-rto-cutover` | Hard retransmit-timeout cutover | From the session record; no committed artifact. A rejected alternative in the P_lost derivation (2026-03-21). |  |
+| `rec-blockstart-orphan` | Lost BlockStart orphans idle objects | Split 2026-11-20 from rec-bulk-arq (own fix branch and verdict). | commit fdac5f5e; commit edd35301 |
+| `rec-p10b-reactive-repair` | Window-mode reactive repair (P10b) | Split 2026-11-20 from rec-bulk-arq. Its sibling P10a is rec-p10a-repair-floor. | commit cb66b934; commit e989e0e9 |
+| `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | Phase C of the reliable windowed multipath plan (2026-07-06); Phase A is rec-reliable-window, Phase B place-marginal-cost. | commit c775f7fb; commit 70393f92 |
+| `rec-arq-overrequest-bound` | Bounded ARQ over-request | Was folded in rec-present-at-stall, whose dead-end verdict is about the pacer, not this fix. | commit 663d3ec9; commit 6f2b084f |
+| `rec-seqclass-law` | Sequential-classification repair law (§16.80) | Split 2026-11-20 from meas-attribution-audit. Three parallel plans (session record 2026-09-06) led to it. | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |
+
+### Folded items per node
+
+- `rec-early-arq`: Early ACK, NACK and repair
+  - commit 8857788d
+  - commit 628fdb1c
+  - commit 98b77167
+  - commit d8925b4f
+  - commit f2cba2b7
+  - commit b255271c
+  - Fix eight critical ADRs: framing, block start, loss estimate, ACKs (2026-03-12, commit e2de447d)
+  - Reorder buffer and network/FEC module refactor (2026-03-17, commit ed1854de)
+- `rec-plost-sack`: Rearchitecture phases: P_lost and SACK
+  - commit 68ea7e6e
+  - commit 06ccbf12
+  - Burst-aware retransmit probability P_lost x (1 - e_burst) (2026-03-21, commit 344430737e)
+  - Source preemption (C.1) resolved and paper glossary (2026-03-21, commit f305634b)
+  - Retransmit timeout and time-to-FEC-recovery formulas (2026-03-21, commit 0ac8a4b1)
+- `rec-bulk-arq`: Bulk ARQ and batch acknowledgements
+  - branch feat/p4-bulk-arq-tailfec
+  - branch P6
+- `rec-reliable-window`: Reliable window
+  - branch §16 Fountain Multipath Aggregation
+  - branch §16 rewrite
+  - RWM Phase A: reliable window with ARQ-layer retention (2026-07-06, commit 4c901536, commit 2699dd94)
+- `rec-fec-vs-arq`: Proactive FEC versus ARQ frontier
+  - branch FEC-vs-ARQ crossover
+  - branch proactive-FEC-vs-ARQ high-RTT
+  - branch transport substrate sender fixes
+  - branch loss-recovery diagnosis
+  - branch FEC recovery bug fix
+  - branch FEC parity
+  - branch transport store-bloat fix
+  - branch per-symbol perf fix
+  - Receiver-tail parallelization and FEC regime sweep (2026-07-08, commit e74d005c, commit 9ec5793c)
+  - Proactive FEC versus ARQ at high RTT (2026-07-08, commit 11c205cf, commit e9c7749b)
+- `rec-proactive-repair`: Repair-wait before ARQ
+  - branch NACK-timing repair-wait
+- `rec-present-at-stall`: Present-at-stall proactive pacer
+  - branch present-at-stall
+- `rec-inline-repair`: Frontier-anchored proactive repair
+  - commit 067f660a
+  - commit 1c2fcfb0
+  - Reactive-repair chain forensics counters (2026-07-13, commit e6b0cf2b)
+- `rec-per-path-clocks`: Per-path recovery clocks
+  - commit 8a345200
+  - commit 6a95193b
+  - commit 5ebbcda8
+- `rec-mp-serial`: Global loss serials under striping
+  - commit ade48ad6
+  - Recovery under striping: snapshot coalescing and packet-threshold channel (2026-07-21, commit 2c632c05, commit a0dbd986)
+- `rec-clock-candidates`: Derived recovery sweep
+  - branch the derived recovery clamp
+  - commit 58fbc575
+- `rec-patience-derived`: Unlock The Default 2: patience
+  - commit 0f287553
+  - Unlock The Default 2: derived stall and patience constants (2026-08-07, commit a29f0c44, commit 3d932c24, commit 5cabca2f)
+- `rec-rack-clocks`: RACK-shaped recovery clocks
+  - commit 70777c78
+  - commit ac4d3853
+- `rec-alpha-sweep`: Alpha-sweep of the recovery clock
+  - branch the alpha-sweep SCORED
+  - branch THE ALPHA-SWEEP launched
+  - commit a04300e3
+  - commit e0334855
+  - commit 3980434c
+  - commit c6f5eaa8
+  - commit 3bd5f0b7
+- `rec-qnative-clock`: Quantile-native clock sweep
+  - branch qnative sweep SCORED
+  - branch qnative sweep launched
+  - branch the quantile-native clock
+  - commit ab545cfe
+  - commit 0183cf96
+  - Quantile-native recovery clock (2026-08-21, commit 993cdfa3, commit ff3e1651, commit a3d35377)
+- `rec-holddown-clock`: Hold-down clock sweep
+  - branch holddown sweep SCORED
+  - branch the hold-down clock DERIVED (16.77) + sweep launched
+  - commit 2b9918d2
+  - Hold-down clock: derivation, engine arm, calibration and sweep (2026-08-21, commit 4e7d2e25, commit 491872e9, commit 6e81463a, commit fef547db, commit 7e18d04f, commit cf725bfe)
+- `rec-refresh-floor`: Refresh-floor lift (q, refresh) sweep
+  - branch the (q,refresh) surface SCORED
+  - branch the refresh-floor lift (16.78) + the (q,refresh) sweep launched
+  - commit d7daceb5
+  - commit 528351c3
+  - Recovery refresh floor lift and sweep (2026-08-21, commit 5be078d0)
+- `rec-dispersion-est`: σ dispersion estimators (fixed lag)
+  - branch tlag scored
+  - branch the fixed-time-lag estimator + the exact clause-B reference; battery running
+  - branch estimator battery SCORED
+  - branch estimator battery launched
+  - commit 2ba1f1d5
+  - commit d4d2007e
+  - Fixed-time-lag dispersion estimator (2026-08-21, commit ef94db3d, commit 303b8e84, commit ff093d5a, commit edbf5815, commit 66ca0b45)
+  - Delay-spread estimator candidates against the stability bar (2026-08-21, commit 30ad6e15, commit a3709af7)
+- `rec-successor-arrival`: Successor-arrival distribution measured
+  - branch the successor-arrival distribution MEASURED
+  - commit 1064e8d1
+  - commit f497bdc4
+  - commit 5481a0b9
+- `rec-goal100`: Recovery primitives and σ
+  - branch item 2 local half
+  - branch item 4 DELIVERED (paper 16.74) + item 5 closed by its own condition
+  - branch item 3's condition DERIVED
+  - branch primitives RE-MEASURED on the sweep's machine
+  - branch the [RFA] instrument
+  - branch goal #100 item 1
+  - Recovery loss function and goal 100 closures (2026-08-20, commit 8c464bbe, commit 90540408e, commit f391f320)
+  - Repair-timing inequality against the shipped rate law (2026-08-20, commit 4d693bc5)
+  - Realized false-repair gauge at the receiver (2026-08-20, commit 578156f4)
+- `rec-goal101`: Recovery clock verdict battery
+  - branch ITEM 4 RUN AGAINST THE DERIVED-ALPHA CLOCK
+  - branch ITEM 4 RUN
+  - branch 16.79 DECIDES the formula + item 4's battery prereg; battery running
+  - commit 6cf2328e
+  - commit 146d8b18
+  - commit 76c0b077
+  - commit abcdf448
+  - paper §11.1 open question 7
+  - commit 5be078d0
+  - commit a26696fb
+  - commit eb50cc59
+  - commit f2e71443
+  - paper §16.79
+- `rec-receiver-law`: Receiver request law
+  - branch feat/recvlaw-arms
+  - branch meas/recvlaw-score
+  - branch meas/recvlaw-run
+  - Receiver-seat repair decision (paper 16.83) (2026-09-08, commit 6e3434fa)
+  - Receiver request-law arms and their battery (2026-09-08, commit 0afb38b8, commit 2dd53535, commit b15a8e8c)
+- `rec-cost-ratio-decision`: Cost-ratio decision (owner ruling)
+  - branch the cost-ratio decision memo
+  - Cost-ratio decision memo (2026-08-19, commit 6751fb7d, commit d1552335)
+- `rec-wire-v9`: Wire v9 per-path sequence
+  - branch fix/wire-v9
+- `rec-gap-horizon`: Gap horizon
+  - branch harness52
+- `rec-f2-merge-guard`: Framing fix regression test
+  - commit f36d9172
+- `rec-recov-sp`: Singles hole suppression
+  - Lossy-single residual accounting (2026-07-27, session record)
+- `rec-nack-congestion`: Congestion-aware NACK throttle (first form)
+  - commit f2cba2b7
+  - commit b255271c
+- `rec-fire-cause`: Recovery fire cause table
+  - branch THE FIRE-CAUSE TABLE
+  - Recovery fire cause: timer versus gap reports (2026-08-21, session record)
+- `rec-burst-state-loss`: Burst-state loss in retransmit choice
+  - Refuted: current burst-state loss in the repair/retransmit choice (2026-03-21, session record)
+- `rec-loss-divisor`: Concurrent-loss divisor for P_retx
+  - Concurrent-loss divisor for the retransmit probability refuted (2026-03-21, session record)
+- `rec-hard-rto-cutover`: Hard retransmit-timeout cutover
+  - Refuted: hard retransmit-timeout cutover between repair and retransmit (2026-03-21, session record)
+- `rec-blockstart-orphan`: Lost BlockStart orphans idle objects
+  - branch idle-tail-recovery fix
+- `rec-p10b-reactive-repair`: Window-mode reactive repair (P10b)
+  - branch P10b
+- `rec-seqclass-law`: Sequential-classification repair law (§16.80)
+  - branch paper 16.80
+  - Three plans for false repairs and the formula that came out (2026-09-06, session record)
 <!-- END GENERATED: table-rec -->

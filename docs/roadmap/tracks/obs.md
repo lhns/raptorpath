@@ -61,4 +61,11 @@ flowchart TB
 | `obs-otel-design` | Metrics registry and OTel design | ADR-0074 draft (supersedes ADR-0013 Layer 4); owner widened the scope to the flight recorder and the analysis stack 2026-11-12. | derivation observability-design.md (branch otel-design); branch otel-design |
 | `obs-user-otel-answers` | Owner answers on OTel design | No raw record. User 2026-11-12: "Q1 remove. Q2 http/protobuf for now. Q3 configurable like probabilistic tracing... Q6 prometheus through a collector." Was titled 'Owner answers on OTel Q1–Q6'. | plan user decision 12; ADR-0074 (otel-design 73130d6d) |
 | `obs-impl` | Observability implementation | Done when: the metrics registry renders /status and the log tags from one source with the OTLP exporter feature-gated, verified by an ns bench, a guard (metrics on vs off) and a single-source rendering test. | plan W5.7; ADR-0074 (draft) |
+
+### Folded items per node
+
+- `obs-status-endpoint`: Runtime status endpoint
+  - commit 1534da9a
+- `obs-gates-echo`: Gate-setting liveness echo
+  - commit b30bf932
 <!-- END GENERATED: table-obs -->

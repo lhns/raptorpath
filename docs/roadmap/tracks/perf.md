@@ -11,6 +11,7 @@ Scope: threading and per-packet cost: threading redesign, I/O owner, receiver co
 flowchart TB
     perf_liveness_split["✔ Path liveness split<br/>from capacity"]
     perf_native_geometry["✔ Inner-TCP geometry<br/>hypothesis"]
+    perf_realtime_path_death>"✔ Realtime path deaths<br/>in window mode"]
     perf_rtt_rescan["✔ Per-ACK RTT minimum<br/>rescan removed"]
     perf_parallelisation["✖ Engine or receiver<br/>parallelisation"]
     perf_emit_batch_v1["↷ Emission batching,<br/>first attempt"]
@@ -40,14 +41,14 @@ flowchart TB
     perf_bbrrs_ring_fix["⏳ bbr_rs send-record<br/>ring fix"]
     perf_fix_burst_bound[/"○ Emission burst bound<br/>derivation"/]
     perf_config_dropped>"⚠ Perf ignores the<br/>config file"]
-    perf_liveness_split ~~~ perf_parallelisation
-    perf_native_geometry ~~~ perf_emit_batch_v1
+    perf_liveness_split ~~~ perf_rtt_rescan
+    perf_native_geometry ~~~ perf_parallelisation
+    perf_realtime_path_death ~~~ perf_emit_batch_v1
     perf_rtt_rescan ~~~ perf_recv_msg_wall
     perf_parallelisation ~~~ perf_ack_merge
     perf_emit_batch_v1 ~~~ perf_rcvbuf
-    perf_recv_msg_wall ~~~ perf_rcvbuf
-    perf_ack_merge ~~~ perf_emit_batch_law0
-    perf_rcvbuf ~~~ perf_quic_feeder
+    perf_recv_msg_wall ~~~ perf_emit_batch_law0
+    perf_ack_merge ~~~ perf_quic_feeder
     perf_rcvbuf ~~~ perf_threading_p0
     perf_emit_batch_law0 ~~~ perf_threading_p1
     perf_quic_feeder ~~~ perf_threading_p2a
@@ -106,7 +107,7 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class perf_liveness_split,perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_d9_attribution,perf_sched_split,perf_s20_r1_collapse,perf_receiver_r2,perf_s26_long_polls,perf_receiver_followups succ
+    class perf_liveness_split,perf_realtime_path_death,perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_d9_attribution,perf_sched_split,perf_s20_r1_collapse,perf_receiver_r2,perf_s26_long_polls,perf_receiver_followups succ
     class perf_native_geometry,perf_parallelisation,perf_emit_batch_v1,perf_quic_feeder,perf_threading_p2a,perf_q3_investigation,perf_receiver_r1,perf_threading_r3 dead
     class perf_rtt_rescan,perf_c8_lag,perf_s33_timer,perf_bbrrs_ns_cost unrated
     class perf_recv_msg_wall mixed
@@ -153,6 +154,7 @@ flowchart TB
 | `perf-liveness-split` | Path liveness split from capacity | done | successful |  | commit becc6121; commit b57a202b |  |
 | `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | done | unrated | clean single-path 3–5.6× faster | commit 6302798c; commit 99926477 |  |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | done | dead-end |  | commit 020d34d5 |  |
+| `perf-realtime-path-death` | Realtime path deaths in window mode | done | unrated |  | commit dff2d7a3; commit bc2d118e; commit 33d5a79c |  |
 
 ### Details per node
 
@@ -189,4 +191,94 @@ flowchart TB
 | `perf-liveness-split` | Path liveness split from capacity | L1 phase 3 (2026-07-03); the ack-path debug logging added while diagnosing it is folded in. | commit becc6121; commit b57a202b |
 | `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | Found in the session record (2026-07-07); the fix is commit 6302798c and its merge 99926477, whose subject carries the headline. Unrated: the extracted verdict quote did not validate. | commit 6302798c; commit 99926477 |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | L2 workstream 3 (2026-07-04); measured with the native object mode folded in meas-l1-harness. | commit 020d34d5 |
+| `perf-realtime-path-death` | Realtime path deaths in window mode | Split 2026-11-20 from meas-l2-multipath (own defect verdict and fix branch). | commit dff2d7a3; commit bc2d118e; commit 33d5a79c |
+
+### Folded items per node
+
+- `perf-parallelisation`: Engine or receiver parallelisation
+  - branch receiver-tail parallelization
+  - commit cee499ce
+  - commit 7387ad9d
+- `perf-emit-batch-v1`: Emission batching, first attempt
+  - commit 4bd18c78
+  - commit 75cbd012
+  - commit 1313841b
+  - commit 52b4fff6
+  - Sender-side emission burst (2026-07-27, commit aa2fcbfa, commit 2367a519, commit c639d56f)
+  - Receiver-side emission batching arms (2026-07-27, commit 8a71ed89, commit bc500aff, commit 47b04ed6, commit 97bc6eaf)
+  - Dual-path emission bursting (2026-07-27, session record)
+- `perf-ack-merge`: One control datagram per message
+  - commit 37c594a4
+  - commit bb8ab286
+  - commit ea037575
+  - commit 38e533b5
+  - ack-merge: density premise refuted; first battery no flip (2026-08-07, commit 8e0c866c, commit 3169b248, commit 43ccb40e, commit 1c1867f1)
+  - ack-merge flip: default ON after full battery (2026-08-08, commit 4171b584, commit c2bfab73, commit 06f0b3e0, commit b505fdba)
+- `perf-recv-msg-wall`: Receiver per-message wall battery
+  - commit 1ce8ba25
+  - commit 774e28a3
+  - Engine-receiver saturation probe (2026-07-19, commit d27ce30d)
+- `perf-rcvbuf`: Receive-buffer fix F-A
+  - branch fix/rcvbuf
+  - Receive-buffer fix on every endpoint socket (2026-10-05, commit 927bb00d, commit 3100c53a, commit 13d8ecd5, commit b52dc861, commit 31d5a522, commit 10b9d78d)
+- `perf-emit-batch-law0`: Emission batching law
+  - paper §10 row Emission batching, Law 0 (`RWM_EMIT_BATCH`, burst bound 64 at every path count)
+  - branch flip/emit-batch
+  - branch meas/emit-rerun
+  - branch feat/emit-batch-scope
+  - Batched emission scope battery before the buffer fix (2026-10-05, commit 788d2efb, commit 1671cae0, commit 5e954dbd)
+  - Batched emission re-run after the buffer fix (2026-10-05, commit c3e80db4, commit 3d552c12, commit 06ee1fb9)
+  - Batched emission on by default (2026-10-05, commit aa1aafb5, commit bf3a6365)
+- `perf-quic-feeder`: Per-path datagram feeder
+  - QUIC feeder queue per path (2026-10-05, commit dc388014)
+- `perf-threading-p0`: Named runtime and thread budget
+  - branch threading P0
+  - Threading P0 per-thread instruments (2026-10-05, commit 08d93e5e, commit a50fa033, commit a37ccee8, commit d465adcf, commit f7180092)
+- `perf-threading-p1`: Threading lock and wake fixes
+  - branch threading P1
+- `perf-threading-p2a`: Single logic-actor threading
+  - commit 39a97f3e
+  - commit 52da7db0
+  - commit 69fd846b
+  - Single scheduler-owning task (P2a) (2026-10-05, commit 3fb277ae, commit a27625fd, commit 0c91753c)
+- `perf-io-owner`: Per-path I/O owner
+  - branch threading Q1
+  - Per-path I/O owner for quinn (2026-10-06, commit 881cca2a, commit 272d0012, commit 0e2c0516, commit e76b11a9)
+- `perf-d9-attribution`: Attribution of one sender change
+  - branch §15 D9 attribution
+  - Perf generator attribution (D9) (2026-10-06, commit 602a1147, commit fe4ee50b, commit e059e304)
+- `perf-sched-split`: Scheduler split by direction
+  - branch threading Q2
+  - Scheduler split by direction (2026-10-06, commit 84f6c90c, commit dbdfefb5, commit bc6429a3, commit e9e315aa)
+- `perf-q3-investigation`: Lock-free send investigation
+  - branch §16 Q3 investigation
+  - Quinn lock wait and the c1d receiver ceiling (2026-10-06, commit 81b53352, commit 18d6ad51)
+- `perf-receiver-r1`: Receiver per-datagram cost, first try
+  - commit a2625113
+  - Receiver per-datagram rewrite (R1) (2026-10-26, commit ae54b9f7)
+- `perf-s20-r1-collapse`: First receiver rewrite collapse diagnosis
+  - branch §20 R1 c1s collapse diagnosed
+  - commit af0fc86c
+  - commit 4e505046
+- `perf-receiver-r2`: Receiver cost with floor fix
+  - branch threading R2 DELIVERED (status §21)
+  - Receiver rewrite with latency floor fix (R2) (2026-10-26, commit b30d80f9, commit acc0ed03)
+- `perf-threading-r3`: Receiver re-profile for threading
+  - Receiver re-profile for threading (R3) (2026-10-26, commit 42b074c1, commit 25d913c0)
+- `perf-c8-lag`: Two-path client lag spread
+  - branch §25/§26 c8 lag diagnosis + RWM_RTOBS instruments ([LAG] min_us, [OSLAG], [TXSEC], [LPOLL])
+  - Two-path client lag spread diagnosis (2026-10-26, commit ef614d69, commit adb48f8a, commit e0062407, commit b4b64748)
+- `perf-incremental-sack`: Incremental SACK marking
+  - branch §28 incremental SACK marking SHIPS
+  - Incremental SACK marking (2026-10-27, commit 320668ce)
+- `perf-decoder-prune`: Decoder prune per drain
+  - branch §32 per-drain receiver prune SHIPS
+- `perf-s33-timer`: Lag tail timer hand-off
+  - branch §33 c8 lag timer hand-off NOT MATERIAL on current main
+- `perf-receiver-followups`: Receiver follow-ups
+  - branch §35 receiver follow-ups
+- `perf-rtt-rescan`: Per-ACK RTT minimum rescan removed
+  - Per-ACK RTT minimum rescan removed from the sender (2026-07-07, session record)
+- `perf-realtime-path-death`: Realtime path deaths in window mode
+  - branch window-liveness fix
 <!-- END GENERATED: table-perf -->

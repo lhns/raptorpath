@@ -32,6 +32,9 @@ gantt
     Overhead reduction (packing, repair ali… :cod_overhead_reduction, 2026-03-18, 2026-03-20
     Generation decoder late-source fix :cod_gen_decoder_fix, 2026-07-08, 2026-07-08
     RLC decoder recovered-symbol index :cod_rlc_index, 2026-07-04, 2026-07-04
+    Systematic plus deficit repair :cod_systematic_deficit, 2026-07-07, 2026-07-07
+    Stage-3 baseline - block versus window :cod_s5_stage3_baseline, 2026-09-30, 2026-09-30
+    AVX for the sender ruled out :crit, cod_simd_sender, 2026-10-02, 2026-10-02
     section rec - recovery
     Early ACK, NACK and repair :rec_early_arq, 2026-03-12, 2026-03-20
     Rearchitecture phases - P_lost and SACK :rec_plost_sack, 2026-03-21, 2026-04-07
@@ -80,6 +83,14 @@ gantt
     Single-path loss collapse diagnosis :rec_c2_collapse_diag, 2026-07-07, 2026-07-07
     Recovery-plane component bench :rec_recovery_bench, 2026-08-08, 2026-08-08
     Recovery fire cause table :rec_fire_cause, 2026-08-21, 2026-08-21
+    Burst-state loss in retransmit choice :crit, rec_burst_state_loss, 2026-03-21, 2026-03-21
+    Concurrent-loss divisor for P_retx :crit, rec_loss_divisor, 2026-03-21, 2026-03-21
+    Hard retransmit-timeout cutover :crit, rec_hard_rto_cutover, 2026-03-21, 2026-03-21
+    Lost BlockStart orphans idle objects :rec_blockstart_orphan, 2026-07-04, 2026-07-04
+    Window-mode reactive repair (P10b) :rec_p10b_reactive_repair, 2026-07-04, 2026-07-04
+    Out-of-order object delivery (Phase C) :rec_rwm_phase_c, 2026-07-06, 2026-07-06
+    Bounded ARQ over-request :rec_arq_overrequest_bound, 2026-07-08, 2026-07-08
+    Sequential-classification repair law (§… :rec_seqclass_law, 2026-09-06, 2026-09-07
     section rate - rate law
     Gilbert-Elliott loss model :rate_ge_hmm, 2026-03-14, 2026-07-07
     BOCD FEC rate control :rate_fec_rate_v1, 2026-03-18, 2026-03-21
@@ -192,6 +203,7 @@ gantt
     Loss-ranked multipath window scheduling :crit, place_early_window_sched, 2026-03-14, 2026-07-04
     Proactive repair on the spare path :crit, place_spare_repair, 2026-07-08, 2026-07-08
     Four-path lock-in defect retracted :place_quad_lockin, 2026-08-17, 2026-08-18
+    Slow-path anchor consolidation (§16.14) :place_anchor_consolidate, 2026-07-13, 2026-07-13
     section cc - congestion control
     Delay-based CC replaces AIMD :cc_early_delay_cc, 2026-03-13, 2026-03-22
     Production Copa-lite port :cc_copa_lite, 2026-07-02, 2026-07-04
@@ -242,6 +254,7 @@ gantt
     Path liveness split from capacity :perf_liveness_split, 2026-07-03, 2026-07-03
     Per-ACK RTT minimum rescan removed :perf_rtt_rescan, 2026-07-07, 2026-07-07
     Inner-TCP geometry hypothesis :perf_native_geometry, 2026-07-04, 2026-07-04
+    Realtime path deaths in window mode :perf_realtime_path_death, 2026-07-04, 2026-07-04
     section meas - measurement
     Repair-share bound counts every slot :active, meas_w1_bracket_fix, 2026-11-19, 2026-11-20
     Steady-window check passed untested win… :meas_blocke_steady_rule, 2026-11-18, 2026-11-18
@@ -294,6 +307,8 @@ gantt
     Ack-cadence over-read checks :meas_ack_cadence, 2026-08-11, 2026-08-11
     31 Mbit/s cap - generation coding on :meas_defect_31mbit, 2026-08-20, 2026-08-20
     Crown no-regression spot (wire v8) :meas_crown_spot_v8, 2026-09-08, 2026-09-08
+    Full benchmark re-run (8 July) :meas_rerun_0708, 2026-07-08, 2026-07-08
+    Gate-forwarding audit :meas_gate_audit, 2026-08-09, 2026-08-09
     section model - model and paper
     Shared engine laws and decisions :active, model_shared_core, 2026-11-14, 2026-11-20
     Shared core steps 0.1–0.3 :model_shared_core_0, 2026-11-14, 2026-11-14
@@ -324,6 +339,7 @@ gantt
     Fountain aggregation claim (paper §16) :model_s16_fountain, 2026-07-04, 2026-07-04
     Tier-1 literature re-scores :model_tier1_rescores, 2026-08-19, 2026-08-19
     Tier-0 paper claim corrections :model_tier0_corrections, 2026-08-19, 2026-08-19
+    Poisson derivation of repair rate :crit, model_poisson_rate, 2026-03-21, 2026-03-21
     section obs - observability
     Runtime status endpoint :obs_status_endpoint, 2026-03-12, 2026-03-12
     Gate-setting liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09

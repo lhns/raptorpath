@@ -403,4 +403,173 @@ flowchart TB
 | `store-latency-lever` | Three-term cap as latency control | Pre-registration ec6a5ec7; scored by lat_report.py (fc860371). Mapped to mixed: works, no default. Track store: the battery tested the three-term cap as a latency control (follows the three-term battery's specification failure, f334471e). Was titled 'Latency Lever battery'. | commit f6d95c99; commit ec6a5ec7 |
 | `store-sf-latency-feedback` | SF latency feedback | REFUTED: dead-end. Track store: its verdict re-attributes the c8 collapse to dead wall, which the paper places in the store-cap-unification arm. Its merge 99514afb (latency-feedback REFUTED) moved here from meas-pipeline-verification on 2026-11-20. | commit c0fb1d79; commit 4320fc48 |
 | `store-queue-fix-premise` | Queue fix premise refuted | Split 2026-11-20 from meas-pipeline-verification (own refuted verdict). | commit 9ae50ee6 |
+
+### Folded items per node
+
+- `store-xn-pool`: Path-scaled pool ×N
+  - commit 5cace520
+  - commit a7ad963b
+  - branch feat/c8-pool-law
+  - branch fix/store-cap-triplication
+  - commit 7387ad9d
+- `store-percap-family`: Per-path store accounts
+  - commit d190b296
+  - commit 689b9f1b
+  - paper §11.1 open question 5
+  - Remove refuted per-path store accounts (2026-09-27, commit ae83022e)
+- `store-borrow`: Bounded account borrowing
+  - commit 477ab328
+- `store-capw`: Capacity-weighted pool
+  - C8-aware capacity-weighted pool law (2026-07-27, commit 080073c4)
+- `store-honest-cap-family`: Honest floor-clock cap
+  - commit efc8f759
+  - commit 5d30c026
+- `store-plain-rs`: Plain-mode send-interval sampler
+  - commit 988960c1
+- `store-pool-deliv`: Delivery-clocked pool anchors
+  - commit f62caf78
+  - commit 8e9b489c
+  - branch feat/pool-delivery-anchor
+  - commit 47fdf550
+  - Ship The Wins 1b: delivery-clocked pool anchor (2026-08-07, commit a43bab82)
+- `store-pool-anchor-flip`: Composed store flip
+  - paper §10 row Pool anchor (`RWM_POOL_ANCHOR`): pooled cap = Σᵢ honest_store_cap on each path's send-interval anchor
+  - commit 201ada44
+  - commit a43bab82
+- `store-sack-prune`: SACK pruning of the store
+  - commit 3dcb39c7
+- `store-sack-release`: SACK-clocked store release
+  - commit 7145fcc6
+  - commit a52105d0
+  - SACK-clocked store release (2026-07-21, commit ff7acb4c)
+- `store-sender-decoupling`: Window decoupling
+  - commit b03b3ad8
+  - commit 3e7f43af
+  - commit 354461af
+  - winmtu battery: diagnosis instruments, scope fix and crown-gate arms (2026-08-06, commit 7ebba0eb, commit 2ea195f0, commit 8b77abc6, commit 282e6aae, commit 44fe5aa0)
+- `store-sack-flowctl`: SACK sender flow control
+  - branch SACK sender flow-control (REFUTED, gated off)
+- `store-reasm-bdp`: Never-evict reassembly clamp
+  - branch SACK+BDP reassembly
+  - commit 56179503
+- `store-anchor-hygiene`: Anchor hygiene laws
+  - commit 988960c1
+  - commit d6bed885
+- `store-three-term`: Three-term outstanding law
+  - commit 90f9ca72
+  - commit 70833cda
+  - commit c7cc6bca
+  - branch three-term law L1 battery
+  - branch the binder is the LINK
+  - Three-Term Law loopback: the gate routes in the composed arm (2026-08-10, commit f36a758b)
+- `store-coverage-term`: Coverage: the fourth store term
+  - commit 2b55dbda
+  - commit dda6670e
+- `store-slack-clock`: Slack-bench: queue-free slack clock
+  - commit 530bbaa2
+  - commit 0e187521
+  - Slack bench: recovery-model driver moved to shared test module (2026-08-09, commit aa947d5a)
+- `store-composed-cap`: Composed cap
+  - branch composed-cap battery
+  - branch the composed cap law lands INTERIOR everywhere on the bench; the [WALL] instrument; two catches by the new discipline
+  - paper §10 row Composed cap (`RWM_COMPOSED_CAP`): three-term pool law plus the per-path cwnd brake
+  - commit d408b7ee
+  - Composed cap law: formula stated in the paper before the code (2026-08-12, commit 56569b57)
+  - Composed cap gate and dead-wall onset instrument (ADR-0070 steps 2-3) (2026-08-12, commit 1f440db0)
+- `store-cap-unification`: Store-cap unification over live paths
+  - branch store-cap unification battery
+  - branch the c8 SF mechanism
+  - branch fix/live-path-membership
+  - Store-cap triplication: unify the honest cap law (2026-08-09, session record)
+- `store-deadwall-modehunt`: Deadwall and mode-hunt batteries
+  - branch mode-hunt battery UNSCORED by its own stop rule
+  - branch dead-wall battery
+  - branch dead-wall mitigations (nothing built
+  - commit b8fd6d9c
+  - commit 2a3d82e8
+  - commit 5fce47cf
+  - commit 465c28ef
+  - commit 2dd7bb2d
+  - commit 79d2fa83
+- `store-cap-law-cluster`: Cap-law cluster: formulas first
+  - commit 8bab64c3
+  - branch sweep item 5
+  - branch sweep items 1+2+4
+  - Boot cap derived as 128 and found to dissolve into the floor (2026-08-18, commit 94a6e6c3)
+- `store-honest-inputs`: Honest inputs and O(1) anchor
+  - branch the flip battery
+  - branch HONEST INPUTS phase 3
+  - branch HONEST INPUTS battery
+  - branch HONEST INPUTS phase 1
+- `store-sum-cap`: Ladder battery: ×N deletion
+  - branch LADDER RESULTS
+  - branch the ladder contract + drivers (local half of item 2)
+  - branch ladder item 1
+  - branch ADR-0071
+  - branch ladder item 5
+  - commit 85b4d1df
+  - commit 5ddf7f6b
+  - commit 91c00ddf
+  - commit 27e36e3f
+  - commit 6a653802
+  - commit 923aa9dc
+  - Ladder item 1: x-N deletion of the store cap, late brake extracted (2026-08-18, commit 6794dec9, commit fb85f8b0, commit 41296b7c)
+  - FULL-arm expressibility check before the ladder pre-registration (2026-08-18, commit 07aedebd)
+  - Ladder item 5: srtt RFC assert and two zero-assertion CI tests (2026-08-18, commit 6f14ccdb)
+  - Composition ladder on the store cap (2026-08-19, commit 62f078bf)
+- `store-delta-cap`: Derived setpoint 1 + q(δ)
+  - branch RWM_DELTA_CAP DEFAULT ON
+  - branch CANDIDATES RESULTS
+  - branch the derived-setpoint laws
+  - branch the literature cross-check
+  - commit e9c6b242
+  - Derived setpoint laws and the delta cap (2026-08-19, commit 036dbab3, commit 70777c78, commit 0055c5da)
+- `store-s18-one-law`: One store law, first session
+  - commit 245a586c
+  - commit 7e13dc06
+- `store-adr72-one-law`: One store law
+  - branch ADR-0072 accepted
+- `store-input-search`: Single-path anchor over-read
+  - branch §23 store-cap input diagnosis
+  - Store-cap input diagnosis (section 23) (2026-10-26, commit 3982bd10, commit 025bc526, commit 1b8ef4b9)
+- `store-power-law`: Power-seeking store law
+  - commit 317520f5
+- `store-dw-window`: Noise-sized window
+  - branch §30 store law D with a noise-sized window DOES-NOT-CLOSE
+  - Delay-closed store law D with a noise-sized window (2026-10-28, commit 9133507d, commit 71aa3ee5)
+- `store-s34-input`: Store-law input after the anchor fix
+  - branch §34 static-cap grid result
+  - branch §34 store-law input NONE-CLOSES on committed ledgers
+  - Loop-delay instrument on a run branch (2026-10-26, commit a48f25fb)
+- `store-law-r67`: Lowest-store floor candidate
+  - commit 34166c90
+  - commit 4cff88d0
+  - commit c49c0a77
+- `store-s60-pre`: Gauge suites and reference binary
+  - commit 204cbc81
+- `store-s60a`: Queue-free floor on small stores
+  - commit fd24c86b
+  - commit 80eda329
+  - commit 2967ef8d
+  - commit b17ec7c1
+  - commit 10272273
+- `store-s60b`: Floor sign test, 400 Mbit path
+  - commit 45eb2c90
+- `store-s61a`: Slow-link knee sweep, first try
+  - commit 33f36c36
+- `store-s61b`: 100 Mbit price below the knee
+  - commit 04aedaf2
+- `store-latency-lever`: Three-term cap as latency control
+  - commit ec6a5ec7
+  - commit fc860371
+  - commit f6d95c99
+  - branch the latency battery
+  - branch latency-lever instruments, pre-registration, and the specification-failure record
+- `store-sf-latency-feedback`: SF latency feedback
+  - commit 4320fc48
+  - commit 2b14cc60
+  - commit c0fb1d79
+  - branch latency-feedback REFUTED (no inner TCP exists)
+- `store-queue-fix-premise`: Queue fix premise refuted
+  - branch the queue fix
 <!-- END GENERATED: table-store -->

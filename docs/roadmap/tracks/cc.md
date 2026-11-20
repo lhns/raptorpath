@@ -162,4 +162,52 @@ flowchart TB
 | `cc-hybrid` | BBR/Copa hybrid build | The forward build of the cc-adr68-fusion design. Done when: a registration with falsifiable per-cell targets (ADR-0068 bars: shal8 >= 75 Mbit, jit0-jit25 >= 0.9x without the standing queue) is committed before any build. | plan W2.4 |
 | `cc-aimd-v1` | AIMD congestion control (first CC) | ADR-0009 closed the missing-CC gap with AIMD on 2026-03-12; replaced by BBR-style delay-based CC (ADR-0019) on 2026-03-13. End date is the replacement's start. | ADR-0009 |
 | `cc-btlbw-recovery` | BtlBw-anchored window recovery | Split 2026-11-20 from cc-copa-lite, where it was folded as branch P-CC (own refuted verdict). | commit fa433ac7; paper §12.6 |
+
+### Folded items per node
+
+- `cc-early-delay-cc`: Delay-based CC replaces AIMD
+  - commit 78aa7d4a
+  - commit 628fdb1c
+  - BBR-style delay-based congestion control (2026-03-13, commit cbbbfdbda9)
+  - Copa recommended over BBR for the paper; ECN and L4S set aside (2026-03-21, session record)
+- `cc-copa-lite`: Production Copa-lite port
+  - branch feat/p1-hint-delay-target
+  - branch feat/p2-estimated-floor
+  - branch P7 follow-up
+  - branch P7 fix
+  - commit b000e443
+  - Jitter-robust Copa queue signal and window-level jitter headroom (2026-07-04, commit d5f89ce2, commit a7c20d72)
+- `cc-copa-sole-substrate`: Copa per path as substrate
+  - branch feat/copa-sole-cc
+  - branch feat/copa-sole-clean
+  - Copa-sole on the clean substrate (2026-07-27, commit 7652ccb8)
+- `cc-cubic-substrate`: Quinn stock Cubic substrate
+  - commit 0d9f26e7
+- `cc-copa-wire-signal`: Copa wire signal, compete mode
+  - commit f203d6e7
+  - commit 386979d8
+  - branch feat/copa-compete
+  - branch meas/competitive-baseline
+  - Copa wire-signal fixes (2026-07-13, commit 9f4fa450, commit aaabd5c5, commit d7eac012, commit 4d9927bf, commit c9f73e0d, commit 7b224ad6)
+- `cc-bbr-default`: BBR as substrate default
+  - commit 519467e0
+- `cc-bbrrs-v1`: bbr_rs first version
+  - commit c319ef91
+  - commit 2eb88de3
+- `cc-adr68-fusion`: Copa-BBR fusion
+  - branch meas/adversarial-cells
+  - paper §11.1 open question 12
+  - commit 6c8c3d38
+  - commit 754139c3
+  - commit 9840854b
+  - ADR-0068 Copa-BBR fusion proposal (2026-07-22, commit 2ce25d14)
+- `cc-s48-host-gate`: bbr_rs host gate
+  - commit 0daf1452
+  - commit 35c24444
+- `cc-aimd-v1`: AIMD congestion control (first CC)
+  - commit dc672631
+  - commit 8857788d
+  - commit cbbbfdbd
+- `cc-btlbw-recovery`: BtlBw-anchored window recovery
+  - branch P-CC
 <!-- END GENERATED: table-cc -->
