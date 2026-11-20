@@ -587,7 +587,7 @@ rows:
   regime: "c8: on 20-gap rows the gate's released count is 28-75 k against 4-26 k SACK marks, so the received-above count does the work (p0-dwell-diag §1, srel= gauge)"
   clamp: "outer min cannot bind (derived)"
   inputs: "honest (wire fields F, A); premise: the reliable receiver never evicts above its frontier (rho = 1 only)"
-  modeswitch: "none in the law; its scope is ADR-0084 Amendment 1 item C2 (release at rho = 1 only, through the grandfathered bit; G02)"
+  modeswitch: "none in the law; its scope is ADR-0084 Amendment 1 item C2 (release at rho = 1 only, until its option-B rewrite; G02)"
   verdicts: [OK]
   measured: "yes"
   gauge: "yes"
@@ -1014,7 +1014,7 @@ rows:
   fix_class: law (a continuous packing/batching quantum) or owner call
   depends_on: []
   ships_with: []
-  evidence: "§3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime. ADR-0084 Amendment 1 item C5: after the flag leaves, the reliable conjunct reads the grandfathered bit rho1_debt (rho >= 1), counted by tests/rho_deny_list.rs and bounded by rho1_debt_bounds::c05_emit_batch_scope_steps_only_at_rho_1 (owed)"
+  evidence: "§3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime. ADR-0084 Amendment 1 item C5: after the flag leaves, the reliable conjunct reads the mid-stack scaffolding bit rho1_debt (rho >= 1) until its option-B rewrite, counted by tests/rho_deny_list.rs and bounded by rho1_debt_bounds::c05_emit_batch_scope_steps_only_at_rho_1 (owed)"
 
 - id: S10
   name: proactive repair emission (taper density and TaperBudget accrual)
@@ -1635,8 +1635,8 @@ rows:
   ships_with: [C13]
   evidence: "giveup_law_tests + UI gate; sim gives up 4-10 (was 23-28) on the harsh cells, 0 at rho = 1; diverges from the engine only for 0 < 1 - rho < R"
 
-# ---------------------------------------------------------------- the grandfathered rho = 1 bit (ADR-0084 Amendment 1, group C)
-# One row per (C) site; C5 is S09. Retiring a site updates its row, the paper §11.3 row and tests/rho_deny_list.rs in one commit.
+# ---------------------------------------------------------------- the rho = 1 step sites (ADR-0084 Amendment 1, group C; option B: all rewritten)
+# One row per (C) site; C5 is S09. Each rewrite updates its row, the paper §11.3 row and tests/rho_deny_list.rs in one commit.
 - id: G01
   name: "placement split (place_symbol law vs best-goodput pick)"
   area: seat
@@ -1650,7 +1650,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1672,7 +1672,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1694,7 +1694,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1716,7 +1716,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1738,7 +1738,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1760,7 +1760,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1804,7 +1804,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1826,7 +1826,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1848,7 +1848,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
@@ -1870,7 +1870,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"

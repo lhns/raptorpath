@@ -1,6 +1,6 @@
 # ADR-0084: Every verdict reaches the receiver
 
-## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; the engine change is stacked on `s06-delete`.**
+## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; S06 merges first on its own guard; all twelve (C) sites are rewritten (option B).**
 
 ## Context
 
@@ -42,7 +42,12 @@ The shed budget does not read ρ: the engine runs `budget = R`, which is cold, f
 
 ### Status
 
-Accepted for the owner's two decisions of 2026-11-20: the flag removal (item 1) and the stacked base (item 3). **Pending the owner:** the grandfathered ρ = 1 bit and its ratchet (item 2, the exception and its enforcement (b)) and the receiver's ρ (item 5). Until the owner rules, those parts are recommendations, not decisions. The reader inventory and the implementation order are in `docs/derivations/adr84-engine-brief.md`. The decisions above are unchanged; this amendment supersedes them where it says so.
+Accepted. The owner's decisions of 2026-11-20 are recorded here:
+- the flag removal (item 1);
+- S06 merging on its own guard-2 PASS, with this change built on main after that merge (item 3);
+- option B for the (C) sites: all twelve are rewritten and none is grandfathered (items 2 and 4).
+
+**Pending:** the receiver's ρ (item 5). The derivation `docs/derivations/rho-step-sites.md` (branch `rho-step-sites`) decides it, together with the form of each (C) site. The reader inventory and the implementation order are in `docs/derivations/adr84-engine-brief.md`. The decisions above are unchanged; this amendment supersedes them where it says so.
 
 ### Context
 
@@ -73,24 +78,28 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
 
 2. **The trap rule.** In engine code, nothing compares, matches or thresholds the retention ρ to select a code path, a law, a constructor or an argument. `reliable = (ρ ≥ 1)` is forbidden under any name, and so is any alias of a ρ value that feeds such a test. ρ enters the engine only as a number in a formula continuous in ρ, such as the shed budget `(1 − ρ)·S_src`.
 
-   **One closed exception, pending the owner: the grandfathered ρ = 1 bit.** It is the trap itself, kept only for the (C) list in item 4:
-   - derived at exactly one function, `rho1_debt_bit(rho: f64) -> bool { rho >= 1.0 }` in `net/rho_debt.rs`;
-   - called twice, once per end: the sender's own `window_rho` and the receiver's own `window_rho` (item 5);
-   - carried only under identifiers containing `rho1_debt`;
-   - read only at the (C) sites and the counted (D) log lines.
+   **No exception (owner, 2026-11-20: option B).** Each of the twelve (C) sites is rewritten. The owner's framing is to ask whether each split has a reason, and to work only on behaviour that can be derived. `docs/derivations/rho-step-sites.md` gives each site its form: one law continuous in ρ, or the split deleted because it has no reason. Nothing merges with a ρ-selected branch.
 
-   A new reader is forbidden. Removing one updates the deny test's table, the law-ledger row and the paper §11.3 row in the same commit. This has the same standing as the known `raptorpath-math` debts W22 and W14 in CLAUDE.md: a counted defect with a bounding test, not a mechanism.
+   **Mid-stack scaffolding only.** While the change is built, the old bool may survive under one name so that each commit stays zero-behaviour where it should:
+   - it is derived at exactly one function, `rho1_debt_bit(rho: f64) -> bool { rho >= 1.0 }` in `net/rho_debt.rs`;
+   - it is carried only under identifiers containing `rho1_debt`;
+   - its readers are pinned by the list below, which only shrinks.
 
-   **Owner's call.** The alternative is to collapse every (C) site to one arm in this change, with no bit. That is 12 behaviour changes at ρ < 1, each needing its own Realtime battery. The recommendation is to grandfather the bit and retire sites one commit each.
+   It is the trap itself and is never a mechanism. **The merge condition is a reader count of 0, with the function and every `rho1_debt` field and identifier deleted.** The deny test's final form asserts that no identifier containing `rho1_debt` exists anywhere in `raptorpath/src`. A branch head that still holds one does not merge.
 
    **Enforcement:** `raptorpath/tests/rho_deny_list.rs`, a source walk patterned on `raptorpath-core/tests/deny_list.rs`, run in the normal CI test job. It fails on any of the following:
-   - (a) a comparison operator, `match`, `partial_cmp` or `total_cmp` on a retention-ρ identifier (`rho`, `window_rho`, `contract_rho`, `recv_rho`, `peer_rho`), anywhere in the non-test code of `raptorpath/src` (test files and `#[cfg(test)]` modules are skipped). Also any binding of a ρ value to a name outside that list, so `contract_rho: cfg.window_rho` passes and `let r = window_rho` fails. The allowlist is two function bodies, each defined exactly once: `rho1_debt_bit`, and `config::check_window_rho`, which holds the domain check and the corner refusal (C8). The retention ρ already travels as a bare `rho` parameter in `net/store_cap.rs` (`contract_stall_s`, `three_term_store_cap`). `net/late.rs` uses a local `rho` for the healing fraction ρ̂_heal, which is renamed `rho_heal` (zero-behaviour), so bare `rho` is denied with no exception;
-   - (b) **the ratchet.** The test finds every occurrence of an identifier containing `rho1_debt` and attributes it to its file and enclosing `fn`. It then compares the resulting set of `(file, fn, count)` with the list in the block `rho1-debt-readers` below, which the test parses from this file. The match must be exact. A reader in a function not on the list fails, and so does a count above the listed one. A count below the listed one also fails, until the list is shortened in the same commit. The list can only shrink: an accepted ADR's decision is not edited (repository rule), so adding an entry takes a new ADR that supersedes this item;
+   - (a) a comparison operator, `match`, `partial_cmp` or `total_cmp` on a retention-ρ identifier (`rho`, `window_rho`, `contract_rho`, `recv_rho`, `peer_rho`), anywhere in the non-test code of `raptorpath/src` (test files and `#[cfg(test)]` modules are skipped). Also any binding of a ρ value to a name outside that list, so `contract_rho: cfg.window_rho` passes and `let r = window_rho` fails. The allowlist is `config::check_window_rho`, whose body holds the domain check and nothing else at merge, plus `rho1_debt_bit` while the scaffolding exists. The corner refusal (C8) stays in that body only until its site is rewritten. The retention ρ already travels as a bare `rho` parameter in `net/store_cap.rs` (`contract_stall_s`, `three_term_store_cap`). `net/late.rs` uses a local `rho` for the healing fraction ρ̂_heal, which is renamed `rho_heal` (zero-behaviour), so bare `rho` is denied with no exception;
+   - (b) **the ratchet on the scaffolding.** The test finds every occurrence of an identifier containing `rho1_debt` and attributes it to its file and enclosing `fn`. It compares the resulting set of `(file, fn, count)` with the list in the block `rho1-debt-readers` below, which the test parses from this file. The match must be exact:
+     - a reader in a function not on the list fails;
+     - a count above the listed one fails;
+     - a count below it also fails, until the table is lowered in the same commit.
+
+     The list only shrinks, and its end state is empty. The merge test asserts zero occurrences;
    - (c) any occurrence of the identifiers `reliable`, `window_reliable`, `recv_window_reliable`, `sender_window_reliable`, `hold_on_full` or `new_reliable` in code outside the two tombstones of item 6. Comments and string literals are exempt, so the byte-stable log echo survives.
 
    A planted fixture proves each form red, and the tree is green. The walk asserts that it visited files. The test is a tripwire, not a proof: review still owns aliases the scanner cannot see.
 
-   The reader list: the functions allowed to hold the bit, on main `060db8af`, at its final state after the ADR-0084 engine change. The (A) and (B) readers leave in their own steps, so they are not listed. The test's companion table pins the identifier count per function, plumbing included. The engine change records those counts at its step 3 and lowers them with every step that removes a reader; a count may only fall.
+   The reader list: the functions allowed to hold the scaffolding bit mid-stack, on main `060db8af`, once the (A) and (B) readers have gone (they leave in their own steps). Each (C) site's rewrite removes its rows, and the list is empty at merge. The test's companion table pins the identifier count per function, plumbing included. The engine change records those counts at its step 3 and lowers them with every step that removes a reader; a count may only fall.
 
    <!-- rho1-debt-readers (file | fn | sites) -->
    ```text
@@ -111,22 +120,22 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
    ```
    <!-- /rho1-debt-readers -->
 
-   Struct field declarations carrying the bit (`SenderPolicy`, `ReorderBuffer`, `WindowDelivery`) are attributed to their struct and listed by the test in the same way.
+   Struct field declarations carrying the bit (`SenderPolicy`, `ReorderBuffer`, `WindowDelivery`) are attributed to their struct and listed by the test in the same way. At merge, those fields are deleted.
 
-3. **Stacked on `s06-delete`.** The engine change is built on `s06-delete` merged up to main. That lifts ADR-0079 Amendment 1's merge hold, which decision 8 above kept, for this purpose only: `s06-delete` reaches main beneath this change, not on its own.
+3. **S06 first, on its own guard; this change on main after it (owner, 2026-11-20).** S06 merges on its own guard-2 PASS in VM batch 1 (`docs/derivations/vm-batch-1-registration.md`):
+   - BASE is S1 = main + `c8-gauges` + `tunnel-inorder-guard` (guard 1's candidate);
+   - CAND is S2 = S1 + `s06-delete`, merged up.
 
-   There are two candidates and two guards, so a failure can be attributed:
-   - guard 1: BASE = main, CAND1 = `s06-delete` merged up. This is ADR-0079's own guard, as registered.
-   - guard 2: BASE = CAND1, CAND2 = this change on top.
+   It does not wait beneath this change, because a guard pass goes stale as main moves. That lifts ADR-0079 Amendment 1's merge hold, which decision 8 above kept: S06 merges when its guard passes.
 
-   A guard-2 failure belongs to ADR-0084 and a guard-1 failure to ADR-0079. Merge-up facts for the worker:
+   The ADR-0084 engine change then branches from main after the S06 merge. Its own guard has main (with S06) as BASE and this change as CAND, so a failure belongs to ADR-0084 alone. If S06 has not merged when the engine work starts, the worker waits; the change is not stacked on an unmerged S06. Merge-up facts for S06 (VM batch 1 §1 uses them):
    - the slot-site counters main added (`shed_visit_slot`, `on_shed_slot`, `on_denied_slot`) lose their site;
    - `sim_shed_reach::witness_slot_site_sheds_paced` is red on that tree by design and is inverted;
    - the `shed-slot` and `shed-slot-denied` entries in `tools/ci/coverage_sites.json` are stale and are removed.
 
-4. **The (C) list is named debt.** Each item below gets a law-ledger row (G01–G12; C5 extends S09 instead), a paper §11.3 row and a bounding test in `raptorpath/tests/rho1_debt_bounds.rs`.
+4. **The (C) list: all twelve are rewritten (option B).** Each item below has a law-ledger row (G01–G12; C5 extends S09 instead) and a paper §11.3 row until its rewrite lands. The table's last column records this amendment's first reading of what would make each site continuous. `rho-step-sites.md` supersedes it site by site: one law, or the split deleted where it has no reason. A site with no derivable behaviour is not rewritten by guesswork; it holds the merge.
 
-   Every bounding test has the same shape:
+   While a site still reads the scaffolding bit mid-stack, its bounding test in `raptorpath/tests/rho1_debt_bounds.rs` keeps the step visible. After the rewrite, the test becomes the site's ±2 % continuity test through ρ = 1. Every bounding test has the same shape:
    - a routing witness: the arm taken at ρ = 1, and the same arm at ρ = 0.99 and ρ = 0.97, so the step is at one point only;
    - the step's observable recorded at ρ = 1 against 1 − ε with ε·S_src < 1. There the budget admits no shed on either side, and (A) is identical by data, so any difference belongs to the bit;
    - an absolute bound where one exists.
@@ -168,7 +177,7 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
 
    T8 therefore asserts identity only on what no live (C) site touches: the verdict set (V = ∅ on both sides, so H = E = 0 and `floor_sent = 0`). It records per-seq sends and resends, names the (C) sites live in its cell, and runs after the last behavioural step.
 
-5. **The receiver's ρ (pending the owner).** The fix needs no ρ at the receiver, so decision 5's accepted default ("no ρ at the receiver") stands. Read in `net/reorder.rs`, the expiry path today honours nothing on the ρ = 1 buffer:
+5. **The receiver's ρ (pending `rho-step-sites.md`).** The fix needs no ρ at the receiver, so decision 5's accepted default ("no ρ at the receiver") stands. Read in `net/reorder.rs`, the expiry path today honours nothing on the ρ = 1 buffer:
    - `drain_expired` returns early when `reliable` (`:117–119`);
    - `oldest_deadline` returns `None` (`:182`);
    - `new_reliable` sets `timeout = 0` and `max_buffered = usize::MAX` (`:43–51`).
@@ -179,7 +188,11 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
 
    Built that way, every buffer honours a floor. No floor is sent at ρ = 1, so the pass never fires there.
 
-   The receiver's (C) sites C9–C12 still need their bit once the flag is gone. It is derived from the receiver's **own** configured `window_rho`, which carries the same information as today's local flag. It is one `rho1_debt_bit` call in `run_impl`, counted in the ratchet. There is no handshake field.
+   Whether the receiver needs ρ at all after its sites C9–C12 are rewritten is pending. `rho-step-sites.md` decides it:
+   - if a receiver law reads ρ (for example a give-up budget `(1 − ρ)·frontier`), the derivation also says whose ρ it is: the receiver's own config, or the sender's on the wire;
+   - if no receiver law reads ρ, the receiver has none.
+
+   Mid-stack, the scaffolding bit is derived from the receiver's own configured `window_rho`, the same information as today's local flag. There is no handshake field in this amendment.
 
    **The mixed configuration.** Each end reading its own retention is a defect on main today. A Realtime sender evicts and sheds; against a Bulk receiver, whose buffer never passes a hole, the frontier stalls. `tests/sim_mixed_rho.rs` shows it (proposed roadmap node `rec-mixed-rho-stall`). ADR-0084's store at every ρ and its seat-free floor pass fix it without a receiver ρ: every unresolved seq is served until it gets a verdict, and every verdict is told. The test is un-ignored in the floor step.
 
@@ -192,7 +205,7 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
 7. **Defaults.** No default ρ changes: Bulk and Auto stay ρ = 1 and Realtime stays the evicting preset, now the declared 0.99.
    - A bare Bulk or Auto run keeps its behaviour:
      - (A) is identical by data at ρ = 1;
-     - (C) takes the ρ = 1 arm through the bit;
+     - each (C) site's rewrite must reduce to today's ρ = 1 arm at ρ = 1, or say, with its derivation, why it does not;
      - (B) is the one ρ = 1 code change: the shed check is now armed, D is refreshed and `shed_denied` counts past-D holes, all with budget 0, so there are zero sheds.
    - It is not binary-identical. Invariance at ρ = 1 rests on the decision pins, T3 and the guards, not on an identical-binary waiver. T8 only records the step at ρ → 1⁻.
    - The wire changes at every ρ (v11: `WindowAck.passed_undelivered` and `WindowFloor`), so a v10 peer is refused (ADR-0010).
@@ -200,23 +213,25 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
    - Today's `window_reliable = false` at Bulk or Auto has no numeric counterpart. Tests and harnesses map it to the declared 0.99, and `true` to 1.0.
 
 8. **The VM guard harness maps per tree.** A guard across this change runs two binaries that spell retention differently:
-   - BASE (main or CAND1) takes `--window-reliable`;
+   - BASE (main, with S06 merged) takes `--window-reliable`;
    - CAND takes `--window-rho 1`.
 
    Where neither is passed, both use their defaults: ρ = 1 at Bulk and Auto, the evicting preset at Realtime.
 
-   A Bulk-only guard cannot see this change, because at ρ = 1 every (A) site is identical by data and every (C) site takes the same arm. Before merge, guard 2 therefore needs a **ρ < 1 stage**: Realtime cells at the declared 0.99, N = 1 and N = 2. Each cell must show its execution witnesses before any outcome is read:
+   A Bulk-only guard cannot see this change, because at ρ = 1 every (A) site is identical by data and every rewritten (C) site is meant to reduce to its ρ = 1 arm. Before merge, guard 2 therefore needs a **ρ < 1 stage**: Realtime cells at the declared 0.99, N = 1 and N = 2. Each cell must show its execution witnesses before any outcome is read:
    - the store fills at ρ < 1;
    - the pause executes, a paused share above 0 on the `O ≥ B` disjunct;
    - the verdict sites are visited;
    - `floor_sent` and `floor_passes` (above 0 wherever a verdict happened);
-   - `G_rx` beside `(1 − ρ)·S_src`. The harness detects the spelling from the binary (`perf --help` lists `--window-rho`), not from the tree name, and records the mapping in the run's provenance. A cell that passed `--window-reliable` to BASE passes `--window-rho 1` to CAND. About 30 scripts under `tools/l1/` and 32 test files under `raptorpath/tests/` pass the flag today. The Rust test harnesses (`tests/common/loopback.rs`, `tests/sim_support`) move in the flag-removal commit; the L1 scripts move before the guard runs.
+   - `G_rx` beside `(1 − ρ)·S_src`.
+
+   The harness detects the spelling from the binary (`perf --help` lists `--window-rho`), not from the tree name, and records the mapping in the run's provenance. A cell that passed `--window-reliable` to BASE passes `--window-rho 1` to CAND. About 30 scripts under `tools/l1/` and 32 test files under `raptorpath/tests/` pass the flag today. The Rust test harnesses (`tests/common/loopback.rs`, `tests/sim_support`) move in the flag-removal commit; the L1 scripts move before the guard runs.
 
 ### Consequences
 
 - The NO-MODE-SWITCH invariant gains a source deny test on the engine. Before this amendment, it had one only on the core and the visualizer.
-- The trap is no longer hidden behind a config bool. It is one function and 23 counted `rho1_debt` reader lines (C1–C7, C9–C12) plus the log echo D1 (D2–D4 move off the bit: they print ρ or read C2's derived name; brief §1), each (C) site with a ledger row and a §11.3 row.
-- Decision 7's "SACK release stays reliable-only" now reads "stays on the ρ = 1 arm of the grandfathered bit (C2)".
-- ADR-0079's merge hold is lifted only for the stacked build.
-- The receiver keeps no ρ in its law; its (C) bit comes from its own config. The mixed-config stall on main is fixed by the store and the floor, not by a wire field.
+- No ρ-selected branch merges. Mid-stack the old bool survives as scaffolding under one pinned name, with a reader list that only shrinks. Its merge state is zero readers, with the field deleted. That is 23 reader lines (C1–C7, C9–C12) plus the log echo D1 at its widest; D2–D4 move off it.
+- Decision 7's "SACK release stays reliable-only" is superseded: C2 is rewritten under `rho-step-sites.md`. Until then, the step it puts into the pause through `|released|` is stated and bounded (item 4).
+- ADR-0079's merge hold is lifted: S06 merges on its own guard-2 PASS, and this change follows it on main.
+- The receiver's ρ is pending the derivation. The mixed-config stall on main is fixed by the store and the floor, not by a wire field.
 - The tests that assert the defect invert with the fix: `sim_lost_tail::known_defect_lost_tail_strands_k_at_rho_below_1` and the defect assertions in `sim_shed_reach::witness_nack_site_sheds_at_rho_below_1`. So do the red-first T1, T1′ and T2 (brief §4).

@@ -961,7 +961,7 @@ a branch.
 - *5. measured in regime?:* c8: on 20-gap rows the gate's released count is 28-75 k against 4-26 k SACK marks, so the received-above count does the work (p0-dwell-diag §1, srel= gauge)
 - *6. clamp bind:* outer min cannot bind (derived)
 - *7. inputs honest?:* honest (wire fields F, A); premise: the reliable receiver never evicts above its frontier (rho = 1 only)
-- *8. NO-MODE-SWITCH:* none in the law; its scope is ADR-0084 Amendment 1 item C2 (release at rho = 1 only, through the grandfathered bit; G02)
+- *8. NO-MODE-SWITCH:* none in the law; its scope is ADR-0084 Amendment 1 item C2 (release at rho = 1 only, until its option-B rewrite; G02)
 - *9. verdict:* **OK**: bounded by store_gate_released_never_exceeds_the_retained_received_truth and stalled_frontier_store_gate_converges_past_the_sack_cap
 - *10. fix class, priority:* none; **P3**, rank 77
 - *flags:* measured yes, gauge yes
@@ -1376,7 +1376,7 @@ a branch.
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
 - *8. NO-MODE-SWITCH:* MODE-SWITCH(live): hint equality and the reliable bool
-- *9. verdict:* **MODE-SWITCH(live), UNDERIVED**: §3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime. ADR-0084 Amendment 1 item C5: after the flag leaves, the reliable conjunct reads the grandfathered bit rho1_debt (rho >= 1), counted by tests/rho_deny_list.rs and bounded by rho1_debt_bounds::c05_emit_batch_scope_steps_only_at_rho_1 (owed)
+- *9. verdict:* **MODE-SWITCH(live), UNDERIVED**: §3.3 rows 2 and 5; the batching echo prints 'out of scope' at rho < 1 and Realtime. ADR-0084 Amendment 1 item C5: after the flag leaves, the reliable conjunct reads the mid-stack scaffolding bit rho1_debt (rho >= 1) until its option-B rewrite, counted by tests/rho_deny_list.rs and bounded by rho1_debt_bounds::c05_emit_batch_scope_steps_only_at_rho_1 (owed)
 - *10. fix class, priority:* law (a continuous packing/batching quantum) or owner call; **P2**, rank 35
 - *flags:* measured no, gauge yes
 
@@ -2008,7 +2008,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c01_placement_split_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* law: place_symbol at every rho after a Realtime N = 2 battery; **P2**, rank 64
 - *flags:* measured no, gauge no
@@ -2029,7 +2029,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: the step reaches decision 3's pause through its input |released| (identically 0 at rho < 1), Delta O in [0, received_above]; bounded by T7c sack_release_step_is_bounded and rho1_debt_bounds::c02_sack_release_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* derive store_gate_released under give-up advances (ADR-0084 question 8), then release at every rho; **P2**, rank 65
 - *flags:* measured no, gauge no
@@ -2050,7 +2050,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c03_recov_mp_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* battery: run at every rho (the law reads no rho); **P2**, rank 66
 - *flags:* measured no, gauge no
@@ -2071,7 +2071,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c04_recov_sp_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* battery: run at every rho; **P3**, rank 67
 - *flags:* measured no, gauge no
@@ -2092,7 +2092,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c06_request_arms_step_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* law: a request law that skips holes the rho < 1 receiver already passed; **P3**, rank 68
 - *flags:* measured no, gauge no
@@ -2113,7 +2113,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c07_copa_plain_feed_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* law: attribution net of give-up advances (G_rx passes); **P3**, rank 69
 - *flags:* measured no, gauge no
@@ -2155,7 +2155,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c09_reorder_buffer_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* derivation: receiver budget (1 - rho)*frontier, memory bound by the sender's pooled B (ADR-0084 question 5); **P2**, rank 71
 - *flags:* measured no, gauge no
@@ -2176,7 +2176,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c10_delivery_drop_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* law: count a drop in G_rx and admit it within 1 - rho, else hold; **P2**, rank 72
 - *flags:* measured no, gauge no
@@ -2197,7 +2197,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c11_receiver_shed_hold_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* follows G09; SRTT/2 becomes b(delta)*SRTT; **P2**, rank 73
 - *flags:* measured no, gauge no
@@ -2218,7 +2218,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): on main the window_reliable flag; mid-stack the scaffolding bit rho1_debt (rho >= 1); rewritten under option B (rho-step-sites.md), merge needs zero readers
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c12_hole_timer_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs
 - *10. fix class, priority:* follows G09: refresh at every rho, expiry inside the receiver budget; **P2**, rank 74
 - *flags:* measured no, gauge no
