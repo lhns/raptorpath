@@ -201,6 +201,16 @@ fn witness_nack_site_sheds_at_rho_below_1() {
     let r = scenario(false);
     let c = counts(&r);
     println!("rho<1: {c}");
+    // The account in the same run (ADR-0081). Observed (CI 44736010517, forced 5 % budget):
+    // H=60 (all NACK site; shed_visit_nack=60), E=11946, A=141, O=0, O_strand=0 at the end,
+    // inert_sweeps=10 of 70, clamp_excl=2995 of 3055. O and O_strand do NOT fire here (the
+    // sheds clear the outstanding set); inert sweeps and H+E over the budget do.
+    let a = r.acct();
+    println!("rho<1 account:{}", a.0);
+    assert!(a.u("shed_visit_nack") >= a.u("H") && a.u("H") > 0, "the shed check ran {} times for H={}:{}", a.u("shed_visit_nack"), a.u("H"), a.0);
+    assert!(a.u("clamp_excl") > 0, "the clamp site never excluded a gap:{}", a.0);
+    assert!(a.u("inert_sweeps") > 0, "D1c: no inert sweep (defect fixed? flip):{}", a.0);
+    assert!(a.violations().iter().any(|v| v.starts_with("H+E")), "H+E within the budget:{}", a.0);
     assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
     assert!(!r.tseam("gap_clamped").is_empty(), "the evicting NACK site never clamped a gap: {c}");
 }
@@ -240,6 +250,30 @@ fn control_liveness_at_rho_1() {
     let r = scenario(true);
     println!("rho=1: {}", counts(&r));
     assert_live(&r, "rho=1");
+}
+
+/// KNOWN DEFECT `rec-evict-blocker-unresolved`: once fixed, the account of the
+/// completed blackout transfer at rho < 1 is clean. Red on main.
+#[test]
+#[ignore = "rec-evict-blocker-unresolved: at rho < 1 a hole below the coding window is neither resent nor resolved; inert sweeps, and H+E above the budget"]
+fn account_is_clean_after_shed_at_rho_below_1() {
+    let r = scenario(false);
+    let a = r.acct();
+    println!("rho<1 account:{}", a.0);
+    assert!(a.violations().is_empty(), "account: {:?}\n{}", a.violations(), a.0);
+    // No client_ok gate at rho < 1: the perf server needs every chunk and the link abandons some by design.
+}
+
+/// Control (not ignored): the account at rho = 1 is clean after the blackout,
+/// and the clamp site ran.
+#[test]
+fn control_account_is_clean_at_rho_1_after_blackout() {
+    let r = scenario(true);
+    let a = r.acct();
+    println!("rho=1 account:{}", a.0);
+    assert_eq!(r.outcome, "client_ok", "transfer did not complete: {}", counts(&r));
+    assert!(a.violations().is_empty(), "account: {:?}\n{}", a.violations(), a.0);
+    assert!(a.u("clamp_evals") > 0, "the clamp site never ran:{}", a.0);
 }
 
 /// Witness (green): the slot site sheds at rho < 1 once emission is paced.

@@ -8438,8 +8438,8 @@ nodes:
   title: Recovery bookkeeping counters
   track: infra
   kind: instrument
-  state: in-progress
-  outcome: unrated
+  state: done
+  outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
   verdict_quote: ''
@@ -8449,11 +8449,11 @@ nodes:
   qualified_by: []
   lane: host-cargo
   start: '2026-11-20'
-  end: ''
+  end: '2026-11-20'
   folded: []
   overview: false
   plain: 'Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing.'
-  notes: 'Plan S4, ADR-0081 (Proposed). Owner 2026-11-20: decision 4 = option B now (debug and test-seams builds, release bytes unchanged), A on the next guard batch; decision 5 = an evicted seq is legal, counted in its own E term, with H + E bounded by 1 - rho. Shares files with the S06 deletion and the gauges, so it merges in sequence with them. 2026-11-20: implementation running on branch recovery-counters (option B, E term), red expected on the rho < 1 sim scenarios.'
+  notes: 'Plan S4, ADR-0081 (Proposed). Owner 2026-11-20: decision 4 = option B now (debug and test-seams builds, release bytes unchanged), A on the next guard batch; decision 5 = an evicted seq is legal, counted in its own E term, with H + E bounded by 1 - rho. Shares files with the S06 deletion and the gauges, so it merges in sequence with them. Merged 2026-11-20 (recovery-counters fd1b392c; release binary identical, binid 44742087564): net/account.rs, the [ACCT] exit line and stuck and execution witnesses, asserted by every loopback test through assert_no_dnf. Red on the rho < 1 lost tail (O_strand, O with oldest_unchanged, inert sweeps, O_hwm above the cap), green on the rho = 1 controls. E is reported as an upper bound on abandonment and not gated; a receiver [ACCT-RX] frontier line separates acks in flight from stuck seqs. First clean-link rho < 1 loopback test added. Open: rx_frontier 5030 against S_sent 8099 on that test, not explained.'
 - id: infra-test-seat-coverage
   title: Coverage per seat
   track: infra
