@@ -1133,10 +1133,12 @@ shape the engine change. The rest are smaller.
 6. **Floor cadence.** Send on the tail-sweep clock only, or also immediately
    on a raise? **Default: the sweep clock only.** Raises can come in bursts,
    and holes with data above them pass on the receiver's own hold.
-7. **D's RTT.** Use the measured EWMA RTT, with no seed (`D = 0` when cold),
-   or the windowed-min RTprop that the doc comment names? **Default: the
-   measured EWMA**, which is what the code passes. Fix the doc comment, and
-   gauge D against the receiver hold.
+7. **D's RTT (§1.3).** ADR-0064's derivation (`6568822c`) used RTprop, the
+   span law's D. The engine passes the EWMA RTT, which carries the
+   self-inflicted queue into D (positive feedback under overload).
+   **Default: RTprop, as derived.** This is a behaviour change on the
+   evicting seat, gauged as D against the receiver hold, with `D = 0` when
+   cold.
 8. **SACK release at every ρ.** It would make O exclude seqs received above
    the frontier. **Default: no for now.** Over-counting errs on the safe
    side; revisit with T7's `O_hwm` reading.
