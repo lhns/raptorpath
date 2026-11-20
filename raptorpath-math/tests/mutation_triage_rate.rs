@@ -15,7 +15,7 @@ fn approx(a: f64, b: f64, tol: f64, what: &str) {
 
 #[test]
 fn r_star_closed_form_and_domain_guards() {
-    let (e, s2, w) = (0.1, 2.6, 50.0);
+    let (e, s2, w): (f64, f64, f64) = (0.1, 2.6, 50.0);
     // paper 4.2: r* = e/(1-e) + z sqrt(e s2 / (W (1-e))), z = 2.33
     let want = e / (1.0 - e) + 2.33 * (e * s2 / (w * (1.0 - e))).sqrt();
     approx(compute_r_star(e, s2, w), want, 1e-12, "compute_r_star anchor");
@@ -77,7 +77,7 @@ fn burst_variance_factor_anchors_and_guards() {
 
 #[test]
 fn p_fec_normal_closed_form_and_domain_guards() {
-    let (r, e, w, s2) = (0.3, 0.1, 50.0, 2.6);
+    let (r, e, w, s2): (f64, f64, f64, f64) = (0.3, 0.1, 50.0, 2.6);
     let z = w.sqrt() * (r * (1.0 - e) - e) / (e * (1.0 - e) * (r + s2)).sqrt();
     approx(p_fec_normal(r, e, w, s2), 1.0 - normal_survival(z), 1e-15, "P_fec anchor");
     // each domain violation alone returns 0
