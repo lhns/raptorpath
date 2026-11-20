@@ -221,7 +221,7 @@ FAST_PATCHES = [
     ("plan51.py", "REPS_CAP51 = None  ", "REPS_CAP51 = 2  ", 1),
     ("loopdiag_p67.sh", "G_ROWS67=96     #", "G_ROWS67=16     #", 1),
     ("plan67.py", "N_BLOCKS = 6  ", "N_BLOCKS = 2  ", 1),
-    ("plan67.py", "N_TWIN_REPS = 3  ", "N_TWIN_REPS = 1  ", 1),
+    ("plan67.py", "N_TWIN_REPS = 3  ", "N_TWIN_REPS = 2  ", 1),
     ("plan67.py", "N_POOL_REPS = 3  ", "N_POOL_REPS = 1  ", 1),
     ("plan67.py", "MIN_LIVE_A = 10  ", "MIN_LIVE_A = 2  ", 1),
     ("plan67.py", "MIN_LIVE_B0 = 4  ", "MIN_LIVE_B0 = 1  ", 1),
@@ -2783,6 +2783,8 @@ def txt67(*parts):
 def binshas67(run_dir):
     """{seat: sha} from BINSHA.txt (`<sha>  <path>  seat=<S> commit=.. features=..`)."""
     d = {}
+    if not os.path.exists(os.path.join(run_dir, "BINSHA.txt")):
+        return d
     for ln in open(os.path.join(run_dir, "BINSHA.txt"), errors="replace"):
         m = re.match(r"([0-9a-f]{64})\s+\S+\s+seat=(\S+)", ln)
         if m:
@@ -2992,7 +2994,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         EXECUTED.add((plan, path))
         return
     if path == "s2-taper-nonzero":
-        check(f"{tag}: an S2 row of stage A printing taper > 0 is S06-FAIL, never replaced (no REPLACE67 for it), and AS cannot pass", any(r["status"] == "S06-FAIL" and r["arm"] == "S2" for r in a_rows) and "AS PASS" not in sc["a"]
+        check(f"{tag}: an S2 row of stage A printing taper > 0 is S06-FAIL, never replaced (no REPLACE67 for it), and the stage score counts it (S06-FAIL-ROWS 1: the merge condition of 4.5 reads it, AS is its own clause)", any(r["status"] == "S06-FAIL" and r["arm"] == "S2" for r in a_rows) and "S06-FAIL-ROWS 1" in sc["a"]
               and not re.search(r"REPLACE67 \S+ S2 .*s06", txt67(stage_dirs["a"], "ld.log")), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"], tail(sc["a"], 5)))
     elif path == "s2-no-pslot":
         check(f"{tag}: an S2 row of stage A without pslot is VOID-WITNESS and re-run once (REPLACE67 on record, a second row of that slot); the stage still scores", any(r["status"] == "VOID-WITNESS" and r["arm"] == "S2" for r in a_rows) and "REPLACE67 c2-100 S2" in txt67(stage_dirs["a"], "ld.log"), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"],))

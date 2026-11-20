@@ -157,7 +157,7 @@ era "LD-ALL tools tests ok"
 # ── 7. one stage ──
 # returns 0 = the stage ran to the end (its verdicts are in score.txt), 1 = it did not complete, 2 = the rehearsal's smoke passed, 6 = the block-1 rule stopped it (FAILED-<stage>; the next stage still runs)
 stage67() { # name
-  local name="$1" bplan dir smk scr chk bto brc ok=0 cand base w seats s v sbrc smrc nrows T1
+  local name="$1" bplan dir smk scr chk bto brc ok=0 cand="" base="" w="" seats="" s v sbrc smrc nrows T1
   bplan="$(python3 -c "import plan67; print(plan67.STAGE_PLAN.get('$name', ''))")"
   dir="$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['$name'])")"
   mkdir -p "$dir"
@@ -251,7 +251,7 @@ if [ "$REHEARSE" = 1 ]; then
   {
     echo "AMENDMENT2 plan 67 rehearsal $(date -u +%FT%TZ)"
     for _s in "${P67NEED[@]}"; do echo "BINSHA $_s ${P67SHA[$_s]} commit=${P67PIN[$_s]}"; done
-    if grep -aq '^DUMP-TWINS-NEEDED' "$RUN/sa/smoke-check.txt" 2>/dev/null; then echo "DUMP67=1 (the [SUCC] line lacks the close times without RWM_SUCC_DUMP: run the dump twins, LD_DUMP67=1)"; else echo "DUMP67=0 (the [SUCC] line carries both close times: no dump twins)"; fi
+    if grep -aq 'DUMP-TWINS-NEEDED' "$RUN/sa/smoke-check.txt" 2>/dev/null; then echo "DUMP67=1 (the [SUCC] line lacks the close times without RWM_SUCC_DUMP: run the dump twins, LD_DUMP67=1)"; else echo "DUMP67=0 (the [SUCC] line carries both close times: no dump twins)"; fi
     echo "SUITE-REUSE HIT for: $(for _s in S1 S2; do [[ " ${P67NEED[*]} " == *" $_s "* ]] && echo -n "$_s "; done)"
     echo "TOOLS-MANIFEST $(sha256sum "$SD/TOOLS-MANIFEST.sha256" 2>/dev/null | cut -d' ' -f1)"
   } > "$RUN/AMENDMENT2.txt"
