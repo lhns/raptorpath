@@ -19,3 +19,6 @@ pub mod clock;
 pub mod sim;
 #[cfg(feature = "test-seams")]
 pub mod test_seams;
+
+#[cfg(test)]
+mod config_round_trip;
