@@ -860,7 +860,10 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             st.retransmit_buffer.remove(&seq);
                             st.nack_retx_at.remove(&seq); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.on_shed(false); }
                             st.shed_seqs.insert(seq);
-                            st.shed_total += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_shed(seq, age, st.shed_deadline_us_live);
+                            st.shed_total += 1;
+                            st.shed_nack += 1;
+                            #[cfg(feature = "test-seams")]
+                            crate::test_seams::on_shed(seq, age, st.shed_deadline_us_live);
                             continue;
                         }
                         if st.shed_deadline_us_live > 0 && age > st.shed_deadline_us_live {

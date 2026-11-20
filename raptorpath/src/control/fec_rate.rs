@@ -169,6 +169,32 @@ impl RateSnapshot {
         let beta = self.beta;
         (1.0 - beta) * r_anchor + beta * r_bulk
     }
+
+    /// Which term of each side of the mix won and what bound it
+    /// (`[SPAN] rlaw=a:<core|burst|mass>/<sat|cap|free>,l:<..>/<..>,b=<beta>`):
+    /// `a` the anchor term, `l` the late-is-fine term, both always traced, and
+    /// the weight beta between them. No comparison on beta: the gauge shows
+    /// both terms and the reader weighs them. Diagnostic read, never feeds the rate.
+    pub fn rlaw(&self) -> String {
+        let mut inputs = self.inputs;
+        inputs.bulk_late_is_fine = false;
+        let a = raptorpath_math::controller_rate_trace(&inputs);
+        inputs.bulk_late_is_fine = true;
+        let l = raptorpath_math::controller_rate_trace(&inputs);
+        format!("a:{}/{},l:{}/{},b={:.3}", a.winner, a.bound, l.winner, l.bound, self.beta)
+    }
+
+    /// The r_sat `controller_rate` feeds `soft_saturate` for these inputs
+    /// (diagnostic read, `[SPAN] rsat=`). 1.0 = no cap: the cap is off, or
+    /// `r_saturation`'s degenerate-input value.
+    pub fn r_sat(&self) -> f64 {
+        let i = &self.inputs;
+        if i.saturation_cap && i.t_sym > 0.0 && i.srtt > 0.0 {
+            raptorpath_math::r_saturation(i.p_upper, i.sigma2, i.window, i.srtt, i.t_sym)
+        } else {
+            1.0
+        }
+    }
 }
 
 /// Upper bound (µs) on the repair-rate cadence: the sender's derived

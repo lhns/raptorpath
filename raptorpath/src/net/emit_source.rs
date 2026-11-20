@@ -165,6 +165,9 @@ pub(crate) struct SenderState {
     /// Past-deadline candidates the ρ budget refused (the serialize arm of
     /// the law — visible in DIAG so the budget's bite is measurable).
     pub shed_denied: u64,
+    /// `shed_total` split by decision site: the P_lost slot path / the NACK path.
+    pub shed_slot: u64,
+    pub shed_nack: u64,
     /// The live derived 1−ρ budget fraction and δ deadline (µs), refreshed
     /// per source symbol alongside the span parameters.
     pub shed_budget_frac: f64,
@@ -255,6 +258,8 @@ impl SenderState {
             shed_seqs: BTreeSet::new(),
             shed_total: 0, #[cfg(any(debug_assertions, feature = "test-seams"))] acct: Default::default(),
             shed_denied: 0,
+            shed_slot: 0,
+            shed_nack: 0,
             shed_budget_frac: 0.0,
             shed_deadline_us_live: 0,
             gl: std::collections::HashMap::new(),
@@ -702,8 +707,9 @@ pub(crate) fn emit_source(
                 } else {
                     String::new()
                 };
+                let (rsat, rlaw) = diag_r_sat(ctx.fec_controller, ctx.scheduler, st.encoder.window_size());
                 crate::readout!(
-                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{}",
+                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{} rsat={:.4} rlaw={}",
                     dnow.saturating_sub(pol.span_diag_start_us) as f64 / 1e6,
                     ack,
                     ws,
@@ -719,6 +725,8 @@ pub(crate) fn emit_source(
                     ah,
                     transit,
                     dg,
+                    rsat,
+                    rlaw,
                 );
             }
         }
@@ -782,7 +790,10 @@ pub(crate) fn emit_source(
                             st.retransmit_buffer.remove(&seq);
                             st.nack_retx_at.remove(&seq); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.on_shed(true); }
                             st.shed_seqs.insert(seq);
-                            st.shed_total += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_shed_slot(seq, age_us_c, st.shed_deadline_us_live);
+                            st.shed_total += 1;
+                            st.shed_slot += 1;
+                            #[cfg(feature = "test-seams")]
+                            crate::test_seams::on_shed_slot(seq, age_us_c, st.shed_deadline_us_live);
                         } else {
                             if pol.shed_on
                                 && st.shed_deadline_us_live > 0
@@ -900,6 +911,23 @@ pub(crate) fn emit_source(
         }
     }
 
+}
+
+/// The live r_sat (`[SPAN] rsat=`) and rate-law term gauge (`rlaw=`) of the
+/// worst-ε path, read from the snapshot the rate mix evaluates. 1.0 / "-"
+/// when there is no path.
+fn diag_r_sat(
+    fec_controller: &FecRateController,
+    scheduler: &crate::scheduler::Scheduler,
+    window: usize,
+) -> (f64, String) {
+    match worst_eps_path(scheduler) {
+        Some((_, est)) => {
+            let snap = fec_controller.rate_snapshot(est, window);
+            (snap.r_sat(), snap.rlaw())
+        }
+        None => (1.0, "-".to_string()),
+    }
 }
 
 /// The worst-ε channel path and its estimator — the path every window-path

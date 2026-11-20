@@ -733,9 +733,27 @@ pub struct RateInputs {
 ///   rate      = clamp( soft_saturate(max(random, burst), r_sat), 0, max_overhead )
 ///               (soft_saturate = kink-free approach to r_sat)
 pub fn controller_rate(inp: &RateInputs) -> f64 {
+    controller_rate_trace(inp).rate
+}
+
+/// `controller_rate` plus which term won (diagnostic read, `[SPAN] rlaw=`).
+#[derive(Debug, Clone, Copy)]
+pub struct RateTrace {
+    pub rate: f64,
+    /// The largest of the three terms max(r_core, r_burst, r_mass): "core",
+    /// "burst" or "mass" (ties go in that order; "core" when p is ~0).
+    pub winner: &'static str,
+    /// What bound the result: "cap" = the max_overhead clamp, "sat" = the
+    /// request reached r_sat (soft_saturate holds it), "free" = neither.
+    pub bound: &'static str,
+}
+
+/// The body of `controller_rate`, unchanged arithmetic; the trace only names
+/// the winning term and the binding bound.
+pub fn controller_rate_trace(inp: &RateInputs) -> RateTrace {
     let p = inp.p_upper;
     if p < 1e-10 {
-        return 0.0;
+        return RateTrace { rate: 0.0, winner: "core", bound: "free" };
     }
 
     let delta_eff = if inp.bulk_late_is_fine {
@@ -798,6 +816,13 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
     };
 
     let mut rate = random_rate.max(burst_rate).max(tail_rate);
+    let winner = if random_rate >= burst_rate && random_rate >= tail_rate {
+        "core"
+    } else if burst_rate >= tail_rate {
+        "burst"
+    } else {
+        "mass"
+    };
 
     // Inner-feedback repair floor (paper §4.4): for payloads whose
     // delivery latency feeds back into their own throughput (TCP inside the
@@ -821,11 +846,21 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
     // hitting a wall, modeling the p99 curve's smooth interior minimum.
     // `soft_saturate` <= min(rate, r_sat) always, so the cap never adds
     // FEC, and -> the hard min as SAT_SOFTNESS -> 0.
+    let mut sat_binds = false;
     if inp.saturation_cap && inp.t_sym > 0.0 && inp.srtt > 0.0 {
-        rate = soft_saturate(rate, r_saturation(p, inp.sigma2, inp.window, inp.srtt, inp.t_sym));
+        let r_sat = r_saturation(p, inp.sigma2, inp.window, inp.srtt, inp.t_sym);
+        sat_binds = rate >= r_sat;
+        rate = soft_saturate(rate, r_sat);
     }
 
-    rate.clamp(0.0, inp.max_overhead)
+    let bound = if rate > inp.max_overhead {
+        "cap"
+    } else if sat_binds {
+        "sat"
+    } else {
+        "free"
+    };
+    RateTrace { rate: rate.clamp(0.0, inp.max_overhead), winner, bound }
 }
 
 /// Continuous z for the r* margin: normal_quantile(1 - delta/epsilon).
@@ -1625,6 +1660,51 @@ mod tests {
         // yet the emitted rate stays just under r_sat.
         let tight = controller_rate(&mk(1e-9));
         assert!(tight > 0.9 * r_sat && tight < r_sat);
+    }
+
+    #[test]
+    fn test_rate_trace_names_the_winning_term_and_bound() {
+        let base = RateInputs { bulk_late_is_fine: false, saturation_cap: false, ..tunnel_inputs(0.026, 56.0) };
+        let t = controller_rate_trace(&base);
+        assert_eq!(t.rate, controller_rate(&base), "the trace is controller_rate");
+        assert_eq!((t.winner, t.bound), ("core", "free"));
+        // A short RTT in symbols makes B/T the largest term.
+        let b = RateInputs { t_symbols: 2.0, max_overhead: 5.0, ..base };
+        assert_eq!(controller_rate_trace(&b).winner, "burst");
+        // The overhead clamp binds on a request above it.
+        let c = RateInputs { max_overhead: 0.01, ..base };
+        assert_eq!(controller_rate_trace(&c).bound, "cap");
+        // r_sat holds a request that reaches it.
+        let r_sat = r_saturation(0.026, 2.9, 56.0, 0.013, 1200.0 * 8.0 / 100e6);
+        let hot = RateInputs { saturation_cap: true, t_symbols: 2.0, max_overhead: 5.0, ..base };
+        let h = controller_rate_trace(&hot);
+        assert_eq!(h.bound, "sat");
+        assert!(h.rate < r_sat);
+    }
+
+    #[test]
+    fn test_controller_rate_is_the_trace_rate_bit_for_bit() {
+        let mut n = 0;
+        let mut bounds = std::collections::BTreeSet::new();
+        for &late in &[false, true] {
+            for &cap in &[false, true] {
+                for &p in &[1e-12, 0.001, 0.026, 0.09, 0.3] {
+                    for &ts in &[0.0, 2.0, 40.0] {
+                        for &mo in &[0.01, 0.5, 5.0] {
+                            for &chi in &[0.0, 0.5, 1.0] {
+                                let inp = RateInputs { bulk_late_is_fine: late, saturation_cap: cap, t_symbols: ts, max_overhead: mo, completion_exposure: chi, ..tunnel_inputs(p, 56.0) };
+                                let t = controller_rate_trace(&inp);
+                                assert_eq!(controller_rate(&inp).to_bits(), t.rate.to_bits(), "{inp:?}");
+                                bounds.insert(t.bound);
+                                n += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(n, 2 * 2 * 5 * 3 * 3 * 3);
+        assert_eq!(bounds.len(), 3, "the grid covers cap, sat and free: {bounds:?}");
     }
 
     fn bulk_inputs(p: f64, chi: f64) -> RateInputs {
