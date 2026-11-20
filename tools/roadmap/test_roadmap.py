@@ -305,6 +305,12 @@ class ValidateTests(unittest.TestCase):
     def test_overview_size_warning(self):
         self.assertTrue(any("overview has 3" in w for w in check.validate_nodes(GOOD)[1]))
 
+    def test_overview_size_range_is_50_to_60(self):
+        def warned(k):
+            nodes = [node(f"rec-n{i}", plain="p", overview=i < k) for i in range(70)]
+            return any(w.startswith("overview has") for w in check.validate_nodes(nodes)[1])
+        self.assertEqual([warned(k) for k in (49, 50, 60, 61)], [True, False, False, True])
+
 
 class BuildTests(unittest.TestCase):
     def test_label_escaping(self):
@@ -506,10 +512,72 @@ class BuildTests(unittest.TestCase):
     def region(out, name):
         return out.split(f"<!-- BEGIN GENERATED: {name} -->")[1].split("<!-- END")[0]
 
+    def test_done_by_month_groups_every_done_node(self):
+        out = self.region(built([
+            node("rec-a", state="done", overview=False, start="2026-07-02", end="2026-07-20"),
+            node("rec-b", state="done", overview=False, start="2026-08-01"),
+            node("rec-c", state="done", overview=False),
+            node("rec-d", state="next"),
+        ]), "done-by-month")
+        self.assertLess(out.index("Aug 2026"), out.index("Jul 2026"))
+        self.assertLess(out.index("Jul 2026"), out.index("Undated"))
+        for i in ("rec-a", "rec-b", "rec-c"):
+            self.assertIn(f"`{i}`", out)
+        self.assertNotIn("rec-d", out)
+
+    def test_done_by_month_prints_plain_else_headline(self):
+        out = self.region(built([
+            node("rec-a", state="done", overview=False, start="2026-07-02", plain="Said | plainly.", headline="9 ms"),
+            node("rec-b", state="done", overview=False, start="2026-07-03", headline="3.49s -> 1.57s median"),
+            node("rec-c", state="done", overview=False, start="2026-07-04"),
+        ]), "done-by-month")
+        self.assertIn("- `rec-a`: T rec-a (✔ done · unrated). Said \\| plainly.\n", out)
+        self.assertIn("- `rec-b`: T rec-b (✔ done · unrated). 3.49s -> 1.57s median\n", out)
+        self.assertIn("- `rec-c`: T rec-c (✔ done · unrated)\n", out)
+
+    def test_overview_has_one_band_per_past_month(self):
+        nodes = [node(f"rec-{k}", state="done", outcome="successful", evidence=["e"], start=f"2026-0{m}-01")
+                 for k, m in (("a", 3), ("b", 4), ("c", 7), ("d", 7))]
+        labels = [lab for lab, _ in build.overview_bands(build.normalize(nodes), [n["id"] for n in nodes])]
+        self.assertEqual(labels, ["Mar 2026", "Apr 2026", "Jul 2026"])
+
+    def test_done_by_month_includes_abandoned_with_its_tag(self):
+        out = self.region(built([
+            node("rec-a", state="done", overview=False, start="2026-07-02"),
+            node("rec-b", state="abandoned", outcome="dead-end", overview=False, start="2026-07-03"),
+            node("rec-c", state="abandoned", outcome="superseded", replaced_by=["rec-a"], overview=False, start="2026-07-04"),
+        ]), "done-by-month")
+        self.assertIn("<b>Jul 2026</b>: 1 done, 2 abandoned", out)
+        self.assertIn("- `rec-b`: T rec-b (✖ dead end)", out)
+        self.assertIn("- `rec-c`: T rec-c (↷ superseded)", out)
+
+    def test_done_by_month_lists_labelled_folded_items_only(self):
+        folded = ["Reorder buffer (2026-03-17, commit ed1854de)",
+                  "Two shas (2026-07-04, commit 02edf367, commit beda623b)",
+                  "Owner rule (2026-07-02, session record)",
+                  "commit 1234abcd", "branch P7 fix", "paper §11.1 open question 7",
+                  "not a label (2026-07-02, commit xyz)"]
+        out = self.region(built([node("rec-a", state="done", overview=False, start="2026-07-02", folded=folded)]),
+                          "done-by-month")
+        lines = out.splitlines()
+        i = lines.index("- `rec-a`: T rec-a (✔ done · unrated)")
+        self.assertEqual(lines[i + 1:i + 4], ["  - Reorder buffer (2026-03-17)", "  - Two shas (2026-07-04)",
+                                              "  - Owner rule (2026-07-02)"])
+        for bare in ("1234abcd", "P7 fix", "open question 7", "not a label"):
+            self.assertNotIn(bare, out)
+
+    def test_track_page_lists_every_folded_item(self):
+        tb = self.region(tfile([node("rec-a", folded=["commit 1234abcd", "Fix | it (2026-07-02, commit 1234abcd)"]),
+                                node("rec-b")], "rec"), "table-rec")
+        part = tb.split("### Folded items per node")[1]
+        self.assertIn("- `rec-a`: T rec-a\n  - commit 1234abcd\n  - Fix \\| it (2026-07-02, commit 1234abcd)", part)
+        self.assertNotIn("rec-b", part)
+        self.assertNotIn("### Folded items", self.region(tfile([node("rec-b")], "rec"), "table-rec"))
+
     def test_region_order(self):
         order = build.REGION_ORDER
-        self.assertEqual(order[:9], ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting",
-                                     "waiting-on-owner", "vm-queue", "timeline"])
+        self.assertEqual(order[:10], ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting",
+                                      "waiting-on-owner", "vm-queue", "timeline", "done-by-month"])
         self.assertEqual(order[-1], "tracks")
         out = built([node("rec-a")])
         pos = [out.index(f"<!-- BEGIN GENERATED: {n} -->") for n in order]
@@ -616,6 +684,21 @@ class HiddenNodeTests(unittest.TestCase):
         self.assertIn("`rec-h`", files["roadmap/tracks/rec.md"])
         self.assertIn("`rec-u`", BuildTests.region(out, "waiting-on-owner"))
         self.assertIn("`rec-h`", BuildTests.region(out, "running"))
+
+    def test_done_owner_call_drawn_in_overview_only(self):
+        nodes = [node("rec-a", state="done", outcome="successful", evidence=["e"], start="2026-01-01"),
+                 node("rec-d", kind="user-decision", state="done", outcome="n/a", evidence=["e"], lane="user",
+                      depends_on=["rec-a"], start="2026-02-01"),
+                 node("rec-u", kind="user-decision", lane="user", start="2026-02-01"),
+                 node("rec-b", depends_on=["rec-d"], start="2026-03-01", state="in-progress")]
+        ov = BuildTests.region(built(nodes), "overview")
+        self.assertIn('rec_d{{"rec · ✔ T rec-d"}}', ov)  # purple hexagon, as in the legend
+        self.assertIn("rec_a --> rec_d", ov)
+        self.assertIn("rec_d --> rec_b", ov)
+        self.assertNotIn("rec_u", ov)  # an open owner call stays out of the diagram
+        tr = BuildTests.region(tfile(nodes, "rec"), "track-rec")
+        self.assertNotIn("rec_d", tr)
+        self.assertIn("rec_a --> rec_b", tr)  # rewired around it in the tree
 
     def test_bypass_edges_connect_prerequisites_to_dependants(self):
         tr = BuildTests.region(tfile(self.NODES, "rec"), "track-rec")

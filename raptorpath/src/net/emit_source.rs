@@ -161,7 +161,7 @@ pub(crate) struct SenderState {
     /// Seqs shed by the δ law (never served again; pruned at the cumulative
     /// frontier — the split_off twin).
     pub shed_seqs: BTreeSet<u64>,
-    pub shed_total: u64,
+    pub shed_total: u64, #[cfg(any(debug_assertions, feature = "test-seams"))] pub acct: super::account::Account,
     /// Past-deadline candidates the ρ budget refused (the serialize arm of
     /// the law — visible in DIAG so the budget's bite is measurable).
     pub shed_denied: u64,
@@ -253,7 +253,7 @@ impl SenderState {
             taper_cache_at_us: 0,
             rate_cache: RepairRateCache::default(),
             shed_seqs: BTreeSet::new(),
-            shed_total: 0,
+            shed_total: 0, #[cfg(any(debug_assertions, feature = "test-seams"))] acct: Default::default(),
             shed_denied: 0,
             shed_budget_frac: 0.0,
             shed_deadline_us_live: 0,
@@ -502,7 +502,7 @@ pub(crate) fn emit_source(
                 .map(|e| e.loss_rate())
                 .unwrap_or(0.0)
         };
-        st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path));
+        st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path)); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.on_sent(&st.retransmit_buffer); }
     }
 
     // Redundant send for Realtime: duplicate source on second-best path
@@ -769,7 +769,7 @@ pub(crate) fn emit_source(
                         // behind a missed deadline. Shed it (within the ρ
                         // budget) and let this correction slot do fresh
                         // span-repair work instead.
-                        let age_us_c = now.saturating_sub(send_time_us);
+                        let age_us_c = now.saturating_sub(send_time_us); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.shed_visit_slot += 1; }
                         if pol.shed_on
                             && shed_allowed(
                                 age_us_c,
@@ -780,7 +780,7 @@ pub(crate) fn emit_source(
                             )
                         {
                             st.retransmit_buffer.remove(&seq);
-                            st.nack_retx_at.remove(&seq);
+                            st.nack_retx_at.remove(&seq); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.on_shed(true); }
                             st.shed_seqs.insert(seq);
                             st.shed_total += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_shed_slot(seq, age_us_c, st.shed_deadline_us_live);
                         } else {
@@ -945,3 +945,15 @@ pub(crate) fn cadenced_repair_rate(
 
 // Appended last so no existing line moves (release panic locations, sim-engine).
 use crate::clock::ClockElapsed as _;
+
+/// The account line at sender exit, on every way the sender can end (clean
+/// shutdown, task abort): independent of `RWM_DIAG`, so a test can assert it.
+/// Printed even when nothing was sent (generation coding keeps no buffer).
+#[cfg(any(debug_assertions, feature = "test-seams"))]
+impl Drop for SenderState {
+    fn drop(&mut self) {
+        let (ws, _) = self.encoder.window_span();
+        self.acct.note_window(ws, self.shed_budget_frac);
+        crate::readout!("{}", self.acct.line(&self.retransmit_buffer, ws, true));
+    }
+}

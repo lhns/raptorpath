@@ -1,6 +1,6 @@
 # ADR-0078: One framing for every source symbol, sized by its sender
 
-## Status: Accepted (2026-11-18, the owner's go after status §64's GATE-64 PASS; merged to main as `f36d9172`). Format decided 2026-11-17 (option A, one framing); fail closed and the sender's announced size, owner decisions 11–12. Design: `docs/derivations/f2-framing-design.md`.
+## Status: Accepted (2026-11-18, the owner's go after status §64's GATE-64 PASS; merged to main as `f36d9172`). Format decided 2026-11-17 (option A, one framing); fail closed and the sender's announced size, owner decisions 11–12. Design: `docs/derivations/f2-framing-design.md`. Wire v11 is taken by ADR-0084 (2026-11-20); decision 3's receiver-timestamp field moves to the next version.
 
 ## Context
 

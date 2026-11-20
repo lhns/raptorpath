@@ -41,13 +41,13 @@ OUTCOMES = ["very-successful", "successful", "mixed", "bad", "dead-end", "supers
 LANES = ["vm", "host-cargo", "no-cargo", "user", "none"]
 
 WRAP = 22           # label line width in characters
-OVERVIEW_WIDTH = 2  # max nodes per row in the overview
+OVERVIEW_WIDTH = 3  # max nodes per row in the overview
 TRACK_WIDTH = 3     # max nodes per row in a per-track tree
-BAND_MIN = 4        # past months are merged into one overview band until it holds this many nodes
+BAND_MIN = 1        # past months are merged into one overview band until it holds this many nodes (1: one band per month)
 GANTT_TITLE = 40    # gantt task names are truncated to this many characters
 
 REGION_ORDER = ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting", "waiting-on-owner",
-                "vm-queue", "timeline", "tracks"]
+                "vm-queue", "timeline", "done-by-month", "tracks"]
 MD_KEY = "roadmap.md"
 TIMELINE_KEY = "roadmap/timeline.md"  # the Gantt page, generated in full
 GENERATED_ON = "Generated from nodes.yaml on {}."  # check.py parses the date back out of this sentence
@@ -189,21 +189,28 @@ def precedence(nodes):
     return pre
 
 
-def hidden(n):
-    """Owner decisions (and nodes with `diagram: false`) are not drawn; tables and lists still carry them."""
-    return n["kind"] == "user-decision" or not n["diagram"]
+def hidden(n, owner_done=False):
+    """Owner decisions (and nodes with `diagram: false`) are not drawn; tables and lists still carry them.
+    With owner_done (the overview only) a done owner decision is drawn."""
+    if not n["diagram"]:
+        return True
+    return n["kind"] == "user-decision" and not (owner_done and n["state"] == "done")
 
 
-def diagram_view(nodes):
+def diagram_view(nodes, owner_done=False):
     """The nodes the diagrams draw: hidden ones removed, a dependency that ran through one rewired
-    from its prerequisites to its dependants. replaced_by / qualified_by into a hidden node are dropped."""
+    from its prerequisites to its dependants. replaced_by / qualified_by into a hidden node are dropped.
+    owner_done: also draw done owner decisions (the overview does; the track trees do not)."""
     by = {n["id"]: n for n in nodes}
     pre = precedence(nodes)
+
+    def hid(n):
+        return hidden(n, owner_done)
 
     def visible_pre(i, seen=()):
         out = []
         for p in pre[i]:
-            if hidden(by[p]):
+            if hid(by[p]):
                 out += [q for q in visible_pre(p, seen + (i,)) if p not in seen]
             else:
                 out.append(p)
@@ -211,12 +218,12 @@ def diagram_view(nodes):
 
     view = []
     for n in nodes:
-        if hidden(n):
+        if hid(n):
             continue
         m = dict(n)
-        m["depends_on"] = list(dict.fromkeys(d for x in n["depends_on"] for d in ([x] if not hidden(by[x]) else visible_pre(x))))
-        m["replaced_by"] = [r for r in n["replaced_by"] if not hidden(by[r])]
-        m["qualified_by"] = [q for q in n["qualified_by"] if not hidden(by[q])]
+        m["depends_on"] = list(dict.fromkeys(d for x in n["depends_on"] for d in ([x] if not hid(by[x]) else visible_pre(x))))
+        m["replaced_by"] = [r for r in n["replaced_by"] if not hid(by[r])]
+        m["qualified_by"] = [q for q in n["qualified_by"] if not hid(by[q])]
         view.append(m)
     return view
 
@@ -385,7 +392,7 @@ def overview_bands(sel, order):
 
 
 def r_overview(nodes, today):
-    nodes = diagram_view(nodes)
+    nodes = diagram_view(nodes, owner_done=True)
     sel = [n for n in nodes if n["overview"]]
     if not sel:
         return "_No nodes have `overview: true` yet._"
@@ -484,6 +491,13 @@ def r_table(code):
             rows = ["| id | title | notes | evidence |", "|---|---|---|---|"]
             rows += [f"| `{n['id']}` | {cell(n['title'])} | {cell(n['notes'])} | {cell('; '.join(n['evidence']))} |" for n in noted]
             parts += ["### Details per node", "\n".join(rows)]
+        withf = [n for n in sel if n["folded"]]
+        if withf:
+            lines = []
+            for n in withf:
+                lines.append(f"- `{n['id']}`: {cell(n['title'])}")
+                lines += [f"  - {cell(f)}" for f in n["folded"]]
+            parts += ["### Folded items per node", "\n".join(lines)]
         return "\n\n".join(parts)
     return render
 
@@ -559,7 +573,8 @@ def r_legend(nodes, today):
     return "\n".join([
         fence(out),
         "",
-        "Owner calls (a purple hexagon) are not drawn in the trees; they are listed under *Waiting on the owner*. "
+        "Owner calls are a purple hexagon. A decided owner call is drawn in the overview only, never in the track "
+        "trees; an open one is listed under *Waiting on the owner*. "
         "The prefix on an overview box is its track. A prerequisite implied by a longer chain is not drawn; "
         "the node tables keep every edge.",
     ])
@@ -618,9 +633,47 @@ def r_vmqueue(nodes, today):
         for i, n in enumerate(q, 1)) or "_The VM queue is empty._"
 
 
+# A folded item written "<title> (<date>, commit <sha>[, commit <sha>...])" or "<title> (<date>, session record)"
+# is a labelled record; the older bare refs ("commit <sha>", "branch <name>", ...) are not.
+LABELLED_RE = re.compile(r"^(?P<title>.+) \((?P<date>\d{4}-\d{2}-\d{2}), "
+                         r"(?:commit [0-9a-f]{7,40}(?:, commit [0-9a-f]{7,40})*|session record)\)$")
+
+
+def labelled(item):
+    """(title, date) of a labelled folded item, else None."""
+    m = LABELLED_RE.match(item)
+    return (m.group("title"), m.group("date")) if m else None
+
+
+def r_done_by_month(nodes, today):
+    """Every finished node (done or abandoned), grouped by the month it ended (else started), newest month
+    first, undated last; each line carries the node's plain sentence (else its headline), and the node's
+    labelled folded records follow as sub-bullets."""
+    sel = [n for n in nodes if n["state"] in ("done", "abandoned")]
+    if not sel:
+        return "_Nothing done yet._"
+    groups = {}
+    for n in sel:
+        groups.setdefault((n["end"] or n["start"])[:7], []).append(n)
+    parts = []
+    for ym in sorted((k for k in groups if k), reverse=True) + ([""] if "" in groups else []):
+        group = sorted(groups[ym], key=lambda n: (n["end"] or n["start"], n["id"]))
+        head = month_name(ym) if ym else "Undated"
+        done = sum(1 for n in group if n["state"] == "done")
+        count = f"{done} done" + (f", {len(group) - done} abandoned" if len(group) > done else "")
+        lines = []
+        for n in group:
+            say = n["plain"] or n["headline"]
+            lines.append(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})" + (f". {cell(say)}" if say else ""))
+            lines += [f"  - {cell(t)} ({d})" for t, d in filter(None, map(labelled, n["folded"]))]
+        body = "\n".join(lines)
+        parts.append(f"<details><summary><b>{head}</b>: {count}</summary>\n\n{body}\n\n</details>")
+    return "\n\n".join(parts)
+
+
 RENDERERS = {"legend": r_legend, "overview": r_overview, "timeline": r_timeline_link, "tracks": r_tracks,
              "plain-words": r_plain, "ready-now": r_ready, "running": r_running, "built-waiting": r_built_waiting,
-             "waiting-on-owner": r_waiting, "vm-queue": r_vmqueue}
+             "waiting-on-owner": r_waiting, "vm-queue": r_vmqueue, "done-by-month": r_done_by_month}
 TRACK_RENDERERS = {f"track-{c}": r_track(c) for c in TRACKS} | {f"table-{c}": r_table(c) for c in TRACKS}
 
 

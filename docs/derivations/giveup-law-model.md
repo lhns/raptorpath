@@ -1,5 +1,7 @@
 # The model's give-up law: option (ii) (owner decision 2026-11-14, item 3)
 
+**Superseded in part by ADR-0084 (2026-11-20):** the budget becomes 1 − ρ counting receiver abandonment, and `min(1 − ρ, R)` with R as a predicted-use gauge is retired. The model moves in its own `GOLDEN_CAPTURE=1` commit.
+
 Derivation only; implementation follows in `raptorpath-wasm` and the page.
 
 **Done with Fable.** Round 1 (on the draft) changed six things:

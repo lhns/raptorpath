@@ -1,12 +1,33 @@
-# Release-binary identity (test-detection plan S8, ADR-0082): build
-# `raptorpath` in release on the base and on every commit since it that
-# touches the engine, on ubuntu-24.04, and compare the binary and its
-# .text/.rodata sections. The base is built twice as a control: if base and
-# base2 differ the job is broken, not the candidate. Builds run from the
-# crate dir, as tools/l1/binid_run.sh does (from the workspace root cargo
-# unifies features across members and the binary differs, status §58).
+# Release-binary identity (test-detection plan S8, ADR-0082), and the gate on code that must stay
+# out of the release binary. It runs on every push and PR whose diff touches clock.rs, sim.rs,
+# test_seams.rs, net/account.rs, raptorpath/Cargo.toml (or this file), builds `raptorpath` in
+# release on the base and on HEAD, and FAILS if the binary, .text or .rodata differ. Base: the
+# merge base with origin/main; the pre-push head (github.event.before) on a push to main, so a push of several commits is compared as a whole. The base is built twice as a control: if
+# base and base2 differ the job is broken, not the candidate.
+# A diff that means to change the binary says so in a commit message of the range, on a line
+#     binid: expected-change <reason>
+# The job prints the reason and passes; without it a difference is red. workflow_dispatch builds
+# the base and every commit since it that touches the engine (the S8 per-commit table).
+# Builds run from the crate dir, as tools/l1/binid_run.sh does (from the workspace root cargo
+# unifies features across members and the binary differs, status 58).
 name: binid
 on:
+  push:
+    paths:
+      - "raptorpath/src/clock.rs"
+      - "raptorpath/src/sim.rs"
+      - "raptorpath/src/test_seams.rs"
+      - "raptorpath/src/net/account.rs"
+      - "raptorpath/Cargo.toml"
+      - ".github/workflows/binid.yml"
+  pull_request:
+    paths:
+      - "raptorpath/src/clock.rs"
+      - "raptorpath/src/sim.rs"
+      - "raptorpath/src/test_seams.rs"
+      - "raptorpath/src/net/account.rs"
+      - "raptorpath/Cargo.toml"
+      - ".github/workflows/binid.yml"
   workflow_dispatch:
     inputs:
       base:
@@ -22,22 +43,40 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
+      optout: ${{ steps.m.outputs.optout }}
     steps:
       - uses: actions/checkout@v4.2.2
         with: { fetch-depth: 0 }
       - id: m
+        env:
+          INPUT_BASE: ${{ inputs.base }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          base="${{ inputs.base }}"
-          [ -n "$base" ] || base=$(git merge-base HEAD origin/main)
+          base="$INPUT_BASE"
+          if [ -z "$base" ]; then
+            if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then base=$BEFORE; git cat-file -e "$base^{commit}" 2>/dev/null || base=$(git rev-parse HEAD~1)
+            else base=$(git merge-base HEAD origin/main); fi
+          fi
           base=$(git rev-parse "$base")
           rows="{\"label\":\"base\",\"ref\":\"$base\"},{\"label\":\"base2\",\"ref\":\"$base\"}"
           n=0
-          for c in $(git rev-list --reverse --first-parent "$base..HEAD" -- raptorpath Cargo.toml Cargo.lock); do
-            n=$((n + 1))
-            rows="$rows,{\"label\":\"c$n-${c:0:8}\",\"ref\":\"$c\"}"
-          done
+          if [ "$EVENT" = workflow_dispatch ]; then
+            for c in $(git rev-list --reverse --first-parent "$base..HEAD" -- raptorpath Cargo.toml Cargo.lock); do
+              n=$((n + 1))
+              rows="$rows,{\"label\":\"c$n-${c:0:8}\",\"ref\":\"$c\"}"
+            done
+          else
+            n=1
+            rows="$rows,{\"label\":\"head\",\"ref\":\"$(git rev-parse HEAD)\"}"
+          fi
           echo "matrix={\"include\":[$rows]}" >> "$GITHUB_OUTPUT"
-          echo "base=$base commits=$n" | tee -a "$GITHUB_STEP_SUMMARY"
+          # the opt-out: a commit-message line `binid: expected-change <reason>` anywhere in base..HEAD
+          # (commit messages are untrusted text: only ever passed on through env, never into a script)
+          reason=$(git log --format=%B "$base..HEAD" | tr -d '\r' | sed -n 's/^binid: expected-change[[:space:]]\+\(.\+\)$/\1/p' | head -1)
+          echo "optout=$reason" >> "$GITHUB_OUTPUT"
+          echo "base=$base candidates=$n optout=${reason:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
   build:
     needs: plan
     runs-on: ubuntu-24.04
@@ -75,6 +114,8 @@ jobs:
       - uses: actions/download-artifact@v4.3.0
         with: { path: bins }
       - name: compare every build with the base
+        env:
+          OPTOUT: ${{ needs.plan.outputs.optout }}
         run: |
           cd bins
           s=$GITHUB_STEP_SUMMARY
@@ -99,5 +140,10 @@ jobs:
             fi
           done
           cmp -s bin-base/rustc.txt bin-base2/rustc.txt || { echo "toolchains differ" | tee -a $s; rc=2; }
+          if [ "$rc" = 1 ] && [ -n "$OPTOUT" ]; then
+            echo "EXPECTED CHANGE (commit line 'binid: expected-change'): $OPTOUT" | tee -a $s; rc=0
+          elif [ "$rc" = 1 ]; then
+            echo "The release binary changed. If that is intended, put 'binid: expected-change <reason>' in a commit message of this range." | tee -a $s
+          fi
           echo "rc=$rc (0 identical, 1 a candidate differs, 2 control broken)" | tee -a $s
           exit $rc

@@ -9,12 +9,16 @@ use sim_support::{run, ChildRun, Scenario};
 
 const K: u64 = 11_800;
 
+/// One child at a time per port (the scratch dir is named by port).
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn child() {
     sim_support::child();
 }
 
 fn lost_tail(reliable: bool, port: u16) -> ChildRun {
+    let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     run(&Scenario {
         seed: 42,
         paths: 1,
@@ -67,6 +71,19 @@ fn known_defect_lost_tail_strands_k_at_rho_below_1() {
     let r = lost_tail(false, 47_200);
     let s = summary(&r);
     println!("rho<1: {s}");
+    // The account reads the same stall (ADR-0081). Observed (CI 44736010517, after the port rekey): S_sent=12147,
+    // O_serv=200, O_strand=147, inert_sweeps=299 of 299 sweeps, oldest_unchanged_max=288,
+    // O_hwm=12146 against a store cap of 1024, clamp_excl=3284 of 3284 evaluations, E=11799
+    // (an upper bound on abandonment) with a budget of 0. Thresholds, not the exact numbers.
+    let a = r.acct();
+    println!("rho<1 account:{}", a.0);
+    assert!(a.u("clamp_evals") > 0 && a.u("clamp_excl") > 0, "the clamp site never excluded a gap:{}", a.0);
+    assert!(a.u("O_strand") > 0, "D1a: no outstanding seq below the clamp bound (defect fixed? flip):{}", a.0);
+    assert!(a.u("O_serv") + a.u("O_strand") > 0, "D1d: nothing outstanding at the end (defect fixed? flip):{}", a.0);
+    assert!(a.u("inert_sweeps") > 0, "D1c: no inert sweep (defect fixed? flip):{}", a.0);
+    assert!(a.u("oldest_unchanged_max") >= 100, "D1d: the oldest un-acked seq did change (defect fixed? flip):{}", a.0);
+    assert!(a.u("O_hwm") > 4 * a.u("cap_at_hwm"), "D1b: intake stayed within the store cap:{}", a.0);
+    assert!(a.violations().iter().any(|v| v.starts_with("H+E")), "E within the budget (unpaced intake bound?):{}", a.0);
     // Executes: the seam fired on k and the evicting NACK site ran.
     let sends = k_lines(&r, "send");
     assert!(sends.first().is_some_and(|l| l.contains(" dropped=1 ")), "seam did not swallow k's first send: {s}");
@@ -90,4 +107,30 @@ fn control_lost_tail_recovers_at_rho_1() {
     assert!(sends.len() >= 2, "k was never resent: {s}");
     assert!(!k_lines(&r, "fill").is_empty(), "k never reached the receiver: {s}");
     assert_eq!(r.outcome, "client_ok", "transfer did not complete: {s}");
+}
+
+/// KNOWN DEFECT `rec-evict-blocker-unresolved`: once fixed, the account of a
+/// completed lost-tail transfer at rho < 1 is clean (O = 0, O_strand = 0,
+/// no inert sweeps, H + E within the budget). Red on main.
+#[test]
+#[ignore = "rec-evict-blocker-unresolved: at rho < 1 the lost tail is stranded (O_strand, inert sweeps, oldest_unchanged grow); H+E also exceeds the budget while the evicting seat has no source-rate bound"]
+fn account_is_clean_after_lost_tail_at_rho_below_1() {
+    let r = lost_tail(false, 47_200);
+    let a = r.acct();
+    println!("rho<1 account:{}", a.0);
+    assert!(a.violations().is_empty(), "account: {:?}\n{}", a.violations(), a.0);
+    // No client_ok gate at rho < 1: the perf server needs every chunk and the link abandons some by design.
+}
+
+/// Control: the account at rho = 1 is clean after the same lost tail, and its
+/// execution witness shows the gap clamp ran.
+#[test]
+fn control_account_is_clean_at_rho_1() {
+    let r = lost_tail(true, 47_210);
+    let a = r.acct();
+    println!("rho=1 account:{}", a.0);
+    assert_eq!(r.outcome, "client_ok", "transfer did not complete: {}", summary(&r));
+    assert!(a.violations().is_empty(), "account: {:?}\n{}", a.violations(), a.0);
+    assert!(a.u("clamp_evals") > 0, "the clamp site never ran, so O_strand = 0 proves nothing:{}", a.0);
+    assert_eq!((a.u("E"), a.u("O_strand")), (0, 0), "E and O_strand are 0 at rho = 1 by construction:{}", a.0);
 }

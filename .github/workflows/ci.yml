@@ -45,6 +45,8 @@ jobs:
       - run: pip install pyyaml
       - name: tools/l1 tests (not the stub run; quarantine list in tools/l1/quarantine.txt)
         run: python tools/ci/run_py_tests.py
+      - name: CI checkers (flake rule, shed-site rule, expected-failure scanner), red and green on fixtures
+        run: python tools/ci/test_ci_tools.py
       - name: roadmap
         run: |
           python tools/roadmap/build.py
@@ -66,6 +68,19 @@ jobs:
         with: { tool: wasm-pack }
       - name: build visualizer and run both .mjs gates
         run: bash raptorpath-visualizer/build_visualizer.sh
+  defects:
+    # Expected-failure job: the #[ignore]d tests whose reason starts with a roadmap node id
+    # (e.g. "rec-evict-blocker-unresolved:") are run with --ignored and must all FAIL. One that
+    # passes means the fix landed or the test rotted. Found by grep, not a list (tools/ci/expected_failure.py).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: defects }
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - run: python tools/ci/expected_failure.py
   sim:
     # Deterministic simulation tests (ADR-0082, S8). tokio_unstable only here
     # (seeded select! order), never in .cargo/config.toml or the release build.
@@ -77,4 +92,42 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: sim }
-      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail -- --nocapture
+      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail --test sim_shed_reach -- --nocapture
+  sim-cross-os:
+    # The same sim scenarios on Linux and Windows (sim_cross_os.rs); the
+    # compare job diffs the traces and logs. A difference means the OS is
+    # an input of the run again (sim-engine.md "What a seed fixes").
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: "--cfg tokio_unstable"
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: "sim-xos-${{ matrix.os }}" }
+      - shell: bash
+        run: SIM_XOS_OUT="$PWD/xos" cargo test -p raptorpath --features sim,test-seams --test sim_cross_os -- --nocapture
+      - uses: actions/upload-artifact@v4.6.2
+        with: { name: "xos-${{ matrix.os }}", path: xos, retention-days: 7 }
+  sim-cross-os-compare:
+    needs: sim-cross-os
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4.3.0
+        with: { path: xos }
+      - name: Linux and Windows traces and logs are identical
+        run: |
+          cd xos
+          ls xos-ubuntu-24.04 xos-windows-latest
+          rc=0
+          for f in xos-ubuntu-24.04/*; do
+            n=$(basename "$f")
+            if cmp -s "$f" "xos-windows-latest/$n"; then echo "same: $n"
+            else echo "DIFFERS: $n (first lines below)"; diff "$f" "xos-windows-latest/$n" | head -12; rc=1; fi
+          done
+          [ "$(ls xos-ubuntu-24.04 | wc -l)" = "$(ls xos-windows-latest | wc -l)" ] || { echo "file sets differ"; rc=1; }
+          exit $rc

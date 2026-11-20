@@ -1,6 +1,6 @@
 # ADR-0079: Delete the taper copy branch: every proactive slot carries a coded symbol
 
-## Status: Accepted (owner decision 2026-11-19, status "§51 block 51 Result, Addendum 3"). Engine change pending: `docs/derivations/s06-delete-plan.md`. Derivation: `docs/derivations/s06-plost-resend.md` on branch `s06-derivation` @ `5ebf41a5` (§4.1, §4.1.1, §4.1.2, Q1).
+## Status: Accepted (owner decision 2026-11-19, status "§51 block 51 Result, Addendum 3"). Engine change pending: `docs/derivations/s06-delete-plan.md`. Derivation: `docs/derivations/s06-plost-resend.md` on branch `s06-derivation` @ `5ebf41a5` (§4.1, §4.1.1, §4.1.2, Q1). Amendment 1 superseded in part by ADR-0084 (the unjudged below-window blocker, the untold shed, the ρ-blind budget); its merge hold stands.
 
 ## Context
 
@@ -39,7 +39,7 @@ No accepted ADR decides §3.2's FEC-to-ARQ transition. `docs/adr` has no hit for
 
 ## Amendment 1 (2026-11-20): the "superset" claim in Decision 4 is false on the evicting seat
 
-Proposed correction, pending the owner: the owner chose the deletion on "keeps ADR-0064's shed law", which this narrows.
+Accepted (owner decision 2026-11-20) as a correction of the record. The owner chose the deletion on "keeps ADR-0064's shed law", which this narrows. Accepting it does not clear the engine merge: `s06-delete` stays unmerged until the shed sites are witnessed (below).
 
 - **What is false.** Decision 4 says the NACK call site judges "a superset of the slot path's `first()`". On the evicting seat (ρ < 1) the NACK site clamps every gap to the coding window before the shed check (`sender_phases.rs:790–805`, main `e304921b`). The slot site judged `retransmit_buffer.first()` with no window limit (`emit_source.rs:757–785`). So the NACK site's shed acts only while a blocker is still inside the window. A blocker below it was judged by the slot site and is judged by no sender path after the deletion. The tail sweep does not cover it: its `(first, first)` gap goes through the same clamp (`net/mod.rs:2789`, `:3035`). The Consequences bullet "that interval is the only difference in the shed set" is false for the same reason. In the local runs below (an unpaced source at about 5× an emulated 40 Mbit link) the window covered only the last few milliseconds of emission, so most blockers were below it. The VM's paced rows may differ.
 - **What the deletion removes.** The slot site's sheds. In the pre-deletion runs where copies fired, it shed 3–18 packets per run, none of them the stalled blocker. Whether those packets were below the window, and what became of them, was not traced.
@@ -53,3 +53,4 @@ Proposed correction, pending the owner: the owner chose the deletion on "keeps A
   - the slot site was live (copies fired) in 9 of the 30 pre-deletion runs and shed the blocker in none of them.
   The earlier 6–10-run cases shared one target dir between trees and are not cited.
 - **A defect on main, not caused by the deletion:** roadmap node `rec-evict-blocker-unresolved`. On both trees the evicting seat leaves the blocker unresolved in half or more of these stalled runs. The tests that read it are record-only until it is fixed.
+- **Merge held (owner decision 2026-11-20).** The slot site is witnessed only in the local runs above (live in 9 of 30 pre-deletion runs, 3–18 sheds each, never the blocker). No CI or simulation test reaches it: the coverage table (`docs/derivations/coverage-by-seat.md`) shows it MISS in every seat, and `tests/sim_shed_reach.rs` reaches only the NACK site (60 sheds, slot site 0, identical on main and `s06-delete`). The failure shape with the slot site live was never recorded. It was the only sender shed without the window clamp, so the deletion may change that shape, which 30-run delivery counts would not show. `s06-delete` merges only after a test that reaches the slot site compares per-site shed counts and the liveness failure shape on both trees, and after the VM guard. The shared 1 − ρ budget does not read ρ (liveness audit, item 4).

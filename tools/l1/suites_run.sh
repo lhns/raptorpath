@@ -5,7 +5,7 @@
 #
 #   SU_ROOT=/home/vibe/suites SU_SRC=<tree root> bash suites_run.sh
 #
-# Exit: 0 all green (TESTS-OK), 1 a REAL failure (TESTS-FAIL), 3 precondition
+# Exit: 0 all green (TESTS-OK), 1 any failure outside the quarantine list, FLAKE or REAL (TESTS-FAIL), 3 precondition
 # not met, 4 a lock is held (nothing run; retry later). Started as `vibe`.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -37,8 +37,10 @@ CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 export CARGO_TARGET_DIR="$ROOT/tgt"
 rm -rf "$CARGO_TARGET_DIR"
 : > "$OUT"
-tst() { # name -- cmd...   (the §8/§11/§12 flake rule: a failure that passes on
-        # an immediate solo re-run is FLAKE; any other is REAL)
+QUAR="$SRC/raptorpath/tests/quarantine.txt"
+tst() { # name -- cmd...   (ADR-0080 flake rule: a failure is a failure. The solo
+        # re-run only classifies it, FLAKE (passed again) or REAL; both fail the
+        # suite unless the test is on raptorpath/tests/quarantine.txt)
   local name="$1"; shift
   local t0; t0=$(date +%s)
   local pre; pre=$(iostate)
@@ -54,7 +56,7 @@ tst() { # name -- cmd...   (the §8/§11/§12 flake rule: a failure that passes 
     echo "REAL-FAILURE $name rc=$rc with no failing test named (build error or timeout?)" >> "$OUT"
     return 1
   fi
-  local real=0 t a seen
+  local real=0 t a seen kind
   for t in $(grep -a -E '^test .* FAILED$' "$ROOT/test-$name.log" | awk '{print $2}' | sort -u); do
     local cmd=()
     seen=0
@@ -62,8 +64,14 @@ tst() { # name -- cmd...   (the §8/§11/§12 flake rule: a failure that passes 
     if ( cd "$SRC" && "${cmd[@]}" -- "$t" --exact --test-threads=1 ) > "$ROOT/test-$name-rerun.log" 2>&1 \
         && grep -aq "^test $t ... ok" "$ROOT/test-$name-rerun.log"; then
       echo "FLAKE $name $t (passed on the immediate solo re-run)" >> "$OUT"
+      kind=FLAKE-FAILURE
     else
-      echo "REAL-FAILURE $name $t" >> "$OUT"
+      kind=REAL-FAILURE
+    fi
+    if python3 "$SRC/tools/ci/flake_rule.py" --quarantine "$QUAR" --check "$t"; then
+      echo "QUARANTINED $name $t ($kind, on the quarantine list)" >> "$OUT"
+    else
+      echo "$kind $name $t" >> "$OUT"
       real=1
     fi
   done

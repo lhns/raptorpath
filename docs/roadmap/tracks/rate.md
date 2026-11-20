@@ -12,12 +12,16 @@ flowchart TB
     rate_ge_hmm[/"✔ Gilbert-Elliott loss<br/>model"/]
     rate_fec_rate_v1[/"✔ BOCD FEC rate<br/>control"/]
     rate_saturation_rstar[/"✔ Saturation-aware r*<br/>and window"/]
+    rate_pfec_exact[/"✔ Exact P_fec by<br/>transfer matrix"/]
+    rate_deadline_rstar[/"✔ Deadline-constrained<br/>r* for N paths"/]
+    rate_ge_real_trace["✔ Real-trace check of<br/>the loss model"]
     rate_rstar_window_mass[/"✔ r* window-mass<br/>provisioning"/]
     rate_taper_r[/"✔ Taper emission<br/>budget law"/]
     rate_leading_taper["↷ Leading-window taper<br/>emission"]
     rate_unified_shed[/"✔ δ-honest overload<br/>shedding"/]
     rate_est_cadence["✔ Batched BOCD<br/>estimator cadence"]
     rate_sender_truth_loss["✖ Sender-truth loss<br/>estimator"]
+    rate_rho_not_input>"✔ ρ not an engine<br/>input"]
     rate_dials_made_real["✔ The dials made real"]
     rate_r_battery["✖ Funded coding at r #gt;<br/>0"]
     rate_dof_ledger[/"⏸ DoF ledger feedback<br/>leg"/]
@@ -42,15 +46,19 @@ flowchart TB
     rate_fix_estimators[/"⛔ Loss estimator<br/>approximations"/]
     rate_fix_term_gauge["⛔ Rate-law term-win<br/>gauge"]
     rate_fix_rho_realtime[/"⛔ Low-latency and<br/>partial-reliability<br/>laws"/]
-    rate_ge_hmm ~~~ rate_rstar_window_mass
-    rate_fec_rate_v1 ~~~ rate_taper_r
-    rate_saturation_rstar ~~~ rate_leading_taper
+    rate_ge_hmm ~~~ rate_pfec_exact
+    rate_fec_rate_v1 ~~~ rate_deadline_rstar
+    rate_saturation_rstar ~~~ rate_ge_real_trace
+    rate_pfec_exact ~~~ rate_rstar_window_mass
+    rate_deadline_rstar ~~~ rate_taper_r
+    rate_ge_real_trace ~~~ rate_leading_taper
     rate_rstar_window_mass ~~~ rate_unified_shed
     rate_taper_r ~~~ rate_est_cadence
     rate_leading_taper ~~~ rate_sender_truth_loss
-    rate_unified_shed ~~~ rate_dials_made_real
+    rate_unified_shed ~~~ rate_rho_not_input
     rate_est_cadence ~~~ rate_dials_made_real
     rate_sender_truth_loss ~~~ rate_dials_made_real
+    rate_rho_not_input ~~~ rate_r_battery
     rate_dials_made_real ~~~ rate_r_battery
     rate_r_battery ~~~ rate_dof_ledger
     rate_r_battery ~~~ rate_defect_pfec
@@ -78,6 +86,7 @@ flowchart TB
     rate_law_reconcile ~~~ rate_fix_estimators
     rate_fix_estimators ~~~ rate_fix_term_gauge
     rate_fix_estimators ~~~ rate_fix_rho_realtime
+    rate_ge_hmm -.-> rate_ge_real_trace
     rate_saturation_rstar -.-> rate_defect_pfec
     rate_ge_hmm --> rate_rstar_window_mass
     rate_fec_rate_v1 --> rate_rstar_window_mass
@@ -97,7 +106,7 @@ flowchart TB
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
-    linkStyle 36,39 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 40,41,44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -111,12 +120,12 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_dials_made_real,rate_c8_frontier_recopy,rate_k4_input_checks succ
+    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_deadline_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_rho_not_input,rate_dials_made_real,rate_c8_frontier_recopy,rate_k4_input_checks succ
+    class rate_pfec_exact,rate_ge_real_trace,rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
     class rate_defect_pfec,rate_defect_taper_inert,rate_overprovision_verdict,rate_shed_budget_rho,rate_adr50_split_unwired defect
-    class rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_pfec_oracle waiting
     class rate_spare_clamp_verdict,rate_delta_jitter_fix,rate_fix_rate_readout,rate_s06_plost_derivation next
     class rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
@@ -130,7 +139,7 @@ flowchart TB
 |---|---|---|---|---|---|---|
 | `rate-ge-hmm` | Gilbert-Elliott loss model | done | successful |  | ADR-0023 |  |
 | `rate-fec-rate-v1` | BOCD FEC rate control | done | successful | DC (ε≈0.1%): 4.3% actual vs 0.1% optimal → 43x | ADR-0050; ADR-0043 |  |
-| `rate-saturation-rstar` | Saturation-aware r* and window | done | successful |  | branch unified deadline-constrained r* (§8.9) |  |
+| `rate-saturation-rstar` | Saturation-aware r* and window | done | successful |  | commit 55013af4; branch feat/p5-saturation-cap |  |
 | `rate-rstar-window-mass` | r* window-mass provisioning | done | successful |  | ADR-0063 | rate-ge-hmm, rate-fec-rate-v1 |
 | `rate-taper-r` | Taper emission budget law | done | successful |  | commit 33b29f81 |  |
 | `rate-leading-taper` | Leading-window taper emission | abandoned | superseded | −22 pp | paper §10 row Leading-window taper emission |  |
@@ -163,6 +172,10 @@ flowchart TB
 | `rate-fix-term-gauge` | Rate-law term-win gauge | blocked | unrated |  | law ledger rows R02 | rate-fix-estimators |
 | `rate-fix-estimators` | Loss estimator approximations | blocked | unrated |  | law ledger rows E07, E08, E09 | place-per-leg-impl |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | blocked | unrated |  | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 | store-engine-form-impl, rate-law-reconcile, rec-fix-refresh-clock, rate-fix-estimators, store-fix-maxbw-minrtt |
+| `rate-deadline-rstar` | Deadline-constrained r* for N paths | done | successful |  | commit fcae9c05; commit addf9eff; paper §4.11 |  |
+| `rate-rho-not-input` | ρ not an engine input | done | unrated |  | commit b181fa54; commit 5d14dd53 |  |
+| `rate-pfec-exact` | Exact P_fec by transfer matrix | done | unrated |  | commit c4daf2bb; commit b6170b77; paper §8.7 |  |
+| `rate-ge-real-trace` | Real-trace check of the loss model | done | unrated |  | commit 1ee87fa1; commit 229917fb |  |
 
 ### Details per node
 
@@ -170,7 +183,7 @@ flowchart TB
 |---|---|---|---|
 | `rate-ge-hmm` | Gilbert-Elliott loss model | Real-trace validation (2026-07-07) found GE inadequate for real loss (G217); the burst multiplier was superseded by ADR-0050. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0023 |
 | `rate-fec-rate-v1` | BOCD FEC rate control | Headline is the motivating inefficiency, not a gain. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0050; ADR-0043 |
-| `rate-saturation-rstar` | Saturation-aware r* and window | P5 saturation-aware r*, soft saturation, derive_window (paper 8.8), unified deadline-constrained r* (paper §8.9). | branch unified deadline-constrained r* (§8.9) |
+| `rate-saturation-rstar` | Saturation-aware r* and window | P5 saturation-aware r*, soft saturation, derive_window (paper 8.8), unified deadline-constrained r* (paper §8.9). | commit 55013af4; branch feat/p5-saturation-cap |
 | `rate-rstar-window-mass` | r* window-mass provisioning | Feat/rstar-bursty merged 2026-07-13; RWM_RSTAR_TAIL on by default since (status §1). End 2026-07-21 was a placeholder (ADR-0063: last edit or migration date); date from merge aba1a523. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0063 |
 | `rate-taper-r` | Taper emission budget law | RWM_TAPER_R is on by default (status §1). | commit 33b29f81 |
 | `rate-leading-taper` | Leading-window taper emission | Paper §10 row is undated; dates from git (not raw records): 8ef5ff18 (2026-07-18) rescoped the -22 pp to the streaming family and 4b8e5384 (2026-07-19) kept the RWM_TAPER_R flip closed on it. Replaced by trailing-span emission, the unified span machine's emission policy. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Leading-window taper emission |
@@ -195,7 +208,7 @@ flowchart TB
 | `rate-fix-rate-readout` | Repair-rate readout | Without it §51 reads only the granted r and reports the law's r, the clamps and the channel split as missing. rate-fix-term-gauge (R02) can merge into it if controller_rate returns its argmax bit-identically. Done when: a behaviour-neutral [RATE] readout on the [DIAG] cadence carries the law's r (mean, p50), r_anchor, r_late and β, the tail target, the spare-clamped rate with a per-leg bind fraction, the soft-saturation, overhead and W* clip bind fractions, the fraction of evaluations on the P_fec > 0 side, cod split by channel (proactive, margin, request), and a one-time echo of the resolved dial on both ends; a bit-identical test shows behaviour unchanged. | docs/derivations/s51-design.md §8 P2 |
 | `rate-c8-frontier-recopy` | c8 repair budget re-copies | c8 HA s42 r1: src 507 616, cod 2 124, taper = plost 119 684. Code-read lead (inference, ages unprinted): a taper copy neither removes nor re-stamps its retransmit_buffer entry, so an old unacked seq keeps its first send time and p_lost goes to 1; the cumulative ack lags the window by 20k-74k symbols at c8. Against repeated copies of one seq: rx_dup is about 24k against about 120k copies at c8. Which seqs are copied is the first question. First step: read the raw c8 diag-ld logs (kept on the VM in ~/b51c8/run) and, if needed, a host test that counts copies per seq. Law ledger S06 (P_lost retransmit) is the row it reports to. Done when: the mechanism is named with evidence and either a defect verdict is in the ledger or the reading is explained. | status §51 block 51 Result, finding 1; status §51 block 51 Result, Addendum 2; docs/l1-raw/s51b/recopy |
 | `rate-overprovision-verdict` | Repair rate over-provision verdict | Owner decision 2026-11-19: treat the over-provisioned rate as a defect now, in parallel with rate-s06-plost-derivation (option b). Consumed r 0.19-0.21 (c2) and 0.24-0.26 (c8) from Auto up against wire loss 0.026-0.039; goodput c2 90 to 76, c8 98 to 83 Mbit/s, wire-bound. Fixing S06 alone changes what fills the slots, not how many. Diagnosis on branch rate-overprovision (docs/derivations/rate-overprovision.md); law-ledger rows R01, R02, R04. Done when: a ledger verdict is recorded and a derived fix direction is reviewed. | status §51 block 51 Result (r(δ) table, goodput against δ); status §51 block 51 Result, Addendum 2 (goodput arithmetic); owner decision 2026-11-19 ("do b"); status §51 block 51 Result, Addendum 3 |
-| `rate-s06-plost-derivation` | Delete the taper copy branch | Derivation on branch s06-derivation (docs/derivations/s06-plost-resend.md), Fable review, then the paper §3.2 amendment, then the engine law with a red-first host loopback test counting copies per seq (ptgt / pmax from c8-gauges) and the ±2 % δ continuity test. Goes before rate-delta-jitter-fix; rate-spare-clamp-verdict and the S08 fix wait for it (all edit the proactive-slot path). Getting goodput back also needs the rate law's r (R02 / R04) to come down; fixing S06 alone turns copies into coded repair. Done when: the law is in the paper, merged through a guard, and the copy count per seq is bounded by the test. | status §51 block 51 Result, Addendum 2; law ledger S06; owner decision 2026-11-19 (delete the copy branch); status §51 block 51 Result, Addendum 3; ADR-0079; docs/derivations/s06-delete-plan.md |
+| `rate-s06-plost-derivation` | Delete the taper copy branch | Derivation on branch s06-derivation (docs/derivations/s06-plost-resend.md), Fable review, then the paper §3.2 amendment, then the engine law with a red-first host loopback test counting copies per seq (ptgt / pmax from c8-gauges) and the ±2 % δ continuity test. Goes before rate-delta-jitter-fix; rate-spare-clamp-verdict and the S08 fix wait for it (all edit the proactive-slot path). Getting goodput back also needs the rate law's r (R02 / R04) to come down; fixing S06 alone turns copies into coded repair. Done when: the law is in the paper, merged through a guard, and the copy count per seq is bounded by the test. 2026-11-20: ADR-0079 Amendment 1 accepted by the owner (superset claim false at rho < 1); branch s06-delete updated to main (a930a72b, CI green); merge held: tests/sim_shed_reach.rs (merged) reaches only the NACK site, identically on both trees, so a test reaching the slot site is owed before the comparison means anything. Slot site reached (slot-reach, merged): it judges only at a source emission, and the sim emitted the whole object at one instant; a paced sim client reaches it. Main vs a local merge into s06-delete, paced: the slot sheds go to 0 and the NACK site absorbs them (245/90 vs 250/0 at a forced 0.05 budget; 54/4 vs 38/0 derived); the final cumulative ack is 12147/12147 on both trees in every paced cell, so the failure shape is the same. The forced budget confounds two of three cells. The recovery model (slot site on, off, copies without shed) changes no property verdict. Same-shape evidence for the deletion; owner to decide whether the hold becomes merges with or after the verdict fix. | status §51 block 51 Result, Addendum 2; law ledger S06; owner decision 2026-11-19 (delete the copy branch); status §51 block 51 Result, Addendum 3; ADR-0079; docs/derivations/s06-delete-plan.md |
 | `rate-shed-budget-rho` | Shed budget ignores ρ | Liveness audit item 4 (coordinator-verified): budget = residual_loss_after_fec(est.loss_rate(), r, A*, sigma2) (emit_source.rs:635), contract_rho is a literal 1.0 (sender_policy.rs:616); loss_rate() is the unweighted per-ack EWMA (Addendum 4). Block E PM s42 r1: bud=0.0000 on 351 of 366 ticks while shed rises to 1 934 (0.36 % of source). Done when: a ledger verdict and a derived budget in the paper. | docs/derivations/liveness-audit.md item 4 |
 | `rate-adr50-split-unwired` | ADR-0050 budget split unwired | Candidate causes of the r cost (audit item 1): BudgetAllocator::proactive_rate called only from tests (fec_rate.rs tests 629-650); the NACK serve loop has no decoder-state check (sender_phases.rs:790-880, coordinator-read). Sized only after the rate-law gauges (c8-gauges) and a no-copy reading. Done when: ledger verdicts and either wiring or a superseding ADR. | status §51 Addendum 4 |
 | `rate-user-rate-law` | Owner calls on rate law | Needs the off-Bulk session's reading of r per cell (which side of the P_fec crossing the engine runs on). Done when: the owner rules on the W* budget (b(δ)·SRTT or retabulate the paper), the 200 cap, χ ≡ 0 on the tunnel, one RTTVAR, and P_fec(0) (paper form vs engine pin). 2026-11-19: target_tail_loss is a declared dial (CLI flag, Home / Datacenter profiles, ADR-0050) that the engine does not deliver and no gauge reads; kept unchanged pending a superseding ADR (owner); the deciding test is a flag sweep at fixed δ in the no-copy VM session, registered two-sided (status §51 Addendum 3). | plan user decision 11; status §3.10 item 2 (conflict for the owner) |
@@ -203,4 +216,71 @@ flowchart TB
 | `rate-fix-term-gauge` | Rate-law term-win gauge | Law ledger: R02. Done when: an engine gauge reports which term or clamp of controller_rate wins, per tick, so the off-Bulk session can read it. | law ledger rows R02 |
 | `rate-fix-estimators` | Loss estimator approximations | Law ledger: E07, E08, E09. The measured RTTVAR per leg (E09) lives in the per-leg state, hence that prerequisite (the wire-clock node it used to wait on is dissolved). Done when: the BOCD quantile floor is explained in the paper or bounded, the Gilbert-Elliott batch lumping gets the bounding test paper-recon specified, and one measured RTTVAR per leg replaces the two stand-ins. | law ledger rows E07, E08, E09 |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | Law ledger: F02, S01, S02, S04, S05, S06. S01 and S02 read RTprop, which waits on the honest-input fix (E03), not on a recovery clock. The two hint equalities (S08, S09) moved to model-fix-hint-keyed-paths. Done when: the store gate carries the ρ term derived in the paper, the span deadline and shed budget read a wire clock, the receiver hold is b(δ)·SRTT, the taper-copy decision is diagnosed, each with continuity tests through every preset. | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 |
+| `rate-deadline-rstar` | Deadline-constrained r* for N paths | Paper §4.11 in the rewritten paper (§8.9 before the 2026-09-27 rewrite). | commit fcae9c05; commit addf9eff; paper §4.11 |
+| `rate-rho-not-input` | ρ not an engine input | Split 2026-11-20 from rec-goal100 (item 1). Goal #101 recorded the same impasse on 2026-08-21. Later finding on the same dial: model-defect-rho-inert (2026-11-14). | commit b181fa54; commit 5d14dd53 |
+| `rate-pfec-exact` | Exact P_fec by transfer matrix | The session-record finding that the normal approximation under-provisions on bursty channels (2026-07-06) is folded here. | commit c4daf2bb; commit b6170b77; paper §8.7 |
+
+### Folded items per node
+
+- `rate-fec-rate-v1`: BOCD FEC rate control
+  - commit 05b576a7
+  - commit e508adf4
+  - commit f2cba2b7
+  - Principled FEC rate control: BOCD estimator, budget allocator, taper model (2026-03-21, commit 1e07bf79)
+- `rate-saturation-rstar`: Saturation-aware r* and window
+  - branch soft saturation + end-of-stream taper completion
+  - branch window derivation
+  - Soft saturation cap and continuous end-of-stream taper (2026-07-04, commit 0e27a4af, commit 3a823943)
+  - Encoder window derived from the channel instead of hand-set (2026-07-04, commit 38c3428e, commit 0a67497c)
+- `rate-rstar-window-mass`: r* window-mass provisioning
+  - branch feat/rstar-bursty
+- `rate-retention-is-rho`: Retention is the ρ dial
+  - paper §11.1 open question 2
+  - Retention moves to the ARQ layer (2026-07-06, commit 62ffbb76)
+- `rate-unified-shed`: δ-honest overload shedding
+  - commit 120d8f89
+  - Shed law as built and consolidation battery (2026-07-21, commit 8e77ba67, commit 5daceabf)
+- `rate-est-cadence`: Batched BOCD estimator cadence
+  - commit 224b9159
+  - branch flip/est-cadence
+  - Sender CPU profile with call graphs (2026-10-02, session record)
+  - AVX and SIMD for the sender judged not worth it (2026-10-02, session record)
+  - Batched estimator updates on by default (2026-10-04, commit 116753b5)
+- `rate-sender-truth-loss`: Sender-truth loss estimator
+  - branch sweep item 3 FIXED
+  - Per-path loss estimate stated as a formula, then fixed (paper 16.58) (2026-08-18, commit 58b77962)
+- `rate-r-battery`: Funded coding at r > 0
+  - branch meas/r-battery-score
+  - commit 2e2db5a7
+  - commit 259ebbc0
+  - r greater than zero battery: pre-registration, harness, calibration and launch (2026-09-08, commit b0ade0b4, commit 48d0cf9f, commit fa3368f9, commit 51edcd46)
+  - S4 first field point (single-path crown cells) (2026-09-08, commit 35c843fd)
+  - r-battery report: W7 void propagation (2026-09-30, commit 8f484be8)
+- `rate-dials-made-real`: The dials made real
+  - branch paper 16.81-16.83
+  - paper §11.1 open question 3
+  - Where bulk and auto sit for r above zero (2026-09-08, commit 1dd546f1)
+- `rate-pfec-continuous`: Continuous P_fec derivation
+  - branch pfec-derive
+  - commit 95820ef1
+  - commit f1243e4a
+  - commit 59a65af8
+  - commit ab9c6246
+- `rate-pfec-oracle`: Executed sliding P_fec oracle
+  - commit 7fd9dd25
+  - commit 2aa40a98
+  - commit 2a622525
+  - commit 08bdfa96
+- `rate-evict-registration`: Evicting-seat m̄ registration
+  - commit 4d200885
+  - commit b1af3fa4
+- `rate-deadline-rstar`: Deadline-constrained r* for N paths
+  - branch unified deadline-constrained r* (§8.9)
+- `rate-rho-not-input`: ρ not an engine input
+  - branch item 1 CLOSED UNREADABLE
+- `rate-pfec-exact`: Exact P_fec by transfer matrix
+  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, commit a0484dab)
+- `rate-ge-real-trace`: Real-trace check of the loss model
+  - branch real-trace validation
+  - Real-trace check of the Gilbert-Elliott loss model (2026-07-06, commit 229917fb)
 <!-- END GENERATED: table-rate -->

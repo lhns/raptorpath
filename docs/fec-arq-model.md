@@ -96,7 +96,7 @@ The three dials are:
 | dial | meaning | range | named points |
 |---|---|---|---|
 | δ | latency price: the marginal cost of delay, in Copa's utility `U = log(throughput) − δ·log(delay)` [Copa2018] | (0, ∞) | Realtime 50, Auto 0.5, Bulk 0.005 |
-| ρ | retention contract: the probability a symbol is eventually delivered | (0, 1] | 1 on every reliable seat |
+| ρ | retention contract: the probability a symbol is eventually delivered | (0, 1] | 1 on every reliable seat; Realtime declared 0.99 (ADR-0084, engine change pending) |
 | r | correction rate: repair plus retransmit symbols per source symbol | [0, r_max] | derived from δ and the channel, never declared |
 
 The FEC rate, the tail target, the recovery deadline, the span width of
@@ -165,7 +165,8 @@ Bulk and Auto once defaulted to was a construction-time mode switch; it was
 removed in `dacfd7c` (ADR-0069) after the Stage-3 re-test found the window not
 worse at any cell and ahead at every Auto cell (Section 10). The retention
 contract ρ is the named point's preset — ρ = 1 at Bulk/Auto, EVICT at
-Realtime — and never selects a pipeline.
+Realtime (declared ρ = 0.99 by ADR-0084, engine change pending) — and never
+selects a pipeline.
 
 ### 1.6 Reading guide
 
@@ -217,6 +218,8 @@ derivation; these are collected in the open-constants register, Section 11.2).
 | π₀, π₁ | prior that a detected hole is reordering / genuine loss | probability |
 | F, S = 1 − F | lateness distribution of self-healing holes and its survival | — |
 | H | store headroom time, Section 7.3 | s |
+| U, V | a sender's unresolved seqs and its verdict seqs (shed or forced), Section 5.1 | seq sets |
+| G_rx, Ab | seqs the receiver passed undelivered; abandonment plus unresolved verdicts, Section 5.6 | seqs |
 
 The earlier drafts of this model used δ for a tail-probability target. In
 this paper δ is always the latency price; the tail target is t_tail, which
@@ -1082,7 +1085,9 @@ recovery must be FEC and r* lands between the Auto and Realtime rows of
 Section 4.2 (13–18 %).
 
 In the engine ρ < 1 exists only as the evicting Realtime seat
-(Section 5.1); T_cut is not a runtime input.
+(Section 5.1), and T_cut is not a runtime input. ADR-0084 (engine change
+pending) adds ρ as a declared number, `window_rho`, read only by the shed
+budget of Section 5.6; T_cut stays a model quantity.
 
 ### 4.11 The deadline-constrained multipath rate
 
@@ -1462,8 +1467,96 @@ by an exact retransmit from the store.
 Two consequences follow. First, "reliable" and "lossy" are the ρ → 1 limit
 and the finite-T_cut interior of one dial, not two policies. Second, the
 shipped machine exposes ρ only structurally: the reliable window seat is
-ρ = 1, and the evicting Realtime seat is the only ρ < 1 seat. ρ is not a
-runtime input anywhere in the engine (Section 11.1).
+ρ = 1, and the evicting Realtime seat is the only ρ < 1 seat. On main ρ is
+not a runtime input anywhere in the engine (Section 11.1). ADR-0084 makes it
+one, read only by the shed budget (Section 5.6); the engine change is
+pending.
+
+*Verdicts (ADR-0084; engine change pending).* A sent source seq leaves the
+sender's unresolved set U in one of three ways: acknowledgement, a shed
+(Section 5.6), or a forced verdict when its last servable copy is gone. A
+verdict is a sender fact ("I will not serve it again"); abandonment is a
+receiver fact ("the frontier passed it undelivered"), and the contract
+counts the second (Section 5.6). Every sent seq is in exactly one term:
+
+```text
+   S_sent  =  A_n  +  H_n  +  E_n  +  |U|            V = the H_n + E_n verdict seqs; a verdict seq stays in V after a later ack
+```
+
+- S_sent, A_n, H_n, E_n: sender counters (measured): source seqs sent,
+  acknowledged, shed, given a forced verdict. This is ADR-0081's identity
+  with ADR-0084's E term, `S_sent = A + H + E + |U|`; the subscript keeps
+  them apart from Section 6.3's A and H.
+- U: sender state, the seqs sent, not acknowledged and without a verdict.
+
+"A seq whose last servable copy leaves the sender gets a verdict at that
+instant":
+
+```text
+   evict(s)  ∧  s ∈ U  ∧  s ∉ store   ⇒   U ← U ∖ {s},  E_n ← E_n + 1,  s ∈ V
+```
+
+- evict(s): the coding window's advance past s (sender event, measured).
+- store: the sender's retention store, `sent_store`.
+
+ADR-0084 runs the store at every ρ: an entry leaves on acknowledgement or at
+its verdict, so the window is never the last copy and E_n = 0 by data on
+every seat. The forced arm stays as the rule's closure, with a gauge that
+must read 0. On main the evicting seat keeps no store, so the window is the
+last copy there; at ρ = 1 the store holds every unresolved seq and E_n = 0
+by data. That difference is a step at ρ → 1⁻ (Section 11.3), which the store
+at every ρ removes on the sender.
+
+*The floor.* "Every seq below the floor is acknowledged or has a verdict":
+
+```text
+   F_v  =  min { s ≥ F : s ∉ V }
+```
+
+- F: measured by the receiver, its newest advertised `next_expected`
+  (Section 6.3's F).
+- V: sender state, as above.
+
+"While the floor is above the receiver's acknowledged frontier, the sender
+repeats it on the tail-sweep clock on every live path; the receiver's
+cumulative ack acknowledges it":
+
+```text
+   send WindowFloor{F_v} on every live path   at each tail-sweep fire  while  F_v > F
+   sweep armed   ⇔   U ≠ ∅  ∨  F_v > F
+   repeats end   ⇔   F ≥ F_v  ∨  no live path  ∨  shutdown          (the final floor goes on the reliable control stream)
+```
+
+- The tail-sweep fire: `tail_sweep_timeout_us(SRTT) = clamp(2·SRTT, 25, 100) ms`,
+  the existing cadence (Section 11.2, refresh clamp row); no new constant.
+- Live paths: `channel_paths`, membership ended by `DEAD_PATH_TIMEOUT`
+  (6 s without a `PathReport`). The repeat is bounded in rate
+  (`≤ |channel_paths|` datagrams per 25 ms), not in count; the count ends at
+  the ack, the path's death or shutdown.
+
+"The newest floor heard on any path is treated as a payload-free arrival at
+seq F_rx, under the same hold and the same expiry as a data arrival":
+
+```text
+   F_rx  =  max over paths of the floors received          (0 before the first)
+   F_rx > next_deliver   ⇒   a marker (F_rx, now) enters the reorder hold, expires at now + H_hold,
+                             passes the holes below F_rx and moves the frontier to F_rx
+```
+
+- next_deliver: receiver state, its in-order frontier.
+- H_hold: the receiver's existing hold, `shed_recv_hold` (Section 5.6); no
+  new constant.
+
+The newest floor, not the minimum over paths, because a live but frozen leg
+would hold a minimum at 0 until it leaves the live set. A floor on path p
+exposes the receiver to exactly what a data arrival at F_rx on p already
+does: on one path, per-path FIFO makes every earlier seq arrive or be lost
+first; on several, seqs still in flight on a slower path arrive as late
+fills, which G_rx subtracts (Section 5.6). At ρ = 1 no verdict exists on any
+arm, so F_v = F identically and the floor is never sent. The floor rides its
+own message (wire v11, extending ADR-0010); on main (v10) no verdict reaches
+the receiver, and a lost tail with nothing above it stalls the frontier
+(roadmap `rec-evict-blocker-unresolved`).
 
 ### 5.2 One decoder
 
@@ -1739,26 +1832,83 @@ replaced. Decode is not the bottleneck at the shipped operating points.
 At small δ, overload must be shed, not serialised: a whole-process stall
 amplified into multi-second backlog on the evicting in-order pipeline, while
 a machine that dropped messages past its horizon kept its p50 and p90. The
-shed law derives both ends from the triangle:
+shed law derives both ends from the triangle (ADR-0084; it supersedes
+`budget = min(1 − ρ, R)`, owner decision 2026-11-14, and the engine change
+is pending):
 
 ```text
-   D(δ)    =  min( b(δ)·RTT , 2·RTT )                             shed deadline
-   R       =  ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst))            residual after in-window FEC
-   budget  =  min( 1 − ρ , R )                                    ρ = the declared contract dial
-   shed  ⇔  age > D(δ)   ∧   shed_total + 1 ≤ budget·src_total
+   D(δ)    =  min( b(δ)·RTprop , 2·RTprop )                       shed deadline, read when the verdict is taken (engine: EWMA RTT until a battery reads this form; Section 11.3)
+   G_rx    =  |holes passed|  −  |late arrivals that fill a passed hole|
+   Ab      =  G_rx  +  |{ v ∈ V : v ≥ F }|
+   shed  ⇔  age > D(δ)   ∧   Ab + 1  ≤  (1 − ρ)·src_total
+   R       =  ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst))            predicted use of the budget
 ```
 
-R is derived; ρ is declared and independent of it. The engine evaluates the
-law at two seats only: the evicting seat runs budget = R, the retain seat
-budget = 0; the model agrees at ρ = 1 and wherever 1 − ρ ≥ R (Section 11.3).
+- b(δ): derived, Section 5.4.
+- RTprop: measured, the per-path windowed-min RTT of Section 6.1, the
+  largest over live paths, no seed (D = 0, nothing sheddable, before the
+  first sample). The engine reads the EWMA RTT until a battery measures the
+  RTprop form; both are computed and their ratio logged (Section 11.3).
+- age: measured, now minus the seq's original send time.
+- G_rx: measured at the receiver over every frontier writer (hold expiry,
+  force-drain, the floor pass), carried on every `WindowAck` as
+  `passed_undelivered` (wire v11). An arrival below the frontier that fills
+  no passed hole is not subtracted.
+- V, F: Section 5.1.
+- ρ: declared dial, `window_rho`; Bulk and Auto 1, Realtime 0.99 (declared,
+  not derived).
+- src_total: sender counter, source seqs sent.
+- R: derived; it inherits `p_fec_normal`'s cut (W22) and is a gauge here, not
+  an operand.
 
-`shed_deadline_us`, `shed_allowed` (`net/shed.rs`),
+"Abandonment, counted where it happens plus the verdicts not yet resolved,
+stays within the declared 1 − ρ of the source": the budget is the declared
+1 − ρ, and R only predicts how much of it FEC's residue will use. Ab is an
+upper bound that converges to the truth: a pending verdict either becomes a
+passed hole (and moves into G_rx) or is delivered (and leaves Ab) once the
+frontier passes it. One ack carries both F and G_rx, so a passed verdict
+leaves the pending term in the update that adds it to G_rx, and a lost ack
+delays the move without duplicating it. At ρ = 1 the budget is 0 at every δ,
+so nothing is shed.
+
+"Every unresolved seq in a reported gap is judged on the unclamped gap; the
+clamp only bounds what is served":
+
+```text
+   for s ∈ [g_s, g_e] ∩ U :
+      verdict(s)  =  SHED     if  age(s) > D(δ)  ∧  Ab + 1 ≤ (1 − ρ)·src_total
+                  =  SERVE    else if  s ∈ [f, c]
+                  =  FORCED   otherwise          (counted, never refused)
+```
+
+- [g_s, g_e]: the gap as reported (receiver gap report or tail sweep),
+  before any clamp.
+- [f, c]: sender state, the servable span over the window and the store.
+  With a store at every ρ every member of U is in it, so the FORCED arm is
+  empty and carries a gauge that must read 0.
+
+Beyond the budget the machine serves: ρ wins over δ. R > 1 − ρ marks an
+operating point where the contract can be held only by serving holes past
+D(δ), giving up δ. A forced verdict is counted and never refused. The
+contract is read at the end of a run:
+
+```text
+   G_rx  ≤  (1 − ρ)·src_total
+```
+
+Receiver give-ups and forced verdicts are not refused by the shed law, so a
+breach is printed, not prevented (Section 11.1).
+
+**Engine status (main).** `shed_deadline_us`, `shed_allowed` (`net/shed.rs`),
 `control/fec_rate.rs::residual_loss_after_fec`; gate `RWM_UNIFIED_SHED`,
-default on. The budget is evaluated with the transmit-side EWMA loss, the
-spare-capped live rate and the span width A* as the window, inside the
-probabilistic retransmit branch. Beyond the budget the machine serialises:
-ρ wins over δ. The retain (ρ = 1) seat never sheds; the law runs only on the
-evicting seat.
+default on. The law runs at two seats only: the evicting seat runs
+budget = R against the cumulative shed count, and the retain seat is not
+armed (budget 0). The budget is evaluated with the transmit-side EWMA loss,
+the spare-capped live rate and the span width A* as the window, inside the
+probabilistic retransmit branch (deleted by ADR-0079, engine merge held) and
+at the NACK site, where the gap is clamped to the coding window before the
+shed check. A shed sends nothing to the receiver. The wasm model runs
+`min(1 − ρ, R)` until its own re-capture commit (Section 11.3).
 The receiver arm holds a hole for `SRTT/2` while its give-up budget
 (≤ ε̂_recv × frontier) lasts and falls back to `(4·SRTT).clamp(60, 300) ms`
 when it is spent (`net/shed.rs::shed_recv_hold`); the `½` is b(δ_Realtime)
@@ -2281,10 +2431,54 @@ with ε̂ᵢ the path's fed loss estimate (measured; Section 11.3). Linear in ρ
 with both terms always computed, so continuous across ρ → 1; its share is
 ε̂·17/8·SRTT/((1 + q)·RTprop), < 0.3 % at c1 and ≈ 6–10 % at c2; its loop
 gain through SRTT is ε̂·17/8 ≪ 1. It is not added while the law's rate input
-is unsettled (below). The engine also has no ρ < 1 seat for it: the EVICT
-path keeps no `sent_store` and `tx_paused` requires `reliable`, so ρ < 1
-runs with no outstanding gate at all (status §3.3), and the release bound of
-Section 6.3 assumes a receiver that never evicts above its frontier.
+is unsettled (below). On main the engine also has no ρ < 1 seat for it: the
+EVICT path keeps no `sent_store` and `tx_paused` requires `reliable`, so
+ρ < 1 runs with no outstanding gate at all (status §3.3).
+
+*The source bound at every ρ (ADR-0084; engine change pending).* "The sender
+stops reading source while the seqs it has sent and the receiver's frontier
+has not yet passed, net of SACK-released ones, reach the pooled cap":
+
+```text
+   pause  ⇔  O ≥ cap  ∨  cwnd_full ,      O  =  (H + 1 − F) − |released|
+```
+
+- H, F: Section 6.3 (the highest seq sent, sender state; the newest
+  `next_expected`, measured by the receiver).
+- released: Section 6.3's count. SACK release requires `reliable`, and
+  ADR-0084 keeps it so, so `released = ∅` at ρ < 1 and O over-counts the
+  seqs received above the frontier: the safe side.
+- cap: this section's law, which has no ρ input.
+- cwnd_full: `∀ i ∈ live: in_flightᵢ ≥ cwndᵢ`, the per-path gate, unarmed by
+  default and untouched.
+
+At ρ = 1 on the plain arm the store holds exactly [F, H], so O equals
+today's `store_len` and the bound is the one above; a per-tick equality pin
+is owed with the engine change. At ρ < 1 it is the first outstanding bound
+the evicting seat has had. The frontier there also advances by hold expiry
+over holes, so O is drained by the receiver's give-ups as well as by
+delivery and cannot deadlock on a lost seq. It has no ρ and no δ beyond the
+cap's q(δ), so it is continuous by construction. It reverses `4c901536`'s
+"EVICT mode never backpressures on retention": under overload the source is
+delayed, ρ over δ. On real links the cap sits at its N·knee ceiling (ledger
+F01, PINNED: 97–100 % of LATE ticks at every δ), so at ρ < 1 too the bound
+acts as a constant outstanding cap until the store law's time form lands;
+`[SUMCAP] pin=` is reported at ρ < 1 as its bind gauge.
+
+"The sender keeps up with the offered load without delaying the source and
+without breaking the contract only while":
+
+```text
+   λ · ( 1 − (1 − ρ − R)⁺ )  ≤  C ,      C  =  Σᵢ bwᵢ·(1 − ε̂ᵢ) / (1 + r)
+```
+
+- λ: measured, the offered source rate.
+- C: derived, the source rate the live paths carry after the rate law's
+  correction share; bwᵢ and ε̂ᵢ measured per path, r the rate law's
+  (Section 4).
+- (1 − ρ − R)⁺: the share of the budget left after FEC's predicted residue,
+  the most a source-side thinning could abandon. That thinning is not built,
+  so past this line the engine delays the source (Section 11.1).
 
 `pooled_store_cap`, `pool_value_multiplier`, `codel_setpoint_q`
 (`net/store_cap.rs`); gates `RWM_SUM_CAP` and `RWM_DELTA_CAP`, both on
@@ -2742,6 +2936,10 @@ with more received runs than that above it every report is the same prefix,
 `|M|` stops growing, and through v8 the counted store stayed over-read by
 every received sequence past the cap until the frontier moved (the store
 bench read 4 071 counted against 2 483 unacknowledged at the c8 geometry).
+The bound assumes a receiver that never evicts above its frontier, which is
+the ρ = 1 receiver. At ρ < 1 the frontier also moves by give-ups; release
+does not run there (it requires `reliable`, and ADR-0084 keeps it so), so
+Section 6.1's source bound reads `released = ∅` at ρ < 1.
 
 `store_gate_released` (`net/sack.rs`), gate `RWM_STORE_SACK_RELEASE`,
 default on; with the gate off no report is folded and `|M| = 0`, so the
@@ -4297,7 +4495,7 @@ never-delivered tail target.
 | # | question | what would decide it |
 |---|---|---|
 | 0 | Do sc3 and c7 still read far below their earlier values? The sc2 regression (~2 Mbit/s) was a CPU-bound sender and is fixed in `1b890e0` (status §3.1 item 2); the sc3 and c7 low readings came from the same binary line, and no re-measure after the fix is recorded | re-run sc3 and c7 on the current binary (Section 9.2) |
-| 2 | Is ρ a runtime dial? Today ρ is structural (1 on the retain seat, < 1 only on the evicting Realtime seat) | plumbing ρ to the store and the receiver; the hard-coded `SRTT/2` receiver hold is the first site that would break |
+| 2 | Is ρ a runtime dial? Today ρ is structural (1 on the retain seat, < 1 only on the evicting Realtime seat) | plumbing ρ to the store and the receiver; the hard-coded `SRTT/2` receiver hold is the first site that would break. Under ADR-0084 (engine change pending) the shed budget reads ρ as a number (`window_rho`, Section 5.6), and the store fill, the serve clamp and the intake pause stop reading the seat; the receiver's reorder buffer and hold still read it (Section 11.3) |
 | 3 | Does Auto's rate sit at the corner r* = 0? | an echo of Copa's delay normaliser d beside D_arq (Section 4.9) |
 | 4 | Does the span law stay continuous at the named points? | an isolating pure-law test of `(δ, ρ, r) → (A*, M*, Δ)` with ±2 % nudges, as the rate law has |
 | 5 | Is cross-path correlation a cause or an effect of pooling? At c8 both legs' drain collapses in the same window | a per-path-account arm (the refuted one is removed) against pooled at a four-path cell, now that legs are seeded independently; a correlated-loss dial for the harness |
@@ -4309,6 +4507,7 @@ never-delivered tail target.
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
 | 13 | Remaining hint- and ρ-keyed sites (status §3.3; each read in source at `168f161`). **Engine, hint equality:** the Realtime duplicate source send (`net/emit_source.rs:475`); `use_packing = protocol_hint == Realtime` (`net/sender_policy.rs:746`), whose consumer `emit_batch_on` (`:805`) also requires `reliable` and `!use_packing`, so emission batching steps off at Realtime and at ρ < 1. **Engine, hint tables:** `queue_target_mult` 1.08 / 1.125 / 1.25 (`scheduler/copa.rs:316-318`); the symbol size 512 / 1200 (`net/mod.rs:179-183`, `symbol_size_for_hint`); the default ρ, `window_reliable = hint != Realtime` (`config.rs:295`, overridable by an explicit `window_reliable`). **Engine, gate:** `RWM_COPA_COMPETE` (`gates/scheduler_gates.rs:74`, default off; read at `net/control_msg.rs:404`). **Engine, `reliable` boolean branches (ρ = 1 against ρ < 1 selecting a path, not composing with δ):** placement law against best-path pick plus duplicate (`net/emit_source.rs:308`); the sent store (`:299`) and the correction path (`:829`); `tx_paused` (`net/mod.rs:2517`); the dynamic store cap (`net/sender_policy.rs:542`), SACK release (`:667`) and per-path recovery (`:760`, `:773`); the sender's gap clamp (`net/sender_phases.rs:984`), repair and retransmit placement (`:1161`, `:1173`, `:1314`) and path-map floor (`:1597`); the shed law's arming (`net/shed.rs:24`); the receiver's reorder buffer (`net/reorder.rs:88`, `:118`, `:182`). Not counted: the dial's own named-point tables that feed continuous laws (`delta_price`, `tail_loss_scale` in `control/fec_rate.rs:70-75`, `SchedulingWeights::from_hint`, which calls `from_delta`), and the log echo at `net/mod.rs:651`. **Visualizer model** (`raptorpath-wasm/src/lib.rs`): `hint_bulk` is set once at construction (`:1022`) and is true only for the classic `"bulk"` hint string; the dial's `"continuum"` path sets it false. Construction-only: `:1022`. Legacy-ablation-only: `:784` (the `legacy_bulk_delta` half) and `:1386-1387`. They route behaviour downstream for the classic `"bulk"` hint, so they are a debt: `:666` (the completion-χ glide applies only to Bulk), `:706` (the completion-debt increment is zeroed for Bulk), `:787` (`bulk_late_is_fine` takes `hint_bulk`) and `:1673` (the displayed `delta_eff`). The visualizer's dial does not reach them, and the classic hint strings are used by the API and the tests. The construction comment's "no hint branch exists downstream of construction" is therefore true of the continuum path only. | route the classic hints through the continuum constructor (Bulk as δ = 0.005) and delete the flag; for the engine, each site is a declared corner, not a law, until it is expressed as a function of the dial |
+| 14 | The overload region. Past Section 6.1's line λ·(1 − (1 − ρ − R)⁺) > C the dial cannot hold both δ and ρ. Under ADR-0084 the engine delays the source once the shed budget is spent; receiver give-ups and forced verdicts can still exceed 1 − ρ there, and they are printed, not prevented. Thinning at the source within (1 − ρ − R)⁺ is not built | a cell driven past C at a declared ρ < 1: the paused share on the `O ≥ cap` disjunct beside G_rx/src_total against 1 − ρ |
 
 ### 11.2 Open-constants register
 
@@ -4361,7 +4560,7 @@ decide it.
 
 | item | model | engine |
 |---|---|---|
-| span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop |
+| span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop. ADR-0084 keeps the EWMA for D, refreshed at the verdict sites, until a battery reads the RTprop form; both are computed and `D_rtprop / D_ewma` is logged |
 | receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
 | store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | the same expression: `pooled_store_cap` has no path-count branch (ADR-0072; `net/store_cap.rs`). No divergence on the default path. `RWM_STORE_PATHS = 0` re-runs `clamp(2.0·BDP, 10, 1024)` as a control arm at every N; the wasm model scales its pool per path with no guard |
@@ -4376,7 +4575,10 @@ decide it.
 | per-path loss feed | wire loss of the path's own direction | the sender's own ack deltas only (`WindowAck` counters, or the per-batch `Ack` with `RWM_ACK_MERGE=0`), reorder credited back by the tracker and carried by the sender, never negative; the peer's `PathReport` loss is monitoring only, and the receiver's incoming loss feeds the RX slot. Window batches carry one symbol, so the tracker's `gap × received` charge is exact (`test_path_batch_tracker_with_gap`); datagrams dropped in quinn's buffers count as loss and are named by `[DIAG] dgev` / `[CTLD] dgrx` |
 | BOCD quantile | mixture quantile | run-length-weighted average of quantiles |
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
-| give-up budget (Section 5.6) | `min(1 − ρ, R)` after D(δ); ρ = 1 is the retain seat at every δ (budget 0) | seat switch: the evicting seat (not `--window-reliable`; the CLI reaches it only at Realtime) runs budget R, the retain seat 0. Agrees at ρ = 1 and wherever 1 − ρ ≥ R; the model is tighter only for 0 < 1 − ρ < R. Bounded at equal R by `giveup_budget_vs_engine_seats_at_equal_r_is_bounded` (`raptorpath-wasm`) |
+| give-up budget (Section 5.6) | the paper: `Ab + 1 ≤ (1 − ρ)·src_total` after D(δ), ρ declared (`window_rho`; Realtime 0.99), R a gauge (ADR-0084). The wasm model still runs `min(1 − ρ, R)` against its shed count until its own `GOLDEN_CAPTURE=1` commit | on main a seat switch: the evicting seat (not `--window-reliable`; the CLI reaches it only at Realtime) runs budget R against the cumulative shed count, the retain seat 0. The wasm model and main agree at ρ = 1 and wherever 1 − ρ ≥ R; the model is tighter only for 0 < 1 − ρ < R. Bounded at equal R by `giveup_budget_vs_engine_seats_at_equal_r_is_bounded` (`raptorpath-wasm`). Both move to the paper's law with the ADR-0084 engine change |
+| retention at ρ → 1⁻ | a store at every ρ (Section 5.1): no forced verdicts, continuous through ρ = 1 | on main the evicting seat keeps no store, so window evictions of unresolved seqs happen at ρ < 1 and never at ρ = 1, untold and uncounted: a step. ADR-0084 removes it on the sender; the step test (sender observables identical at ρ = 1 and at 1 − ε with ε·src_total < 1) is owed with the engine change |
+| receiver give-up at ρ → 1⁻ | (not modelled) | the reorder buffer never passes a hole at ρ = 1 and passes on its ε̂_recv budget below it: a step that ADR-0084 keeps. Owed: the step test's receiver observables (passes, G_rx), record-only |
+| verdict floor | every verdict reaches the receiver (`WindowFloor`, Section 5.1) | not on main (wire v10): a shed or an eviction sends nothing, so a lost tail with nothing above it stalls the frontier (roadmap `rec-evict-blocker-unresolved`) |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |
 
 The per-path loss feed's two laws (the row above). Tracker, per arriving
@@ -4773,13 +4975,14 @@ engine.
 
 ```text
    b(δ)   =  clamp( 2^(−½·log₁₀(δ/δ_auto)), ½, 2 )                         span_horizon_b
-   D(δ)   =  min( b(δ)·RTT, 2·RTT )                                         shed_deadline_us
+   D(δ)   =  min( b(δ)·RTprop, 2·RTprop )                                   shed_deadline_us (engine: EWMA RTT, Section 11.3)
    A*     =  clamp( ⌈rate·D⌉, 1, W )                                        emit_source
    M*     =  clamp( ⌈rate·2·RTprop/A*_q⌉ + 1, 2, 32 )                        gen_pipe_depth
    Δ      =  clamp( ⌈rate·J⌉, 1, 64 )                                       emit_source
    repair span  =  [F, F + A*) ,   F + A* ≤ sent − Δ
 
-   shed  ⇔  age > D(δ)  ∧  shed_total + 1 ≤ ε̂·(1 − P_fec(r, A*))·src_total     shed_allowed
+   shed  ⇔  age > D(δ)  ∧  G_rx + |{v ∈ V : v ≥ F}| + 1 ≤ (1 − ρ)·src_total   shed_allowed (ADR-0084; main: shed_total against ε̂·(1 − P_fec(r, A*)))
+   F_v   =  min{ s ≥ F : s ∉ V } ,   F_rx = max over paths of the floors received   WindowFloor, wire v11 (ADR-0084, pending)
 
    W_mp  ≳  Σᵢ gᵢ·(RTT_max + t_slack)                                      —
    deficit = Σ_{unacked s} ε_path(s) ;  cross-path r = ε_A/(1 − ε_B)        (analytic only)
@@ -4801,6 +5004,7 @@ engine.
    store_len    =  retained − released                                      store_gate_released
    released     =  min(|S|, max(|M|, |S∩[0,F)| + (A − ((H+1−F) − |S∩[F,H]|))⁺))   (F, A) = newest (next_expected, received_above)
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s
+   pause        ⇔  (H + 1 − F − |released|) ≥ cap  ∨  cwnd_full   (every ρ)   ADR-0084, pending; main: store_len ≥ cap ∨ cwnd_full, at ρ = 1 only
    burst b      =  emit_burst   (every N; no path-count input; RWM_EMIT_BATCH, on)  emit_burst_bound
 ```
 

@@ -138,7 +138,7 @@ pub(crate) async fn run_receiver(
     // COUNT of the contiguous delivered prefix -- every seq below it has
     // been handed to the consumer; 0 = nothing delivered. (Through v8 this
     // was `highest_delivered_seq`, where 0 meant both "nothing" and "seq 0".)
-    let mut next_expected: u64 = 0;
+    let mut next_expected: u64 = 0; #[cfg(any(debug_assertions, feature = "test-seams"))] let acct_rx = { let a = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)); let t = a.clone(); tokio::spawn(async move { let mut last = u64::MAX; loop { tokio::time::sleep(Duration::from_millis(50)).await; let f = t.load(std::sync::atomic::Ordering::Relaxed); let dead = std::sync::Arc::strong_count(&t) == 1; if f != last || dead { crate::readout!("[ACCT-RX] frontier={}{}", f, if dead { " final=1" } else { "" }); last = f; } if dead { break; } } }); a };
     // The `next_expected` we last advertised in a WindowAck (dedupe for ack
     // sends; the shared window_ack_seq atomic carries the PEER's acks for the
     // local sender and must not be conflated with this). 0 = nothing yet, so
@@ -1977,7 +1977,7 @@ pub(crate) async fn run_receiver(
                     );
                     if emit_ack {
                         if cumulative_advanced {
-                            last_advertised_ack = next_expected;
+                            last_advertised_ack = next_expected; #[cfg(any(debug_assertions, feature = "test-seams"))] acct_rx.store(next_expected, std::sync::atomic::Ordering::Relaxed);
                         }
                         // SACK ranges: what was received beyond the cumulative
                         // point (not what's missing). Only on an advertising
@@ -2226,7 +2226,7 @@ pub(crate) async fn run_receiver(
         seen_end,
         &mut rank_prev_seen,
     ));
-    blk.flush_final(probe);
+    blk.flush_final(probe); #[cfg(any(debug_assertions, feature = "test-seams"))] { crate::readout!("[ACCT-RX] frontier={} holes_given_up={} final=1", next_expected, recv_shed_holes); }
 }
 
 /// The decode-inert floor (paper §5.2 "Retained state"): everything below the

@@ -212,6 +212,17 @@ fn pump<R: Read + Send + 'static>(src: R, log: ServerLog) -> ThreadHandle<()> {
     })
 }
 
+thread_local! {
+    /// The live logs of the servers this test thread spawned: the O check at
+    /// the client's exit polls them for the receiver frontier.
+    static LIVE_SERVER_LOGS: std::cell::RefCell<Vec<ServerLog>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The highest receiver frontier across this thread's live servers.
+fn live_rx_frontier() -> Option<u64> {
+    LIVE_SERVER_LOGS.with(|l| l.borrow().iter().filter_map(|s| rx_frontier(&s.text())).max())
+}
+
 /// A running perf server child.
 pub struct PerfServer {
     pub addrs: Vec<SocketAddr>,
@@ -305,6 +316,7 @@ pub fn spawn_perf_server(binds: &[SocketAddr], env: &[(&str, &str)], args: &[&st
     apply_env(&mut cmd, env);
     let mut child = Reaper(cmd.spawn().expect("spawn perf server"));
     let log = ServerLog::default();
+    LIVE_SERVER_LOGS.with(|l| l.borrow_mut().push(log.clone()));
     let readers = vec![
         pump(child.0.stdout.take().expect("server stdout"), log.clone()),
         pump(child.0.stderr.take().expect("server stderr"), log.clone()),
@@ -454,12 +466,145 @@ pub const CLEAN_RATE: [(&str, &str); 2] = [
     ("RWM_L0_SEED", "42"),
 ];
 
+/// Does the engine binary under test carry the recovery account
+/// (`net/account.rs`)? Same condition as the engine's `cfg`, evaluated on the
+/// test crate: it shares the profile and the feature set with the binary.
+pub const ACCOUNT_CARRIED: bool = cfg!(any(debug_assertions, feature = "test-seams"));
+
+/// One `[ACCT]` line of the engine's recovery account, as `key=value` tokens.
+#[derive(Debug, Clone)]
+pub struct AcctLine {
+    pub raw: String,
+    pub final_line: bool,
+}
+
+impl AcctLine {
+    /// The value of `key=` (panics when absent: the line shape is the
+    /// engine's contract, pinned by a unit test there).
+    pub fn f(&self, key: &str) -> f64 {
+        let pat = format!(" {key}=");
+        let i = self.raw.find(&pat).unwrap_or_else(|| panic!("no {key}= in {}", self.raw));
+        self.raw[i + pat.len()..]
+            .split(' ')
+            .next()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("unparsable {key}= in {}", self.raw))
+    }
+
+    pub fn u(&self, key: &str) -> u64 {
+        self.f(key) as u64
+    }
+
+    /// The checks for the end of a completed transfer; returns the failures
+    /// (empty = clean). `frontier` is the receiver's delivered frontier
+    /// (`[ACCT-RX]`), when known: an outstanding seq below it was delivered
+    /// and only its ack is in flight, which is not a stuck seq. `E` and `H`
+    /// are reported, not gated: `E` counts seqs that left the coding window
+    /// before their ack, an upper bound on abandonment (most were delivered).
+    /// `H` is gated only where no budget was ever open.
+    pub fn violations(&self, frontier: Option<u64>) -> Vec<String> {
+        let (sent, a, h, e) = (self.u("S_sent"), self.u("A"), self.u("H"), self.u("E"));
+        let (o_serv, o_strand) = (self.u("O_serv"), self.u("O_strand"));
+        let mut v = Vec::new();
+        if sent != a + h + e + o_serv + o_strand {
+            v.push(format!(
+                "the identity does not close: S_sent={sent} != A+H+E+O_serv+O_strand={}",
+                a + h + e + o_serv + o_strand
+            ));
+        }
+        let o = o_serv + o_strand;
+        if o_strand != 0 {
+            v.push(format!("O_strand = {o_strand}: outstanding seqs below the gap server's clamp bound"));
+        }
+        if o != 0 {
+            // O_max is the highest outstanding seq; all below the receiver's frontier = acks in flight.
+            match frontier {
+                Some(f) if (self.u("O_max")) < f => {}
+                Some(f) => v.push(format!("O = {o} at the end of a completed transfer, highest outstanding seq {} is not below the receiver's frontier {f}", self.u("O_max"))),
+                None => {} // no receiver evidence in hand: this call cannot judge O
+            }
+        }
+        if self.u("inert_sweeps") != 0 {
+            v.push(format!("inert_sweeps = {}: tail sweeps whose gap sent nothing", self.u("inert_sweeps")));
+        }
+        if self.f("bud") == 0.0 && h != 0 {
+            v.push(format!("H = {h} with no shed budget ever open"));
+        }
+        v
+    }
+}
+
+/// The receiver's delivered frontier: the largest `frontier=` of any
+/// `[ACCT-RX]` line in a server log.
+pub fn rx_frontier(log: &str) -> Option<u64> {
+    log.lines()
+        .filter(|l| l.starts_with("[ACCT-RX] "))
+        .filter_map(|l| l.split(' ').find_map(|t| t.strip_prefix("frontier=")).and_then(|v| v.parse().ok()))
+        .max()
+}
+
+/// Every `[ACCT]` line in a log.
+pub fn account_lines(log: &str) -> Vec<AcctLine> {
+    log.lines()
+        .filter(|l| l.starts_with("[ACCT] "))
+        .map(|l| AcctLine { raw: format!(" {}", &l["[ACCT]".len() + 1..]), final_line: l.ends_with(" final=1") })
+        .collect()
+}
+
+/// The end-of-transfer account check (ADR-0081). Every exit (`final=1`) line
+/// in `log` must be clean. With `require`, at least one exit line must exist
+/// when the binary carries the account: a missing line is a failure, not a
+/// pass, so the check cannot silently not execute. `srv_log` supplies the
+/// receiver frontier for the O check. Each asserted line is echoed to the real
+/// stderr (not captured by the test harness) with its E and budget.
+pub fn assert_account(log: &str, who: &str, require: bool, srv_log: Option<&str>) {
+    if !ACCOUNT_CARRIED {
+        return;
+    }
+    let fin: Vec<AcctLine> = account_lines(log).into_iter().filter(|l| l.final_line).collect();
+    assert!(
+        !require || !fin.is_empty(),
+        "{who}: no `[ACCT] ... final=1` exit line from a build that carries the recovery account - \
+         the sender's exit line did not print, so the account check did not execute"
+    );
+    let snap = srv_log.and_then(rx_frontier);
+    let have_servers = srv_log.is_some();
+    for l in &fin {
+        // O > 0: the receiver's frontier must pass the highest outstanding seq.
+        // The server's sampler prints every 50 ms, so give it up to 5 s.
+        let need = l.u("O_max");
+        let o = l.u("O_serv") + l.u("O_strand");
+        let mut frontier = snap;
+        if o > 0 && have_servers && !frontier.is_some_and(|f| f > need) {
+            wait_until(Duration::from_secs(5), || live_rx_frontier().is_some_and(|f| f > need));
+            frontier = frontier.max(live_rx_frontier());
+        }
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr(),
+            "[ACCT-ASSERT] {who} reliable={} S_sent={} H={} E={} bud={} O={} O_max={} rx_frontier={frontier:?}",
+            l.u("reliable"), l.u("S_sent"), l.u("H"), l.u("E"), l.f("bud"), l.u("O_serv") + l.u("O_strand"), l.u("O_max")
+        );
+        let v = l.violations(frontier);
+        assert!(v.is_empty(), "{who}: recovery account failed: {}\n{}", v.join("; "), l.raw.trim());
+    }
+}
+
 /// Fail a stalled transfer AS a stall. A perf run that did not finish within
 /// the perf client's run timeout is printed as a `"dnf":true` run line and the
 /// client still exits 0, so without this check the stall surfaces downstream
 /// as a misleading gauge failure. The closing summary line (no `"run"` key)
 /// carries `"dnf":<count>` and is skipped. The panic carries the log tails.
 pub fn assert_no_dnf(cli_log: &str, srv_log: Option<&str>) {
+    assert_no_dnf_inner(cli_log, srv_log);
+    // ADR-0081: the sender's account closes at the end of a completed transfer.
+    assert_account(cli_log, "client", true, srv_log);
+    if let Some(s) = srv_log {
+        assert_account(s, "server", false, None);
+    }
+}
+
+fn assert_no_dnf_inner(cli_log: &str, srv_log: Option<&str>) {
     let tail = |log: &str| {
         let lines: Vec<&str> = log.lines().collect();
         lines[lines.len().saturating_sub(80)..].join("\n")
@@ -592,6 +737,19 @@ pub fn transfer(t: Transfer<'_>) -> (String, String) {
     let mut cargs = perf_args(t.hint, t.bytes, t.runs).to_vec();
     cargs.extend_from_slice(t.extra_args);
     let cli = run_perf_client(&binds, &cenv, &cargs);
+    // An outstanding seq at the client's exit is only an ack in flight if the
+    // receiver delivered it: give the server's `[ACCT-RX]` frontier (every
+    // 50 ms) up to 5 s to pass the client's highest outstanding seq.
+    let need = account_lines(&cli)
+        .iter()
+        .filter(|l| l.final_line && l.u("O_serv") + l.u("O_strand") > 0)
+        .map(|l| l.u("O_max"))
+        .max();
+    if ACCOUNT_CARRIED {
+        if let Some(need) = need {
+            wait_until(Duration::from_secs(5), || rx_frontier(&srv.log.text()).is_some_and(|f| f > need));
+        }
+    }
     assert_no_dnf(&cli, Some(&srv.log.text()));
     let srv_log = match t.srv_tag {
         Some(tag) => srv.log_after(srv.log.len(), tag),
