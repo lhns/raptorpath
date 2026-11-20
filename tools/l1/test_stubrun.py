@@ -2804,9 +2804,9 @@ def case67(plan, path):
         extra.update(ref67_files(root, sb))
         rehearse = plan == "67" and path != "not-rehearsal"
         bad = {"s2-taper-nonzero": "s2-taper-nonzero", "s2-no-pslot": "s2-no-pslot@2:c2-100", "s2-belowfloor-high": "s2-belowfloor-high", "r1-blind": "r1-blind", "twin-no-final": "twin-no-final", "twin-worse": "twin-worse",
-               "twin-under-min": "twin-under-min", "twin-no-kept-acct": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-no-gauge@1-7:c2-100", "block1-fail": "s1-no-gauge@0:c2-100"}
+               "twin-under-min": "twin-under-min@1-99", "twin-no-kept-acct": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-no-gauge@1-7:c2-100", "block1-fail": "s1-no-gauge@0:c2-100"}
         if plan == "67g":
-            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@0", "s1-no-gauge": "s1-no-gauge@1", "g1-fail": "s1-goodput-low"})
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@0", "s1-no-gauge": "s1-no-gauge@1", "g1-fail": "s1-no-gauge@0-99"})
         if plan == "67x":
             bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100"})
         if path in bad:
@@ -2965,7 +2965,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         if path == "full":
             check(f"{tag}: rc 0, LD-ALL-DONE; GATE-67G1 PASS and GATE-67G2 PASS on clean rows; no replacement run, no S06-FAIL", done_ok and gate1.group(1) == "PASS" and gate2.group(1) == "PASS" and not any(r["status"] == "S06-FAIL" for r in g1 + g2), (rc, tail(out, 8), tail(sc["g1"], 6), tail(sc["g2"], 6)))
         if path == "g1-fail":
-            check(f"{tag}: S1 slower than B0: GATE-67G1 FAIL, and G2 (BASE = S1) still ran to the end and printed its gate", gate1.group(1) == "FAIL" and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (tail(sc["g1"], 5), tail(sc["g2"], 5)))
+            check(f"{tag}: S1 rows without the gauge prints on every draw (the witness failure is not replaced away): GATE-67G1 FAIL, and G2 (BASE = S1) still ran to the end and printed its gate", gate1.group(1) == "FAIL" and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (tail(sc["g1"], 5), tail(sc["g2"], 5)))
         if path == "s1-no-gauge":
             rp = led56(stage_dirs["g1"], "repl.log")
             check(f"{tag}: an S1 row without the gauge prints is WITNESS-FAIL in G1 and re-run once (repl.log holds its replacement), and the gate still reads", any(r["status"] == "WITNESS-FAIL" for r in g1) and len(rp) >= 1 and gate1 is not None, ([r["status"] for r in g1], len(rp)))
@@ -3006,7 +3006,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         check(f"{tag}: S1's first A row is void: the block-1 rule stops the stage (FAILED-STAGE67 in its ledger, FAILED-a marker, exit 6) and the NEXT stage (R1) still ran to the end; the session is not DONE-ALL",
               os.path.exists(os.path.join(stage_dirs["a"], "FAILED-a")) and "FAILED-STAGE67" in txt67(stage_dirs["a"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(e, 8)))
     elif path == "r1-blind":
-        check(f"{tag}: S1 prints taper = 0 on most R1 rows: R1-BLIND, reported (not a failure of S2)", re.search(r"^R1 R1-BLIND", sc["r1"], re.M) is not None, tail(sc["r1"], 6))
+        check(f"{tag}: S1 prints taper = 0 on most R1 rows: R1-BLIND, reported (not a failure of S2)", re.search(r"^R1-BLIND", sc["r1"], re.M) is not None, tail(sc["r1"], 6))
     elif path == "twin-no-final":
         check(f"{tag}: the twins' sender has no final=1 line: the last periodic [ACCT] line is read and labelled ACCT-LAST", "ACCT-LAST" in sc["r2"], tail(sc["r2"], 8))
     elif path == "twin-under-min":

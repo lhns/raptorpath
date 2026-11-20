@@ -621,7 +621,7 @@ def score_a(paths, out, plan_id="67a", repl=None):
     verdict = {}
     # UNSCOREABLE: fewer than MIN_LIVE_A live S1 or S2 rows per cell (MIN_LIVE_B0 live B0 rows for A1)
     short_as = [f"{c} {a} {len(slotfill(rows, c, a))}<{plan67.MIN_LIVE_A}" for c in (C2, C8) for a in ("S1", "S2") if len(slotfill(rows, c, a)) < plan67.MIN_LIVE_A]
-    short_a1 = short_as + [f"{c} B0 {len(slotfill(rows, c, 'B0'))}<{plan67.MIN_LIVE_B0}" for c in (C2, C8) if len(slotfill(rows, c, "B0")) < plan67.MIN_LIVE_B0]
+    short_a1 = [x for x in short_as if not (plan67.drop_s2() and " S2 " in x)] + [f"{c} B0 {len(slotfill(rows, c, 'B0'))}<{plan67.MIN_LIVE_B0}" for c in (C2, C8) if len(slotfill(rows, c, "B0")) < plan67.MIN_LIVE_B0]
 
     def verdict_of(name, short, fn):
         if aborted:
@@ -717,9 +717,13 @@ def score_r1(paths, out, plan_id="67r"):
     for r in s06:
         out(f"    S06-FAIL S2 s{r['seed']} r{r['rep']}: {'; '.join(x for x in r['problems'] if x.startswith('s06:'))}")
     out(f"  reported: goodput med S1 {fm(lc.med(m(s1, 'mbps')), 1)} S2 {fm(lc.med(m(s2, 'mbps')), 1)} B0 {fm(lc.med(m(b0, 'mbps')), 1)}; in-order delay is under the 30 s tick floor (marked, not read)")
-    short = [f"{a} {len([r for r in rows0 if r['arm'] == a and r['status'] in ('LIVE', 'S06-FAIL') + CRASH])}" for a in ("S1", "S2") if len([r for r in rows0 if r["arm"] == a]) < 1]
-    pre = ("UNSCOREABLE (abort " + ",".join(aborted) + ")") if aborted else ("UNSCOREABLE (no S1 or S2 row)" if short else ("NO VERDICT (more than %d replaced slots)" % info["cap"] if info["too_many"] else None))
-    a1 = pre and "A1-R " + pre or f"A1-R {'PASS' if a1r_ok else 'FAIL'}"
+    def _none(arms):
+        return [f"{a} {len([r for r in rows0 if r['arm'] == a and r['status'] in ('LIVE', 'S06-FAIL') + CRASH])}" for a in arms if len([r for r in rows0 if r["arm"] == a]) < 1]
+    short, short1 = _none(("S1", "S2")), _none(("S1",))      # LD_DROP_S2 (a G2 FAIL): A1-R reads S1 against B0 alone, R1 has no S2 arm to score
+    def _pre(sh):
+        return ("UNSCOREABLE (abort " + ",".join(aborted) + ")") if aborted else ("UNSCOREABLE (no S1 or S2 row)" if sh else ("NO VERDICT (more than %d replaced slots)" % info["cap"] if info["too_many"] else None))
+    pre, pre1 = _pre(short), _pre(short1)
+    a1 = pre1 and "A1-R " + pre1 or f"A1-R {'PASS' if a1r_ok else 'FAIL'}"
     r1 = pre and "R1 " + pre or ("R1 FAIL" if not r1_ok else ("R1-BLIND" if blind else "R1 PASS"))
     out(a1)
     out(r1)
