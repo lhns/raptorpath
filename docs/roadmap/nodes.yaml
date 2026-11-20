@@ -7035,7 +7035,9 @@ nodes:
   - rate-c8-frontier-recopy
   replaced_by: []
   qualified_by: []
-  lane: no-cargo
+  lane: vm
+  vm_order: 3
+  order_reason: 'VM batch 1 (docs/derivations/vm-batch-1-registration.md)'
   start: ''
   end: ''
   folded: []
@@ -7056,7 +7058,9 @@ nodes:
   depends_on: []
   replaced_by: []
   qualified_by: []
-  lane: host-cargo
+  lane: vm
+  vm_order: 2
+  order_reason: 'VM batch 1 (docs/derivations/vm-batch-1-registration.md)'
   start: '2026-11-19'
   end: ''
   folded: []
@@ -7138,7 +7142,9 @@ nodes:
   - meas-s51-session
   replaced_by: []
   qualified_by: []
-  lane: host-cargo
+  lane: vm
+  vm_order: 1
+  order_reason: 'VM batch 1 (docs/derivations/vm-batch-1-registration.md)'
   start: ''
   end: ''
   folded: []

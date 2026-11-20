@@ -473,13 +473,14 @@ flowchart TB
 <!-- BEGIN GENERATED: ready-now -->
 **vm**
 
+- `rate-s06-plost-derivation`: Repair slots send only coded repair
+- `meas-s51-c8-gauges`: Per-path readouts for two-path runs
 - `meas-progress-baseline`: Cumulative progress benchmark
 
 **host-cargo**
 
 - `rate-delta-jitter-fix`: Jitter margin reads wrong direction
 - `rate-fix-rate-readout`: Repair-rate readout
-- `meas-s51-c8-gauges`: Per-path readouts for two-path runs
 - `model-fix-hint-keyed-paths`: Preset-keyed engine code made smooth
 - `meas-guard-resolution`: Merge check sees smaller changes
 - `meas-test-hygiene`: Test hygiene fixes
@@ -495,7 +496,6 @@ flowchart TB
 - `store-sampler-design`: How the in-flight limit samples delay
 - `meas-defect-cr61-large-pool`: Collapse detector misfires on large limits
 - `rec-framing-followups`: Framing fix leftovers
-- `rate-s06-plost-derivation`: Repair slots send only coded repair
 - `rate-shed-budget-rho`: Late-data drop budget ignores ρ
 - `rate-adr50-split-unwired`: Decided repair-budget split never wired
 - `meas-guard-bulk-blind`: Merge check only tests bulk
@@ -604,7 +604,9 @@ flowchart TB
 ## VM queue
 
 <!-- BEGIN GENERATED: vm-queue -->
-_The VM queue is empty._
+1. `meas-s51-c8-gauges`: Per-path readouts for two-path runs. VM batch 1 (docs/derivations/vm-batch-1-registration.md)
+2. `infra-tunnel-inorder-guard`: Tunnel must deliver in order. VM batch 1 (docs/derivations/vm-batch-1-registration.md)
+3. `rate-s06-plost-derivation`: Repair slots send only coded repair. VM batch 1 (docs/derivations/vm-batch-1-registration.md)
 <!-- END GENERATED: vm-queue -->
 
 ## Timeline
