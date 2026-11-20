@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   gates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable
@@ -19,7 +19,7 @@ jobs:
         with: { shared-key: debug }
       - run: cargo test -p raptorpath --lib gates
   math-core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable
@@ -28,7 +28,7 @@ jobs:
       - run: cargo test -p raptorpath-math
       - run: cargo test -p raptorpath-core
   lib-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable
@@ -36,7 +36,7 @@ jobs:
         with: { shared-key: release }
       - run: cargo test -p raptorpath --lib --release
   tools:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4.2.2
         with: { fetch-depth: 0 }  # test_harness63 needs git history (a271e0bb)
@@ -51,7 +51,7 @@ jobs:
           python tools/roadmap/check.py | tee check.out
           grep -q '^check: OK' check.out
   visualizer:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable

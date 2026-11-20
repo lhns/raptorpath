@@ -22,7 +22,7 @@ for i in $(seq 1 "$N"); do
   done
   # the tools/l1 set takes ~4 min (mostly one 130 s test), so it runs on iterations 1, 11, 21 only
   if [ $(( (i - 1) % 10 )) -eq 0 ]; then
-    python3 tools/ci/run_py_tests.py > "$OUT/py.log" 2>&1 || grep -aE '^FAIL ' "$OUT/py.log" | awk '{print $2 " [py]"}' >> "$OUT/failures.txt"
+    python3 tools/ci/run_py_tests.py > "$OUT/py.log" 2>&1 || grep -aE '^FAIL  test_' "$OUT/py.log" | awk '{print $2 " [py]"}' >> "$OUT/failures.txt"
   fi
   echo "iteration $i done"
 done

@@ -15,7 +15,7 @@ permissions:
   contents: read
 jobs:
   suite:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     strategy:
       fail-fast: false
@@ -33,10 +33,10 @@ jobs:
         with: { shared-key: "nightly-${{ matrix.name }}" }
       - run: ${{ matrix.cmd }}
   stubrun:
-    # Fails on hosted runners today (93 checks, ABORT rc 5 in the 60b/63 launch paths; cause not yet diagnosed,
-    # see tools/l1/quarantine.txt). Reported, not gating, until fixed.
+    # Failed on ubuntu-latest (26.04) with 93 checks (the 60b/61b/63 launch paths end ABORT-SMOKE, rc 5); cause not
+    # diagnosed. Report-only until a green run on ubuntu-24.04 or a diagnosis.
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4.2.2
@@ -50,16 +50,17 @@ jobs:
           echo "stubrun wall: $(( $(date +%s) - start )) s, rc=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
           exit $rc
   py-quarantined:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4.2.2
+        with: { fetch-depth: 0 }
       - uses: actions/setup-python@v5.6.0
         with: { python-version: "3.12" }
       - run: pip install pyyaml
       - name: tools/l1 tests including quarantined (report only)
         run: python tools/ci/run_py_tests.py --include-quarantined || true
   repeat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4.2.2
