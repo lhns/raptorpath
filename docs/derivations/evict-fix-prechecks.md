@@ -78,24 +78,184 @@ code never records: eviction itself must be the verdict.
 - **[E] An eviction sends nothing.** `encoder.advance` plus a
   `source_path_map` prune (`net/mod.rs:3594–3602`, `net/sender_phases.rs:1374`,
   `:1399–1401`).
-- **[E] After the source is exhausted** the sender emits only what the
-  repair and recovery paths produce: the tail sweep's synthesized gap (clamped
-  away when `first()` is below the window, item 1) and whatever proactive
-  repair the window still funds. None of it names a seq the receiver may skip.
-  `Shutdown` is sent only on engine shutdown (`net/mod.rs:3046–`) and the
-  receiver does not flush its reorder buffer on it.
+- **[E] After the source is exhausted, nothing is sent at all** when
+  `first()` is below the window. In the lost-tail run below (`lt_evict`) the
+  last data symbol leaves at t ≈ 0.05 s: the seam's send tick, which prints at
+  most every 100 ms *on a send*, prints once (at k's send). For the remaining
+  30 s the sender's `[DIAG]` reads `src=0 cod=0 retx=0`, and its 298 sweeps
+  are all clamped. When `first()` is inside the window the sweep does resend
+  (section 3, `sr_evict`), but a resend is data, not a verdict.
+- **[E] `Shutdown` is no substitute.** The sender sends it only on engine
+  shutdown (`net/mod.rs:3046–3061`). The receiver only logs it
+  (`net/control_msg.rs:119–121`).
+- **[E] The reverse direction exists.** When a hold expiry moves the frontier
+  with no arrival, the receiver sends a bare `WindowAck` (`net/receiver.rs`
+  `:1026–1047`). So a receiver-side pass does reach the sender, as the
+  cumulative ack, and prunes `retransmit_buffer` (`net/sender_phases.rs:1403`).
 
-**Answer.** Today the receiver learns of an abandoned seq only by inference
-from later arrivals. A lost tail with nothing above it is therefore never
-passed, at any budget, and neither a shed nor an eviction changes that.
-"Tell the receiver" needs a new sender→receiver fact (a floor below which the
-sender has abandoned every seq), and it must be sent when no data follows,
-so it cannot ride on data symbols alone.
+**Answer.** Today the receiver learns that a seq was abandoned only by
+inference from later arrivals. A lost tail with nothing above it is never
+passed, at any budget. Neither a shed nor an eviction produces a message, and
+once the source is exhausted with `first()` below the window the sender is
+silent. "Tell the receiver" needs a new sender→receiver fact: a floor below
+which the sender can serve nothing. It must be sent when no data follows, so
+it cannot ride on data symbols alone, and it needs a repeat or ack rule
+because it travels on the unreliable control lane.
 
 ## 3. Why the lost tail stalls at the natural budget
 
-(traces below)
+**Setup.** The `sim_lost_tail` test binary (`--features sim,test-seams`,
+`RUSTFLAGS="--cfg tokio_unstable"`, built from `0d885bbd`) is run in its child
+mode directly, so env can be added. Every run uses seed 42, 6 MB (12 147
+source symbols), Realtime, one path, 2.5 % loss, 4 ms jitter,
+`RWM_TEST_TS_DROP=dead`, `RWM_TEST_TS_DEAD_MS=1500` and
+`RWM_TEST_TS_SHED_ALL=1`. One port per scenario: 47 200 for k = 11 800
+(`sim_lost_tail`), 47 400 for k = 12 087 (`sim_shed_reach`). The script and
+logs are not committed. The command is the one `tests/sim_support/mod.rs:81–97`
+builds, with `SIM_RELIABLE` set per row.
 
-## 4. What this implies for the rule's derivation
+| run | ρ | k | budget | outcome | sender `cum=src/cod/ack` | sweeps | retx | shed/denied |
+|---|---|---|---|---|---|---|---|---|
+| lt_retain | 1 | 11 800 | n/a | client_ok 12.4 s | n/a | n/a | k sent twice, filled | – |
+| lt_evict | <1 | 11 800 | natural (0.0000) | limit 30 s | 12147/2/**11800** | 298 | **0** | 0/0 |
+| lt_evict_b05 | <1 | 11 800 | forced 0.05 | limit 30 s | 12147/2/**11800** | 298 | **0** | 0/0 |
+| sr_retain | 1 | 12 087 | n/a | client_ok 4.55 s | n/a | n/a | k sent twice, filled | – |
+| sr_evict | <1 | 12 087 | natural (0.0000) | limit 30 s | 12147/64/**12147** | 80 | 62 | 0/70 |
+| sr_evict_b05 | <1 | 12 087 | forced 0.05 | limit 30 s | 12147/2/**12087** | 70 | 0 | 60/0 |
 
-(below)
+**[E] The divergence starts at the source, not at the resend.** At ρ < 1 the
+whole object goes through the encoder before any loss is judged. k = 11 800's
+first send is at t = 44 ms (ρ = 1: t = 1.535 s, paced by the store cap). The
+first gap report, at t = 72–79 ms, already shows the window frozen at
+`win=[11947,12146]`, while the receiver's frontier is at 3 953 (t = 130 ms).
+This is D1b: there is no source-rate bound at ρ < 1 (`net/mod.rs:2473`).
+
+**[E] The lost tail (lt_evict): resends never start.** k is below the window
+from its first judgment. The first sweep line naming k is
+`gap_clamped n=2896 gap=[11800,11800] win=[11947,12146] t_us=…1044000`, and
+every later sweep is the same line. The ρ = 1 counterpart at the same point
+is `send seq=11800 n=2 site=batch dropped=0` (t = 3.180 s), then `fill`. k has
+nothing above it at the receiver (every later send was swallowed), so no
+expiry passes it. The receiver's ack stays at 11 800, `retransmit_buffer.first()`
+stays at k, and the sweep stays aimed at a below-window seq (D1a + D1c = D1d).
+**The budget plays no part:** with the budget forced to 0.05 the run is
+identical (`lt_evict_b05`: no shed, no resend), because the shed check sits
+after the clamp.
+
+**[E] The in-window tail (sr_evict) at the natural budget does not stall.**
+The shed refusal (`denied`, 70 times, on every tail seq 12 087..12 146) falls
+through to the resend (`net/sender_phases.rs:866–1091`). The sweep resends
+one seq per sweep, the receiver's frontier walks 12 088 → 12 146 at about two
+seqs per 100 ms, and the sender's ack reaches 12 147. Why `first()` is in the
+window here: the earlier below-window holes (e.g. 11 482, clamped at
+t = 0.94 s) had data above them, so the receiver's hold expiry passed them and
+the bare ack pruned them. **The transfer still never completes.** The perf
+server completes an object only when every chunk was delivered
+(`perf.rs:144`, `got.len() == total`). The receiver gave up 4 212 holes
+(`[SHED-R] holes=4212`), each a seq evicted before it could be resent. So at
+ρ < 1 `client_ok` is not a liveness oracle: any abandoned seq fails it.
+
+**[E] The forced-budget shape (sr_evict_b05).** All 60 tail seqs are shed, no
+copy is sent, the ack stays at 12 087 and nothing tells the receiver. The node's
+"receiver frontier stays at 10856" is a stale sample: `ev=frontier` prints
+only from `push` (`net/reorder.rs:92`), so it falls silent when arrivals
+stop. The receiver's own ack shows its frontier reached 12 087.
+
+**Why the budget reads 0.**
+- **[E]** It is refreshed only inside `emit_source` (`net/emit_source.rs:620–641`,
+  in `fn emit_source` at `:315`), so it freezes at the last source emission,
+  here t ≈ 0.05 s. `bud=0.0000` is printed on every `[DIAG]` line of `sr_evict`.
+- **[E]** The law is `residual_loss_after_fec(ε̂, r, A*, σ²) = ε̂·(1 − P_fec)`,
+  which returns 0 for ε̂ = 0 (`control/fec_rate.rs:784–790`). It has no ρ
+  argument, and `contract_rho` is the literal 1.0 (`net/sender_policy.rs:616`),
+  read by no budget site.
+- **[I]** ε̂ was 0 at that instant because the first ack round had barely
+  started (the loss estimator was not sampled here).
+
+**Answer.** At the natural budget the *lost tail* stalls because it is below
+the window from its first judgment. The source has no rate bound, so the
+window passed k about 1 ms after k was sent. The clamp removes every sweep and
+NACK before either the shed or the resend is reached, and nothing above k
+ever reaches the receiver. The 0 budget is a separate defect (cold, ρ-blind,
+frozen after the last source). It decides shed versus resend only for
+in-window seqs. In-window, a refusal means "resend", which works but is slow
+(one seq per sweep).
+
+## 4. Input to the rule's derivation
+
+The owner's rule (node `rec-evict-blocker-unresolved`, main `13fe8637`) has
+three parts plus the budget law. For each: what the answers establish, what
+the derivation must settle, and any contradiction.
+
+**(1) The verdict is judged on the unclamped gap; the clamp bounds only what
+is served.**
+- Established: the clamp is correct as a serve bound. Below the window there
+  are no bytes, and the fallback is a useless repair (section 1). Moving the
+  verdict before the clamp is the right split. It is the identity at ρ = 1,
+  where there is no clamp.
+- Established: a below-window seq can get only one verdict, "abandoned". A
+  budget refusal there means "resend", which cannot be served, so for these
+  seqs the budget can only *count*, not *decide*.
+- To settle: what the tail sweep targets. It names only `first()`
+  (`net/mod.rs:3035`). With part 2 removing abandoned seqs, `first()` moves to
+  the oldest servable seq, which settles it, but the derivation should say so.
+
+**(2) Every verdict removes the seq and reaches the receiver, even when no
+data follows.**
+- Established: no message exists today (section 2). The new fact is a floor,
+  and it must be repeated or acked because the control lane is unreliable.
+- **Contradiction, in its naive form "eviction is the verdict, tell the
+  receiver the window start".** The size-cap eviction (`net/mod.rs:3594–3597`)
+  does not read the ack. In these runs the window start was 11 947 at
+  t = 79 ms, while the receiver's frontier was about 4 000 and about 8 000
+  symbols were still in flight on the link (section 3, [E]). A floor equal to
+  the window start would have told the receiver to skip data that then
+  arrived. Late fills below the frontier are delivered at once, out of order
+  (`net/reorder.rs:76–82`). So an eviction verdict means "the sender can no
+  longer serve it", not "lost". The receiver may pass a hole below the floor
+  only when its own in-flight bound (hold H or the deadline D) has also
+  expired, and the derivation must state that bound.
+- To settle: whether eviction of an un-acked seq should exist at all at
+  ρ < 1, or be made rare by (3). Every eviction verdict is also an
+  abandonment that 1 − ρ must account for (below).
+- Not sufficient alone [E for the oracle]: at ρ < 1 any abandoned seq fails
+  the perf object (`perf.rs:144`). So "shed below the window" plus "tell the
+  receiver" can make `sim_lost_tail` resolve k, but cannot make
+  `sim_shed_reach`'s `assert_live` green, which asserts `client_ok`. The red-first
+  test of the rule must assert the frontier passing every verdict seq (and the
+  sender's ack reaching the end), not object completion.
+
+**(3) A ρ-continuous source-rate bound replaces the reliable-only intake
+pause.**
+- Established: this is where the stall starts. The unpaced source put the
+  whole object through the 200-symbol window in about 44 ms, so most losses
+  became below-window abandonments before their first judgment (4 212
+  receiver give-ups in a 12 147-symbol run at 2.5 % link loss). Parts 1–2
+  turn these into prompt verdicts but do not reduce their number. Only (3)
+  does.
+- To settle: the bound's form. At ρ = 1 it must reduce to today's
+  `store_len ≥ cap ∨ cwnd_full` (`net/mod.rs:2473`). At ρ < 1 it must keep
+  abandonment ≤ (1 − ρ) of the source. A natural candidate is
+  "un-acked seqs evicted per source ≤ 1 − ρ", which makes eviction of un-acked
+  data itself the paced quantity. That is inferred, not measured.
+- Note: the engine has no numeric ρ on this seat. `reliable` is a bool that
+  selects the store, the clamp and `shed_on` (`net/sender_policy.rs:667`,
+  `net/emit_source.rs:347`, `net/sender_phases.rs:795`). A ρ-continuous bound
+  needs ρ as a number at these sites, which is the NO-MODE-SWITCH debt this
+  rule inherits.
+
+**The 1 − ρ budget law.**
+- Established: today it is ε̂·(1 − P_fec). It reads no ρ, is 0 on a cold
+  estimator, is refreshed only on source emission (so frozen once the source
+  is exhausted), and charges only NACK and slot sheds. Evictions are never
+  charged, and neither are receiver give-ups (4 212 here against 0 sender
+  sheds).
+- What it must become: a bound on all abandonment (sender sheds plus evicted
+  un-acked seqs, the set part 2 makes visible) against the *declared* 1 − ρ,
+  refreshed where verdicts are taken. At ρ = 1 it is 0, which is the identity
+  with retention. ε̂·(1 − P_fec) is then a predicted *use* of that budget (what
+  FEC leaves), not the budget itself.
+- To settle: whether the budget is enforced on the source (part 3) and only
+  accounted at the verdict, since a below-window verdict cannot be refused.
+  The section-3 traces say it must be: no budget can refuse an abandonment
+  that has already happened.
