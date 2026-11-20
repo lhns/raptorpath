@@ -78,3 +78,41 @@ jobs:
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: sim }
       - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail --test sim_shed_reach -- --nocapture
+  sim-cross-os:
+    # The same sim scenarios on Linux and Windows (sim_cross_os.rs); the
+    # compare job diffs the traces and logs. A difference means the OS is
+    # an input of the run again (sim-engine.md "What a seed fixes").
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: "--cfg tokio_unstable"
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: "sim-xos-${{ matrix.os }}" }
+      - shell: bash
+        run: SIM_XOS_OUT="$PWD/xos" cargo test -p raptorpath --features sim,test-seams --test sim_cross_os -- --nocapture
+      - uses: actions/upload-artifact@v4.6.2
+        with: { name: "xos-${{ matrix.os }}", path: xos, retention-days: 7 }
+  sim-cross-os-compare:
+    needs: sim-cross-os
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4.3.0
+        with: { path: xos }
+      - name: Linux and Windows traces and logs are identical
+        run: |
+          cd xos
+          ls xos-ubuntu-24.04 xos-windows-latest
+          rc=0
+          for f in xos-ubuntu-24.04/*; do
+            n=$(basename "$f")
+            if cmp -s "$f" "xos-windows-latest/$n"; then echo "same: $n"
+            else echo "DIFFERS: $n (first lines below)"; diff "$f" "xos-windows-latest/$n" | head -12; rc=1; fi
+          done
+          [ "$(ls xos-ubuntu-24.04 | wc -l)" = "$(ls xos-windows-latest | wc -l)" ] || { echo "file sets differ"; rc=1; }
+          exit $rc
