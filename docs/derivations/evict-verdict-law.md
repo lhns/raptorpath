@@ -144,18 +144,32 @@ taken."
 "Every seq below the floor is acked or has a verdict."
 
 ```text
-   F  =  min U        if U ≠ ∅
-   F  =  hi + 1       if U = ∅              hi = the highest source seq sent
+   F  =  min { s ≥ A_rx : s ∉ V }          A_rx = the receiver's last advertised next_expected
 ```
 
-At ρ = 1 with `V = 0`, `F = A_rx`, the receiver's last advertised
-`next_expected`:
-- every seq below `A_rx` is pruned from U;
-- `A_rx` itself is unacked and in U if it was sent, and `F = hi + 1 = A_rx`
-  otherwise.
+F is `A_rx` advanced through the run of verdict seqs that starts at it. It is
+defined from the verdict set and the ack, not from `retransmit_buffer`. The
+reason is that `retransmit_buffer` is not filled on every ρ = 1 arm: the
+insert at `net/emit_source.rs:498–506` is skipped in generation mode
+(`if !pol.generation`). There, `min U` would read `hi + 1` with data
+outstanding, so a floor would be sent at ρ = 1.
 
-So `F > A_rx` happens only after a verdict, and the floor is never sent at
-ρ = 1. This is by data, not by a seat check, and a gauge witnesses it (§7).
+On the plain arm at ρ < 1 the two forms agree. Every seq in
+`[A_rx, min U)` is in V, because `retransmit_buffer` is pruned only by the
+cumulative ack and by verdicts. So `F = min(U ∪ {hi + 1})` there. The
+verdict set below `hi + 1` and at or above `A_rx` is `shed_seqs` extended to
+forced verdicts. `shed_seqs` is already pruned on the cumulative twin
+(`net/sender_phases.rs:1404–1407`).
+
+**At ρ = 1, `V = ∅` on every arm**, because:
+- shedding is unarmed (`shed_armed` needs `!reliable`, and the budget is 0);
+- the store holds every unresolved seq on the plain arm;
+- generation mode is exempt from the size-cap eviction (`net/mod.rs:3594`);
+- coded-only and OOO retain (config refuses them at ρ < 1, `config.rs:304`).
+
+So `F = A_rx` identically, and the floor is never sent at ρ = 1. This is by
+data, not by a seat check, and T3 witnesses it on the plain, generation and
+coded-only arms.
 
 ### 2.2 When the sender sends it, and the ack
 
@@ -207,6 +221,13 @@ seq F, under the same hold and the same expiry as a data arrival."
   datagram on the same connection and the same bottleneck queue as earlier
   data on p. So when it arrives, every seq below F sent on p has either
   arrived or been lost, up to reordering within the path.
+  - **[E] The control lane does not overtake staged data on the sender's
+    side.** `TxBatch` hands each path's slots over Data first, then Ctrl
+    (`transport/io_owner.rs:1509`). The I/O owner then sends the commands in
+    the order received, each command's datagrams in order
+    (`:1088–1106`).
+  - **[I] quinn's datagram send queue and the links are FIFO** (not read
+    here). T5's single-path overtaking case tests it.
 - The hold H covers that reordering. It is the receiver's existing hold
   (`shed_recv_hold`: `SRTT/2` while the receiver's budget is open,
   `(4·SRTT).clamp(60, 300) ms` otherwise). No new constant is introduced.
@@ -312,28 +333,50 @@ form, with no ρ in it:
   U, so the brake bounds the pipe and not the unresolved set.
 - (iv) It passes: cwnd is derived by the CC.
 
-**(b) The unresolved count against the pooled cap at every ρ (recommended):**
+**(b) The count of seqs not yet passed by the receiver's frontier, against the pooled cap at every ρ (recommended):**
 
 ```text
-   P  =  (O_U ≥ B)  ∨  F_cwnd ,      O_U = |U| − |released ∩ U| ,      B = §6.1's pooled cap, at every ρ
+   P  =  (O ≥ B)  ∨  F_cwnd ,      O = (hi + 1 − A_rx) − |released| ,      B = §6.1's pooled cap, at every ρ
 ```
 
-- (i) It is exact by data, with one pin. At ρ = 1 on the plain arm,
-  `|U| = sent_store.len()`. Both are inserted once per source emission
-  (`net/emit_source.rs:347`, `:505`) and pruned on the same cumulative twin
-  (`net/sender_phases.rs:1403`, `:1411`), and `H = E = 0`. So
-  `O_U = sack_release_outstanding(sent_store.len(), released)`, today's
-  `store_len`.
-  - **[I]**: this needs a per-tick equality pin at ρ = 1 before it ships.
+"The sender stops reading source while the seqs it has sent and the
+receiver's frontier has not yet passed reach the pooled cap."
+
+- **Why not |U|.** §1.1 removes every evicted seq from U, so at ρ < 1
+  `|U| ≤ win_cap = 200` always. Work it on the precheck link: 40 Mbit at 512 B
+  is about 9 800 sym/s, and at a 26 ms RTT the BDP is about 250 symbols, so
+  `B ≈ (1 + q)·250 > 200`. `|U| ≥ B` would never be true. The source would
+  stay unpaced, and a `|U| ≤ B` assertion would pass without the pause ever
+  executing. Forced verdicts drain U, but they do not drain O: only the
+  receiver's frontier does. O equals `|U| + |V_pending|` on the plain arm,
+  where `V_pending = {v ∈ V : v ≥ A_rx}`, the term §4 already uses.
+- (i) It is exact by data, with one pin. At ρ = 1 on the plain arm the store
+  holds exactly `(ack, hi]` (core-extraction §1.1). Insertion is in seq
+  order and pruning is by prefix on the cumulative twin. So
+  `sent_store.len() = hi + 1 − A_rx` and `O = sack_release_outstanding(sent_store.len(), released)`,
+  today's `store_len`.
+  - **[I]**: this needs a per-tick equality pin at ρ = 1 before it ships,
+    because `ack` and `A_rx` are read at different instants of the loop.
   - The generation and coded-only arms keep their own O. Both require
     ρ = 1 (`config.rs:304`).
   - `F_cwnd` and its arming are untouched.
-- (ii) It binds. B is today's `effective_store_cap`. At ρ < 1 that
-  needs `plain_dyn_cap` without its `reliable &&` (`net/sender_policy.rs:521`),
-  so the cap law (1 + q(δ))·Σ bwᵢ·RTpropᵢ runs on both seats. The law has no
-  ρ input (paper §6.1). U grows when the source outruns the acks, so the
-  pause stops the unpaced 44 ms emission of the precheck.
-- (iii) It passes: O_U counts unresolved seqs by definition.
+- (ii) It binds. O grows whenever emission outruns the receiver's frontier,
+  which is exactly the 44 ms unpaced emission of the precheck.
+  - B is today's `effective_store_cap`. At ρ < 1 that needs `plain_dyn_cap`
+    without its `reliable &&` (`net/sender_policy.rs:521`).
+  - `plain_dyn_cap` has these readers, all on main `1ef0f634`. Each one then
+    also runs at ρ < 1:
+    - the cap select (`net/mod.rs:2464`);
+    - the 5 ms cap refresh `refresh_store_cap` (`net/sender_phases.rs:62`);
+    - the path-scaled pool echo (`net/mod.rs:1784`);
+    - `three_term_on`, `sum_cap` and `delta_cap` (`net/sender_policy.rs:564`, `:579`, `:592`), of which three-term is off by default;
+    - `percap_track` (`:686`, DIAG only).
+
+    All of them belong to the one §6.1 law, which has no ρ input. None of them
+    reads the store's bytes. **[I]**: this was read at the definitions, not
+    traced through every consumer.
+- (iii) It passes, and more than |U| would. O counts unresolved seqs plus
+  verdict seqs the receiver has not resolved.
 - (iv) Partly.
   - The law's terms are cited or derived (§6.1 table).
   - `knee` is a resource bound whose value is stale.
@@ -343,9 +386,14 @@ form, with no ρ in it:
 
 It has no ρ and no δ beyond B's existing q(δ), so it is continuous by
 construction. `released` is empty at ρ < 1 today, because SACK release
-requires `reliable` (`net/sender_policy.rs:628`). O_U then over-counts the
+requires `reliable` (`net/sender_policy.rs:628`). O then over-counts the
 seqs received above the frontier. That errs on the safe side; owner
 question 8.
+
+At an evicting receiver, A_rx also advances by hold expiry over holes. So O
+is drained by the receiver's give-ups as well as by delivery, and the bound
+cannot deadlock on a lost seq. At ρ = 1 a lost seq holds A_rx until it is
+recovered, exactly as the store does today.
 
 **(c) Pause before a forced verdict:**
 
@@ -367,7 +415,7 @@ question 8.
 an entry leaves on ack or on verdict. Then:
 - every unresolved seq stays servable;
 - `E ≡ 0`, and the FORCED arm is empty everywhere;
-- (b)'s `|U| = sent_store` outstanding holds on both seats;
+- (b)'s O equals the store's outstanding count on both seats;
 - the `reliable` bool leaves the store, the clamp and the intake pause.
 
 It is the form that removes the ρ = 1 step (§5). It is a larger behaviour
@@ -380,7 +428,7 @@ owner question 2.
 
 The rate bound reads no ρ, so it enforces no part of the 1 − ρ budget
 directly. What it bounds is the *self-inflicted* term:
-- O_U ≤ B keeps the standing queue near q(δ)·RTprop (Little's law, §6.1).
+- `O ≤ B` keeps the standing queue near q(δ)·RTprop (Little's law, §6.1).
 - That removes most queue-overflow losses: 1 110 against 91 random losses in
   the precheck, direction only.
 - Those losses would otherwise become receiver abandonment (`G_rx`, §4) or
@@ -459,9 +507,12 @@ predicted use of that budget, not its size."
 - **Ab is an upper bound that converges to the truth.** A pending verdict
   either becomes a hole (and moves into `G_rx`) or is delivered (and leaves
   Ab) once the receiver's frontier passes it.
-- **Double counting.** A verdict on a seq the receiver gives up on before the
-  floor arrives counts in both terms. That errs on the safe side and is
-  gauged (§7).
+- **No double count.** One `WindowAck` carries both `next_expected` and
+  `passed_undelivered`. A verdict seq the receiver passes leaves the pending
+  term (it falls below `A_rx`) in the same update that adds it to `G_rx`.
+  Between acks it sits in the pending term only. An ack lost in transit
+  delays the move without duplicating it, because both fields are
+  cumulative.
 - **What this replaces.** It supersedes `budget = min(1 − ρ, R)` (paper §5.6;
   model option (ii), owner decision 2026-11-14, `giveup-law-model.md`). The
   engine evaluates that law today as budget = R on the evicting seat:
@@ -507,6 +558,23 @@ question 5), and it is an existing law selection by budget state inside
 | 1 − ρ | declared dial |
 | R | derived, §5.6. It inherits W22's `p_fec_normal` cut and is provisional. Here it is a gauge, not an operand |
 
+### 4.1 The formulas as core functions
+
+| formula | core function (`raptorpath-core/src/hole.rs`) | relation to `core-extraction-recovery.md` |
+|---|---|---|
+| §1.2 verdict | `judge_seq(age_us, d_us, ab, s_src, budget_frac, servable: bool) -> Verdict {Shed, Serve, Forced}` | new. **Breaks decision 5** (clamp-then-shed order stays at the call site): the shed is judged before the clamp |
+| §1.2 serve bound | `clamp_gap(s, e, f, c)` unchanged | unchanged signature; it now runs after `judge_seq` |
+| §1.1 forced verdict | none; it is an engine event at the advance sites, counted | — |
+| §1.3 D | `shed_deadline_us(b, rtt_us)` (moves with ADR-0076 phase 6) | refresh site changes only |
+| §2.1 floor | `floor(acked: u64, verdicts_from_acked: impl Iterator<u64>) -> u64` | new |
+| §1.2/§2.2 sweep | `tail_sweep_gap(min U)` unchanged; new `sweep_armed(lowest_unresolved: Option<u64>, floor, acked) -> bool` | arming was inline (`net/mod.rs:2788`); it now needs the floor |
+| §2.3 receiver | `floor_rx(per_path: &[u64]) -> u64` (min; 0 for an empty slice) | new, receiver side; N = 1 and N = 2 absolute tests |
+| §3.2 (b) | `intake_paused(O, B, F)` unchanged signature | **breaks §1.3's map and its redundancy pin**: at ρ < 1 the engine passes (O, B, F) instead of (0, ∞, false), so the §3.3 pin is retired. The model's `intake_paused(O_retained, B, false)` call must pass the frontier-covered O |
+| §4 budget | `shed_budget(rho, s_src) -> f64 = (1 − ρ)·s_src` and `abandon_count(g_rx, pending) -> u64` | new; replaces the R operand of `shed_allowed` |
+
+Class A holds for all of them: no hint, no δ/ρ- or N-selected branch, no env
+read. `judge_seq` reads ρ only as the number `budget_frac`.
+
 ## 5. Continuity
 
 The formulas:
@@ -544,7 +612,7 @@ The ±2 % tests to write. Each is absolute, at each preset, in
   is a state comparison, not a dial threshold: assert no other flip.
 - **`floor_rx(per_path)`** at N = 1 and N = 2: absolute values, including a
   path that has received no floor yet (F_p = 0).
-- **`floor(min_u, hi)`** at the empty-U and non-empty cases, absolute.
+- **`floor(acked, verdicts)`**: absolute values. `floor(a, ∅) = a` (the ρ = 1 identity), a run of verdicts from a gives `a + run`, and a gap in the run stops it.
 
 ## 6. Red-first tests
 
@@ -570,24 +638,29 @@ Execution witnesses carried by every test:
 The tests:
 - **T1 lost tail** (`sim_lost_tail`, k = 11 800, ρ < 1).
   - The ack reaches `S_src` by
-    `t_k + n_sweep·tail_sweep_timeout + owd + H_max`, where n_sweep is the
-    floor repeats observed.
+    `t_dead + n·T_sweep_max + owd_max + H_max`. Here t_dead is when the seam
+    stops dropping, `T_sweep_max = TAIL_SWEEP_MAX_US`, and
+    `n = 1 + the floors the scenario's seam drops` (n = 2 in T1 itself,
+    one sweep for the verdict and one for the floor). n is fixed by the
+    scenario, not read from the run.
   - k has a verdict (shed, or forced), or is filled.
   - `floor_sent ≥ 1` and `floor_passes ≥ 1`.
   - Red on main: the ack stays at 11 800.
 - **T2 stalled blocker** (`sim_shed_reach`, forced budget 0.05).
   - The ack reaches 12 147.
-  - Every shed seq is below the final ack by `t_s + n_sweep·sweep + owd + H_max`.
+  - Every shed seq is below the final ack by `t_s + n·T_sweep_max + owd_max + H_max`, with n as in T1.
   - Red on main: the ack stays at 12 087.
 - **The replacement for `assert_live`.** `assert_frontier_live(r)`, in this
   order:
   1. ack = S_src within the bound above;
-  2. for each verdict seq s: frontier > s by `t_v(s) + n_sweep·sweep + owd + H_max`;
+  2. for each verdict seq s: frontier > s by `t_v(s) + n·T_sweep_max + owd_max + H_max` (n from the scenario);
   3. the account closes, `S_sent = A + V + |U|`, with `|U| = 0`;
   4. `G_rx ≤ Ab` at the end;
   5. `G_rx` and `(1 − ρ)·S_src` are printed. They are asserted only where a
      budget was declared.
-- **T3 ρ = 1 control.** The same scenarios with `SIM_RELIABLE=true`:
+- **T3 ρ = 1 control.** The same scenarios with `SIM_RELIABLE=true`, on the
+  plain arm and on the generation and coded-only arms (F must not read
+  `retransmit_buffer`, §2.1):
   - `V = 0`, `floor_sent = 0`, `G_rx = 0`;
   - the arming disjunct `F > A_rx` is never true;
   - `client_ok`.
@@ -600,6 +673,9 @@ The tests:
   seqs below F when the fast path's floor lands.
   - The receiver passes no hole before the slow path's floor plus H.
   - The late fills of passed seqs number 0.
+  - A single-path overtaking case: a forced verdict raises F while seqs
+    below F are still queued on the one path. The receiver passes none of
+    them, which tests the FIFO premise of §2.3.
   - A variant blackholes one path: the pass waits for that connection's
     idle close. The bound is reported, not pinned.
 - **T6 budget.** At a declared ρ < 1:
@@ -607,10 +683,12 @@ The tests:
     served (the refusal counter rises);
   - R and `G_rx / S_src` are printed side by side.
 - **T7 rate bound.**
-  - At ρ < 1 with the unpaced source: `O_U ≤ B` at every DIAG tick
-    (`O_hwm ≤ B`), and `drop_queue` falls against main. The direction is
+  - At ρ < 1 with the unpaced source: the pause **executes**, as a
+    paused-iteration share > 0 on the `O ≥ B` disjunct (an execution
+    witness, read first). Then `O ≤ B + 1` at every DIAG tick
+    (`O_hwm ≤ B + 1`), and `drop_queue` falls against main. The direction is
     asserted, not the size.
-  - At ρ = 1: the per-tick pin `O_U == sack_release_outstanding(sent_store.len(), released)`.
+  - At ρ = 1: the per-tick pin `O == sack_release_outstanding(sent_store.len(), released)`.
 - **T8 the ρ = 1 step (record-only until owner question 2).** The same seed
   at ρ = 1 and at ρ = 1 − ε with `ε·S_src < 1`. It reports the difference in
   delivered set and in `E`. It asserts only that `H = 0` on both sides
@@ -626,12 +704,12 @@ The tests:
 | D's `min(b·RTT, 2·RTT)` | share of judged batches where 2·RTT binds | 0 at b ≤ 2 (all presets); reported |
 | D cold (`D = 0`, no measured RTT) | count of judged batches with D = 0 | early-run only |
 | shed admission | refusals split by the deadline conjunct and by the budget conjunct | reported per run |
-| intake pause (b) | paused-iteration share split by `O_U ≥ B` and by `F_cwnd` | reported (`[DIAG] paused=`) |
+| intake pause (b) | paused-iteration share split by `O ≥ B` and by `F_cwnd` | reported (`[DIAG] paused=`); > 0 at ρ < 1 under overload |
 | B's clamp | `[SUMCAP] floor=` / `pin=` (existing), plus `RELIABLE_STORE_MAX` binds | the memory ceiling should not bind |
 | floor min over paths | share of floor passes where a non-latest path set `F_rx` | reported |
 | floor repeat | sends per `F` raise, until acked | ≈ 1 + p_ctrl/(1 − p_ctrl) |
 | receiver hold H | `SHEDH` at_floor / at_cap / interior (existing) | reported |
-| Ab double count | verdict seqs also counted in `G_rx` before their floor | reported |
+| Ab pending term | verdict seqs at or above `A_rx`, against `G_rx` | reported |
 | floor at ρ = 1 | `floor_sent`, and sweep fires armed only by `F > A_rx` | 0 |
 
 ## 8. Paper text
@@ -661,7 +739,7 @@ anywhere in the engine (Section 11.1).":**
 > every seq is acknowledged or given up:
 >
 > ```text
->    F  =  min U   (U ≠ ∅),     F  =  hi + 1   (U = ∅)
+>    F  =  min { s ≥ A_rx : s ∉ V }          A_rx = the acknowledged frontier
 > ```
 >
 > The sender repeats `WindowFloor{F}` on every live path at the tail-sweep
@@ -670,8 +748,8 @@ anywhere in the engine (Section 11.1).":**
 > `F_rx = min_p F_p` over its live paths and treats it as a payload-free
 > arrival at F_rx under its ordinary hold. Per-path FIFO makes every earlier
 > seq on that path arrive or be lost first, so the floor exposes no more
-> than a data arrival at F does. At ρ = 1, F equals the acknowledged
-> frontier whenever no verdict exists, so the floor is never sent.
+> than a data arrival at F does. At ρ = 1 no verdict exists on any arm,
+> so F equals the acknowledged frontier and the floor is never sent.
 
 **§5.6, replacing the law block and the paragraph after it ("R is derived;
 … (Section 11.3)."):**
@@ -700,10 +778,10 @@ anywhere in the engine (Section 11.1).":**
 > neither acknowledged nor given a verdict:
 >
 > ```text
->    pause  ⇔  O_U ≥ cap  ∨  cwnd_full ,      O_U = |U| − |released ∩ U|
+>    pause  ⇔  O ≥ cap  ∨  cwnd_full ,      O = (hi + 1 − A_rx) − |released|
 > ```
 >
-> At ρ = 1, O_U equals the store's outstanding count (pinned), so the bound
+> At ρ = 1, O equals the store's outstanding count (pinned), so the bound
 > is the one above. At ρ < 1 it is the first outstanding bound the evicting
 > seat has had. It has no ρ input. Past the offered load
 > λ·(1 − (1 − ρ − R)⁺) > C, the source is delayed or the contract breaks
@@ -717,15 +795,43 @@ anywhere in the engine (Section 11.1).":**
 > exceed 1 − ρ there, and they are reported, not prevented. Thinning at the
 > source within 1 − ρ − R is not implemented.
 
-**§11.3, two new divergence rows:**
+**§11.3, two new divergence rows** (the table's columns are item | model |
+engine):
 
-> | the ρ = 1 step | the evicting seat has no store, so forced verdicts occur at ρ → 1⁻ and not at ρ = 1 | bounded by the step test (record-only) until the store runs at every ρ |
-> | the Realtime ρ preset | no declared value; the engine's shed budget needs one | config-time; no ρ < 1 budget ships undeclared |
+> | retention at ρ → 1⁻ | a store at every ρ (Section 5.1): no forced verdicts, continuous through ρ = 1 | the evicting seat has no store, so forced verdicts occur at ρ → 1⁻ and not at ρ = 1; bounded by the step test (record-only) until the store runs at every ρ |
+> | the shed budget | `1 − ρ`, with ρ the declared dial | `1 − ρ` from `window_rho`; no ρ < 1 preset is declared at Realtime, so its budget is 0 until one is |
+
+**§11.1, row 2 ("Is ρ a runtime dial?"), appended to its "what would
+decide it" cell:**
+
+> The shed budget now reads ρ as a number (Section 5.6); the store, the
+> clamp and the receiver hold still read the seat.
+
+**Sentences this text makes false, to rewrite in the same commit:**
+- §5.1: "ρ is not a runtime input anywhere in the engine (Section 11.1)".
+  ρ now enters the shed budget.
+- §4.10, last paragraph: "In the engine ρ < 1 exists only as the evicting
+  Realtime seat (Section 5.1); T_cut is not a runtime input". The first
+  half stays true of the seat, and ρ is now an input of the budget.
+- §5.6: "The engine evaluates the law at two seats only: the evicting seat
+  runs budget = R, the retain seat budget = 0". The paragraph is replaced
+  above.
+- §5.6: "inside the probabilistic retransmit branch". That branch was
+  deleted with ADR-0079, so the budget is evaluated at the verdict sites.
+- §5.6: "The retain (ρ = 1) seat never sheds; the law runs only on the
+  evicting seat". It becomes "at ρ = 1 the budget is 0, so nothing is shed".
+- §6.1's deleted sentence also carried the §6.3 caveat ("the release bound
+  of Section 6.3 assumes a receiver that never evicts above its frontier").
+  It must move to §6.3, since O is drained by the receiver's give-ups at
+  ρ < 1.
+- The §11.3 row "receiver shed hold" is unchanged. The §11.3 row "span
+  deadline D" already records that the engine passes the EWMA RTT, so §1.3
+  adds no new divergence there.
 
 **Appendix A.4, replacing the shed line:**
 
 > `shed ⇔ age > D(δ) ∧ G_rx + V_pending + 1 ≤ (1 − ρ)·src_total`;
-> `F = min U`; `pause ⇔ O_U ≥ cap ∨ cwnd_full` (every ρ).
+> `F = min{ s ≥ A_rx : s ∉ V }`; `pause ⇔ (hi + 1 − A_rx − released) ≥ cap ∨ cwnd_full` (every ρ).
 
 ## 9. Open questions for the owner
 
@@ -745,8 +851,12 @@ Each question has a recommended default.
 4. **The Realtime preset ρ.** The repository has no source for it.
    **Default:** the owner declares a named point. 0.99 is a candidate: it
    leaves room above the measured 0.36 % shed share (liveness audit item 4)
-   and is labelled declared, not derived. Until it is declared, the budget at
-   Realtime is 0, which means serve and never shed.
+   and is labelled declared, not derived. **The consequence of no
+   declaration:** the budget at Realtime is 0, which means serve and never
+   shed. That switches off ADR-0064's shipped δ-honest shedding, which its
+   flip battery rested on (0 collapse reps, 0.25 % shed). So "undeclared"
+   is not a neutral default: Realtime would ship without shedding until a ρ
+   is declared.
 5. **ρ at the receiver.** The receiver's give-up budget reads ε̂_recv.
    Carrying ρ in the handshake would be a second wire change. **Default: no.**
    The sender counts `G_rx` and reports breaches.
@@ -757,7 +867,7 @@ Each question has a recommended default.
    or the windowed-min RTprop that the doc comment names? **Default: the
    measured EWMA**, which is what the code passes. Fix the doc comment, and
    gauge D against the receiver hold.
-8. **SACK release at every ρ.** It would make O_U exclude seqs received above
+8. **SACK release at every ρ.** It would make O exclude seqs received above
    the frontier. **Default: no for now.** Over-counting errs on the safe
    side; revisit with T7's `O_hwm` reading.
 9. **Arm the cwnd brake by default at every ρ, (a).** **Default: no.** It
