@@ -141,6 +141,16 @@ pub fn child() {
     let out: String = env("SIM_OUT");
 
     let _ = rustls::crypto::ring::default_provider().install_default();
+    // TEMPORARY (determinism diagnosis): frame-level tracing to a file.
+    if let Ok(f) = std::env::var("SIM_TRACE") {
+        let file = std::fs::File::create(std::env::var("SIM_TRACE_OUT").unwrap()).unwrap();
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::new(f))
+            .without_time()
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(file))
+            .init();
+    }
     let wall0 = std::time::Instant::now();
     // Runaway guard: a scenario that stops advancing virtual time would
     // otherwise hang CI.

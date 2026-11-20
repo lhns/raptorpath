@@ -26,5 +26,8 @@ jobs:
           rustc -V; for s in "nat30 nat30 47400" "nat30_b nat30 47400" "shed6_a shed6 47400" "shed6_b shed6 47401" "basic_a basic 47100" "basic_b basic 47101"; do
             set -- $s; bash .github/simdet-tmp/child.sh $BIN out $1 $2 $3
           done
+          SIM_TRACE=quinn_proto=trace,raptorpath=trace SIM_TRACE_OUT=out/basic_t.ftrace bash .github/simdet-tmp/child.sh $BIN out basic_t basic 47100
+          SIM_TRACE=quinn_proto=trace,raptorpath=trace SIM_TRACE_OUT=out/basic_t2.ftrace bash .github/simdet-tmp/child.sh $BIN out basic_t2 basic 47100
+          ls -la out
       - uses: actions/upload-artifact@v4
         with: { name: "simdet-linux-${{ matrix.tc }}", path: out/ }
