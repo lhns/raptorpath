@@ -276,8 +276,8 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         anyhow::bail!("--client requires --peer");
     }
 
-    // Same resolution path as cmd_run (defaults incl. the dummy
-    // tun_addr 10.99.0.1/24 — parsed but never applied to the OS: the
+    // Same resolution as cmd_run minus the config file (defaults incl. the
+    // dummy tun_addr 10.99.0.1/24 — parsed but never applied to the OS: the
     // injected memory TUN skips device/route/DNS setup entirely).
     let cfg = config::RaptorpathConfig {
         server: if args.server { Some(true) } else { None },
@@ -299,19 +299,7 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         window_systematic_repair: if args.window_systematic_repair { Some(true) } else { None },
         ..Default::default()
     };
-    // The object corners' retention requirement is checked by
-    // `config::resolve` against the RESOLVED ρ (retain is the Bulk/Auto
-    // default, so the corners no longer need the flag spelled out there).
-    let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
-
-    // Client convenience: one wildcard bind per peer path.
-    if !peer_config.is_server && peer_config.bind_addrs.is_empty() {
-        peer_config.bind_addrs = peer_config
-            .peer_addrs
-            .iter()
-            .map(|_| "0.0.0.0:0".parse().unwrap())
-            .collect();
-    }
+    let peer_config = config::resolve_perf(&cfg)?;
 
     info!(?peer_config, "perf configuration");
     // Threading D9 (from archive/thread-p2a 133adb9): the perf generator /
@@ -329,22 +317,6 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
 }
 
 async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<()> {
-    // Build config: profile defaults -> TOML file -> CLI args
-    let mut base_config = config::RaptorpathConfig::default();
-
-    // Apply profile defaults if specified
-    if let Some(ref profile_name) = args.profile {
-        let profile: config::Profile = profile_name.parse()?;
-        base_config = config::merge(base_config, profile.defaults());
-    }
-
-    // Load TOML config if specified
-    if let Some(ref path) = config_path {
-        let file_config = config::load_config(path)?;
-        base_config = config::merge(base_config, file_config);
-    }
-
-    // Overlay CLI args
     let cli_overlay = config::RaptorpathConfig {
         server: if args.server { Some(true) } else { None },
         bind: if args.bind.is_empty() {
@@ -395,8 +367,9 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         // Systematic+repair is a bulk-object mode; tunnel stream stays systematic.
         window_systematic_repair: None,
     };
-    let final_config = config::merge(base_config, cli_overlay);
-    let (peer_config, status_addr) = config::resolve(&final_config)?;
+    // Profile defaults -> TOML file -> CLI overlay.
+    let (peer_config, status_addr) =
+        config::resolve_tunnel(args.profile.as_deref(), config_path.as_deref(), cli_overlay)?;
 
     info!(?peer_config, "resolved configuration");
 

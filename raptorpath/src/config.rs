@@ -705,3 +705,40 @@ mod tests {
         assert!(status_addr.is_none());
     }
 }
+
+// Entry-point resolution, one fn per command, so a test can drive each without
+// starting the engine. Appended last: no existing line of this file moves.
+
+/// `raptorpath run`: profile defaults, then the TOML file, then the CLI
+/// overlay; the tunnel's object modes are pinned off ([`tunnel_config`]).
+pub fn resolve_tunnel(
+    profile: Option<&str>,
+    config_path: Option<&Path>,
+    cli_overlay: RaptorpathConfig,
+) -> anyhow::Result<(PeerConfig, Option<SocketAddr>)> {
+    let mut base_config = RaptorpathConfig::default();
+    if let Some(profile_name) = profile {
+        let profile: Profile = profile_name.parse()?;
+        base_config = merge(base_config, profile.defaults());
+    }
+    if let Some(path) = config_path {
+        base_config = merge(base_config, load_config(path)?);
+    }
+    resolve(&tunnel_config(base_config, cli_overlay)?)
+}
+
+/// `raptorpath perf`: the CLI overlay alone (`perf` takes no `--config`), plus
+/// the client convenience of one wildcard bind per peer path.
+pub fn resolve_perf(cli: &RaptorpathConfig) -> anyhow::Result<PeerConfig> {
+    // The object corners' retention requirement is checked by `resolve`
+    // against the RESOLVED ρ (retain is the Bulk/Auto default).
+    let (mut peer_config, _status_addr) = resolve(cli)?;
+    if !peer_config.is_server && peer_config.bind_addrs.is_empty() {
+        peer_config.bind_addrs = peer_config
+            .peer_addrs
+            .iter()
+            .map(|_| "0.0.0.0:0".parse().unwrap())
+            .collect();
+    }
+    Ok(peer_config)
+}
