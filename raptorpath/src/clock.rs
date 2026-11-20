@@ -147,3 +147,28 @@ fn next_u64() -> u64 {
     let s = SIM_RNG.fetch_add(G, std::sync::atomic::Ordering::Relaxed).wrapping_add(G);
     crate::sim::splitmix_mix(s)
 }
+
+/// The server's self-signed certificate: `rcgen::generate_simple_self_signed`
+/// (a fresh ECDSA key), or under an active simulation a fixed Ed25519 key, so
+/// the certificate and the handshake's signature length are the same every
+/// run (an ECDSA DER signature is 70-72 bytes at random).
+#[inline(always)]
+pub fn self_signed(names: Vec<String>) -> Result<rcgen::CertifiedKey, rcgen::Error> {
+    #[cfg(feature = "sim")]
+    if sim_active() {
+        return crate::sim::self_signed(names);
+    }
+    rcgen::generate_simple_self_signed(names)
+}
+
+/// The client config as built, or under an active simulation with a seeded
+/// initial destination connection id (quinn's default draws it from the OS
+/// RNG).
+#[inline(always)]
+pub fn client_config(config: quinn::ClientConfig) -> quinn::ClientConfig {
+    #[cfg(feature = "sim")]
+    if sim_active() {
+        return crate::sim::client_config(config);
+    }
+    config
+}

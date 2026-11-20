@@ -3836,7 +3836,7 @@ mod decision_trace_pin;
 /// `false` only if the listener could not be installed. One awaited future,
 /// one trigger — the two signals are not two shutdown paths.
 async fn shutdown_signal() -> bool {
-    #[cfg(unix)]
+    #[cfg(all(unix, not(feature = "sim")))] // sim: one body on every OS (tokio's select/watch RNG draws, sim-engine.md)
     {
         use tokio::signal::unix::{signal, SignalKind};
         let mut term = match signal(SignalKind::terminate()) {
@@ -3848,7 +3848,7 @@ async fn shutdown_signal() -> bool {
             _ = term.recv() => true,
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(not(all(unix, not(feature = "sim"))))]
     {
         tokio::signal::ctrl_c().await.is_ok()
     }

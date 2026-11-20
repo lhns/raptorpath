@@ -13,10 +13,10 @@
 //!   hole is ever shed (the refusal `denied` fires instead). 0.05 is twice the
 //!   link's loss rate.
 //! The natural 5 % scattered-loss scenario (30 MB) shed 17 on Windows and 0
-//! on Linux while the link streams were keyed by port; it sheds 0 on both
-//! now, and its traces still differ between the OSes (tokio's select RNG is
-//! drawn a different number of times per OS, `docs/derivations/sim-engine.md`
-//! "What a seed fixes"). The blackout is the trigger.
+//! on Linux before the sim fixed its port and OS inputs
+//! (`docs/derivations/sim-engine.md` "What a seed fixes"). Its count moves
+//! with any unrelated change to the run (0 after the port fix, 15 after the
+//! fixed certificate), so it is no trigger. The blackout is.
 //!
 //! Sites: the NACK-path shed (`sender_phases.rs`, ev=`shed`) is reached.
 //! The slot-site shed (`emit_source.rs`, ev=`shed_slot`) is NOT reached by
