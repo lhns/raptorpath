@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        tc: ["1.95.0", stable]
+        tc: ["1.95.0"]
     env:
       RUSTFLAGS: "--cfg tokio_unstable"
       CARGO_TERM_COLOR: never
@@ -28,6 +28,7 @@ jobs:
           done
           SIM_TRACE=quinn_proto=trace,raptorpath=trace SIM_TRACE_OUT=out/basic_t.ftrace bash .github/simdet-tmp/child.sh $BIN out basic_t basic 47100
           SIM_TRACE=quinn_proto=trace,raptorpath=trace SIM_TRACE_OUT=out/basic_t2.ftrace bash .github/simdet-tmp/child.sh $BIN out basic_t2 basic 47100
+          SIM_TRACE=quinn_proto=trace,raptorpath=trace SIM_TRACE_OUT=out/nat30_t.ftrace bash .github/simdet-tmp/child.sh $BIN out nat30_t nat30 47400
           ls -la out
       - uses: actions/upload-artifact@v4
         with: { name: "simdet-linux-${{ matrix.tc }}", path: out/ }
