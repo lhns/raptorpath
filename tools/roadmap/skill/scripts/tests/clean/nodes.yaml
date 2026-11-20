@@ -1,0 +1,326 @@
+# A small web shop. Fixture for the tech-tree scripts; every state, outcome and kind appears.
+nodes:
+- id: api-auth-keys
+  title: "Per-client API keys"
+  track: api
+  kind: feature
+  state: done
+  outcome: successful
+  evidence: ["PR #101"]
+  verdict_quote: "Merged; all endpoints now require a key."
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: none
+  start: 2026-01-05
+  end: 2026-01-20
+  folded: []
+  overview: true
+  plain: "Every client gets its own key, so we can tell who calls what."
+  confirmed: 2026-01-25
+
+- id: api-rate-limit
+  title: "Per-key rate limiting"
+  track: api
+  kind: feature
+  state: done
+  outcome: very-successful
+  evidence: ["PR #212", "docs/adr/0007-rate-limits.md"]
+  verdict_quote: "Merged; p99 latency unchanged under the load test."
+  headline: "p99 410 ms -> 180 ms"
+  depends_on: [api-auth-keys]
+  replaced_by: []
+  lane: none
+  start: 2026-02-02
+  end: 2026-02-09
+  folded:
+  - "Retry-After header (2026-02-05, commit 3f9c2a1b)"
+  - "Fix limiter test flake"
+  overview: true
+  plain: "Each API key gets its own request budget, so one noisy client cannot slow the rest."
+  confirmed: 2026-02-12
+
+- id: api-graphql-gateway
+  title: "GraphQL gateway"
+  track: api
+  kind: experiment
+  state: abandoned
+  outcome: dead-end
+  evidence: ["notes/graphql-spike.md"]
+  verdict_quote: "Dropped: query cost limits needed more work than the clients gain."
+  headline: ""
+  depends_on: [api-auth-keys]
+  replaced_by: []
+  lane: none
+  start: 2026-02-15
+  end: 2026-03-01
+  folded: ["Schema stitching prototype (2026-02-20, session record)"]
+  overview: false
+  confirmed: 2026-03-05
+
+- id: web-checkout-redesign
+  title: "Checkout redesign"
+  track: web
+  kind: feature
+  state: done
+  outcome: mixed
+  evidence: ["PR #230"]
+  verdict_quote: "Conversion up 4%, but the page is 30% slower on mobile."
+  headline: "conversion +4%"
+  depends_on: [api-auth-keys]
+  replaced_by: []
+  lane: none
+  start: 2026-02-10
+  end: 2026-03-10
+  folded:
+  - "Address autocomplete (2026-03-02, commit 9a8b7c6d)"
+  - "Guest checkout toggle (2026-03-05, session record)"
+  overview: true
+  plain: "A shorter checkout form: more people finish, but it loads slowly on phones."
+  notes: "Mobile slowdown is tracked in the image work below."
+
+- id: web-skeleton-loader
+  title: "Skeleton loading screens"
+  track: web
+  kind: experiment
+  state: abandoned
+  outcome: superseded
+  evidence: ["notes/skeleton.md"]
+  verdict_quote: "Superseded by the CDN approach, which fixed the same problem server side."
+  headline: ""
+  depends_on: [web-checkout-redesign]
+  replaced_by: [web-image-cdn]
+  lane: none
+  start: 2026-03-01
+  end: 2026-03-08
+  folded: []
+  overview: false
+  confirmed: 2026-03-30
+
+- id: web-image-lazyload
+  title: "Lazy image loading"
+  track: web
+  kind: experiment
+  state: done
+  outcome: bad
+  evidence: ["PR #241 (reverted)"]
+  verdict_quote: "Reverted: layout shift made the product grid unusable."
+  headline: "layout shift 0.02 -> 0.31"
+  depends_on: [web-checkout-redesign]
+  replaced_by: []
+  lane: none
+  start: 2026-03-12
+  end: 2026-03-20
+  folded: []
+  overview: true
+  plain: "Loading product images only when scrolled to made the page jump around, so it was reverted."
+  confirmed: 2026-03-25
+
+- id: web-image-cdn
+  title: "Images from the edge"
+  track: web
+  kind: feature
+  state: done
+  outcome: successful
+  evidence: ["PR #255"]
+  verdict_quote: "Merged; no layout change, images served from the edge."
+  headline: ""
+  depends_on: [web-image-lazyload]
+  replaced_by: []
+  lane: none
+  start: 2026-03-22
+  end: 2026-04-02
+  folded: []
+  overview: true
+  plain: "Product images come from a nearby server, which fixes the slow mobile load."
+
+- id: data-schema-v2
+  title: "Order schema v2"
+  track: data
+  kind: refactor
+  state: done
+  outcome: unrated
+  evidence: ["PR #150"]
+  verdict_quote: ""
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: none
+  start: 2026-01-12
+  end: 2026-02-01
+  folded: []
+  overview: true
+  plain: "Orders move to a cleaner table layout; nothing changes for shoppers."
+
+- id: data-cache-layer
+  title: "Product cache"
+  track: data
+  kind: feature
+  state: done
+  outcome: mixed
+  evidence: ["PR #260"]
+  verdict_quote: "Merged; hit rate 92% but stale reads reported on price changes."
+  headline: "hit rate 92%"
+  depends_on: [data-schema-v2]
+  replaced_by: []
+  lane: none
+  start: 2026-03-01
+  end: 2026-04-05
+  folded: []
+  overview: true
+  plain: "Popular products are served from memory, which is fast but sometimes shows an old price."
+  qualified_by: [data-stale-cache]
+
+- id: data-stale-cache
+  title: "Stale prices in the cache"
+  track: data
+  kind: defect
+  state: in-progress
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: local
+  start: 2026-05-10
+  end: ""
+  folded: []
+  overview: true
+  plain: "A price change can take up to five minutes to show; we are finding out why."
+  notes: "Done when: the cause is written down and a fix is scheduled."
+
+- id: data-search-index
+  title: "Search index rebuild"
+  track: data
+  kind: feature
+  state: next
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [data-schema-v2, data-stale-cache]
+  replaced_by: []
+  lane: staging
+  start: ""
+  end: ""
+  folded: []
+  overview: true
+  plain: "Rebuild the product search index on the new schema."
+  notes: "Done when: the rebuild finishes on the staging copy in under an hour."
+  queue_order: 2
+  order_reason: "needs the staging environment once the deploy freeze ends"
+
+- id: data-retention-policy
+  title: "Order data retention period"
+  track: data
+  kind: owner-decision
+  state: next
+  outcome: n/a
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: owner
+  start: 2026-05-20
+  end: ""
+  folded: []
+  overview: true
+  plain: "The owner decides how long old orders are kept."
+  notes: "Done when: the owner names a period."
+
+- id: data-sharding
+  title: "Order table sharding"
+  track: data
+  kind: feature
+  state: parked
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [data-retention-policy]
+  replaced_by: []
+  lane: none
+  start: ""
+  end: ""
+  folded: []
+  overview: true
+  plain: "Split the order table by year; waits for the retention decision."
+
+- id: ops-region-choice
+  title: "Hosting region"
+  track: ops
+  kind: owner-decision
+  state: done
+  outcome: n/a
+  evidence: ["docs/decisions/hosting-region.md"]
+  verdict_quote: ""
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: owner
+  start: 2026-04-10
+  end: 2026-04-12
+  folded: []
+  overview: true
+  plain: "The owner picked the cloud region closest to most shoppers."
+
+- id: ops-staging-deploy
+  title: "Automated staging deploys"
+  track: ops
+  kind: tooling
+  state: in-progress
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [ops-region-choice]
+  replaced_by: []
+  lane: staging
+  start: 2026-05-05
+  end: ""
+  folded: []
+  overview: true
+  plain: "Pushing to the main branch updates the staging site by itself."
+  waiting_on: "staging deploy freeze"
+  queue_order: 1
+  order_reason: "everything else on staging needs it"
+
+- id: ops-blue-green
+  title: "Blue-green production deploys"
+  track: ops
+  kind: feature
+  state: blocked
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [ops-staging-deploy]
+  replaced_by: []
+  lane: staging
+  start: ""
+  end: ""
+  folded: []
+  overview: true
+  plain: "Switch production traffic between two copies so a bad deploy can be undone at once."
+  queue_order: 3
+  order_reason: "last: it reuses the staging pipeline"
+
+- id: ops-cost-alerts
+  title: "Cloud cost alerts"
+  track: ops
+  kind: tooling
+  state: in-progress
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: local
+  start: 2026-06-02
+  end: ""
+  folded: []
+  overview: false
+  plain: "Email when the monthly cloud bill passes a set limit."

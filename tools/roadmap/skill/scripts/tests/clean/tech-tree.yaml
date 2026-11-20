@@ -1,0 +1,47 @@
+# tech-tree.yaml: one per project, at the repo root. Paths are relative to this file.
+# Example: a web shop with an API, a web front end, a data layer and operations work.
+
+nodes: nodes.yaml
+page: roadmap.md
+
+# Tracks: the areas of the work, in display order. The code prefixes every node id.
+tracks:
+  api:  {name: "API", scope: "public HTTP API: endpoints, auth, rate limits, versioning"}
+  web:  {name: "web front end", scope: "storefront UI, checkout flow, accessibility"}
+  data: {name: "data", scope: "schema, migrations, caching, search index"}
+  ops:  {name: "operations", scope: "CI, deploys, monitoring, cost"}
+
+# Kinds: what sort of thing a node is. Only the attributes carry behaviour.
+kinds:
+  feature: {}
+  experiment: {shape: slant}            # a trial with a measured result
+  refactor: {}
+  tooling: {}
+  defect:                               # a finding that qualifies earlier results
+    shape: flag
+    rated: false                        # shown as open or fixed, never rated
+    blocks: false                       # an open defect does not block work on its diagnosis
+  owner-decision:
+    shape: hexagon
+    owner_gate: true                    # outcome n/a; listed under "Waiting on the owner"
+
+# Lanes: what a forward node needs to run. A lane says who or what does the work; the owner-decision
+# kind says what the node is. Owner decisions sit in the owner lane, and so can other work only the owner does.
+lanes: [local, staging, owner, none]
+
+# Optional: a lane worked one at a time (here: the single shared staging environment).
+# Its forward nodes carry a unique queue_order and are listed in the "queue" region.
+queue_lane: staging
+
+# Optional: warn when the overview leaves this band. Size it to the history: months x picks per month.
+overview: {min: 12, max: 30}
+
+# Optional layout (these are the defaults): boxes per row, and one overview band per past month.
+layout: {overview_width: 3, track_width: 3, band_min: 1}
+
+# Optional: inputs for scripts/history_gap.py.
+history:
+  main: origin/main
+  weak_refs:
+    adr: 'ADR[- ]?0*(\d{1,4})'          # decision-record numbers: shared by many commits, so weak
+    pr: '#(\d+)\b'                      # PR numbers, for squash-merge repos without merge commits
