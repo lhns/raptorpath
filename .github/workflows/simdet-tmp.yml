@@ -7,10 +7,11 @@ permissions:
   contents: read
 jobs:
   traces:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         tc: ["1.95.0"]
+        os: [ubuntu-24.04, windows-latest]
     env:
       RUSTFLAGS: "--cfg tokio_unstable"
       CARGO_TERM_COLOR: never
@@ -19,8 +20,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with: { toolchain: "${{ matrix.tc }}" }
       - uses: Swatinem/rust-cache@v2.7.8
-        with: { shared-key: "sim-${{ matrix.tc }}" }
-      - run: |
+        with: { shared-key: "sim-${{ matrix.os }}" }
+      - shell: bash
+        run: |
           BIN=$(cargo test -p raptorpath --features sim,test-seams --test sim_shed_reach --no-run --message-format=json | jq -r 'select(.target.name == "sim_shed_reach" and .executable != null) | .executable' | tail -1)
           echo "BIN=$BIN"
           rustc -V; for s in "nat30 nat30 47400" "nat30_b nat30 47400" "shed6_a shed6 47400" "shed6_b shed6 47401" "basic_a basic 47100" "basic_b basic 47101"; do
@@ -31,4 +33,4 @@ jobs:
           SIM_TRACE=quinn_proto=trace,raptorpath=trace SIM_TRACE_OUT=out/nat30_t.ftrace bash .github/simdet-tmp/child.sh $BIN out nat30_t nat30 47400
           ls -la out
       - uses: actions/upload-artifact@v4
-        with: { name: "simdet-linux-${{ matrix.tc }}", path: out/ }
+        with: { name: "simdet-${{ matrix.os }}", path: out/ }

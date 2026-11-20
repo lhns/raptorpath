@@ -3843,7 +3843,7 @@ async fn shutdown_signal() -> bool {
             Ok(t) => t,
             Err(_) => return tokio::signal::ctrl_c().await.is_ok(),
         };
-        tokio::select! {
+        tokio::select! { biased; // TEMPORARY EXPERIMENT (determinism diagnosis)
             r = tokio::signal::ctrl_c() => r.is_ok(),
             _ = term.recv() => true,
         }
