@@ -887,8 +887,8 @@ def check59(tag, path, run_dir, sb):
           got_slots == want_slots and all(r["status"] == "LIVE" and r.get("t59") and not m59.missing(r) and r["problems"] == [] for r in led),
           (len(led), [(r["cell"], r["arm"], r["status"], r["problems"], m59.missing(r)) for r in led if r["status"] != "LIVE" or m59.missing(r) or r["problems"]][:3], got_slots[:3], want_slots[:3]))
     t = led[0]["t59"]
-    check(f"{tag}: the readouts are the stub's known deltas (per tick 250 src / 240 acked / 20 ack wakes, n = 100 + k % 5): release batch 12.5 (src) / 12.0 (ack), the shed counted from [SPAN], the seat armed",
-          abs(t["rel_src"] - 12.5) < 1e-9 and abs(t["rel_ack"] - 12.0) < 1e-9 and t["mbar_lo"] is not None and t["w1_hi"] is not None and t["shed_total"] > 0 and t["shed_armed_span"] and t["sender_shed_echo"] and t["receiver_shed_echo"], t)
+    check(f"{tag}: the readouts are the stub's known deltas (per tick 250 src / 240 acked / 20 ack wakes, n = 100 + k % 5): release batch 12.5 (src) / 12.0 (ack), the shed counted from [SPAN], the seat armed, the W1 upper bracket in counts (40 cod + 10 plost per tick) / (30 dbt_acc per tick) = 5/3",
+          abs(t["rel_src"] - 12.5) < 1e-9 and abs(t["rel_ack"] - 12.0) < 1e-9 and t["mbar_lo"] is not None and abs(t["w1_hi"] - (40 + 10) / 30.0) < 1e-9 and t["shed_total"] > 0 and t["shed_armed_span"] and t["sender_shed_echo"] and t["receiver_shed_echo"], t)
     shas = {r["bin_sha"] for r in led}
     check(f"{tag}: one binary ran every row (one sha) and the seat comparison executed on every row (sha_checked)", len(shas) == 1 and all(r["sha_checked"] is True for r in led), shas)
     ldtxt = open(os.path.join(rep, "ld.log"), errors="replace").read()
@@ -973,6 +973,7 @@ def stub_bin_file(sb):
             "# RWM_SUCC_DUMP RWM_EMIT_BURST\n# RWM_DELTA\n# emission batching ACTIVE\n# emission batching out of scope\n# RWM_PERF_RATE_MBIT\n# spc=\n# offered-load pacing ACTIVE\nexit 0\n")
     with open(path, "w", newline="\n") as fh:
         fh.write(body)
+    os.chmod(path, 0o755)      # the script's `[ -x ]` check: a Windows host passes any file, Linux needs the bit
     return path, hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -2452,6 +2453,7 @@ def stub_bin_pair(sb):
         text = body % name
         with open(path, "w", newline="\n") as fh:
             fh.write(text)
+        os.chmod(path, 0o755)
         out.append((path, hashlib.sha256(text.encode()).hexdigest()))
     return out[0], out[1]
 

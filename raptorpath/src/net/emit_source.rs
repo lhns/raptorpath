@@ -29,7 +29,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tracing::warn;
 
@@ -309,7 +309,7 @@ fn test_corrupt_framed(framed: bytes::Bytes) -> bytes::Bytes {
         return framed;
     }
     *TEST_CORRUPTED_PAYLOAD.lock().unwrap() = Some(framed.to_vec());
-    *TEST_CORRUPTED_AT.lock().unwrap() = Some(std::time::Instant::now());
+    *TEST_CORRUPTED_AT.lock().unwrap() = Some(crate::clock::now());
     let mut bad = framed.to_vec();
     bad[..2].copy_from_slice(&0xFFFFu16.to_le_bytes());
     bytes::Bytes::from(bad)
@@ -685,7 +685,7 @@ pub(crate) fn emit_source(
                     format!(
                         " ar={:.0} agap={}/{}",
                         st.astar_anchor
-                            .rate(Instant::now(), Duration::from_millis(50))
+                            .rate(crate::clock::now(), Duration::from_millis(50))
                             .unwrap_or(0.0),
                         g,
                         d
@@ -880,9 +880,12 @@ pub(crate) fn cadenced_repair_rate(
         };
         (path, RepairRateCache::period_us(est.rtt()), ctrl.rate_snapshot(est, window))
     };
-    let t0 = std::time::Instant::now();
+    let t0 = crate::clock::now();
     let rate = snap.rate();
-    cache.add_eval_ns(t0.elapsed().as_nanos() as u64);
+    cache.add_eval_ns(t0.clock_elapsed().as_nanos() as u64);
     cache.store(now_us, window, path, period, rate);
     rate
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

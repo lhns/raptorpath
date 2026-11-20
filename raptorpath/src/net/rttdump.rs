@@ -128,7 +128,7 @@ pub struct RttDump {
 impl RttDump {
     fn new() -> Self {
         Self {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             cap: dump_max(),
             paths: Mutex::new(HashMap::new()),
         }
@@ -138,7 +138,7 @@ impl RttDump {
     /// same reason `ackdiag` does: the dumped series must be self-consistent
     /// without depending on any engine clock's lifetime.
     fn now_us(&self) -> u64 {
-        self.epoch.elapsed().as_micros() as u64
+        self.epoch.clock_elapsed().as_micros() as u64
     }
 
     /// Offer one RTT sample. Called from the single delegate every ack path
@@ -313,3 +313,6 @@ mod tests {
         assert_eq!(d.totals(2), None, "an unfed path has no state at all");
     }
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

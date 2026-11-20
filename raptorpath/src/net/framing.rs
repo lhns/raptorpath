@@ -148,7 +148,7 @@ impl SymbolPacker {
             symbol_size,
             buffer: Vec::with_capacity(symbol_size as usize),
             flush_timeout,
-            last_push: Instant::now(),
+            last_push: crate::clock::now(),
         }
     }
 
@@ -192,7 +192,7 @@ impl SymbolPacker {
             let max_payload = cap;
             let truncated_len = packet.len().min(max_payload.saturating_sub(2));
             self.append(&packet[..truncated_len]);
-            self.last_push = Instant::now();
+            self.last_push = crate::clock::now();
             // The buffer now has exactly one (possibly truncated) packet.
             // It will be flushed on the next push or flush call.
             return result.or_else(|| Some(self.emit()));
@@ -206,7 +206,7 @@ impl SymbolPacker {
         };
 
         self.append(packet);
-        self.last_push = Instant::now();
+        self.last_push = crate::clock::now();
         result
     }
 
@@ -222,7 +222,7 @@ impl SymbolPacker {
     /// Returns true if the flush timeout has elapsed since the last push.
     // Test-only consumer: this file's packer tests.
     pub fn should_flush(&self) -> bool {
-        !self.buffer.is_empty() && self.last_push.elapsed() >= self.flush_timeout
+        !self.buffer.is_empty() && self.last_push.clock_elapsed() >= self.flush_timeout
     }
 
     /// Returns true if the buffer contains data waiting to be emitted.
@@ -236,7 +236,7 @@ impl SymbolPacker {
             self.flush_timeout
         } else {
             self.flush_timeout
-                .checked_sub(self.last_push.elapsed())
+                .checked_sub(self.last_push.clock_elapsed())
                 .unwrap_or(Duration::ZERO)
         }
     }
@@ -254,3 +254,6 @@ impl SymbolPacker {
 
 #[cfg(test)]
 mod tests;
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

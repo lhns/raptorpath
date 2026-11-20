@@ -260,7 +260,7 @@ impl Default for AckCadenceGauge {
 impl AckCadenceGauge {
     pub fn new() -> Self {
         Self {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             last_report_us: AtomicU64::new(0),
             last_src_ack: AtomicU64::new(0),
             last_crecv: AtomicU64::new(0),
@@ -272,7 +272,7 @@ impl AckCadenceGauge {
     /// µs on the gauge's own monotonic epoch: inter-arrival spacing is the
     /// measurement, so the gauge carries its own `Instant`.
     pub fn now_us(&self) -> u64 {
-        self.epoch.elapsed().as_micros() as u64
+        self.epoch.clock_elapsed().as_micros() as u64
     }
 
     /// **Readouts 1 + 2 + 4's feed.** One inbound `WindowAck` on `path_id`,
@@ -603,3 +603,6 @@ pub(crate) fn maybe_report(
 
 #[cfg(test)]
 mod tests;
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

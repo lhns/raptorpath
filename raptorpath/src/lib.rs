@@ -15,3 +15,7 @@ pub mod task_obs;
 pub mod test_seams;
 pub mod transport;
 pub mod tun;
+// Appended last so no existing line moves (release panic locations).
+pub mod clock;
+#[cfg(feature = "sim")]
+pub mod sim;

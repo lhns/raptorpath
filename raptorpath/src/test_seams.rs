@@ -57,9 +57,7 @@ fn cfg() -> &'static Cfg {
 }
 
 fn t_us() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_micros() as u64)
+    crate::net::now_us()
 }
 
 /// Sends of source seq k seen so far (including swallowed ones).
@@ -94,7 +92,7 @@ pub fn on_send(syms: &[WireSymbol], site: &str) -> bool {
             Mode::All => true,
             Mode::Dead => dead_now(c),
         };
-        eprintln!("[TSEAM] ev=send seq={} n={n} site={site} dropped={} t_us={}", c.k, swallow as u8, t_us());
+        crate::readout!("[TSEAM] ev=send seq={} n={n} site={site} dropped={} t_us={}", c.k, swallow as u8, t_us());
     } else if c.drop == Mode::Dead && K_SENT.load(Relaxed) && dead_now(c) {
         swallow = true;
     }
@@ -120,7 +118,7 @@ fn tick_send(syms: &[WireSymbol], swallowed: bool) {
     let now = t_us();
     let last = LAST.load(Relaxed);
     if now.saturating_sub(last) >= 100_000 && LAST.compare_exchange(last, now, Relaxed, Relaxed).is_ok() {
-        eprintln!(
+        crate::readout!(
             "[TSEAM] ev=txtick rel_us={} pass={} swallowed={} repair={} maxsrc={} t_us={now}",
             now.saturating_sub(K_T0.load(Relaxed)),
             PASS.load(Relaxed), SWAL.load(Relaxed), REP.load(Relaxed), MAXSRC.load(Relaxed)
@@ -149,7 +147,7 @@ pub fn on_recv(block_id: u64, is_repair: bool) {
     let now = t_us();
     let last = LAST.load(Relaxed);
     if now.saturating_sub(last) >= 100_000 && LAST.compare_exchange(last, now, Relaxed, Relaxed).is_ok() {
-        eprintln!(
+        crate::readout!(
             "[TSEAM] ev=rxtick n={} repair={} maxsrc={} k_src={} t_us={now}",
             N.load(Relaxed), REP.load(Relaxed), MAXSRC.load(Relaxed), KSRC.load(Relaxed)
         );
@@ -161,7 +159,7 @@ pub fn on_recv(block_id: u64, is_repair: bool) {
 pub fn on_force_drain(before: u64, after: u64, drained: &[u64]) {
     let c = cfg();
     if c.k != u64::MAX && c.k >= before && c.k < after && !drained.contains(&c.k) {
-        eprintln!("[TSEAM] ev=pass_force seq={} t_us={}", c.k, t_us());
+        crate::readout!("[TSEAM] ev=pass_force seq={} t_us={}", c.k, t_us());
     }
 }
 
@@ -169,7 +167,7 @@ pub fn on_force_drain(before: u64, after: u64, drained: &[u64]) {
 pub fn on_shed(seq: u64, age_us: u64, d_us: u64) {
     let c = cfg();
     if seq == c.k {
-        eprintln!("[TSEAM] ev=shed seq={seq} age_us={age_us} d_us={d_us} t_us={}", t_us());
+        crate::readout!("[TSEAM] ev=shed seq={seq} age_us={age_us} d_us={d_us} t_us={}", t_us());
     }
 }
 
@@ -181,7 +179,7 @@ pub fn budget_frac(frac: f64) -> f64 {
 /// A shed-denied seq (`shed_denied += 1`) at the NACK site.
 pub fn on_denied(seq: u64) {
     if seq == cfg().k {
-        eprintln!("[TSEAM] ev=denied seq={seq} t_us={}", t_us());
+        crate::readout!("[TSEAM] ev=denied seq={seq} t_us={}", t_us());
     }
 }
 
@@ -195,7 +193,7 @@ pub fn on_frontier(next_deliver: u64, pending: usize, hold_us: u64) {
     let now = t_us();
     let last = LAST.load(Relaxed);
     if now.saturating_sub(last) >= 100_000 && LAST.compare_exchange(last, now, Relaxed, Relaxed).is_ok() {
-        eprintln!("[TSEAM] ev=frontier next={next_deliver} pending={pending} hold_us={hold_us} t_us={now}");
+        crate::readout!("[TSEAM] ev=frontier next={next_deliver} pending={pending} hold_us={hold_us} t_us={now}");
     }
 }
 
@@ -208,9 +206,9 @@ pub fn on_arrive(seq: u64) {
         return;
     }
     if seq == c.k {
-        eprintln!("[TSEAM] ev=fill seq={seq} t_us={}", t_us());
+        crate::readout!("[TSEAM] ev=fill seq={seq} t_us={}", t_us());
     } else if seq > c.k && !ABOVE.swap(true, Relaxed) {
-        eprintln!("[TSEAM] ev=above seq={} first={seq} t_us={}", c.k, t_us());
+        crate::readout!("[TSEAM] ev=above seq={} first={seq} t_us={}", c.k, t_us());
     }
 }
 
@@ -219,7 +217,7 @@ pub fn on_arrive(seq: u64) {
 pub fn on_give_up(before: u64, after: u64, held: &[u64]) {
     let c = cfg();
     if c.k != u64::MAX && c.k >= before && c.k < after && !held.contains(&c.k) {
-        eprintln!("[TSEAM] ev=pass seq={} t_us={}", c.k, t_us());
+        crate::readout!("[TSEAM] ev=pass seq={} t_us={}", c.k, t_us());
     }
 }
 
@@ -227,14 +225,14 @@ pub fn on_give_up(before: u64, after: u64, held: &[u64]) {
 /// tree calls it). Kept so one test file reads both trees.
 pub fn on_shed_slot(seq: u64, age_us: u64, d_us: u64) {
     if seq == cfg().k {
-        eprintln!("[TSEAM] ev=shed_slot seq={seq} age_us={age_us} d_us={d_us} t_us={}", t_us());
+        crate::readout!("[TSEAM] ev=shed_slot seq={seq} age_us={age_us} d_us={d_us} t_us={}", t_us());
     }
 }
 
 /// A slot-site shed refusal (past D, budget closed) of k.
 pub fn on_denied_slot(seq: u64) {
     if seq == cfg().k {
-        eprintln!("[TSEAM] ev=denied_slot seq={seq} t_us={}", t_us());
+        crate::readout!("[TSEAM] ev=denied_slot seq={seq} t_us={}", t_us());
     }
 }
 
@@ -250,7 +248,7 @@ pub fn on_gap_clamped(gap_start: u64, gap_end: u64, win_start: u64, win_end: u64
     let now = t_us();
     let last = LAST.load(Relaxed);
     if now.saturating_sub(last) >= 100_000 && LAST.compare_exchange(last, now, Relaxed, Relaxed).is_ok() {
-        eprintln!(
+        crate::readout!(
             "[TSEAM] ev=gap_clamped n={n} gap=[{gap_start},{gap_end}] win=[{win_start},{win_end}] t_us={now}"
         );
     }

@@ -273,6 +273,7 @@ flowchart TB
 | Receiver refresh clock input | ⛔ blocked | Giving the receiver a real delay for its re-report timer; it waits for the in-flight limit fix, because until then the timer's limits decide its value anyway. |
 | NACK repair throttle: gauge, paper | ○ next | First measuring how often a hidden rule that limits re-sends per loss report actually bites, then justifying it in the paper or removing it. |
 | Retransmits queued behind source? | ○ next | Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets. |
+| Evicting seat strands a stalled blocker | ⚠ open defect | In the slow-link mode (rho < 1) a lost packet can be neither resent nor dropped, and the transfer then waits on the receiver to skip it; a lost tail with nothing after it is never resolved. |
 | Retention is the ρ dial | ✔ done · n/a | The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting. |
 | Batched BOCD estimator cadence | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
 | Funded coding at r > 0 | ✖ dead end | Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand. |
@@ -288,6 +289,8 @@ flowchart TB
 | Repair-rate readout | ○ next | Adding a readout of how much repair data the formula asks for and which limit is in control, without changing behaviour. |
 | Repair rate over-provision verdict | ⚠ open defect | The repair rate spends about a fifth of the link on repair where real loss is about 3 %; decide whether that is a defect and derive the fix, in parallel with the re-send fix, since this is where the lost throughput is. |
 | Delete the taper copy branch | ○ next | Remove the re-send-copy branch so every repair slot sends coded repair, after a new ADR and the paper change, with tests that no copies are sent and that dropping past-deadline packets still works. |
+| Shed budget ignores ρ | ⚠ open defect | The budget for dropping late data on the slow-link mode is computed from a flawed loss estimate and does not use the retention setting at all; decide its verdict and derive it from ρ. |
+| ADR-0050 budget split unwired | ⚠ open defect | ADR-0050 decided that proactive repair is the total budget minus the expected resends; that code is only called from tests, and a decode close does not cancel the resend it covers. |
 | Owner calls on rate law | ⛔ blocked | Owner decision on five mismatches between the paper and the code in how much repair data to send. |
 | Rate-law reconciliation | ⛔ blocked | Making the paper and the code agree on how much repair data to send, with a test for every remaining difference. |
 | Rate-law term-win gauge | ⛔ blocked | Adding a readout that shows which part of the repair-rate formula is actually in control. |
@@ -335,7 +338,8 @@ flowchart TB
 | Per-path I/O owner | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
-| Repair-share bound counts every slot | ○ next | The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model's definition is checked to mean the same thing. |
+| Perf ignores the config file | ⚠ open defect | The perf client and server never read --config, so the tail target, the overhead cap, certificate pinning and the slow-link setting cannot be set for a perf run. |
+| Repair-share bound counts every slot | ▶ in progress | The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model's definition is checked to mean the same thing. |
 | Pacer late-send check replaced | ✔ fixed | The planned test of loss repair on a low-latency link required its rate pacer to send almost nothing late, against a limit set without data. Lateness turned out to be ordinary timer delay on both programs, so the limit was replaced by a check for gross stalls, and lateness is now reported instead of voiding runs. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
 | Formula-first review | ✔ done · successful | After a limit rule turned out to be wrong in shape despite passing every test, every rule must now be written as a formula and derived before it is coded. |
@@ -345,7 +349,7 @@ flowchart TB
 | Two-path control bimodal collapse | ⚠ open defect | Open problem: on the hardest two-path test, the control runs sometimes fall back to using only the fast path, which makes results very noisy. |
 | Delay readout prints whole milliseconds | ⚠ open defect | Open problem: one diagnostic line rounds the delay to whole milliseconds, which hides small delays on fast links. |
 | Partial-reliability measurement block | ⛔ blocked | A follow-up test of the mode where some data may be dropped, which first needs that setting to be adjustable on its own. |
-| Merge guard blind off Bulk | ○ next | The standard merge guard runs only Bulk rows, which send no repair slots, so it cannot see any change to the repair path; give it off-Bulk stages. |
+| Merge guard blind off Bulk | ○ next | No engine merge on a Bulk-only guard from now on. The standard merge guard runs only Bulk rows, which send no repair slots, so it cannot see any change to the repair path; give it off-Bulk stages. |
 | Per-leg clamp and saturation gauges | ○ next | Fix the measurements that only work on one path, so the next two-path run can read the congestion-window clamp and saturation per path. |
 | Harness robustness for every plan | ○ next | Making sure every test plan can be rehearsed end to end without the real network, so a long test session does not die on a script bug. |
 | Guard CPU and lag resolution | ○ next | Making the merge check sensitive to smaller CPU and delay changes, which it currently cannot see. |
@@ -371,7 +375,16 @@ flowchart TB
 | Observability implementation | ⛔ blocked | Building one metrics system that feeds the status page, the logs and standard monitoring tools. |
 | Workspace restructure | ⏳ waiting | Reorganising the repository layout in stages; the documentation and tools moves are done and the code splits are still open. |
 | Recorded, not fixed | ⚠ open defect | Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much. |
+| Tunnel in-order guard | ⚠ open defect | Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins. |
 | tech-tree skill PR | ○ next | Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository. |
+| CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
+| Unwired-code and config audits | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
+| Model check of hole recovery | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
+| Recovery bookkeeping counters | ○ next | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
+| Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
+| Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
+| Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
+| Deterministic simulation of the engine | ▶ in progress | Run both ends of a transfer in one process on a virtual clock, so a stall or timeout test replays exactly and runs in a fraction of a second. |
 <!-- END GENERATED: plain-words -->
 
 ## Ready now
@@ -391,16 +404,21 @@ flowchart TB
 - `meas-test-hygiene`: Test hygiene fixes
 - `rec-fix-perleg-clock-n1`: Per-leg recovery clock, one law
 - `rec-fix-nack-throttle`: NACK repair throttle: gauge, paper
+- `infra-test-recovery-counters`: Recovery bookkeeping counters
+- `rec-evict-blocker-unresolved`: Evicting seat strands a stalled blocker
+- `perf-config-dropped`: Perf ignores the config file
+- `infra-dead-code-batch`: Remove 24 dead functions
 
 **no-cargo**
 
 - `rate-spare-clamp-verdict`: Spare clamp on Realtime: verdict
-- `meas-w1-bracket-fix`: Repair-share bound counts every slot
 - `store-defect-b0p-brake`: Boot-time brake estimate latches transients
 - `store-sampler-design`: Store-law delay sampler design
 - `meas-defect-cr61-large-pool`: Collapse rule blind at large pools
 - `rec-framing-followups`: Framing fix leftovers
 - `rate-s06-plost-derivation`: Delete the taper copy branch
+- `rate-shed-budget-rho`: Shed budget ignores ρ
+- `rate-adr50-split-unwired`: ADR-0050 budget split unwired
 - `meas-guard-bulk-blind`: Merge guard blind off Bulk
 - `meas-harness-robustness`: Harness robustness for every plan
 - `infra-tech-tree-skill`: tech-tree skill PR
@@ -420,10 +438,18 @@ flowchart TB
 
 - `model-shared-core`: Shared engine laws and decisions
 - `model-wasm-fixes`: Wasm model fixes
+- `infra-test-static-audits`: Unwired-code and config audits
+- `infra-test-recovery-model`: Model check of hole recovery
+- `infra-test-sim-engine`: Deterministic simulation of the engine
 
 **no-cargo**
 
+- `meas-w1-bracket-fix`: Repair-share bound counts every slot
 - `store-law-derivation`: Store-law derivation
+
+**none**
+
+- `infra-test-ci-gate`: CI on every push
 <!-- END GENERATED: running -->
 
 ## Built, waiting
@@ -506,7 +532,7 @@ _The VM queue is empty._
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated from nodes.yaml on 2026-11-19.
+Generated from nodes.yaml on 2026-11-20.
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
@@ -517,15 +543,15 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 53 nodes (22 done, 6 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 33 nodes (16 done, 4 in progress, 4 next, 5 blocked, 1 parked, 3 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 54 nodes (22 done, 6 in progress, 5 next, 3 blocked, 4 parked, 14 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 35 nodes (16 done, 4 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
-- [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
-- [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 4 in progress, 8 next, 4 blocked, 1 abandoned)
+- [perf - performance](roadmap/tracks/perf.md): 28 nodes (18 done, 1 in progress, 2 next, 7 abandoned)
+- [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 15 nodes (12 done, 2 in progress, 1 next)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (16 done, 7 in progress, 3 next, 2 blocked)
 <!-- END GENERATED: tracks -->
 

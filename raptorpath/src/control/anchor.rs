@@ -82,7 +82,7 @@ pub const STALL_TICK_S: f64 = 0.05;
 impl StallWitness {
     pub fn new() -> Self {
         Self {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             last_tick_us: std::sync::atomic::AtomicU64::new(0),
             quarantine_until_us: std::sync::atomic::AtomicU64::new(0),
             gaps: std::sync::atomic::AtomicU64::new(0),
@@ -91,7 +91,7 @@ impl StallWitness {
     }
 
     fn now_us(&self) -> u64 {
-        self.epoch.elapsed().as_micros() as u64
+        self.epoch.clock_elapsed().as_micros() as u64
     }
 
     /// Timer-task tick on the witness's own monotonic epoch.
@@ -552,3 +552,6 @@ mod tests {
         assert!(!w.in_quarantine(t + 2_100_000));
     }
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

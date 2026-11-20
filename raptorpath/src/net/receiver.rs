@@ -200,7 +200,7 @@ pub(crate) async fn run_receiver(
     // this gauge is therefore also emitted on the same 1 s cadence, last line
     // wins.
     let mut recv_qclk_echo = crate::net::QuantileClockGauge::new("receiver");
-    let mut qclk_report_at = Instant::now();
+    let mut qclk_report_at = crate::clock::now();
     // `[RACK]` / `[RFA]` fire accounting at the receiver site (paper §7.1).
     let mut recv_rack_echo = crate::net::RackClockGauge::new();
     // `[RFA]` is a PLAIN-WINDOW instrument (the same configuration scope the
@@ -208,7 +208,7 @@ pub(crate) async fn run_receiver(
     // echoes which machine it measured so no row is ever read out of scope.
     recv_rack_echo.set_recv_generation(recv_window_generation);
     // `[RFA]` cadence — see the readout site. Cumulative, 1 s, last line wins.
-    let mut rfa_report_at = Instant::now();
+    let mut rfa_report_at = crate::clock::now();
     // `[SUCC]`: the same-flow successor-arrival distribution — per hole,
     // detection → resolution, in three disjoint outcomes. See `net/succ.rs`
     // for the measurand, the origin event, and why it is detection rather
@@ -286,8 +286,8 @@ pub(crate) async fn run_receiver(
         recv_request_law,
         recv_rank_feedback,
     );
-    let mut succ_report_at = Instant::now();
-    let mut recv_shed_diag_at = Instant::now();
+    let mut succ_report_at = crate::clock::now();
+    let mut recv_shed_diag_at = crate::clock::now();
     // Unordered delivery: next in-order seq not yet received (the frontier).
     // Walks `received_seqs` to drive the cumulative WindowAck (retention
     // pruning) while delivery itself is unordered.
@@ -296,7 +296,7 @@ pub(crate) async fn run_receiver(
     // re-advertise the gap (SACK-bearing WindowAck) — acks are
     // best-effort datagrams, and a lost gap report must not leave
     // recovery to the sender's single-seq tail sweep alone.
-    let mut last_hole_nack_at = Instant::now();
+    let mut last_hole_nack_at = crate::clock::now();
     // Track received seqs for WindowNack gap reporting
     // A ring bitmap (threading R1; `net/seq_bits.rs`), not a tree: no node
     // allocation per seq, O(words) range reads.
@@ -313,7 +313,7 @@ pub(crate) async fn run_receiver(
     // counters are dominated by quinn's own transport-level ACK cadence, and
     // control datagrams ride coalesced inside those packets, so merging two
     // datagram frames changes the frame count, not the packet count.
-    let mut ctld_last_report = Instant::now();
+    let mut ctld_last_report = crate::clock::now();
     // Slow-path conversion gauges (RWM_DIAG only): the receiver-side view of
     // conversion, per arrival path:
     //  * first[p]  — seqs whose first copy this path delivered (source
@@ -332,8 +332,8 @@ pub(crate) async fn run_receiver(
     let mut c8r_lead: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
     let mut c8r_unb_n: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
     let mut c8r_unb_ms: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
-    let mut c8r_last_adv = Instant::now();
-    let mut c8r_last_print = Instant::now();
+    let mut c8r_last_adv = crate::clock::now();
+    let mut c8r_last_print = crate::clock::now();
     // Generation-deficit feedback, receiver arm (paper §5.8).
     // `gen_widths[anchor]` = the generation's K_g, learned from the wire
     // header (`window_count`) of any coded symbol for that anchor.
@@ -360,17 +360,17 @@ pub(crate) async fn run_receiver(
         .report_gens
         .unwrap_or(if recv_gates.gen_pipe { GEN_PIPE_MAX_GENS + 1 } else { 6 })
         .clamp(1, 2000);
-    let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
+    let mut last_deficit_send = crate::clock::now() - Duration::from_secs(1);
     let mut highest_seen_seq: u64 = 0;
     // One past the highest seq seen (0 = nothing seen): the exclusive twin of
     // `highest_seen_seq`, so "a seq above the cumulative point has been
     // seen" is `seen_end > next_expected` with no seq-0 ambiguity.
     let mut seen_end: u64 = 0;
-    let mut last_nack_time = Instant::now();
+    let mut last_nack_time = crate::clock::now();
     // Dupack analog: highest_seen at the last gap-advertising ack, and when
     // it was sent (rate limit) — see GAP_ACK_MIN_INTERVAL.
     let mut last_gap_ack_seen: u64 = 0;
-    let mut last_gap_ack_time = Instant::now() - GAP_ACK_MIN_INTERVAL;
+    let mut last_gap_ack_time = crate::clock::now() - GAP_ACK_MIN_INTERVAL;
     // Controller feedback tracking for window mode (repairs fed / useful).
     let mut last_pi_repairs_fed: u64 = 0;
     let mut last_pi_repairs_useful: u64 = 0;
@@ -386,7 +386,7 @@ pub(crate) async fn run_receiver(
     // Current frontier hole being tracked: (seq, stall_start, saw_buffered_
     // equation_during_stall, source_arrived_for_it). None = not stalled.
     let mut fdiag_hole: Option<(u64, Instant, bool, bool)> = None;
-    let mut fdiag_report_at = Instant::now();
+    let mut fdiag_report_at = crate::clock::now();
     // Aggregate resolution counts + stall time (µs), split by mechanism.
     let mut fdiag_decode_n: u64 = 0;
     let mut fdiag_source_n: u64 = 0;
@@ -423,8 +423,8 @@ pub(crate) async fn run_receiver(
     //     delivering frames that then die before `read_datagram()`.
     let wdiag_on = recv_gates.diag;
     let mut wdiag_frontier_val: u64 = 0;
-    let mut wdiag_frontier_at = Instant::now();
-    let mut wdiag_last_report = Instant::now();
+    let mut wdiag_frontier_at = crate::clock::now();
+    let mut wdiag_last_report = crate::clock::now();
     let mut wdiag_batches: u64 = 0; // Data batches processed (total)
     let mut wdiag_syms: u64 = 0; // symbols fed (total)
     let mut wdiag_batches_last: u64 = 0;
@@ -506,7 +506,7 @@ pub(crate) async fn run_receiver(
                 });
                 let deficits = raw_deficits;
                 if !deficits.is_empty() || $force {
-                    last_deficit_send = Instant::now();
+                    last_deficit_send = crate::clock::now();
                     if recv_gates.trace {
                         let total: u32 = deficits.iter().map(|(_, d)| d).sum();
                         crate::readout!(
@@ -561,7 +561,7 @@ pub(crate) async fn run_receiver(
                 let (lstar_opt, _knee_bound) = blk.late.request_lateness();
                 let lstar = lstar_opt.unwrap_or(0);
                 blk.req_lstar_us = lstar;
-                let now_rq = Instant::now();
+                let now_rq = crate::clock::now();
                 let holes = blk.succ.holes_at_least(
                     now_rq,
                     lstar,
@@ -631,7 +631,7 @@ pub(crate) async fn run_receiver(
     let mut rdiag_qsum: u64 = 0;
     let mut rdiag_qmax: usize = 0;
     let mut rdiag_qn: u64 = 0;
-    let mut rdiag_last = Instant::now();
+    let mut rdiag_last = crate::clock::now();
     // Decoder-prune witness (paper §5.2 "Retained state"): prunes since the
     // last [RDIAG] line, and the run's longest single prune. Measured only
     // under RWM_RDIAG; never read by the prune itself.
@@ -672,7 +672,7 @@ pub(crate) async fn run_receiver(
             window_decoder.advance(prune_before);
             if let Some(t0) = rdiag_prune_t {
                 rdiag_prune_n += 1;
-                rdiag_prune_max_us = rdiag_prune_max_us.max(t0.elapsed().as_micros() as u64);
+                rdiag_prune_max_us = rdiag_prune_max_us.max(t0.clock_elapsed().as_micros() as u64);
             }
         }
         // The staged control datagrams go to the owners before every wait
@@ -698,7 +698,7 @@ pub(crate) async fn run_receiver(
                 let interval = srtt
                     .map(|s| s.clamp(Duration::from_millis(3), Duration::from_millis(50)))
                     .unwrap_or(Duration::from_millis(10));
-                let elapsed = last_deficit_send.elapsed();
+                let elapsed = last_deficit_send.clock_elapsed();
                 let remaining = interval.saturating_sub(elapsed);
                 Some(tokio::time::Instant::now() + remaining)
             } else {
@@ -794,7 +794,7 @@ pub(crate) async fn run_receiver(
                     rb.oldest_deadline()
                 };
                 deadline.map(|d| {
-                    let remaining = d.saturating_duration_since(Instant::now());
+                    let remaining = d.saturating_duration_since(crate::clock::now());
                     tokio::time::Instant::now() + remaining
                 })
             } else {
@@ -804,7 +804,7 @@ pub(crate) async fn run_receiver(
 
         // ADR-0015: select between message arrival, in-order-hold expiry,
         // and shutdown signal
-        let rdiag_t0 = if rdiag_on && waiting { Some(Instant::now()) } else { None };
+        let rdiag_t0 = if rdiag_on && waiting { Some(crate::clock::now()) } else { None };
         let (path_id, msg) = match queued.pop_front() {
             Some(m) => m,
             None => tokio::select! {
@@ -858,20 +858,20 @@ pub(crate) async fn run_receiver(
                 // until recovered — the hold-expiry force-delivery below is
                 // the EVICT policy's move and is structurally skipped here.
                 if recv_window_reliable {
-                    last_hole_nack_at = Instant::now();
+                    last_hole_nack_at = crate::clock::now();
                     // Wedge forensics: the frontier is stalled (this arm only
                     // fires with a pending hole). Once frozen > 1 s, name the
                     // blocker's receiver-side state once per second.
                     if wdiag_on {
                         if next_expected != wdiag_frontier_val {
                             wdiag_frontier_val = next_expected;
-                            wdiag_frontier_at = Instant::now();
+                            wdiag_frontier_at = crate::clock::now();
                         }
-                        let stall = wdiag_frontier_at.elapsed();
+                        let stall = wdiag_frontier_at.clock_elapsed();
                         if stall >= Duration::from_secs(1)
-                            && wdiag_last_report.elapsed() >= Duration::from_secs(1)
+                            && wdiag_last_report.clock_elapsed() >= Duration::from_secs(1)
                         {
-                            wdiag_last_report = Instant::now();
+                            wdiag_last_report = crate::clock::now();
                             let blocker = reorder_buf
                                 .as_ref()
                                 .map(|rb| rb.next_deliver_seq())
@@ -973,7 +973,7 @@ pub(crate) async fn run_receiver(
                 // stalls on an unrecoverable symbol.
                 if let Some(ref mut reorder) = reorder_buf {
                     let shed_frontier_before = reorder.next_deliver_seq();
-                    let expired = reorder.drain_expired(Instant::now());
+                    let expired = reorder.drain_expired(crate::clock::now());
                     // δ-honest shed accounting: seqs the frontier passed
                     // minus entries actually delivered = holes given up.
                     if recv_shed_on {
@@ -982,9 +982,9 @@ pub(crate) async fn run_receiver(
                             .saturating_sub(shed_frontier_before)
                             .saturating_sub(expired.len() as u64);
                         if recv_shed_diag
-                            && recv_shed_diag_at.elapsed() >= Duration::from_millis(500)
+                            && recv_shed_diag_at.clock_elapsed() >= Duration::from_millis(500)
                         {
-                            recv_shed_diag_at = Instant::now();
+                            recv_shed_diag_at = crate::clock::now();
                             crate::readout!(
                                 "[SHED-R] holes={} frontier={} budget_open={}",
                                 recv_shed_holes,
@@ -998,7 +998,7 @@ pub(crate) async fn run_receiver(
                     // than at the next arrival so an abandoned hole's age is
                     // stamped when it was abandoned. Read-only.
                     for rec in
-                        blk.succ.abandon_below(reorder.next_deliver_seq(), Instant::now())
+                        blk.succ.abandon_below(reorder.next_deliver_seq(), crate::clock::now())
                     {
                         blk.late.note_hole(rec.outcome, rec.cross, rec.us, rec.hi_us);
                         abandoned_seqs.insert(rec.seq);
@@ -1100,7 +1100,7 @@ pub(crate) async fn run_receiver(
         },
         };
         if let Some(t0) = rdiag_t0 {
-            rdiag_idle_us += t0.elapsed().as_micros() as u64;
+            rdiag_idle_us += t0.clock_elapsed().as_micros() as u64;
             // This wait's whole drain (the message in hand + the queued rest).
             rdiag_msgs += 1 + queued.len() as u64;
             // Queue depth (in owner batches) sampled once per wait.
@@ -1112,7 +1112,7 @@ pub(crate) async fn run_receiver(
                     rdiag_qn += 1;
                 }
             }
-            let w = rdiag_last.elapsed();
+            let w = rdiag_last.clock_elapsed();
             if w >= Duration::from_millis(500) {
                 let wall_us = w.as_micros() as u64;
                 let busy =
@@ -1138,7 +1138,7 @@ pub(crate) async fn run_receiver(
                 rdiag_qsum = 0;
                 rdiag_qmax = 0;
                 rdiag_qn = 0;
-                rdiag_last = Instant::now();
+                rdiag_last = crate::clock::now();
             }
         }
         let rxp_is_data = matches!(msg, WireMessage::Data(_));
@@ -1390,9 +1390,9 @@ pub(crate) async fn run_receiver(
                         crate::test_seams::on_recv(symbol.block_id, symbol.is_repair);
                         let rxp_t = rxp.begin();
                         let recovered = if fdiag_on {
-                            let t_dec = Instant::now();
+                            let t_dec = crate::clock::now();
                             let r = win_dec.add_symbol(symbol);
-                            let call_us = t_dec.elapsed().as_micros() as u64;
+                            let call_us = t_dec.clock_elapsed().as_micros() as u64;
                             fdiag_addsym_us += call_us;
                             fdiag_addsym_max_us = fdiag_addsym_max_us.max(call_us);
                             fdiag_addsym_n += 1;
@@ -1420,7 +1420,7 @@ pub(crate) async fn run_receiver(
                         let rxp_t = rxp.begin();
                         let mut lat_release: crate::net::lat::Release = None;
                         {
-                            let succ_now = Instant::now();
+                            let succ_now = crate::clock::now();
                             // `path_id` is the path this arrival landed on —
                             // the exposer at `observe_high`, the closer at
                             // `resolve`. Nothing branches on it.
@@ -1594,7 +1594,7 @@ pub(crate) async fn run_receiver(
                                 // Never buffered: the delivery instant is
                                 // its own stamp, so `[LAT]`'s reorder wait is
                                 // exactly 0.
-                                vec![(seq, sym_data, Instant::now())]
+                                vec![(seq, sym_data, crate::clock::now())]
                             };
 
                             // Conversion DIAG: this arrival advanced the
@@ -1602,16 +1602,16 @@ pub(crate) async fn run_receiver(
                             // ≥ 5 ms, credit the unblock (and the stall it
                             // ended) to this path.
                             if c8r_on && !deliverable.is_empty() {
-                                let gap = c8r_last_adv.elapsed();
+                                let gap = c8r_last_adv.clock_elapsed();
                                 if gap >= Duration::from_millis(5) {
                                     *c8r_unb_n.entry(path_id).or_insert(0) += 1;
                                     *c8r_unb_ms.entry(path_id).or_insert(0) +=
                                         gap.as_millis() as u64;
                                 }
-                                c8r_last_adv = Instant::now();
+                                c8r_last_adv = crate::clock::now();
                             }
 
-                            let lat_now = Instant::now();
+                            let lat_now = crate::clock::now();
                             for (dseq, ddata, dbuf) in deliverable {
                                 // `[LAT]`: the reorder wait is
                                 // `t_deliver - buffered_at`, which only the
@@ -1667,7 +1667,7 @@ pub(crate) async fn run_receiver(
                             if let Some(ref reorder) = reorder_buf {
                                 for rec in blk.succ.abandon_below(
                                     reorder.next_deliver_seq(),
-                                    Instant::now(),
+                                    crate::clock::now(),
                                 ) {
                                     blk.late.note_hole(
                                         rec.outcome,
@@ -1692,8 +1692,8 @@ pub(crate) async fn run_receiver(
                     // fst/dup = first-copy vs displacement deliveries; lead =
                     // mean first-copy frontier lead (symbols); unb = frontier
                     // unblocks credited / stall ms ended.
-                    if c8r_on && c8r_last_print.elapsed() >= Duration::from_secs(1) {
-                        c8r_last_print = Instant::now();
+                    if c8r_on && c8r_last_print.clock_elapsed() >= Duration::from_secs(1) {
+                        c8r_last_print = crate::clock::now();
                         let mut keys: Vec<u32> = c8r_first
                             .keys()
                             .chain(c8r_dup.keys())
@@ -1764,7 +1764,7 @@ pub(crate) async fn run_receiver(
                             ));
                         }
                         let shed_frontier_before = reorder.next_deliver_seq();
-                        let expired = reorder.drain_expired(Instant::now());
+                        let expired = reorder.drain_expired(crate::clock::now());
                         if recv_shed_on {
                             recv_shed_holes += reorder
                                 .next_deliver_seq()
@@ -1798,7 +1798,7 @@ pub(crate) async fn run_receiver(
                                     || batch.symbols.iter().any(|s| {
                                         !s.is_repair && s.block_id == hp
                                     });
-                                let dt = t0.elapsed().as_micros() as u64;
+                                let dt = t0.clock_elapsed().as_micros() as u64;
                                 if by_source {
                                     fdiag_source_n += 1;
                                     fdiag_source_us += dt;
@@ -1825,11 +1825,11 @@ pub(crate) async fn run_receiver(
                             let (_h, buffered) =
                                 win_dec.frontier_probe(f, highest_seen_seq);
                             fdiag_hole =
-                                Some((f, Instant::now(), buffered > 0, false));
+                                Some((f, crate::clock::now(), buffered > 0, false));
                         }
                         // Periodic aggregate report (~500 ms).
-                        if fdiag_report_at.elapsed() >= Duration::from_millis(500) {
-                            fdiag_report_at = Instant::now();
+                        if fdiag_report_at.clock_elapsed() >= Duration::from_millis(500) {
+                            fdiag_report_at = crate::clock::now();
                             let (holes, buffered) =
                                 win_dec.frontier_probe(f, highest_seen_seq);
                             let dec_avg = if fdiag_decode_n > 0 {
@@ -1880,9 +1880,9 @@ pub(crate) async fn run_receiver(
                     // run with no repair-class event stays silent.
                     if (recv_gates.diag || fdiag_on)
                         && recv_rack_echo.is_receiver_site()
-                        && rfa_report_at.elapsed() >= Duration::from_secs(1)
+                        && rfa_report_at.clock_elapsed() >= Duration::from_secs(1)
                     {
-                        rfa_report_at = Instant::now();
+                        rfa_report_at = crate::clock::now();
                         crate::readout!("{}", recv_rack_echo.rfa_line());
                     }
 
@@ -1893,9 +1893,9 @@ pub(crate) async fn run_receiver(
                     // an unreached evaluation site and never as an unset gate.
                     if (recv_gates.diag || fdiag_on)
                         && recv_qclk_echo.evals() > 0
-                        && qclk_report_at.elapsed() >= Duration::from_secs(1)
+                        && qclk_report_at.clock_elapsed() >= Duration::from_secs(1)
                     {
-                        qclk_report_at = Instant::now();
+                        qclk_report_at = crate::clock::now();
                         crate::readout!("{}", recv_qclk_echo.line());
                     }
 
@@ -1916,9 +1916,9 @@ pub(crate) async fn run_receiver(
                     // recorded sample is left in a partial batch.
                     if (recv_gates.diag || fdiag_on)
                         && blk.succ.is_receiver_site()
-                        && succ_report_at.elapsed() >= Duration::from_secs(1)
+                        && succ_report_at.clock_elapsed() >= Duration::from_secs(1)
                     {
-                        succ_report_at = Instant::now();
+                        succ_report_at = crate::clock::now();
                         // `[RANK]`: `frontier_probe` re-read unconditionally
                         // (it is otherwise reachable only under `RWM_FDIAG`),
                         // plus the tail correction: the span that arrived
@@ -1956,7 +1956,7 @@ pub(crate) async fn run_receiver(
                     let gap_pending = seen_end > next_expected
                         && highest_seen_seq > last_gap_ack_seen;
                     let gap_report_due =
-                        gap_pending && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
+                        gap_pending && last_gap_ack_time.clock_elapsed() >= GAP_ACK_MIN_INTERVAL;
                     // `[LATE] sampler_bind`: a hole was ready to be reported
                     // and the 2 ms floor — not its lateness — is what held the
                     // report back. A threshold that always binds turns the law
@@ -1988,7 +1988,7 @@ pub(crate) async fn run_receiver(
                         // gap rate limit).
                         let sack_ranges = if advertise {
                             last_gap_ack_seen = highest_seen_seq;
-                            last_gap_ack_time = Instant::now();
+                            last_gap_ack_time = crate::clock::now();
                             // A gap-bearing ack is a hole re-advertisement:
                             // push the reliable-mode refresh timer out.
                             last_hole_nack_at = last_gap_ack_time;
@@ -2061,9 +2061,9 @@ pub(crate) async fn run_receiver(
                     // declaration of `ctld_last_report` for why frames and not
                     // the qdisc packet counters). Cumulative per path, 1 Hz.
                     if recv_diag_on
-                        && ctld_last_report.elapsed() >= Duration::from_secs(1)
+                        && ctld_last_report.clock_elapsed() >= Duration::from_secs(1)
                     {
-                        ctld_last_report = Instant::now();
+                        ctld_last_report = crate::clock::now();
                         let mut line = String::from("[CTLD]");
                         let live = recv_stats.live_path_ids();
                         for &pid in &live {
@@ -2102,7 +2102,7 @@ pub(crate) async fn run_receiver(
 
                     // Periodic tasks (rate-limited by REPORT_INTERVAL)
                     // NACK sending replaced by SACK-extended WindowAck above.
-                    let now = Instant::now();
+                    let now = crate::clock::now();
                     if now.duration_since(last_nack_time) >= REPORT_INTERVAL
                         && highest_seen_seq > 0
                     {
@@ -2306,3 +2306,6 @@ fn rank_probe(
     *rank_prev_seen = highest_seen_seq;
     (holes, pivots, tail_holes)
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;
