@@ -220,12 +220,10 @@ raptorpath-math/src/lib.rs: replace + with * in derive_window
 raptorpath-math/src/lib.rs: replace + with * in find_t_cut
 raptorpath-math/src/lib.rs: replace + with * in p_recovered_within
 raptorpath-math/src/lib.rs: replace + with * in r_saturation
-raptorpath-math/src/lib.rs: replace + with * in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace + with - in burst_deficit
 raptorpath-math/src/lib.rs: replace + with - in find_t_cut
 raptorpath-math/src/lib.rs: replace + with - in p_recovered_within
 raptorpath-math/src/lib.rs: replace + with - in r_saturation
-raptorpath-math/src/lib.rs: replace + with - in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace - with + in boost_params
 raptorpath-math/src/lib.rs: replace - with + in burst_deficit
 raptorpath-math/src/lib.rs: replace - with + in compute_buffer_max
@@ -244,8 +242,6 @@ raptorpath-math/src/lib.rs: replace - with + in p_recovered_within
 raptorpath-math/src/lib.rs: replace - with + in p_recovered_within
 raptorpath-math/src/lib.rs: replace - with + in p_recovered_within
 raptorpath-math/src/lib.rs: replace - with + in r_star_mass
-raptorpath-math/src/lib.rs: replace - with + in solve_r_from_time_budget
-raptorpath-math/src/lib.rs: replace - with + in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace - with / in boost_params
 raptorpath-math/src/lib.rs: replace - with / in compute_buffer_max
 raptorpath-math/src/lib.rs: replace - with / in find_t_cut
@@ -261,8 +257,6 @@ raptorpath-math/src/lib.rs: replace - with / in p_recovered_within
 raptorpath-math/src/lib.rs: replace - with / in p_recovered_within
 raptorpath-math/src/lib.rs: replace - with / in p_recovered_within
 raptorpath-math/src/lib.rs: replace - with / in r_star_mass
-raptorpath-math/src/lib.rs: replace - with / in solve_r_from_time_budget
-raptorpath-math/src/lib.rs: replace - with / in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace / with % in boost_params
 raptorpath-math/src/lib.rs: replace / with % in boost_params
 raptorpath-math/src/lib.rs: replace / with % in compute_buffer_max
@@ -270,9 +264,6 @@ raptorpath-math/src/lib.rs: replace / with % in find_t_cut
 raptorpath-math/src/lib.rs: replace / with % in ln_gamma
 raptorpath-math/src/lib.rs: replace / with % in p_recovered_within
 raptorpath-math/src/lib.rs: replace / with % in p_recovered_within
-raptorpath-math/src/lib.rs: replace / with % in solve_r_from_time_budget
-raptorpath-math/src/lib.rs: replace / with % in solve_r_from_time_budget
-raptorpath-math/src/lib.rs: replace / with % in zeta_of_delta
 raptorpath-math/src/lib.rs: replace / with * in boost_params
 raptorpath-math/src/lib.rs: replace / with * in boost_params
 raptorpath-math/src/lib.rs: replace / with * in burst_deficit
@@ -282,9 +273,7 @@ raptorpath-math/src/lib.rs: replace / with * in fit_burst_tail
 raptorpath-math/src/lib.rs: replace / with * in ln_gamma
 raptorpath-math/src/lib.rs: replace / with * in p_recovered_within
 raptorpath-math/src/lib.rs: replace / with * in p_recovered_within
-raptorpath-math/src/lib.rs: replace / with * in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace / with * in span_horizon_b
-raptorpath-math/src/lib.rs: replace / with * in zeta_of_delta
 raptorpath-math/src/lib.rs: replace < with <= in compute_delta
 raptorpath-math/src/lib.rs: replace < with <= in derive_window
 raptorpath-math/src/lib.rs: replace < with <= in find_t_cut
@@ -299,7 +288,6 @@ raptorpath-math/src/lib.rs: replace < with <= in r_saturation
 raptorpath-math/src/lib.rs: replace < with <= in r_saturation
 raptorpath-math/src/lib.rs: replace < with <= in solve_r_from_delta_rho
 raptorpath-math/src/lib.rs: replace < with <= in solve_r_from_time_budget
-raptorpath-math/src/lib.rs: replace < with <= in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace < with <= in solve_rho_from_r_delta
 raptorpath-math/src/lib.rs: replace < with == in find_t_cut
 raptorpath-math/src/lib.rs: replace < with == in find_t_cut
@@ -307,11 +295,8 @@ raptorpath-math/src/lib.rs: replace < with == in ln_gamma
 raptorpath-math/src/lib.rs: replace < with == in normal_survival
 raptorpath-math/src/lib.rs: replace < with == in p_fec_normal
 raptorpath-math/src/lib.rs: replace < with == in p_lost
-raptorpath-math/src/lib.rs: replace < with == in solve_r_from_time_budget
-raptorpath-math/src/lib.rs: replace < with == in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace < with > in find_t_cut
 raptorpath-math/src/lib.rs: replace < with > in find_t_cut
-raptorpath-math/src/lib.rs: replace < with > in solve_r_from_time_budget
 raptorpath-math/src/lib.rs: replace <= with > in find_t_cut
 raptorpath-math/src/lib.rs: replace <= with > in find_t_cut
 raptorpath-math/src/lib.rs: replace <= with > in p_recovered_within
