@@ -148,6 +148,7 @@ const PENDING_TRIAGE: &[&str] = &[];
 const PARAM_ALLOWLIST: &[(&str, &str)] = &[
     ("control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_fed", "D: the window PI no-op ADR-0050 kept for compatibility; its one caller (net/tx_inputs.rs:183, SenderCmd::FecFeedback) is a dead call"),
     ("control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_useful", "D: as _repairs_fed"),
+    ("net/mod.rs::create_window_encoder::_backend", "I: RLC is the only window codec since ADR-0069; the doc keeps the parameter as the selection point for another one"),
     ("runtime_obs.rs::read_threads::_with_delay", "I: non-Linux stub returning None; the Linux body reads it"),
     ("transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_app_limited", "I: upstream quinn-proto 0.11 bw_estimation::end_acks ignores it too; the port keeps the signature (module doc)"),
     ("transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_current_round", "I: as _app_limited"),
