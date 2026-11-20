@@ -10,7 +10,7 @@ Scope: multipath placement: placement price, idle-leg lock-out, diversity weight
 ```mermaid
 flowchart TB
     place_early_window_sched["↷ Loss-ranked<br/>multipath window<br/>scheduling"]
-    place_marginal_cost[/"✔ Marginal-cost<br/>placement law"/]
+    place_marginal_cost[/"✔ Packets go to the<br/>cheapest path"/]
     place_frozen_echo["↷ Frozen app-echo srtt<br/>price"]
     place_spare_repair["✖ Proactive repair on<br/>the spare path"]
     place_daps["↷ DAPS queue-<br/>management chain"]
@@ -19,17 +19,17 @@ flowchart TB
     place_anchor_consolidate["✔ Slow-path anchor<br/>diagnosis"]
     place_slack["✖ Place-slack"]
     place_quad_lockin>"✔ Four-path lock-in<br/>defect retracted"]
-    place_wdiv["⏳ Derived diversity<br/>weight, leg choice"]
+    place_wdiv["⏳ Spreading<br/>retransmissions across<br/>paths"]
     place_stage2_battery["✔ Placement battery"]
     place_hol["✖ Placement frontier<br/>term"]
     place_t_derived["✖ Derived placement<br/>temperature"]
     place_s38_wire["✔ Wire-clocked<br/>placement base"]
     place_s41_iteration["✔ Wire price,<br/>iteration once"]
-    place_wire_price["✔ Wire-RTT placement<br/>price"]
+    place_wire_price["✔ Paths priced by<br/>measured network delay"]
     place_path_event["✔ Path event after<br/>promotion"]
-    place_per_leg_state["⏳ One per-leg state<br/>design"]
-    place_per_leg_relocate["⏳ Per-leg state<br/>relocation step"]
-    place_per_leg_impl["⛔ Per-leg state<br/>implementation"]
+    place_per_leg_state["⏳ One record per path:<br/>design"]
+    place_per_leg_relocate["⏳ Path measurements<br/>moved into one record"]
+    place_per_leg_impl["⛔ One record per path:<br/>build"]
     place_early_window_sched ~~~ place_marginal_cost
     place_early_window_sched ~~~ place_frozen_echo
     place_early_window_sched ~~~ place_spare_repair
@@ -92,24 +92,24 @@ flowchart TB
 <!-- BEGIN GENERATED: table-place -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `place-marginal-cost` | Marginal-cost placement law | done | successful |  | branch RWM Phase B | rec-reliable-window |
+| `place-marginal-cost` | Packets go to the cheapest path | done | successful |  | branch RWM Phase B | rec-reliable-window |
 | `place-daps` | DAPS queue-management chain | abandoned | superseded | −30 % | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |  |
 | `place-rate-sample` | Per-path rate-sample estimator | abandoned | superseded |  | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); commit 11e0f5eb |  |
 | `place-slack` | Place-slack | abandoned | dead-end | 6 % | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |  |
 | `place-stage2-battery` | Placement battery | done | successful | 6 % of delivered latency | status §2 row "Placement battery (Track A)" | meas-wire-v8 |
 | `place-hol` | Placement frontier term | abandoned | dead-end | 6 % | tag archive/RWM_PLACE_HOL | place-stage2-battery |
 | `place-t-derived` | Derived placement temperature | abandoned | dead-end | 0.78–0.85× | tag archive/RWM_PLACE_T_DERIVED | place-stage2-battery |
-| `place-wdiv` | Derived diversity weight, leg choice | in-progress | unrated |  | branch wdiv-diag; paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`) |  |
+| `place-wdiv` | Spreading retransmissions across paths | in-progress | unrated |  | branch wdiv-diag; paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`) |  |
 | `place-frozen-echo` | Frozen app-echo srtt price | abandoned | superseded |  | paper §10 row Frozen app-echo srtt as the placement base, `(½ + ε̂)·s_i` (the pre-§41b base; `RWM_PLACE_WIRE` unset) |  |
 | `place-s38-wire` | Wire-clocked placement base | done | bad | +2.5 % | status §38; commit ac133b31 | model-review-37 |
 | `place-s41-iteration` | Wire price, iteration once | done | mixed |  | status §41; commit 85be32ac | place-s38-wire |
-| `place-wire-price` | Wire-RTT placement price | done | successful | p = 0.7195 | status §41b; status §3.9; ADR-0073; commit fc5edd2d | place-s41-iteration |
-| `place-per-leg-state` | One per-leg state design | in-progress | unrated |  | derivation w3-per-leg-state.md (branch perleg-design); branch perleg-design | infra-simplify-review, place-wire-price |
-| `place-per-leg-relocate` | Per-leg state relocation step | in-progress | unrated |  | status Owner decisions (2026-11-16) items 4-5; branch perleg-phase-a e5246d7f; derivation w3-per-leg-state.md (branch perleg-design) | place-per-leg-state |
+| `place-wire-price` | Paths priced by measured network delay | done | successful | p = 0.7195 | status §41b; status §3.9; ADR-0073; commit fc5edd2d | place-s41-iteration |
+| `place-per-leg-state` | One record per path: design | in-progress | unrated |  | derivation w3-per-leg-state.md (branch perleg-design); branch perleg-design | infra-simplify-review, place-wire-price |
+| `place-per-leg-relocate` | Path measurements moved into one record | in-progress | unrated |  | status Owner decisions (2026-11-16) items 4-5; branch perleg-phase-a e5246d7f; derivation w3-per-leg-state.md (branch perleg-design) | place-per-leg-state |
 | `place-submax-anchor` | Sub-max quantile rate anchor | abandoned | dead-end | 65× | paper §10 row Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) |  |
 | `place-path-event` | Path event after promotion | done | unrated |  | status §46 | place-wire-price |
-| `place-user-perleg-questions` | Owner calls on per-leg design | next | n/a |  | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 | place-per-leg-state |
-| `place-per-leg-impl` | Per-leg state implementation | blocked | unrated |  | plan W3.2, W3.6a | place-per-leg-relocate, place-per-leg-state, place-user-perleg-questions |
+| `place-user-perleg-questions` | Owner calls on per-path record design | next | n/a |  | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 | place-per-leg-state |
+| `place-per-leg-impl` | One record per path: build | blocked | unrated |  | plan W3.2, W3.6a | place-per-leg-relocate, place-per-leg-state, place-user-perleg-questions |
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | abandoned | superseded |  | ADR-0026 |  |
 | `place-spare-repair` | Proactive repair on the spare path | abandoned | dead-end |  | commit ea20927f; commit 6c938427 |  |
 | `place-quad-lockin` | Four-path lock-in defect retracted | done | unrated |  | commit 0128bb5c |  |
@@ -119,24 +119,24 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `place-marginal-cost` | Marginal-cost placement law | Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06). | branch RWM Phase B |
+| `place-marginal-cost` | Packets go to the cheapest path | Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06). Was titled 'Marginal-cost placement law'. | branch RWM Phase B |
 | `place-daps` | DAPS queue-management chain | 2026-07-12 arc, deleted 2026-07-27 (9b48286e). The DAPS queue management, its read-ahead depth bound (68d6b6c5: 'correct lever, but bulk C8 aggregation is BOUNDED') and pace-all at BtlBw_i (34449977) share one paper row; the per-path rate-sample estimator is its own node (place-rate-sample, split 2026-11-16), and so is the sub-max quantile anchor (place-submax-anchor). | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); ADR-0065 |
 | `place-rate-sample` | Per-path rate-sample estimator | Split 2026-11-16 from 'DAPS and rate estimator (4 arms)' (its own branch). Deleted with the DAPS chain 2026-07-27; the paper row: the surviving ideas became the M* law and the anchor-hygiene laws. | paper §10 row DAPS chain, pace-all, per-path rate-sample estimator (`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_RATE_SAMPLE`, `RWM_PER_PATH_EST`); commit 11e0f5eb |
 | `place-slack` | Place-slack | G179 (feat/c8-conversion, 2026-08-06) is matched to this row by date and subject (slow-path conversion); uncertain. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Place-slack (`RWM_PLACE_SLACK`) |
 | `place-stage2-battery` | Placement battery | Verdict "First readout MIXED" is the battery's own word, not the outcome scale's mixed. | status §2 row "Placement battery (Track A)" |
 | `place-hol` | Placement frontier term | Archived 2026-11-12 (simplify batch 3) on the owner's housekeeping call. The archive tag's quote names another commit; the verdict is the paper row. Dates: paper §10 rows carry an end (removal) date only; archive/RWM_PLACE_HOL archived 2026-11-12 (tag date not used for end). | tag archive/RWM_PLACE_HOL |
 | `place-t-derived` | Derived placement temperature | Archived 2026-11-12 on the owner's ruling (archive code, keep formula). Dates: paper §10 rows carry an end (removal) date only; archive/RWM_PLACE_T_DERIVED archived 2026-11-12 (tag date not used for end). | tag archive/RWM_PLACE_T_DERIVED |
-| `place-wdiv` | Derived diversity weight, leg choice | Never in a battery; wdiv-diag wires RWM_PLACE_WDIV and the [HOLD] cx_leg field; reported arms in §52; unmerged. Dates: paper §10 rows carry an end (removal) date only. | branch wdiv-diag; paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`) |
+| `place-wdiv` | Spreading retransmissions across paths | Never in a battery; wdiv-diag wires RWM_PLACE_WDIV and the [HOLD] cx_leg field; reported arms in §52; unmerged. Dates: paper §10 rows carry an end (removal) date only. Was titled 'Derived diversity weight, leg choice'. | branch wdiv-diag; paper §10 row Derived diversity weight (`RWM_PLACE_WDIV_DERIVED`) |
 | `place-frozen-echo` | Frozen app-echo srtt price | Paper row is undated: the base dates from the placement law (2026-07-06) and was replaced on 2026-11-10 (§41b, ADR-0073). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Frozen app-echo srtt as the placement base, `(½ + ε̂)·s_i` (the pre-§41b base; `RWM_PLACE_WIRE` unset) |
 | `place-s38-wire` | Wire-clocked placement base | Split 2026-11-16 from 'Wire-RTT placement price'. The arm did not ship; iteration once in §41. | status §38; commit ac133b31 |
 | `place-s41-iteration` | Wire price, iteration once | Split 2026-11-16 from 'Wire-RTT placement price'. Allocation-free witness, host gate, then the §38 battery. | status §41; commit 85be32ac |
-| `place-wire-price` | Wire-RTT placement price | §41b GATE PASS (p = 0.72) -> owner promotion (ADR-0073) -> merged via diag36 (85c2295). §38 and §41 are their own nodes since 2026-11-16 (place-s38-wire, place-s41-iteration). The §3.9 lock-out classifier rule is folded in; §46 is its own node. | status §41b; status §3.9; ADR-0073; commit fc5edd2d |
-| `place-per-leg-state` | One per-leg state design | Design only (plan W3.2); prerequisite of W3.3/W3.4; open owner questions (plan user decision 9). The per-leg state takes over the wire price's inputs. Answered: question 4 (decision 4, 2026-11-16) and question 1 (decision 10, 2026-11-17). | derivation w3-per-leg-state.md (branch perleg-design); branch perleg-design |
-| `place-per-leg-relocate` | Per-leg state relocation step | Phase A of the per-leg design (A0-A4 on perleg-phase-a e5246d7f, 2026-11-16..17): leg_state_trace_pin captured at main and the leak-backstop bind gauge; one s (LegState.s) replaces Copa's srtt and the estimator's ewma_rtt; m, b, the rate sampler, J1-J3 and the wire RTT move into LegState; the [LEG] gauge (observation only). Owner decision 4 answered the only question it needs (reseed s on revival). It changes no behaviour, so per owner decision 5 it rides one stacked merge guard with the other zero-behaviour steps (the shared-core moves), bisected only on failure. Done when: that guard passes and the branch merges. | status Owner decisions (2026-11-16) items 4-5; branch perleg-phase-a e5246d7f; derivation w3-per-leg-state.md (branch perleg-design) |
+| `place-wire-price` | Paths priced by measured network delay | §41b GATE PASS (p = 0.72) -> owner promotion (ADR-0073) -> merged via diag36 (85c2295). §38 and §41 are their own nodes since 2026-11-16 (place-s38-wire, place-s41-iteration). The §3.9 lock-out classifier rule is folded in; §46 is its own node. Was titled 'Wire-RTT placement price'. | status §41b; status §3.9; ADR-0073; commit fc5edd2d |
+| `place-per-leg-state` | One record per path: design | Design only (plan W3.2); prerequisite of W3.3/W3.4; open owner questions (plan user decision 9). The per-leg state takes over the wire price's inputs. Answered: question 4 (decision 4, 2026-11-16) and question 1 (decision 10, 2026-11-17). Was titled 'One per-leg state design'. | derivation w3-per-leg-state.md (branch perleg-design); branch perleg-design |
+| `place-per-leg-relocate` | Path measurements moved into one record | Phase A of the per-leg design (A0-A4 on perleg-phase-a e5246d7f, 2026-11-16..17): leg_state_trace_pin captured at main and the leak-backstop bind gauge; one s (LegState.s) replaces Copa's srtt and the estimator's ewma_rtt; m, b, the rate sampler, J1-J3 and the wire RTT move into LegState; the [LEG] gauge (observation only). Owner decision 4 answered the only question it needs (reseed s on revival). It changes no behaviour, so per owner decision 5 it rides one stacked merge guard with the other zero-behaviour steps (the shared-core moves), bisected only on failure. Done when: that guard passes and the branch merges. Was titled 'Per-leg state relocation step'. | status Owner decisions (2026-11-16) items 4-5; branch perleg-phase-a e5246d7f; derivation w3-per-leg-state.md (branch perleg-design) |
 | `place-submax-anchor` | Sub-max quantile rate anchor | Split from place-daps (its parent). The row says the windowed max is the correct statistic for decode-clocked samples; it names no replacing node. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Sub-max quantile rate anchor (`RWM_RATE_WIRE`, `RWM_RATE_Q`) |
 | `place-path-event` | Path event after promotion | Own verdict: NO-DIFFERENCE against the registered prediction CAND-RECOVERS-FASTER (result in the §41c file, session 3). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §46 |
-| `place-user-perleg-questions` | Owner calls on per-leg design | Q4 reseed (2026-11-16); Q1 queue_target_mult = 1 + q(delta) (2026-11-17). Q2-3 and 5-8 belong to Phase B / W3.3. Done when: those are answered. | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 |
-| `place-per-leg-impl` | Per-leg state implementation | Done when: one per-leg struct (m̂, b̂, RTT σ, app-echo spread, idle rule) replaces the two srtt copies, with the store-cap units bounding test and migration step A1 tests green in the VM pre-flight. The relocation (Phase A) is its own node, place-per-leg-relocate; this node is Phase B and W3.3, which wait on the remaining per-leg questions (2-3, 5-8). | plan W3.2, W3.6a |
+| `place-user-perleg-questions` | Owner calls on per-path record design | Q4 reseed (2026-11-16); Q1 queue_target_mult = 1 + q(delta) (2026-11-17). Q2-3 and 5-8 belong to Phase B / W3.3. Done when: those are answered. Was titled 'Owner calls on per-leg design'. | plan user decision 9; status Owner decisions (2026-11-16) item 4; status Owner decisions (2026-11-17) item 10 |
+| `place-per-leg-impl` | One record per path: build | Done when: one per-leg struct (m̂, b̂, RTT σ, app-echo spread, idle rule) replaces the two srtt copies, with the store-cap units bounding test and migration step A1 tests green in the VM pre-flight. The relocation (Phase A) is its own node, place-per-leg-relocate; this node is Phase B and W3.3, which wait on the remaining per-leg questions (2-3, 5-8). Was titled 'Per-leg state implementation'. | plan W3.2, W3.6a |
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it. | ADR-0026 |
 | `place-spare-repair` | Proactive repair on the spare path | Its merge ea20927f carries the aggregation arc's 2026-07-08 "final verdict" (meas-c8-aggregation-arc). | commit ea20927f; commit 6c938427 |
 | `place-quad-lockin` | Four-path lock-in defect retracted | Split 2026-11-20 from store-cap-law-cluster (sweep item 6, a placement verdict). | commit 0128bb5c |
@@ -144,7 +144,7 @@ flowchart TB
 
 ### Folded items per node
 
-- `place-marginal-cost`: Marginal-cost placement law
+- `place-marginal-cost`: Packets go to the cheapest path
   - branch L2-ws1
   - Owner rule: no equal-weight striping (2026-07-06, commit 8c6c7e2d)
   - RWM Phase B: multipath striping with the placement law (2026-07-06, commit 4cf6b9b1, commit dfba099e)
@@ -174,7 +174,7 @@ flowchart TB
   - paper §10 row Derived placement temperature (`RWM_PLACE_T_DERIVED`)
 - `place-s38-wire`: Wire-clocked placement base
   - commit 432b4740
-- `place-wire-price`: Wire-RTT placement price
+- `place-wire-price`: Paths priced by measured network delay
   - branch diag36
 - `place-submax-anchor`: Sub-max quantile rate anchor
   - Delete RATE_WIRE and RATE_Q (2026-07-27, commit f1f32c5b)
@@ -187,5 +187,5 @@ flowchart TB
   - branch C8 cross-path repair
 - `place-quad-lockin`: Four-path lock-in defect retracted
   - branch sweep item 6 REFUTED
-  - Placement cold-start defect does not exist (retracted) (2026-08-17, commit 0128bb5c)
+  - Placement cold-start defect does not exist (retracted) (2026-08-18, commit 0128bb5c)
 <!-- END GENERATED: table-place -->
