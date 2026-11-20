@@ -30,7 +30,8 @@ Shed counters read 0 because the code never ran, and no test could tell that fro
 3. **Every counter carries an execution count:** shed-check visits, clamp evaluations.
 4. **`tests/common/loopback.rs` asserts the account at the end of every completed transfer:** the identity closes, `O_strand` = 0, `O` = 0, `inert_sweeps` = 0. The helpers every loopback test calls run it.
 5. **Shipping, in two steps.**
-   - First under `#[cfg(debug_assertions)]`. The release bytes are expected unchanged, which the `.text`/`.rodata` hash check proves; then no merge guard is needed.
+   - First under `#[cfg(any(debug_assertions, feature = "test-seams"))]`, so the debug suite and the seams tests (which run in release and are the ones that reach the lost tail) both carry it. The release bytes are expected unchanged, which the `.text`/`.rodata` hash check proves; then no merge guard is needed.
+   - The exit line prints whatever `RWM_DIAG` says, so every loopback test can assert it. Only the per-tick fields stay behind the DIAG gate.
    - Then in the release binary, on the next scheduled guard batch with the host ns bench, so L1 batteries carry the witness too. Hot-path cost: integer increments at existing counter sites, and an O(log n) range count on the DIAG tick only.
 
 ## Consequences
