@@ -194,9 +194,9 @@ fn witness_nack_site_sheds_at_rho_below_1() {
     let r = scenario(false);
     let c = counts(&r);
     println!("rho<1: {c}");
-    // The account in the same run (ADR-0081). Observed on main (seed 42, forced 5 % budget):
-    // H=85 (all NACK site; shed_visit_nack=85), E=11946, A=116, O=0, O_strand=0 at the end,
-    // inert_sweeps=10 of 73, clamp_excl=3084 of 3149. O and O_strand do NOT fire here (the
+    // The account in the same run (ADR-0081). Observed (CI 44736010517, forced 5 % budget):
+    // H=60 (all NACK site; shed_visit_nack=60), E=11946, A=141, O=0, O_strand=0 at the end,
+    // inert_sweeps=10 of 70, clamp_excl=2995 of 3055. O and O_strand do NOT fire here (the
     // sheds clear the outstanding set); inert sweeps and H+E over the budget do.
     let a = r.acct();
     println!("rho<1 account:{}", a.0);

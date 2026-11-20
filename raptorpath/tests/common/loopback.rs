@@ -212,6 +212,17 @@ fn pump<R: Read + Send + 'static>(src: R, log: ServerLog) -> ThreadHandle<()> {
     })
 }
 
+thread_local! {
+    /// The live logs of the servers this test thread spawned: the O check at
+    /// the client's exit polls them for the receiver frontier.
+    static LIVE_SERVER_LOGS: std::cell::RefCell<Vec<ServerLog>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The highest receiver frontier across this thread's live servers.
+fn live_rx_frontier() -> Option<u64> {
+    LIVE_SERVER_LOGS.with(|l| l.borrow().iter().filter_map(|s| rx_frontier(&s.text())).max())
+}
+
 /// A running perf server child.
 pub struct PerfServer {
     pub addrs: Vec<SocketAddr>,
@@ -305,6 +316,7 @@ pub fn spawn_perf_server(binds: &[SocketAddr], env: &[(&str, &str)], args: &[&st
     apply_env(&mut cmd, env);
     let mut child = Reaper(cmd.spawn().expect("spawn perf server"));
     let log = ServerLog::default();
+    LIVE_SERVER_LOGS.with(|l| l.borrow_mut().push(log.clone()));
     let readers = vec![
         pump(child.0.stdout.take().expect("server stdout"), log.clone()),
         pump(child.0.stderr.take().expect("server stderr"), log.clone()),
@@ -555,8 +567,18 @@ pub fn assert_account(log: &str, who: &str, require: bool, srv_log: Option<&str>
         "{who}: no `[ACCT] ... final=1` exit line from a build that carries the recovery account - \
          the sender's exit line did not print, so the account check did not execute"
     );
-    let frontier = srv_log.and_then(rx_frontier);
+    let snap = srv_log.and_then(rx_frontier);
+    let have_servers = srv_log.is_some();
     for l in &fin {
+        // O > 0: the receiver's frontier must pass the highest outstanding seq.
+        // The server's sampler prints every 50 ms, so give it up to 5 s.
+        let need = l.u("O_max");
+        let o = l.u("O_serv") + l.u("O_strand");
+        let mut frontier = snap;
+        if o > 0 && have_servers && !frontier.is_some_and(|f| f > need) {
+            wait_until(Duration::from_secs(5), || live_rx_frontier().is_some_and(|f| f > need));
+            frontier = frontier.max(live_rx_frontier());
+        }
         use std::io::Write;
         let _ = writeln!(
             std::io::stderr(),
@@ -717,7 +739,7 @@ pub fn transfer(t: Transfer<'_>) -> (String, String) {
     let cli = run_perf_client(&binds, &cenv, &cargs);
     // An outstanding seq at the client's exit is only an ack in flight if the
     // receiver delivered it: give the server's `[ACCT-RX]` frontier (every
-    // ~250 ms) up to 5 s to pass the client's highest outstanding seq.
+    // 50 ms) up to 5 s to pass the client's highest outstanding seq.
     let need = account_lines(&cli)
         .iter()
         .filter(|l| l.final_line && l.u("O_serv") + l.u("O_strand") > 0)

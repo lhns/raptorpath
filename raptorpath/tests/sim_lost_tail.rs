@@ -71,10 +71,10 @@ fn known_defect_lost_tail_strands_k_at_rho_below_1() {
     let r = lost_tail(false, 47_200);
     let s = summary(&r);
     println!("rho<1: {s}");
-    // The account reads the same stall (ADR-0081). Observed on main (seed 42): S_sent=12147,
-    // O_serv=200, O_strand=147, inert_sweeps=299 of 299 sweeps, oldest_unchanged_max=289,
-    // O_hwm=12146 against a store cap of 1024, clamp_excl=3185 of 3185 evaluations, E=11799
-    // with a budget of 0. Thresholds, not the exact numbers.
+    // The account reads the same stall (ADR-0081). Observed (CI 44736010517, after the port rekey): S_sent=12147,
+    // O_serv=200, O_strand=147, inert_sweeps=299 of 299 sweeps, oldest_unchanged_max=288,
+    // O_hwm=12146 against a store cap of 1024, clamp_excl=3284 of 3284 evaluations, E=11799
+    // (an upper bound on abandonment) with a budget of 0. Thresholds, not the exact numbers.
     let a = r.acct();
     println!("rho<1 account:{}", a.0);
     assert!(a.u("clamp_evals") > 0 && a.u("clamp_excl") > 0, "the clamp site never excluded a gap:{}", a.0);
