@@ -61,7 +61,7 @@ impl ReorderBuffer {
     /// delivery instant itself, so its wait is exactly 0. Read by the gauge
     /// and by nothing else.
     pub fn push(&mut self, seq: u64, data: Bytes) -> Vec<(u64, Bytes, Instant)> {
-        self.push_with_time(seq, data, crate::clock::now())
+        self.push_with_time(seq, data, Instant::now())
     }
 
     /// Push a recovered symbol with an explicit timestamp (for MockClock-driven tests).
@@ -213,7 +213,7 @@ mod tests {
             assert!(rb.push(seq, b(seq as u8)).is_empty(), "seq {seq} must be held behind the hole");
         }
         // No amount of elapsed time gives up on the hole
-        let far_future = crate::clock::now() + Duration::from_secs(3600);
+        let far_future = Instant::now() + Duration::from_secs(3600);
         assert!(rb.drain_expired(far_future).is_empty());
         assert!(rb.oldest_deadline().is_none(), "reliable buffer never arms an expiry");
         assert_eq!(rb.next_deliver_seq(), 1);
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn every_delivery_carries_the_instant_it_was_buffered() {
         let mut rb = ReorderBuffer::new_reliable();
-        let t0 = crate::clock::now();
+        let t0 = Instant::now();
         // In order: never buffered, so its stamp is the delivery instant.
         let out = rb.push_with_time(0, b(0), t0);
         assert_eq!(out.len(), 1);
@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn evict_policy_force_delivers_on_expiry() {
         let mut rb = ReorderBuffer::new(10, 500);
-        let now = crate::clock::now();
+        let now = Instant::now();
         assert!(rb.push_with_time(1, b(1), now).is_empty()); // hole at 0
         let out = rb.drain_expired(now + Duration::from_millis(20));
         assert_eq!(out.len(), 1, "lossy policy gives up on the hole");
@@ -291,7 +291,7 @@ mod tests {
     /// reliable constructor never force-drains.
     #[test]
     fn count_bounded_policy_bounds_entries_not_bytes() {
-        let now = crate::clock::now();
+        let now = Instant::now();
         // 4 × 2 MiB = 8 MiB held behind a hole: only the entry count binds.
         let mut rb = ReorderBuffer::new(1000, 4);
         for seq in 1..=4u64 {

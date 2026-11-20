@@ -106,7 +106,7 @@ impl SchedulingWeights {
 /// (The block pipeline's block-granular source affinity was removed with it,
 /// ADR-0069; the window sender places per symbol.)
 pub struct Scheduler {
-    paths: crate::clock::PathMap<PathId, PathState>,
+    paths: HashMap<PathId, PathState>,
     /// The sender-site `[ETA]` gauge (`net/eta.rs`). It lives here and not
     /// in the sender loop because its two feed sites -- the placement
     /// (`net/emit_source.rs`, which picks the path) and the ACK
@@ -158,7 +158,7 @@ impl Scheduler {
     /// the per-path Copa-lite queue target.
     pub fn new_with_hint(clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
         Self {
-            paths: crate::clock::PathMap::new(),
+            paths: HashMap::new(),
             eta: Default::default(),
             place_bind: std::cell::Cell::new((0, 0, 0)),
             place_wire_gauge: std::cell::Cell::new((0, 0, 0, 0)),
@@ -269,7 +269,7 @@ impl Scheduler {
         source_symbols: Vec<WireSymbol>,
         repair_symbols: Vec<WireSymbol>,
     ) -> Vec<(PathId, Vec<WireSymbol>)> {
-        let mut assignments: crate::clock::PathMap<PathId, Vec<WireSymbol>> = crate::clock::PathMap::new();
+        let mut assignments: HashMap<PathId, Vec<WireSymbol>> = HashMap::new();
 
         let active_paths: Vec<_> = self
             .paths

@@ -87,7 +87,7 @@ impl Scheduler {
         if probs.is_empty() {
             return None;
         }
-        let u: f64 = crate::clock::random_f64();
+        let u: f64 = rand::random();
         let mut acc = 0.0;
         for (pid, p) in &probs {
             acc += p;
@@ -143,7 +143,7 @@ impl Scheduler {
         if candidates.is_empty() {
             return self.place_symbol(true, &[]);
         }
-        let idx = (crate::clock::random_f64() * candidates.len() as f64) as usize;
+        let idx = (rand::random::<f64>() * candidates.len() as f64) as usize;
         Some(candidates[idx.min(candidates.len() - 1)])
     }
 

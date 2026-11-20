@@ -682,7 +682,7 @@ mod tests {
     #[test]
     fn the_receivers_late_formula_over_the_real_reorder_buffer() {
         use crate::net::reorder::ReorderBuffer;
-        let t0 = crate::clock::now();
+        let t0 = std::time::Instant::now();
         let mut rb = ReorderBuffer::new(10, 100);
         let mut g = LatGauge::default();
         let feed = |rb: &mut ReorderBuffer, g: &mut LatGauge, seq: u64, at: std::time::Instant| {

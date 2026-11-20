@@ -21,8 +21,6 @@
 //! pure/injectable-time state with no env reads, so each consumer gates it
 //! behind its own `RWM_*` flag.
 
-#[allow(unused_imports)]
-use crate::clock::SimElapsed;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -84,7 +82,7 @@ pub const STALL_TICK_S: f64 = 0.05;
 impl StallWitness {
     pub fn new() -> Self {
         Self {
-            epoch: crate::clock::now(),
+            epoch: Instant::now(),
             last_tick_us: std::sync::atomic::AtomicU64::new(0),
             quarantine_until_us: std::sync::atomic::AtomicU64::new(0),
             gaps: std::sync::atomic::AtomicU64::new(0),
@@ -93,7 +91,7 @@ impl StallWitness {
     }
 
     fn now_us(&self) -> u64 {
-        self.epoch.sim_elapsed().as_micros() as u64
+        self.epoch.elapsed().as_micros() as u64
     }
 
     /// Timer-task tick on the witness's own monotonic epoch.
@@ -386,7 +384,7 @@ mod tests {
 
     #[test]
     fn send_rate_anchor_seeds_from_first_measured_sends() {
-        let t0 = crate::clock::now();
+        let t0 = Instant::now();
         let mut a = SendRateAnchor::new();
         // 150 sym/s (the c3-1200B realtime stream class). One SRTT of sends
         // must be enough for a live, truthful anchor — the A* ≈ rate·D law
@@ -409,7 +407,7 @@ mod tests {
         // synthetic 1-s clock gap (process stall), then the whole backlog
         // released as an instantaneous flood. A* = clamp(rate·D, 1, W) must
         // not move: the anchor may not read the flood as link rate.
-        let t0 = crate::clock::now();
+        let t0 = Instant::now();
         let mut a = SendRateAnchor::new();
         let t = feed_steady(&mut a, t0, 150.0, 2.0, SRTT);
         let baseline = a.rate(t, SRTT).unwrap();
@@ -445,8 +443,8 @@ mod tests {
     #[test]
     fn send_rate_anchor_no_samples_is_none() {
         let a = SendRateAnchor::new();
-        assert!(a.rate(crate::clock::now(), SRTT).is_none());
-        assert!(a.mean_rate(crate::clock::now(), SRTT).is_none());
+        assert!(a.rate(Instant::now(), SRTT).is_none());
+        assert!(a.mean_rate(Instant::now(), SRTT).is_none());
     }
 
     /// Burst-immunity law: an admission-gated sender legitimately bursts
@@ -457,7 +455,7 @@ mod tests {
     /// mean for the pooled store-cap law.
     #[test]
     fn send_rate_anchor_mean_is_refill_burst_immune_where_the_max_latches() {
-        let t0 = crate::clock::now();
+        let t0 = Instant::now();
         let mut a = SendRateAnchor::new();
         let mut t = feed_steady(&mut a, t0, 1000.0, 1.0, SRTT);
         // 5 cycles of [165 ms steady @1000/s + 35 ms refill burst @40k/s]:
@@ -492,7 +490,7 @@ mod tests {
     /// the previous half's mean holds the pre-dip rate.
     #[test]
     fn send_rate_anchor_mean_ratchets_through_a_self_dip() {
-        let t0 = crate::clock::now();
+        let t0 = Instant::now();
         let mut a = SendRateAnchor::new();
         let mut t = feed_steady(&mut a, t0, 8000.0, 1.0, SRTT);
         let before = a.mean_rate(t, SRTT).expect("warm");

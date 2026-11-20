@@ -723,8 +723,7 @@ impl QuicTransport {
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
         sender_tx: mpsc::Sender<InboundBatch>,
     ) {
-        let mut ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
-        ids.sort_unstable(); // SIM SPIKE: DashMap order is per-process random
+        let ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
         for path_id in ids {
             self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone(), sender_tx.clone()).await;
         }
@@ -1136,7 +1135,7 @@ mod passthrough_cc_tests {
             window: window.clone(),
             stats: Arc::new(PassthroughCcStats::default()),
         });
-        f.build(crate::clock::now(), mtu)
+        f.build(Instant::now(), mtu)
     }
 
     /// The shim's window() follows the engine-owned atomic: what our engine
@@ -1184,8 +1183,8 @@ mod passthrough_cc_tests {
         let w = Arc::new(AtomicU64::new(100_000));
         let stats = Arc::new(PassthroughCcStats::default());
         let f = Arc::new(PassthroughFactory { window: w.clone(), stats: stats.clone() });
-        let mut c = f.build(crate::clock::now(), 1200);
-        let now = crate::clock::now();
+        let mut c = f.build(Instant::now(), 1200);
+        let now = Instant::now();
         c.on_congestion_event(now, now, false, 3_600);
         c.on_congestion_event(now, now, true, 1_200);
         assert_eq!(c.window(), 100_000, "loss must not move the engine-owned window");

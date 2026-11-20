@@ -1,6 +1,6 @@
 //! Injectable clock for testability.
 //!
-//! Production code uses `WallClock` (wraps `crate::clock::now()`).
+//! Production code uses `WallClock` (wraps `Instant::now()`).
 //! Tests use `MockClock` to advance time instantly, eliminating
 //! `thread::sleep` calls and timing-dependent flakiness.
 
@@ -18,7 +18,7 @@ pub struct WallClock;
 
 impl Clock for WallClock {
     fn now(&self) -> Instant {
-        crate::clock::now()
+        Instant::now()
     }
 }
 
@@ -31,7 +31,7 @@ pub struct MockClock {
 impl MockClock {
     pub fn new() -> Self {
         Self {
-            current: Mutex::new(crate::clock::now()),
+            current: Mutex::new(Instant::now()),
         }
     }
 

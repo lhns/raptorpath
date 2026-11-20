@@ -23,7 +23,7 @@
 //! ```text
 //!     gap_report_due = highest_seen_seq > highest_delivered_seq
 //!                   && highest_seen_seq > last_gap_ack_seen
-//!                   && last_gap_ack_time.sim_elapsed() >= GAP_ACK_MIN_INTERVAL
+//!                   && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL
 //! ```
 //!
 //! — a higher seq arrived while a hole was outstanding, i.e. detection. A
@@ -131,8 +131,6 @@
 //! branch anywhere in the tree tests any value it computes. Pinned by
 //! [`tests::succ_is_observation_only`].
 
-#[allow(unused_imports)]
-use crate::clock::SimElapsed;
 use std::collections::BTreeMap;
 use std::time::Instant;
 
@@ -420,7 +418,7 @@ impl SuccGauge {
         Self {
             open: BTreeMap::new(),
             hi: None,
-            hi_at: crate::clock::now(),
+            hi_at: Instant::now(),
             orig: Hist::default(),
             rep: Hist::default(),
             aban: Hist::default(),

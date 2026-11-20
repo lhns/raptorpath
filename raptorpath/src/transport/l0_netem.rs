@@ -6,8 +6,6 @@
 //! quinn send itself (threading Q1: no other task touches the connection);
 //! the design note follows.
 
-#[allow(unused_imports)]
-use crate::clock::SimElapsed;
 use crate::scheduler::PathId;
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -161,7 +159,7 @@ impl L0Netem {
         Some(Arc::new(Self {
             cfgs,
             states: DashMap::new(),
-            epoch: crate::clock::now(),
+            epoch: std::time::Instant::now(),
             seed,
             enq: std::sync::atomic::AtomicU64::new(0),
             ge_drops: std::sync::atomic::AtomicU64::new(0),
@@ -173,7 +171,7 @@ impl L0Netem {
 
     /// The shim's clock (µs since its epoch); release times are on it.
     pub(super) fn now_us(&self) -> u64 {
-        self.epoch.sim_elapsed().as_micros() as u64
+        self.epoch.elapsed().as_micros() as u64
     }
 
     /// The wall instant of a release time on the shim's clock.
