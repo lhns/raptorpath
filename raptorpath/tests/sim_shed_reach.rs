@@ -1,5 +1,6 @@
 //! Reach and liveness of the sender's shed sites, deterministically (ADR-0082).
-//! Realtime hint, one path, 5 % client-to-server loss, seed 42, 30 MB.
+//! Realtime hint, one path, 2.5 % client-to-server loss, seed 42, 6 MB, a 1.5 s
+//! blackout over the last 60 symbols (the same seam as `sim_lost_tail`).
 //! Run with
 //! `RUSTFLAGS="--cfg tokio_unstable" cargo test -p raptorpath --features sim,test-seams --test sim_shed_reach`
 //! (`-- --ignored` for the known-defect liveness test).
@@ -9,9 +10,10 @@
 //! * `RWM_TEST_TS_BUDGET_FRAC=0.05` fixes the 1 - rho budget. The sim sender
 //!   hands the whole object to the link in ~1 s, before the loss estimator has
 //!   a sample, so the derived budget reads 0.0000 for the whole run and no
-//!   hole is ever shed (`denied` fires instead, `witness_*` pins that too).
-//!   0.05 is the loss rate of the link, i.e. a budget a warm estimator at
-//!   this loss would be allowed to approach.
+//!   hole is ever shed (the refusal `denied` fires instead). 0.05 is twice the
+//!   link's loss rate.
+//! The natural 5 % scattered-loss scenario (30 MB) sheds on Windows (17) but
+//! not on Linux, so the blackout is the platform-independent trigger.
 //!
 //! Sites: the NACK-path shed (`sender_phases.rs`, ev=`shed`) is reached.
 //! The slot-site shed (`emit_source.rs`, ev=`shed_slot`) is NOT: in every
@@ -30,23 +32,30 @@ fn child() {
 /// perturbs the run, so the witness and the liveness test must share one).
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const PORT: u16 = 47_400;
+/// The 6 MB object is 12 147 source symbols; k is 60 from the end, inside the
+/// 200-symbol coding window, and every data send from k's first send on is
+/// swallowed for 1.5 s (`RWM_TEST_TS_DROP=dead`): the whole tail is a hole
+/// older than D (about 13 ms) by the time the sender judges it.
+const K: u64 = 12_087;
 
 fn scenario(reliable: bool) -> ChildRun {
     let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     run(&Scenario {
         seed: 42,
         paths: 1,
-        bytes: 30_000_000,
+        bytes: 6_000_000,
         hint: "realtime",
         reliable: Some(reliable),
-        loss: 0.05,
+        loss: 0.025,
         jitter_ms: 4,
         limit_s: 40,
         port: PORT,
         env: vec![
             // A seq that never exists: the per-seq seams stay quiet but `gap_clamped`
             // is armed; SHED_ALL opens the shed trace.
-            ("RWM_TEST_TS_SEQ", "999999999".into()),
+            ("RWM_TEST_TS_SEQ", K.to_string()),
+            ("RWM_TEST_TS_DROP", "dead".into()),
+            ("RWM_TEST_TS_DEAD_MS", "1500".into()),
             ("RWM_TEST_TS_SHED_ALL", "1".into()),
             ("RWM_TEST_TS_BUDGET_FRAC", "0.05".into()),
         ],
