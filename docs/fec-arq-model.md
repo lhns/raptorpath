@@ -1508,11 +1508,14 @@ The engine readers of the flag split four ways (inventory in
   sender sites (C1–C7) still step there.
 - (D) log and diagnostic lines, counted with (C).
 
-The receiver's (C) sites need ρ too. ADR-0084 Amendment 1 recommends
-carrying the sender's ρ in the v11 handshake, as v10 carries its symbol
-size, so the receiver reads the contract of the stream it receives (owner's
-call; the alternative, each end reading its own configured ρ, keeps today's
-mismatch when the two ends' hints differ).
+The receiver's law needs no ρ (ADR-0084 default 5 stands). The floor pass
+is its own function, separate from the hold expiry, and reads no seat bit,
+so the ρ = 1 buffer honours a floor exactly like the evicting one; no floor
+is sent at ρ = 1. The receiver's (C) sites read the bit from the receiver's
+own configured ρ, the same information as today's local flag (pending the
+owner, Amendment 1 item 5). On main each end reading its own flag stalls a
+Realtime sender against a Bulk receiver (`tests/sim_mixed_rho.rs`); the
+store at every ρ and the seat-free floor pass remove that stall.
 
 *Verdicts (ADR-0084; engine change pending).* A sent source seq leaves the
 sender's unresolved set U in one of three ways: acknowledgement, a shed
@@ -2490,7 +2493,16 @@ has not yet passed, net of SACK-released ones, reach the pooled cap":
 - released: Section 6.3's count. SACK release requires `reliable` on main;
   ADR-0084 keeps it on the ρ = 1 arm only (Amendment 1: the grandfathered
   bit, Section 11.3 row C2), so `released = ∅` at ρ < 1 and O over-counts the
-  seqs received above the frontier: the safe side.
+  seqs received above the frontier: the safe side. **The bound therefore
+  steps at ρ = 1 through its input, though its formula reads no ρ:**
+
+  ```text
+     Δ O  =  |released|_(ρ = 1)  ∈  [0, received_above]  ⊆  [0, H + 1 − F]
+  ```
+
+  bounded by the release law's own lower-bound property and by T7's
+  `released ≡ 0` at ρ < 1 and `released ≤ received_above` at ρ = 1
+  (ADR-0084 Amendment 1). It goes when C2 retires.
 - cap: this section's law, which has no ρ input.
 - cwnd_full: `∀ i ∈ live: in_flightᵢ ≥ cwndᵢ`, the per-path gate, unarmed by
   default and untouched.

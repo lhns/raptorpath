@@ -1679,7 +1679,7 @@ rows:
   fix_class: "derive store_gate_released under give-up advances (ADR-0084 question 8), then release at every rho"
   depends_on: []
   ships_with: []
-  evidence: "bounded by rho1_debt_bounds::c02_sack_release_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs"
+  evidence: "the step reaches decision 3's pause through its input |released| (identically 0 at rho < 1), Delta O in [0, received_above]; bounded by T7c sack_release_step_is_bounded and rho1_debt_bounds::c02_sack_release_steps_only_at_rho_1 (owed with the ADR-0084 engine change); reader count pinned by tests/rho_deny_list.rs"
 
 - id: G03
   name: "multipath hole law scope (recov_mp)"

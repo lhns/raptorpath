@@ -2,7 +2,11 @@
 
 This brief is for the worker who builds the engine change. **The spec is ADR-0084 plus its Amendment 1, plus the paper sections they cite** (`docs/fec-arq-model.md` §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5). Where the ADR is silent, `evict-verdict-law.md` §1–§7 fills in, subject to its erratum. If this brief disagrees with any of them, they win: report the disagreement, don't resolve it.
 
-Every design question is settled except two owner's calls in Amendment 1, item 2 (grandfather the bit or collapse the sites) and item 5 (the receiver's ρ). This brief builds the recommended answer to each and names the step that changes if the owner rules otherwise.
+Every design question is settled except two items that are **pending the owner** in Amendment 1:
+- item 2: grandfather the bit under a ratchet, or collapse the sites;
+- item 5: the receiver's ρ (recommended: none in the law; the receiver's (C) bit comes from its own config).
+
+This brief builds the recommended answer to each. If the owner rules otherwise, step 2 (the bit) and step 3 (the ratchet) change; nothing else does.
 
 **Working rules.** The coordinator's worker rules apply:
 - your own worktree and branch;
@@ -80,7 +84,7 @@ What each site would need to become continuous is in Amendment 1, item 4, and in
 | D3 | `net/mod.rs:2040` → `net/account.rs:199` | `Account::new(reliable)` and the `[ACCT] reliable=` field. After A3 the account needs no seat: print `rho=` with ρ, and update any parser that reads `reliable=` |
 | D4 | `net/mod.rs:2478`, `net/diag.rs:808` | the wnd2/relgap DIAG gauges gated on `reliable && !generation`. They measure the SACK-release frontier, so gate them on `pol.store_sack_release_on` (C2's derived name), not the bit. D4 then reads no `rho1_debt` directly |
 
-D4 moves off the bit, so the deny-test table at the end of step 9 counts D1–D3 only.
+D2, D3 and D4 move off the bit: D2 and D3 print ρ, and D4 reads C2's derived name. Only D1 stays in the ratchet.
 
 **Plumbing.** These carry the value but are not readers. Each disappears or is renamed to `rho1_debt` or `window_rho`:
 - `config.rs:61`, `:196`, `:293–294`, `:346`;
@@ -144,24 +148,20 @@ The derivation's tests (§6) keep its names. The scenario parameters (seed 42, 6
 
   It asserts the frontier first. It asserts completion only in ρ = 1 controls.
 - **T1** `lost_tail_ack_reaches_s_src_at_rho_below_1` (`sim_lost_tail.rs`, k = 11 800, `limit_s: 40`). The ack reaches S_src by `t_dead + (n_tail + 1 + n_drop)·T_sweep_max + owd_max + H_max`, with `n_tail = 346`. k is passed by `t_dead + 2·T_sweep_max + owd_max + H_max`. Red on CAND1: the ack stays at 11 800.
-- **T1′** `last_seq_lost_is_passed_by_a_floor` (`sim_lost_tail.rs`). k is the object's last seq, `S_src − 1`, under `dead`, with nothing above it. On CAND1 the derived budget reads 0 in the sim (`sim_shed_reach.rs:9–14`), which would resend and fill k, so force a budget of 0.01 (`RWM_TEST_TS_BUDGET_FRAC`), equal to 1 − 0.99. Asserts:
-  - k is shed and then passed by `t_shed + 2·T_sweep_max + owd_max + H_max`;
-  - `floor_sent ≥ 1`;
-  - `floor_passes ≥ 1`.
-
-  Red on CAND1: k is shed untold and the ack never reaches S_src.
+- **T1′ is not here.** It is an ablation, not a defect on main. On CAND1 the derived budget reads 0 in the sim (`sim_shed_reach.rs:9–14`), so k is resent and filled. It is red there only under a forced budget, which would make the expected-failure job lock in a seam artefact. T1′ is written in step 8.
+- **`sim_mixed_rho::mixed_realtime_sender_bulk_receiver_ack_reaches_src`** is already on the branch: Amendment 1 item 5, the mixed-config stall on main. Keep it ignored until step 8.
 - **T2** `shed_blocker_ack_reaches_s_src` (`sim_shed_reach.rs`, forced budget 0.05). The ack reaches 12 147, and every shed seq is below the final ack by `t_s + (1 + n_drop)·T_sweep_max + owd_max + H_max`. Red on CAND1: the ack stays at 12 087.
 - **T7a** `intake_bounded_at_rho_below_1` (`sim_lost_tail.rs`). First the pause executes: the paused-iteration share on the `O ≥ B` disjunct is greater than 0, read first. Then `O_hwm ≤ cap_at_hwm + 1` from `[ACCT]`. Red on CAND1: `O_hwm > 4·cap_at_hwm`. The existing defect test already reads this.
 - **T3** (not ignored) `rho1_controls`: the same scenarios at ρ = 1 on the plain, generation and coded-only arms. Green on CAND1 and on every later commit. Asserts `client_ok`, `V = 0` and, once those counters exist, `floor_sent = 0` and `G_rx = 0`.
 
 **Step 2: `window_rho` replaces the flag.** Zero behaviour at every mapped config.
-- **Config:** `RaptorpathConfig.window_rho: Option<f64>`. `config::check_window_rho` enforces the domain, `0 < ρ ≤ 1` and finite, and refuses the object corners below ρ = 1 (C8). `resolve` gives Bulk and Auto 1.0, Realtime 0.99, and an explicit value wins. `check_window_rho` is also called at the top of `net::run_impl`: `PeerConfig` is public, and `perf::server` and `perf::client` take one. Delete the redundant conjuncts A9–A12 in the same commit. Add a test that a hand-built `PeerConfig` with a corner at ρ = 0.99 is refused at start.
+- **Config:** `RaptorpathConfig.window_rho: Option<f64>`. `config::check_window_rho` enforces the domain `0 < ρ ≤ 1` and refuses the object corners below ρ = 1 (C8). Add one test per refused value, each failing with a message that names `window_rho`: NaN, +∞, −∞, 0, −0.5 and 1.0000001. NaN fails every comparison, so write the check as `!(rho > 0.0 && rho <= 1.0)`, which also refuses NaN. The precedent is the `RWM_DELTA` NaN defect F1 (`9b8b42ca`), where a NaN slid through a clamp and pinned the cap. `resolve` gives Bulk and Auto 1.0, Realtime 0.99, and an explicit value wins. `check_window_rho` is also called at the top of `net::run_impl`: `PeerConfig` is public, and `perf::server` and `perf::client` take one. Delete the redundant conjuncts A9–A12 in the same commit. Add a test that a hand-built `PeerConfig` with a corner at ρ = 0.99 is refused at start.
 - **The wire to the engine:** `PeerConfig.window_rho: f64`. `SenderPolicy.contract_rho` takes the declared ρ instead of the literal `1.0` (`sender_policy.rs:616`). It is read by the opt-in three-term law only. That law is off unless `RWM_THREE_TERM` is set and is scoped to `plain_dyn_cap`, which is ρ = 1 until step 5, so nothing changes here.
 - **CLI:** `--window-rho <f64>` on `run` and `perf`.
 - **Tombstones**, so old spellings fail loudly. The TOML key `window_reliable: Option<bool>` and a hidden `--window-reliable` flag both error at startup with the message in Amendment 1 item 6, following the `mp_block_affinity` pattern (`config.rs:77–80`, `main.rs:105–107`). Add tests that a TOML with `window_reliable = true`, and a CLI with `--window-reliable`, both fail with "window_rho" in the message.
 - **The bit:** `raptorpath/src/net/rho_debt.rs` holds `pub(crate) fn rho1_debt_bit(rho: f64) -> bool { rho >= 1.0 }`, documented as the NO-MODE-SWITCH trap kept as counted debt (Amendment 1). It is called exactly twice:
   - the sender's own ρ in `run_impl`;
-  - the receiver's ρ: its own ρ here; the peer's ρ after step 4 under 5(b).
+  - the receiver's own configured ρ, for its (C) sites C9–C12. There is no handshake field (Amendment 1 item 5).
 - **Renames:**
   - every reader in §1 reads `rho1_debt`, and the plumbing is renamed;
   - the bare `rho` parameters of `net/store_cap.rs` (`contract_stall_s`, `three_term_store_cap`) become `contract_rho`;
@@ -174,22 +174,24 @@ The derivation's tests (§6) keep its names. The scenario parameters (seed 42, 6
 
 **Step 3: the deny test** `raptorpath/tests/rho_deny_list.rs`. Copy the structure of `raptorpath-core/tests/deny_list.rs`, including the walk-visited assertion and the planted fixture under `CARGO_TARGET_TMPDIR` at `:144`. Strip comments and string literals, skip test files (`**/tests.rs`, `#[cfg(test)]` modules), and walk the non-test code of `raptorpath/src`. It fails on:
 - **(a) Comparing a retention-ρ identifier** (`rho`, `window_rho`, `contract_rho`, `recv_rho`, `peer_rho`). That means a comparison operator on either side, a `match`, `.partial_cmp(` or `.total_cmp(` on one. It also fails when a ρ value is bound to a name outside that list: `contract_rho: cfg.window_rho` passes and `let r = window_rho;` fails. The allowlist is two function bodies, `rho1_debt_bit` and `check_window_rho`, each defined exactly once (pin the definition count).
-- **(b) The `rho1_debt` count drifting.** The per-file count of identifiers containing `rho1_debt` must equal a const table in the test, failing on a rise and on a fall alike. The table starts at step 2's counts. Every later step that removes a reader lowers its file's entry in the same commit.
+- **(b) The ratchet.** Attribute every identifier containing `rho1_debt` to its `(file, enclosing fn)`; a struct field counts under its struct.
+  - The set of functions must equal the `rho1-debt-readers` block in Amendment 1, which the test parses from `docs/adr/0084-every-verdict-reaches-the-receiver.md`. A reader in any other function fails.
+  - The per-function counts must equal a const table in the test. A rise fails, and so does a fall the table does not record.
+  - The table starts at step 2's counts, including the (A) and (B) readers still present. Every later step that removes a reader lowers its entry in the same commit, and at the end the table matches the ADR block exactly.
+  - The test also fails if the table lists a function the ADR block does not. So the list can only shrink, and growing it needs a new ADR.
 - **(c) An old identifier.** These must not occur: `reliable`, `window_reliable`, `recv_window_reliable`, `sender_window_reliable`, `hold_on_full`, `new_reliable`. The exception is the two tombstones, `config.rs` (field plus check) and `main.rs` (hidden arg plus check), with their counts pinned.
 
 Show the test red on the fixture: each planted form is flagged, including `let reliable = contract_rho >= 1.0;`, an aliased `let r = window_rho; if r < 1.0 {}`, and `fn f(rho: f64) -> bool { rho == 1.0 }`. Show it green on the tree.
 
-It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_list`), not in `build_visualizer.sh`, which would compile the engine in the wasm job. Add one line for it to the enforcement list in the repo's `CLAUDE.md` ("extend them when touching this area"), in the same commit.
+It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_list`), not in `build_visualizer.sh`, which would compile the engine in the wasm job. Do not edit `CLAUDE.md`; the coordinator handles that line.
 
 **Step 4: protocol v11.**
 - **Wire changes**, one `PROTOCOL_VERSION` bump from 10 to 11, refused on mismatch (ADR-0010):
   - `ControlMessage::WindowFloor { floor: u64 }`, appended so no tag renumbers;
-  - `WindowAck.passed_undelivered: u64`;
-  - under 5(b), `Handshake.retention_rho` (f64 bits, BE), reconciled across paths like `reconcile_peer_symbol_size`, with a mismatch refused.
-- **The receiver's ρ:** it derives its bit from the peer's ρ, `rho1_debt_bit(peer_rho)`.
+  - `WindowAck.passed_undelivered: u64`.
+- **The receiver's ρ:** none on the wire. The handshake is unchanged except for the version.
 - **`G_rx` at the receiver:** it counts at all three frontier writers (`drain_expired` sites, `force_drain_oldest`, the future floor pass) and subtracts fills of passed holes. The passed-hole set is pruned at the decode-inert floor (`receiver.rs:2236`). A fill after the prune is gauged, not subtracted. It is ungated (paper §5.6) and carried on every `WindowAck`.
-- **Tests:** codec round-trips, v10-to-v11 refusal, and handshake ρ reconcile (N = 1, N = 2, mismatch refused).
-- **If the owner picks 5(a):** drop the handshake field. The receiver's call takes its own `window_rho`, and T1′ gets a mismatch variant recorded as a known defect.
+- **Tests:** codec round-trips and v10-to-v11 refusal.
 
 **Step 5: the rate bound (A4, A5, A6).** This comes before the store. `SeqRing` is unbounded (`net/seq_ring.rs`), so a store at ρ < 1 with no pause would grow to the object size: the lost-tail run reads `O_hwm = 12 146` against a cap of 1 024.
 - **The pause:** `pause ⇔ O ≥ B ∨ cwnd_full`, with `O = (H + 1 − F) − |released|`, through one helper for both copies, and B the pooled cap at every ρ (`plain_dyn_cap` loses the bit).
@@ -197,6 +199,11 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
 - **Un-ignore T7a.** Invert the `O_hwm > 4·cap_at_hwm` assertion ("D1b") in `known_defect_lost_tail_strands_k_at_rho_below_1`.
 - **T7b** `overload_breach_is_printed`. Unpaced source at ρ = 0.99. First the pause executes, read first. Then `O ≤ B + 1` at every DIAG tick, and `drop_queue` falls against CAND1 (direction only). The line `[BUDGET] G_rx=… budget=… breach=…` is asserted present, not asserted within budget.
 - **The bind gauge:** `[SUMCAP] pin=` at ρ < 1 is reported.
+- **T7c** `sack_release_step_is_bounded` (Amendment 1 item 4, "C2 and the rate bound"). Decision 3's formula has no ρ, but its input `|released|` reads the bit through C2. Assert:
+  - at ρ = 0.99, `released = 0` at every tick, and the sender's SACK channel is absent (the routing witness);
+  - at ρ = 1, `released ≤ received_above` at every tick (the absolute bound on the step).
+
+  Record the step's size at ρ = 1 against 1 − ε.
 
 **Step 6: a store at every ρ (A1, A2, A3, A7, A8).**
 - **The clamp:** removing it (A3) makes the gap unclamped at every ρ. So `nacked_count` covers the whole gap here, a deliberate behaviour change at ρ < 1 that the guard battery reads.
@@ -232,11 +239,17 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
 
 **Step 8: the floor.**
 - **Sender:** `F = min{s ≥ A_rx : s ∉ V}`. While `F > A_rx`, send it on every live path at each tail-sweep fire. Arm the sweep on `U ≠ ∅ ∨ F > A_rx` (`sweep_armed`). Send the last floor on the reliable control stream before `Shutdown`.
-- **Receiver:** take the newest floor over paths, `floor_rx = max`, 0 before the first. It enters the hold as a payload-free arrival at F (paper §5.1) and passes the holes below F.
+- **Receiver:** take the newest floor over paths, `floor_rx = max`, 0 before the first. The pass is its own function on `ReorderBuffer`, and it reads no `rho1_debt`; derivation §2.3 says "the pass reads no seat bit". The marker is `(F_rx, now + H)`, with H from `shed_recv_hold`, and the marker's own deadline arms the drain timer. The pass does not go through `drain_expired` or `oldest_deadline`, which return nothing on the ρ = 1 buffer (`reorder.rs:117–119`, `:182`). When the marker expires it delivers the pending entries below F in order, counts the passes in `G_rx` and moves the frontier to F. Unit tests run it on both constructors: the ρ = 1 buffer passes a hole below a floor exactly like the evicting one.
 - **Absolute tests:** `floor(a, ∅) = a`; a run of verdicts from a gives `a + run`; a gap stops it. `floor_rx` at N = 1 and N = 2, including a path with no floor yet.
 - **T4** (floor loss, ack loss, never-ack, dead peer, shutdown), **T5** (N = 2: the frozen idle leg; a slow leg's late fills excluded from `G_rx`) and **T5′** (N = 1 overtaking), as in derivation §6.
-- **Un-ignore T1, T1′ and T2** (green here).
-- **The ablation:** a seam that suppresses `WindowFloor`. T1′, T2, and T1 at ρ = 0.97 go red; T1 at 0.99 stays green (derivation §2.5). Record the output in the commit message.
+- **Un-ignore T1, T2 and `sim_mixed_rho::mixed_realtime_sender_bulk_receiver_ack_reaches_src`** (green here: the Bulk receiver's floor pass honours the Realtime sender's floors).
+- **T1′** `last_seq_lost_is_passed_by_a_floor`. k is the object's last seq, `S_src − 1`, under `dead`, with nothing above it. Run at the declared ρ = 0.99 with no budget seam. Assert:
+  - k is shed and then passed by `t_shed + 2·T_sweep_max + owd_max + H_max`;
+  - `floor_sent ≥ 1`;
+  - `floor_passes ≥ 1`.
+
+  It is green on the finished tree. Its witness is the ablation below.
+- **The ablation** is the evidence that the floor is what fixes these: a test seam `RWM_TEST_TS_NO_FLOOR=1` that suppresses `WindowFloor` on the finished tree. `ablation_without_the_floor_t1prime_and_t2_stall` (not ignored) runs T1′, T2, and T1 at ρ = 0.97 under the seam, and asserts that each one's ack stops short. T1 at 0.99 under the seam is the control that stays live (derivation §2.5). Record the outputs in the commit message.
 
 **Step 9: T8, the (C) bounding tests and the ledger.**
 - **T8** `rho1_step_is_confined_to_the_c_sites`. The same seed at ρ = 1 and at ρ = 1 − ε with ε·S_src < 1 (for 6 MB, ε = 5·10⁻⁵ gives 0.6). It runs after every behavioural step, so the pause, the store and the budget are all in.
@@ -258,7 +271,7 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
 
   C8 is a config test: refused at 0.99, accepted at 1, and no runtime reader (the deny test).
 - **Bookkeeping:**
-  - tighten the deny-test table to its final counts: (C) without C8, plus D1–D3;
+  - tighten the ratchet table to its final counts, which equal the ADR block: (C) without C8, plus D1;
   - update the ledger rows F02 (done), G01–G12 and S09 with the test names;
   - flip the paper's "engine change pending" tense to the present for the parts that landed, and re-render `law-ledger/render.py`.
 
@@ -275,6 +288,7 @@ Done means all of these hold:
 
 Report the branch and the commit per step, every number the tests printed (`G_rx / S_src` against 1 − ρ, R, `O_hwm` against B, the refusal shares), the decisions you made locally, and anything in this brief that the spec contradicted.
 
-The guards are not yours to run, and there is no VM. Two things for whoever runs them:
+The guards are not yours to run, and there is no VM. Three things for whoever runs them:
 - guard 2's BASE is CAND1 and its CAND is your head;
+- guard 2 needs a ρ < 1 stage before merge (Amendment 1 item 8), because a Bulk-only guard cannot see this change: Realtime at 0.99, N = 1 and N = 2, with execution witnesses read before outcomes (store fill, pause share on `O ≥ B`, verdict visits, `floor_sent`/`floor_passes`, `G_rx` against `(1 − ρ)·S_src`);
 - the harness takes `--window-reliable` on BASE and `--window-rho 1` on CAND, as Amendment 1 item 8 requires. The `tools/l1` scripts must detect the spelling from the binary (`perf --help | grep -q -- --window-rho`) before that guard runs. That change is a separate commit in `tools/`, listed in your report.
