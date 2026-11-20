@@ -1198,6 +1198,14 @@ decide it" cell:**
 
 ## 9. Open questions for the owner
 
+**Answered 2026-11-20 (owner): every recommended default below is accepted.** This means:
+- decision 1 is branch S, a store at every ρ, in the same change;
+- decision 2 is to delay the source under overload, with the breach printed;
+- question 3 supersedes `min(1 − ρ, R)` with `1 − ρ` (model change, golden re-capture in its own commit);
+- the Realtime preset declares ρ = 0.99 as a named point (declared, not derived);
+- the protocol v11 `WindowFloor` message is approved, recorded in ADR-0084;
+- questions 5–12 take their defaults.
+
 Each question has a recommended default. The first two are decisions that
 shape the engine change. The rest are smaller.
 
