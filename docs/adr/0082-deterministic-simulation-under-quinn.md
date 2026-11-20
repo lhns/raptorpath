@@ -15,7 +15,8 @@
 1. **One engine clock function** returning `tokio::time::Instant::now().into_std()` replaces every direct `Instant::now()` read and the `now_us()` base. Without tokio's `test-util` feature that call is `std::time::Instant::now()`, so release behaviour is unchanged. The proof ladder applies: hashes, then the decision pins, then the ns bench, then the guard unless waived.
 2. **The simulator runs both peers in one process** (`perf::server`, `perf::client`) on a current-thread tokio runtime with paused time, with an in-memory `AsyncUdpSocket` given to quinn through a `Runtime` wrapper. The L0 shim's link model (rate, delay, jitter, GE, Weibull bursts) moves under the socket, seeded.
 3. **The oracle** is ADR-0081's account plus the per-seq `test-seams` trace.
-4. **Simulator code is test-only** (`test-seams` or `cfg(test)`). Only the clock function is in the release binary.
+4. **Not turmoil, not `scheduler::Clock`.** turmoil has no quinn socket and does not own time for quinn. `MockClock` moves reads but not tokio's timers. The wasm sim is a model and drives no engine code.
+5. **Simulator code is test-only** (`test-seams` or `cfg(test)`). Only the clock function is in the release binary.
 
 ## Consequences
 

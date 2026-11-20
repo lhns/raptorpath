@@ -10,6 +10,7 @@ This week's defects passed every test we have. This plan adds seven detectors, o
 - **Merge guard:** the 12 + 12-row A/B run on the benchmark VM (status §41c). ADR-0076 requires it for any change to the release binary's bytes, together with the host ns bench. A change whose release `.text`/`.rodata` hashes are unchanged may be waived (owner question 9 in `shared-core-design.md`, still open).
 - **Host slot:** the one cargo job the host allows at a time (lock dir, `CARGO_BUILD_JOBS=1`). Anything that runs on CI instead does not use it.
 - **CI:** GitHub Actions on the public `github` remote. Nothing runs there today.
+- **The wedge fix:** the pending engine fix for the evicting-seat stuck states (D1), diagnosed on branch `wedge-diag`. **S06** is ADR-0079's change (delete the taper copy branch); its reactive-recovery tests are `tests/s06_reactive.rs`, and **T3** is that file's past-deadline-blocker group. **Batch α** is the first group of engine moves in `shared-core-design.md` §4 (steps 1.2–2.5), which share one merge guard.
 
 ## 1. The defects
 
@@ -20,7 +21,7 @@ This week's defects passed every test we have. This plan adds seven detectors, o
 | D1c | The tail sweep re-targets `retransmit_buffer.first()` even when that seq is below the window, so the gap it builds is clamped away (D1a) and the sweep does nothing | `net/mod.rs:2789`, `:3035` |
 | D1d | A lost tail with no later traffic is never resolved | follows from D1a + D1c; reproduced on `wedge-diag` `bc383f29` (`tests/s06_reactive.rs`) |
 | D2 | A non-ignored timing test passed 4/10 on one tree and 1/10 on the other, and was recorded green on 1–2 samples | `s06_reactive.rs` T3 (`stall_budget_open`, `a91e23f1` on `s06-delete`) |
-| D3 | Unwired code and ignored config: ADR-0050 Phase 3 `proactive_rate` and `set_protocol_hint` are called only from tests; `enable_pi_feedback` is passed and ignored (`_enable_pi_feedback`); the CLI overlay sets tunnel fields to `None` and `merge` takes `overlay.or(base)`; perf drops `--config` and the tail target; a third of the ledger's cells never execute | `fec_rate.rs:317`, `:832`; `scheduler/mod.rs:596`; `main.rs:378–395`; `config.rs:195–212`; `liveness-audit.md` |
+| D3 | Unwired code and ignored config: ADR-0050 Phase 3 `proactive_rate` and `set_protocol_hint` are called only from tests; `enable_pi_feedback` is passed and ignored (`_enable_pi_feedback`); the CLI overlay sets the tunnel's forced fields (for example `window_out_of_order`, which the tunnel must keep off) to `None`, and `merge` takes `overlay.or(base)`, so a config-file value leaks past the tunnel's guard (as read; not run); perf drops `--config` and the tail target; a third of the ledger's cells never execute | `fec_rate.rs:317`, `:832`; `scheduler/mod.rs:596`; `main.rs:378–395`; `config.rs:195–212`; `liveness-audit.md` |
 | D4 | Pinned laws: the store cap sits at N·2048 at every δ, and the NACK budget at its floor of 10 on 70–97 % of ticks. Every test checked that the code computes the model. None checked that the law output moves | `law-ledger.md` F01, C09 |
 | D5 | Zero readings with no witness: shed counters read 0 because the code never ran | `liveness-audit.md` S04 |
 | D6a | main failed its own gate tests after a "tools only" merge dropped an engine half | fixed in `e304921b` |
@@ -52,11 +53,11 @@ The seven detectors from the brief, keyed to the steps in §4.
 | | D1a clamp | D1b rate | D1c sweep | D1d tail | D2 flaky | D3 unwired | D4 pinned | D5 zero | D6a gate | D6b stale bin |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 CI + flake rule (S1) | no | no | no | no | **yes** | no | no | no | **yes** | no |
-| 3a/b static audits, config round trip (S2) | no | no | no | no | no | **yes** (4 of 6) | no | no | no | no |
+| 3a/b static audits, config round trip (S2) | no | no | no | no | no | **yes** (5 of 6) | no | no | no | no |
 | 7 pinned-law check on logs + law-moves sweep (S3) | no | no | no | no | no | part (NR cells) | **yes** | part | no | no |
 | 2 conservation + stuck counters (S4) | **yes** | part | **yes** | **yes** | no | no | no | **yes** | no | no |
 | 3c per-seat coverage (S5) | part | no | part | no | no | part (NR cells) | no | **yes** | no | no |
-| 6 mutation testing (S6) | no | no | no | no | no | part | part | no | no | no |
+| 6 mutation testing (S6) | no | no | no | no | no | no | part | no | no | no |
 | 5a hand-written hole model + Kani (S7) | yes* | part* | yes* | yes* | no | no | no | no | no | no |
 | 4 deterministic simulation (S8) | **yes** | **yes** | **yes** | **yes** | **yes** | no | part | part | no | no |
 | 5b model check over the real decisions (S9) | **yes** | part | **yes** | **yes** | no | no | no | no | no | no |
@@ -75,7 +76,7 @@ Every step lists: what it catches and misses, what it needs, where it runs, its 
   - **Tier A, on every push to `main` and every PR** (about 25–35 min cold, estimated, less with a cargo cache):
     - `cargo test -p raptorpath --lib gates`, `-p raptorpath-math`, `-p raptorpath-core` (including its deny-list test);
     - `cargo test -p raptorpath --lib` in release;
-    - the `tools/l1` Python and shell tests;
+    - the `tools/l1` Python and shell tests. `test_s60` is a known host-only failure: it runs in tier A on Linux, and if it fails there too it is quarantined with that cause. `test_harness46` flakes under load: it starts in quarantine until it passes N runs in the repeat job;
     - the roadmap `check.py`;
     - the two visualizer `.mjs` gates (needs Node and wasm-pack).
   - **Tier B, nightly and on demand:** the full `suites_run.sh` set (release, debug, seams, wasm, core), plus a repeat job (below). Estimated 1.5–2.5 h on one runner; it can be split by test binary over parallel jobs.
@@ -85,6 +86,7 @@ Every step lists: what it catches and misses, what it needs, where it runs, its 
   - the D2 test, at 40 %, clears 4 runs with 0.4^4 = 0.026 and 30 runs with about 1e-12;
   - so 30 clean runs show a failure rate ≤ 10 % at 95 % confidence. Showing ≤ 5 % takes 59 runs (0.95^59 = 0.05).
   - The owner picks N. A timing test that cannot reach it moves to the simulator (S8), where it is deterministic.
+- **Quarantine needs a diagnosed cause.** A test goes on the list only with its failure classified as the test's own (a timing bound, a race in the harness) or as an engine defect with a ledger or status entry. The D2 test shows why: 4/10 of its runs ended UNRESOLVED on both trees (`a91e23f1`), so part of that "flake" was the D1 stuck state itself. Quarantining it as a timing flake would hide the same signal the new rule is meant to raise.
 - **Catches.** D6a (main red on the push that broke it) and D2 (a 40 % test fails the repeat job at once).
 - **Misses.** On its own, every engine logic defect. CI only carries the other detectors. On push it finds a broken main after the fact; a required PR check catches it before.
 - **Needs.** `.github/workflows/ci.yml` and `nightly.yml`, a `tests/quarantine.txt` reader in `suites_run.sh`, and a small runner wrapper, because `suites_run.sh` takes the VM locks today. No code changes.
@@ -102,11 +104,12 @@ All three are `#[cfg(test)]` source-walk or resolution tests, in the style of `g
   - It is text-based, so method-name collisions give false passes. It reports a candidate list and does not prove anything.
 - **S2b. Ignored-parameter audit.** Flag every parameter named `_x` in a non-test function whose caller passes a non-constant value. rustc never warns on `_`-prefixed names, which is why `_enable_pi_feedback` (`fec_rate.rs:317`) stayed silent. An allowlist with a reason covers trait signatures.
 - **S2c. Config round trip, per entry point.** For each key in `Config`, resolve a TOML that sets only that key to a non-default value through each entry point: tunnel `run`, perf client, perf server. Each must change the resolved `PeerConfig` or a named consumer field. A key that reaches none is either marked "not read by this entry point" in a table the test owns, or it fails.
-  - Catches: the CLI overlay fields set to `None` (`main.rs:378–395`) shadowing a file value, and perf dropping `--config` and the tail target.
+  - Catches: perf dropping `--config` and the tail target (the key moves nothing at that entry point).
+  - **The inverse check, for forced keys.** Each entry point declares the keys it forces. The tunnel forces in-order delivery, so `window_out_of_order`, `window_coded_only`, `window_generation_coding` and `window_systematic_repair` stay off. For those keys, setting them in the file must **not** move the resolved value. That is what catches the CLI overlay defect: `main.rs:378–395` sets them to `None`, `merge` takes `overlay.or(base)` (`config.rs:195–212`), and the file's value comes through. A plain "key changes the config" check passes on that defect.
   - It catches `enable_pi_feedback` only if the assertion sits at the consumer (the controller), not at `PeerConfig`, because the value reaches `PeerConfig` and dies one call later. So the test asserts one level past the struct for every key the controller takes.
   - It needs the entry points' resolution to be callable without starting the engine. If `main.rs` builds `PeerConfig` inline, that code moves into a lib function first: a pure refactor with the same values.
 - **S2d. The NR third of the ledger** is not caught here. It needs S3 (logs) or S5 (coverage).
-- **Catches:** D3 (4 of the 6 named items). **Misses:** D3's never-executed ledger cells, and everything else.
+- **Catches:** D3, 5 of the 6 named items: `proactive_rate` and `set_protocol_hint` (S2a), `enable_pi_feedback` (S2b, and S2c at the consumer), the CLI overlay (S2c inverse), perf's `--config` and tail target (S2c). **Misses:** D3's never-executed ledger cells, and everything else.
 - **Runs on:** host once to write the tests (one incremental `--lib` test build in the host slot), then CI tier A. **Engine bytes:** none (`cfg(test)`). The S2c refactor in `main.rs`, if needed, changes the binary's code layout: run the `.text`/`.rodata` hash check, and if the hashes differ it rides the next guard batch.
 - **Owner:** no ADR. The allowlists are reviewed like code.
 - **Prerequisites:** none (S1 to keep it running). **Parallel:** yes. It touches only test modules and, for S2c, `main.rs`/`config.rs`, which no current engine work touches.
@@ -118,7 +121,7 @@ All three are `#[cfg(test)]` source-walk or resolution tests, in the style of `g
   - It also fails on a counter that reads 0 at a seat with no execution witness in the same log (MEASUREMENT DISCIPLINE 1).
   - Each new battery's logs then go through the same check when they are committed.
 - **What, part 2: true replay.** This works only for laws whose inputs are logged. Most `[DIAG]` fields are outputs (`nbud`, `win`, `wsize`), not inputs. The store cap's inputs (b̂, m̂, N, δ) and the NACK budget's input (`current_loss`) are not all printed.
-  - So: for each ledger row, list whether its inputs are logged.
+  - Which laws have their inputs logged has **not been read yet**. `[DCAP]` prints `q` and `b`, and `[DIAG]` prints `rtt`, `plu` and `btlbw`, so some are. The first task is to list, for each ledger row, whether its inputs are logged.
   - Where they are, feed the logged inputs to the law function (a `raptorpath-math` function, or an engine function via a small test binary) and fail if the output's range over the logged operating range is one value.
   - Where they are not, the part-1 check over output shares stands in, and the row gets an "inputs not logged" note, which is an NG cell in the audit's terms.
 - **What, part 3: law-moves sweep (MEASUREMENT DISCIPLINE 17, made a gate).** For each law the ledger lists, a property test sweeps each dial over the operating range read from the logs: δ over the three presets ± 2 %, N = 1…8, ε from the logged range.
@@ -169,10 +172,11 @@ All three are `#[cfg(test)]` source-walk or resolution tests, in the style of `g
 - **Three ways to ship it; the owner picks one.**
   - **(A) In the release binary:** an end-of-run line plus DIAG fields. The L1 batteries then carry the witness too, which is where the zero readings happened. It changes engine bytes, so it needs the merge guard and the host ns bench.
     - Hot-path cost: one integer increment at sites that already increment `shed_total`, and an O(1) check per DIAG tick, not per symbol.
-    - `O_strand` needs a count of outstanding seqs below a bound. `retransmit_buffer` is an ordered map, so that is a range count on the DIAG tick only, at O(log n), behind `pol.diag_on` like the other DIAG work.
-  - **(B) Under `#[cfg(debug_assertions)]`.** The release bytes are expected unchanged; prove it with the `.text`/`.rodata` hash, then no guard. The debug suite (about 1000 tests, whose child processes run the debug binary) carries it. The release suite and L1 do not.
-  - **(C) Under `test-seams`.** The same, but only the seams runs carry it.
-  - **Recommended:** (B) now, so it lands without a guard on the next debug suite, and (A) on the next scheduled guard batch.
+    - `O_strand` needs a count of outstanding seqs below a bound. `retransmit_buffer` is an ordered map, so that is an O(log n) range count, done on the DIAG tick (behind `pol.diag_on`) and once at exit.
+  - **(B) Under `#[cfg(any(debug_assertions, feature = "test-seams"))]`.** The release bytes are expected unchanged; prove it with the `.text`/`.rodata` hash, then no guard. The debug suite (about 1000 tests, whose child processes run the debug binary) carries it, and so do the seams runs. The seams half matters: the S06 tests that reach D1d need `--features test-seams`, and `suites_run.sh` runs the seams tests in release, where `debug_assertions` alone would leave the counters out. The release suite without seams, and L1, do not carry it.
+  - **(C) Under `test-seams` only.** Only the seams runs carry it.
+  - **Recommended:** (B) now, so it lands without a guard, and (A) on the next scheduled guard batch.
+- **The exit line must not depend on `RWM_DIAG`.** Today's `final=1` lines print under the `RWM_DIAG` gate (`net/diag.rs:960`), and most loopback tests do not set it. The account line prints at sender exit in every build that carries it, so every loopback test can assert it. Only the per-tick fields stay behind `diag_on`.
 - **Owner question on semantics.** Is a seq that leaves the coding window on the evicting seat without a verdict a legal outcome? If yes, it needs its own term (`E` evicted) and the retention contract has to bound it by 1 − ρ. If no, `O_strand` > 0 is always a defect. The plan assumes no, because ADR-0064's shed law is the only sanctioned loss.
 - **Runs on:** host for building, then CI tier B (debug suite). **Engine bytes:** none for (B), proven by the hash check; yes for (A), with the guard. ADR-0081.
 - **Prerequisites:** none to land (B). For red-first value it pairs with the wedge fix: land the counters on `wedge-diag`'s tests first (red on main), and the fix turns them green. **Parallel:** it touches `net/mod.rs`, `sender_phases.rs`, `emit_source.rs` and `diag.rs`, the same files as the wedge fix and the taper deletion (ADR-0079). It runs in sequence with those, in the same chunk as the wedge fix.
@@ -210,6 +214,7 @@ All three are `#[cfg(test)]` source-walk or resolution tests, in the style of `g
   - Bounds: window W = 3, 8 source packets, every loss pattern, a sender that keeps sending or stops, a bounded number of timer fires.
   - It copies the shipped order: gap report → clamp to the window (evicting seat) → shed check → serve; the tail sweep on `first()`; the intake pause on the reliable seat only.
 - **The property.** At every terminal state, each seq is acked, filled, skipped by decode, or shed, and `O` ≤ store cap.
+  - **Loss and timer budgets.** With unbounded loss even a correct protocol leaves a hole: lose every resend and nothing can fill it. So the model bounds loss to L drops per seq (every loss pattern within that budget), and then the link delivers. The timer budget gives each hole at least L + 1 timer-driven chances (sweeps or refreshes). Under those budgets a correct protocol fills or sheds every hole, so a counterexample is a real defect. The reliable seat at the same budgets is the control, and it must pass.
   - The time steps are bounded so that every run ends. Then this is a safety check on terminal states, not a liveness check. That matters because a sweep that fires forever without effect is a cycle, not a deadlock, and whether stateright's `eventually` sees cycles is **unverified**. The docs say a counterexample runs "through to a terminal state".
   - This should find D1a, D1c and D1d in seconds (expected, not run): seq 0 lost, 4 more sent, window moves past 0, and nothing ever judges seq 0.
 - **Honest limit.** The model is checked; its match to the engine is assumed. It repeats this project's known failure (the model ≠ the engine) unless S9 replaces it. It is worth doing first because it is cheap and it checks the protocol design: it would have shown that the clamp-before-shed order cannot be live on the evicting seat, whatever the code does.
@@ -225,6 +230,9 @@ All three are `#[cfg(test)]` source-walk or resolution tests, in the style of `g
 ### S8. Deterministic simulation of the recovery path (detector 4)
 
 - **The layer: under quinn, at the socket.** There is no transport trait to cut below, and the L0 shim sits above quinn, so quinn's own CC sees a clean link. Both peers run in one process on a current-thread tokio runtime with paused time, through `perf::server`/`perf::client`. quinn gets an in-memory `AsyncUdpSocket` through a `quinn::Runtime` wrapper, the pattern `TimedRuntime` already uses. The link model (rate, delay, jitter, GE, Weibull bursts) is the L0 shim's, moved under the socket and seeded. Time advances only when every task is idle, so a 30 s tail-loss scenario runs in milliseconds and gives the same event order for the same seed.
+- **Not turmoil.** turmoil simulates hosts and a network over its own socket types. Nothing found connects it to quinn's `AsyncUdpSocket`, and turmoil-net does not intercept time. An in-memory socket under quinn's own `Runtime` seam needs no new dependency.
+- **Not the existing `Clock` trait.** `scheduler/clock.rs` has a `Clock` trait with `MockClock`, but `MockClock` holds a std `Instant` behind a mutex, so tokio's timers (`sleep`, `interval`, quinn's timers) do not follow it. Only tokio's paused clock moves reads and timers together. The trait can stay as it is, or be backed by the new clock function; this plan does not depend on it.
+- **Not the wasm sim.** `raptorpath-wasm`'s simulation is the L0 model (ADR-0077). It drives no engine code, so it cannot find engine defects.
 - **Blockers, all found in this tree:**
   1. **121 direct `Instant::now()` reads** in engine code, plus the `now_us()` base. tokio's paused clock does not move `std::time::Instant`, so each read goes through one engine clock function that returns `tokio::time::Instant::now().into_std()`.
      - Without tokio's `test-util` feature, that call is `std::time::Instant::now()` (tokio 1.50 `time/instant.rs`, `variant::now`), so the release behaviour is the same and the bytes may be too.
@@ -314,6 +322,10 @@ S1–S3 and S7 can start at once, in parallel, as four independent workers. Only
 - Whether the `CARGO_BIN_EXE` binary built for integration tests gets tokio's `test-util` through `tokio-test`.
 - That the perf server writes an llvm-cov profile on its signal exit.
 - The mutant count and per-mutant time (run `cargo mutants --list` on CI first).
+- Which laws have their inputs logged (S3 part 2). No log was read for this.
+- cargo-llvm-cov's current Windows status. It is needed only on CI (Linux).
+- That `O` = 0 at the exit flush holds on the loopback tests that pass today. Expected, but the counter does not exist yet. A test that fails it on landing is either a new finding or a test that ends before its transfer completes.
+- The CLI overlay direction (D3): read from `main.rs`/`config.rs`, not run.
 - How stateright's `eventually` treats cycles. The plan avoids depending on it with bounded time.
 - That S7's model finds D1a/c/d at W = 3 and 8 packets. The trace is argued, not run.
 - That the clock change leaves the release `.text` unchanged.
