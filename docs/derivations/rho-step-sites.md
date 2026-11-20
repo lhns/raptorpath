@@ -21,17 +21,17 @@ Every site has a formula with no ρ comparison. Each formula reproduces today's 
 | # | site (main) | today: ρ = 1 / ρ < 1 | reason for the split found? | correct at ρ = 0.999 | shape | formula (§2) | pin | red-first test |
 |---|---|---|---|---|---|---|---|---|
 | C1 | placement: `emit_source.rs:356`, `:863`; `sender_phases.rs:973`, `:1118` | §5.7 softmax law / best-path pick | **no**: rollout scope, "wire it into run_window_sender (reliable mode only)" (`4cf6b9b1`) | the law | (i) | §5.7 `P(i)` at every ρ | N = 1 absolute: both arms pick the one path | `c01_placement_law_at_every_rho` |
-| C2 | SACK release: `sender_policy.rs:628`, `mod.rs:1103` | release on / `released = ∅` | **no**: copies the store's scope ("the gate arithmetic is exactly the shipped store_len", `ff7acb4c`); the store was ρ = 1-only | release | (iii) | `released ⊆ S ∩ (received ∪ passed)` at every ρ | `SenderPolicy` ρ = 1 digest | extended property test plus T7c inverted |
+| C2 | SACK release: `sender_policy.rs:628`, `mod.rs:1103` | release on / `released = ∅` | **no**: copies the store's scope ("the gate arithmetic is exactly the shipped store_len", `ff7acb4c`); the store was ρ = 1-only | release, with H the highest seq *sent* | (iii) | `\|released\| ≤ \|S ∩ (received ∪ passed)\|` at every ρ | `SenderPolicy` ρ = 1 digest | property test with a verdicted tail (red today) plus T7c inverted |
 | C3 | `recov_mp`: `sender_policy.rs:692` | per-flight hole law / legacy age gate | **no**: the stated reason excludes generation only ("generation mode has no per-seq ARQ", `8a345200`) | the law | (i), after C12 | `fire ⇔ time_ripe ∨ packet_threshold` at every ρ | N = 1 path of the law; ρ = 1 digest | `c03_hole_law_at_every_rho` |
 | C4 | `recov_sp`: `sender_policy.rs:705` (gate off) | as C3, at N = 1 | **no**: same text (`982b1a07`) | as C3 | (i), after C12 | as C3, time channel | gate-off identity | `c04_recov_sp_scope_reads_no_rho` |
 | C5 | `emit_batch_on`: `sender_policy.rs:737` | batched / per-symbol | **yes, now void**: "inside the flow-control store headroom" (`75cbd012`); the pause was ρ = 1-only, and ADR-0084 A5 puts it at every ρ | batched | (i) | `gate ∧ ¬coded_wire ∧ ¬use_packing` | ρ = 1 and Realtime digests unchanged | `c05_burst_stops_at_the_pause_below_1` |
 | C6 | request arms: `mod.rs:1049`, `:1058` (`sack.rs:36`), `:1752` (gates off) | armed / never | **no**: the stated reason is generation ("no per-seq layer to suppress", `b15a8e8c`) | **owner** | **(iv)** | default: requests judged by the same verdict rule | gate-off identity | `c06_request_is_judged_like_a_gap` |
 | C7 | Copa plain feed: `mod.rs:938` (opt-in) | fed / unfed | **no**: the reason covers out-of-order and generation only (`a895205e`) | fed, minus verdicts | (ii) | `newly = ([c, A_rx) ∪ SACK) \ attributed \ V` | V = ∅ at ρ = 1 | `c07_feed_never_credits_a_verdict` |
 | C8 | corner refusal: `config.rs:304` | accepted / refused | **yes, now void**: "the reliable store is the backstop for every hole they leave behind" (`dacfd7cc`). The store exists at every ρ after ADR-0084; generation never had one | accepted | (i) generation, systematic; (iii) out-of-order, coded-only | refusal deleted; floor pass on the out-of-order frontier | config tests at 1 and 0.99 | `c08_*` (§2.8) |
-| C9 | reorder buffer: `receiver.rs:163`; `reorder.rs:88`, `:118`, `:182` | never passes a hole / expiry, force-drain at 500 | **yes, now void**: at ρ < 1 the sender could forget a seq untold, so the receiver had to time out on its own (`4c901536`). ADR-0084 tells every verdict | passes only below the floor | (i) | `next' = max(next, F_rx)` at `t_F + H` | `ReorderBuffer` script digest, no floor | `c09_receiver_passes_only_below_a_floor` |
+| C9 | reorder buffer: `receiver.rs:163`; `reorder.rs:88`, `:118`, `:182` | never passes a hole / expiry, force-drain at 500 | **a reason for the expiry, none for the split**: "force-delivered to avoid head-of-line blocking. Max 500 buffered entries" (`628fdb1c`, March 2026, before any retention existed). The ρ = 1 arm was added next to it (`4c901536`). After ADR-0084, HOL avoidance is the sender's δ verdict, and every verdict is told | passes only below the floor | (i) | `next' = max(next, F_rx)` at `t_F + H` | `ReorderBuffer` script digest, no floor | `c09_receiver_passes_only_below_a_floor` |
 | C10 | full consumer channel: `receiver.rs:172`, `delivery.rs:66` | hold / drop | **hold has a reason valid at every ρ; drop has none** ("as it always has", `780be2b1`) | hold | (i) | hold at every ρ | `delivery.rs` ρ = 1 tests unchanged | `c10_full_channel_holds_below_1` |
 | C11 | receiver shed arm: `receiver.rs:183` | off / `SRTT/2` under ε̂_recv | **no**: "compiled OUT on the reliable (ρ = 1) contract" (ADR-0064 decision 3), by fiat, not by a 0 budget; "this path exists only for the Realtime hint" (`dacfd7cc`) | no local give-up; H = the floor marker's hold | (i) | `H = min(b(δ_rx), 2)·SRTT_rx` | inert at ρ = 1 (no floor) | `c11_no_local_give_up_below_1` |
-| C12 | hole timer: `receiver.rs:734`, `:860` | re-advertise / expire | **as C9** (`4c901536`) | refresh, plus the floor marker | (i) | `deadline = min(t_nack + refresh, t_req, t_F + H)` | ρ = 1 term set unchanged | `c12_refresh_runs_below_1` |
+| C12 | hole timer: `receiver.rs:734`, `:860` | re-advertise / expire | **as C9**: the expiry from `628fdb1c`; the refresh was added only to the arm that never gives up (`4c901536`) | refresh, plus the floor marker | (i) | `deadline = min(t_nack + refresh, t_req, t_F + H)` | ρ = 1 term set unchanged | `c12_refresh_runs_below_1` |
 
 **Count:**
 - (i): 8 sites (C1, C3, C4, C5, C9, C10, C11, C12), plus C8's generation and systematic corners;
@@ -39,9 +39,11 @@ Every site has a formula with no ρ comparison. Each formula reproduces today's 
 - (iii): 1 (C2), plus C8's out-of-order and coded-only corners;
 - (iv): 1 (C6).
 
-For three sites the split had a reason: C5, C8 and C9 (with C12, which is the same reason). In all three, the reason was "ρ < 1 has no store, no pause, or no verdict", and ADR-0084 removes it. In every other site the bool was at hand, or the store's scope test was copied. The original Phase A commit claimed the continuous form and shipped a bool: "Retention policy (rho-parameterized, T_cut(rho); rho=1 = ack-only)" (`4c901536`), while the code holds no ρ.
+For two sites the split had a written reason about retention: C5 and C8. Both said "ρ < 1 has no store or no pause", and ADR-0084 removes it. C9 and C12's expiry has a reason that is not about ρ: head-of-line avoidance, from a tunnel that had no ARQ. ADR-0084's verdict now carries it. C10's hold has a reason that holds at every ρ. In every other site the bool was at hand, or the store's scope test was copied. The original Phase A commit claimed the continuous form and shipped a bool: "Retention policy (rho-parameterized, T_cut(rho); rho=1 = ack-only)" (`4c901536`), while the code holds no ρ.
 
 **Bulk and Auto defaults:** none move. At ρ = 1 every formula is today's ρ = 1 arm, or has its (1 − ρ) term at 0.
+
+Shape (i) here means "keep one arm at every ρ". That is wider than "redundant by data": six of the (i) sites (C1, C3, C9, C10, C11, C12) change Realtime behaviour.
 
 **Realtime defaults that move** (Realtime is ρ = 0.99; the owner accepted ADR-0084's Realtime change, but these come on top of it):
 - C9, C11, C12: a hole is passed on the sender's verdict and floor instead of the receiver's own `SRTT/2` hold (§1);
@@ -77,6 +79,12 @@ Under option B, "no ρ at the receiver" is open again. The bit that Amendment 1 
 
 The rate is at most one floor per path per gap report. Gap reports are already rate-limited by `GAP_ACK_MIN_INTERVAL`, and forced verdicts are 0 by data once there is a store at every ρ, so the "bursts of thousands" concern is gone. No new constant. The guard's ρ < 1 stage measures the latency change (the frontier-stall p99 at Realtime, N = 1 and N = 2, against CAND1).
 
+**The larger cost, a Realtime default change: a spent budget serializes.**
+- Today a spent receiver budget still passes the hole after `(4·SRTT).clamp(60, 300) ms`.
+- Under R1, once `Ab + 1 > (1 − ρ)·S_src`, a past-D hole is served until it is filled, with no time bound: ρ wins over δ. That is ADR-0084 decision 1's rule, but today's Realtime receiver never obeyed it.
+- On a link whose residual loss exceeds 1 − ρ, Realtime then stalls where it used to skip.
+- Guard 3 carries a cell for it: Realtime 0.99 at a loss and blackout pattern that exhausts the budget. It reads the frontier-stall p99 against CAND2 and `shed_denied`.
+
 **What R1 changes, site by site:** C9 and C11 lose their give-up arm; C12's expiry becomes the floor-marker term while its refresh runs at every ρ; C10 holds at every ρ.
 
 ## 2. The sites
@@ -88,6 +96,10 @@ Each formula is on its own line, next to the sentence it implements. Symbol prov
 - `ReorderBuffer` and `WindowDelivery` driven by a scripted push, drain and full-channel sequence, with no floor.
 
 Every site commit must keep it. A commit that changes it is not a site commit.
+
+The digest cannot reach the inline sites: C1's four call sites, the hole law in `serve_gaps`, C12's timer and C7's feed. So there is a second, universal pin. **Each site commit keeps the ρ = 1 sim trace byte-identical to the previous commit.** The trace is `ChildRun.trace`, every link event with its virtual time. It runs in four ρ = 1 cells: the Bulk and Realtime hints at N = 1 and N = 2, seed 42, the `sim_lost_tail` scenario.
+
+**The all-seq pass count.** The `pass` and `pass_force` tseam events print only for the seam's seq k (`test_seams.rs:167–172`, `:230–235`), so they cannot show "no pass". Brief step 4 already counts `G_rx` at every frontier writer. It must count each writer separately and ungated, `G_rx = G_expiry + G_force + G_floor`, each being frontier advance minus delivered at that writer, carried on `[ACCT-RX]`. "No local pass" then means `G_expiry = G_force = 0`.
 
 ### C1: placement (4 sites)
 
@@ -113,22 +125,33 @@ Every site commit must keep it. A commit that changes it is not a site commit.
   - At ρ < 1 there is no channel and `released ≡ 0`, so O counts them.
 - **Reason.** None. `ff7acb4c` scoped it to the store it releases from ("sent_store holds the only payload copy"), and the store existed only at ρ = 1. ADR-0060 has no ρ. ADR-0084 question 8 then deferred release at every ρ ("no for now"), pending a proof that the release stays a lower bound when the frontier also moves by give-ups.
 - **At 0.999:** release on.
-- **Shape:** (iii). The lower-bound property must be re-shown, and it is shown here.
+- **Shape:** (iii). The lower bound has to be re-derived, and the re-derivation finds a defect that release at ρ < 1 would expose.
+- **The code.**
+  - `store_released_for_gate = min(|S|, max(marks, above))` (`sack.rs:387`).
+  - `above = |S ∩ [0, F)| + (A − not_retained)⁺`, with `not_retained = (H + 1 − F) − |S ∩ [F, H]|` (`received_above_released`, `sack.rs:361`).
+  - `store_gate_released` takes H as **the store's last key** (`sack.rs:403`).
+- **The derivation's ρ = 1 premises** (doc comment, `sack.rs:342–357`):
+  1. "every seq `< F` was delivered";
+  2. "the reliable receiver never evicts above its frontier";
+  3. "S is pruned only as a prefix", so "its last key is the highest seq ever sent" (`sack.rs:391–394`).
+- **Each premise at ρ < 1, after ADR-0084:**
+  1. Below F every seq is received **or passed**. A released passed seq is one the receiver no longer needs, so the bound to keep is against `received ∪ passed`. Under R1, `passed ⊆ V` and a verdict leaves S, so it is again exactly `|S ∩ received|`.
+  2. Under R1 the receiver passes only below F, so nothing above F leaves the received set.
+  3. **False.** A verdict removes an entry from S anywhere, the tail included (T1′: the object's last seq is shed). Then S's last key h is below the true highest sent seq H. `not_retained` is under-counted by `H − h`, and `above` over-counts by up to `H − h`, which is an over-release. The fix is to read H from the sender's highest-sent counter, not from S.
 - **Formula.** "A SACKed seq leaves O; its payload stays until the cumulative frontier passes it" (ADR-0060):
 
   ```text
-     O = (H + 1 − F) − |released|,     released  ⊆  S ∩ (received ∪ passed)        at every ρ
+     |released|  =  min( |S|,  max( marks,  |S ∩ [0, F)| + ( A − ((H_sent + 1 − F) − |S ∩ [F, H_sent]|) )⁺ ) )   ≤   |S ∩ (received ∪ passed)|        at every ρ
   ```
 
-  - **Symbols.** H is the highest sent, F the sender's ack, and S the store, which keeps an entry until ack or verdict (ADR-0084 decision 2). `received` is the receiver's SACK set and `passed` its floor passes.
-  - **Derivation.** `store_gate_released` counts `retained_below(f)` as received (`sack.rs:406`). Below the receiver's frontier f, every seq is received or passed, by definition of the frontier. So the count is bounded by `|S ∩ (received ∪ passed)|` at every ρ.
-  - **Under R1 the bound is tight.** `passed ⊆ V`, and a verdict leaves S, so `S ∩ passed = ∅` and the bound reduces to the existing one, `|S ∩ received|`.
-  - **The bound needs no R1.** A passed seq that is released is one the receiver no longer needs, so releasing it costs no recoverability. That holds even if a pass could precede the verdict's store removal.
-- **Pin.** The `SenderPolicy` digest. At ρ = 1 the conjunct `reliable` was true, so the predicate is unchanged.
+  - **Symbols.** S is the store, which keeps an entry until ack or verdict (ADR-0084 decision 2). F and A are the newest report's `next_expected` and `received_above`, measured. `marks` are the per-seq SACK marks. `H_sent` is the highest seq sent, a counter.
+  - **At ρ = 1** `H_sent` equals S's last key, so `|released|` is today's.
+  - **The claim is on the count, not on a set.**
+- **Pin.** The `SenderPolicy` digest (at ρ = 1 the deleted conjunct was true), plus the per-commit ρ = 1 trace identity.
 - **Default change.** At Realtime the pause opens earlier (O net of received-above), and the pause still binds at B. At Bulk and Auto, none.
-- **Red-first test.** Two parts:
-  - extend `store_gate_released_never_exceeds_the_retained_received_truth` (`net/tests.rs:1690`) with a frontier that jumps holes (a passed set P removed from S, as R1 makes it), and assert `released ≤ |S ∩ received|`;
-  - invert brief T7c: at ρ = 0.99, `released > 0` on at least one tick (the routing witness, red today, where `released ≡ 0`), and `released ≤ received_above` at every tick at both ρ.
+- **Red-first tests.**
+  - `store_gate_released_bound_survives_a_verdicted_tail`: the property test of `net/tests.rs:1690`, with entries removed from S at random and at the tail (verdicts) and H_sent above S's last key. It asserts `released ≤ |S ∩ received|`. Red today, through the last-key H.
+  - The brief's T7c, inverted: at ρ = 0.99, `released > 0` on at least one tick (the routing witness; today `released ≡ 0`), and `released ≤ received_above` at every tick at both ρ.
 
 ### C3: the multipath hole law (`recov_mp`)
 
@@ -206,7 +229,8 @@ Every site commit must keep it. A commit that changes it is not a site commit.
      newly(ack)  =  ( [c, A_rx) ∪ SACK(ack) ) \ attributed \ V
   ```
 
-  - **Symbols.** c is the feed cursor and A_rx the ack's `next_expected`, both measured. V is the sender's own verdict set (`shed_seqs`), which is exact per seq; `G_rx` would only give a count.
+  - **Symbols.** c is the feed cursor and A_rx the ack's `next_expected`, both measured. V is the sender's verdict set, exact per seq (`G_rx` would only give a count).
+  - **Mechanism.** `newly_delivered` runs in `copa_feed_attribute`, on the ack path, where `shed_seqs` is not in reach. So the verdict site calls `feed.on_verdict(s)`, which drops the seq's commitment and marks it attributed. `newly` then skips it.
   - **A late fill of a shed seq is not credited.** That is a conservative under-count, gauged.
 - **Pin.** At ρ = 1, `V = ∅` (asserted), so `newly` is today's set.
 - **Default change:** none (opt-in).
@@ -251,7 +275,7 @@ Every site commit must keep it. A commit that changes it is not a site commit.
 - **Default change.** Realtime (§1.2): give-up latency, and the 500-entry force-drain is gone.
 - **Red-first test.** `c09_receiver_passes_only_below_a_floor`:
   - the matched Realtime scenario of `sim_mixed_rho` at 0.99;
-  - the `pass` and `pass_force` tseam events are 0, and `floor_passes = G_rx`;
+  - `G_expiry = G_force = 0` (the all-seq count, §2 intro), and `G_floor = G_rx`;
   - the unit tests run the floor pass on the one constructor.
   - Red today: expiry passes.
 
@@ -320,19 +344,21 @@ Every site commit must keep it. A commit that changes it is not a site commit.
   - a second cell at the Realtime hint, N = 2 (S_src = 12 147, budgets {0, 1, 12, 121}).
 - **Assertions, execution witnesses first:**
   1. **ρ = 1 control.** `client_ok`, `V = ∅`, `floor_sent = 0`, `G_rx = 0`.
-  2. **Witness.** At 0.99: `shed ≥ 1` and `floor_passes ≥ 1`. At 0.999, if the candidates exceed 5, `shed_denied > 0`, so the budget, not an arm, decided.
+  2. **Witness.** At 0.99: `shed ≥ 1` (counted over every seq with `RWM_TEST_TS_SHED_ALL=1`, `test_seams.rs:58`, `:175–179`) and `G_floor ≥ 1`. At 0.999, if the candidates exceed 5, `shed_denied > 0`, so the budget, not an arm, decided.
   3. **Liveness.** At every ρ the ack reaches S_src within T1's bound, and the account closes with `|U| = 0`.
   4. **Only give-ups.**
      - `G_rx ≤ ⌊(1 − ρ)·S_src⌋`.
-     - Every pass is a floor pass: tseam `pass = pass_force = 0`, and `floor_passes = G_rx`.
+     - Every pass is a floor pass: `G_expiry = G_force = 0` and `G_floor = G_rx` (the all-seq counts).
      - The delivered set satisfies `|S_all \ D(ρ)| ≤ ⌊(1 − ρ)·S_src⌋`, with `D(1) = S_all`.
   5. **Identity where the budget is 0.** If ⌊(1 − ρ)·S_src⌋ = 0, the sim trace equals the ρ = 1 run's byte for byte (`ChildRun.trace`). After the change, ρ enters only through the budget. The three-term law reads it too, but it is off by default.
-  6. **Identity up to the first give-up.** Otherwise, the sim trace equals the ρ = 1 run's up to the virtual time of the first `ev=shed`. "Differ only by give-ups" cannot be a whole-trace diff, because the first shed shifts later timing.
+  6. **Identity up to the first give-up.** Otherwise, the sim trace equals the ρ = 1 run's up to the virtual time of the first `ev=shed`. Trace lines start with their virtual µs (`sim.rs:280–282`). "Differ only by give-ups" cannot be a whole-trace diff, because the first shed shifts later timing.
 - **Red on main.** Expressed through brief step 2's mapping, where ρ < 1 is the evicting seat:
   - at 0.9999, clause 5 fails: the trace differs from the start;
   - clause 3 fails: the lost tail stalls;
   - clause 4 fails: the receiver passes by expiry, not by floor.
-- **Lifecycle.** It is written in the first commit, ignored with a `rho-step-sites:` reason, and un-ignored by the commit that removes the last reader.
+- **Lifecycle.**
+  - It is written in the first commit, ignored with a `model-rho-step-sites:` reason (the roadmap node `0c1692c2` added; `tools/ci/expected_failure.py` rejects a prefix that is not a node).
+  - It is un-ignored in the commit that turns it green, which the expected-failure job enforces. By its cells that is C1 at the latest (commit 9): C6, C7 and C8 are not in them.
 
 ## 4. The reverse pairing
 
@@ -351,10 +377,10 @@ Every site commit must keep it. A commit that changes it is not a site commit.
 **Base.**
 1. CAND1: `s06-delete` merged up to main (brief §2).
 2. ADR-0084, brief steps 1–8, with these changes:
-   - **Step 1** also adds §3's acceptance test and §4's reverse test, red and ignored with `rho-step-sites:` reasons.
+   - **Step 1** also adds §3's acceptance test (`model-rho-step-sites:`) and §4's reverse test (`rec-mixed-rho-stall:`), red and ignored. Each is un-ignored in the commit that turns it green: §4 in the C9–C12 group, and §3 by C1.
    - **Step 2's bit is scaffolding.** `rho1_debt_bit` and its readers exist only inside this stack. Its reader list is the brief's (C) list plus D1, pinned by the deny test's table.
-   - **Step 3's ratchet becomes the merge gate.** Each site commit lowers the table. The test `rho1_debt_is_gone` asserts that the table is empty and `net/rho_debt.rs` is absent. It is ignored with a `rho-step-sites:` reason, so `expected_failure.py` requires it to fail until the last site commit, which un-ignores it. Merge condition: it runs and passes.
-   - **Step 9 is dropped.** There is no `rho1_debt_bounds.rs` and no T8: the debt does not merge. §3 replaces T8.
+   - **Step 3's ratchet becomes the merge gate.** Each site commit lowers the table. The test `rho1_debt_is_gone` asserts that the table is empty and `net/rho_debt.rs` is absent. It is ignored with a `model-rho-step-sites:` reason, so `expected_failure.py` requires it to fail until the last site commit, which un-ignores it. Merge condition: it runs and passes.
+   - **Step 9 is dropped.** There is no `rho1_debt_bounds.rs` and no T8: the debt does not merge. §3 replaces T8. Its bookkeeping moves to commit 13: ledger F02 done, rows G01–G12 and S09, the paper's tense flip, and the `law-ledger/render.py` re-render.
    - **Step 10** (the model's give-up law, `GOLDEN_CAPTURE=1`) stays last.
 
 **Site commits.** One per site, red first, each lowering the table. Each is Sonnet-implementable from its §2 entry. The dependencies set the order:
@@ -412,7 +438,19 @@ While the stack is open, every row reads `MODE-SWITCH(scaffold)` with its commit
 
 ## 7. Amendment 1 rewrite
 
-Proposed replacement for item 2's exception and enforcement (b), and for item 5. The rest of the amendment stands.
+Proposed replacement for item 2's exception and enforcement (b), and for item 5 (below).
+
+These other parts go stale and are rewritten in the same amendment commit:
+- **ADR-0084 decision 7**, "SACK release stays reliable-only". It is an accepted decision, so it is not edited. The amendment supersedes it: release runs at every ρ (C2).
+- **The Consequences bullet** "A step at ρ = 1 remains on the receiver …". No step remains; R1.
+- **Item 4:**
+  - its table's "what makes it continuous" column becomes a pointer to this document;
+  - its paragraph "C2 and the rate bound" and its "Correction to decision 2" become: the sender-side step at ρ = 1 is gone, for all of C1–C7.
+- **Item 7**, the bullet "(C) takes the ρ = 1 arm through the bit". There is no bit, and every site has one arm.
+- **Item 8:** the guard plan becomes §5's five guards.
+- **Item 2 (a)'s allowlist:** after C8, `check_window_rho` holds the domain check only, with no corner refusal. The allowlist is then `check_window_rho` alone; `rho1_debt_bit` leaves at commit 13.
+- **The Consequences bullet** "23 counted `rho1_debt` reader lines": zero at merge.
+- **The engine brief:** §1 group (C) points here; §3 "SACK release stays on the ρ = 1 arm" and "the receiver's give-up budget stays ε̂_recv" are deleted; §4 steps 3 and 9 change as in §5 above.
 
 > **2. The trap rule.** In engine code, nothing compares, matches or thresholds the retention ρ to select a code path, a law, a constructor or an argument. ρ enters only as a number in a formula continuous in ρ. Today that formula is the shed budget `(1 − ρ)·S_src`, plus the opt-in three-term law. There is no exception.
 >
@@ -432,6 +470,8 @@ Proposed replacement for item 2's exception and enforcement (b), and for item 5.
   - **Recommended: (a).**
 - **Confirm the receiver law R1, floor-only.** The receiver passes only on the sender's floor and keeps no ρ. Cost: Realtime give-up latency goes from about `owd + SRTT/2` to about `RTT + owd + H`. Guard 3 measures it.
 - **Confirm C10's hold at Realtime.** A slow consumer backpressures instead of dropping. A budgeted drop would need a receiver ρ.
+- **Confirm the floor-cadence reversal.** This reverses the owner-accepted default of `evict-verdict-law.md` question 6, "sweep clock only". The floor is also sent at the end of every gap pass that raised it, because R1 removes that default's premise (holes with data above pass on the receiver's own hold).
+- **Confirm the serialize cost of R1** (§1.2). With the budget spent, a Realtime hole waits for its fill instead of passing at 60–300 ms.
 - **Realtime N ≥ 2 changes (C1, C3).** These are by the paper's own law, but they change the Realtime default. Guard 4 measures them.
 - **Bulk and Auto:** no default changes.
 
