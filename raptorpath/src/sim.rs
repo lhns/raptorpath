@@ -38,6 +38,7 @@
 #![allow(unexpected_cfgs)]
 
 use quinn::udp::{RecvMeta, Transmit};
+use quinn::{ConnectionId, ConnectionIdGenerator};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::future::Future;
@@ -321,7 +322,7 @@ pub(crate) fn client_config(mut config: quinn::ClientConfig) -> quinn::ClientCon
             for c in b.chunks_mut(8) {
                 c.copy_from_slice(&splitmix_mix(state.fetch_add(0x9E37_79B9_7F4A_7C15, Relaxed)).to_le_bytes());
             }
-            quinn::ConnectionId::new(&b[..20])
+            ConnectionId::new(&b[..20])
         }));
     }
     config
@@ -330,9 +331,9 @@ pub(crate) fn client_config(mut config: quinn::ClientConfig) -> quinn::ClientCon
 /// Seeded 8-byte connection ids (quinn's default length, no lifetime).
 struct SimCid(u64);
 
-impl quinn::ConnectionIdGenerator for SimCid {
-    fn generate_cid(&mut self) -> quinn::ConnectionId {
-        quinn::ConnectionId::new(&next_u64(&mut self.0).to_le_bytes())
+impl ConnectionIdGenerator for SimCid {
+    fn generate_cid(&mut self) -> ConnectionId {
+        ConnectionId::new(&next_u64(&mut self.0).to_le_bytes())
     }
     fn cid_len(&self) -> usize {
         8
