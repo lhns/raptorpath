@@ -1,0 +1,9 @@
+{
+ "note": "Named decision sites outside the ledger's loc strings. Found by regex inside file, nearest to the line hint (drift tolerant, +-80 lines).",
+ "sites": [
+  {"id": "shed-nack", "desc": "NACK-path shed: hole shed, removed from retransmit buffer (sender_phases.rs ~846-869)", "file": "raptorpath/src/net/sender_phases.rs", "regex": "st\\.shed_total \\+= 1;", "near": 859},
+  {"id": "shed-nack-denied", "desc": "NACK-path shed refused, past deadline (shed_denied)", "file": "raptorpath/src/net/sender_phases.rs", "regex": "st\\.shed_denied \\+= 1;", "near": 867},
+  {"id": "shed-slot", "desc": "slot-site shed: correction slot sheds a past-deadline candidate (emit_source.rs ~757-785)", "file": "raptorpath/src/net/emit_source.rs", "regex": "st\\.shed_total \\+= 1;", "near": 775},
+  {"id": "shed-slot-denied", "desc": "slot-site shed refused", "file": "raptorpath/src/net/emit_source.rs", "regex": "st\\.shed_denied \\+= 1;", "near": 783}
+ ]
+}
