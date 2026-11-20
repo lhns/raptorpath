@@ -411,13 +411,13 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     read -r bytes p62_tmo HINT p60_arm_env <<< "$p62_spec"
     rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p62_tmo")
   fi
-  local p51_arm_env="" p67_arm_env="" PERFDIR="$HERE" p67_plan_arg=()
+  local p51_arm_env="" p67_arm_env="" PERFDIR="$HERE"
   if [ "$P67" = 1 ]; then
     # Plan 67: bytes / timeout / hint / env from plan67.py armspec (the ONE table), the binary of the arm's seat, the tools tree of a pacer seat (its lib.sh forwards RWM_PERF_RATE_MBIT).
     local p67_spec p67_tmo p67_seat p67_bv p67_sv p67_tv
     p67_spec="$(python3 ./plan67.py armspec "$PLAN" "$cell" "$arm")" || { echo "UNKNOWN-ARM $arm at $cell (plan $PLAN)" >> "$OUT"; return 0; }
     read -r bytes p67_tmo HINT p67_arm_env <<< "$p67_spec"
-    rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p67_tmo"); p67_plan_arg=("$PLAN")
+    rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p67_tmo")
     p67_seat="$(python3 ./plan67.py seat "$arm")" || { echo "UNKNOWN-ARM $arm (plan 67: no seat)" >> "$OUT"; return 0; }
     p67_bv="LD_BIN_$p67_seat"; p67_sv="LD_SHA_$p67_seat"; p67_tv="LD_TOOLS_$p67_seat"
     RBIN="${!p67_bv:-}"; RWANT="${!p67_sv:-}"
@@ -620,10 +620,10 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
   [ "$P38" = 1 ] && parser=./place38_parse.py
   [ "$P43" = 1 ] && parser=./place43_parse.py
   [ "$P46" = 1 ] && parser=./place46_parse.py
-  [ "$P67" = 1 ] && parser=./s67_score.py      # plan 67: the row parser takes the plan first (`row <plan> <cell> <arm> ...`), reads LD_SHA_<SEAT>, prints P67ROW
+  [ "$P67" = 1 ] && parser=./s67_score.py      # plan 67: the row parser takes the plan from LD_PLAN, reads LD_SHA_<SEAT>, prints P67ROW
   if LD_PLAN="$PLAN" LD_ROW_BYTES="$rowbytes" LD_ONDISK="$ondisk" LD_IO_FULL10="$io_max" LD_IO_B="$io_b" LD_IO_A="$io_a" LD_PROCS_B="$procs_b" LD_PROCS_A="$procs_a" LD_PCAP_DIR="$pdir" LD_TABLE_DIR="$OUTDIR/tables" P38_STORE="${p38store:-def}" \
       P46_VARIANT="$variant" LD_EVT="$base-evt.txt" LD_EVTQ="$base-evtq.txt" \
-      python3 "$parser" row "${p67_plan_arg[@]}" "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
+      python3 "$parser" row "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
       "$TMPD/ld-drv.out" "$TMPD/rwm-c.log" "$TMPD/rwm-s.log" "$cot" "$sha" >> "$OUT" 2>&1; then
     # Scored (summary in the ledger, per-skb tables kept): only now do the pcaps go.
     { [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; } && rm -rf "$OUTDIR/pcap/${name}-s${seed}-r${rep}-"a*

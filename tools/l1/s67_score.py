@@ -1185,9 +1185,13 @@ def main(argv):
         return 2
     cmd, a = argv[0], argv[1:]
     if cmd == "row":
-        plan_id, cell, arm, seed, rep, rc, wall, drv, cli, srv = a[:10]
-        cot = a[10] if len(a) > 10 else 0
-        sha = a[11] if len(a) > 11 else None
+        if a and a[0].startswith("67"):      # the plan may be the first argument or come from LD_PLAN (the battery's `row <cell> <arm> ...` shape)
+            plan_id, a = a[0], a[1:]
+        else:
+            plan_id = os.environ.get("LD_PLAN", "")
+        cell, arm, seed, rep, rc, wall, drv, cli, srv = a[:9]
+        cot = a[9] if len(a) > 9 else 0
+        sha = a[10] if len(a) > 10 else None
         os.environ.setdefault("LD_PLAN", plan_id)
         try:
             r = row_of(plan_id, cell, arm, seed, rep, rc, wall, lc.read(drv), lc.read(cli), lc.read(srv), cot, sha)
