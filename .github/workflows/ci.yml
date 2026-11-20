@@ -81,8 +81,8 @@ jobs:
       - name: determinism repeat (temporary, sim-engine branch only)
         if: github.ref == 'refs/heads/sim-engine'
         run: |
-          for i in $(seq 1 25); do
+          for i in $(seq 1 30); do
             cargo test -q -p raptorpath --features sim,test-seams --test sim_determinism same_seed 2>&1 | tail -3 | tee -a rep.log
           done
-          ok=$(grep -c 'test result: ok' rep.log); echo "determinism repeat: $ok/25 runs ok (2 same-seed pairs each)" | tee -a "$GITHUB_STEP_SUMMARY"
-          [ "$ok" = 25 ]
+          ok=$(grep -c 'test result: ok' rep.log); echo "determinism repeat: $ok/30 runs ok (2 same-seed pairs each)" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$ok" = 30 ]

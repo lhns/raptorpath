@@ -3,6 +3,8 @@ name: nightly
 on:
   schedule:
     - cron: "17 3 * * *"
+  push:
+    branches: [sim-engine]  # temporary: pre-merge full suites for sim-engine
   workflow_dispatch:
     inputs:
       repeats:
@@ -25,6 +27,7 @@ jobs:
           - { name: doc, cmd: "cargo test --doc -p raptorpath --release" }
           - { name: debug, cmd: "cargo test -p raptorpath --no-fail-fast -- --test-threads=2" }
           - { name: seams, cmd: "cargo test -p raptorpath --release --features test-seams --test f2_unframable_closes --test f2_mixed_symbol_size --test f2_realtime_packed -- --test-threads=1" }
+          - { name: check-all-targets, cmd: "cargo check --workspace --all-targets" }
           - { name: wasm-core, cmd: "cargo test -p raptorpath-wasm && cargo test -p raptorpath-core" }
     steps:
       - uses: actions/checkout@v4.2.2
