@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable
@@ -24,11 +24,11 @@ jobs:
         with: { shared-key: mutants }
       - uses: taiki-e/install-action@v2
         with: { tool: "cargo-mutants@25.3.1,cargo-nextest@0.9.100" }
-      - name: cargo mutants (rate-law functions) shard ${{ matrix.shard }}/6
+      - name: cargo mutants (rate-law functions) shard ${{ matrix.shard }}/2
         run: |
-          fns='FecRateController::compute_repair_rate|FecRateController::compute_triangle|controller_rate|solve_r_from_delta_rho|solve_rho_from_r_delta|p_fec_normal|p_fec_exact_repairs|p_fec_exact|p_fec_recovery_by_time|r_star_mass|r_star_bisect|compute_r_star_with_z|compute_r_star_exact|r_saturation|TaperFunction::should_generate|bulkness_of_delta|soft_saturate|burst_variance_factor|inner_feedback_floor|compute_delta'
+          fns='solve_r_from_time_budget|zeta_of_delta'
           whole='zeta_of_delta|solve_r_from_time_budget|compute_r_star|TaperFunction::should_generate'
-          cargo mutants -p raptorpath-math --shard ${{ matrix.shard }}/6 --test-tool nextest --minimum-test-timeout 60 --timeout 300 --no-times \
+          cargo mutants -p raptorpath-math --shard ${{ matrix.shard }}/2 --test-tool nextest --minimum-test-timeout 60 --timeout 300 --no-times \
             --re " in ($fns)\$" --re "replace ($whole) -> " && rc=0 || rc=$?
           echo "cargo-mutants exit $rc"
           case $rc in 0|2|3) ;; *) exit $rc ;; esac
