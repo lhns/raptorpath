@@ -1,6 +1,6 @@
 # ADR-0082: A deterministic simulation of both peers, with the virtual link under quinn
 
-## Status: Proposed (2026-11-20). Plan: `docs/derivations/test-detection-plan.md` S8.
+## Status: Accepted (owner decision 2026-11-20, on Fable's review; conditioned on main's CI green with all four sim merges in, at 680d5aa7 and 8276ee39). Phase 1 implemented; phase 2 (Gilbert-Elliott and Weibull links, a CPU-cost model) not implemented. Plan: `docs/derivations/test-detection-plan.md` S8.
 
 ## Context
 
@@ -14,9 +14,15 @@
 
 1. **One engine clock function** returning `tokio::time::Instant::now().into_std()` replaces every direct `Instant::now()` read and the `now_us()` base. Without tokio's `test-util` feature that call is `std::time::Instant::now()`, so release behaviour is unchanged. The proof ladder applies: hashes, then the decision pins, then the ns bench, then the guard unless waived.
 2. **The simulator runs both peers in one process** (`perf::server`, `perf::client`) on a current-thread tokio runtime with paused time, with an in-memory `AsyncUdpSocket` given to quinn through a `Runtime` wrapper. The L0 shim's link model (rate, delay, jitter, GE, Weibull bursts) moves under the socket, seeded.
-3. **The oracle** is ADR-0081's account plus the per-seq `test-seams` trace.
+3. **The oracle** is the recovery account of ADR-0081, as amended by ADR-0084, plus the per-seq `test-seams` trace. The account is not on main yet (branch `recovery-counters`).
 4. **Not turmoil, not `scheduler::Clock`.** turmoil has no quinn socket and does not own time for quinn. `MockClock` moves reads but not tokio's timers. The wasm sim is a model and drives no engine code.
-5. **Simulator code is test-only** (`test-seams` or `cfg(test)`). Only the clock function is in the release binary.
+5. **Simulator code is behind the `sim` cargo feature**, never in the release binary. In the release binary there are only pass-through seams. These are the clock function, the `clock.rs` hooks called from `transport/quic.rs` (certificate and client config), and `shutdown_signal`'s cfg split, whose sim-only body is not compiled into release.
+6. **Determinism rules.**
+   - One seeded RNG for the engine and the link.
+   - Ordered maps where iteration order reaches behaviour under `sim`.
+   - `--cfg tokio_unstable` in sim builds only, for a seeded `select!` order.
+   - quinn's connection ids, stateless-reset key and initial dcid seeded through its public config hooks, and a fixed certificate key.
+   - No port or OS value as an RNG input.
 
 ## Consequences
 
@@ -27,6 +33,6 @@
   - Sim builds may order maps differently from the product, so product iteration-order bugs are invisible to it.
   - It has no CPU or backpressure cost model yet, so an unpaced source runs at infinite speed.
   - It is fast for stalls only; bulk transfers run at about 1.9 x real time.
-- **The release binary stays byte-identical to a tree without the sim.** This is a standing CI gate, not a one-time reading: `binid` runs on every push touching the sim, clock, seam or account code or the crate manifest, and a diff that means to change the binary must say so.
+- **The release binary stays byte-identical to a tree without the sim.** Today it is proven per merge with the `binid` workflow. A standing gate, running on every push that touches the sim, clock, seam or account code or the crate manifest, is owed on branch `ci-gates`.
 - **A green simulation test does not replace the VM guard** for anything timing- or load-dependent.
 - Fidelity: no kernel stack (GSO, receive buffer, real pacing). Claims about those stay L1's.
