@@ -109,6 +109,17 @@ case "$1" in
       *" framing_ns "*)      # plan 64's rehearsal: one run of the framing bench per call, the STUB_BENCH_DIR blocks b1..b3 in rotation
         n=$(cat "$STUB_BENCH_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_BENCH_DIR/n"
         cat "$STUB_BENCH_DIR/b$(( (n - 1) % 3 + 1 )).txt" ;;
+      *" -p raptorpath-math "*)      # the main suite call. STUB_FLAKE=<test>: it fails once; the solo re-run (`-- <test> --exact`, the default branch below) passes: the ADR-0080 flake
+        case " $* " in
+          *" --exact "*) ;;
+          *) [ -n "${STUB_FLAKE:-}" ] && { echo "test $STUB_FLAKE ... FAILED"; echo "test result: FAILED. 0 passed; 1 failed; 0 ignored"; exit 101; } ;;
+        esac
+        echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+        seen=0
+        for a in "$@"; do
+          [ "$seen" = 1 ] && case "$a" in -*) ;; *) echo "test $a ... ok" ;; esac
+          [ "$a" = "--" ] && seen=1
+        done ;;
       *) echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
           seen=0      # plan 51's dial pins name their tests after `--`: one `test <name> ... ok` line each (STUB_FAIL_PIN: that one FAILS; STUB_SKIP_PIN: that one prints nothing, a filter that matched no test)
           for a in "$@"; do
@@ -242,9 +253,12 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
     for f in os.listdir(sl_src):
         if f.endswith((".py", ".log")):
             shutil.copyfile(os.path.join(sl_src, f), os.path.join(sl_dst, f))
+    ci_dir = os.path.join(sb["repo"], "tools", "ci")      # the suites' flake rule (ADR-0080): run_suites calls tools/ci/flake_rule.py against raptorpath/tests/quarantine.txt
+    os.makedirs(ci_dir, exist_ok=True)
+    shutil.copyfile(os.path.join(HERE, "..", "ci", "flake_rule.py"), os.path.join(ci_dir, "flake_rule.py"))
     if not FULL:
         shrink(tools)
-    tree = {"raptorpath/src/lib.rs": src_text, "raptorpath/src/b.rs": "// b\n", "raptorpath/tests/t.rs": "// t\n",
+    tree = {"raptorpath/tests/quarantine.txt": "# the quarantine list: empty\n", "raptorpath/src/lib.rs": src_text, "raptorpath/src/b.rs": "// b\n", "raptorpath/tests/t.rs": "// t\n",
             "Cargo.toml": "[workspace]\n", "Cargo.lock": "# lock\n", "raptorpath-math/src/lib.rs": "// math\n", "raptorpath-core/src/lib.rs": "// core\n", "raptorpath-wasm/src/lib.rs": "// wasm\n",
             "gf256/src/lib.rs": "// gf",
             "vendor/quinn-proto/Cargo.toml": "[package]\n", "vendor/quinn-proto/src/lib.rs": "// vendored\n"}
@@ -351,6 +365,37 @@ def extra_mismatch(rel):
         EXTRA_DONE.add(rel)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+FLAKE_TEST = "stub::flaky_one"
+EXTRA_FLAKE = ("flake-not-quarantined", "flake-quarantined")
+FLAKE_DONE = set()
+
+
+def extra_flake(kind):
+    """ADR-0080 in run_suites (plan 48 launch, no suite reuse): the main suite fails once and passes its solo re-run.
+    flake-not-quarantined: still a failure -> ABORT-TESTS, FAILED-ALL, rc 5, nothing measured (the old rule called it ok).
+    flake-quarantined (control): the test is on quarantine.txt -> QUARANTINED on record, the session completes."""
+    tag = "48/" + kind
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        edits = {"raptorpath/tests/quarantine.txt": "%s | stub owner | stub reason\n" % FLAKE_TEST} if kind == "flake-quarantined" else None
+        sb = make_sandbox(root, "48", BASE_SHA, edits=edits)
+        rc, out, rows, cargo = run_launch(sb, "48", BASE_SHA, extra_env={"STUB_FLAKE": FLAKE_TEST})
+        tt = open(os.path.join(sb["root"], "run", "suites", "TESTS.txt"), errors="replace").read()
+        failed = os.path.exists(os.path.join(sb["root"], "run", "FAILED-ALL"))
+        reruns = [c for c in cargo if "|test " in c and "--exact" in c]
+        check(f"{tag}: the flaky test failed once and passed its solo re-run (FLAKE on record, one re-run)", f"FLAKE main {FLAKE_TEST}" in tt and len(reruns) == 1, (tt, reruns))
+        if kind == "flake-not-quarantined":
+            check(f"{tag}: a pass on the re-run no longer excuses it: FLAKE-FAILURE, TESTS-FAIL, ABORT-TESTS, FAILED-ALL, rc 5, no row measured",
+                  f"FLAKE-FAILURE main {FLAKE_TEST}" in tt and "QUARANTINED" not in tt and os.path.exists(os.path.join(sb["root"], "run", "suites", "TESTS-FAIL")) and not os.path.exists(os.path.join(sb["root"], "run", "suites", "TESTS-OK"))
+                  and rc == 5 and "ABORT-TESTS" in era(sb) and failed and rows == [] and "LD-ALL-DONE" not in out, (rc, tt, tail(out)))
+        else:
+            check(f"{tag}: on the quarantine list the same failure is QUARANTINED, not a suite failure: TESTS-OK, the session completes (LD-ALL-DONE, rc 0)",
+                  f"QUARANTINED main {FLAKE_TEST} (FLAKE-FAILURE, on the quarantine list)" in tt and os.path.exists(os.path.join(sb["root"], "run", "suites", "TESTS-OK")) and rc == 0 and "LD-ALL-DONE" in out and not failed, (rc, tt, tail(out)))
+        FLAKE_DONE.add(kind)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
 
 def check53(tag, path, run_dir):
     """Plan 53's own assertions on a stub run: its table, binaries, env and ledger, the rehearsal criteria it prints, and that no guard exists."""
@@ -2914,7 +2959,8 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
             jobs.append(ex.submit(red51, kind, crit))
     for j in jobs:
         j.result()
-    jobs = [ex.submit(timed, p, v) for p, v in phase2 if want(f"{p}/{v}")]
+    jobs = [ex.submit(extra_flake, k) for k in EXTRA_FLAKE if want("48/" + k)]
+    jobs += [ex.submit(timed, p, v) for p, v in phase2 if want(f"{p}/{v}")]
     jobs += [ex.submit(extra_mismatch, rel) for rel in EXTRA_MISMATCH if SUITES_DIR.get("prior") and want("mismatch:" + rel)]
     for j in jobs:
         j.result()
@@ -2930,6 +2976,7 @@ if not only:
     wanted = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
     check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == wanted, (wanted ^ EXECUTED))
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
+    check("ADR-0080's flake rule runs in run_suites: a flake outside quarantine.txt aborts (flake-not-quarantined), one on it is recorded and passes (flake-quarantined)", FLAKE_DONE == set(EXTRA_FLAKE), set(EXTRA_FLAKE) ^ FLAKE_DONE)
     check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65, whose reuse is the reference manifest or none)",
           set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65"})
 print("FAILED %d" % fails if fails else "ALL OK")
