@@ -17,7 +17,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: debug }
-      - run: cargo test -p raptorpath --lib gates
+      - run: cargo test -p raptorpath --lib config_round_trip
   math-core:
     runs-on: ubuntu-24.04
     steps:
