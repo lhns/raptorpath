@@ -1,0 +1,45 @@
+# TEMPORARY (branch mutant-triage-rate only): the S6 mutants job restricted to the
+# rate-law functions, to check the new tests kill what the triage says they kill.
+name: mutants-rate
+on:
+  push:
+    branches: [mutant-triage-rate]
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+permissions:
+  contents: read
+jobs:
+  shard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: mutants }
+      - uses: taiki-e/install-action@v2
+        with: { tool: "cargo-mutants@25.3.1,cargo-nextest@0.9.100" }
+      - name: cargo mutants (rate-law functions) shard ${{ matrix.shard }}/6
+        run: |
+          fns='FecRateController::compute_repair_rate|FecRateController::compute_triangle|controller_rate|solve_r_from_delta_rho|solve_rho_from_r_delta|p_fec_normal|p_fec_exact_repairs|p_fec_exact|p_fec_recovery_by_time|r_star_mass|r_star_bisect|compute_r_star_with_z|compute_r_star_exact|r_saturation|TaperFunction::should_generate|bulkness_of_delta|soft_saturate|burst_variance_factor|inner_feedback_floor|compute_delta'
+          whole='zeta_of_delta|solve_r_from_time_budget|compute_r_star|TaperFunction::should_generate'
+          cargo mutants -p raptorpath-math --shard ${{ matrix.shard }}/6 --test-tool nextest --minimum-test-timeout 60 --timeout 300 --no-times \
+            --re " in ($fns)\$" --re "replace ($whole) -> " && rc=0 || rc=$?
+          echo "cargo-mutants exit $rc"
+          case $rc in 0|2|3) ;; *) exit $rc ;; esac
+          python3 -c "import json; o=json.load(open('mutants.out/outcomes.json')); print({k:o[k] for k in o if k!='outcomes'})"
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: rate-shard-${{ matrix.shard }}
+          path: |
+            mutants.out/missed.txt
+            mutants.out/caught.txt
+            mutants.out/timeout.txt
+            mutants.out/unviable.txt
+            mutants.out/outcomes.json
