@@ -2452,7 +2452,7 @@ has not yet passed, net of SACK-released ones, reach the pooled cap":
 - cwnd_full: `∀ i ∈ live: in_flightᵢ ≥ cwndᵢ`, the per-path gate, unarmed by
   default and untouched.
 
-At ρ = 1 on the plain arm the store holds exactly (F, H], so O equals
+At ρ = 1 on the plain arm the store holds exactly [F, H], so O equals
 today's `store_len` and the bound is the one above; a per-tick equality pin
 is owed with the engine change. At ρ < 1 it is the first outstanding bound
 the evicting seat has had. The frontier there also advances by hold expiry

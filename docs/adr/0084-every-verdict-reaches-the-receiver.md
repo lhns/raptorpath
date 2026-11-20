@@ -22,7 +22,7 @@ The shed budget does not read ρ: the engine runs `budget = R`, which is cold, f
 
 7. **Smaller defaults.** D keeps the EWMA RTT until a battery reads the derived RTprop form; both are computed and their ratio logged (derivation question 7). SACK release stays reliable-only, the cwnd brake stays unarmed, and the budget stays cumulative (questions 8–10).
 8. **Superseded in part:**
-   - **ADR-0064 decision 3:** the budget operand `ε̂·(1 − P_fec)` with the cumulative shed count becomes `Ab` against 1 − ρ, and "compiled out at ρ = 1" becomes "budget 0 at ρ = 1". The law's form (age > D(δ) within a 1 − ρ budget, past-budget candidates served) stays.
+   - **ADR-0064 decision 3:** the budget operand `ε̂·(1 − P_fec)` with the cumulative shed count becomes `Ab` against 1 − ρ, and at ρ = 1 nothing is shed because the budget is 0; whether `shed_armed`'s seat read goes is left to the engine change. The law's form (age > D(δ) within a 1 − ρ budget, past-budget candidates served) stays.
    - **ADR-0079 Amendment 1:** a below-window blocker is no longer "judged by no sender path"; a shed now reaches the receiver; the shared budget now reads ρ. Its merge hold on `s06-delete` is unchanged.
    - **ADR-0081's identity** becomes `S_sent = A + H + E + |U|` (`O_strand ≡ 0` by construction), with a verdict seq staying in its term after a later ack, and abandonment counted at the receiver, not as `H + E`. This also supersedes the `E` term of `test-detection-plan.md` §7 answer 5.
    - **The 2026-11-14 owner decision** `budget = min(1 − ρ, R)`.
@@ -30,10 +30,10 @@ The shed budget does not read ρ: the engine runs `budget = R`, which is cold, f
 
 ## Consequences
 
-- The lost tail resolves: every abandoned seq is passed by the receiver within a sweep-bounded time, and the account closes with `|U| = 0` at every ρ.
+- The lost tail resolves: every abandoned seq is passed by the receiver within one sweep plus the hold per delivered floor (the repeat is bounded in rate, not in count), and the account closes with `|U| = 0` at every ρ.
 - Realtime keeps δ-honest shedding through its declared ρ; without the declaration its budget would be 0.
 - Costs at ρ < 1: one refcount increment and ring insert per source symbol (payloads are shared `Bytes`), resident memory up to the cap B, and floor repeats at most `|channel_paths|` datagrams per `TAIL_SWEEP_MIN_US`.
 - On real links B sits at its N·2048 ceiling (ledger F01, PINNED), so the bound acts as a constant outstanding cap until the store law's time form lands. Its bind gauge is reported at ρ < 1.
 - A step at ρ = 1 remains on the receiver: the reorder buffer never passes a hole at ρ = 1 and gives up on its ε̂_recv budget below it. A receiver law with ρ is a separate derivation (question 5), bounded meanwhile by a record-only step test.
-- ADR-0078 and the receiver-timestamp plans (status §42, §43; roadmap `rec-framing-followups`) gave v11 to the receiver-timestamp field. That field moves to the next bump after this one.
+- ADR-0078 and the receiver-timestamp plans (status §42, §43; roadmap `rec-framing-followups`) gave v11 to the receiver-timestamp field. It needs a later version; which one is the coordinator's to confirm.
 - The engine change touches the store fill, the serve, the clamp bounds, the intake pause, the sweep arming, the receiver reorder buffer and the wire; it is a behaviour change at ρ < 1 and rides a guard batch. Its tests are the derivation's §6 (T1–T8), red first.
