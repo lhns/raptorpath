@@ -4,8 +4,9 @@
 //! `now_us` base, the test seams' env) are process-global. A parent test
 //! therefore re-runs its own test binary as a child (`child` test, gated on
 //! `SIM_CHILD`), one child at a time, and reads back the child's trace file
-//! and log. Each scenario gets its own server port: the real socket is
-//! still bound (never polled) under the sim socket.
+//! and log. Each concurrent scenario needs its own server port: the real
+//! socket is still bound (never polled) under the sim socket. The port is
+//! not an input of the run (the link streams are keyed by server index).
 #![allow(dead_code, unexpected_cfgs)]
 
 #[cfg(not(tokio_unstable))]

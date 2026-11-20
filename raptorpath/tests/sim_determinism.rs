@@ -1,7 +1,8 @@
 //! The simulation is deterministic: the same seed gives a byte-identical
 //! socket trace and engine log in separate processes, on one path and on
 //! two (hash order bit only at N >= 2, sim-spike.md blocker 3); a different
-//! seed gives a different trace. Run with
+//! seed gives a different trace; the server port is not an input (the same
+//! seed on two ports gives the same trace, port numbers aside). Run with
 //! `RUSTFLAGS="--cfg tokio_unstable" cargo test -p raptorpath --features sim,test-seams --test sim_determinism`.
 
 mod sim_support;
@@ -44,6 +45,52 @@ fn same_seed_twice(paths: u16, port: u16) {
         b.wall_s,
         c.wall_s
     );
+}
+
+/// `s` with every whole number equal to a server port (`ports`) replaced by
+/// its index: traces and logs print the real server address.
+fn unport(s: &str, ports: &[u16]) -> String {
+    let mut out = String::with_capacity(s.len());
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_digit() {
+            let j = i + b[i..].iter().take_while(|c| c.is_ascii_digit()).count();
+            let tok = &s[i..j];
+            match ports.iter().position(|p| p.to_string() == tok) {
+                Some(k) => out.push_str(&format!("SRV{k}")),
+                None => out.push_str(tok),
+            }
+            i = j;
+        } else {
+            let c = s[i..].chars().next().unwrap();
+            out.push(c);
+            i += c.len_utf8();
+        }
+    }
+    out
+}
+
+/// The server port is not a scenario input: the same seed on two ports
+/// gives the same trace and log once the port numbers are masked. (The link
+/// RNG streams used to be keyed by the port, so a port change redrew every
+/// loss and jitter sample from the first datagram on.)
+fn same_seed_two_ports(paths: u16, p1: u16, p2: u16) {
+    let ports = |p: u16| (p..p + paths).collect::<Vec<_>>();
+    let mask = |r: ChildRun, p: u16| ChildRun { trace: unport(&r.trace, &ports(p)), log: unport(&r.log, &ports(p)), ..r };
+    let a = mask(run(&Scenario::basic(5, paths, p1)), p1);
+    let b = mask(run(&Scenario::basic(5, paths, p2)), p2);
+    assert_same(&a, &b, &format!("{paths} path(s), seed 5, ports {p1} and {p2}"));
+}
+
+#[test]
+fn same_seed_two_ports_same_trace_one_path() {
+    same_seed_two_ports(1, 47_130, 47_131);
+}
+
+#[test]
+fn same_seed_two_ports_same_trace_two_paths() {
+    same_seed_two_ports(2, 47_140, 47_150);
 }
 
 #[test]
