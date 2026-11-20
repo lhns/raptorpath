@@ -733,9 +733,10 @@ run_suites() {
     grep -a -E '^test .* FAILED$|^---- ' "$SD/test-$name.log" | head -40 >> "$SD/TESTS.txt"
     era "LD-ALL test $name rc=$rc $sum"
     [ "$rc" = "0" ] && return 0
-    # The pre-registered flake rule: a failure that passes on an immediate solo
-    # re-run of that test alone is FLAKE; any other is REAL.
-    local real=0 t
+    # ADR-0080's flake rule (as tools/l1/suites_run.sh): a failure is a failure. The solo re-run only
+    # classifies it, FLAKE (passed again) or REAL; both fail the suite unless the test is on
+    # raptorpath/tests/quarantine.txt (tools/ci/flake_rule.py).
+    local real=0 t kind
     if ! grep -aq -E '^test .* FAILED$' "$SD/test-$name.log"; then
       echo "REAL-FAILURE $name rc=$rc with no failing test named (build error?)" >> "$SD/TESTS.txt"
       return 1
@@ -744,11 +745,16 @@ run_suites() {
       local base=("$@")
       local cmd=() a seen=0
       for a in "${base[@]}"; do [ "$a" = "--" ] && seen=1; [ "$seen" = "0" ] && cmd+=("$a"); done
-      if ( cd "$REPO" && CARGO_TARGET_DIR="$TT" "${cmd[@]}" -- "$t" --exact --test-threads=1 ) > "$SD/test-$name-rerun.log" 2>&1 \
-          && grep -aq "^test $t ... ok" "$SD/test-$name-rerun.log"; then
+      if ( cd "$REPO" && CARGO_TARGET_DIR="$TT" "${cmd[@]}" -- "$t" --exact --test-threads=1 ) > "$SD/test-$name-rerun.log" 2>&1           && grep -aq "^test $t ... ok" "$SD/test-$name-rerun.log"; then
         echo "FLAKE $name $t (passed on the immediate solo re-run)" >> "$SD/TESTS.txt"
+        kind=FLAKE-FAILURE
       else
-        echo "REAL-FAILURE $name $t" >> "$SD/TESTS.txt"
+        kind=REAL-FAILURE
+      fi
+      if python3 "$REPO/tools/ci/flake_rule.py" --quarantine "$REPO/raptorpath/tests/quarantine.txt" --check "$t"; then
+        echo "QUARANTINED $name $t ($kind, on the quarantine list)" >> "$SD/TESTS.txt"
+      else
+        echo "$kind $name $t" >> "$SD/TESTS.txt"
         real=1
       fi
     done

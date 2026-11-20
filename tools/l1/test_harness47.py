@@ -274,8 +274,10 @@ check("battery: plan 41c = 96-row table, smoke 2, the candidate must lack RWM_PL
 i_suites, i_guard, i_p46 = runall.index('SD="$RUN/suites"; mkdir -p "$SD"\n  suites_stage\n'), runall.index("stage guard 41c"), runall.index("stage p46 46")
 check("run_all plan 47: suites on CAND's tree first, then the guard (41c), then plan 46; each in its own subdir (suites/, guard/, p46/)",
       i_suites < i_guard < i_p46 and 'SD="$RUN/suites"' in runall and 'dir="$RUN/$1"' in runall and "stage guard 41c" in runall and "stage p46 46" in runall)
-check("run_all plan 47: a REAL suite failure is ABORT-TESTS before anything else runs; the FLAKE rule is the existing tst; all tools/l1 python tests run",
-      'else run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"; fi' in runall and "FLAKE $name $t" in runall and '[ "$PLAN" = "41" ] || [ "$PLAN" = "47" ]' in runall
+check("run_all plan 47: a suite failure is ABORT-TESTS before anything else runs unless the test is quarantined (ADR-0080: a pass on the solo re-run only classifies it FLAKE, it no longer excuses it); all tools/l1 python tests run",
+      'else run_suites || fail_all "ABORT-TESTS ($SD/TESTS.txt)"; fi' in runall and "FLAKE $name $t" in runall and "kind=FLAKE-FAILURE" in runall and "kind=REAL-FAILURE" in runall
+      and 'tools/ci/flake_rule.py" --quarantine "$REPO/raptorpath/tests/quarantine.txt" --check "$t"' in runall and 'echo "QUARANTINED $name $t' in runall and "The pre-registered flake rule" not in runall
+      and '[ "$PLAN" = "41" ] || [ "$PLAN" = "47" ]' in runall
       and "test_*.py" in runall and 'tst doc' in runall and 'tst wasm' in runall and 'tst debug-witness' in runall and 'tst main' in runall)
 check("run_all plan 47: a failed guard VERDICT does not stop plan 46 (only a stage that cannot run does); budget checked before each battery",
       "stage guard did not complete" in runall and 'if [ "$bto" -lt 1800 ]' in runall and "ABORT-INJECT stage" in runall)
