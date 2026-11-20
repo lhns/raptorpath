@@ -973,6 +973,7 @@ def stub_bin_file(sb):
             "# RWM_SUCC_DUMP RWM_EMIT_BURST\n# RWM_DELTA\n# emission batching ACTIVE\n# emission batching out of scope\n# RWM_PERF_RATE_MBIT\n# spc=\n# offered-load pacing ACTIVE\nexit 0\n")
     with open(path, "w", newline="\n") as fh:
         fh.write(body)
+    os.chmod(path, 0o755)      # the script's `[ -x ]` check: a Windows host passes any file, Linux needs the bit
     return path, hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -2452,6 +2453,7 @@ def stub_bin_pair(sb):
         text = body % name
         with open(path, "w", newline="\n") as fh:
             fh.write(text)
+        os.chmod(path, 0o755)
         out.append((path, hashlib.sha256(text.encode()).hexdigest()))
     return out[0], out[1]
 
