@@ -792,11 +792,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             // seqs are gone. RETAIN: the sent-data store serves ANY
             // un-acked seq (targeted ARQ for holes that aged out of
             // the FEC horizon), so gaps are not clamped to the window.
-            let (clamped_start, clamped_end) = if reliable {
-                (gap_start, gap_end)
-            } else {
-                (gap_start.max(win_start), gap_end.min(win_end))
-            };
+            let (clamped_start, clamped_end) = gap_clamp(
+                reliable, gap_start, gap_end,
+                win_start,
+                win_end,
+            );
             if clamped_start > clamped_end { #[cfg(feature = "test-seams")] crate::test_seams::on_gap_clamped(gap_start, gap_end, win_start, win_end);
                 continue;
             }
@@ -1448,4 +1448,16 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
     *prev_ack_cell = prev_ack;
     *c8c_last_ack_adv_us_cell = c8c_last_ack_adv_us;
     *nack_repairs_this_period_cell = nack_repairs_this_period;
+}
+
+/// The gap clamp (EVICT: only the coding window can serve a gap; RETAIN: the
+/// store serves any un-acked seq). Read by the recovery account (ADR-0081) as
+/// its clamp bound, so the account and the server cannot disagree.
+#[inline(always)]
+pub(crate) fn gap_clamp(reliable: bool, gap_start: u64, gap_end: u64, win_start: u64, win_end: u64) -> (u64, u64) {
+    if reliable {
+        (gap_start, gap_end)
+    } else {
+        (gap_start.max(win_start), gap_end.min(win_end))
+    }
 }
