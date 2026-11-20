@@ -663,7 +663,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         }
         if cached_max_repairs == 0 || cached_nack_budget == 0 {
             // Fully suppressed or budget exhausted — drain NACK queue
-            dg.diag_gaps_dropped += 1; #[cfg(any(debug_assertions, feature = "test-seams"))] { if matches!(gap_cause, FireCause::Timer) { st.acct.on_sweep_served(0); } }
+            dg.diag_gaps_dropped += 1; #[cfg(any(debug_assertions, feature = "test-seams"))] { if matches!(gap_cause, FireCause::Timer) { st.acct.on_sweep_dropped(); } }
             continue;
         }
         // Was this batch's snapshot older than the newest dequeued one?
@@ -757,7 +757,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         };
 
         let (win_start, win_end) = st.encoder.window_span();
-        let mut retransmitted: u64 = 0;
+        let mut retransmitted: u64 = 0; #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.batch_excl = 0; }
         let mut nacked_count: u64 = 0;
         if pol.diag_on {
             dg.mpd_gap_reports += 1;
@@ -792,12 +792,12 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             // seqs are gone. RETAIN: the sent-data store serves ANY
             // un-acked seq (targeted ARQ for holes that aged out of
             // the FEC horizon), so gaps are not clamped to the window.
-            let (clamped_start, clamped_end) = gap_clamp(
+            let (clamped_start, clamped_end) = gap_clamp!(
                 reliable, gap_start, gap_end,
                 win_start,
                 win_end,
             ); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.clamp_evals += 1; }
-            if clamped_start > clamped_end { #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.clamp_excl += 1; } #[cfg(feature = "test-seams")] crate::test_seams::on_gap_clamped(gap_start, gap_end, win_start, win_end);
+            if clamped_start > clamped_end { #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.clamp_excl += 1; st.acct.batch_excl += 1; } #[cfg(feature = "test-seams")] crate::test_seams::on_gap_clamped(gap_start, gap_end, win_start, win_end);
                 continue;
             }
             nacked_count += clamped_end - clamped_start + 1;
@@ -1451,13 +1451,18 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
 }
 
 /// The gap clamp (EVICT: only the coding window can serve a gap; RETAIN: the
-/// store serves any un-acked seq). Read by the recovery account (ADR-0081) as
-/// its clamp bound, so the account and the server cannot disagree.
-#[inline(always)]
-pub(crate) fn gap_clamp(reliable: bool, gap_start: u64, gap_end: u64, win_start: u64, win_end: u64) -> (u64, u64) {
-    if reliable {
-        (gap_start, gap_end)
-    } else {
-        (gap_start.max(win_start), gap_end.min(win_end))
-    }
+/// store serves any un-acked seq). A macro, not a function, so the release
+/// code generation of `serve_gaps` is exactly the inline `if` it replaced (a
+/// function moved `.text`, binid run 44725880856). The recovery account reads
+/// its clamp bound through it (`account::clamp_lo`), so it and the server
+/// cannot disagree.
+macro_rules! gap_clamp {
+    ($reliable:expr, $gap_start:expr, $gap_end:expr, $win_start:expr, $win_end:expr $(,)?) => {
+        if $reliable {
+            ($gap_start, $gap_end)
+        } else {
+            ($gap_start.max($win_start), $gap_end.min($win_end))
+        }
+    };
 }
+pub(crate) use gap_clamp;

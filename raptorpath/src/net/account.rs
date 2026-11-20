@@ -32,7 +32,7 @@ use super::seq_ring::SeqRing;
 /// function the server calls, so the two cannot disagree.
 #[inline]
 pub(crate) fn clamp_lo(reliable: bool, win_start: u64) -> u64 {
-    gap_clamp(reliable, 0, u64::MAX, win_start, u64::MAX).0
+    gap_clamp!(reliable, 0u64, u64::MAX, win_start, u64::MAX).0
 }
 
 /// The retransmit buffer the account reads.
@@ -56,6 +56,8 @@ pub(crate) struct Account {
     pub evict_floor: u64,
     /// High-water mark of the buffer length, against `store_cap`.
     pub o_hwm: u64,
+    /// The effective store cap in force when `o_hwm` last rose.
+    pub cap_at_hwm: u64,
     /// The effective store cap at the last loop iteration.
     pub store_cap: u64,
     /// Highest live 1 − ρ budget fraction seen.
@@ -69,7 +71,13 @@ pub(crate) struct Account {
     /// Tail-sweep fires, the ones whose gap produced zero sends, and how many
     /// consecutive sweeps found the same oldest un-acked seq (now / worst).
     pub sweeps: u64,
+    /// Sweeps that sent nothing, for any reason (budget, cooldown, clamp).
+    pub sweeps_nosend: u64,
+    /// The stuck ones: nothing sent AND the clamp excluded a gap of the batch
+    /// (the sweep re-targeted a seq the server cannot reach).
     pub inert_sweeps: u64,
+    /// Clamp exclusions in the batch being served (reset per batch).
+    pub batch_excl: u64,
     pub oldest_unchanged: u64,
     pub oldest_unchanged_max: u64,
     last_sweep_oldest: Option<u64>,
@@ -104,7 +112,10 @@ impl Account {
     /// A source seq entered the buffer.
     pub fn on_sent(&mut self, buf: &Buf) {
         self.sent += 1;
-        self.o_hwm = self.o_hwm.max(buf.len() as u64);
+        if buf.len() as u64 > self.o_hwm {
+            self.o_hwm = buf.len() as u64;
+            self.cap_at_hwm = self.store_cap;
+        }
     }
 
     /// The coding window moved (or is about to): raise the evicted floor.
@@ -148,11 +159,20 @@ impl Account {
         self.last_sweep_oldest = Some(oldest);
     }
 
-    /// A sweep batch was served; `sends` is what it produced.
+    /// A sweep batch was served; `sends` is what it produced. Inert = it sent
+    /// nothing and the clamp excluded a gap of this batch.
     pub fn on_sweep_served(&mut self, sends: u64) {
         if sends == 0 {
-            self.inert_sweeps += 1;
+            self.sweeps_nosend += 1;
+            if self.batch_excl > 0 {
+                self.inert_sweeps += 1;
+            }
         }
+    }
+
+    /// A sweep batch was dropped before the gap loop (no repair budget).
+    pub fn on_sweep_dropped(&mut self) {
+        self.sweeps_nosend += 1;
     }
 
     pub fn read(&self, buf: &Buf, win_start: u64) -> Reading {
@@ -173,8 +193,8 @@ impl Account {
         let r = self.read(buf, win_start);
         format!(
             "[ACCT] S_sent={} A={} H={} E={} O_serv={} O_strand={} closes={} \
-             inert_sweeps={} sweeps={} oldest_unchanged={} oldest_unchanged_max={} \
-             O_hwm={} store_cap={} bud={:.6} shed_slot={} shed_nack={} \
+             inert_sweeps={} sweeps_nosend={} sweeps={} oldest_unchanged={} oldest_unchanged_max={} \
+             O_hwm={} cap_at_hwm={} store_cap={} bud={:.6} shed_slot={} shed_nack={} \
              shed_visit_slot={} shed_visit_nack={} clamp_evals={} clamp_excl={}{}",
             r.sent,
             r.a,
@@ -184,10 +204,12 @@ impl Account {
             r.o_strand,
             u8::from(r.closes()),
             self.inert_sweeps,
+            self.sweeps_nosend,
             self.sweeps,
             self.oldest_unchanged,
             self.oldest_unchanged_max,
             self.o_hwm,
+            self.cap_at_hwm,
             self.store_cap,
             self.bud_max,
             self.shed_slot,

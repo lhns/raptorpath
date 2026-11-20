@@ -6640,7 +6640,7 @@ mod account_arith {
     fn clamp_lo_is_the_lower_bound_of_gap_clamp() {
         for reliable in [true, false] {
             for (gs, ge, ws, we) in [(0, 5, 10, 20), (5, 15, 10, 20), (12, 14, 10, 20), (15, 30, 10, 20), (0, 0, 0, 0)] {
-                let (cs, _) = gap_clamp(reliable, gs, ge, ws, we);
+                let (cs, _) = gap_clamp!(reliable, gs, ge, ws, we);
                 assert_eq!(cs, gs.max(clamp_lo(reliable, ws)), "reliable={reliable} gap=({gs},{ge}) win=({ws},{we})");
             }
         }
@@ -6709,9 +6709,13 @@ mod account_arith {
         assert_eq!((a.sweeps, a.oldest_unchanged, a.oldest_unchanged_max), (3, 2, 2));
         a.on_sweep(8);
         assert_eq!((a.oldest_unchanged, a.oldest_unchanged_max), (0, 2));
-        a.on_sweep_served(0);
+        a.on_sweep_served(0); // sent nothing, nothing clamped: a no-send, not inert
+        assert_eq!((a.sweeps_nosend, a.inert_sweeps), (1, 0));
+        a.batch_excl = 1;
+        a.on_sweep_served(0); // sent nothing and the clamp excluded the gap: inert
         a.on_sweep_served(3);
-        assert_eq!(a.inert_sweeps, 1);
+        a.on_sweep_dropped();
+        assert_eq!((a.sweeps_nosend, a.inert_sweeps), (3, 1));
     }
 
     /// The exit line carries every key the test-side parser reads.
@@ -6721,7 +6725,7 @@ mod account_arith {
         let b = buf_with(3, &mut a);
         let l = a.line(&b, 0, true);
         for k in [
-            "S_sent=3", "A=0", "H=0", "E=0", "O_serv=3", "O_strand=0", "closes=1", "inert_sweeps=0", "O_hwm=3",
+            "S_sent=3", "A=0", "H=0", "E=0", "O_serv=3", "O_strand=0", "closes=1", "inert_sweeps=0", "sweeps_nosend=0", "O_hwm=3", "cap_at_hwm=",
             "store_cap=", "bud=", "shed_visit_slot=", "shed_visit_nack=", "clamp_evals=", "clamp_excl=", "final=1",
         ] {
             assert!(l.contains(k), "{k} missing: {l}");
