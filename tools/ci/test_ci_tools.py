@@ -121,9 +121,10 @@ class ExpectedFailure(unittest.TestCase):
             self.assertIn("--features", ef.command(ts[0]))
             self.assertIn("tokio_unstable", ef.env_for(ts[0])["RUSTFLAGS"])
 
-    def test_real_tree_finds_the_known_defect(self):
+    def test_real_tree_finds_the_known_defect_and_it_is_excluded(self):
         ids = {(t["id"], t["fn"]) for t in ef.scan(HERE.parents[1])}
         self.assertIn(("rec-evict-blocker-unresolved", "liveness_after_shed_at_rho_below_1"), ids)
+        self.assertIn("liveness_after_shed_at_rho_below_1", ef.EXCLUDED)
 
     def test_unknown_node_id_is_an_error_not_a_skip(self):
         with tempfile.TemporaryDirectory() as d:

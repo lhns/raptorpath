@@ -19,7 +19,13 @@ import tomllib
 
 IGNORE = re.compile(r'#\[ignore\s*=\s*"([a-z0-9]+(?:-[a-z0-9]+)+):\s')
 FN = re.compile(r"\bfn\s+(\w+)")
-MSG = "a defect test now passes: fix landed or the test rotted; un-ignore it or fix it"
+# Defect tests that are NOT a valid red: they fail with or without the defect, so running them
+# here would lock the failure in. Keyed by test fn name; the job prints them as excluded.
+EXCLUDED = {
+    # node rec-evict-blocker-unresolved: asserts completion; rewrite assert_live on the frontier and the ack first
+    "liveness_after_shed_at_rho_below_1": "asserts transfer completion, which fails in that scenario with or without the defect; rewrite assert_live on the frontier and the ack first (node rec-evict-blocker-unresolved)",
+}
+MSG ="a defect test now passes: fix landed or the test rotted; un-ignore it or fix it"
 
 
 def node_ids(root):
@@ -91,7 +97,11 @@ def main():
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
     root = pathlib.Path(a.root)
-    tests = scan(root)
+    allt = scan(root)
+    tests = [t for t in allt if t["fn"] not in EXCLUDED]
+    for t in allt:
+        if t["fn"] in EXCLUDED:
+            print(f"excluded: {t['id']}  {t['file']}::{t['fn']}: {EXCLUDED[t['fn']]}")
     print(f"defect tests found ({len(tests)}):")
     for t in tests:
         print(f"  {t['id']}  {t['file']}::{t['fn']}  $ {' '.join(command(t))}")
