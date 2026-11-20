@@ -1,6 +1,6 @@
 # Known failures skipped by tier-A CI (tools/ci/run_py_tests.py).
 # <test file> | <cause> | <date>   Remove a line when the cause is fixed.
 test_abort_witness.sh | test's own: it copies `sleep` to a file named raptorpath to fake a survivor, but ubuntu runners ship uutils coreutils (multicall by program name), so the copy dies with unknown program 'raptorpath' and the survivor count reads 0; passes with GNU sleep | 2026-11-20
-test_harness61.py | pre-existing on main: its 'engine diff against the frozen base commit is EMPTY' witness fails because the engine has moved since that base (also fails on the owner's host); it is skipped, so it passes vacuously, in a shallow clone | 2026-11-20
-test_harness62.py | pre-existing on main: its 'engine diff against the frozen base commit is EMPTY' witness fails because the engine has moved since that base (also fails on the owner's host); it is skipped, so it passes vacuously, in a shallow clone | 2026-11-20
-test_harness63.py | pre-existing on main: its 'engine diff against the frozen base commit is EMPTY' witness fails because the engine has moved since that base (also fails on the owner's host); it is skipped, so it passes vacuously, in a shallow clone | 2026-11-20
+test_harness61.py | pre-existing on main: its 'engine diff against the frozen base commit is EMPTY' witness fails because the engine has moved since that base; it is skipped, so it passes vacuously, in a shallow clone | 2026-11-20
+test_harness62.py | pre-existing on main: its 'engine diff against the frozen base commit is EMPTY' witness fails because the engine has moved since that base; it is skipped, so it passes vacuously, in a shallow clone | 2026-11-20
+test_harness63.py | pre-existing on main: its 'engine diff against the frozen base commit is EMPTY' witness fails because the engine has moved since that base; it is skipped, so it passes vacuously, in a shallow clone | 2026-11-20
