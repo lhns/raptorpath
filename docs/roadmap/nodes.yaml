@@ -1695,7 +1695,7 @@ nodes:
   title: Repair-share bound counts every slot
   track: meas
   kind: infra
-  state: next
+  state: in-progress
   outcome: unrated
   evidence:
   - status "The two K4 input checks, post hoc"
@@ -1706,12 +1706,12 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: no-cargo
-  start: ''
+  start: '2026-11-19'
   end: ''
   folded: []
   overview: false
   plain: 'The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model''s definition is checked to mean the same thing.'
-  notes: 'mbar59_score w1_hi in count form (Δcod + Δplost)/Σdbt_acc, red-first on the block E rows; then one W1 definition for K4 on both sides (pfec-oracle-spec §6.2 uses cod/(rr*src)).'
+  notes: 'mbar59_score w1_hi in count form (Δcod + Δplost)/Σdbt_acc, red-first on the block E rows; then one W1 definition for K4 on both sides (pfec-oracle-spec §6.2 uses cod/(rr*src)). Scorer half merged 39096c9f (stub run ALL OK): block E PM W1 0.856-0.860 under the new bound 0.863-0.868 (old bound 0.738-0.788 sat below W1 on every PM row); PL 0.511-0.521 under 0.536-0.544. Thin margin; the window starts after t=4.76. Owed: one W1 definition on both sides of K4.'
 - id: rate-spare-cwnd
   title: Is spare's cwnd enforced?
   track: rate

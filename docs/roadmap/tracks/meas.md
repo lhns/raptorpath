@@ -51,7 +51,7 @@ flowchart TB
     meas_s51_session["✔ Off-Bulk baseline<br/>and δ sweep"]
     meas_blocke_pacing_gate>"✔ Pacer late-send<br/>check replaced"]
     meas_blocke_steady_rule>"✔ Steady-window check<br/>passed untested<br/>windows"]
-    meas_w1_bracket_fix["○ Repair-share bound<br/>counts every slot"]
+    meas_w1_bracket_fix["▶ Repair-share bound<br/>counts every slot"]
     meas_defect_cr61_large_pool>"⚠ Collapse rule blind<br/>at large pools"]
     meas_s51b_rho["⛔ Partial-reliability<br/>measurement block"]
     meas_guard_bulk_blind["○ Merge guard blind<br/>off Bulk"]
@@ -157,8 +157,9 @@ flowchart TB
     class meas_c8_aggregation_arc,meas_coupling_model dead
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool defect
-    class meas_w1_bracket_fix,meas_guard_bulk_blind,meas_s51_c8_gauges,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
+    class meas_w1_bracket_fix inprog
     class meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
+    class meas_guard_bulk_blind,meas_s51_c8_gauges,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
 ```
 <!-- END GENERATED: track-meas -->
 
@@ -167,7 +168,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-meas -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `meas-w1-bracket-fix` | Repair-share bound counts every slot | next | unrated |  | status "The two K4 input checks, post hoc" | rate-k4-input-checks |
+| `meas-w1-bracket-fix` | Repair-share bound counts every slot | in-progress | unrated |  | status "The two K4 input checks, post hoc" | rate-k4-input-checks |
 | `meas-blocke-pacing-gate` | Pacer late-send check replaced | done | unrated | 1 % late limit replaced by a 250 ms stall check; lateness reported | status §63 Result; status §51 Amendment 4; branch e-tree-f2-pace 61852b6c | rec-f2-merge-guard |
 | `meas-blocke-steady-rule` | Steady-window check passed untested windows | done | unrated | Fixed: PM 114 -> 0 steady, PL 149 -> 40 | status §51 Amendment 5; branch e-tree-f2-pace 8899fef8 | meas-blocke-pacing-gate |
 | `meas-harness-reuse` | Cheaper sessions by reuse | done | successful | guard ran no suites and no builds | status §64 Amendments 1-2; status owner decision 14 |  |
@@ -230,7 +231,7 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `meas-w1-bracket-fix` | Repair-share bound counts every slot | mbar59_score w1_hi in count form (Δcod + Δplost)/Σdbt_acc, red-first on the block E rows; then one W1 definition for K4 on both sides (pfec-oracle-spec §6.2 uses cod/(rr*src)). | status "The two K4 input checks, post hoc" |
+| `meas-w1-bracket-fix` | Repair-share bound counts every slot | mbar59_score w1_hi in count form (Δcod + Δplost)/Σdbt_acc, red-first on the block E rows; then one W1 definition for K4 on both sides (pfec-oracle-spec §6.2 uses cod/(rr*src)). Scorer half merged 39096c9f (stub run ALL OK): block E PM W1 0.856-0.860 under the new bound 0.863-0.868 (old bound 0.738-0.788 sat below W1 on every PM row); PL 0.511-0.521 under 0.536-0.544. Thin margin; the window starts after t=4.76. Owed: one W1 definition on both sides of K4. | status "The two K4 input checks, post hoc" |
 | `meas-blocke-pacing-gate` | Pacer late-send check replaced | Old binary late share too (2.06 / 2.60 / 1.04 %): the fix did not cause it. §51 Amendment 4: pace-stall iff late_max_ms > 250; enqueue lateness and the engine-side off-load window share reported; off-load steady windows excluded from K4. On §63's seven paced rows off-load is 0/220 everywhere. The legacy steady rule's PM count (114 against a predicted < 30) was the rule's defect, not a missed prediction (meas-blocke-steady-rule). | status §63 Result; status §51 Amendment 4; branch e-tree-f2-pace 61852b6c |
 | `meas-blocke-steady-rule` | Steady-window check passed untested windows | A_star is sampled every 0.5 s against a 0.75 s window. The fixed rule is stricter than the design sentence (a change up to 0.5 s outside the span fails). PL on the fixed binary clears the 30-window floor at 40; the old binary read 23 and 38. | status §51 Amendment 5; branch e-tree-f2-pace 8899fef8 |
 | `meas-harness-reuse` | Cheaper sessions by reuse | Suites reused via a wider source manifest (ref64, Cargo.* and every engine crate); the launch takes its rehearsal binaries (sha-checked) and tools-test result; s62 used a prebuilt binary; sccache on host builds as a trial (owner decision 14). Measured: compile is 60-70 % of a suite run (release 16.6 of ~24 min). Also fixed: the harness63 F2 grep under set -e that marked every row VOID-RC; owed: harness64 keeps [SYMSZ] (KEEP_PAT) before its tools reach main. | status §64 Amendments 1-2; status owner decision 14 |
