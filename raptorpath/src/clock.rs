@@ -102,21 +102,13 @@ pub fn endpoint_config(
     }
 }
 
-/// Spawn order over per-path ids taken from a hash map: unchanged without
-/// `sim`, sorted under it (hash order differs per process).
-#[inline(always)]
-pub fn path_order<T: Ord>(ids: Vec<T>) -> Vec<T> {
-    #[cfg(not(feature = "sim"))]
-    {
-        ids
-    }
-    #[cfg(feature = "sim")]
-    {
-        let mut ids = ids;
-        ids.sort_unstable();
-        ids
-    }
-}
+/// Per-path ids collected from a hash map to fix a spawn order: `Vec`
+/// (hash order, the original code) without `sim`, sorted (`BTreeSet`) under
+/// it. A type, not a sort call, so the non-sim code is the original line.
+#[cfg(feature = "sim")]
+pub type PathIds<T> = std::collections::BTreeSet<T>;
+#[cfg(not(feature = "sim"))]
+pub type PathIds<T> = Vec<T>;
 
 /// Per-path maps whose iteration order drives a decision: ordered under
 /// `sim` (std's `RandomState` order differs per process), unchanged without.
