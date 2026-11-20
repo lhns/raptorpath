@@ -1471,7 +1471,8 @@ and the finite-T_cut interior of one dial, not two policies. Second, the
 shipped machine exposes ρ only structurally: the reliable window seat is
 ρ = 1, and the evicting Realtime seat is the only ρ < 1 seat. On main ρ is
 not a runtime input anywhere in the engine (Section 11.1). ADR-0084 makes it
-one, read only by the shed budget (Section 5.6); the engine change is
+one, read as a number by the shed budget (Section 5.6) and by the opt-in
+three-term cap's `stall(δ, ρ)` (Section 6.1); the engine change is
 pending.
 
 *The flag leaves (ADR-0084 Amendment 1; engine change pending).* "There is no
@@ -1499,9 +1500,12 @@ The engine readers of the flag split four ways (inventory in
 
 - (C) no ρ-continuous form yet: twelve sites (Section 11.3, rows C1–C12),
   among them the placement split, SACK release and the receiver's reorder
-  buffer. They read one grandfathered bit, `rho1_debt_bit(ρ) = (ρ ≥ 1)`,
-  derived at one function and counted per file by the deny test. The bit is
-  the trap itself, kept as named debt; a new reader is refused.
+  buffer. Eleven read one grandfathered bit, `rho1_debt_bit(ρ) = (ρ ≥ 1)`,
+  derived at one function and counted per file by the deny test; the twelfth
+  (C8, the object corners) is a config-time refusal below ρ = 1. The bit is
+  the trap itself, kept as named debt; a new reader is refused. So the
+  sender-side step at ρ → 1⁻ goes only for the store and the budget: seven
+  sender sites (C1–C7) still step there.
 - (D) log and diagnostic lines, counted with (C).
 
 The receiver's (C) sites need ρ too. ADR-0084 Amendment 1 recommends
@@ -4617,7 +4621,7 @@ decide it.
 | BOCD quantile | mixture quantile | run-length-weighted average of quantiles |
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
 | give-up budget (Section 5.6) | the paper: `Ab + 1 ≤ (1 − ρ)·src_total` after D(δ), ρ declared (`window_rho`; Realtime 0.99), R a gauge (ADR-0084). The wasm model still runs `min(1 − ρ, R)` against its shed count until its own `GOLDEN_CAPTURE=1` commit | on main a seat switch: the evicting seat (not `--window-reliable`; the CLI reaches it only at Realtime) runs budget R against the cumulative shed count, the retain seat 0. The wasm model and main agree at ρ = 1 and wherever 1 − ρ ≥ R; the model is tighter only for 0 < 1 − ρ < R. Bounded at equal R by `giveup_budget_vs_engine_seats_at_equal_r_is_bounded` (`raptorpath-wasm`). Both move to the paper's law with the ADR-0084 engine change |
-| retention at ρ → 1⁻ | a store at every ρ (Section 5.1): no forced verdicts, continuous through ρ = 1 | on main the evicting seat keeps no store, so window evictions of unresolved seqs happen at ρ < 1 and never at ρ = 1, untold and uncounted: a step. ADR-0084 removes it on the sender; the step test (sender observables identical at ρ = 1 and at 1 − ε with ε·src_total < 1) is owed with the engine change |
+| retention at ρ → 1⁻ | a store at every ρ (Section 5.1): no forced verdicts, continuous through ρ = 1 | on main the evicting seat keeps no store, so window evictions of unresolved seqs happen at ρ < 1 and never at ρ = 1, untold and uncounted: a step. ADR-0084 removes the store's part of it; the sender sites C1–C7 below still step through the grandfathered bit (Amendment 1). The step test (ρ = 1 against 1 − ε with ε·src_total < 1) asserts V = ∅ on both sides and records per-seq sends and resends; it is owed with the engine change |
 | C1: placement split | one placement law at every ρ (Section 5.7) | the `place_symbol` law with the ρ_fate penalty at ρ = 1 and the best-goodput pick (`select_source_path`, `select_repair_path[_avoiding]`) below it, at four sites: the source send, the correction slot, the NACK resend and the repair margin. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 the grandfathered bit `rho1_debt` (ρ ≥ 1) does, the NO-MODE-SWITCH trap kept as counted debt (ledger G01). Bounded by `rho1_debt_bounds::c01_placement_split_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
 | C2: SACK release | O net of SACK-released seqs at every ρ (Section 6.3) | release runs at ρ = 1 only; below it `released = ∅` and O over-counts the seqs received above the frontier (the safe side, ADR-0084 question 8). On main the `reliable` flag selects it; after ADR-0084 Amendment 1 the grandfathered bit `rho1_debt` (ρ ≥ 1) does, the NO-MODE-SWITCH trap kept as counted debt (ledger G02). Bounded by `rho1_debt_bounds::c02_sack_release_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
 | C3: multipath hole law | per-flight suppression at every ρ (Section 7.1) | `recov_mp` is armed at ρ = 1 only; below it the global clock re-fires. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 the grandfathered bit `rho1_debt` (ρ ≥ 1) does, the NO-MODE-SWITCH trap kept as counted debt (ledger G03). Bounded by `rho1_debt_bounds::c03_recov_mp_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |

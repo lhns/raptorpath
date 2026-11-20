@@ -44,11 +44,11 @@ The budget becomes:
 
 At ρ = 1 the last conjunct reads `Ab + 1 ≤ 0`, which is always false, so the site sheds nothing by formula.
 
-**The ρ = 1 test:** a Bulk sim with loss, ρ = 1. Assert:
+**The ρ = 1 test** `shed_arm_at_rho_1_sheds_nothing`. Use the blackout scenario of `sim_shed_reach` at ρ = 1, so holes older than D are guaranteed. A plain lossy run may never age a hole past D, and then zero sheds proves nothing. Assert:
 - `shed_visit_nack > 0`: the check is visited. The site is reached at ρ = 1 because `retransmit_buffer` fills for every non-generation send (`emit_source.rs:499–506`).
-- `D > 0` at the visit: `shed_deadline_us_live` is refreshed under `if pol.shed_on` inside the span block (`emit_source.rs:630`). With the arm on at ρ = 1 it refreshes there too, so the test is not vacuous.
+- `D > 0` at the visit: `shed_deadline_us_live` is refreshed under `if pol.shed_on` inside the span block (`emit_source.rs:630`). With the arm on at ρ = 1 it refreshes there too.
+- `shed_denied > 0`: a past-D hole reached the budget conjunct and was refused. This is the witness that the formula, not the arming, kept H at 0. `shed_denied` is a gauge only, now non-zero at Bulk, so any L1 parser that reads `[DIAG] shed` at Bulk sees it move.
 - `H = 0` and no `ev=shed` line.
-- `shed_denied > 0`: a gauge only, now non-zero at Bulk. Any L1 parser that reads `[DIAG] shed` at Bulk sees it move.
 
 The receiver calls `shed_armed(.., false, ..)` at `net/receiver.rs:186`; after the change that call simply loses the argument.
 
@@ -71,7 +71,7 @@ The receiver calls `shed_armed(.., false, ..)` at `net/receiver.rs:186`; after t
 
 What each site would need to become continuous is in Amendment 1, item 4, and in the paper §11.3 rows C1–C12.
 
-**(D) Log, diagnostic and test-seam readers.** 5 sites, 6 lines. They read `rho1_debt` and are counted with (C) in the deny test.
+**(D) Log, diagnostic and test-seam readers.** 4 sites, 6 lines. They read `rho1_debt` and are counted with (C) in the deny test.
 
 | # | site | note |
 |---|---|---|
@@ -109,7 +109,11 @@ Branch from `github/s06-delete` (`a930a72b`) and merge `github/main`. The merge-
    - `Account::shed_visit_slot` (`net/account.rs:67`, `:198`, `:219`) has no site and stays at 0. Keep the field so the `[ACCT]` format is stable (`net/tests.rs:6729`, `tests/place_arms_reachability.rs:116` list it), and say so in its doc comment;
    - delete `on_shed_slot` and `on_denied_slot` from `src/test_seams.rs`, or leave them dead with a comment; choose one and report it.
 3. **`net/sender_phases.rs`, the clamp and the NACK shed.** Take main's `gap_clamp!` macro with its account counters, and `s06-delete`'s two-field tuple read `(send_time_us, _)` with main's `shed_visit_nack` counter. A3 removes the macro later.
-4. **`docs/fec-arq-model.md`.** Keep both sides' text. `s06-delete`'s hunks are present-tense S06 text, and main's are ADR-0084 and Amendment 1 text. They touch different sections except near line 1755, §5.6. Read that hunk by hand.
+4. **`docs/fec-arq-model.md`.** One hunk conflicts: §5.6, the paragraph "**Engine status (main).**", checked with `git merge-tree github/s06-delete adr84-amend`. Merge both sides into one paragraph:
+   - from `s06-delete`, the present-tense S06 sentences (the slot branch is deleted, and its set was contained in the NACK site's plus the tail sweep's, except between gap batches);
+   - from main, the ADR-0084 sentences: the evicting seat runs budget R against the cumulative shed count, the retain seat is not armed, the NACK site clamps the gap before the shed check, a shed sends nothing, and the wasm model runs `min(1 − ρ, R)`.
+
+   Drop main's "(deleted by ADR-0079, engine merge held)". Amendment 1's §5.1, §6.1, §6.3, §11.1 and §11.3 edits merge cleanly.
 
 After the merge:
 - **`sim_shed_reach::witness_slot_site_sheds_paced`** (`tests/sim_shed_reach.rs:282`) is red by design: it asserts at least 10 slot-site sheds, and the site is gone. Invert it into `slot_site_is_absent_paced`: assert `shed_slot == 0` and NACK-site `shed > 0` in the paced run. Update the module doc comment (`:21–35`).
@@ -151,26 +155,31 @@ The derivation's tests (§6) keep its names. The scenario parameters (seed 42, 6
 - **T3** (not ignored) `rho1_controls`: the same scenarios at ρ = 1 on the plain, generation and coded-only arms. Green on CAND1 and on every later commit. Asserts `client_ok`, `V = 0` and, once those counters exist, `floor_sent = 0` and `G_rx = 0`.
 
 **Step 2: `window_rho` replaces the flag.** Zero behaviour at every mapped config.
-- **Config:** `RaptorpathConfig.window_rho: Option<f64>`. `config::check_window_rho` enforces the domain, `0 < ρ ≤ 1` and finite, and refuses the object corners below ρ = 1 (C8). `resolve` gives Bulk and Auto 1.0, Realtime 0.99, and an explicit value wins.
-- **The wire to the engine:** `PeerConfig.window_rho: f64`. `SenderPolicy.contract_rho` takes the declared ρ instead of the literal `1.0` (`sender_policy.rs:616`).
+- **Config:** `RaptorpathConfig.window_rho: Option<f64>`. `config::check_window_rho` enforces the domain, `0 < ρ ≤ 1` and finite, and refuses the object corners below ρ = 1 (C8). `resolve` gives Bulk and Auto 1.0, Realtime 0.99, and an explicit value wins. `check_window_rho` is also called at the top of `net::run_impl`: `PeerConfig` is public, and `perf::server` and `perf::client` take one. Delete the redundant conjuncts A9–A12 in the same commit. Add a test that a hand-built `PeerConfig` with a corner at ρ = 0.99 is refused at start.
+- **The wire to the engine:** `PeerConfig.window_rho: f64`. `SenderPolicy.contract_rho` takes the declared ρ instead of the literal `1.0` (`sender_policy.rs:616`). It is read by the opt-in three-term law only. That law is off unless `RWM_THREE_TERM` is set and is scoped to `plain_dyn_cap`, which is ρ = 1 until step 5, so nothing changes here.
 - **CLI:** `--window-rho <f64>` on `run` and `perf`.
 - **Tombstones**, so old spellings fail loudly. The TOML key `window_reliable: Option<bool>` and a hidden `--window-reliable` flag both error at startup with the message in Amendment 1 item 6, following the `mp_block_affinity` pattern (`config.rs:77–80`, `main.rs:105–107`). Add tests that a TOML with `window_reliable = true`, and a CLI with `--window-reliable`, both fail with "window_rho" in the message.
 - **The bit:** `raptorpath/src/net/rho_debt.rs` holds `pub(crate) fn rho1_debt_bit(rho: f64) -> bool { rho >= 1.0 }`, documented as the NO-MODE-SWITCH trap kept as counted debt (Amendment 1). It is called exactly twice:
   - the sender's own ρ in `run_impl`;
   - the receiver's ρ: its own ρ here; the peer's ρ after step 4 under 5(b).
-- **Renames:** every reader in §1 reads `rho1_debt`; the plumbing is renamed.
+- **Renames:**
+  - every reader in §1 reads `rho1_debt`, and the plumbing is renamed;
+  - the bare `rho` parameters of `net/store_cap.rs` (`contract_stall_s`, `three_term_store_cap`) become `contract_rho`;
+  - `net/late.rs`'s local `rho` (ρ̂_heal) becomes `rho_heal`.
 - **The harness mapping:** `tests/sim_support` `Scenario.reliable: Option<bool>` becomes `rho: Option<f64>`, with `Some(true)` → 1.0 and `Some(false)` → 0.99. `tests/common/loopback.rs` gets `cfgs(.., rho: f64)` and `--window-rho`. Make the same change in every test file in §1.
 - **Zero-behaviour proof:**
   - `decision_trace_pin` unchanged;
   - T3 green;
   - every existing sim fingerprint unchanged.
 
-**Step 3: the deny test** `raptorpath/tests/rho_deny_list.rs`. Copy the structure of `raptorpath-core/tests/deny_list.rs`, including the walk-visited assertion and the planted fixture under `CARGO_TARGET_TMPDIR` at `:144`. Strip comments and string literals before scanning, and walk `raptorpath/src`. It fails on:
-- **(a) Comparing a retention-ρ identifier** (`window_rho`, `contract_rho`, `recv_rho`, `peer_rho`). That means a comparison operator on either side, a `match`, `.partial_cmp(` or `.total_cmp(` on one, or `let x = <ρ ident>;` (an alias). The allowlist is three functions, each matched exactly once: `rho1_debt_bit`, `check_window_rho`'s domain check, and its corner refusal. `net/late.rs`'s `rho` (ρ̂_heal) is not on the list.
+**Step 3: the deny test** `raptorpath/tests/rho_deny_list.rs`. Copy the structure of `raptorpath-core/tests/deny_list.rs`, including the walk-visited assertion and the planted fixture under `CARGO_TARGET_TMPDIR` at `:144`. Strip comments and string literals, skip test files (`**/tests.rs`, `#[cfg(test)]` modules), and walk the non-test code of `raptorpath/src`. It fails on:
+- **(a) Comparing a retention-ρ identifier** (`rho`, `window_rho`, `contract_rho`, `recv_rho`, `peer_rho`). That means a comparison operator on either side, a `match`, `.partial_cmp(` or `.total_cmp(` on one. It also fails when a ρ value is bound to a name outside that list: `contract_rho: cfg.window_rho` passes and `let r = window_rho;` fails. The allowlist is two function bodies, `rho1_debt_bit` and `check_window_rho`, each defined exactly once (pin the definition count).
 - **(b) The `rho1_debt` count drifting.** The per-file count of identifiers containing `rho1_debt` must equal a const table in the test, failing on a rise and on a fall alike. The table starts at step 2's counts. Every later step that removes a reader lowers its file's entry in the same commit.
 - **(c) An old identifier.** These must not occur: `reliable`, `window_reliable`, `recv_window_reliable`, `sender_window_reliable`, `hold_on_full`, `new_reliable`. The exception is the two tombstones, `config.rs` (field plus check) and `main.rs` (hidden arg plus check), with their counts pinned.
 
-Show the test red on the fixture: each planted form is flagged, including `let reliable = contract_rho >= 1.0;` and an aliased `let r = window_rho; if r < 1.0 {}`. Show it green on the tree. Also add it to `raptorpath-visualizer/build_visualizer.sh`'s gate list beside the core deny list (CLAUDE.md enforcement).
+Show the test red on the fixture: each planted form is flagged, including `let reliable = contract_rho >= 1.0;`, an aliased `let r = window_rho; if r < 1.0 {}`, and `fn f(rho: f64) -> bool { rho == 1.0 }`. Show it green on the tree.
+
+It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_list`), not in `build_visualizer.sh`, which would compile the engine in the wasm job. Add one line for it to the enforcement list in the repo's `CLAUDE.md` ("extend them when touching this area"), in the same commit.
 
 **Step 4: protocol v11.**
 - **Wire changes**, one `PROTOCOL_VERSION` bump from 10 to 11, refused on mismatch (ADR-0010):
@@ -182,20 +191,29 @@ Show the test red on the fixture: each planted form is flagged, including `let r
 - **Tests:** codec round-trips, v10-to-v11 refusal, and handshake ρ reconcile (N = 1, N = 2, mismatch refused).
 - **If the owner picks 5(a):** drop the handshake field. The receiver's call takes its own `window_rho`, and T1′ gets a mismatch variant recorded as a known defect.
 
-**Step 5: a store at every ρ (A1, A2, A3, A7, A8).**
+**Step 5: the rate bound (A4, A5, A6).** This comes before the store. `SeqRing` is unbounded (`net/seq_ring.rs`), so a store at ρ < 1 with no pause would grow to the object size: the lost-tail run reads `O_hwm = 12 146` against a cap of 1 024.
+- **The pause:** `pause ⇔ O ≥ B ∨ cwnd_full`, with `O = (H + 1 − F) − |released|`, through one helper for both copies, and B the pooled cap at every ρ (`plain_dyn_cap` loses the bit).
+- **The ρ = 1 pin:** `O == sack_release_outstanding(sent_store.len(), released)` at every tick (A.5's owed equality).
+- **Un-ignore T7a.** Invert the `O_hwm > 4·cap_at_hwm` assertion ("D1b") in `known_defect_lost_tail_strands_k_at_rho_below_1`.
+- **T7b** `overload_breach_is_printed`. Unpaced source at ρ = 0.99. First the pause executes, read first. Then `O ≤ B + 1` at every DIAG tick, and `drop_queue` falls against CAND1 (direction only). The line `[BUDGET] G_rx=… budget=… breach=…` is asserted present, not asserted within budget.
+- **The bind gauge:** `[SUMCAP] pin=` at ρ < 1 is reported.
+
+**Step 6: a store at every ρ (A1, A2, A3, A7, A8).**
+- **The clamp:** removing it (A3) makes the gap unclamped at every ρ. So `nacked_count` covers the whole gap here, a deliberate behaviour change at ρ < 1 that the guard battery reads.
 - **The forced verdict:** at both window advances (`mod.rs:3594–3597` and `sender_phases.rs:1374`), `evict(s) ∧ s ∈ U ∧ s ∉ store ⇒ E += 1`, pruned like a shed, with a visits-and-forced gauge that must read 0.
 - **The account identity:** `S_sent = A + H + E + |U|` (ADR-0081 as amended).
-- **T8** `rho1_step_sender_observables_identical`. The same seed at ρ = 1 and at ρ = 1 − ε with ε·S_src < 1 (for 6 MB, ε = 5·10⁻⁵ gives 0.6). Verdicts, per-seq sends and resends are asserted identical. Receiver observables are only recorded (C9–C12).
-- **Flips:** the defect assertions in `sim_lost_tail::known_defect_lost_tail_strands_k_at_rho_below_1` (`O_strand > 0`, `inert_sweeps > 0`, k never resent) stop holding here. Invert them in this commit: assert `O_strand = 0`, that k is resent or shed, and that `clamp_excl = 0`. Do the same for `sim_shed_reach::witness_nack_site_sheds_at_rho_below_1`'s `inert_sweeps`, `clamp_excl` and `H+E` assertions. Any red-first test that now passes is un-ignored here.
+- **Flips:** these defect assertions stop holding here; invert them in this commit:
+  - in `known_defect_lost_tail_strands_k_at_rho_below_1`, `O_strand > 0`, `inert_sweeps > 0`, `clamp_excl > 0` and "k never resent". Assert instead `O_strand = 0`, `clamp_excl = 0`, and that k is resent or shed;
+  - in `sim_shed_reach::witness_nack_site_sheds_at_rho_below_1`, the `inert_sweeps` and `clamp_excl` assertions.
 
-**Step 6: the verdict rule and the budget (B1).**
-- **Judge on the unclamped gap.** The per-seq order is (§1.2):
+  Any red-first test that now passes is un-ignored here.
+
+**Step 7: the verdict rule and the budget (B1).**
+- **The per-seq order** in a reported gap (§1.2):
   1. the stamp;
   2. skip if `s ∉ U`;
   3. `judge_seq`;
   4. serve.
-
-  `nacked_count` covers the whole gap, a deliberate behaviour change at ρ < 1 that the guard battery reads.
 - **Pure functions**, with absolute tests at the anchor points:
   - `judge_seq(age, d, ab, s_src, budget_frac, servable) -> Verdict`;
   - `shed_budget(rho, s_src) = (1 − ρ)·s_src`;
@@ -210,8 +228,9 @@ Show the test red on the fixture: each planted form is flagged, including `let r
   - sheds stop when `Ab + 1 > (1 − ρ)·S_src`, and the refusal counter rises.
 
   It prints R and `G_rx / S_src` side by side.
+- **Flips:** the `H+E` budget-breach assertions of the two defect-asserting tests flip here or in step 8. Invert them where they flip.
 
-**Step 7: the floor.**
+**Step 8: the floor.**
 - **Sender:** `F = min{s ≥ A_rx : s ∉ V}`. While `F > A_rx`, send it on every live path at each tail-sweep fire. Arm the sweep on `U ≠ ∅ ∨ F > A_rx` (`sweep_armed`). Send the last floor on the reliable control stream before `Shutdown`.
 - **Receiver:** take the newest floor over paths, `floor_rx = max`, 0 before the first. It enters the hold as a payload-free arrival at F (paper §5.1) and passes the holes below F.
 - **Absolute tests:** `floor(a, ∅) = a`; a run of verdicts from a gives `a + run`; a gap stops it. `floor_rx` at N = 1 and N = 2, including a path with no floor yet.
@@ -219,28 +238,29 @@ Show the test red on the fixture: each planted form is flagged, including `let r
 - **Un-ignore T1, T1′ and T2** (green here).
 - **The ablation:** a seam that suppresses `WindowFloor`. T1′, T2, and T1 at ρ = 0.97 go red; T1 at 0.99 stays green (derivation §2.5). Record the output in the commit message.
 
-**Step 8: the rate bound (A4, A5, A6).**
-- **The pause:** `pause ⇔ O ≥ B ∨ cwnd_full`, with `O = (H + 1 − F) − |released|`, through one helper for both copies, and B the pooled cap at every ρ.
-- **The ρ = 1 pin:** `O == sack_release_outstanding(sent_store.len(), released)` at every tick (A.5's owed equality).
-- **Un-ignore T7a.**
-- **T7b** `overload_breach_is_printed`. Unpaced source at ρ = 0.99. First the pause executes, read first. Then `O ≤ B + 1` at every DIAG tick, and `drop_queue` falls against CAND1 (direction only). The line `[BUDGET] G_rx=… budget=… breach=…` is asserted present, not asserted within budget.
-- **The bind gauge:** `[SUMCAP] pin=` at ρ < 1 is reported.
+**Step 9: T8, the (C) bounding tests and the ledger.**
+- **T8** `rho1_step_is_confined_to_the_c_sites`. The same seed at ρ = 1 and at ρ = 1 − ε with ε·S_src < 1 (for 6 MB, ε = 5·10⁻⁵ gives 0.6). It runs after every behavioural step, so the pause, the store and the budget are all in.
+  - Assert on what no live (C) site touches: `V = ∅` on both sides, so `H = E = 0` and `floor_sent = 0`.
+  - Record per-seq sends and resends, and the receiver's passes and `G_rx`.
+  - Name the (C) sites live in its cell. At Realtime, N = 1 these are C2 (default on: it changes O and so the pause) and C9–C12; C3 is listed if `recov_mp` acts at N = 1.
 
-**Step 9: the (C) bounding tests and the ledger.** Write `raptorpath/tests/rho1_debt_bounds.rs`, one test per C row. Each test asserts that the site routes by the bit:
-- the ρ = 1 arm executes at ρ = 1, through an existing counter or echo, or a test-seam hook;
-- the other arm executes at ρ = 0.99 and at ρ = 0.97, the same arm at both, so the step is at one point;
-- at ρ = 1 against 1 − ε (ε·S_src < 1), it prints the site's observable; that line is record-only.
+  This replaces the derivation's "sender observables identical" (Amendment 1, the correction to decision 2).
+- **`raptorpath/tests/rho1_debt_bounds.rs`**, one test per C row. Each asserts that the site routes by the bit:
+  - the ρ = 1 arm executes at ρ = 1, through an existing counter or echo, or a test-seam hook;
+  - the other arm executes at ρ = 0.99 and at ρ = 0.97, the same arm at both, so the step is at one point;
+  - at ρ = 1 against 1 − ε, it prints the site's observable; that line is record-only.
 
-The absolute bounds to assert:
-- C9: at ρ = 1, `pass = pass_force = 0`;
-- C10: at ρ < 1, the drop count is printed beside `G_rx`, the known gap;
-- C11: at ρ = 1, `SHEDH evals = 0`;
-- C12: at ρ = 1, the `[QCLK] site=receiver` echo appears and there is no expiry.
+  The absolute bounds to assert:
+  - C9: at ρ = 1, `pass = pass_force = 0`;
+  - C10: at ρ < 1, the drop count is printed beside `G_rx`, the known gap;
+  - C11: at ρ = 1, `SHEDH evals = 0`;
+  - C12: at ρ = 1, the `[QCLK] site=receiver` echo appears and there is no expiry.
 
-C8 is a config test: refused at 0.99, accepted at 1, and no runtime reader (the deny test). Then:
-- tighten the deny-test table to its final counts: (C) without C8, plus D1–D3;
-- update the ledger rows F02 (done), G01–G12 and S09 with the test names;
-- flip the paper's "engine change pending" tense to the present for the parts that landed, and re-render `law-ledger/render.py`.
+  C8 is a config test: refused at 0.99, accepted at 1, and no runtime reader (the deny test).
+- **Bookkeeping:**
+  - tighten the deny-test table to its final counts: (C) without C8, plus D1–D3;
+  - update the ledger rows F02 (done), G01–G12 and S09 with the test names;
+  - flip the paper's "engine change pending" tense to the present for the parts that landed, and re-render `law-ledger/render.py`.
 
 **Step 10: the model's give-up law (its own commit).** This is a deliberate model change (ADR-0084 decision 5). The wasm and cartoon give-up law moves to `1 − ρ`, and the visualizer anchor "= R when 1 − ρ ≥ R" (`test_visualizer_ui.mjs:238–241`) becomes "= 1 − ρ". Re-capture with `GOLDEN_CAPTURE=1` and say in the commit message that it is a deliberate model change.
 

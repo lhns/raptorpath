@@ -84,11 +84,11 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
    **Owner's call.** The alternative is to collapse every (C) site to one arm in this change, with no bit. That is 12 behaviour changes at ρ < 1, each needing its own Realtime battery. The recommendation is to grandfather the bit and retire sites one commit each.
 
    **Enforcement:** `raptorpath/tests/rho_deny_list.rs`, a source walk patterned on `raptorpath-core/tests/deny_list.rs`, run in the normal CI test job. It fails on any of the following:
-   - (a) a comparison operator, `match`, `partial_cmp` or `total_cmp` on a retention-ρ identifier (`window_rho`, `contract_rho`, `recv_rho`, `peer_rho`), or a `let` binding whose right-hand side is a bare ρ identifier, anywhere in `raptorpath/src`. The allowlist has three functions, each matched exactly once: `rho1_debt_bit`, `config::check_window_rho` (the domain check) and the corner refusal (C8);
+   - (a) a comparison operator, `match`, `partial_cmp` or `total_cmp` on a retention-ρ identifier (`rho`, `window_rho`, `contract_rho`, `recv_rho`, `peer_rho`), anywhere in the non-test code of `raptorpath/src` (test files and `#[cfg(test)]` modules are skipped). Also any binding of a ρ value to a name outside that list, so `contract_rho: cfg.window_rho` passes and `let r = window_rho` fails. The allowlist is two function bodies, each defined exactly once: `rho1_debt_bit`, and `config::check_window_rho`, which holds the domain check and the corner refusal (C8). The retention ρ already travels as a bare `rho` parameter in `net/store_cap.rs` (`contract_stall_s`, `three_term_store_cap`). `net/late.rs` uses a local `rho` for the healing fraction ρ̂_heal, which is renamed `rho_heal` (zero-behaviour), so bare `rho` is denied with no exception;
    - (b) a per-file count of `rho1_debt` identifiers that differs from the (C)+(D) table, whether it rises or falls without a recorded change;
    - (c) any occurrence of the identifiers `reliable`, `window_reliable`, `recv_window_reliable`, `sender_window_reliable`, `hold_on_full` or `new_reliable` in code outside the two tombstones of item 6. Comments and string literals are exempt, so the byte-stable log echo survives.
 
-   A planted fixture proves each form red, and the tree is green. The walk asserts that it visited files. The test is a tripwire, not a proof: review still owns aliases the scanner cannot see. The retention ρ is distinct from `net/late.rs`'s healing fraction `rho` (ρ̂_heal), which the name list leaves out.
+   A planted fixture proves each form red, and the tree is green. The walk asserts that it visited files. The test is a tripwire, not a proof: review still owns aliases the scanner cannot see.
 
 3. **Stacked on `s06-delete`.** The engine change is built on `s06-delete` merged up to main. That lifts ADR-0079 Amendment 1's merge hold, which decision 8 above kept, for this purpose only: `s06-delete` reaches main beneath this change, not on its own.
 
@@ -123,7 +123,14 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
    | C11 | receiver shed hold arm `recv_shed_on`: `net/receiver.rs:183` | off / `SRTT/2` under the ε̂_recv budget | follows C9, with `SRTT/2` becoming `b(δ)·SRTT` (§11.3 "receiver shed hold") |
    | C12 | receiver hole timer: `net/receiver.rs:734`, `:860` | refresh (re-advertise the gap) / hold expiry (give up) | both computed at every ρ: the refresh runs everywhere, and under C9's law the expiry passes nothing at ρ = 1 |
 
-   Count: 12 sites, 24 reader lines. C8 reads ρ in `config.rs`, through the allowlisted refusal, not through the bit. The other 11 read `rho1_debt`.
+   Count: 12 sites, 24 reader lines. C8 reads ρ in `check_window_rho`, through the allowlisted refusal, not through the bit. The other 11 read `rho1_debt`. `check_window_rho` runs in `config::resolve` and again at the top of `net::run_impl`. `PeerConfig` is public and `perf::server`/`client` take one, so a hand-built config with a corner below ρ = 1 is refused at start instead of having its corner silently dropped. That makes deleting the conjuncts zero-behaviour for every config `resolve` accepts.
+
+   **Correction to decision 2 and the paper's "retention at ρ → 1⁻" row.** "The sender-side step at ρ = 1 is gone" holds only for the store (group A) and the shed budget (group B). Seven sender sites still step at ρ = 1 through the bit, C1–C7. Of these:
+   - C2 (SACK release) is on by default and changes O, and so the pause, at every N;
+   - C5 is live at Bulk and Auto;
+   - C1 and C3 are live at N ≥ 2.
+
+   T8 therefore asserts identity only on what no live (C) site touches: the verdict set (V = ∅ on both sides, so H = E = 0 and `floor_sent = 0`). It records per-seq sends and resends, names the (C) sites live in its cell, and runs after the last behavioural step.
 
 5. **The receiver's ρ (owner's call).** With no flag, the receiver needs ρ for its (C) bit (C9–C12). Today it reads its own local flag (`net/mod.rs:1195`, `net/receiver.rs:86`). Either option below reverses default 5's "no ρ at the receiver" for this purpose; neither gives the receiver's give-up budget a ρ, which keeps ε̂_recv until C9's derivation lands.
    - **(a) Each end reads its own configured ρ.** No new information flows, the same as today's flag. It carries a latent mismatch. Each direction's symbol size belongs to its sender (v10 `Handshake.symbol_size`), so a Realtime end can talk to a Bulk end. The Bulk end's receiver then runs the never-pass buffer on the peer's ρ < 1 stream. That buffer's `drain_expired` returns nothing, so a `WindowFloor` marker never passes a hole, and a lost tail stalls again (T1′).
@@ -140,7 +147,7 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
      - (A) is identical by data at ρ = 1;
      - (C) takes the ρ = 1 arm through the bit;
      - (B) is the one ρ = 1 code change: the shed check is now armed, D is refreshed and `shed_denied` counts past-D holes, all with budget 0, so there are zero sheds.
-   - It is not binary-identical. Invariance at ρ = 1 rests on the decision pins, T3, T8 and the guards, not on an identical-binary waiver.
+   - It is not binary-identical. Invariance at ρ = 1 rests on the decision pins, T3 and the guards, not on an identical-binary waiver. T8 only records the step at ρ → 1⁻.
    - The wire changes at every ρ (v11: `WindowAck.passed_undelivered`, `WindowFloor`, and `Handshake.retention_rho` under 5(b)), so a v10 peer is refused (ADR-0010).
    - A bare Realtime run takes ADR-0084's accepted change.
    - Today's `window_reliable = false` at Bulk or Auto has no numeric counterpart. Tests and harnesses map it to the declared 0.99, and `true` to 1.0.

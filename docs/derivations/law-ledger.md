@@ -2134,7 +2134,7 @@ a branch.
 - *5. measured in regime?:* not measured as a step; recorded by its bounding test once it exists
 - *6. clamp bind:* n/a
 - *7. inputs honest?:* n/a
-- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)
+- *8. NO-MODE-SWITCH:* MODE-SWITCH(live): a config-time refusal on rho < 1 (check_window_rho, allowlisted; no runtime reader, no rho1_debt bit; on main the window_reliable flag)
 - *9. verdict:* **MODE-SWITCH(live)**: bounded by rho1_debt_bounds::c08_corner_refusal_is_config_only (owed); allowlisted once in tests/rho_deny_list.rs
 - *10. fix class, priority:* derivation: define each corner at rho < 1, then drop the refusal; **P3**, rank 70
 - *flags:* measured no, gauge no

@@ -1782,7 +1782,7 @@ rows:
   regime: "not measured as a step; recorded by its bounding test once it exists"
   clamp: "n/a"
   inputs: "n/a"
-  modeswitch: "MODE-SWITCH(live): the grandfathered rho = 1 bit (rho1_debt_bit, rho >= 1; on main the window_reliable flag)"
+  modeswitch: "MODE-SWITCH(live): a config-time refusal on rho < 1 (check_window_rho, allowlisted; no runtime reader, no rho1_debt bit; on main the window_reliable flag)"
   verdicts: ["MODE-SWITCH(live)"]
   measured: "no"
   gauge: "no"
