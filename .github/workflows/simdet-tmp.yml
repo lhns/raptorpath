@@ -1,0 +1,26 @@
+# TEMPORARY (sim-determinism diagnosis): Linux traces for a Windows diff. Removed before merge.
+name: simdet-tmp
+on:
+  push:
+    branches: [sim-determinism-fix]
+permissions:
+  contents: read
+jobs:
+  traces:
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: "--cfg tokio_unstable"
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: sim }
+      - run: cargo test -p raptorpath --features sim,test-seams --test sim_shed_reach --no-run
+      - run: |
+          BIN=$(ls -t target/debug/deps/sim_shed_reach-* | grep -v '\.d$' | head -1)
+          for s in "nat30 nat30 47400" "shed6_a shed6 47400" "shed6_b shed6 47401" "basic_a basic 47100" "basic_b basic 47101"; do
+            set -- $s; bash .github/simdet-tmp/child.sh $BIN out $1 $2 $3
+          done
+      - uses: actions/upload-artifact@v4
+        with: { name: simdet-linux, path: out/ }
