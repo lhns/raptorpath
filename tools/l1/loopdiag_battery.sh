@@ -81,7 +81,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py plan61.py s61_score.py test_s61.py test_harness61.py plan62.py s62_score.py test_s62.py test_harness62.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py plan64.py rt64_score.py framing64.py s65_score.py plan51e.py s51e_score.py plan51.py s51_score.py test_s51e.py test_s51.py plan63.py test_harness63.py test_harness51.py
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py plan61.py s61_score.py test_s61.py test_harness61.py plan62.py s62_score.py test_s62.py test_harness62.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py plan64.py rt64_score.py framing64.py s65_score.py plan51e.py s51e_score.py plan51.py s51_score.py test_s51e.py test_s51.py plan63.py test_harness63.py test_harness51.py plan67.py s67_score.py s67_fixtures.py test_s67.py test_harness67.py tun67_battery.sh loopdiag_p67.sh
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -95,7 +95,8 @@ DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"
 TMPD="${LD_TMPD:-/tmp}"
 P61=0; case "$PLAN" in 61a|61b) P61=1 ;; esac      # status 61 (the c3 sweep): single-seat like plan 60, its own tables (plan61.py)
 P62=0; case "$PLAN" in 62r0|62a) P62=1 ;; esac      # status 62 (c3 at jitter 0): plan 61's shape, its own tables (plan62.py)
-{ [ "$P61" = 1 ] || [ "$P62" = 1 ]; } || case "$PLAN" in 60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (62r0|62a|61a|61b|60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65)"; exit 3 ;; esac
+P67=0; case "$PLAN" in 67a|67r|67p|67o|67d) P67=1 ;; esac      # status 67 (VM batch 1): stages A / R1 / R2 / the pool block / the dump twins (stage G is plan 41d with LD_WITNESS67, stage T is tun67_battery.sh)
+{ [ "$P61" = 1 ] || [ "$P62" = 1 ] || [ "$P67" = 1 ]; } || case "$PLAN" in 60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (67a|67r|67p|67o|67d|62r0|62a|61a|61b|60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -153,7 +154,12 @@ P60=0; case "$PLAN" in 60a|60b) P60=1; P38=1; PCAND=1 ;; esac
 # Plan 65 (status 65, the exact replication of the Realtime in-order delay lean) is plan 64's stage R with 24 pairs (48 rows), the BASE-F2-DEAD redraw (cap 4 slots) and a smoke with a conditional third row: P65 rides P64.
 P64=0; P65=0; [ "$PLAN" = "65" ] && P65=1
 { [ "$PLAN" = "64" ] || [ "$PLAN" = "65" ]; } && { P64=1; P38=1; P41=1; PCAND=1; TRIES=1; }      # TRIES=1: a stage R row runs ONCE (a dead BASE warm-up or an RC row failing item 1 is the datum, never a bring-up failure to draw again; plan 63 did the same)
+# Plan 67 (status 67, VM batch 1; docs/derivations/vm-batch-1-registration.md; plan67.py, s67_score.py): SEVEN binaries, not two. Every row runs the binary of its arm's SEAT (plan67.py seat), LD_BIN_<SEAT> / LD_SHA_<SEAT>
+# from the envelope; the pacer seats' rows run their OWN tools tree's perf_rwm_c.sh (LD_TOOLS_<SEAT>: the tree whose lib.sh forwards RWM_PERF_RATE_MBIT, registration 1.2). Bytes, timeout, hint and env come from plan67.py
+# armspec; a row runs ONCE per attempt (TRIES=1) and a precondition-witness void is re-run once by run_slot67 (plan67.py replace decides from the ledger); an S06-FAIL row never is.
+[ "$P67" = 1 ] && { TRIES=1; P38=1; PCAND=1; }
 HINT=bulk; [ "$P59" = 1 ] && HINT=realtime; [ "$P64" = 1 ] && HINT=realtime
+W67="${LD_WITNESS67:-}"; { [ -z "$W67" ] || { [ "$PLAN" = "41d" ] && { [ "$W67" = "g1" ] || [ "$W67" = "g2" ]; }; }; } || { echo "ABORT-PLAN LD_WITNESS67=$W67 is defined for the plan-41d stage only (g1|g2), not $PLAN"; exit 3; }
 # Plan 64's stage G = plan 41d + the F2 row witnesses (LD_WITNESS64=1; run_all carries it for LD_PLAN=64): the parser reads it.
 W64="${LD_WITNESS64:-0}"; [ "$W64" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS64=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
 # Plans 61a / 61b (status 61, docs/derivations/s61-registration.md): plan 60's single-seat shape at c3-25 (61a) and c2-100 (61b), arms G<W> only (RWM_SLAW=1, Bulk). Every row's bytes, RWM_PERF_TIMEOUT_S, hint and arm env come from
@@ -169,7 +175,7 @@ P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P38=1; PCAND=1; }
 # main binary (LD_BIN / LD_SHA). CONTROL is expected to fail the warm-up, so a row runs ONCE (LD_BRINGUP_TRIES forced to 1: a failed warm-up is the datum, not a bring-up failure) and nothing is replaced.
 P63=0; [ "$PLAN" = "63" ] && { P63=1; P38=1; PCAND=1; TRIES=1; }
 SCRUB_EXTRA=()
-{ [ "$P51" = 1 ] || [ "$P51E" = 1 ] || [ "$P63" = 1 ]; } && SCRUB_EXTRA=(-u RWM_DELTA -u RWM_COPA_DELTA -u RWM_COPA_WIRE -u RWM_COMPLETION_EXPOSURE -u RWM_MIN_R -u RWM_CC_PACE -u RWM_PERF_RATE_MBIT)
+{ [ "$P51" = 1 ] || [ "$P51E" = 1 ] || [ "$P63" = 1 ] || [ "$P67" = 1 ]; } && SCRUB_EXTRA=(-u RWM_DELTA -u RWM_COPA_DELTA -u RWM_COPA_WIRE -u RWM_COMPLETION_EXPOSURE -u RWM_MIN_R -u RWM_CC_PACE -u RWM_PERF_RATE_MBIT)
 # Plan 54 (the guard) is plan 41d unchanged; LD_WITNESS54=1 (run_all carries it for LD_PLAN=54) adds the row witnesses in the parser and the [SNAPV] preflight below.
 W54="${LD_WITNESS54:-0}"; [ "$W54" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
 BIN_BASE=""; WANT_BASE=""
@@ -208,6 +214,8 @@ fi
 [ "$P61" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=120)      # plan 61: as plan 60; the per-row timeout is the arm's (tmo_env)
 # Plan 62: plan 61's instrument env plus the live-netem witness (perf_rwm_c.sh prints `[NETEM] tag=pre|post` for both legs; the row's check below stops the launch on a jitter term: ABORT-NETEM).
 if [ "$P62" = 1 ]; then INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=120 RWM_NETEM_WITNESS=1); KEEP_PAT="$KEEP_PAT|\[NETEM\]"; fi
+# Plan 67: the guard's instrument env (RWM_RTOBS gives the [LAG] lines, RWM_RDIAG the receiver's below_floor); the per-row timeout is the arm's (tmo_env). The twins' [ACCT] / [ACCT-RX] lines are kept in the ledger by run_one (ACCT-KEPT).
+[ "$P67" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)
 # Plan 51e: plan 59's env (RWM_DIAG=1 RWM_RDIAG=1, no RWM_RTOBS); the per-row timeout is the arm's (75 s paced, 30 s U). Plan 51: plan 48-54's guard env (RWM_RTOBS=1 RWM_RDIAG=1) at 200 s.
 [ "$P51E" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)
 [ "$P63" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)      # plan 63: plan 51e's instrument env; the per-row timeout is the arm's (tmo_env)
@@ -281,6 +289,22 @@ fi
 GOT="$(sha256sum "$BIN" | cut -d' ' -f1)"
 [ "$GOT" = "$WANT" ] || { _lb_say "ABORT-SHA start: $GOT != $WANT"; exit 5; }
 [ "$PLAN" != "43b" ] || [ "$GOT" = "$SHA43" ] || { _lb_say "ABORT-SHA plan 43b needs the binary of status 43 ($SHA43), got $GOT"; exit 5; }
+if [ "$P67" = 1 ]; then
+  # Plan 67: every seat this stage runs, before any row: the file, its sha against the pin the envelope checked, and the strings that identify it (plan67.py strings: ABORT-SEAT on a mix-up of two trees).
+  for _seat in ${LD_SEATS67:?LD_SEATS67 (the seats this stage runs)}; do
+    _bv="LD_BIN_$_seat"; _sv="LD_SHA_$_seat"; _tv="LD_TOOLS_$_seat"
+    [ -n "${!_bv:-}" ] && [ -n "${!_sv:-}" ] || { _lb_say "ABORT-SHA plan 67 seat $_seat: $_bv / $_sv unset"; exit 5; }
+    preflight_binary "${!_bv}" "RWM_STORE"
+    [ "$(sha256sum "${!_bv}" | cut -d' ' -f1)" = "${!_sv}" ] || { _lb_say "ABORT-SHA plan 67 seat $_seat: ${!_bv} does not hash to its pin ${!_sv}"; exit 5; }
+    while read -r _kind _str; do
+      case "$_kind" in
+        need) grep -aqF -- "$_str" "${!_bv}" 2>/dev/null || { _lb_say "ABORT-SEAT plan 67 seat $_seat: the binary has no '$_str' string"; exit 5; } ;;
+        forbid) ! grep -aqF -- "$_str" "${!_bv}" 2>/dev/null || { _lb_say "ABORT-SEAT plan 67 seat $_seat: the binary carries '$_str'"; exit 5; } ;;
+      esac
+    done < <(python3 ./plan67.py strings "$_seat")
+    { [ -z "${!_tv:-}" ] || [ -f "${!_tv}/perf_rwm_c.sh" ]; } || { _lb_say "ABORT-BIN plan 67 seat $_seat: no perf_rwm_c.sh in ${!_tv}"; exit 5; }
+  done
+fi
 if [ "$P63" = 1 ]; then
   # Plan 63: the CONTROL seat (BASE) must run, carry the same E-block tokens as the CAND (the e-tree binary has the gauge, the shed gate and the pacer), be a different file with a different sha, and equal its pin.
   preflight_binary "$BIN_BASE" "RWM_SLAW" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE" "RWM_PERF_RATE_MBIT"
@@ -387,7 +411,18 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     read -r bytes p62_tmo HINT p60_arm_env <<< "$p62_spec"
     rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p62_tmo")
   fi
-  local p51_arm_env=""
+  local p51_arm_env="" p67_arm_env="" PERFDIR="$HERE" p67_plan_arg=()
+  if [ "$P67" = 1 ]; then
+    # Plan 67: bytes / timeout / hint / env from plan67.py armspec (the ONE table), the binary of the arm's seat, the tools tree of a pacer seat (its lib.sh forwards RWM_PERF_RATE_MBIT).
+    local p67_spec p67_tmo p67_seat p67_bv p67_sv p67_tv
+    p67_spec="$(python3 ./plan67.py armspec "$PLAN" "$cell" "$arm")" || { echo "UNKNOWN-ARM $arm at $cell (plan $PLAN)" >> "$OUT"; return 0; }
+    read -r bytes p67_tmo HINT p67_arm_env <<< "$p67_spec"
+    rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p67_tmo"); p67_plan_arg=("$PLAN")
+    p67_seat="$(python3 ./plan67.py seat "$arm")" || { echo "UNKNOWN-ARM $arm (plan 67: no seat)" >> "$OUT"; return 0; }
+    p67_bv="LD_BIN_$p67_seat"; p67_sv="LD_SHA_$p67_seat"; p67_tv="LD_TOOLS_$p67_seat"
+    RBIN="${!p67_bv:-}"; RWANT="${!p67_sv:-}"
+    [ -z "${!p67_tv:-}" ] || PERFDIR="${!p67_tv}"
+  fi
   if [ "$P63" = 1 ]; then
     # Plan 63: the row's bytes, timeout, hint and env from plan63.py armspec (plan 51e's spec for the arm without its seat prefix); C<arm> runs the CONTROL (BASE) binary, F<arm> the CAND.
     local p63_spec p63_tmo
@@ -416,7 +451,9 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     evt_env=(RWM_EVENT="$(python3 ./place46_parse.py event "$variant")")
     [ "$rep" = "0" ] && evt_env+=(RWM_EVENT_QDISC=1)
   fi
-  if [ "$P51" = 1 ] || [ "$P51E" = 1 ] || [ "$P63" = 1 ]; then
+  if [ "$P67" = 1 ]; then
+    read -r -a arm_env <<< "$p67_arm_env"      # plan67.py armspec: RWM_STORE_PATH_POOL=<pool> (the pool block), RWM_SUCC_DUMP=1 (the dump twins), plan 51e's PM env (R2: RWM_SLAW first, RWM_C_RELIABLE=0, RWM_PERF_RATE_MBIT=35)
+  elif [ "$P51" = 1 ] || [ "$P51E" = 1 ] || [ "$P63" = 1 ]; then
     read -r -a arm_env <<< "$p51_arm_env"      # plan51.py: RWM_DELTA=<v> on a numeric arm, nothing on a named-hint arm; plan51e.py: RWM_SLAW first, RWM_C_RELIABLE=0, RWM_PERF_RATE_MBIT on PL / PM
   elif [ "$P60" = 1 ] || [ "$P61" = 1 ] || [ "$P62" = 1 ]; then
     read -r -a arm_env <<< "$p60_arm_env"      # plan60.arm_env: RWM_SLAW first, the pool knob (not at the shipped 2048), the EVICT switches
@@ -529,6 +566,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     io_b=$(io_full10)
     procs_b=$(procs_running)
     t0=$(date +%s)
+    cd "$PERFDIR" || { _lb_say "ABORT-BIN $name: no tools dir $PERFDIR"; exit 5; }      # plan 67: a pacer seat's own tools tree; every other row: $HERE (a no-op)
     env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
         -u RWM_RTOBS -u RWM_ACKDIAG -u RWM_LOOPDIAG -u RWM_IO_RT -u RWM_STORE_PATHS \
         -u RWM_PLAIN_RS -u RWM_STORE -u RWM_QUIC_CC -u RWM_STORE_LAW -u RWM_RDIAG -u RWM_PCAP_DIR -u RWM_PLACE_WIRE -u RWM_TEST_PLACE_HOLD -u RWM_PLACE_WDIV -u RWM_PLACE_WDIV_DERIVED -u RWM_RECOV_SNAPVER -u RWM_STORE_PATH_POOL -u RWM_SUCC_DUMP -u RWM_SUCC_DUMP_MAX -u RWM_UNIFIED -u RWM_UNIFIED_SHED -u RWM_C_RELIABLE -u RWM_SLAW -u RWM_THREE_TERM \
@@ -539,6 +577,7 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
         RWM_C_PIPELINE=window RWM_BIN="$RBIN" \
       bash perf_rwm_c.sh "$ca" "$cb" "$HINT" "$bytes" 1 "$mode" > "$TMPD/ld-drv.out" 2>&1
     rc=$?
+    cd "$HERE" || exit 3
     wall=$(( $(date +%s) - t0 ))
     cot_a=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     io_a=$(io_full10)
@@ -548,6 +587,13 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     echo "IOPRESSURE $name s$seed rep=$rep full_avg10_before=$io_b full_avg10_after=$io_a $(grep '^full' "$PROCFS"/pressure/io)" >> "$OUT"
     echo "PROCS $name s$seed rep=$rep procs_running_before=$procs_b procs_running_after=$procs_a" >> "$OUT"
     grep -aE "$KEEP_PAT" "$TMPD/ld-drv.out" >> "$OUT" || true
+    if [ "$P67" = 1 ]; then
+      # The test-seams twins' account lines live in the endpoint logs, not in the driver output: keep the sender's last periodic [ACCT] line, its final=1 line (a killed sender has none) and the receiver's [ACCT-RX]
+      # in the ledger itself (the section 64 [SYMSZ] lesson: a witness only in the raw log is not on record).
+      { sed 's/\x1b\[[0-9;]*m//g' "$TMPD/rwm-c.log" 2>/dev/null | grep -aF '[ACCT] ' | grep -av 'final=1' | tail -n 1 | sed 's/^/ACCT-KEPT side=cli kind=periodic /'
+        sed 's/\x1b\[[0-9;]*m//g' "$TMPD/rwm-c.log" 2>/dev/null | grep -aF '[ACCT] ' | grep -a 'final=1' | tail -n 1 | sed 's/^/ACCT-KEPT side=cli kind=final /'
+        sed 's/\x1b\[[0-9;]*m//g' "$TMPD/rwm-s.log" 2>/dev/null | grep -aF '[ACCT-RX]' | tail -n 1 | sed 's/^/ACCT-KEPT side=srv kind=rx /'; } >> "$OUT" || true
+    fi
     echo "RUNTIME $name s$seed rep=$rep attempt=$attempt ${wall}s rc=$rc" >> "$OUT"
     [ "$rc" = "0" ] || echo "ABORT-RC $name s$seed rep=$rep rc=$rc (row void, battery goes on)" >> "$OUT"
     local base="$DDIR/${name}-s${seed}-r${rep}-a$(( attempt + ATTEMPT_OFF ))"      # ATTEMPT_OFF: plan 56's replacement run keeps the VOID row's logs (a1, a2) and writes a11, a12
@@ -574,9 +620,10 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
   [ "$P38" = 1 ] && parser=./place38_parse.py
   [ "$P43" = 1 ] && parser=./place43_parse.py
   [ "$P46" = 1 ] && parser=./place46_parse.py
+  [ "$P67" = 1 ] && parser=./s67_score.py      # plan 67: the row parser takes the plan first (`row <plan> <cell> <arm> ...`), reads LD_SHA_<SEAT>, prints P67ROW
   if LD_PLAN="$PLAN" LD_ROW_BYTES="$rowbytes" LD_ONDISK="$ondisk" LD_IO_FULL10="$io_max" LD_IO_B="$io_b" LD_IO_A="$io_a" LD_PROCS_B="$procs_b" LD_PROCS_A="$procs_a" LD_PCAP_DIR="$pdir" LD_TABLE_DIR="$OUTDIR/tables" P38_STORE="${p38store:-def}" \
       P46_VARIANT="$variant" LD_EVT="$base-evt.txt" LD_EVTQ="$base-evtq.txt" \
-      python3 "$parser" row "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
+      python3 "$parser" row "${p67_plan_arg[@]}" "$cell" "$arm" "$seed" "$rep" "$rc" "$wall" \
       "$TMPD/ld-drv.out" "$TMPD/rwm-c.log" "$TMPD/rwm-s.log" "$cot" "$sha" >> "$OUT" 2>&1; then
     # Scored (summary in the ledger, per-skb tables kept): only now do the pcaps go.
     { [ "$PLAN" = "36" ] || [ "$PLAN" = "40" ]; } && rm -rf "$OUTDIR/pcap/${name}-s${seed}-r${rep}-"a*
@@ -1166,6 +1213,56 @@ plan64() { # smoke -> the whole plan (0), or the two smoke rows (1); plan 65: 48
     BLOCK=1
   fi
 }
+
+# ── plan 67 (status 67, VM batch 1): one stage per battery launch (LD_PLAN = 67a | 67r | 67p | 67o | 67d); the table, the row specs and the replacement cap are plan67.py's ──
+# A slot voided by a PRECONDITION witness (a gauge print, pslot, the pool echo, rho, a twin without an account line) is re-run ONCE (plan67.py replace decides from the ledger); an S06-FAIL row never is. The block-1 rule
+# (registration 5.2): after the stage's first block the arms' first real rows must be LIVE with their witnesses, else the stage stops with FAILED-STAGE67 (exit 6) and the envelope goes on to the next stage.
+run_slot67() { # cell arm seed rep store
+  local why
+  ATTEMPT_OFF=0
+  run_one "$@"
+  if why="$(python3 ./plan67.py replace "$PLAN" "$OUT" "$1" "$2" "$3" "$4")"; then
+    echo "REPLACE67 $1 $2 s$3 rep=$4 reason=$why $(date -u +%T)" >> "$OUT"
+    ATTEMPT_OFF=10      # the replacement's per-row logs are a11 / a12: the void row's a1 / a2 stay as evidence
+    run_one "$@"
+    ATTEMPT_OFF=0
+  fi
+}
+plan67() { # smoke -> the whole table (0), or the smoke rows (1)
+  local -a tbl
+  local line cell store arm seed rep n=0 b1
+  if [ "$1" = "1" ]; then mapfile -t tbl < <(python3 ./plan67.py plan "$PLAN" smoke); else mapfile -t tbl < <(python3 ./plan67.py plan "$PLAN"); fi
+  [ "${#tbl[@]}" -gt 0 ] && [ "${#tbl[@]}" -eq "$(python3 ./plan67.py count "$PLAN" $([ "$1" = "1" ] && echo smoke))" ] || { echo "ABORT-PLAN67 table has ${#tbl[@]} rows (plan67.py count disagrees)" >> "$OUT"; exit 3; }
+  b1="$(python3 ./plan67.py block1n "$PLAN")"
+  for line in "${tbl[@]}"; do
+    read -r cell store arm seed rep <<< "$line"
+    if [ "$1" = "1" ]; then run_one "$cell" "$arm" "$seed" "$rep" "$store"; else run_slot67 "$cell" "$arm" "$seed" "$rep" "$store"; fi
+    n=$(( n + 1 ))
+    if [ "$1" != "1" ] && [ "$b1" -gt 0 ] && [ "$n" -eq "$b1" ]; then
+      if ! python3 ./s67_score.py block1 "$PLAN" "$OUT" >> "$OUT" 2>&1; then
+        echo "FAILED-STAGE67 plan $PLAN after block 1 ($n rows): an arm's first real row is not LIVE with its precondition witnesses; the stage stops $(date -u +%FT%TZ)" >> "$OUT"
+        _lb_say "FAILED-STAGE67 plan $PLAN -- stage stopped (block-1 rule)"; exit 6
+      fi
+      echo "BLOCK1-OK67 plan $PLAN ($n rows)" >> "$OUT"
+    fi
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE ${#tbl[@]} slots $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=1
+  fi
+}
+if [ "$P67" = 1 ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan67 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan67 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^P67ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
 
 if [ "$P64" = 1 ]; then
   if [ "${LD_SMOKE:-0}" = "1" ]; then
