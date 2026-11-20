@@ -45,7 +45,8 @@ fn sim_run() {
     let rt = b.build().unwrap();
 
     let wall0 = std::time::Instant::now();
-    let srv_addr: std::net::SocketAddr = "127.0.0.1:47011".parse().unwrap();
+    let npaths = env_u64("SIM_PATHS", 1) as u16;
+    let srv_addrs: Vec<std::net::SocketAddr> = (0..npaths).map(|i| std::net::SocketAddr::from(([127, 0, 0, 1], 47011 + i))).collect();
 
     let (outcome, virt_s, net) = rt.block_on(async move {
         let link = |loss: f64| LinkCfg {
@@ -64,7 +65,7 @@ fn sim_run() {
             ),
             _ => (0.0, None), // tailctl: same config, clean link, no blackout
         };
-        let net = SimNet::install(seed, vec![srv_addr], link(c2s_loss), link(0.0), blackout);
+        let net = SimNet::install(seed, srv_addrs.clone(), link(c2s_loss), link(0.0), blackout);
         {
             let net = net.clone();
             std::thread::spawn(move || loop {
@@ -84,14 +85,14 @@ fn sim_run() {
 
         let srv = RaptorpathConfig {
             server: Some(true),
-            bind: Some(vec![srv_addr.to_string()]),
+            bind: Some(srv_addrs.iter().map(|a| a.to_string()).collect()),
             protocol_hint: Some(hint.into()),
             window_reliable: if tail { Some(false) } else { None },
             ..Default::default()
         };
         let cli = RaptorpathConfig {
-            bind: Some(vec!["127.0.0.1:0".to_string()]),
-            peer: Some(vec![srv_addr.to_string()]),
+            bind: Some(vec!["127.0.0.1:0".to_string(); npaths as usize]),
+            peer: Some(srv_addrs.iter().map(|a| a.to_string()).collect()),
             protocol_hint: Some(hint.into()),
             window_reliable: if tail { Some(false) } else { None },
             ..Default::default()

@@ -72,3 +72,10 @@ pub fn random_f64() -> f64 {
     }
     rand::random::<f64>()
 }
+
+/// Per-path maps whose iteration order drives a decision or a spawn order:
+/// ordered under the sim (std's `RandomState` order differs per process).
+#[cfg(feature = "sim")]
+pub type PathMap<K, V> = std::collections::BTreeMap<K, V>;
+#[cfg(not(feature = "sim"))]
+pub type PathMap<K, V> = std::collections::HashMap<K, V>;

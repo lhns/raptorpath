@@ -723,7 +723,8 @@ impl QuicTransport {
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
         sender_tx: mpsc::Sender<InboundBatch>,
     ) {
-        let ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
+        let mut ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
+        ids.sort_unstable(); // SIM SPIKE: DashMap order is per-process random
         for path_id in ids {
             self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone(), sender_tx.clone()).await;
         }

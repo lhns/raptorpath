@@ -176,7 +176,7 @@ impl SimNet {
             }
         };
         drop(st);
-        self.log(format!("{tus} TX {tag} ord={ord} len={} {fate}", data.len()));
+        self.log(format!("{tus} TX {tag} {}>{} ord={ord} len={} {fate}", src.port(), dst.port(), data.len()));
     }
 }
 
@@ -284,7 +284,7 @@ impl quinn::AsyncUdpSocket for SimSocket {
                     m.dst_ip = Some(self.addr.ip());
                     meta[i] = m;
                     let tag = if src.port() >= 50_000 { "c>s" } else { "s>c" };
-                    self.net.log(format!("{tus} RX {tag} ord={ord} len={len}"));
+                    self.net.log(format!("{tus} RX {tag} {}>{} ord={ord} len={len}", src.port(), self.addr.port()));
                 }
                 return Poll::Ready(Ok(n));
             }
