@@ -60,6 +60,7 @@ flowchart TB
     rec_fix_refresh_clock[/"⛔ Receiver refresh<br/>clock input"/]
     rec_fix_nack_throttle[/"○ NACK repair<br/>throttle: gauge, paper"/]
     rec_retx_behind_source["○ Retransmits queued<br/>behind source?"]
+    rec_evict_blocker_unresolved>"⚠ Evicting seat<br/>strands a stalled<br/>blocker"]
     rec_early_arq ~~~ rec_bulk_arq
     rec_nack_congestion ~~~ rec_reliable_window
     rec_plost_sack ~~~ rec_p10a_repair_floor
@@ -113,8 +114,8 @@ flowchart TB
     rec_fix_perleg_clock_n1 ~~~ rec_fix_refresh_clock
     rec_fix_perleg_clock_n1 ~~~ rec_fix_nack_throttle
     rec_recovery_timeouts ~~~ rec_retx_behind_source
-    rec_fix_refresh_clock ~~~ rec_retx_behind_source
-    rec_fix_nack_throttle ~~~ rec_retx_behind_source
+    rec_fix_refresh_clock ~~~ rec_evict_blocker_unresolved
+    rec_fix_nack_throttle ~~~ rec_evict_blocker_unresolved
     rec_nack_congestion -.-> rec_fix_nack_throttle
     rec_per_path_clocks -.-> rec_defect_qclk_clamp
     rec_per_path_clocks -.-> rec_defect_hole_law
@@ -165,7 +166,7 @@ flowchart TB
     class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
     class rec_recov_sp,rec_dispersion_est,rec_realtime_srv_lag_lean,rec_leverb_guard parked
     class rec_gap_horizon waiting
-    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates defect
+    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_evict_blocker_unresolved defect
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
     class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
     class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
@@ -230,6 +231,7 @@ flowchart TB
 | `rec-fix-nack-throttle` | NACK repair throttle: gauge, paper | next | unrated |  | law ledger rows C09 |  |
 | `rec-retx-behind-source` | Retransmits queued behind source? | next | unrated |  | plan W3.6d (unanswered); status §55 Erratum 1 ("plan item 6d, unanswered") |  |
 | `rec-nack-congestion` | Congestion-aware NACK throttle (first form) | done | unrated |  | ADR-0046 | meas-matrix-bench |
+| `rec-evict-blocker-unresolved` | Evicting seat strands a stalled blocker | next | unrated |  | status "S06 deletion review and an evicting-seat defect (2026-11-20)"; branch wedge-diag bc383f29 |  |
 
 ### Details per node
 
@@ -286,4 +288,5 @@ flowchart TB
 | `rec-fix-nack-throttle` | NACK repair throttle: gauge, paper | Law ledger: C09. Gauge first: it needs no clock change to be measured (§55 Erratum 1 leaves it out of the clock fix). Done when: a gauge reports the per-report cap and multiplier bind fractions at c8, then the throttle gets a paper entry with provenance for its seven constants, or is deleted. | law ledger rows C09 |
 | `rec-retx-behind-source` | Retransmits queued behind source? | §55 Erratum 1: at c8 the recovery lever is the dwell, i.e. the store fix and this question. Done when: a diagnosis from the code path (transport.send_symbols to the per-path I/O owner) and the committed §48b/§53 ledgers says whether retransmits wait behind source symbols in quinn's per-path send buffer, with the measured dwell, and names the fix (a priority seam in the I/O owner) if they do. | plan W3.6d (unanswered); status §55 Erratum 1 ("plan item 6d, unanswered") |
 | `rec-nack-congestion` | Congestion-aware NACK throttle (first form) | ADR-0046 (Accepted), prompted by the ADR-0045 matrix run. The ledger's defect on NackCongestionState is rec-fix-nack-throttle. | ADR-0046 |
+| `rec-evict-blocker-unresolved` | Evicting seat strands a stalled blocker | Local runs on main (unpaced source ~5x an emulated 40 Mbit link): no source-rate bound on the evicting seat (intake pause reliable-only, net/mod.rs:2473); the NACK site clamps gaps to the 200-symbol window before the shed check (sender_phases.rs:790-805), so resend and shed act only while the blocker is inside it; the tail sweep re-targets a below-window first() (net/mod.rs:2789, :3035). Stalled-blocker case unresolved 19/30 (main-equivalent) and 15/30 (s06-delete). Owed: which site produced block E's 1 934 sheds; whether paced VM rows show it. Fix direction is an owner decision (source-rate gate, shed below the window, sweep target). Done when: a red-first test of the lost tail and the stalled blocker goes green, with the S4 counters as the oracle. | status "S06 deletion review and an evicting-seat defect (2026-11-20)"; branch wedge-diag bc383f29 |
 <!-- END GENERATED: table-rec -->

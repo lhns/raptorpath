@@ -8531,6 +8531,27 @@ nodes:
   overview: false
   plain: 'Make most of the engine''s items crate-private so the compiler reports dead code.'
   notes: 'Plan S10, at a quiet point.'
+- id: rec-evict-blocker-unresolved
+  title: Evicting seat strands a stalled blocker
+  track: rec
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status "S06 deletion review and an evicting-seat defect (2026-11-20)"
+  - branch wedge-diag bc383f29
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'In the slow-link mode (rho < 1) a lost packet can be neither resent nor dropped, and the transfer then waits on the receiver to skip it; a lost tail with nothing after it is never resolved.'
+  notes: 'Local runs on main (unpaced source ~5x an emulated 40 Mbit link): no source-rate bound on the evicting seat (intake pause reliable-only, net/mod.rs:2473); the NACK site clamps gaps to the 200-symbol window before the shed check (sender_phases.rs:790-805), so resend and shed act only while the blocker is inside it; the tail sweep re-targets a below-window first() (net/mod.rs:2789, :3035). Stalled-blocker case unresolved 19/30 (main-equivalent) and 15/30 (s06-delete). Owed: which site produced block E''s 1 934 sheds; whether paced VM rows show it. Fix direction is an owner decision (source-rate gate, shed below the window, sweep target). Done when: a red-first test of the lost tail and the stalled blocker goes green, with the S4 counters as the oracle.'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere

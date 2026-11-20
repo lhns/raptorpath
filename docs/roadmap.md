@@ -273,6 +273,7 @@ flowchart TB
 | Receiver refresh clock input | ⛔ blocked | Giving the receiver a real delay for its re-report timer; it waits for the in-flight limit fix, because until then the timer's limits decide its value anyway. |
 | NACK repair throttle: gauge, paper | ○ next | First measuring how often a hidden rule that limits re-sends per loss report actually bites, then justifying it in the paper or removing it. |
 | Retransmits queued behind source? | ○ next | Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets. |
+| Evicting seat strands a stalled blocker | ⚠ open defect | In the slow-link mode (rho < 1) a lost packet can be neither resent nor dropped, and the transfer then waits on the receiver to skip it; a lost tail with nothing after it is never resolved. |
 | Retention is the ρ dial | ✔ done · n/a | The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting. |
 | Batched BOCD estimator cadence | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
 | Funded coding at r > 0 | ✖ dead end | Tested sending extra repair data ahead of losses; in one small run it made the lossy single-path transfer slower, so the system keeps repairing on demand. |
@@ -404,6 +405,7 @@ flowchart TB
 - `rec-fix-perleg-clock-n1`: Per-leg recovery clock, one law
 - `rec-fix-nack-throttle`: NACK repair throttle: gauge, paper
 - `infra-test-recovery-counters`: Recovery bookkeeping counters
+- `rec-evict-blocker-unresolved`: Evicting seat strands a stalled blocker
 
 **no-cargo**
 
@@ -539,7 +541,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 53 nodes (22 done, 6 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 54 nodes (22 done, 6 in progress, 5 next, 3 blocked, 4 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 35 nodes (16 done, 4 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
