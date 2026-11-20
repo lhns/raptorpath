@@ -496,7 +496,7 @@ fn pin_snapshot_order() {
 /// net/sender_phases.rs `gap_clamp!` (:1459), used at :795.
 macro_rules! hole_gap_clamp {
     ($reliable:expr, $gap_start:expr, $gap_end:expr, $win_start:expr, $win_end:expr $(,)?) => {
-        if false {
+        if $reliable {
             ($gap_start, $gap_end)
         } else {
             ($gap_start.max($win_start), $gap_end.min($win_end))
