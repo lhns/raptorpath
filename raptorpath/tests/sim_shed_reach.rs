@@ -122,6 +122,7 @@ fn witness_nack_site_sheds_at_rho_below_1() {
     let r = scenario(false);
     let c = counts(&r);
     println!("rho<1: {c}");
+    println!("rho<1 account:{}", r.acct().0);
     assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
     assert!(!r.tseam("gap_clamped").is_empty(), "the evicting NACK site never clamped a gap: {c}");
 }

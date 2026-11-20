@@ -71,6 +71,7 @@ fn known_defect_lost_tail_strands_k_at_rho_below_1() {
     let r = lost_tail(false, 47_200);
     let s = summary(&r);
     println!("rho<1: {s}");
+    println!("rho<1 account:{}", r.acct().0);
     // Executes: the seam fired on k and the evicting NACK site ran.
     let sends = k_lines(&r, "send");
     assert!(sends.first().is_some_and(|l| l.contains(" dropped=1 ")), "seam did not swallow k's first send: {s}");
