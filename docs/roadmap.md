@@ -338,6 +338,7 @@ flowchart TB
 | Per-path I/O owner | ✔ done · very-successful | Gave each network path its own input and output task, which raised single-path throughput by about half. |
 | bbr_rs send-record ring fix | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Emission burst bound derivation | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
+| Perf ignores the config file | ⚠ open defect | The perf client and server never read --config, so the tail target, the overhead cap, certificate pinning and the slow-link setting cannot be set for a perf run. |
 | Repair-share bound counts every slot | ▶ in progress | The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model's definition is checked to mean the same thing. |
 | Pacer late-send check replaced | ✔ fixed | The planned test of loss repair on a low-latency link required its rate pacer to send almost nothing late, against a limit set without data. Lateness turned out to be ordinary timer delay on both programs, so the limit was replaced by a check for gross stalls, and lateness is now reported instead of voiding runs. |
 | Collapse rule blind at large pools | ⚠ open defect | The rule that tells a collapsed run from a healthy one misfires on a large, healthy control queue at the slower link shape; the wide delay tail there is not yet explained. |
@@ -384,6 +385,7 @@ flowchart TB
 | Mutation testing of the laws | ⛔ blocked | Weekly mutation runs on the maths crates on CI, to find laws no test pins. |
 | Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
 | Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
+| Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
 <!-- END GENERATED: plain-words -->
 
 ## Ready now
@@ -405,6 +407,8 @@ flowchart TB
 - `rec-fix-nack-throttle`: NACK repair throttle: gauge, paper
 - `infra-test-recovery-counters`: Recovery bookkeeping counters
 - `rec-evict-blocker-unresolved`: Evicting seat strands a stalled blocker
+- `perf-config-dropped`: Perf ignores the config file
+- `infra-dead-code-batch`: Remove 24 dead functions
 
 **no-cargo**
 
@@ -544,10 +548,10 @@ Each track has its own page with its tree, node table and per-node details.
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 25 nodes (10 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
-- [perf - performance](roadmap/tracks/perf.md): 27 nodes (18 done, 1 in progress, 1 next, 7 abandoned)
+- [perf - performance](roadmap/tracks/perf.md): 28 nodes (18 done, 1 in progress, 2 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 26 nodes (14 done, 6 in progress, 2 next, 4 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 27 nodes (14 done, 6 in progress, 3 next, 4 blocked)
 <!-- END GENERATED: tracks -->
 

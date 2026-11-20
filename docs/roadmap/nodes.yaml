@@ -8359,6 +8359,7 @@ nodes:
   outcome: unrated
   evidence:
   - docs/derivations/test-detection-plan.md
+  - branch static-audits 86b5208f
   verdict_quote: ''
   headline: ''
   depends_on: []
@@ -8370,7 +8371,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it.'
-  notes: 'Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard.'
+  notes: 'Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard. Built and triaged on static-audits 86b5208f: 69 uncalled pub fns (43 test-only, 22 dead, 4 unwired) and 12 ignored params (9 intended, 2 dead, 1 unwired); unwired list: ADR-0050 Phase 3 proactive_rate, ADR-0017 MTU sizing (repair_wire_overhead, min_mtu), Scheduler::on_loss (paper 8.1), set_protocol_hint (Auto detection documented, never built), enable_pi_feedback. Red on main''s tunnel leak with the fix removed. Waits for tunnel-inorder-guard and a release-binary hash check of the main.rs refactor 4bbb2f96.'
 - id: infra-test-pinned-law-check
   title: Pinned-law check from logs
   track: infra
@@ -8554,6 +8555,46 @@ nodes:
   overview: false
   plain: 'In the slow-link mode (rho < 1) a lost packet can be neither resent nor dropped, and the transfer then waits on the receiver to skip it; a lost tail with nothing after it is never resolved.'
   notes: 'Local runs on main (unpaced source ~5x an emulated 40 Mbit link): no source-rate bound on the evicting seat (intake pause reliable-only, net/mod.rs:2473); the NACK site clamps gaps to the 200-symbol window before the shed check (sender_phases.rs:790-805), so resend and shed act only while the blocker is inside it; the tail sweep re-targets a below-window first() (net/mod.rs:2789, :3035). Stalled-blocker case unresolved 19/30 (main-equivalent) and 15/30 (s06-delete). Owed: which site produced block E''s 1 934 sheds; whether paced VM rows show it. Fix direction is an owner decision (source-rate gate, shed below the window, sweep target). Done when: a red-first test of the lost tail and the stalled blocker goes green, with the S4 counters as the oracle.'
+- id: perf-config-dropped
+  title: Perf ignores the config file
+  track: perf
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The perf client and server never read --config, so the tail target, the overhead cap, certificate pinning and the slow-link setting cannot be set for a perf run.'
+  notes: 'main.rs:263 cmd_perf gets no config though --config is global (main.rs:12) and the README documents it. Blocks the tail-target flag sweep (VM queue 4) and rho < 1 at Bulk/Auto in perf. Also: ge_burst_factor and realtime_burst_extra have no consumer anywhere (config.rs:64-67). Done when: the S2c round-trip cells for perf move, red first.'
+- id: infra-dead-code-batch
+  title: Remove 24 dead functions
+  track: infra
+  kind: simplification
+  state: next
+  outcome: unrated
+  evidence:
+  - branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies.'
+  notes: 'D list in audits.rs on static-audits 86b5208f (callers deleted in dacfd7cc / ADR-0069 and others). Tests that exercise a dead copy instead of the live path: compute_repair_rate_capped, get_or_eval, pooled_recovery_srtt_of, Scheduler::schedule, compute_repair_count, compute_gap_ranges. Release-binary hash check; guard only if bytes change. Stale docs to fix with it: net/tests.rs:3807, fec_rate.rs:46, paper 8.1, loss_clamp_witness doc.'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere
