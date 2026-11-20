@@ -294,17 +294,110 @@ pub(crate) fn endpoint_config(
     role: &str,
     path_id: crate::scheduler::PathId,
 ) -> quinn::EndpointConfig {
-    let mut cfg = quinn::EndpointConfig::default();
-    if let Some(net) = net() {
-        *runtime = Arc::new(SimRuntime(runtime.clone()));
-        let mut s = net.seed ^ ((path_id as u64) << 8) ^ if role == "server" { 0x5a } else { 0xa5 };
-        let mut seed = [0u8; 32];
-        for c in seed.chunks_mut(8) {
-            c.copy_from_slice(&next_u64(&mut s).to_le_bytes());
-        }
-        cfg.rng_seed(Some(seed));
+    let Some(net) = net() else { return quinn::EndpointConfig::default() };
+    *runtime = Arc::new(SimRuntime(runtime.clone()));
+    let mut s = net.seed ^ ((path_id as u64) << 8) ^ if role == "server" { 0x5a } else { 0xa5 };
+    // quinn's default reset key and connection-id generator draw from the OS
+    // RNG; under the sim both come from the endpoint's seed stream.
+    let mut cfg = quinn::EndpointConfig::new(Arc::new(SimHmac(next_u64(&mut s))));
+    let cids = Arc::new(AtomicU64::new(next_u64(&mut s)));
+    cfg.cid_generator(move || Box::new(SimCid(splitmix_mix(cids.fetch_add(0x9E37_79B9_7F4A_7C15, Relaxed)))));
+    let mut seed = [0u8; 32];
+    for c in seed.chunks_mut(8) {
+        c.copy_from_slice(&next_u64(&mut s).to_le_bytes());
     }
+    cfg.rng_seed(Some(seed));
     cfg
+}
+
+/// `crate::clock::client_config` under an active simulation: the client's
+/// initial destination connection id (20 bytes, quinn's default length) from
+/// the scenario seed instead of the OS RNG.
+pub(crate) fn client_config(mut config: quinn::ClientConfig) -> quinn::ClientConfig {
+    if let Some(net) = net() {
+        let state = Arc::new(AtomicU64::new(splitmix_mix(net.seed ^ 0x1D_C1D0)));
+        config.initial_dst_cid_provider(Arc::new(move || {
+            let mut b = [0u8; 24];
+            for c in b.chunks_mut(8) {
+                c.copy_from_slice(&splitmix_mix(state.fetch_add(0x9E37_79B9_7F4A_7C15, Relaxed)).to_le_bytes());
+            }
+            quinn::ConnectionId::new(&b[..20])
+        }));
+    }
+    config
+}
+
+/// Seeded 8-byte connection ids (quinn's default length, no lifetime).
+struct SimCid(u64);
+
+impl quinn::ConnectionIdGenerator for SimCid {
+    fn generate_cid(&mut self) -> quinn::ConnectionId {
+        quinn::ConnectionId::new(&next_u64(&mut self.0).to_le_bytes())
+    }
+    fn cid_len(&self) -> usize {
+        8
+    }
+    fn cid_lifetime(&self) -> Option<Duration> {
+        None
+    }
+}
+
+/// A keyed, deterministic, NOT cryptographic stand-in for quinn's
+/// stateless-reset HMAC: tokens only need to be stable per key and data.
+struct SimHmac(u64);
+
+impl SimHmac {
+    fn mac(&self, data: &[u8]) -> [u8; 32] {
+        let mut h = self.0;
+        for c in data.chunks(8) {
+            let mut w = [0u8; 8];
+            w[..c.len()].copy_from_slice(c);
+            h = splitmix_mix(h ^ u64::from_le_bytes(w)).wrapping_add(c.len() as u64);
+        }
+        let mut out = [0u8; 32];
+        for o in out.chunks_mut(8) {
+            o.copy_from_slice(&next_u64(&mut h).to_le_bytes());
+        }
+        out
+    }
+}
+
+impl quinn::crypto::HmacKey for SimHmac {
+    fn sign(&self, data: &[u8], out: &mut [u8]) {
+        out.copy_from_slice(&self.mac(data)[..out.len()]);
+    }
+    fn signature_len(&self) -> usize {
+        32
+    }
+    fn verify(&self, data: &[u8], sig: &[u8]) -> Result<(), quinn::crypto::CryptoError> {
+        if sig.len() <= 32 && self.mac(data)[..sig.len()] == *sig {
+            Ok(())
+        } else {
+            Err(quinn::crypto::CryptoError)
+        }
+    }
+}
+
+/// A fixed Ed25519 key (PKCS#8 v1: the RFC 8410 prefix and a constant seed),
+/// so the server certificate is the same every run, and its TLS signature
+/// (Ed25519 is deterministic, 64 bytes) has a fixed length.
+const SIM_ED25519_PKCS8: [u8; 48] = {
+    let mut k = [0x5a; 48];
+    let prefix = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+    let mut i = 0;
+    while i < prefix.len() {
+        k[i] = prefix[i];
+        i += 1;
+    }
+    k
+};
+
+/// `crate::clock::self_signed` under an active simulation.
+pub(crate) fn self_signed(names: Vec<String>) -> Result<rcgen::CertifiedKey, rcgen::Error> {
+    let der = rustls::pki_types::PrivatePkcs8KeyDer::from(&SIM_ED25519_PKCS8[..]);
+    let key_pair = rcgen::KeyPair::try_from(&der)?;
+    let cert = rcgen::CertificateParams::new(names)?.self_signed(&key_pair)?;
+    Ok(rcgen::CertifiedKey { cert, key_pair })
 }
 
 /// The simulation runtime: current-thread, paused time, `select!` order
