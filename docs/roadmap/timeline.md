@@ -322,7 +322,7 @@ gantt
     Derivation and harness branches to main :infra_derivation_merges, 2026-11-19, 2026-11-19
     CI on every push :active, infra_test_ci_gate, 2026-11-20, 2026-11-20
     Unwired-code and config audits :active, infra_test_static_audits, 2026-11-20, 2026-11-20
-    Pinned-law check from logs :active, infra_test_pinned_law_check, 2026-11-20, 2026-11-20
+    Pinned-law check from logs :infra_test_pinned_law_check, 2026-11-20, 2026-11-20
     Model check of hole recovery :active, infra_test_recovery_model, 2026-11-20, 2026-11-20
     Deterministic simulation spike :active, infra_test_sim_spike, 2026-11-20, 2026-11-20
     Recovery bookkeeping counters :infra_test_recovery_counters, 2026-11-20, 2026-11-20
