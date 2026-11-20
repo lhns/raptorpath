@@ -64,6 +64,40 @@ const PERF_INJECTED_TUN: &str = "perf runs on an injected memory TUN: no device,
 const DEPRECATED: &str = "deprecated: parsed, warned, ignored (paper 5.10)";
 const NO_CONSUMER: &str = "no PeerConfig field and no consumer: resolve drops a documented key";
 
+/// The table. Triage of the `Owed` / `DiesAtController` cells (they stay
+/// owed here; fixing one is a separate change), by root cause:
+///
+/// 1. DEFECT, perf drops the global `--config`. `main.rs:12` declares it
+///    `global = true` and the README (Usage: "`--config <file.toml>` is
+///    global") documents it so, but `cmd_perf` is called without it
+///    (`main.rs:263`; the comment at `main.rs:279` says "minus the config
+///    file" on purpose). Docs and behaviour disagree. Per key under perf:
+///    * defect, no other route in: `target_tail_loss`, `max_fec_overhead`,
+///      `inner_feedback_weight` (law inputs with no perf flag: liveness
+///      audit 2b, PERF-MISSING); `pin_cert` (no perf flag, so a perf client
+///      can never pin a certificate); `window_reliable = false` (perf's
+///      bare-bool flag cannot set ρ < 1 at Bulk/Auto, so the ρ dial does not
+///      compose with δ there in perf); `bind` (optional for a perf client,
+///      so a file value would apply); `status_addr` (the engine serves
+///      /status from `PeerConfig.status_addr`, `net/mod.rs:1293`, but perf
+///      has no way to set it); `reorder_timeout_ms`, `reorder_max_size`
+///      (read only at ρ < 1, `receiver.rs:165-166`).
+///    * defect only through the dropped file, a flag exists: `protocol_hint`.
+///    * acceptable: `server`, `peer` (perf's CLI requires them,
+///      `main.rs:270-277`, and would overlay a file value); the four
+///      `window_*` object modes (perf's flags are their documented surface,
+///      README perf section); `interleave_depth`, `mp_block_affinity` (dead
+///      everywhere: reading the file would only turn silence into the
+///      ADR-0069 error); `enable_pi_feedback` (dead in the tunnel too, see 3).
+/// 2. DEFECT, `ge_burst_factor` and `realtime_burst_extra` have no consumer
+///    on either entry point. `config.rs:64-67` documents them with a default
+///    of 0.10, `merge` carries them, nothing reads them and nothing warns
+///    (liveness audit 2b, NO-READER silent; the GE burst multiplier was
+///    superseded by ADR-0050, liveness audit row 0023). Fix: warn and ignore
+///    like the `DEPRECATED` keys, or remove them.
+/// 3. DEFECT, `enable_pi_feedback` reaches `PeerConfig` and dies at the
+///    controller (S2b `PARAM_UNWIRED`): documented at `config.rs:62`,
+///    default true, ignored since ADR-0050 removed PI. Same fix as 2.
 const KEYS: &[Key] = &[
     Key { name: "server", toml: "true", tunnel: Moves("is_server"), perf: Owed(PERF_DROPS_CONFIG) },
     Key { name: "bind", toml: "[\"127.0.0.1:19001\"]", tunnel: Moves("bind_addrs"), perf: Owed(PERF_DROPS_CONFIG) },

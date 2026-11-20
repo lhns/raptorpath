@@ -4,9 +4,11 @@
 //! **S2a, production-caller audit.** Every `pub` / `pub(..)` fn defined outside
 //! test code needs a call site outside test code (`#[cfg(test)]` items,
 //! `#[cfg(any(test, feature = "test-seams"))]` items, `*tests.rs` files, files
-//! declared by a `#[cfg(test)] mod x;`), or it must be listed with a reason in
-//! [`ALLOWLIST`], or sit in [`PENDING_TRIAGE`] (no reason yet: a human decides
-//! whether the fn is dead, a missing wiring, or fine).
+//! declared by a `#[cfg(test)] mod x;`), or it must be listed with a classed
+//! reason: [`ALLOWLIST`] (test support, dead, scanner miss) or [`UNWIRED`]
+//! (the defect record: logic documented to run that has no caller). A new
+//! finding sits in [`PENDING_TRIAGE`] until a human classes it. The classes
+//! are defined above the lists.
 //!
 //! **S2b, ignored-parameter audit.** rustc never warns on a `_`-prefixed name,
 //! so `fn f(_x: T)` hides a parameter the caller fills in and the callee
@@ -18,7 +20,11 @@
 //! * Name matching, not type resolution. A method is "called" when some
 //!   `.name(` appears, whatever the receiver, so a same-named method on another
 //!   type gives a false pass (`new`, `len`, `get` are always "called").
-//!   Associated fns are matched on `Type::name` / `Self::name` only.
+//!   Associated fns are matched on `Type::name` / `Self::name` only. Known
+//!   false passes found at triage: `Scheduler::min_mtu` (no production
+//!   caller; quinn's `transport.min_mtu(` in `transport/quic.rs` hides it)
+//!   and `LossEstimator::record_symbol` (only tests call it; the inner
+//!   `self.ge.record_symbol(` hides it). Both are uncaught U/T items.
 //! * A fn called only by another uncalled fn counts as called (no transitive
 //!   deadness). A fn reached only through a re-export alias
 //!   (`use X as Y; Y::f()`) is reported uncalled: a false positive.
@@ -33,103 +39,130 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 // ---------------------------------------------------------------- lists
+//
+// Every entry is `(key, "<class>: <reason>")`. Classes:
+// * T: test-support. An accessor on live state, an A/B hook, or a thin wrapper
+//   whose body only delegates to the fn production calls. Only tests read it
+//   and no decision depends on it. The reason names the tests.
+// * D: dead. Nothing reads it, or it is a path production no longer takes
+//   (including a copy of logic production runs inline elsewhere, so the tests
+//   that call it pin the copy, not the production site). The reason names what
+//   superseded it, with the commit or ADR.
+// * U: unwired. Production logic a doc comment, ADR or the paper says runs,
+//   with no production caller. A defect: listed in [`UNWIRED`] /
+//   [`PARAM_UNWIRED`], which pass the test but are the defect record.
+// * I (params only): ignored on purpose, for a concrete stated reason.
+// * R: a real production caller the scanner missed (none at triage).
+// Observation-only code (gauges, counters) is T or D, never U. Deleting a D or
+// fixing a U is a separate decision; nothing here changes engine code.
 
-/// S2a: uncalled pub fns with a decided reason. Key: `path::[Type::]fn`.
-/// Mechanical categories (main entry point, serde `default = "fn"` paths) are
-/// computed, not listed. Empty until the coordinator triages.
-const ALLOWLIST: &[(&str, &str)] = &[];
-
-/// S2a: uncalled pub fns awaiting triage. No reason on purpose.
-const PENDING_TRIAGE: &[&str] = &[
-    "control/anchor.rs::SendRateAnchor::mean_rate",
-    "control/estimator.rs::LossCredit::held",
-    "control/estimator.rs::LossEstimator::bocd_updates",
-    "control/estimator.rs::LossEstimator::is_in_burst",
-    "control/estimator.rs::LossEstimator::loss_rate_mean",
-    "control/estimator.rs::LossEstimator::record_counts",
-    "control/estimator.rs::LossEstimator::start_cadence_clock_at",
-    "control/estimator.rs::LossEstimator::update_rx_loss",
-    "control/fec_rate.rs::BudgetAllocator::proactive_rate",
-    "control/fec_rate.rs::BudgetAllocator::total_budget",
-    "control/fec_rate.rs::FecRateController::compute_repair_count",
-    "control/fec_rate.rs::FecRateController::compute_repair_rate_capped",
-    "control/fec_rate.rs::FecRateController::diagnostics",
-    "control/fec_rate.rs::FecRateController::feedback_update",
-    "control/fec_rate.rs::FecRateController::set_bulk_pure_arq",
-    "control/fec_rate.rs::FecRateController::set_saturation_cap",
-    "control/fec_rate.rs::FecRateController::set_tail_provision",
-    "control/fec_rate.rs::RepairRateCache::get_or_eval",
-    "fec/traits.rs::FecBackend::repair_wire_overhead",
-    "net/ackdiag.rs::AckCadenceGauge::last_recon",
-    "net/ackdiag.rs::AckCadenceGauge::totals",
-    "net/channel_set.rs::channel_worst_loss_rate",
-    "net/control_msg.rs::repair_request_ignored",
-    "net/eta.rs::SenderEta::frontier_eta_us",
-    "net/eta.rs::SenderEta::wire_gauges",
-    "net/eta.rs::Tlag::ring_len",
-    "net/framing.rs::SymbolPacker::should_flush",
-    "net/framing.rs::read_packets",
-    "net/lat.rs::LatGauge::n_deliv",
-    "net/late.rs::RankGauge::is_fed",
-    "net/recovery_clock.rs::qnative_recovery_round_us",
-    "net/recovery_laws.rs::pooled_recovery_srtt_of",
-    "net/recv_block.rs::RecvDiagBlock::final_done",
-    "net/rttdump.rs::RttDump::totals",
-    "net/sack.rs::SackMemo::intervals",
-    "net/sack.rs::compute_gap_ranges",
-    "net/sack.rs::sack_release_mark",
-    "net/seq_bits.rs::SeqBits::refused",
-    "net/shed.rs::CompletionFeed::drain_bps",
-    "net/snapver.rs::SnapOrder::newest",
-    "net/store_cap.rs::path_scaled_store_cap",
-    "net/store_cap.rs::store_cap_sf_reset",
-    "net/succ.rs::SuccGauge::det_n",
-    "net/succ.rs::SuccGauge::hist",
-    "net/succ.rs::SuccGauge::observe_high",
-    "net/succ.rs::SuccGauge::orig_frac",
-    "net/succ.rs::SuccGauge::over_n",
-    "net/succ.rs::SuccGauge::resolve",
-    "net/succ.rs::SuccGauge::rtx_n",
-    "net/succ.rs::SuccGauge::sp_n",
-    "net/succ.rs::SuccGauge::xp_n",
-    "runtime_obs.rs::armed",
-    "scheduler/mod.rs::Scheduler::cold_place",
-    "scheduler/mod.rs::Scheduler::on_loss",
-    "scheduler/mod.rs::Scheduler::place_wdiv_derived",
-    "scheduler/mod.rs::Scheduler::schedule",
-    "scheduler/mod.rs::Scheduler::set_cold_place",
-    "scheduler/mod.rs::Scheduler::set_place_wdiv_derived",
-    "scheduler/mod.rs::Scheduler::set_protocol_hint",
-    "scheduler/mod.rs::lcw_reset",
-    "scheduler/path.rs::PathState::loss_clamp_witness",
-    "scheduler/path.rs::PathState::sender_truth_release_batch",
-    "task_obs.rs::RxProbe::counters",
-    "transport/io_owner.rs::first_identity_violation",
-    "transport/io_owner.rs::identity_counts",
-    "transport/quic.rs::QuicTransport::cc_window_bytes",
-    "transport/quic.rs::QuicTransport::rcvbuf_grant",
-    "transport/quic.rs::QuicTransport::rx_socket_rcvbuf",
-    "tun/mod.rs::TunInterface::write_packet",
+/// S2a: uncalled pub fns with a decided T / D / R reason. Key:
+/// `path::[Type::]fn`. Mechanical categories (main entry point, serde
+/// `default = "fn"` paths) are computed, not listed.
+const ALLOWLIST: &[(&str, &str)] = &[
+    ("control/anchor.rs::SendRateAnchor::mean_rate", "D: its consumer, the RWM_POOL_ANCHOR arm, was removed in 00dec5e0; the anchor tests (anchor.rs:447-501) pin a statistic nothing reads"),
+    ("control/estimator.rs::LossCredit::held", "T: credit readout for the LossCredit tests (estimator.rs:803-806)"),
+    ("control/estimator.rs::LossEstimator::bocd_updates", "T: cadence-mechanism gauge read by the estimator cadence tests (estimator.rs:650-690)"),
+    ("control/estimator.rs::LossEstimator::is_in_burst", "T: burst-flag readout for estimator.rs:745 and tests/estimator_production_test.rs:176-202; its last production reader (realtime_burst_extra) went in f2cba2b7"),
+    ("control/estimator.rs::LossEstimator::loss_rate_mean", "T: Beta-posterior readout for net/tests.rs:3924,4936. Its production reader (block eligibility in the scheduler) went in dacfd7cc (ADR-0069); the doc at net/tests.rs:3807-3809 still calls it a shipped consumer"),
+    ("control/estimator.rs::LossEstimator::record_counts", "T: wall-clock wrapper delegating to record_counts_at (the production feed), for control/fec_rate/tests.rs:531-1312"),
+    ("control/estimator.rs::LossEstimator::start_cadence_clock_at", "T: MockClock sim hook (doc: the engine never calls it) for estimator.rs:684, tests/common/gate_harness.rs:419, tests/store_cap_sf_bench.rs:1859"),
+    ("control/estimator.rs::LossEstimator::update_rx_loss", "D: NACK-echo RX feed; the wire never got ADR-0050's NackAck (liveness audit 2a, changed-in-code note 1); production feeds record_rx_batch. Only estimator.rs:832 calls it"),
+    ("control/fec_rate.rs::BudgetAllocator::total_budget", "T: conservation readout for control/fec_rate/tests.rs:628-649; production reads only nack_cap (net/mod.rs:3320). Goes live with the proactive_rate fix"),
+    ("control/fec_rate.rs::FecRateController::compute_repair_count", "D: block-era k-source repair count; its caller went with the block pipeline in dacfd7cc (ADR-0069). tests/control_loop.rs, tests/gilbert_elliott_test.rs:38 and fec_rate/tests.rs:291-318 still drive it"),
+    ("control/fec_rate.rs::FecRateController::compute_repair_rate_capped", "D: superseded by the inline spare clamp at net/emit_source.rs:578-580 (ADR-0050's gate, WIRED in the liveness audit). tests/gate_suite.rs:493, tests/control_loop.rs:242, tests/store_cap_sf_bench.rs:2437 pin this copy, not the production site"),
+    ("control/fec_rate.rs::FecRateController::diagnostics", "D: returns constant zeros since the PI removal (ADR-0050); its caller went in dacfd7cc; /status reads the stats atomics (monitor/stats.rs:160). Only tests/control_loop.rs:147"),
+    ("control/fec_rate.rs::FecRateController::feedback_update", "D: no-op kept for compatibility (ADR-0050: PI removed, feedback_update preserved as a no-op); production callers went in dacfd7cc. tests/control_loop.rs, tests/bench_suite.rs:863"),
+    ("control/fec_rate.rs::FecRateController::set_bulk_pure_arq", "T: P4a ablation hook (doc) for fec_rate/tests.rs:98-468, tests/common/gate_harness.rs:553, config_round_trip.rs:175"),
+    ("control/fec_rate.rs::FecRateController::set_saturation_cap", "T: saturation-cap ablation hook for fec_rate/tests.rs:389, tests/common/gate_harness.rs:547"),
+    ("control/fec_rate.rs::FecRateController::set_tail_provision", "T: #46 ablation hook (doc) for fec_rate/tests.rs:546-771"),
+    ("control/fec_rate.rs::RepairRateCache::get_or_eval", "D: re-composes hit/eval/store, which production composes itself in cadenced_repair_rate (net/emit_source.rs:928,942); fec_rate/tests.rs:1332,1400 pin the wrapper, not that wiring"),
+    ("net/ackdiag.rs::AckCadenceGauge::last_recon", "T: readout-4 pair for tests/ackdiag_repair_recon.rs:81"),
+    ("net/ackdiag.rs::AckCadenceGauge::totals", "T: per-path totals for tests/ackdiag_loopback.rs:64, tests/ackdiag_repair_recon.rs:48-64, tests/quad_path_loopback.rs:71-94"),
+    ("net/channel_set.rs::channel_worst_loss_rate", "D: its production readers went with the block pipeline in dacfd7cc (ADR-0069); only net/tests.rs:4868 pins it"),
+    ("net/control_msg.rs::repair_request_ignored", "D: gauge with no reader: its doc says the count is 'read off' it, but no log line or test prints it (the counter itself is bumped at control_msg.rs:797)"),
+    ("net/eta.rs::SenderEta::frontier_eta_us", "T: accessor for eta.rs:711 (doc: no decision reads it); its placement reader went with RWM_PLACE_HOL in 57955ea4"),
+    ("net/eta.rs::SenderEta::wire_gauges", "D: no reader: the doc says 'test seat' but nothing calls it; its readers went with the placement arm in 4265e3db (ADR-0073)"),
+    ("net/eta.rs::Tlag::ring_len", "T: ring occupancy for eta.rs:625,649"),
+    ("net/framing.rs::SymbolPacker::should_flush", "T: doc says test-only; framing/tests.rs:295-301. Production flushes on its own timer (net/mod.rs:3049-3156)"),
+    ("net/framing.rs::read_packets", "T: owned-copy collector over unframe, the one production reader since ab9feec4 (ADR-0078); framing/tests.rs"),
+    ("net/lat.rs::LatGauge::n_deliv", "T: identity left side for lat.rs:542-752"),
+    ("net/late.rs::RankGauge::is_fed", "T: readout for late.rs:742-745"),
+    ("net/recovery_clock.rs::qnative_recovery_round_us", "D: its consumer, the RWM_HOLDDOWN_Q hold-down clock, was removed in 89fb0eb8 (refuted, paper hold-down row); only tests/recovery_bench.rs:782-823"),
+    ("net/recovery_laws.rs::pooled_recovery_srtt_of", "D: copy of the composition production runs inline at net/mod.rs:2798-2801; net/tests.rs:1314 pins the copy"),
+    ("net/recv_block.rs::RecvDiagBlock::final_done", "T: readout for recv_block.rs:239-253"),
+    ("net/rttdump.rs::RttDump::totals", "T: doc says test-facing, no engine caller; rttdump.rs:260-313"),
+    ("net/sack.rs::SackMemo::intervals", "T: bound check for sack_memo_tests.rs:152"),
+    ("net/sack.rs::compute_gap_ranges", "D: production gap producer replaced in 738008cb (capped SACK report is an honest prefix); net/tests.rs:1369, tests/sim_nack_test.rs, tests/bench_suite.rs:1087 still drive it"),
+    ("net/sack.rs::sack_release_mark", "T: allocating wrapper delegating to sack_release_mark_into (the production call); net/tests.rs:1520-3516, seq_ring.rs:374 (test)"),
+    ("net/seq_bits.rs::SeqBits::refused", "T: refusal counter for seq_bits.rs:382,425"),
+    ("net/shed.rs::CompletionFeed::drain_bps", "D: no reader; the χ path calls drain_bps_at directly (shed.rs:182), as does shed.rs:229"),
+    ("net/snapver.rs::SnapOrder::newest", "T: readout for net/tests.rs:6242,6537 and decision_trace_pin.rs:435-465 (cfg(test))"),
+    ("net/store_cap.rs::path_scaled_store_cap", "D: the quadratic RWM_SUM_CAP=0 predecessor, superseded by pooled_store_cap (ADR-0070, paper store-cap law); net/tests.rs:1890-2595 and tests/store_cap_bench.rs:120 pin it as the documented defect"),
+    ("net/store_cap.rs::store_cap_sf_reset", "D: doc says bench/test isolation, but nothing calls it"),
+    ("net/succ.rs::SuccGauge::det_n", "T: identity readout for succ/tests.rs:112-187"),
+    ("net/succ.rs::SuccGauge::hist", "T: histogram readout for succ/tests.rs:34-412"),
+    ("net/succ.rs::SuccGauge::observe_high", "T: wrapper delegating to observe_high_at (the receiver's call, receiver.rs:1462); succ/tests.rs, recv_block.rs:230 (test)"),
+    ("net/succ.rs::SuccGauge::orig_frac", "T: readout for succ/tests.rs:231-249; the line prints the field directly"),
+    ("net/succ.rs::SuccGauge::over_n", "T: readout for succ/tests.rs:163-203"),
+    ("net/succ.rs::SuccGauge::resolve", "T: wrapper delegating to resolve_at (doc: the receiver calls that one); succ/tests.rs:132-223"),
+    ("net/succ.rs::SuccGauge::rtx_n", "T: readout for succ/tests.rs:35"),
+    ("net/succ.rs::SuccGauge::sp_n", "T: readout for succ/tests.rs:409-425"),
+    ("net/succ.rs::SuccGauge::xp_n", "T: readout for succ/tests.rs:408-425"),
+    ("runtime_obs.rs::armed", "D: no reader; its one caller went with the losing Q1 arm in 84f6c90c"),
+    ("scheduler/mod.rs::Scheduler::cold_place", "T: A/B readout (doc) for scheduler/tests.rs:1230, tests/store_cap_sf_bench.rs:1836"),
+    ("scheduler/mod.rs::Scheduler::schedule", "D: block-batch placement, superseded by place_symbol (paper placement law, net/emit_source.rs:358,869); its caller went in dacfd7cc. scheduler/tests.rs, tests/congestion_control.rs, tests/congestion_production_test.rs still drive it"),
+    ("scheduler/mod.rs::Scheduler::set_cold_place", "T: A/B hook (doc) for scheduler/tests.rs:1041-1186, tests/store_cap_sf_bench.rs:1834"),
+    ("scheduler/mod.rs::Scheduler::place_wdiv_derived", "T: arm readout for scheduler/tests.rs:2507"),
+    ("scheduler/mod.rs::Scheduler::set_place_wdiv_derived", "T: arm hook for scheduler/tests.rs:2476-2598"),
+    ("scheduler/mod.rs::lcw_reset", "T: doc says tests only; net/tests.rs:2280"),
+    ("scheduler/path.rs::PathState::loss_clamp_witness", "D: no reader; superseded by the process-wide LCW atomics printed as [LCW] (scheduler/mod.rs:631, store_cap.rs:766). The per-path lcw= token its doc promises does not exist"),
+    ("scheduler/path.rs::PathState::sender_truth_release_batch", "D: refuted release law kept for the negative result (doc: no production call site); nothing calls this batch form, the bounding test uses sender_truth_release_delta (net/tests.rs:4138)"),
+    ("task_obs.rs::RxProbe::counters", "T: readout for task_obs.rs:1601-1605"),
+    ("transport/io_owner.rs::first_identity_violation", "T: lock-order witness for tests/lock_order_loopback.rs:65"),
+    ("transport/io_owner.rs::identity_counts", "T: lock-order witness for tests/lock_order_loopback.rs:58"),
+    ("transport/quic.rs::QuicTransport::cc_window_bytes", "D: passthrough-window readback for diagnostics; nothing reads it"),
+    ("transport/quic.rs::QuicTransport::rcvbuf_grant", "T: readout for quic.rs rcvbuf_endpoint_tests (quic.rs:1306)"),
+    ("transport/quic.rs::QuicTransport::rx_socket_rcvbuf", "T: readout for quic.rs rcvbuf_endpoint_tests (quic.rs:1305,1316)"),
+    ("tun/mod.rs::TunInterface::write_packet", "D: never called since its introduction; delivery hands packets to the TUN with try_send on the channel (net/delivery.rs:63,86; ADR-0011)"),
 ];
 
-/// S2b: ignored `_param`s with a decided reason. Key: `path::[Type::]fn::param`.
-const PARAM_ALLOWLIST: &[(&str, &str)] = &[];
-
-/// S2b: ignored `_param`s awaiting triage. No reason on purpose.
-const PARAM_PENDING_TRIAGE: &[&str] = &[
-    "control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_fed",
-    "control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_useful",
-    "control/fec_rate.rs::FecRateController::new_with_toggles::_enable_pi_feedback",
-    "net/mod.rs::create_window_encoder::_backend",
-    "runtime_obs.rs::read_threads::_with_delay",
-    "transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_app_limited",
-    "transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_current_round",
-    "transport/bbr_rs.rs::RsBandwidthEstimation::on_sent::_bytes",
-    "transport/rcvbuf.rs::force_recv_buffer_size::_requested",
-    "transport/rcvbuf.rs::force_recv_buffer_size::_sock",
-    "transport/rcvbuf.rs::socket_drops::_sock",
-    "tun/mod.rs::TunInterface::create::_config",
+/// S2a, the defect record: production logic a doc, ADR or the paper says runs,
+/// with no production caller. Listed so the test passes; each one is open.
+const UNWIRED: &[(&str, &str)] = &[
+    ("control/fec_rate.rs::BudgetAllocator::proactive_rate", "U: ADR-0050 Phase 3 (proactive_budget = total_budget - nack_expected) is not wired: only fec_rate/tests.rs:629-650 read it, and controller_rate has no NACK term (liveness audit 2a row 0050 Phase 3, ranking item 1(ii))"),
+    ("fec/traits.rs::FecBackend::repair_wire_overhead", "U: doc says the scheduler subtracts it from the MTU for the symbol size; ADR-0017's MTU-aware sizing is unwired (liveness audit 2a row 0017: Scheduler::min_mtu has no caller either, size comes from the hint-keyed symbol_size_for_hint, net/mod.rs:181)"),
+    ("scheduler/mod.rs::Scheduler::on_loss", "U: paper 8.1 (fec-arq-model.md:3371) says on_loss backs cwnd off on a decode failure; its caller went with the block pipeline in dacfd7cc and window mode has no decode-failure signal, so it never fires. Fix is a window-mode signal or a paper edit"),
+    ("scheduler/mod.rs::Scheduler::set_protocol_hint", "U: ProtocolHint::Auto is documented as 'auto-detect based on packet patterns' (control/fec_rate.rs:46); nothing detects, only scheduler/tests.rs:585 calls it, so Auto is the fixed point δ = 0.5 (liveness audit 2b). Fix is likely the doc: a detector that flips hints would be a mode switch"),
 ];
+
+/// S2a: uncalled pub fns awaiting triage. No reason on purpose: a new finding
+/// lands here, then moves to [`ALLOWLIST`] or [`UNWIRED`] with its class.
+const PENDING_TRIAGE: &[&str] = &[];
+
+/// S2b: ignored `_param`s with a decided T / D / I / R reason. Key:
+/// `path::[Type::]fn::param`.
+const PARAM_ALLOWLIST: &[(&str, &str)] = &[
+    ("control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_fed", "D: the window PI no-op ADR-0050 kept for compatibility; its one caller (net/tx_inputs.rs:183, SenderCmd::FecFeedback) is a dead call"),
+    ("control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_useful", "D: as _repairs_fed"),
+    ("net/mod.rs::create_window_encoder::_backend", "I: RLC is the only window codec since ADR-0069; the doc keeps the parameter as the selection point for another one"),
+    ("runtime_obs.rs::read_threads::_with_delay", "I: non-Linux stub returning None; the Linux body reads it"),
+    ("transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_app_limited", "I: upstream quinn-proto 0.11 bw_estimation::end_acks ignores it too; the port keeps the signature (module doc)"),
+    ("transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_current_round", "I: as _app_limited"),
+    ("transport/bbr_rs.rs::RsBandwidthEstimation::on_sent::_bytes", "I: the port keeps upstream's call signature but replaces the send-rate side of the estimator (module doc), so the sent byte count has no use"),
+    ("transport/rcvbuf.rs::force_recv_buffer_size::_requested", "I: non-Linux stub (no SO_RCVBUFFORCE), returns false"),
+    ("transport/rcvbuf.rs::force_recv_buffer_size::_sock", "I: non-Linux stub (no SO_RCVBUFFORCE), returns false"),
+    ("transport/rcvbuf.rs::socket_drops::_sock", "I: non-Linux stub (no SO_MEMINFO), returns None by contract"),
+    ("tun/mod.rs::TunInterface::create::_config", "I: stub for platforms with no TUN support; it bails"),
+];
+
+/// S2b, the defect record.
+const PARAM_UNWIRED: &[(&str, &str)] = &[
+    ("control/fec_rate.rs::FecRateController::new_with_toggles::_enable_pi_feedback", "U: the documented config key enable_pi_feedback (config.rs:62, default true at config.rs:380) is passed (net/mod.rs) and silently dropped: ADR-0050 removed PI. Not a law to wire: the fix is to warn-and-ignore like fec_switch_* (config.rs:315-330) or remove the key (S2c: DiesAtController)"),
+];
+
+/// S2b: ignored `_param`s awaiting triage (see [`PENDING_TRIAGE`]).
+const PARAM_PENDING_TRIAGE: &[&str] = &[];
 
 // ---------------------------------------------------------------- text helpers
 
@@ -1104,17 +1137,28 @@ fn load_src() -> Vec<(String, String)> {
 
 // ---------------------------------------------------------------- tests
 
-fn check_lists(
-    what: &str,
-    found: &BTreeSet<String>,
-    allow: &[(&str, &str)],
-    pending: &[&str],
-) {
-    let listed: BTreeSet<&str> = allow.iter().map(|(k, _)| *k).chain(pending.iter().copied()).collect();
+/// The lists for one audit: `allow` (T / D / R, plus I when `params`),
+/// `unwired` (U only, the defect record) and `pending` (no reason yet).
+struct Lists<'a> {
+    allow: &'a [(&'a str, &'a str)],
+    unwired: &'a [(&'a str, &'a str)],
+    pending: &'a [&'a str],
+    params: bool,
+}
+
+/// Every flagged key is listed exactly once, every listed key is still
+/// flagged (the stale check), and every reason opens with a class its list
+/// admits. Returns the per-class counts, read off the lists.
+fn check_lists(what: &str, found: &BTreeSet<String>, l: &Lists) -> BTreeMap<char, usize> {
+    let mut listed: BTreeSet<&str> = BTreeSet::new();
+    let keys = l.allow.iter().chain(l.unwired).map(|(k, _)| *k).chain(l.pending.iter().copied());
+    for k in keys {
+        assert!(listed.insert(k), "{what}: {k} is listed twice");
+    }
     let new: Vec<&String> = found.iter().filter(|k| !listed.contains(k.as_str())).collect();
     assert!(
         new.is_empty(),
-        "{what}: {} not allowlisted and not in PENDING_TRIAGE:\n  {}",
+        "{what}: {} not listed (add to PENDING_TRIAGE, then triage):\n  {}",
         new.len(),
         new.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n  ")
     );
@@ -1124,9 +1168,19 @@ fn check_lists(
         "{what}: listed but no longer flagged (fixed or renamed: delete the entry):\n  {}",
         stale.iter().map(|s| **s).collect::<Vec<_>>().join("\n  ")
     );
-    for (k, why) in allow {
-        assert!(!why.trim().is_empty(), "{what}: allowlist entry {k} has no reason");
+    let allow_classes: &[char] = if l.params { &['T', 'D', 'I', 'R'] } else { &['T', 'D', 'R'] };
+    let mut counts = BTreeMap::new();
+    for (list, classes) in [(l.allow, allow_classes), (l.unwired, &['U'][..])] {
+        for (k, why) in list {
+            let class = match why.split_once(": ") {
+                Some((c, rest)) if c.chars().count() == 1 && !rest.trim().is_empty() => c.chars().next().unwrap(),
+                _ => panic!("{what}: {k}: reason must be `<class>: <why>`, got {why:?}"),
+            };
+            assert!(classes.contains(&class), "{what}: {k}: class {class} does not belong in this list (allowed {classes:?})");
+            *counts.entry(class).or_default() += 1;
+        }
     }
+    counts
 }
 
 #[test]
@@ -1137,14 +1191,66 @@ fn every_pub_fn_has_a_production_caller_or_a_listed_reason() {
         s.files, s.test_files, s.pub_defs, s.categories, s.uncalled.len()
     );
     assert!(s.pub_defs > 200, "the scan saw only {} pub fns: the walker is broken", s.pub_defs);
-    check_lists("S2a uncalled pub fns", &s.uncalled, ALLOWLIST, PENDING_TRIAGE);
+    let lists = Lists { allow: ALLOWLIST, unwired: UNWIRED, pending: PENDING_TRIAGE, params: false };
+    let counts = check_lists("S2a uncalled pub fns", &s.uncalled, &lists);
+    eprintln!("[S2a] classes {counts:?}, pending {}", PENDING_TRIAGE.len());
 }
 
 #[test]
 fn no_ignored_parameter_receives_a_live_value() {
     let s = scan(&load_src());
     eprintln!("[S2b] auto-allowed {:?}, flagged {}", s.categories, s.ignored_params.len());
-    check_lists("S2b ignored `_param`s", &s.ignored_params, PARAM_ALLOWLIST, PARAM_PENDING_TRIAGE);
+    let lists = Lists { allow: PARAM_ALLOWLIST, unwired: PARAM_UNWIRED, pending: PARAM_PENDING_TRIAGE, params: true };
+    let counts = check_lists("S2b ignored `_param`s", &s.ignored_params, &lists);
+    eprintln!("[S2b] classes {counts:?}, pending {}", PARAM_PENDING_TRIAGE.len());
+}
+
+// -- the list rules: a stale, unclassed or misfiled entry fails; a good one passes.
+
+fn found(keys: &[&str]) -> BTreeSet<String> {
+    keys.iter().map(|k| k.to_string()).collect()
+}
+
+#[test]
+fn list_rules_pass_a_well_formed_triage() {
+    let l = Lists { allow: &[("a", "T: tests read it"), ("b", "I: stub")], unwired: &[("c", "U: ADR says so")], pending: &["d"], params: true };
+    let counts = check_lists("fixture", &found(&["a", "b", "c", "d"]), &l);
+    assert_eq!(counts, BTreeMap::from([('I', 1), ('T', 1), ('U', 1)]));
+}
+
+#[test]
+#[should_panic(expected = "listed but no longer flagged")]
+fn list_rules_fail_a_stale_unwired_entry() {
+    let l = Lists { allow: &[], unwired: &[("gone", "U: was unwired")], pending: &[], params: false };
+    check_lists("fixture", &found(&[]), &l);
+}
+
+#[test]
+#[should_panic(expected = "reason must be")]
+fn list_rules_fail_a_reason_with_no_class() {
+    let l = Lists { allow: &[("a", "tests read it")], unwired: &[], pending: &[], params: false };
+    check_lists("fixture", &found(&["a"]), &l);
+}
+
+#[test]
+#[should_panic(expected = "does not belong")]
+fn list_rules_fail_a_u_entry_in_the_allowlist() {
+    let l = Lists { allow: &[("a", "U: unwired")], unwired: &[], pending: &[], params: false };
+    check_lists("fixture", &found(&["a"]), &l);
+}
+
+#[test]
+#[should_panic(expected = "does not belong")]
+fn list_rules_fail_an_i_entry_in_the_fn_allowlist() {
+    let l = Lists { allow: &[("a", "I: stub")], unwired: &[], pending: &[], params: false };
+    check_lists("fixture", &found(&["a"]), &l);
+}
+
+#[test]
+#[should_panic(expected = "not listed")]
+fn list_rules_fail_an_unlisted_finding() {
+    let l = Lists { allow: &[], unwired: &[], pending: &[], params: false };
+    check_lists("fixture", &found(&["new"]), &l);
 }
 
 // -- the scanner itself: a planted defect is flagged, a planted control is not.
