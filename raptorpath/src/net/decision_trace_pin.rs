@@ -14,14 +14,18 @@
 //!   taper     D21 `TaperFunction`, `TaperBudget::accrue`;
 //!   store     D1/D2 `pooled_store_cap` chain, `codel_setpoint_q`,
 //!             `pool_value_multiplier`, `delta_budget_b(hint)`;
-//!   snapver   D5 `SnapOrder`, `snapver_*`, `judged_gaps`, `take_gap_batch`.
+//!   snapver   D5 `SnapOrder`, `snapver_*`, `judged_gaps`, `take_gap_batch`;
+//!   hole      the gap clamp, the tail-sweep target and the intake pause,
+//!             which have no function today: VERBATIM `cfg(test)` copies of
+//!             the inline code (core-extraction-recovery.md, step 0), over
+//!             both seats (rho = 1 `reliable`, rho < 1 not).
 //!
 //! Not driveable without I/O today (listed, not pinned): the inline A*/Delta
 //! seat in `emit_source.rs` (inside the emit block, needs the scheduler,
 //! encoder and transport); D9 per-seq verdicts and D10 margin (inside
 //! `serve_gaps`); `mp_hole_ripe` (stays in the engine by design).
 //!
-//! Captured on main 766d9906 (untouched tree).
+//! Captured on main 766d9906 (untouched tree); `hole` on main 7123c754.
 //!
 //! Determinism: no clock, no RNG, no HashMap iteration (maps are read by
 //! sorted key). f64 results of pure IEEE arithmetic (+ - * / min max ceil
@@ -481,6 +485,109 @@ fn pin_snapshot_order() {
     );
 }
 
+// ---- hole: the clamp, the tail-sweep target, the intake pause -----------
+//
+// Verbatim copies of inline engine code (no function exists to call), so a
+// later move into `raptorpath-core::hole` must reproduce this digest through
+// the core functions. `reliable` is the seat: true at rho = 1 (retain), false
+// at rho < 1 (evict). Each copy names its source line; if the engine line
+// changes on purpose, change the copy and say so.
+
+/// net/sender_phases.rs `gap_clamp!` (:1459), used at :795.
+macro_rules! hole_gap_clamp {
+    ($reliable:expr, $gap_start:expr, $gap_end:expr, $win_start:expr, $win_end:expr $(,)?) => {
+        if $reliable {
+            ($gap_start, $gap_end)
+        } else {
+            ($gap_start.max($win_start), $gap_end.min($win_end))
+        }
+    };
+}
+
+/// net/mod.rs :2789 (arming: `first().map(..)`) and :3035-3042 (firing:
+/// the one-seq gap `(seq, seq)`); no seat, no window input.
+fn hole_tail_sweep_gap(lowest: Option<u64>) -> Option<(u64, u64)> {
+    lowest.map(|seq| (seq, seq))
+}
+
+/// net/mod.rs :2473, with the store input of :2303-2310
+/// (`sack_release_outstanding(store_len, released)`, sack.rs:461).
+fn hole_tx_paused(reliable: bool, store_len: usize, released: usize, effective_store_cap: usize, cwnd_full: bool) -> bool {
+    let store_len = sack_release_outstanding(store_len, released);
+    reliable && (store_len >= effective_store_cap || cwnd_full)
+}
+
+/// net/mod.rs :3219-3229, the emit-burst copy: store disjunct only.
+fn hole_burst_stops(reliable: bool, store_len: usize, released: usize, effective_store_cap: usize) -> bool {
+    reliable && sack_release_outstanding(store_len, released) >= effective_store_cap
+}
+
+fn hole_digest() -> String {
+    let mut t = Tr::new("hole");
+    // Clamp: windows incl. the empty-window sentinel (0, 0) and u64 edges;
+    // gaps wholly below, straddling, inside, above, single-seq, and at the
+    // u64 edges; both seats.
+    let wins: [(u64, u64); 8] = [(0, 0), (0, 5), (3, 3), (5, 9), (8, 12), (10, 12), (1 << 40, (1 << 40) + 3), (u64::MAX - 2, u64::MAX)];
+    let mut gaps: Vec<(u64, u64)> = Vec::new();
+    for s in 0..=13u64 {
+        for e in s..=13u64 {
+            gaps.push((s, e));
+        }
+    }
+    gaps.extend([(0, u64::MAX), (u64::MAX, u64::MAX), (u64::MAX - 1, u64::MAX), (1 << 40, (1 << 40) + 9), ((1 << 40) + 1, (1 << 40) + 2)]);
+    for &reliable in &[true, false] {
+        t.b(reliable);
+        for &(win_start, win_end) in &wins {
+            for &(gap_start, gap_end) in &gaps {
+                let (cs, ce) = hole_gap_clamp!(reliable, gap_start, gap_end, win_start, win_end);
+                t.u(cs);
+                t.u(ce);
+                t.b(cs > ce);
+            }
+        }
+        t.sep();
+    }
+    // Tail-sweep target: empty buffer and a spread of lowest seqs.
+    for lowest in [None, Some(0u64), Some(1), Some(7), Some(1 << 40), Some(u64::MAX)] {
+        match hole_tail_sweep_gap(lowest) {
+            Some((a, b)) => {
+                t.b(true);
+                t.u(a);
+                t.u(b);
+            }
+            None => t.b(false),
+        }
+    }
+    t.sep();
+    // Intake pause: (O, B, F) at B = 0, B = O, B = O + 1 and usize::MAX, with
+    // and without released seqs, both seats; then the burst copy.
+    for &reliable in &[true, false] {
+        t.b(reliable);
+        for store_len in [0usize, 1, 2, 5, 64, 512] {
+            for released in [0usize, 1, 3, 64, 1000] {
+                let o = store_len.saturating_sub(released);
+                for cap in [0usize, 1, o, o + 1, o.saturating_sub(1), 64, usize::MAX] {
+                    for cwnd_full in [false, true] {
+                        t.b(hole_tx_paused(reliable, store_len, released, cap, cwnd_full));
+                    }
+                    t.b(hole_burst_stops(reliable, store_len, released, cap));
+                }
+            }
+        }
+        t.sep();
+    }
+    t.finish()
+}
+
+#[test]
+fn pin_hole_decisions() {
+    check(
+        "hole",
+        hole_digest(),
+        "5be21e25622b04a114fa2268f45fd2577fe233169000be4739c6eabebad88060",
+    );
+}
+
 /// The digests are a pure function of the code: a second evaluation in the
 /// same process agrees (no hidden state, no clock, no iteration order).
 #[test]
@@ -491,4 +598,5 @@ fn digests_are_reproducible_within_a_process() {
     assert_eq!(taper_digest(), taper_digest());
     assert_eq!(store_digest(), store_digest());
     assert_eq!(snap_digest(), snap_digest());
+    assert_eq!(hole_digest(), hole_digest());
 }
