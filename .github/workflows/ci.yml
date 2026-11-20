@@ -35,6 +35,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: release }
       - run: cargo test -p raptorpath --lib --release
+  model:
+    # Hole-lifecycle model (ADR-0083, test-detection plan S7). Its own workspace and lock file
+    # (stateright stays out of the engine's lock). Two tests: the reliable seat (rho = 1) is the
+    # control and must pass every property; the evicting seat (rho < 1) must show the lost-tail
+    # counterexample, which the test asserts exists (today's behaviour; ADR-0084 changes the
+    # intended law, and that test flips when the defect is fixed). --nocapture prints the
+    # counterexample traces and state counts into the log.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { workspaces: raptorpath-model, shared-key: model }
+      - run: cargo test --locked --release --manifest-path raptorpath-model/Cargo.toml -- --nocapture
   tools:
     runs-on: ubuntu-24.04
     steps:
