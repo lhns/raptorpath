@@ -107,7 +107,7 @@ const KEYS: &[Key] = &[
     Key { name: "target_tail_loss", toml: "0.001", tunnel: MovesToController("target_tail_loss"), perf: Owed("the tail target: no --target-tail-loss flag and --config dropped") },
     Key { name: "max_fec_overhead", toml: "0.2", tunnel: MovesToController("max_fec_overhead"), perf: Owed("no --max-fec-overhead flag and --config dropped") },
     Key { name: "protocol_hint", toml: "\"realtime\"", tunnel: MovesToController("protocol_hint"), perf: Owed(PERF_DROPS_CONFIG) },
-    Key { name: "status_addr", toml: "\"127.0.0.1:9821\"", tunnel: Moves("status_addr"), perf: Owed("no flag; triage whether perf serves the monitor") },
+    Key { name: "status_addr", toml: "\"127.0.0.1:9821\"", tunnel: Moves("status_addr"), perf: Owed("no flag and --config dropped; the engine would serve /status (net/mod.rs:1293)") },
     Key { name: "route", toml: "[\"192.0.2.0/24\"]", tunnel: Moves("routes"), perf: NotRead(PERF_INJECTED_TUN) },
     Key { name: "dns", toml: "\"192.0.2.53\"", tunnel: Moves("dns"), perf: NotRead(PERF_INJECTED_TUN) },
     Key { name: "interleave_depth", toml: "4", tunnel: Rejected, perf: Owed("perf drops --config: once read, resolve rejects it") },
