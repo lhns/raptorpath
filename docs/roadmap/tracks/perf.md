@@ -18,12 +18,12 @@ flowchart TB
     perf_recv_msg_wall["✔ Receiver per-message<br/>wall battery"]
     perf_ack_merge["✔ One control datagram<br/>per message"]
     perf_rcvbuf["✔ Receive-buffer fix<br/>F-A"]
-    perf_emit_batch_law0["✔ Emission batching<br/>law"]
+    perf_emit_batch_law0["✔ Packets sent in<br/>small bursts"]
     perf_quic_feeder["↷ Per-path datagram<br/>feeder"]
     perf_threading_p0["✔ Named runtime and<br/>thread budget"]
     perf_threading_p1["✔ Threading lock and<br/>wake fixes"]
-    perf_threading_p2a["✖ Single logic-actor<br/>threading"]
-    perf_io_owner["✔ Per-path I/O owner"]
+    perf_threading_p2a["✖ All control logic on<br/>one task"]
+    perf_io_owner["✔ One I/O task per<br/>path"]
     perf_d9_attribution["✔ Attribution of one<br/>sender change"]
     perf_sched_split["✔ Scheduler split by<br/>direction"]
     perf_q3_investigation["✖ Lock-free send<br/>investigation"]
@@ -34,13 +34,13 @@ flowchart TB
     perf_c8_lag["✔ Two-path client lag<br/>spread"]
     perf_s26_long_polls["✔ Lag tail and long<br/>polls"]
     perf_incremental_sack["✔ Incremental SACK<br/>marking"]
-    perf_decoder_prune["✔ Decoder prune per<br/>drain"]
+    perf_decoder_prune["✔ Receiver clears<br/>decoder work more<br/>often"]
     perf_s33_timer["✔ Lag tail timer hand-<br/>off"]
     perf_receiver_followups["✔ Receiver follow-ups"]
     perf_bbrrs_ns_cost["✔ bbr_rs per-packet<br/>cost bench"]
-    perf_bbrrs_ring_fix["⏳ bbr_rs send-record<br/>ring fix"]
-    perf_fix_burst_bound[/"○ Emission burst bound<br/>derivation"/]
-    perf_config_dropped>"⚠ Perf ignores the<br/>config file"]
+    perf_bbrrs_ring_fix["⏳ Cheaper bookkeeping<br/>in our BBR"]
+    perf_fix_burst_bound[/"○ Deriving the send-<br/>burst size"/]
+    perf_config_dropped>"⚠ Benchmark tool<br/>ignores the config<br/>file"]
     perf_liveness_split ~~~ perf_rtt_rescan
     perf_native_geometry ~~~ perf_parallelisation
     perf_realtime_path_death ~~~ perf_emit_batch_v1
@@ -128,12 +128,12 @@ flowchart TB
 | `perf-ack-merge` | One control datagram per message | done | very-successful | +12.7% | commit bdab7deb |  |
 | `perf-recv-msg-wall` | Receiver per-message wall battery | done | mixed |  | commit dc4fb783; paper §16.35 |  |
 | `perf-rcvbuf` | Receive-buffer fix F-A | done | successful |  | status §7 | meas-v4-verification |
-| `perf-emit-batch-law0` | Emission batching law | done | very-successful | +41.1 % | status §8 | perf-rcvbuf, meas-gso-truth |
+| `perf-emit-batch-law0` | Packets sent in small bursts | done | very-successful | +41.1 % | status §8 | perf-rcvbuf, meas-gso-truth |
 | `perf-quic-feeder` | Per-path datagram feeder | abandoned | superseded | c1d-400 goodput 292.4 → 491.4 Mbit/s | status §10; tag archive/quic-feeder; tag archive/quic-feeder-v2 |  |
 | `perf-threading-p0` | Named runtime and thread budget | done | successful | busy median 79.0 % | status §9 |  |
 | `perf-threading-p1` | Threading lock and wake fixes | done | successful |  | status §11 |  |
-| `perf-threading-p2a` | Single logic-actor threading | abandoned | dead-end | goodput −33.0 % | status §12; tag archive/thread-p2a | perf-threading-p0 |
-| `perf-io-owner` | Per-path I/O owner | done | very-successful | +48 % | status §13 | perf-threading-p1 |
+| `perf-threading-p2a` | All control logic on one task | abandoned | dead-end | goodput −33.0 % | status §12; tag archive/thread-p2a | perf-threading-p0 |
+| `perf-io-owner` | One I/O task per path | done | very-successful | +48 % | status §13 | perf-threading-p1 |
 | `perf-d9-attribution` | Attribution of one sender change | done | successful |  | status §15; commit 62deacba | perf-io-owner |
 | `perf-sched-split` | Scheduler split by direction | done | successful |  | status §14 | perf-io-owner |
 | `perf-q3-investigation` | Lock-free send investigation | abandoned | dead-end | 0.16–0.19 of wall | status §16 | perf-sched-split |
@@ -144,13 +144,13 @@ flowchart TB
 | `perf-c8-lag` | Two-path client lag spread | done | unrated | 81 % | status §25; commit d8abe709 |  |
 | `perf-s26-long-polls` | Lag tail and long polls | done | successful | 81 % | status §26; commit 92934a7a | perf-c8-lag |
 | `perf-incremental-sack` | Incremental SACK marking | done | very-successful | -30 % | status §28 | perf-s26-long-polls |
-| `perf-decoder-prune` | Decoder prune per drain | done | very-successful | +19.6 % | status §32 | perf-threading-r3 |
+| `perf-decoder-prune` | Receiver clears decoder work more often | done | very-successful | +19.6 % | status §32 | perf-threading-r3 |
 | `perf-s33-timer` | Lag tail timer hand-off | done | unrated |  | status §33; commit 61128b84 | perf-incremental-sack |
 | `perf-receiver-followups` | Receiver follow-ups | done | successful |  | status §35 | perf-decoder-prune, cod-debug-stall |
 | `perf-bbrrs-ns-cost` | bbr_rs per-packet cost bench | done | unrated |  | branch nsbench48; branch nsbench48-2 | cc-bbrrs-r1 |
-| `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | in-progress | unrated |  | plan W3.6e; branch bbrrs-r4 (fa9947dd) | perf-bbrrs-ns-cost |
-| `perf-fix-burst-bound` | Emission burst bound derivation | next | unrated |  | law ledger rows F03 | model-law-ledger |
-| `perf-config-dropped` | Perf ignores the config file | next | unrated |  | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |  |
+| `perf-bbrrs-ring-fix` | Cheaper bookkeeping in our BBR | in-progress | unrated |  | plan W3.6e; branch bbrrs-r4 (fa9947dd) | perf-bbrrs-ns-cost |
+| `perf-fix-burst-bound` | Deriving the send-burst size | next | unrated |  | law ledger rows F03 | model-law-ledger |
+| `perf-config-dropped` | Benchmark tool ignores the config file | next | unrated |  | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |  |
 | `perf-liveness-split` | Path liveness split from capacity | done | successful |  | commit becc6121; commit b57a202b |  |
 | `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | done | successful | clean single-path 3–5.6× faster | commit 6302798c; commit 99926477 |  |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | done | dead-end |  | commit 020d34d5 |  |
@@ -165,12 +165,12 @@ flowchart TB
 | `perf-ack-merge` | One control datagram per message | First battery NO FLIP (2026-08-07); re-registered and flipped 2026-08-08. | commit bdab7deb |
 | `perf-recv-msg-wall` | Receiver per-message wall battery | Split 2026-11-16 from 'Batched BOCD estimator cadence' (2026-08 audit outcome: mixed). Its pre-build amendment pre-registered RWM_EST_CADENCE (774e28a3). | commit dc4fb783; paper §16.35 |
 | `perf-rcvbuf` | Receive-buffer fix F-A | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §7 |
-| `perf-emit-batch-law0` | Emission batching law | Its registered feed clause is "fed loss vs truth unchanged at every leg", read on the per-datagram [TRUTH] counter. Dates: status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. | status §8 |
+| `perf-emit-batch-law0` | Packets sent in small bursts | Its registered feed clause is "fed loss vs truth unchanged at every leg", read on the per-datagram [TRUTH] counter. Dates: status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Was titled 'Emission batching law'. | status §8 |
 | `perf-quic-feeder` | Per-path datagram feeder | §10 is headed "superseded by the threading redesign"; the per-path I/O owner (Q1) is that redesign's delivered piece. Dates: status-section end dates are the section file's last edit, not the verdict date; archive/quic-feeder archived 2026-10-05 (tag date not used for end); archive/quic-feeder-v2 archived 2026-10-05 (tag date not used for end). | status §10; tag archive/quic-feeder; tag archive/quic-feeder-v2 |
 | `perf-threading-p0` | Named runtime and thread budget | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §9 |
 | `perf-threading-p1` | Threading lock and wake fixes | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §11 |
-| `perf-threading-p2a` | Single logic-actor threading | Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: judged the implementation poor and asked for a rethink. Dates: status-section end dates are the section file's last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end). Was titled 'Threading P2a logic actor'. | status §12; tag archive/thread-p2a |
-| `perf-io-owner` | Per-path I/O owner | §13 DELIVERED (SHIP-SHARED); the D9 attribution (§15) is its own node (perf-d9-attribution). | status §13 |
+| `perf-threading-p2a` | All control logic on one task | Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: judged the implementation poor and asked for a rethink. Dates: status-section end dates are the section file's last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end). Was titled 'Threading P2a logic actor'. Was titled 'Single logic-actor threading'. | status §12; tag archive/thread-p2a |
+| `perf-io-owner` | One I/O task per path | §13 DELIVERED (SHIP-SHARED); the D9 attribution (§15) is its own node (perf-d9-attribution). Was titled 'Per-path I/O owner'. | status §13 |
 | `perf-d9-attribution` | Attribution of one sender change | Split 2026-11-16 from 'Per-path I/O owner (Q1)': §13 re-scoped §12's c1s collapse to D9, and §15 tested D9 alone. | status §15; commit 62deacba |
 | `perf-sched-split` | Scheduler split by direction | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §14 |
 | `perf-q3-investigation` | Lock-free send investigation | End 2026-10-26 was a placeholder (status §16: last edit or migration date); date from merge ce600796. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §16 |
@@ -181,13 +181,13 @@ flowchart TB
 | `perf-c8-lag` | Two-path client lag spread | Split 2026-11-16 from 'c8 client lag diagnosis' (§25, §26, §33; rated successful as a family, a rating that now sits on §26, perf-s26-long-polls). Diagnostic, 30 rows, placement step 1. | status §25; commit d8abe709 |
 | `perf-s26-long-polls` | Lag tail and long polls | Split 2026-11-16 from 'c8 client lag diagnosis'. The RWM_RTOBS instruments ([LAG] min_us, [OSLAG], [TXSEC], [LPOLL]) merged with it; its SACK-drain finding is what §28 bounded. | status §26; commit 92934a7a |
 | `perf-incremental-sack` | Incremental SACK marking | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §28 |
-| `perf-decoder-prune` | Decoder prune per drain | End 2026-11-01 was a placeholder (status §32: last edit or migration date); date from merge bb29595e. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §32 |
+| `perf-decoder-prune` | Receiver clears decoder work more often | End 2026-11-01 was a placeholder (status §32: last edit or migration date); date from merge bb29595e. Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'Decoder prune per drain'. | status §32 |
 | `perf-s33-timer` | Lag tail timer hand-off | Split 2026-11-16 from 'c8 client lag diagnosis'. Offline reading of the §28 step-0 and §26 ledgers, no VM. | status §33; commit 61128b84 |
 | `perf-receiver-followups` | Receiver follow-ups | End 2026-11-09 was a placeholder (status §35: last edit or migration date); date from merge 4926822a. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §35 |
 | `perf-bbrrs-ns-cost` | bbr_rs per-packet cost bench | nsbench48 folded into its rebased successor nsbench48-2 (unmerged). Result recorded in status §48b (nm.txt fee4f580, 78156b46): bbr_rs +417 ns/packet net over quinn BBR (x4.9), +339 ns at 200 in flight, a fixed per-packet cost. | branch nsbench48; branch nsbench48-2 |
-| `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | Built on branch bbrrs-r4 (fa9947dd): the send-record map is a fixed-bound ring; the ns gate (db2cb4f4) went red at baseline (7.72x) and green after the fix (net ratio 7.7x -> 1.3-1.7x). Kept in-progress, not done, because it merges with the round-2 session. Done when: the send-record map is a fixed ring (or sampled) and a red-first ns gate holds bbr_rs at <= 2x quinn BBR per packet on the VM release bench. | plan W3.6e; branch bbrrs-r4 (fa9947dd) |
-| `perf-fix-burst-bound` | Emission burst bound derivation | Law ledger: F03. Done when: the 64-symbol burst bound is derived as a CPU/latency quantum in the paper, or swept and recorded as a declared constant with its bind fraction. | law ledger rows F03 |
-| `perf-config-dropped` | Perf ignores the config file | main.rs:263 cmd_perf gets no config though --config is global (main.rs:12) and the README documents it. Blocks the tail-target flag sweep (VM queue 4) and rho < 1 at Bulk/Auto in perf. Also: ge_burst_factor and realtime_burst_extra have no consumer anywhere (config.rs:64-67). Done when: the S2c round-trip cells for perf move, red first. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
+| `perf-bbrrs-ring-fix` | Cheaper bookkeeping in our BBR | Built on branch bbrrs-r4 (fa9947dd): the send-record map is a fixed-bound ring; the ns gate (db2cb4f4) went red at baseline (7.72x) and green after the fix (net ratio 7.7x -> 1.3-1.7x). Kept in-progress, not done, because it merges with the round-2 session. Done when: the send-record map is a fixed ring (or sampled) and a red-first ns gate holds bbr_rs at <= 2x quinn BBR per packet on the VM release bench. Was titled 'bbr_rs send-record ring fix'. | plan W3.6e; branch bbrrs-r4 (fa9947dd) |
+| `perf-fix-burst-bound` | Deriving the send-burst size | Law ledger: F03. Done when: the 64-symbol burst bound is derived as a CPU/latency quantum in the paper, or swept and recorded as a declared constant with its bind fraction. Was titled 'Emission burst bound derivation'. | law ledger rows F03 |
+| `perf-config-dropped` | Benchmark tool ignores the config file | main.rs:263 cmd_perf gets no config though --config is global (main.rs:12) and the README documents it. Blocks the tail-target flag sweep (VM queue 4) and rho < 1 at Bulk/Auto in perf. Also: ge_burst_factor and realtime_burst_extra have no consumer anywhere (config.rs:64-67). Done when: the S2c round-trip cells for perf move, red first. Was titled 'Perf ignores the config file'. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
 | `perf-liveness-split` | Path liveness split from capacity | L1 phase 3 (2026-07-03); the ack-path debug logging added while diagnosing it is folded in. | commit becc6121; commit b57a202b |
 | `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | The fix is commit 6302798c and its merge 99926477; rated like cod-rlc-index (merged, measured gain, no registered readout). First found in the session record. | commit 6302798c; commit 99926477 |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | L2 workstream 3 (2026-07-04); measured with the native object mode folded in meas-l1-harness. | commit 020d34d5 |
@@ -221,7 +221,7 @@ flowchart TB
 - `perf-rcvbuf`: Receive-buffer fix F-A
   - branch fix/rcvbuf
   - Receive-buffer fix on every endpoint socket (2026-10-05, commit 927bb00d, commit 3100c53a, commit 13d8ecd5, commit b52dc861, commit 31d5a522, commit 10b9d78d)
-- `perf-emit-batch-law0`: Emission batching law
+- `perf-emit-batch-law0`: Packets sent in small bursts
   - paper §10 row Emission batching, Law 0 (`RWM_EMIT_BATCH`, burst bound 64 at every path count)
   - branch flip/emit-batch
   - branch meas/emit-rerun
@@ -236,9 +236,9 @@ flowchart TB
   - Threading P0 per-thread instruments (2026-10-05, commit 08d93e5e, commit a50fa033, commit a37ccee8, commit d465adcf, commit f7180092)
 - `perf-threading-p1`: Threading lock and wake fixes
   - branch threading P1
-- `perf-threading-p2a`: Single logic-actor threading
+- `perf-threading-p2a`: All control logic on one task
   - Single scheduler-owning task (P2a) (2026-10-05, commit 3fb277ae, commit a27625fd, commit 0c91753c, commit 39a97f3e, commit 52da7db0, commit 69fd846b)
-- `perf-io-owner`: Per-path I/O owner
+- `perf-io-owner`: One I/O task per path
   - branch threading Q1
   - Per-path I/O owner for quinn (2026-10-06, commit 881cca2a, commit 272d0012, commit 0e2c0516, commit e76b11a9)
 - `perf-d9-attribution`: Attribution of one sender change
@@ -266,14 +266,13 @@ flowchart TB
 - `perf-incremental-sack`: Incremental SACK marking
   - branch §28 incremental SACK marking SHIPS
   - Incremental SACK marking (2026-10-27, commit 320668ce)
-- `perf-decoder-prune`: Decoder prune per drain
+- `perf-decoder-prune`: Receiver clears decoder work more often
   - branch §32 per-drain receiver prune SHIPS
 - `perf-s33-timer`: Lag tail timer hand-off
   - branch §33 c8 lag timer hand-off NOT MATERIAL on current main
 - `perf-receiver-followups`: Receiver follow-ups
   - branch §35 receiver follow-ups
 - `perf-rtt-rescan`: Per-ACK RTT minimum rescan removed
-  - Per-ACK RTT minimum rescan removed from the sender (2026-07-07, commit 6302798c, commit 99926477)
   - branch per-symbol perf fix
 - `perf-realtime-path-death`: Realtime path deaths in window mode
   - branch window-liveness fix

@@ -12,14 +12,14 @@ flowchart TB
     model_paper_v1["✔ Unified FEC/ARQ<br/>model paper"]
     model_open_points["✔ Resolve the paper's<br/>open points"]
     model_visualizer_v1["✔ First visualizer:<br/>triangle and BOCD"]
-    model_wasm_l0["✔ raptorpath-math and<br/>wasm model"]
+    model_wasm_l0["✔ Shared math library<br/>and browser simulator"]
     model_math_verification["✔ Mathematical<br/>verification of the<br/>model"]
     model_s16_fountain["↷ Fountain aggregation<br/>claim (paper #167;16)"]
-    model_vis_continuum["✔ Visualizer as one<br/>continuum law"]
+    model_vis_continuum["✔ Visualizer rebuilt<br/>on one smooth law"]
     model_tier1_rescores["✔ Tier-1 literature<br/>re-scores"]
     model_tier0_corrections["✔ Tier-0 paper claim<br/>corrections"]
-    model_mode_switch_debts>"⚠ Engine NO-MODE-<br/>SWITCH debts"]
-    model_open_constants>"⚠ Open-constants<br/>register"]
+    model_mode_switch_debts>"⚠ Engine still<br/>switches on presets"]
+    model_open_constants>"⚠ Hand-picked numbers<br/>without derivation"]
     model_paper_rewrite["✔ Concise rewrite of<br/>the model paper"]
     model_review_37["✔ Model review"]
     model_paper_recon["⏳ Paper versus engine<br/>reconciliation"]
@@ -27,19 +27,19 @@ flowchart TB
     model_wasm_audit["✔ Wasm mode-switch<br/>audit"]
     model_defect_tcut>"✔ T_cut give-up law<br/>pinned"]
     model_defect_dead_machine>"✔ Wasm dead second<br/>machine"]
-    model_bound_tests_unrun>"⚠ Erratum: pre-flight<br/>tests not run"]
-    model_law_ledger["✔ Law ledger"]
+    model_bound_tests_unrun>"⚠ Three planned checks<br/>never ran"]
+    model_law_ledger["✔ Audit of every<br/>formula"]
     model_shared_core_0["✔ Shared core steps<br/>0.1–0.3"]
-    model_shared_core["▶ Shared engine laws<br/>and decisions"]
+    model_shared_core["▶ Visualizer and<br/>engine share one code"]
     model_endspeed["✔ Phase-6 forms and<br/>end-of-run speed"]
     model_giveup_law[/"✔ Model give-up law"/]
     model_viz_fix["✔ Visualizer fixes"]
-    model_defect_rho_inert>"⚠ ρ inert at Auto,<br/>Realtime"]
+    model_defect_rho_inert>"⚠ Visualizer:<br/>retention dial has no<br/>effect"]
     model_warm_start["✔ Warm-started tail<br/>solve (visualizer)"]
-    model_fix_hint_keyed_paths["○ Hint-keyed engine<br/>paths made continuous"]
-    model_wasm_fixes["▶ Wasm model fixes"]
-    model_fix_paper_p2["○ Paper text for<br/>placement and bbr_rs"]
-    model_fix_paper_p3["⛔ Paper-only law<br/>records"]
+    model_fix_hint_keyed_paths["○ Preset-keyed engine<br/>code made smooth"]
+    model_wasm_fixes["▶ Visualizer model<br/>fixes"]
+    model_fix_paper_p2["○ Paper fixes: path<br/>choice, our BBR"]
+    model_fix_paper_p3["⛔ Four unstated rules<br/>added to paper"]
     model_paper_v1 ~~~ model_open_points
     model_paper_v1 ~~~ model_visualizer_v1
     model_open_points ~~~ model_wasm_l0
@@ -123,7 +123,7 @@ flowchart TB
 <!-- BEGIN GENERATED: table-model -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `model-shared-core` | Shared engine laws and decisions | in-progress | unrated | steps 0.1-0.3 merged; core moves ride guard α | ADR-0077; derivation shared-core-design.md; derivation visualizer-drift-2026-11.md; status §58 | model-wasm-audit, infra-restructure, model-shared-core-0 |
+| `model-shared-core` | Visualizer and engine share one code | in-progress | unrated | steps 0.1-0.3 merged; core moves ride guard α | ADR-0077; derivation shared-core-design.md; derivation visualizer-drift-2026-11.md; status §58 | model-wasm-audit, infra-restructure, model-shared-core-0 |
 | `model-shared-core-0` | Shared core steps 0.1–0.3 | done | successful |  | status "Owner decisions (2026-11-14)" erratum; commit e9188e01; branch shared-core-0; ADR-0077 | model-user-wasm-calls |
 | `model-endspeed` | Phase-6 forms and end-of-run speed | done | successful |  | status §58 Amendment 3; commit e5cef8ce; branch endspeed-relaid | meas-s58-session |
 | `model-warm-start` | Warm-started tail solve (visualizer) | done | successful |  | commit e614ec64; commit 95e926d4; commit aefe6d97; branch warm-start-2; branch warm-scan; branch warm-scan-clean | model-endspeed |
@@ -131,27 +131,27 @@ flowchart TB
 | `model-open-points` | Resolve the paper's open points | done | unrated |  | commit adf7674c; commit bcda035a; commit c25e36e6; commit 82fa398f; commit bdf796ea; commit 298e1c00 | model-paper-v1 |
 | `model-math-verification` | Mathematical verification of the model | done | unrated |  | commit 3a8fdfcb |  |
 | `model-visualizer-v1` | First visualizer: triangle and BOCD | done | unrated |  | commit 4cd3abc3; commit 468b7580; commit aa56ef51 |  |
-| `model-wasm-l0` | raptorpath-math and wasm model | done | successful |  | branch multipath visualizer | model-visualizer-v1 |
-| `model-vis-continuum` | Visualizer as one continuum law | done | successful |  | commit b0e16638 | cod-unified-span, model-wasm-l0 |
-| `model-mode-switch-debts` | Engine NO-MODE-SWITCH debts | in-progress | unrated |  | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver; status §3.3 row `symbol_size_for_hint`; status §3.3 row the CLI's ρ; ADR-0078 decision 2 |  |
-| `model-open-constants` | Open-constants register | in-progress | unrated |  | status §3.4 |  |
+| `model-wasm-l0` | Shared math library and browser simulator | done | successful |  | branch multipath visualizer | model-visualizer-v1 |
+| `model-vis-continuum` | Visualizer rebuilt on one smooth law | done | successful |  | commit b0e16638 | cod-unified-span, model-wasm-l0 |
+| `model-mode-switch-debts` | Engine still switches on presets | in-progress | unrated |  | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver; status §3.3 row `symbol_size_for_hint`; status §3.3 row the CLI's ρ; ADR-0078 decision 2 |  |
+| `model-open-constants` | Hand-picked numbers without derivation | in-progress | unrated |  | status §3.4 |  |
 | `model-review-37` | Model review | done | successful |  | status §37 |  |
 | `model-paper-recon` | Paper versus engine reconciliation | in-progress | unrated |  | derivation w3-paper-reconciliation.md (branch paper-recon); branch paper-recon |  |
 | `model-bound-tests` | Bounding tests for divergences | done | unrated |  | branch bound-tests | model-paper-recon |
 | `model-wasm-audit` | Wasm mode-switch audit | done | successful |  | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit | model-vis-continuum, infra-restructure |
 | `model-defect-tcut` | T_cut give-up law pinned | done | unrated |  | status §3.10 item 1; commit 56388aee | model-wasm-audit |
 | `model-defect-dead-machine` | Wasm dead second machine | done | unrated |  | status §3.10 item 3; status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd | model-wasm-audit |
-| `model-bound-tests-unrun` | Erratum: pre-flight tests not run | in-progress | unrated |  | status §53 Erratum 2 (cbe2be3f) |  |
-| `model-law-ledger` | Law ledger | done | unrated |  | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |  |
-| `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | next | unrated |  | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2; status §51 block 51 Result (T2 Realtime FAIL; finding 2, S08 at c8) | meas-s51-session |
+| `model-bound-tests-unrun` | Three planned checks never ran | in-progress | unrated |  | status §53 Erratum 2 (cbe2be3f) |  |
+| `model-law-ledger` | Audit of every formula | done | unrated |  | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |  |
+| `model-fix-hint-keyed-paths` | Preset-keyed engine code made smooth | next | unrated |  | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2; status §51 block 51 Result (T2 Realtime FAIL; finding 2, S08 at c8) | meas-s51-session |
 | `model-user-wasm-calls` | Owner calls on wasm audit | done | n/a |  | status "Owner decisions (2026-11-14)"; status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md | model-wasm-audit |
 | `model-giveup-law` | Model give-up law | done | successful |  | status "Owner decisions (2026-11-14)" item 3; commit 56388aee; derivation giveup-law-model.md; paper §5.6 | model-user-wasm-calls, model-defect-tcut |
 | `model-viz-fix` | Visualizer fixes | done | successful |  | status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd; branch viz-fix | model-user-wasm-calls, model-defect-dead-machine |
-| `model-defect-rho-inert` | ρ inert at Auto, Realtime | in-progress | unrated |  | law ledger M04; commit 8aeb0254; status "Owner decisions (2026-11-14)" item 3 | model-giveup-law |
+| `model-defect-rho-inert` | Visualizer: retention dial has no effect | in-progress | unrated |  | law ledger M04; commit 8aeb0254; status "Owner decisions (2026-11-14)" item 3 | model-giveup-law |
 | `model-user-weak-identity` | Owner call: weaker binary identity | done | n/a |  | status §58 Part B result | meas-s58-session |
-| `model-wasm-fixes` | Wasm model fixes | in-progress | unrated |  | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 | model-user-wasm-calls, rate-law-reconcile, store-engine-form-impl |
-| `model-fix-paper-p2` | Paper text for placement and bbr_rs | next | unrated |  | law ledger rows K05, K10 | model-law-ledger |
-| `model-fix-paper-p3` | Paper-only law records | blocked | unrated |  | law ledger rows S10, C08, C10, E12 | meas-s51-session, store-fix-maxbw-minrtt |
+| `model-wasm-fixes` | Visualizer model fixes | in-progress | unrated |  | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 | model-user-wasm-calls, rate-law-reconcile, store-engine-form-impl |
+| `model-fix-paper-p2` | Paper fixes: path choice, our BBR | next | unrated |  | law ledger rows K05, K10 | model-law-ledger |
+| `model-fix-paper-p3` | Four unstated rules added to paper | blocked | unrated |  | law ledger rows S10, C08, C10, E12 | meas-s51-session, store-fix-maxbw-minrtt |
 | `model-user-three-dials` | Owner call: three dials | done | n/a |  | commit 0a55b65c |  |
 | `model-user-no-mode-switch` | Owner rule: no mode switches | done | n/a |  | commit ee51b9c4; commit f2f1c782; CLAUDE.md |  |
 | `model-s16-fountain` | Fountain aggregation claim (paper §16) | abandoned | superseded |  | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16; commit 1412f280 |  |
@@ -163,7 +163,7 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `model-shared-core` | Shared engine laws and decisions | Owner decision 2026-11-14. Engine moves are zero-behaviour-change (pins, ns bench, guard). Store, recovery and placement stay unshared until the model has a queue and gap reports. Steps 0.1-0.3 are model-shared-core-0. §58 Part B: only edits that move no existing line meet the identical-sha waiver, so step 1.2, the span-seat extraction and every move into raptorpath-core ride guard α; a weaker identity rule is an owner call (model-user-weak-identity). | ADR-0077; derivation shared-core-design.md; derivation visualizer-drift-2026-11.md; status §58 |
+| `model-shared-core` | Visualizer and engine share one code | Owner decision 2026-11-14. Engine moves are zero-behaviour-change (pins, ns bench, guard). Store, recovery and placement stay unshared until the model has a queue and gap reports. Steps 0.1-0.3 are model-shared-core-0. §58 Part B: only edits that move no existing line meet the identical-sha waiver, so step 1.2, the span-seat extraction and every move into raptorpath-core ride guard α; a weaker identity rule is an owner call (model-user-weak-identity). Was titled 'Shared engine laws and decisions'. | ADR-0077; derivation shared-core-design.md; derivation visualizer-drift-2026-11.md; status §58 |
 | `model-shared-core-0` | Shared core steps 0.1–0.3 | Step 0.1 the empty raptorpath-core crate with its deny-list test (e20ef491), 0.2 non-vacuous source walks (c47274c2), 0.3 decision_trace_pin captured on the untouched tree (5c933677). Its first Linux run, in §58: 7/7. | status "Owner decisions (2026-11-14)" erratum; commit e9188e01; branch shared-core-0; ADR-0077 |
 | `model-endspeed` | Phase-6 forms and end-of-run speed | ADR-0076 phase 6's five span-law closed forms move from the wasm model to raptorpath-math (span_forms.rs, declared below the engine code so no existing line shifts), with the visualizer's end-of-run speed fix (memoised r* DP over the live deficit band, memoised tail solve, 12 ms frame budget); outputs bit-identical against cfg(test) copies of the old functions, goldens unchanged. Supersedes the branches phase6-forms and viz-endspeed. | status §58 Amendment 3; commit e5cef8ce; branch endspeed-relaid |
 | `model-warm-start` | Warm-started tail solve (visualizer) | Visualizer only, no engine bytes, not in status. e614ec64: the tail solve is warm-started, bit-identical to compute_r_star_exact; 95e926d4: the no-hint solve gallops up from k = 0 and the step budget is predictive. The branches warm-scan and warm-scan-clean (not merged) hold the evidence tests (fail(k) monotonicity scan, bit-equality harness; long tests #[ignore]). | commit e614ec64; commit 95e926d4; commit aefe6d97; branch warm-start-2; branch warm-scan; branch warm-scan-clean |
@@ -171,26 +171,26 @@ flowchart TB
 | `model-open-points` | Resolve the paper's open points | Split 2026-11-16 from 'Unified FEC/ARQ model paper'. Appendix D audit (adf7674c), the 12 LOW-difficulty points (bcda035a), then the numbered resolutions, e.g. 'Resolve #11 (T_cut algorithm) and #12 (Mode 3 convergence)' (bdf796ea); C.4 and C.5 marked not applicable. | commit adf7674c; commit bcda035a; commit c25e36e6; commit 82fa398f; commit bdf796ea; commit 298e1c00 |
 | `model-math-verification` | Mathematical verification of the model | 23 tests, three paper errors found (2026-04-12). Folded the remaining April commits (2026-04-01..12), no separate development. | commit 3a8fdfcb |
 | `model-visualizer-v1` | First visualizer: triangle and BOCD | Split 2026-11-16 from 'raptorpath-math and wasm L0 model': the first interactive visualizer (2026-04-07..10), connected to the triangle (4cd3abc3), with per-symbol P_lost mixing and T_cut stop (4a0890ac), adaptive r (BOCD) and the real RLC codec in wasm (468b7580), a calibrated channel (aa56ef51). | commit 4cd3abc3; commit 468b7580; commit aa56ef51 |
-| `model-wasm-l0` | raptorpath-math and wasm model | Folds paper §11.1 open question 6 (do the three channel implementations agree). raptorpath-math and raptorpath-wasm crates (da837ee9, 2026-04-08) so the visualizer runs the real Rust code; the April visualizer itself is model-visualizer-v1. | branch multipath visualizer |
-| `model-vis-continuum` | Visualizer as one continuum law | 2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434). | commit b0e16638 |
-| `model-mode-switch-debts` | Engine NO-MODE-SWITCH debts | Status §3.3 lists seven hint- or ρ-keyed sites: the Realtime duplicate source send, use_packing (now a sender-only choice: ADR-0078 removed the receive-side packing bit), Copa's queue_target_mult, copa_compete_active, the reliable branches, symbol_size_for_hint (from the §51 design) and the CLI's ρ that follows the hint. Undated in the raw records (status §3 since 2026-09-27). Folds paper §11.1 open question 13. Open: none of the seven is fixed. | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver; status §3.3 row `symbol_size_for_hint`; status §3.3 row the CLI's ρ; ADR-0078 decision 2 |
-| `model-open-constants` | Open-constants register | 21 unprovenanced constants (FORMULA-FIRST); undated raw record. Folds paper §11.1 open questions 8 and 9. Open: no constant is provenanced yet. | status §3.4 |
+| `model-wasm-l0` | Shared math library and browser simulator | Folds paper §11.1 open question 6 (do the three channel implementations agree). raptorpath-math and raptorpath-wasm crates (da837ee9, 2026-04-08) so the visualizer runs the real Rust code; the April visualizer itself is model-visualizer-v1. Was titled 'raptorpath-math and wasm model'. | branch multipath visualizer |
+| `model-vis-continuum` | Visualizer rebuilt on one smooth law | 2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434). Was titled 'Visualizer as one continuum law'. | commit b0e16638 |
+| `model-mode-switch-debts` | Engine still switches on presets | Status §3.3 lists seven hint- or ρ-keyed sites: the Realtime duplicate source send, use_packing (now a sender-only choice: ADR-0078 removed the receive-side packing bit), Copa's queue_target_mult, copa_compete_active, the reliable branches, symbol_size_for_hint (from the §51 design) and the CLI's ρ that follows the hint. Undated in the raw records (status §3 since 2026-09-27). Folds paper §11.1 open question 13. Open: none of the seven is fixed. Was titled 'Engine NO-MODE-SWITCH debts'. | status §3.3 row `net/emit_source.rs` (`protocol_hint == Realtime`); status §3.3 row `net/sender_policy.rs` `use_packing`; status §3.3 row `scheduler/copa.rs` `queue_target_mult`; status §3.3 row `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`); status §3.3 row `reliable` boolean branches in the window sender/receiver; status §3.3 row `symbol_size_for_hint`; status §3.3 row the CLI's ρ; ADR-0078 decision 2 |
+| `model-open-constants` | Hand-picked numbers without derivation | 21 unprovenanced constants (FORMULA-FIRST); undated raw record. Folds paper §11.1 open questions 8 and 9. Open: no constant is provenanced yet. Was titled 'Open-constants register'. | status §3.4 |
 | `model-review-37` | Model review | Found the idle-leg stale-price lock-out (-> §38). Dates: status-section end dates are the section file's last edit, not the verdict date. | status §37 |
 | `model-paper-recon` | Paper versus engine reconciliation | Plan W3.7 marks it done (18 true, 8 stale, 3 fixed); the branch is unmerged and the rate-law questions wait on the owner (plan user decision 11). | derivation w3-paper-reconciliation.md (branch paper-recon); branch paper-recon |
 | `model-wasm-audit` | Wasm mode-switch audit | Audit before ADR-0076 phase 6; 27 hint-keyed sites; fixes wait on owner calls. | derivation wasm-modeswitch-audit.md (branch wasm-modeswitch-audit); branch wasm-modeswitch-audit |
 | `model-defect-tcut` | T_cut give-up law pinned | Fixed in the model by the give-up law (ii) (model-giveup-law, merge 56388aee): the sim's give-up horizon is D(δ) with the budget min(1 − ρ, R), and nothing in raptorpath-wasm's sim or the page calls find_t_cut any more (the exported wasm wrapper and the page's JS wrapper remain, unused). find_t_cut's search cap stays as known raptorpath-math debt (W14) with its bounding test (CLAUDE.md); law ledger C13 has not been re-labelled. | status §3.10 item 1; commit 56388aee |
 | `model-defect-dead-machine` | Wasm dead second machine | Fixed by viz-fix (model-viz-fix): the classic-hint machine is removed and the named hints are an alias table onto the one continuum constructor. Law ledger M03 has not been re-labelled. | status §3.10 item 3; status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd |
-| `model-bound-tests-unrun` | Erratum: pre-flight tests not run | No raw record. Status §53 Erratum 2 (cbe2be3f): the visualizer build, the native golden test and the bound-tests wasm pool test were registered for the pre-flight but not run; they move to the next VM session's pre-flight. | status §53 Erratum 2 (cbe2be3f) |
-| `model-law-ledger` | Law ledger | Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 64-73 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire). | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |
-| `model-fix-hint-keyed-paths` | Hint-keyed engine paths made continuous | Law ledger: S08, S09 (moved from rate-fix-rho-realtime). queue_target_mult is K01's, which cc-copa-consumers deletes or reduces; whichever lands first removes the table. The symbol-size row has no ledger row yet (s51-design P6). Covers model-mode-switch-debts. Done when: the five hint-keyed behaviours (source-symbol size, the Realtime duplicate send, packing and batching scope, queue_target_mult, the default ρ) are each one formula continuous in δ (or ρ an independent dial), with continuity tests through every preset (±2 %), after §51 has measured the step. | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2; status §51 block 51 Result (T2 Realtime FAIL; finding 2, S08 at c8) |
+| `model-bound-tests-unrun` | Three planned checks never ran | No raw record. Status §53 Erratum 2 (cbe2be3f): the visualizer build, the native golden test and the bound-tests wasm pool test were registered for the pre-flight but not run; they move to the next VM session's pre-flight. Was titled 'Erratum: pre-flight tests not run'. | status §53 Erratum 2 (cbe2be3f) |
+| `model-law-ledger` | Audit of every formula | Recorded in status §55. The correctness audit of every shipped law (70 rows, ranked fix order). Merged to main (9e3764c9). Qualified by §55 Erratum 1: its item 7 (swap the recovery clocks to a wire RTT) is withdrawn. Rows owing no fix (rank 64-73 and C12): E05, E06, F06, R08, D01, D02, D03, D04, D05, D06, and C12 (an off arm, re-run or retire). Was titled 'Law ledger'. | branch law-ledger (head 4f84ce63); docs/derivations/law-ledger.md; docs/derivations/law-ledger.yaml; status §55 |
+| `model-fix-hint-keyed-paths` | Preset-keyed engine code made smooth | Law ledger: S08, S09 (moved from rate-fix-rho-realtime). queue_target_mult is K01's, which cc-copa-consumers deletes or reduces; whichever lands first removes the table. The symbol-size row has no ledger row yet (s51-design P6). Covers model-mode-switch-debts. Done when: the five hint-keyed behaviours (source-symbol size, the Realtime duplicate send, packing and batching scope, queue_target_mult, the default ρ) are each one formula continuous in δ (or ρ an independent dial), with continuity tests through every preset (±2 %), after §51 has measured the step. Was titled 'Hint-keyed engine paths made continuous'. | status §3.3 additions (695c7f4f); docs/derivations/s51-design.md §1.2; status §51 block 51 Result (T2 Realtime FAIL; finding 2, S08 at c8) |
 | `model-user-wasm-calls` | Owner calls on wasm audit | Done when: the owner rules on the audit's five calls (including removal or cfg(test) of the dead second machine and the T_cut floor), recorded in status. | status "Owner decisions (2026-11-14)"; status §3.10 items 1 and 3; docs/derivations/wasm-modeswitch-audit.md |
 | `model-giveup-law` | Model give-up law | Replaces V5/V6 (the cartoon's budget choice) and W14 (the sim's T_cut horizon); the sim stops calling find_t_cut. The 1 − ρ cap is a model law the engine lacks, so it has its paper §5.6 line, a §11.3 row and a bounding test; dropping T_cut diverges at harsh Bulk (8–26 of 100 slider positions), also bounded by a test. Goldens unchanged. | status "Owner decisions (2026-11-14)" item 3; commit 56388aee; derivation giveup-law-model.md; paper §5.6 |
 | `model-viz-fix` | Visualizer fixes | Also: the W11 β = 0 guard is gone, a W22 bounding test is added, the store text is per cell (2048 is a clamp measured pinned; 512·N an underived constant), the model-vs-engine table rows C04 and S05 are fixed. Goldens unchanged; 39 native wasm tests and both mjs gates pass. | status "Owner decisions (2026-11-14)" erratum; commit 0857a0cd; branch viz-fix |
-| `model-defect-rho-inert` | ρ inert at Auto, Realtime | Ledger M04: DEGENERATE (ρ inert at Auto and Realtime under the shipped R). The same-day erratum: this holds under the shipped (cut) R only; under the block-exact candidate C6, ρ would act on 1–4 of 100 positions. It waits on the P_fec work (rate-pfec-continuous, rate-pfec-oracle). | law ledger M04; commit 8aeb0254; status "Owner decisions (2026-11-14)" item 3 |
+| `model-defect-rho-inert` | Visualizer: retention dial has no effect | Ledger M04: DEGENERATE (ρ inert at Auto and Realtime under the shipped R). The same-day erratum: this holds under the shipped (cut) R only; under the block-exact candidate C6, ρ would act on 1–4 of 100 positions. It waits on the P_fec work (rate-pfec-continuous, rate-pfec-oracle). Was titled 'ρ inert at Auto, Realtime'. | law ledger M04; commit 8aeb0254; status "Owner decisions (2026-11-14)" item 3 |
 | `model-user-weak-identity` | Owner call: weaker binary identity | Declined 2026-11-16: ADR-0077's identical-sha waiver stays; zero-behaviour steps are stacked into one guard run instead (Owner decisions 2026-11-16, item 5). | status §58 Part B result |
-| `model-wasm-fixes` | Wasm model fixes | Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. Progress 2026-11-14: viz-fix (model-viz-fix) removed the dead machine and the W11 guard; the give-up law (ii) (model-giveup-law) replaced the cartoon shed choice and T_cut. | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 |
-| `model-fix-paper-p2` | Paper text for placement and bbr_rs | Law ledger: K05, K10. Done when: the paper carries the placement cost lines (A.4) and the bbr_rs minimum-filter sign, checked against the code. | law ledger rows K05, K10 |
-| `model-fix-paper-p3` | Paper-only law records | Law ledger: S10, C08, C10, E12. Done when: the taper grant law, the gap-report minimum interval, the reactive repair margin and the send-rate anchor each have a paper line with provenance. | law ledger rows S10, C08, C10, E12 |
+| `model-wasm-fixes` | Visualizer model fixes | Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. Progress 2026-11-14: viz-fix (model-viz-fix) removed the dead machine and the W11 guard; the give-up law (ii) (model-giveup-law) replaced the cartoon shed choice and T_cut. Was titled 'Wasm model fixes'. | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 |
+| `model-fix-paper-p2` | Paper fixes: path choice, our BBR | Law ledger: K05, K10. Done when: the paper carries the placement cost lines (A.4) and the bbr_rs minimum-filter sign, checked against the code. Was titled 'Paper text for placement and bbr_rs'. | law ledger rows K05, K10 |
+| `model-fix-paper-p3` | Four unstated rules added to paper | Law ledger: S10, C08, C10, E12. Done when: the taper grant law, the gap-report minimum interval, the reactive repair margin and the send-rate anchor each have a paper line with provenance. Was titled 'Paper-only law records'. | law ledger rows S10, C08, C10, E12 |
 | `model-user-three-dials` | Owner call: three dials | Owner decision 2026-03-21 (session record): fix any two of the three, and the channel determines the third. Written into the paper the same day as a new §6.10 with worked examples. | commit 0a55b65c |
 | `model-user-no-mode-switch` | Owner rule: no mode switches | Owner statements 2026-07-02 (the protocol should have no hard cutoffs) and 2026-07-06 (no more switching between codes or between window and block mode), from the session record. Codified in CLAUDE.md; its provenance text was corrected on 2026-07-28 and a wrong attribution reverted on 2026-08-06 (the two commits in evidence). | commit ee51b9c4; commit f2f1c782; CLAUDE.md |
 | `model-s16-fountain` | Fountain aggregation claim (paper §16) | The 2026-07-06 rewrite as reliable windowed multipath is folded in meas-c8-aggregation-arc. | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16; commit 1412f280 |
@@ -254,7 +254,7 @@ flowchart TB
   - commit 4a0890ac
   - commit 9b922b5f
   - Visualizer moved into raptorpath-visualizer/ with camelCase wasm wrappers (2026-04-10, commit 72258063a, commit 96145766c)
-- `model-wasm-l0`: raptorpath-math and wasm model
+- `model-wasm-l0`: Shared math library and browser simulator
   - commit da837ee9
   - branch vis UI polish
   - branch vis-semantics
@@ -271,14 +271,14 @@ flowchart TB
   - Visualizer latency readouts and hover explanations (2026-07-02, commit 74301e83)
   - Visualizer overhead split into channel floor and excess (2026-07-03, commit 15674b37)
   - Visualizer Auto window slider and saturation-pressure gauge (2026-07-04, commit 5426274e, commit aa87d818)
-- `model-vis-continuum`: Visualizer as one continuum law
+- `model-vis-continuum`: Visualizer rebuilt on one smooth law
   - commit 149a0e48
   - commit 61dc8a18
   - commit 867d1976
   - Visualizer refresh to the unified machine (2026-07-28, commit 6ae44967, commit c84c10f8, commit addb23e2, commit 9b527041)
-- `model-mode-switch-debts`: Engine NO-MODE-SWITCH debts
+- `model-mode-switch-debts`: Engine still switches on presets
   - paper §11.1 open question 13
-- `model-open-constants`: Open-constants register
+- `model-open-constants`: Hand-picked numbers without derivation
   - paper §11.1 open question 8
   - paper §11.1 open question 9
   - Open-constants register rows for 16.81 to 16.83 (2026-09-08, commit de9b91e3)

@@ -9,7 +9,7 @@ Scope: RaptorQ/FEC encoder and decoder, gf256, symbol framing, the generation se
 <!-- BEGIN GENERATED: track-cod -->
 ```mermaid
 flowchart TB
-    cod_block_pipeline["↷ RaptorQ block FEC<br/>pipeline"]
+    cod_block_pipeline["↷ First design: fixed<br/>FEC blocks"]
     cod_mettle["✖ METTLE swappable FEC<br/>backend"]
     cod_streaming_code["↷ Streaming two-layer<br/>Realtime code"]
     cod_legacy_rlc["↷ Legacy sliding-<br/>window/generation<br/>decoders"]
@@ -18,16 +18,16 @@ flowchart TB
     cod_overhead_reduction["✔ Overhead reduction<br/>(packing, repair<br/>alignment)"]
     cod_rlc_all_profiles["↷ Windowed RLC for<br/>every profile"]
     cod_rlc_index["✔ RLC decoder<br/>recovered-symbol index"]
-    cod_generation_coding["⏸ Generation cross-<br/>path fungible coding"]
+    cod_generation_coding["⏸ Optional cross-path<br/>group coding"]
     cod_coded_only_wire["↷ Coded-only<br/>generation wire"]
     cod_fungible_window["✖ Coded-only fungible<br/>window"]
     cod_systematic_deficit["✔ Systematic plus<br/>deficit repair"]
     cod_fmtcp["✖ FMTCP-class decode-<br/>on-total"]
     cod_gen_decoder_fix["✔ Generation decoder<br/>late-source fix"]
     cod_systematic_wire["✔ Systematic wire,<br/>sparse decoder"]
-    cod_unified_span["✔ Unified span machine"]
+    cod_unified_span["✔ One decoder for<br/>every latency setting"]
     cod_wire_compact["✔ Compact v5 DATA<br/>framing"]
-    cod_one_pipeline["✔ One window pipeline"]
+    cod_one_pipeline["✔ One sliding window<br/>for all traffic"]
     cod_s4_block_retest["✔ Block default re-<br/>test"]
     cod_s5_stage3_baseline["✔ Stage-3 baseline:<br/>block versus window"]
     cod_debug_stall["✔ Decoder re-delivery<br/>stall fix"]
@@ -88,24 +88,24 @@ flowchart TB
 <!-- BEGIN GENERATED: table-cod -->
 | id | title | state | outcome | headline | evidence | depends_on |
 |---|---|---|---|---|---|---|
-| `cod-block-pipeline` | RaptorQ block FEC pipeline | abandoned | superseded |  | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |  |
+| `cod-block-pipeline` | First design: fixed FEC blocks | abandoned | superseded |  | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |  |
 | `cod-s4-block-retest` | Block default re-test | done | unrated |  | status §4; commit 566e0f89; branch cleanup/a4-block-retest |  |
 | `cod-mettle` | METTLE swappable FEC backend | abandoned | dead-end |  | paper §10 row METTLE FEC backend; ADR-0021; ADR-0028 |  |
 | `cod-backend-switch` | Mid-stream FEC backend switching | abandoned | dead-end |  | paper §10 row Mid-stream backend switching (loss-threshold selector); ADR-0030 |  |
 | `cod-streaming-code` | Streaming two-layer Realtime code | abandoned | superseded |  | paper §10 row Streaming two-layer code (Realtime machine); ADR-0027 |  |
 | `cod-gf256-simd` | SIMD GF(2^8) and gf256 crate | done | successful | ~15-25× speedup on the FEC decode hot path | ADR-0041 |  |
 | `cod-rlc-all-profiles` | Windowed RLC for every profile | abandoned | superseded |  | commit 341857ec |  |
-| `cod-generation-coding` | Generation cross-path fungible coding | parked | unrated |  | status §3.2 |  |
+| `cod-generation-coding` | Optional cross-path group coding | parked | unrated |  | status §3.2 |  |
 | `cod-coded-only-wire` | Coded-only generation wire | abandoned | superseded | 70.9 Mbit/s | paper §10 row Coded-only generation wire |  |
 | `cod-systematic-wire` | Systematic wire, sparse decoder | done | successful | Gen single-c2 33.9 → 70.9 Mbit/s | ADR-0056 | cod-generation-coding |
 | `cod-fungible-window` | Coded-only fungible window | abandoned | dead-end | 3.9 Mbit/s | paper §10 row Coded-only fungible window (coded-object mode) |  |
 | `cod-fmtcp` | FMTCP-class decode-on-total | abandoned | dead-end | 0.48× | commit f8417579; paper §10 row FMTCP-class decode-on-total [Cui2015] |  |
 | `cod-legacy-rlc` | Legacy sliding-window/generation decoders | abandoned | superseded |  | paper §10 row Legacy RLC decoders (sliding-window, generation); ADR-0022 |  |
-| `cod-unified-span` | Unified span machine | done | successful |  | ADR-0064 | cod-systematic-wire |
-| `cod-one-pipeline` | One window pipeline | done | successful |  | ADR-0069; status §5 | cod-unified-span |
+| `cod-unified-span` | One decoder for every latency setting | done | successful |  | ADR-0064 | cod-systematic-wire, model-user-no-mode-switch |
+| `cod-one-pipeline` | One sliding window for all traffic | done | successful |  | ADR-0069; status §5 | cod-unified-span |
 | `cod-wire-compact` | Compact v5 DATA framing | done | very-successful | +2.6/+3.6 Mbit/s | commit 078b0ce9 |  |
 | `cod-debug-stall` | Decoder re-delivery stall fix | done | successful | 0 of 40 iterations stalled | status §31 |  |
-| `cod-user-generation-seat` | Owner call: keep generation coding | parked | n/a |  | plan user decision 4, W4.4; status §3.2 | cod-generation-coding |
+| `cod-user-generation-seat` | Owner call: keep cross-path coding | parked | n/a |  | plan user decision 4, W4.4; status §3.2 | cod-generation-coding |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | done | unrated |  | ADR-0039; ADR-0040; ADR-0047; ADR-0048 | meas-transport-comparison |
 | `cod-gen-decoder-fix` | Generation decoder late-source fix | done | successful | repairs_useful 0.15%→66% | commit 3701e10d; commit 88852b4f |  |
 | `cod-rlc-index` | RLC decoder recovered-symbol index | done | successful | 4.6-5.7x faster decode | commit 7f6d1057; commit 28cd99a4 |  |
@@ -116,23 +116,23 @@ flowchart TB
 
 | id | title | notes | evidence |
 |---|---|---|---|
-| `cod-block-pipeline` | RaptorQ block FEC pipeline | The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); the §4 re-test (cod-s4-block-retest) found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13. | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |
+| `cod-block-pipeline` | First design: fixed FEC blocks | The original design (initial commit 2026-03-12) through its deletion in dacfd7c (2026-10-04); the §4 re-test (cod-s4-block-retest) found block better before the window caught up in §5. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date; paper §10 rows carry an end (removal) date only. Block-era fixes cited by ADR-0001 (flush timeout), 0006 (protocol hint sets block size), 0008 (BlockStart), 0016 (block interleaving), 2026-03-12..13. Was titled 'RaptorQ block FEC pipeline'. | ADR-0002; ADR-0004; ADR-0014; status §3.7 row 236; status §3.7 row 238; ADR-0001; ADR-0006; ADR-0008; ADR-0016; paper §10 row Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) |
 | `cod-s4-block-retest` | Block default re-test | Split 2026-11-16 from the block pipeline node (own status section and verdict). Discharges ADR-0069's re-test clause; the Stage-3 baseline (§5) then read WINDOW-NOT-WORSE and the window became the only pipeline (cod-one-pipeline). | status §4; commit 566e0f89; branch cleanup/a4-block-retest |
 | `cod-mettle` | METTLE swappable FEC backend | Removal was the owner's call (user 2026-08-07). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row METTLE FEC backend; ADR-0021; ADR-0028 |
 | `cod-backend-switch` | Mid-stream FEC backend switching | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Mid-stream backend switching (loss-threshold selector); ADR-0030 |
 | `cod-streaming-code` | Streaming two-layer Realtime code | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Streaming two-layer code (Realtime machine); ADR-0027 |
 | `cod-gf256-simd` | SIMD GF(2^8) and gf256 crate | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0041 |
-| `cod-generation-coding` | Generation cross-path fungible coding | Owner greenlit generation coding 2026-07-06 (user-requests). §3.2: opt-in, never default, no keep-or-remove decision (plan user decision 4). The systematic plus deficit-repair submode is its own node since 2026-11-20 (cod-systematic-deficit). | status §3.2 |
+| `cod-generation-coding` | Optional cross-path group coding | Owner greenlit generation coding 2026-07-06 (user-requests). §3.2: opt-in, never default, no keep-or-remove decision (plan user decision 4). The systematic plus deficit-repair submode is its own node since 2026-11-20 (cod-systematic-deficit). Was titled 'Generation cross-path fungible coding'. | status §3.2 |
 | `cod-coded-only-wire` | Coded-only generation wire | Paper §10 row has an end date only (2026-07-13). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Coded-only generation wire |
 | `cod-systematic-wire` | Systematic wire, sparse decoder | End 2026-07-21 was a placeholder (ADR-0056: last edit or migration date); date from merge 2122481b. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0056 |
 | `cod-fungible-window` | Coded-only fungible window | Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Coded-only fungible window (coded-object mode) |
 | `cod-fmtcp` | FMTCP-class decode-on-total | Dates: paper §10 rows carry an end (removal) date only. | commit f8417579; paper §10 row FMTCP-class decode-on-total [Cui2015] |
 | `cod-legacy-rlc` | Legacy sliding-window/generation decoders | Paper §10 row has an end date only; start taken from the sliding-window FEC commit 628fdb1c (2026-03-14). Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Legacy RLC decoders (sliding-window, generation); ADR-0022 |
-| `cod-unified-span` | Unified span machine | Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0064 |
-| `cod-one-pipeline` | One window pipeline | ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. The §5 Stage-3 baseline is its own node since 2026-11-20 (cod-s5-stage3-baseline). | ADR-0069; status §5 |
+| `cod-unified-span` | One decoder for every latency setting | Folds paper §11.1 open question 4 (does the span law stay continuous). The NO-MODE-SWITCH machine in the engine. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. Was titled 'Unified span machine'. | ADR-0064 |
+| `cod-one-pipeline` | One sliding window for all traffic | ADR-0069 deprecated block 2026-08-10 (re-test clause), executed 2026-10-04 on §5 WINDOW-NOT-WORSE. §5 also carries the estimator-cadence flip (rate-est-cadence) and the crown spot. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date; status-section end dates are the section file's last edit, not the verdict date. The §5 Stage-3 baseline is its own node since 2026-11-20 (cod-s5-stage3-baseline). Was titled 'One window pipeline'. | ADR-0069; status §5 |
 | `cod-wire-compact` | Compact v5 DATA framing | Headline is verbatim from the sibling paper row (window decoupling, A69): "Its sibling, compact wire framing, shipped (+2.6/+3.6 Mbit/s)". | commit 078b0ce9 |
 | `cod-debug-stall` | Decoder re-delivery stall fix | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §31 |
-| `cod-user-generation-seat` | Owner call: keep generation coding | 2026-11-16: stays parked with no disposition; it unblocks nothing in the current chain (Owner decisions 2026-11-16, item 7). Law ledger F05, R09 (P3) wait on it. | plan user decision 4, W4.4; status §3.2 |
+| `cod-user-generation-seat` | Owner call: keep cross-path coding | 2026-11-16: stays parked with no disposition; it unblocks nothing in the current chain (Owner decisions 2026-11-16, item 7). Law ledger F05, R09 (P3) wait on it. Was titled 'Owner call: keep generation coding'. | plan user decision 4, W4.4; status §3.2 |
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | ADR-0047 raised timer resolution and fixed LTE recovery (1% to 100%) and WiFi overhead (39.6% to 21.4%); ADR-0048 reduced window-backend overhead further. | ADR-0039; ADR-0040; ADR-0047; ADR-0048 |
 | `cod-gen-decoder-fix` | Generation decoder late-source fix | The five earlier aggregation refutations were measured on the broken decoder (2026-07-08). | commit 3701e10d; commit 88852b4f |
 | `cod-systematic-deficit` | Systematic plus deficit repair | Split 2026-11-20 from cod-generation-coding: the oracle BUILD verdict and the build with its measured result are one pre-registered piece. | commit 704ae730; commit 4f12d4b0; commit e4bdfa63; commit 715ed4d9; commit 35cb17aa |
@@ -140,7 +140,7 @@ flowchart TB
 
 ### Folded items per node
 
-- `cod-block-pipeline`: RaptorQ block FEC pipeline
+- `cod-block-pipeline`: First design: fixed FEC blocks
   - commit dc672631
   - commit e2de447d
   - Block sizing, handshake and graceful shutdown (2026-03-12, commit 6f2852f1)
@@ -166,10 +166,10 @@ flowchart TB
 - `cod-rlc-all-profiles`: Windowed RLC for every profile
   - commit c8fcc910
   - Reliable windowed RLC for bulk breaks: 10 of 10 to 0 of 10 (2026-07-05, commit 341857ec)
-  - Windowed RLC for all hints: bulk single-path fails (2026-07-05, commit 59fc7c03)
+  - Windowed RLC for all hints: bulk single-path fails (2026-07-05, commit 341857ec)
   - RLC encode and decode throughput against bulk needs (2026-07-06, commit 4663c38c)
   - Measured RLC decode throughput at three window sizes (2026-07-06, commit 4663c38c)
-- `cod-generation-coding`: Generation cross-path fungible coding
+- `cod-generation-coding`: Optional cross-path group coding
   - branch generation-coding foundation (codec verified; multi-gen pending deficit feedback)
   - branch generation deficit feedback
   - branch dense generation decoder (27x); C8 aggregation still unrealized
@@ -189,7 +189,7 @@ flowchart TB
   - FMTCP-class decode-on-total aggregation (2026-07-08, commit 3145c15c, commit 2e01e534, commit 0ce6cd34, commit 4220aa06)
   - Literature map of FEC transport findings (2026-07-08, commit 56353d25)
   - FMTCP re-test and deletion (2026-07-27, commit 4fb5b156, commit f8417579)
-- `cod-unified-span`: Unified span machine
+- `cod-unified-span`: One decoder for every latency setting
   - commit 206b90ca
   - commit 1eec34d5
   - commit 28138b98
@@ -202,7 +202,7 @@ flowchart TB
   - paper §11.1 open question 4
   - Paper section 15 unified sliding-window model (2026-07-04, commit c8fcc910, commit 961e23d4)
   - Window advance derived from the latency budget (planned) (2026-07-08, session record)
-- `cod-one-pipeline`: One window pipeline
+- `cod-one-pipeline`: One sliding window for all traffic
   - branch exec/adr-0069-window-default
   - ADR-0069: block mode deprecated, default kept pinned (2026-08-10, commit 17f7fa91)
   - Window pipeline only, block pipeline deleted (2026-10-04, commit b074267a, commit d091e8a8, commit bc049ce5, commit 37d3f06c, commit 78ca2ae5, commit 140e3a9f)
