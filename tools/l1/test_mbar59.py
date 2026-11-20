@@ -135,6 +135,7 @@ def diag_line(k):
     src = 2000 if k <= SRC_UNTIL else 0
     return (f"[DIAG] t={t:.1f}s win=800/1000 paused=0% good={80.0 + k:.1f}Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src={src}sym/s cod={320 if src else 0}sym/s cum={250 * kk}/{40 * kk}/{ack} "
             f"sidle=0ms/0/mx0ms cwnd=1 infl=1 np=1 np_act=1 rtt=5.0ms bdp100=165sym sweeps=0 retx=0 gapdrop=0 nbud=0 "
+            + (f"mpr[rep=0 seqs=0 fired=0 stale=0 plost={PLOST_PT * kk} taper={PLOST_PT * kk} age=1ms] " if PLOST_PT is not None else "") +
             f"p0:infl=1/sinfl=0/bdp1(cap0) sout=0 khr=1.00/kraw=- btlbw=1 sr=0/g0d0 est=Y pl=0.0150 cmp=- rtt=5/wrtt=3/rtp2ms rtp_us=1 "
             + (f"shed={3 * kk}/{kk} bud=0.0500 D=40ms " if SHED else "")
             + f"wait[tun=1% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=82% cmd=0% n={n_loop(k)} us=250000 busy=45% busy_us=112500] "
@@ -149,15 +150,19 @@ def span_line(j, early=False, none=False):
 
 
 SHED = True
+PLOST_PT = 0              # P_lost retransmit copies per tick (the cumulative [DIAG] `plost=` = PLOST_PT x ticks); None prints no mpr token
+DBT_ACC_PT = 30.0         # [WSTORE] dbt_acc per 250 ms window: 0.12 (median rr) x 250 src per tick, so sum dbt_acc = rr x d(cum src) exactly
 
 
-def cli_log(shed=True, n_ticks=60):
-    global SHED
-    SHED = shed
+def cli_log(shed=True, n_ticks=60, plost=0, wstore=True):
+    global SHED, PLOST_PT
+    SHED, PLOST_PT = shed, plost
     L = ['[DIAG] t=9.9s win=1/1 src=5000sym/s cod=9sym/s cum=999999/9/999999 wait[tun=1% ack=1% n=9999999 us=1 busy=1% busy_us=1] wake[tun=1 ack=999999]',   # before the marker: ignored
          '{"seconds":0.01,"warmup":true}']
     for k in range(1, n_ticks + 1):
         L.append(diag_line(k))
+        if wstore:
+            L.append(f"[WSTORE] t={0.25 * k:.2f} k={k} tw=250.0 n=100 W=50 dbt_acc={DBT_ACC_PT:.2f} dbt_em=5 dbt_share=0.5000 dbt_rm_ack=0.00")
         if k % 2 == 0:
             j = k // 2
             L.append(span_line(j, early=(0.5 * j < 5.0), none=(j == 12)))
@@ -174,7 +179,17 @@ check("cum deltas over LATE: src +7000, cod +1120, ack +6720; wake ack +560", (m
 check("loop iterations = the SUM of the per-period wait n over the ticks after the first LATE tick (2 800), not last minus first (which would read 40)", m["loop_n"] == N_SUM == 2800, m["loop_n"])
 check("release batch d(cum)/d(wake ack) (bounds nothing): 12.5 on the src field, 12.0 on the ack field", near(m["rel_src"], 12.5) and near(m["rel_ack"], 12.0), (m["rel_src"], m["rel_ack"]))
 check("mbar_lo = d(cum)/sum(wait n), the LOWER bound on sources per advance: 2.5 on the src field, 2.4 on the ack field", near(m["loop_src"], 2.5) and near(m["loop_ack"], 2.4) and near(m["mbar_lo"], 2.4) and near(m["mbar_lo_src"], 2.5), (m["loop_src"], m["loop_ack"]))
-check("W1 bracket: upper = (cod/src)/rr = 0.16/0.12; lower = max(0, 1 - 1/(0.12 x 2.4)) = 0 (vacuous at m-bar_lo 2.4: negative, clamped)", near(m["w1_hi"], 0.16 / 0.12) and m["w1_lo"] == 0.0, (m["w1_lo"], m["w1_hi"]))
+# W1 upper bracket, the COUNT form (status.md "The two K4 input checks, post hoc"): W1 <= (d cod + d plost) / sum dbt_acc over the LATE windows (t_first < t <= t_last).
+# Why not (cod/src)/rr: every debt slot counts as emitted before it is spent on a coded repair (in cod) OR a P_lost retransmit copy (plost), so cod/(rr x src) omits the plost slots.
+# The two forms relate as  new = (d cod + d plost) / sum dbt_acc  vs  old = d cod / (rr x d src):  with plost = 0 they agree exactly when sum dbt_acc = rr x d src
+# (dbt_acc is the accrual the engine actually booked, rr x src is its rate-times-sources estimate); with plost > 0 the new bound is larger by d plost / sum dbt_acc.
+check("W1 upper (count form), plost = 0: (1120 + 0) / 840 = 4/3, equal to the old rate form (cod/src)/rr = 0.16/0.12 because sum dbt_acc = 0.12 x 7000 here", near(m["w1_hi"], 1120 / 840) and near(m["w1_hi"], 0.16 / 0.12), m["w1_hi"])
+check("W1 lower = max(0, 1 - 1/(0.12 x 2.4)) = 0 (vacuous at m-bar_lo 2.4: negative, clamped)", m["w1_lo"] == 0.0, m["w1_lo"])
+mp = m59.row_metrics(cli_log(plost=10), [], [])
+check("W1 upper with P_lost copies (10 per tick, d plost 280): (1120 + 280) / 840 = 5/3, above the old rate form 4/3 by d plost / sum dbt_acc", near(mp["w1_hi"], 1400 / 840) and near(mp["cod_src_rate"] / mp["rr"], 4 / 3), (mp["w1_hi"], mp["cod_src_rate"], mp["rr"]))
+check("W1 upper is n/a (None), never the rate form, when the row has no [WSTORE] dbt_acc windows", m59.row_metrics(cli_log(wstore=False), [], [])["w1_hi"] is None)
+check("W1 upper is n/a (None), never the rate form, when the [DIAG] ticks print no plost counter", m59.row_metrics(cli_log(plost=None), [], [])["w1_hi"] is None)
+check("W1 upper is n/a (None) when a window in the interval has no dbt_acc (printed -)", m59.row_metrics([ln.replace("dbt_acc=30.00", "dbt_acc=-", 1) if ln.startswith("[WSTORE] t=6.00 ") else ln for ln in cli_log()], [], [])["w1_hi"] is None)
 m10 = m59.row_metrics([re.sub(r" n=\d+ ", " n=10 ", ln) for ln in cli_log()], [], [])
 check("W1 lower bound with a per-loop count of 10 (mbar_lo = 6720/280 = 24): 1 - 1/(0.12 x 24) = 0.65278", near(m10["mbar_lo"], 24.0) and near(m10["w1_lo"], 1 - 1 / (0.12 * 24.0), 1e-9), (m10["mbar_lo"], m10["w1_lo"]))
 check("eps_hat = the median per-path pl= over LATE (0.015); no FDIAG on this log -> None", near(m["eps_hat"], 0.015) and m["fdiag_rf"] is None, m["eps_hat"])
@@ -302,6 +317,51 @@ check("score59: the readout table has every registered line (mbar_lo, W1 bracket
       ("release batch d(cum src)/d(wake ack) [no bound]", "mbar_lo  d(cum ack)/sum(wait n)", "W1 lower", "W1 upper", "eps_hat", "cod/src (DIAG rates", "[SPAN] rr", "[SPAN] debt", "[SPAN] a_star", "[SPAN] delta", "[SPAN] bud", "shed total", "goodput Mbit/s"))
       and "m-bar >= 2.400" in rep and "not excluded by it: 4, 16, 64, 256" in rep and "0.000 <= W1 <= 1.333" in rep, rep[-1500:])
 check("score59 states what it is: reported only, nothing scored", "REPORTED ONLY" in rep and "nothing here is scored" in rep)
+
+# ═══ 4. the committed block E ledger (docs/l1-raw/s51e/s51e-session.tgz): the measured W1 against the old rate bound and the new count bound ═══
+import tarfile
+import io
+import slaw_parse as sp_
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+TGZ = os.path.join(ROOT, "docs", "l1-raw", "s51e", "s51e-session.tgz")
+BLOCK_E = {}
+if os.path.exists(TGZ):
+    with tarfile.open(TGZ) as tf:
+        for mem in tf.getmembers():
+            mm_ = re.search(r"diag-ld/c2-100@def-(PM|PL)-s(\d+)-r(\d+)-a1-c\.log$", mem.name)
+            if mm_ and mem.isfile():
+                BLOCK_E[mm_.groups()] = tf.extractfile(mem).read().decode("utf-8", "replace").splitlines()
+else:
+    try:        # `git archive` excludes l1-raw, so a plain checkout may lack the file only in an export: read the blob from git
+        blob = subprocess.run(["git", "-C", ROOT, "show", "HEAD:docs/l1-raw/s51e/s51e-session.tgz"], capture_output=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(blob)) as tf:
+            for mem in tf.getmembers():
+                mm_ = re.search(r"diag-ld/c2-100@def-(PM|PL)-s(\d+)-r(\d+)-a1-c\.log$", mem.name)
+                if mm_ and mem.isfile():
+                    BLOCK_E[mm_.groups()] = tf.extractfile(mem).read().decode("utf-8", "replace").splitlines()
+    except Exception:
+        pass
+
+
+def measured_w1(cli):
+    """sum dbt_em / sum dbt_acc over the windows t >= LATE_T after the last warm-up marker (s60_score.evict_stats' definition, the same slaw_parse reader)."""
+    idx = [i for i, ln in enumerate(cli) if '"warmup":true' in ln]
+    acc = em = 0.0
+    for ln in cli[idx[-1] + 1:] if idx else cli:
+        r = sp_.parse_line(ln)
+        if r and r[0] == "WSTORE" and r[1]["t"] >= m59.LATE_T:
+            acc, em = acc + (r[1].get("dbt_acc") or 0.0), em + (r[1].get("dbt_em") or 0.0)
+    return em / acc if acc else None
+
+
+check("block E ledger readable: 5 PM + 5 PL client logs", sum(1 for k in BLOCK_E if k[0] == "PM") == 5 and sum(1 for k in BLOCK_E if k[0] == "PL") == 5, sorted(BLOCK_E))
+for (arm_, seed_, rep_), cli_ in sorted(BLOCK_E.items()):
+    mr = m59.row_metrics(cli_, [], [], None, "c2-100")
+    w1 = measured_w1(cli_)
+    old_hi = (mr["cod_src_rate"] / mr["rr"]) if (mr["rr"] and mr["cod_src_rate"] is not None) else None      # the removed rate form, recomputed from the surviving fields
+    check(f"block E {arm_} s{seed_} r{rep_}: measured W1 {w1:.4f} <= the count-form upper bracket {mr['w1_hi']}" + ("" if arm_ == "PL" else f" (it is above the old rate form {old_hi:.4f})"),
+          w1 is not None and mr["w1_hi"] is not None and w1 <= mr["w1_hi"] and (arm_ == "PL" or (old_hi is not None and w1 > old_hi)), (w1, mr["w1_hi"], old_hi))
+    check(f"block E {arm_} s{seed_} r{rep_}: the bracket is not vacuous (W1 within 0.05 of the bound: it is a count identity, not 1.0)", mr["w1_hi"] is not None and mr["w1_hi"] - (w1 or 0) < 0.05, (w1, mr["w1_hi"]))
 
 # ═══ END ═══
 print("FAILED %d" % fails if fails else "ALL OK")
