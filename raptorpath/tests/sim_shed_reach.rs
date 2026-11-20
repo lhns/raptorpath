@@ -25,9 +25,10 @@
 //!
 //! The paced scenario (`paced`) feeds the same object at 20 Mbit/s, half
 //! the link (`SIM_PACE_MBIT`, `sim_support::paced_client`). Emission then
-//! interleaves with acks, and the slot site sheds (seed 42: 90 with the
-//! budget forced to 0.05; 0 to 4 per seed with the derived budget, which
-//! binds). `witness_slot_site_sheds_paced` gates that.
+//! interleaves with acks, and the slot site sheds (seed 42, budget forced to
+//! 0.05: 90 on Windows, 98 on Linux CI; 0 to 4 per seed with the derived
+//! budget, which binds). `witness_slot_site_sheds_paced` gates that, and
+//! `frontier_passes_every_shed_paced` that the receiver passed every hole.
 
 mod sim_support;
 use sim_support::{run, ChildRun, Scenario};
@@ -124,17 +125,39 @@ fn counts(r: &ChildRun) -> String {
     )
 }
 
-/// The failure shape per site: of each site's shed seqs, how many the
-/// receiver's frontier (sampled every 100 ms) ever passed, and the lowest one
-/// it never passed.
+/// The data sender's final cumulative ack: the third field of
+/// `[DIAG] cum=src/cod/ack` (`net/diag.rs`), i.e. the receiver's in-order
+/// frontier as last reported, read from the last line with the largest src
+/// (the peer's own sender prints `[DIAG]` too). The `frontier` seam samples
+/// every 100 ms and stops short of the end even in a completed run, so it is
+/// not used here.
+fn final_cum_ack(r: &ChildRun) -> (u64, u64) {
+    let cum = |l: &str| -> Option<(u64, u64)> {
+        let c = l.split(' ').find_map(|w| w.strip_prefix("cum="))?;
+        let v: Vec<u64> = c.split('/').filter_map(|x| x.parse().ok()).collect();
+        (v.len() == 3).then(|| (v[0], v[2]))
+    };
+    r.log
+        .lines()
+        .filter(|l| l.starts_with("[DIAG]"))
+        .filter_map(cum)
+        .fold(None, |best: Option<(u64, u64)>, c| match best {
+            Some(b) if b.0 > c.0 => Some(b),
+            _ => Some(c),
+        })
+        .expect("no [DIAG] cum= line")
+}
+
+/// The failure shape per site: of each site's shed seqs, how many lie at or
+/// above the sender's final cumulative ack (never passed), and the lowest.
 fn pass_shape(r: &ChildRun) -> String {
-    let last = r.tseam("frontier").iter().map(|l| field(l, "next=")).max().unwrap_or(0);
+    let (src, ack) = final_cum_ack(r);
     let site = |ev: &str| {
         let seqs: Vec<u64> = r.tseam(ev).iter().map(|l| field(l, "seq=")).collect();
-        let stuck: Vec<u64> = seqs.iter().copied().filter(|&s| s >= last).collect();
+        let stuck: Vec<u64> = seqs.iter().copied().filter(|&s| s >= ack).collect();
         format!("{ev}: {} shed, {} never passed (lowest {:?})", seqs.len(), stuck.len(), stuck.iter().min())
     };
-    format!("max_frontier_next={last}; {}; {}", site("shed"), site("shed_slot"))
+    format!("src={src} final_cum_ack={ack}; {}; {}", site("shed"), site("shed_slot"))
 }
 
 /// Liveness: the transfer completes, and every shed hole is passed by the
@@ -149,7 +172,6 @@ fn pass_shape(r: &ChildRun) -> String {
 ///     t_pass(s) <= t_s + H_max + 100 ms + d_us,
 /// where t_pass(s) is the first frontier sample with next > s.
 fn assert_live(r: &ChildRun, what: &str) {
-    println!("{what}: {}", pass_shape(r));
     let c = counts(r);
     assert_eq!(r.outcome, "client_ok", "{what}: transfer did not complete: {c}");
     let frontier: Vec<(u64, u64, u64)> =
@@ -210,12 +232,54 @@ fn witness_slot_site_sheds_paced() {
     assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
 }
 
-/// Liveness of the paced scenario, by the bound of `assert_live`. Record
-/// only (see the ignore reason); prints both sites' counts and the shape.
+/// Frontier liveness of the paced scenario: the sender's final cumulative
+/// ack covers every source seq, so every shed hole (both sites) was passed.
+/// Completion (`client_ok`) is not asserted: `perf::server` acks an object
+/// only when every chunk arrived, which rho < 1 does not promise.
 #[test]
-#[ignore = "record only: liveness at rho < 1 is the open defect rec-evict-blocker-unresolved"]
-fn liveness_after_shed_paced() {
+fn frontier_passes_every_shed_paced() {
     let r = paced();
-    println!("paced rho<1: {}", counts(&r));
-    assert_live(&r, "paced rho<1");
+    let shape = pass_shape(&r);
+    println!("paced rho<1: {} | {shape}", counts(&r));
+    let (src, ack) = final_cum_ack(&r);
+    assert_eq!(ack, src, "the receiver frontier stopped short: {shape}");
+}
+
+/// Record only: the paced scenario with the derived budget (no
+/// `RWM_TEST_TS_BUDGET_FRAC`), where the shared 1 - rho budget binds, and
+/// with a 100 ms blackout from seq 6000 on (holes that age below the
+/// window while emission continues). Prints per-site counts and the shape.
+#[test]
+#[ignore = "record only: per-site shed counts for the tree comparison (ADR-0079 Amendment 1)"]
+fn record_paced_cells() {
+    let cells: [(&str, Vec<(&'static str, String)>); 2] = [
+        ("derived budget", vec![]),
+        (
+            "budget 0.05, blackout 100 ms from seq 6000",
+            vec![
+                ("RWM_TEST_TS_BUDGET_FRAC", "0.05".into()),
+                ("RWM_TEST_TS_SEQ", "6000".into()),
+                ("RWM_TEST_TS_DROP", "dead".into()),
+                ("RWM_TEST_TS_DEAD_MS", "100".into()),
+            ],
+        ),
+    ];
+    for (name, extra) in cells {
+        let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let mut env = vec![("SIM_PACE_MBIT", "20".to_string()), ("RWM_TEST_TS_SHED_ALL", "1".into())];
+        env.extend(extra);
+        let r = run(&Scenario {
+            seed: 42,
+            paths: 1,
+            bytes: 6_000_000,
+            hint: "realtime",
+            reliable: Some(false),
+            loss: 0.025,
+            jitter_ms: 4,
+            limit_s: 40,
+            port: PORT,
+            env,
+        });
+        println!("paced [{name}]: {} | {}", counts(&r), pass_shape(&r));
+    }
 }
