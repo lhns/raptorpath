@@ -39,8 +39,17 @@ Runs 44674646726, 44675108300, 44675848279, 44676399042. The last 8 `.text` byte
 - Same seed twice: identical socket trace and filtered engine log, 1 path and 2 paths; a different seed differs. 30 consecutive repeats of both, on CI, before the repeat step was removed.
 - Lost tail at ρ < 1 (Realtime, `window_reliable=false`, 6 MB, k = 11800, seam `dead` 1.5 s, 2.5 % loss): KNOWN DEFECT `rec-evict-blocker-unresolved` reproduced. k is sent once (swallowed) and never resent, shed, filled or passed in 30 s virtual; the evicting NACK site clamps the gap 299 times (logged every 100 ms). The test asserts the stall exists; flip it when the defect is fixed.
 - Control, the same lost tail at ρ = 1: k resent and filled, transfer complete at 12.2 s virtual.
-- Jitter witness: recovery-clock sigma 4799 µs with 4 ms uniform jitter, 757 µs with jitter off (queueing and retransmits, not 0).
+- Jitter witness: recovery-clock sigma 4799 µs with 4 ms uniform jitter, 757 µs with jitter off (queueing and retransmits, not 0). After the link streams were rekeyed by server index ("What a seed fixes"): 4801 / 751 µs, the ρ = 1 lost-tail control completes at 12.19 s, the ρ < 1 lost tail still strands k (CI 44726903209).
 - Wall: under 0.3 s per child run on CI.
+
+## What a seed fixes
+
+Measured 2026-11-20 (Windows 11 host, `windows-latest` and `ubuntu-24.04` runners, rustc 1.95.0 and 1.100.0), comparing socket traces line by line:
+
+- **Same seed, same port, same OS: identical**, including the 6 MB blackout and 30 MB 5 % scenarios of `sim_shed_reach`.
+- **The server port was an input** until the link's loss and jitter streams were keyed by server index (`sim.rs`, `SimNet::send`); before, the first c>s datagram already arrived at a different virtual time. Now pinned by `sim_determinism::same_seed_two_ports_*`.
+- **The OS is an input.** The traces agree for a while, then the same events at the same virtual millisecond run in a different task order (first seen as a 24-byte DATAGRAM frame coalesced into a different packet). Cause: tokio's `select!` start branch and its `watch` channel draw from one per-thread RNG, and `net::shutdown_signal` draws a different number of times per OS (unix: `select!` over `ctrl_c` and SIGTERM, two `watch` listeners; Windows: one `ctrl_c`), so every later draw is shifted. Running the Windows body on unix under `sim` (experiment only, not merged) made every compared trace and filtered log identical across the two OSes (CI 44726235078), and with the old port-keyed streams it turned Linux's 0 sheds in the 30 MB 5 % scenario into Windows' 17, trace for trace (CI 44727373869). Compiler version (1.95.0 vs 1.100.0) and machine speed changed nothing.
+- **Not fixed by the seed, masked so far:** quinn-proto's connection IDs (`rand::rng()` in `cid_generator.rs`) and the per-run certificate (Handshake CRYPTO length 655 vs 656 bytes between two runs, absorbed by padding). Neither changed a trace in any run compared.
 
 ## Hash order in production
 

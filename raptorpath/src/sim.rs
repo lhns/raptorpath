@@ -7,7 +7,8 @@
 //! a deterministic virtual address: a configured server address, or
 //! 127.0.0.1:50000+n for each client bind in bind order. Each direction is
 //! one FIFO link: serialization at `rate_bps`, a fixed one-way `delay`, a
-//! seeded jitter, a drop-tail queue and seeded Bernoulli loss, plus an
+//! seeded jitter, a drop-tail queue and seeded Bernoulli loss (both streams
+//! keyed by the seed and the direction, not by the server's real port), plus an
 //! optional client-to-server blackout. Every send (with its fate) and every
 //! receive goes into the trace as `virt_us TX|RX dir src>dst ord len fate`.
 //!
@@ -211,7 +212,11 @@ impl SimNet {
         let mut st = self.st.lock().unwrap();
         let to_server = st.servers.contains(&dst);
         let cfg = if to_server { st.c2s.clone() } else { st.s2c.clone() };
-        let base = self.seed ^ ((src.port() as u64) << 16) ^ dst.port() as u64;
+        // Stream key per direction: a server by its index, a client by its
+        // virtual port. Never the server's real port: that is a harness
+        // choice, and keying on it redrew every loss and jitter sample.
+        let key = |a: &SocketAddr| st.servers.iter().position(|s| s == a).map_or(a.port() as u64, |i| i as u64);
+        let base = self.seed ^ (key(&src) << 16) ^ key(&dst);
         let blackout = st.blackout.clone();
         let dq = st.socks.get(&dst).cloned();
         let d = st.dirs.entry((src, dst)).or_insert_with(|| Dir {

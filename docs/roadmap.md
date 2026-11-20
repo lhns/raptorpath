@@ -380,7 +380,7 @@ flowchart TB
 | CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
 | Unwired-code and config audits | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
 | Model check of hole recovery | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
-| Recovery bookkeeping counters | ○ next | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
+| Recovery bookkeeping counters | ▶ in progress | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
 | Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
 | Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
 | Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
@@ -404,8 +404,6 @@ flowchart TB
 - `meas-test-hygiene`: Test hygiene fixes
 - `rec-fix-perleg-clock-n1`: Per-leg recovery clock, one law
 - `rec-fix-nack-throttle`: NACK repair throttle: gauge, paper
-- `infra-test-recovery-counters`: Recovery bookkeeping counters
-- `rec-evict-blocker-unresolved`: Evicting seat strands a stalled blocker
 - `perf-config-dropped`: Perf ignores the config file
 - `infra-dead-code-batch`: Remove 24 dead functions
 
@@ -440,6 +438,7 @@ flowchart TB
 - `model-wasm-fixes`: Wasm model fixes
 - `infra-test-static-audits`: Unwired-code and config audits
 - `infra-test-recovery-model`: Model check of hole recovery
+- `infra-test-recovery-counters`: Recovery bookkeeping counters
 - `infra-test-sim-engine`: Deterministic simulation of the engine
 
 **no-cargo**
@@ -543,7 +542,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 19 nodes (8 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 54 nodes (22 done, 6 in progress, 5 next, 3 blocked, 4 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 54 nodes (22 done, 7 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 35 nodes (16 done, 4 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 70 nodes (36 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 19 nodes (6 done, 3 in progress, 1 next, 1 blocked, 8 abandoned)
@@ -552,6 +551,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (16 done, 7 in progress, 3 next, 2 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (16 done, 8 in progress, 2 next, 2 blocked)
 <!-- END GENERATED: tracks -->
 
