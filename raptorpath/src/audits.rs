@@ -118,6 +118,9 @@ const ALLOWLIST: &[(&str, &str)] = &[
     ("scheduler/mod.rs::lcw_reset", "T: doc says tests only; net/tests.rs:2280"),
     ("scheduler/path.rs::PathState::loss_clamp_witness", "D: no reader; superseded by the process-wide LCW atomics printed as [LCW] (scheduler/mod.rs:631, store_cap.rs:766). The per-path lcw= token its doc promises does not exist"),
     ("scheduler/path.rs::PathState::sender_truth_release_batch", "D: refuted release law kept for the negative result (doc: no production call site); nothing calls this batch form, the bounding test uses sender_truth_release_delta (net/tests.rs:4138)"),
+    ("sim.rs::LinkCfg::default_40m", "T: sim-harness constructor for tests/sim_support/mod.rs:157 (the sim feature is test-only)"),
+    ("sim.rs::SimNet::install", "T: sim-harness entry for tests/sim_support/mod.rs:158 (the sim feature is test-only)"),
+    ("sim.rs::SimNet::trace", "T: sim-harness readout for tests/sim_support/mod.rs:187 (the sim feature is test-only)"),
     ("task_obs.rs::RxProbe::counters", "T: readout for task_obs.rs:1601-1605"),
     ("transport/io_owner.rs::first_identity_violation", "T: lock-order witness for tests/lock_order_loopback.rs:65"),
     ("transport/io_owner.rs::identity_counts", "T: lock-order witness for tests/lock_order_loopback.rs:58"),
@@ -1186,23 +1189,23 @@ fn check_lists(what: &str, found: &BTreeSet<String>, l: &Lists) -> BTreeMap<char
 #[test]
 fn every_pub_fn_has_a_production_caller_or_a_listed_reason() {
     let s = scan(&load_src());
-    eprintln!(
+    crate::readout!(
         "[S2a] {} files ({} test), {} pub fns, auto-allowed {:?}, uncalled {}",
         s.files, s.test_files, s.pub_defs, s.categories, s.uncalled.len()
     );
     assert!(s.pub_defs > 200, "the scan saw only {} pub fns: the walker is broken", s.pub_defs);
     let lists = Lists { allow: ALLOWLIST, unwired: UNWIRED, pending: PENDING_TRIAGE, params: false };
     let counts = check_lists("S2a uncalled pub fns", &s.uncalled, &lists);
-    eprintln!("[S2a] classes {counts:?}, pending {}", PENDING_TRIAGE.len());
+    crate::readout!("[S2a] classes {counts:?}, pending {}", PENDING_TRIAGE.len());
 }
 
 #[test]
 fn no_ignored_parameter_receives_a_live_value() {
     let s = scan(&load_src());
-    eprintln!("[S2b] auto-allowed {:?}, flagged {}", s.categories, s.ignored_params.len());
+    crate::readout!("[S2b] auto-allowed {:?}, flagged {}", s.categories, s.ignored_params.len());
     let lists = Lists { allow: PARAM_ALLOWLIST, unwired: PARAM_UNWIRED, pending: PARAM_PENDING_TRIAGE, params: true };
     let counts = check_lists("S2b ignored `_param`s", &s.ignored_params, &lists);
-    eprintln!("[S2b] classes {counts:?}, pending {}", PARAM_PENDING_TRIAGE.len());
+    crate::readout!("[S2b] classes {counts:?}, pending {}", PARAM_PENDING_TRIAGE.len());
 }
 
 // -- the list rules: a stale, unclassed or misfiled entry fails; a good one passes.
