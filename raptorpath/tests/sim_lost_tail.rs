@@ -71,7 +71,19 @@ fn known_defect_lost_tail_strands_k_at_rho_below_1() {
     let r = lost_tail(false, 47_200);
     let s = summary(&r);
     println!("rho<1: {s}");
-    println!("rho<1 account:{}", r.acct().0);
+    // The account reads the same stall (ADR-0081). Observed on main (seed 42): S_sent=12147,
+    // O_serv=200, O_strand=147, inert_sweeps=299 of 299 sweeps, oldest_unchanged_max=289,
+    // O_hwm=12146 against a store cap of 1024, clamp_excl=3185 of 3185 evaluations, E=11799
+    // with a budget of 0. Thresholds, not the exact numbers.
+    let a = r.acct();
+    println!("rho<1 account:{}", a.0);
+    assert!(a.u("clamp_evals") > 0 && a.u("clamp_excl") > 0, "the clamp site never excluded a gap:{}", a.0);
+    assert!(a.u("O_strand") > 0, "D1a: no outstanding seq below the clamp bound (defect fixed? flip):{}", a.0);
+    assert!(a.u("O_serv") + a.u("O_strand") > 0, "D1d: nothing outstanding at the end (defect fixed? flip):{}", a.0);
+    assert!(a.u("inert_sweeps") > 0, "D1c: no inert sweep (defect fixed? flip):{}", a.0);
+    assert!(a.u("oldest_unchanged_max") >= 100, "D1d: the oldest un-acked seq did change (defect fixed? flip):{}", a.0);
+    assert!(a.u("O_hwm") > 4 * a.u("cap_at_hwm"), "D1b: intake stayed within the store cap:{}", a.0);
+    assert!(a.violations().iter().any(|v| v.starts_with("H+E")), "E within the budget (unpaced intake bound?):{}", a.0);
     // Executes: the seam fired on k and the evicting NACK site ran.
     let sends = k_lines(&r, "send");
     assert!(sends.first().is_some_and(|l| l.contains(" dropped=1 ")), "seam did not swallow k's first send: {s}");
@@ -101,7 +113,7 @@ fn control_lost_tail_recovers_at_rho_1() {
 /// completed lost-tail transfer at rho < 1 is clean (O = 0, O_strand = 0,
 /// no inert sweeps, H + E within the budget). Red on main.
 #[test]
-#[ignore = "rec-evict-blocker-unresolved: at rho < 1 the lost tail is stranded; the account ends with O > 0"]
+#[ignore = "rec-evict-blocker-unresolved: at rho < 1 the lost tail is stranded (O_strand, inert sweeps, oldest_unchanged grow); H+E also exceeds the budget while the evicting seat has no source-rate bound"]
 fn account_is_clean_after_lost_tail_at_rho_below_1() {
     let r = lost_tail(false, 47_200);
     let a = r.acct();

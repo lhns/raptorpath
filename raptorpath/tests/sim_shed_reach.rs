@@ -122,7 +122,16 @@ fn witness_nack_site_sheds_at_rho_below_1() {
     let r = scenario(false);
     let c = counts(&r);
     println!("rho<1: {c}");
-    println!("rho<1 account:{}", r.acct().0);
+    // The account in the same run (ADR-0081). Observed on main (seed 42, forced 5 % budget):
+    // H=85 (all NACK site; shed_visit_nack=85), E=11946, A=116, O=0, O_strand=0 at the end,
+    // inert_sweeps=10 of 73, clamp_excl=3084 of 3149. O and O_strand do NOT fire here (the
+    // sheds clear the outstanding set); inert sweeps and H+E over the budget do.
+    let a = r.acct();
+    println!("rho<1 account:{}", a.0);
+    assert!(a.u("shed_visit_nack") >= a.u("H") && a.u("H") > 0, "the shed check ran {} times for H={}:{}", a.u("shed_visit_nack"), a.u("H"), a.0);
+    assert!(a.u("clamp_excl") > 0, "the clamp site never excluded a gap:{}", a.0);
+    assert!(a.u("inert_sweeps") > 0, "D1c: no inert sweep (defect fixed? flip):{}", a.0);
+    assert!(a.violations().iter().any(|v| v.starts_with("H+E")), "H+E within the budget:{}", a.0);
     assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
     assert!(!r.tseam("gap_clamped").is_empty(), "the evicting NACK site never clamped a gap: {c}");
 }
@@ -156,7 +165,7 @@ fn control_liveness_at_rho_1() {
 /// KNOWN DEFECT `rec-evict-blocker-unresolved`: once fixed, the account of the
 /// completed blackout transfer at rho < 1 is clean. Red on main.
 #[test]
-#[ignore = "rec-evict-blocker-unresolved: at rho < 1 a hole below the coding window is neither resent nor resolved; the account ends with O > 0"]
+#[ignore = "rec-evict-blocker-unresolved: at rho < 1 a hole below the coding window is neither resent nor resolved; inert sweeps, and H+E above the budget"]
 fn account_is_clean_after_shed_at_rho_below_1() {
     let r = scenario(false);
     let a = r.acct();
