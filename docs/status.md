@@ -2083,6 +2083,30 @@ The launch sha is pinned by an amendment.
 - **κ is read per row** (`[SUCC] rep_mean` over the LATE loop), and the fitted constant is withdrawn. With the measured κ, B1024 (κ = 3.1) sits at the old-hole edge with no fit. At the candidate's point (κ = 1.23) the horizon condition holds about 7× and the SACK-prefix condition about 3×.
 - **Future pool arms go at the knee, the candidate and 640 per path:** c8 170 / 256 / 640. Off Bulk the knee arms are rescaled estimates, and the measured knee is the readout.
 
+**S06 deletion review and an evicting-seat defect (2026-11-20, local loopback runs and code only; Fable-reviewed): ADR-0079's "superset" claim is false at ρ < 1 (Amendment 1, pending the owner). No delivery difference is measured. The evicting seat leaves a stalled blocker unresolved on main itself.**
+- **Main's harness forward list (fixed, `e304921b`).** The tools-only merge `1a0258b7` kept `RWM_PERF_RATE_MBIT` and `RWM_SLAW` in `lib.sh`'s `RWM_FORWARD`, but not the engine code that reads them, so both `gates::forwarding_audit` tests failed on main. Both are now green on the fix. A tree that cherry-picks the pacer or the slaw gauge re-adds its own line.
+- **The claim.** On the evicting seat the NACK site clamps each gap to the 200-symbol coding window before its shed check (`sender_phases.rs:790–805`). The slot site judged `retransmit_buffer.first()` with no window limit. So after the deletion no sender path judges a blocker below the window. A shed is sender state only: it never reaches the receiver, which moves past a hole by force-drain or hold expiry. Its two sender-side effects, a shared 1 − ρ budget and the sweep target, are in ADR-0079 Amendment 1.
+- **Measured** (`s06-delete`, one target dir per tree, the binaries' sha256 recorded). In the stalled-blocker case, 30 runs per tree:
+  - quick shed: 7/30 before, 8/30 after (p = 1.0);
+  - unresolved: 19/30 and 15/30 (p = 0.43);
+  - the slot site never shed the blocker in its 9 live runs.
+
+  Earlier figures are withdrawn: "the deletion loses no drops", "never recovered within 25 s" (it was passed at +160 ms by force-drain), "27–51 ms later" and the 373 ms bound. Two odd counter readings came from a stale binary, built in a target dir the two trees shared.
+- **Defect on main** (diagnosis `wedge-diag` `bc383f29`; local runs, an unpaced source at about 5× an emulated 40 Mbit link):
+  - the source rate has no bound on the evicting seat, because the intake pause is reliable-only (`net/mod.rs:2473`);
+  - the window then covers only the last few milliseconds, so the NACK site's resend and shed act only while a blocker is still inside it;
+  - the tail sweep re-targets a below-window `first()` that the same clamp then drops;
+  - a lost tail with no later traffic is never resolved.
+
+  Continuous traffic still recovers, one reorder hold later. Node `rec-evict-blocker-unresolved`. Owed:
+  - which site produced block E's 1 934 sheds;
+  - whether the paced VM rows show the same.
+- **Tests on `s06-delete`:** `stall_budget_open`, `arrivals_continue` and `stall_budget_closed` are record-only (`#[ignore]` with their measured rates). T2 (`stalled_blocker_recovered_by_nack`) still gates, at 9/10 on the candidate: its one miss was a decode fill.
+- **The S06 guard candidate is held.** It waits on:
+  - the owner on Amendment 1;
+  - the shed-conservation test and the guard's ρ < 1 shed registration, re-read, since conservation is no longer the expected result;
+  - T2 accepting a witnessed decode fill.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).

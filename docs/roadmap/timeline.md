@@ -229,6 +229,7 @@ gantt
     bbr_rs per-packet cost bench :perf_bbrrs_ns_cost, 2026-11-10, 2026-11-12
     bbr_rs send-record ring fix :active, perf_bbrrs_ring_fix, 2026-11-13, 2026-11-20
     section meas - measurement
+    Repair-share bound counts every slot :active, meas_w1_bracket_fix, 2026-11-19, 2026-11-20
     Steady-window check passed untested win… :meas_blocke_steady_rule, 2026-11-18, 2026-11-18
     Cheaper sessions by reuse :meas_harness_reuse, 2026-11-18, 2026-11-18
     Owner call on test cost :meas_user_test_cost, 2026-11-18, 2026-11-18
@@ -322,15 +323,16 @@ gantt
     Derivation and harness branches to main :infra_derivation_merges, 2026-11-19, 2026-11-19
     CI on every push :active, infra_test_ci_gate, 2026-11-20, 2026-11-20
     Unwired-code and config audits :active, infra_test_static_audits, 2026-11-20, 2026-11-20
-    Pinned-law check from logs :active, infra_test_pinned_law_check, 2026-11-20, 2026-11-20
+    Pinned-law check from logs :infra_test_pinned_law_check, 2026-11-20, 2026-11-20
     Model check of hole recovery :active, infra_test_recovery_model, 2026-11-20, 2026-11-20
-    Deterministic simulation spike :active, infra_test_sim_spike, 2026-11-20, 2026-11-20
+    Deterministic simulation spike :infra_test_sim_spike, 2026-11-20, 2026-11-20
     Recovery bookkeeping counters :infra_test_recovery_counters, 2026-11-20, 2026-11-20
     Coverage per seat :infra_test_seat_coverage, 2026-11-20, 2026-11-20
     Mutation testing of the laws :infra_test_mutation, 2026-11-20, 2026-11-20
     Model check over the real code :infra_test_model_real_decisions, 2026-11-20, 2026-11-20
     Narrow pub so dead code warns :infra_test_pub_narrowing, 2026-11-20, 2026-11-20
+    Deterministic simulation of the engine :active, infra_test_sim_engine, 2026-11-20, 2026-11-20
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-realtime-srv-lag-lean`, `rec-framing-followups`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rate-spare-clamp-verdict`, `rate-delta-jitter-fix`, `rate-fix-rate-readout`, `rate-s06-plost-derivation`, `rate-shed-budget-rho`, `rate-adr50-split-unwired`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `meas-w1-bracket-fix`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51b-rho`, `meas-guard-bulk-blind`, `meas-s51-c8-gauges`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-tech-tree-skill`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-realtime-srv-lag-lean`, `rec-framing-followups`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rec-evict-blocker-unresolved`, `rate-spare-clamp-verdict`, `rate-delta-jitter-fix`, `rate-fix-rate-readout`, `rate-s06-plost-derivation`, `rate-shed-budget-rho`, `rate-adr50-split-unwired`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `perf-config-dropped`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51b-rho`, `meas-guard-bulk-blind`, `meas-s51-c8-gauges`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-tech-tree-skill`, `infra-dead-code-batch`
 <!-- END GENERATED: timeline -->

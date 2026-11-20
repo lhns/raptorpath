@@ -17,7 +17,7 @@
 //! A path's RX state is created on its first arrival: the receiver never
 //! needs the TX half's path set to observe one.
 
-use std::collections::HashMap;
+use crate::clock::PathMap;
 
 use super::PathId;
 use crate::control::RxEstimator;
@@ -31,7 +31,7 @@ pub struct RxPathState {
 /// The RX half: per path, the incoming-direction estimators.
 #[derive(Debug, Default)]
 pub struct RxScheduler {
-    paths: HashMap<PathId, RxPathState>,
+    paths: PathMap<PathId, RxPathState>,
 }
 
 impl RxScheduler {

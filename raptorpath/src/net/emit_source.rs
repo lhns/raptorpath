@@ -29,7 +29,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tracing::warn;
 
@@ -303,7 +303,7 @@ fn test_corrupt_framed(framed: bytes::Bytes) -> bytes::Bytes {
         return framed;
     }
     *TEST_CORRUPTED_PAYLOAD.lock().unwrap() = Some(framed.to_vec());
-    *TEST_CORRUPTED_AT.lock().unwrap() = Some(std::time::Instant::now());
+    *TEST_CORRUPTED_AT.lock().unwrap() = Some(crate::clock::now());
     let mut bad = framed.to_vec();
     bad[..2].copy_from_slice(&0xFFFFu16.to_le_bytes());
     bytes::Bytes::from(bad)
@@ -638,7 +638,7 @@ pub(crate) fn emit_source(
                                     flat_rate,
                                     a_star as f64,
                                     crate::control::fec_rate::burst_variance_factor(est),
-                                );
+                                ); #[cfg(feature = "test-seams")] { st.shed_budget_frac = crate::test_seams::budget_frac(st.shed_budget_frac); }
                         }
                         Some((a_star, delta))
                     } else {
@@ -680,7 +680,7 @@ pub(crate) fn emit_source(
                     format!(
                         " ar={:.0} agap={}/{}",
                         st.astar_anchor
-                            .rate(Instant::now(), Duration::from_millis(50))
+                            .rate(crate::clock::now(), Duration::from_millis(50))
                             .unwrap_or(0.0),
                         g,
                         d
@@ -762,7 +762,7 @@ pub(crate) fn emit_source(
                     let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);
                     // P(retransmit) = P_lost(t_k) (paper §3.2):
                     // probabilistic — a smooth transition from FEC to ARQ.
-                    if rand::random::<f64>() < p {
+                    if crate::clock::random_f64() < p {
                         // δ-honest shed: a candidate older than D(δ) arrives
                         // after the receiver's δ-horizon give-up —
                         // retransmitting it only serializes the stream
@@ -782,7 +782,7 @@ pub(crate) fn emit_source(
                             st.retransmit_buffer.remove(&seq);
                             st.nack_retx_at.remove(&seq);
                             st.shed_seqs.insert(seq);
-                            st.shed_total += 1;
+                            st.shed_total += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_shed_slot(seq, age_us_c, st.shed_deadline_us_live);
                         } else {
                             if pol.shed_on
                                 && st.shed_deadline_us_live > 0
@@ -790,7 +790,7 @@ pub(crate) fn emit_source(
                             {
                                 // Past deadline but ρ-budget-refused: the
                                 // serialize arm (visible in DIAG).
-                                st.shed_denied += 1;
+                                st.shed_denied += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_denied_slot(seq);
                             }
                             use_retransmit = true;
                             retransmit_seq = seq;
@@ -936,9 +936,12 @@ pub(crate) fn cadenced_repair_rate(
         };
         (path, RepairRateCache::period_us(est.rtt()), ctrl.rate_snapshot(est, window))
     };
-    let t0 = std::time::Instant::now();
+    let t0 = crate::clock::now();
     let rate = snap.rate();
-    cache.add_eval_ns(t0.elapsed().as_nanos() as u64);
+    cache.add_eval_ns(t0.clock_elapsed().as_nanos() as u64);
     cache.store(now_us, window, path, period, rate);
     rate
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

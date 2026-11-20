@@ -135,7 +135,7 @@ pub async fn server(config: PeerConfig) -> anyhow::Result<()> {
             got: HashSet::new(),
             total,
             bytes: 0,
-            started: Instant::now(),
+            started: crate::clock::now(),
             obs: crate::runtime_obs::snapshot(),
         });
         if st.got.insert(chunk_idx) {
@@ -153,7 +153,7 @@ pub async fn server(config: PeerConfig) -> anyhow::Result<()> {
                 serde_json::json!({
                     "server": true, "obj_id": obj_id, "bytes": st.bytes,
                     "chunks": st.total,
-                    "assemble_s": round(st.started.elapsed().as_secs_f64(), 6),
+                    "assemble_s": round(st.started.clock_elapsed().as_secs_f64(), 6),
                 })
             );
             // The object's own window, first packet → completion (after the
@@ -191,7 +191,7 @@ async fn run_object(
 ) -> anyhow::Result<RunOutcome> {
     let total = (nbytes.max(1)).div_ceil(payload_len) as u32;
     let payload = vec![0xA5u8; payload_len];
-    let t0 = Instant::now();
+    let t0 = crate::clock::now();
     let mut left = nbytes.max(1);
     // The whole object is ahead of us, in the bytes the engine will read
     // (every chunk carries `HDR_LEN`). The ENGINE drains it as its sender
@@ -205,7 +205,7 @@ async fn run_object(
         left -= k;
         let pkt = encode_chunk(obj_id, idx, total, &payload[..k]);
         match tokio::time::timeout(
-            deadline.saturating_sub(t0.elapsed()),
+            deadline.saturating_sub(t0.clock_elapsed()),
             mem.feed.send(pkt),
         )
         .await
@@ -216,7 +216,7 @@ async fn run_object(
         }
     }
     loop {
-        let remaining = deadline.saturating_sub(t0.elapsed());
+        let remaining = deadline.saturating_sub(t0.clock_elapsed());
         if remaining.is_zero() {
             return Ok(RunOutcome::Dnf);
         }
@@ -231,7 +231,7 @@ async fn run_object(
                         if let Some(f) = feed {
                             f.clear();
                         }
-                        return Ok(RunOutcome::Acked(t0.elapsed().as_secs_f64()));
+                        return Ok(RunOutcome::Acked(t0.clock_elapsed().as_secs_f64()));
                     }
                 }
             }
@@ -410,3 +410,6 @@ mod tests {
         assert!(HDR_LEN + chunk_payload_len(ProtocolHint::Auto) <= 1196);
     }
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;
