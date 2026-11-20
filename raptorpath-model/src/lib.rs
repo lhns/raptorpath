@@ -107,6 +107,9 @@ pub struct State {
     pub ever_served: u16,
     /// Some copy was dropped in this run (for the non-vacuity property).
     pub any_drop: bool,
+    /// "Executes" witness: a gap seq below the window start was served (only
+    /// the unclamped reliable path can do this).
+    pub served_below_window: bool,
     // ---- link ----
     /// Data copies in flight, a FIFO (one path, no reordering); a copy of a
     /// seq already queued coalesces with it.
@@ -249,6 +252,9 @@ impl HoleModel {
             // for an acked seq has nothing to serve.
             if has(s.outstanding, seq) {
                 self.resend(s, seq);
+                if seq < win_start {
+                    s.served_below_window = true;
+                }
             }
         }
         false
@@ -500,6 +506,23 @@ impl HoleModel {
         out
     }
 
+    /// The lost-tail shape on a terminal state (see `P_NO_LOST_TAIL`).
+    pub fn lost_tail_shape(&self, s: &State) -> bool {
+        let (Some(blocker), Some((win_start, _))) = (lowest(s.outstanding), self.window_span(s))
+        else {
+            return false;
+        };
+        self.is_terminal(s)
+            && s.total == Some(self.object)
+            && blocker < win_start
+            && s.sweep_seq == blocker
+            && s.sweep_clamped >= self.timer_budget
+            && !has(s.ever_served, blocker)
+            && self.pending(s) == 0
+            && !has(s.received, blocker)
+            && s.frontier <= blocker
+    }
+
     /// The window span at a state (for the tests' trace-shape checks).
     pub fn window_at(&self, s: &State) -> Option<(u8, u8)> {
         self.window_span(s)
@@ -522,6 +545,18 @@ pub const P_TAIL_CLEAN: &str = "terminal, frontier moved: sender holds no outsta
 /// clean: its counterexample is a hole the sender released (shed) that the
 /// receiver never passes.
 pub const P_RELEASED_PASSED: &str = "terminal, sender clean: receiver frontier passed every seq";
+/// The lost-tail shape as a property (its counterexample IS the shape):
+/// a terminal state after the stop branch where the cumulative blocker sits
+/// below the window start, every sweep of it was clamped out, it was never
+/// resent (never shed: it is still outstanding) and the receiver holds no
+/// entry above it.
+pub const P_NO_LOST_TAIL: &str = "terminal: no blocker stranded below the window";
+/// The same, behind a delivered prefix, with the stranded tail longer than W.
+pub const P_NO_LOST_TAIL_BEHIND_PREFIX: &str =
+    "terminal: no tail longer than W stranded behind a delivered prefix";
+/// Executes witness for the control: the unclamped path served a seq below
+/// the window start.
+pub const P_UNCLAMPED_SERVE: &str = "sometimes: a gap below the window start is served";
 pub const P_STORE_CAP: &str = "always: reliable outstanding <= store cap";
 pub const P_COMPLETES: &str = "sometimes: a run completes cleanly";
 
@@ -542,6 +577,7 @@ impl Model for HoleModel {
             sweep_clamped: 0,
             ever_served: 0,
             any_drop: false,
+            served_below_window: false,
             link: Vec::new(),
             drops: [0; MAX_SEQS],
             report: false,
@@ -573,6 +609,15 @@ impl Model for HoleModel {
             }),
             Property::always(P_RELEASED_PASSED, |m: &HoleModel, s: &State| {
                 !m.is_terminal(s) || s.outstanding != 0 || Some(s.frontier) == s.total
+            }),
+            Property::always(P_NO_LOST_TAIL, |m: &HoleModel, s: &State| {
+                !m.lost_tail_shape(s)
+            }),
+            Property::always(P_NO_LOST_TAIL_BEHIND_PREFIX, |m: &HoleModel, s: &State| {
+                !(m.lost_tail_shape(s) && s.frontier > 0 && m.object - s.frontier > m.window)
+            }),
+            Property::sometimes(P_UNCLAMPED_SERVE, |_: &HoleModel, s: &State| {
+                s.served_below_window
             }),
             Property::always(P_STORE_CAP, |m: &HoleModel, s: &State| {
                 !m.seat.reliable || s.outstanding.count_ones() <= m.store_cap as u32

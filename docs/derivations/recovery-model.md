@@ -4,7 +4,7 @@ Crate `raptorpath-model/` (ADR-0083, Proposed). It is a hand-written [stateright
 
 **The model is checked; its match to the engine is assumed.** No engine code runs in it. Each step below copies the engine's order of decisions as read on github/main 54198a2a. If the engine changes, the model does not follow. Plan step S9 removes this caveat for the steps it moves into `raptorpath-core`.
 
-The crate is its own workspace root, through an empty `[workspace]` table, with its own `Cargo.lock`. So stateright never enters the engine's lock file, and the root `Cargo.toml` is untouched. The engine suites (`tools/l1` `src_manifest`) do not build or cover it, so it is not added there.
+The crate is its own workspace root, through an empty `[workspace]` table, with its own `Cargo.lock`. So stateright never enters the engine's lock file, and the root `Cargo.toml` is untouched. The engine suites (`tools/l1/suites_run.sh`) do not run it, so its sources are not added to `src_manifest` in `tools/l1/loopdiag_run_all.sh`. That manifest records what the suites covered. Its `./*/Cargo.toml` glob already picks up the crate's manifest.
 
 ## What is modelled
 
@@ -72,23 +72,32 @@ The crate is its own workspace root, through an empty `[workspace]` table, with 
 
 ## Results
 
-L = 1, release build, one thread, on the host (2026-11-20). A debug `cargo test` runs both tests in 45 s.
+L = 1, release build, one thread, on the host, 2026-11-20. A debug `cargo test` takes about 45 s.
 
 | Seat | Unique states | States | Time | Result |
 |---|---|---|---|---|
-| reliable, ρ = 1 | 830 285 | 3 075 163 | 4.8 s | every property holds (full exploration) |
-| evicting, ρ = 3/4 | 1 715 116 | 6 414 525 | 9.6 s | counterexamples (BFS stops once every failure property has one) |
+| reliable, ρ = 1 | 1 548 426 | 5 776 884 | 11.1 s | every property holds (full exploration); the executes witness *a gap below the window start is served* is reached |
+| evicting, ρ = 3/4 | 1 715 116 | 6 414 525 | 11.9 s | counterexamples; BFS stops once every listed failure property has one, so this count may be partial |
 
-The evicting seat's shortest counterexample to *sender holds no outstanding seq* is also its lost-tail one:
+The lost-tail shape is itself a property (*no blocker stranded below the window*), so whatever discovery the checker returns has that shape. The discovery is the first one found, not necessarily the shortest. Here is the one found on the evicting seat:
 
 ```
-Emit ×8, Boundary{stop}, Deliver(0), Drop(1) … Drop(7), SenderReport, TailSweep, TailSweep
+Emit ×8, Boundary{stop}, Deliver(0), Deliver(1), Drop(2) … Drop(7), SenderReport, TailSweep, TailSweep
 ```
 
-- seq 0 is delivered and acked, and seqs 1–7 are lost once each;
-- the window is [5, 7] and the cumulative blocker is 1;
-- both sweeps synthesize the gap (1, 1), and the clamp empties it before the shed check;
-- seq 1 is never resent and never shed, and the receiver holds nothing above it.
+- seqs 0 and 1 are delivered and acked, and seqs 2–7 are each lost once;
+- the window is [5, 7] and the cumulative blocker is 2;
+- both sweeps synthesize the gap (2, 2), and the clamp empties it before the shed check;
+- seq 2 is never resent and never shed, and the receiver holds nothing above it.
+
+**Scope of the green result.** The reliable seat shows no counterexample within these restrictions:
+
+- one FIFO path;
+- L = 1;
+- hold expiry through the lowest pending entry;
+- reports and sweeps always judged past the deadline.
+
+These restrict the behaviours checked. None of them over-approximates.
 
 - **Evicting seat: a counterexample exists.** It is the lost tail:
   - the tail is lost and the sender stops;
@@ -96,11 +105,11 @@ Emit ×8, Boundary{stop}, Deliver(0), Drop(1) … Drop(7), SenderReport, TailSwe
   - every sweep of the blocker is clamped out before the shed judgement;
   - nothing above the blocker arrives, so neither hold expiry nor force-drain can pass it.
 
-  This is the known defect diagnosed on branch `wedge-diag` (bc383f29, `lost_tail_longer_than_window_strands_k_evicting`). The test asserts that the counterexample exists and has this shape, both for the whole object and for a tail behind a delivered prefix (with the tail longer than W). Flip it when the defect is fixed.
+  This is the known defect diagnosed on branch `wedge-diag` (bc383f29, `lost_tail_longer_than_window_strands_k_evicting`). The test asserts that a counterexample exists to the shape property and to its variant behind a delivered prefix (with the tail longer than W). Flip it when the defect is fixed.
 - **Evicting seat, reported but not asserted.** A second shape is a receiver hole that the sender released:
   - seq 6 is lost and then shed by the correction slot while seq 7 is emitted;
   - seq 7 is lost, and its sweep sheds it (past D, within the budget 2/8);
   - the sender is clean, but the receiver frontier stays at 6, because no entry above it arrives to expire or drain.
 
-  Whether a stalled frontier with nothing behind it matters to the application is an owner question. It is not one of the defects this step targets.
+  This is model-only: there is no engine reproduction. The engine's `..._stall_budget_open` test counts a sweep shed as a pass. Whether a stalled receiver frontier with nothing behind it matters is an owner question, and it is not one of the defects this step targets.
 - **Reliable seat, the control:** passes every property at the same bounds.
