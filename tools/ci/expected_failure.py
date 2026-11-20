@@ -22,9 +22,17 @@ FN = re.compile(r"\bfn\s+(\w+)")
 MSG = "a defect test now passes: fix landed or the test rotted; un-ignore it or fix it"
 
 
+def node_ids(root):
+    """Roadmap node ids, or None when the tree has no docs/roadmap/nodes.yaml (a test fixture)."""
+    f = root / "docs/roadmap/nodes.yaml"
+    return set(re.findall(r"^- id: (\S+)", f.read_text(encoding="utf-8"), re.M)) if f.is_file() else None
+
+
 def scan(root):
-    """-> [{id, file, fn, crate, kind, target, features}] for every defect-ignored test."""
+    """-> [{id, file, fn, crate, kind, target, features}] for every defect-ignored test.
+    A hyphenated prefix that is not a roadmap node is an error: a typo must not drop the test."""
     found = []
+    nodes = node_ids(root)
     for crate in sorted(p.parent for p in root.glob("*/Cargo.toml")):
         meta = tomllib.loads((crate / "Cargo.toml").read_text(encoding="utf-8"))
         pkg = meta["package"]["name"]
@@ -38,6 +46,8 @@ def scan(root):
                         continue
                     fn = next((FN.search(x).group(1) for x in lines[i:i + 8] if FN.search(x)), None)
                     rel = f.relative_to(root).as_posix()
+                    if nodes is not None and m.group(1) not in nodes:
+                        raise SystemExit(f"{rel}:{i + 1}: ignore reason starts with '{m.group(1)}:', which is not a node id in docs/roadmap/nodes.yaml")
                     if fn is None:
                         raise SystemExit(f"{rel}:{i + 1}: defect ignore with no fn within 8 lines")
                     top = sub == "tests" and f.parent == crate / "tests"

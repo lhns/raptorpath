@@ -20,7 +20,7 @@ for c in "${CMDS[@]}"; do $c --no-run || echo "BUILD-FAILED [$c]" >> "$OUT/failu
 for i in $(seq 1 "$N"); do
   for c in "${CMDS[@]}"; do
     $c --no-fail-fast > "$OUT/run.log" 2>&1
-    grep -aE '^test .* \.\.\. (ok|FAILED)$' "$OUT/run.log" | awk -v c="$c" '{print $2 " [" c "] " $4}' >> "$OUT/passes.txt"
+    grep -aE '^test .* \.\.\. (ok|FAILED)$' "$OUT/run.log" | awk -v c="$c" '{print $2 " [" c "] " $NF}' >> "$OUT/passes.txt"
     grep -aE '^test .* FAILED$' "$OUT/run.log" | awk -v c="$c" '{print $2 " [" c "]"}' >> "$OUT/failures.txt"
     if ! grep -aq '^test result' "$OUT/run.log"; then echo "NO-RESULT [$c]" >> "$OUT/failures.txt"; fi
   done

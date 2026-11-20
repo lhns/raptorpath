@@ -43,7 +43,7 @@ jobs:
         run: python tools/ci/run_seat_coverage.py out/lcov 2>&1 | tee out-run.log
       - name: map to ledger rows
         run: |
-          python tools/ci/coverage_by_row.py out/lcov --md out/coverage-by-seat.md --json out/coverage-by-seat.json
+          python tools/ci/coverage_by_row.py out/lcov --md out/coverage-by-seat.md --json out/coverage-by-seat.json --source "seat-coverage run $GITHUB_RUN_ID"
           cat out/coverage-by-seat.md >> "$GITHUB_STEP_SUMMARY"
       - name: shed-site rule (fails when a named site is MISS in every seat and has no miss_reason)
         run: python tools/ci/coverage_by_row.py out/lcov --check-sites

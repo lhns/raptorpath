@@ -5,7 +5,7 @@
 #
 #   SU_ROOT=/home/vibe/suites SU_SRC=<tree root> bash suites_run.sh
 #
-# Exit: 0 all green (TESTS-OK), 1 a REAL failure (TESTS-FAIL), 3 precondition
+# Exit: 0 all green (TESTS-OK), 1 any failure outside the quarantine list, FLAKE or REAL (TESTS-FAIL), 3 precondition
 # not met, 4 a lock is held (nothing run; retry later). Started as `vibe`.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"

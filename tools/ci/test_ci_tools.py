@@ -125,6 +125,15 @@ class ExpectedFailure(unittest.TestCase):
         ids = {(t["id"], t["fn"]) for t in ef.scan(HERE.parents[1])}
         self.assertIn(("rec-evict-blocker-unresolved", "liveness_after_shed_at_rho_below_1"), ids)
 
+    def test_unknown_node_id_is_an_error_not_a_skip(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = self.tree(d, self.SRC)
+            (d / "docs/roadmap").mkdir(parents=True)
+            (d / "docs/roadmap/nodes.yaml").write_text("- id: some-other-node\n")
+            with self.assertRaises(SystemExit) as e:
+                ef.scan(d)
+            self.assertIn("not a node id", str(e.exception))
+
     T = {"id": "n-x", "fn": "defect"}
 
     def test_verdict_failing_defect_is_green(self):
