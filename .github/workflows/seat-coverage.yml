@@ -6,8 +6,6 @@ on:
   schedule:
     - cron: "47 3 * * *"
   workflow_dispatch:
-  push:
-    branches: [seat-coverage]  # TEMPORARY, removed before the branch is finished
 env:
   CARGO_TERM_COLOR: never
   CARGO_INCREMENTAL: "0"

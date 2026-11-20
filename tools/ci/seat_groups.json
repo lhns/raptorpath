@@ -1,5 +1,5 @@
 {
- "note": "Seat groups for S5. A group is a list of (integration test binary, libtest name filters). Seat = (hint, rho, N) as the test sets it: hint via cfgs(.., hint, window_reliable) or --protocol-hint; rho=1 iff window_reliable (or the named point's preset); N = number of bind/peer addresses. Groups overlap (a Bulk rho=1 N=2 test is in bulk_rho1 and n2). A test that loops over several N or hints counts for every seat it loops over, so a hit there over-approximates (listed under 'mixed' in the table).",
+ "note": "Seat groups for S5. A group is a list of (integration test binary, libtest name filters). Seat = (hint, rho, N) as the test sets it: hint via cfgs(.., hint, window_reliable) or --protocol-hint; rho=1 iff window_reliable (or the named point's preset); N = number of bind/peer addresses. Groups overlap (a Bulk rho=1 N=2 test is in bulk_rho1 and n2). A test that loops over several N or hints counts for every seat it loops over, so a hit there over-approximates (listed under 'mixed' in the table). No lib group: cargo llvm-cov report found no object files for a --lib-only run (tried split and single-command forms), so lib unit tests are not in the seat table.",
  "mixed": [
   "eta_reachability",
   "lat_reachability",
@@ -369,12 +369,6 @@
      ]
     }
    ]
-  },
-  "lib": {
-   "seat": "lib unit tests (no seat: each test builds its own config in-process)",
-   "lib": true,
-   "tests": [],
-   "single": true
   }
  }
 }
