@@ -146,7 +146,19 @@ fn stalled_blocker_recovered_by_nack() {
     assert_eq!(taper, 0, "taper={taper}");
     // NACK(k) >= 1 within the time threshold (9/8 x an SRTT bounded at
     // 200 ms) plus one hole-refresh period.
-    let first_nack = nacks.first().unwrap_or_else(|| panic!("no NACK resend of k={K} before it filled"));
+    // A decode fill of k is a pass only with its witness: the receiver's
+    // `fill` event for k (asserted above, `fill` unwrapped) and NO delivered
+    // source send of k before it (every send of k before the fill was
+    // swallowed by the seam), so only the decoder can have produced k.
+    let delivered_before_fill = sends.iter().any(|e| !e.dropped && e.t <= fill.t);
+    let Some(first_nack) = nacks.first() else {
+        assert!(
+            !delivered_before_fill,
+            "k={K} filled with no NACK resend, yet a delivered send of k preceded the fill:              not a decode fill, and a NACK resend is required"
+        );
+        println!("[s06 T2] k filled by the decoder (witness: fill event, no delivered send of k before it)");
+        return;
+    };
     let bound = 200_000 * 9 / 8 + HOLE_REFRESH_MAX_US + SLACK_US;
     assert!(
         first_nack.t.saturating_sub(t0) <= bound,
@@ -221,7 +233,7 @@ fn evicting_run(
 /// decode fill, or by the sender's shed. Bound: resolved within the longest
 /// hold of the first arrival above k.
 #[test]
-#[ignore = "records, does not gate: 7/10 pass on BOTH trees; the failures are runs where k leaves by the receiver's capacity force-drain (pass_force), which this test's pass-or-fill check does not count"]
+#[ignore = "records, does not gate (rec-evict-blocker-unresolved): 7/10 pass on BOTH trees; the failures are runs where k leaves by the receiver's capacity force-drain (pass_force), which this test's pass-or-fill check does not count"]
 fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_arrivals_continue() {
     let run = evicting_run(K, "12000000", &[("RWM_TEST_TS_DROP", "all")], Duration::from_secs(30), |_, rx| {
         first(rx, "above").is_some()
@@ -246,16 +258,16 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_arrivals_continue() {
 /// (ii) No seq above k arrives (the link is dead after k's first send), the
 /// shed budget is open: the sender sheds k by the tail sweep within
 /// D + one sweep + one tick of its send.
-/// RECORD-ONLY. Measured (10 runs per tree, separate binaries, 2.4 % loss):
-/// the bound held in 4/10 runs on the pre-deletion tree and 1/10 on the
-/// candidate; 4/10 runs end UNRESOLVED (k never shed within 30 s) on both
-/// trees, and the other failures are sheds seconds past the bound (211 ms to
-/// 10 s). The slot site was idle (plost=0) in the quick base runs. This is a
-/// slow-link defect already present on main, not caused by the deletion; the
-/// bound is not widened. See `docs/derivations/s06-delete-plan.md` and the
-/// run table in the s06-delete report.
+/// RECORD-ONLY. Measured, 30 runs per tree, separate target dirs and
+/// binaries (2.4 % loss): quick shed (< 500 ms) 7/30 on the pre-deletion tree
+/// and 8/30 on the candidate (Fisher exact two-sided p = 1.0); UNRESOLVED
+/// (k never shed within 30 s) 19/30 vs 15/30 (p = 0.43); slow sheds 4 vs 7
+/// (0.7 to 7.9 s). No difference between trees: the evicting-seat NACK site
+/// clamps every gap out of the 200-symbol coding window, so a blocker that has
+/// left it is not judged, on either tree. Pre-existing, not caused by the
+/// deletion; the bound is not widened. Node `rec-evict-blocker-unresolved`.
 #[test]
-#[ignore = "records, does not gate: flaky on both trees (pre-existing, see the doc comment)"]
+#[ignore = "records, does not gate (rec-evict-blocker-unresolved): flaky on both trees, pre-existing, see the doc comment"]
 fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_open() {
     let run = evicting_run(K_TAIL, BYTES_TAIL, &[("RWM_TEST_TS_DROP", "dead")], Duration::from_secs(30), |c, _| {
         first(c, "shed").is_some()
@@ -286,7 +298,7 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_open() {
 /// counted, and k is served: a NACK/sweep resend reaches the wire once the
 /// link is back.
 #[test]
-#[ignore = "records, does not gate: 7/10 pass on BOTH trees (separate binaries); the failing runs see no shed_denied because k is outside the coding window (pre-existing)"]
+#[ignore = "records, does not gate (rec-evict-blocker-unresolved): 7/10 pass on BOTH trees (separate binaries); the failing runs see no shed_denied because k is outside the coding window (pre-existing)"]
 fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_closed() {
     let run = evicting_run(
         K_TAIL,
@@ -328,7 +340,7 @@ fn past_deadline_blocker_is_shed_or_passed_in_bounded_time_stall_budget_closed()
 /// shed events of k (0 or 1), and k is passed or filled at the receiver once
 /// the link returns, within the hold plus one RTT-scale slack.
 #[test]
-#[ignore = "records, does not gate: k leaves by the receiver pass_force or hold expiry on both trees; see the diag table"]
+#[ignore = "records, does not gate (rec-evict-blocker-unresolved): k leaves by the receiver pass_force or hold expiry on both trees; see the diag table"]
 fn past_deadline_blocker_mid_object_stall_evicting() {
     // Blackout length: `RWM_S06_MID_DEAD_MS` (default 100 ms ~ 400 symbols at
     // 40 Mbit: more than the 200-symbol coding window, so k leaves it).
@@ -378,7 +390,7 @@ fn past_deadline_blocker_mid_object_stall_evicting() {
 /// (one lost source symbol mid-object, arrivals above it continue), evicting
 /// seat. Records only; read the raw logs (`RWM_S06_DUMP`).
 #[test]
-#[ignore = "diagnosis control: records, does not gate"]
+#[ignore = "diagnosis control: records, does not gate (rec-evict-blocker-unresolved)"]
 fn past_deadline_blocker_mid_object_no_blackout_evicting() {
     let run = evicting_run(
         K,
