@@ -980,7 +980,7 @@ mod tests {
     /// estimator's ×10 latch is the defect under test.
     #[test]
     fn estimator_reads_true_link_under_token_bucket_ack_clusters() {
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         let mut est = RsBandwidthEstimation::default();
         let rtprop = 10 * MS; // shal8-class propagation floor
         let pkt: u64 = 1200;
@@ -1041,7 +1041,7 @@ mod tests {
     /// filter at all.
     #[test]
     fn estimator_rejects_sub_rtprop_intervals() {
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         let mut est = RsBandwidthEstimation::default();
         let rtprop = 10 * MS;
         let pkt: u64 = 1200;
@@ -1070,7 +1070,7 @@ mod tests {
     /// and a low app-limited sample is not admitted.
     #[test]
     fn app_limited_samples_are_raise_only() {
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         let mut est = RsBandwidthEstimation::default();
         let rtprop = 10 * MS;
         let pkt: u64 = 1200;
@@ -1119,7 +1119,7 @@ mod tests {
     fn sustained_loss_cannot_clamp_recovery_below_the_pipe() {
         let cfg = Arc::new(BbrRsConfig::default());
         let mut bbr = BbrRs::new(cfg, 1200);
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         // Established model: RTprop 10 ms, bw 12 MB/s (~100 mbit).
         bbr.min_rtt = 10 * MS;
         bbr.max_bandwidth.max_filter.update_max(1, 12_000_000);

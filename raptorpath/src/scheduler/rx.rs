@@ -31,7 +31,7 @@ pub struct RxPathState {
 /// The RX half: per path, the incoming-direction estimators.
 #[derive(Debug, Default)]
 pub struct RxScheduler {
-    paths: HashMap<PathId, RxPathState>,
+    paths: crate::clock::PathMap<PathId, RxPathState>,
 }
 
 impl RxScheduler {

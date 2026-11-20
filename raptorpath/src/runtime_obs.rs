@@ -150,7 +150,7 @@ pub fn lag_line(phase: &str, side: &str, extra: &str, late_us: &[u64], dropped: 
 //
 // Time base. The deadlines and `late_us` are on CLOCK_MONOTONIC. `at_us` is
 // relative to the SAME `origin` the lag probe uses: at arm time
-// `origin = Instant::now()` (CLOCK_MONOTONIC on Linux) and, right next to
+// `origin = crate::clock::now()` (CLOCK_MONOTONIC on Linux) and, right next to
 // it, `origin_mono_ns` = `clock_gettime(CLOCK_MONOTONIC)`; then
 // `at_us = (mono_now − origin_mono_ns) / 1000`. The two origin reads are
 // ~100 ns apart, a constant offset far below the 1 ms timeline resolution.
@@ -744,7 +744,7 @@ pub fn armed() -> bool {
 /// The armed path of [`arm`].
 fn arm_unconditionally() {
     let handle = tokio::runtime::Handle::current();
-    let origin = Instant::now();
+    let origin = crate::clock::now();
     // Read next to `origin`: the OS reference thread's `at_us` axis.
     #[cfg(target_os = "linux")]
     let origin_mono_ns = mono_clock_ns();
@@ -799,7 +799,7 @@ pub fn snapshot() -> Option<Snapshot> {
         })
         .collect();
     Some(Snapshot {
-        at: Instant::now(),
+        at: crate::clock::now(),
         workers,
         threads: read_threads(crate::task_obs::deep()),
         owners: owner_samples(),
@@ -1181,7 +1181,7 @@ mod tests {
         let name = name.expect("worker thread has a name");
         assert!(name.starts_with("rp-w-"), "worker thread name {name}");
         let log = Arc::new(LagLog::default());
-        let origin = Instant::now();
+        let origin = crate::clock::now();
         rt.spawn(lag_probe(log.clone(), origin));
         std::thread::sleep(Duration::from_millis(250));
         let lat = log.window(0, u64::MAX);

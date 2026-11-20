@@ -50,6 +50,8 @@
 //! sender task (no scheduler lock), and the report snapshots it before it
 //! touches the gauge.
 
+#[allow(unused_imports)]
+use crate::clock::SimElapsed;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -260,7 +262,7 @@ impl Default for AckCadenceGauge {
 impl AckCadenceGauge {
     pub fn new() -> Self {
         Self {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             last_report_us: AtomicU64::new(0),
             last_src_ack: AtomicU64::new(0),
             last_crecv: AtomicU64::new(0),
@@ -272,7 +274,7 @@ impl AckCadenceGauge {
     /// µs on the gauge's own monotonic epoch: inter-arrival spacing is the
     /// measurement, so the gauge carries its own `Instant`.
     pub fn now_us(&self) -> u64 {
-        self.epoch.elapsed().as_micros() as u64
+        self.epoch.sim_elapsed().as_micros() as u64
     }
 
     /// **Readouts 1 + 2 + 4's feed.** One inbound `WindowAck` on `path_id`,

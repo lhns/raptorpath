@@ -60,6 +60,8 @@
 //! Wire format: identical to `rlc_window`/`generation` (14-byte self-
 //! describing repair header, FILL_FLAG variant included).
 
+#[allow(unused_imports)]
+use crate::clock::SimElapsed;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use bytes::Bytes;
@@ -1070,23 +1072,23 @@ mod tests {
             let (mut n_rep, mut n_adv, mut out_n) = (0u64, 0u64, 0usize);
             for i in 0..n {
                 let s = enc.add_source(&payload);
-                let t = Instant::now();
+                let t = crate::clock::now();
                 out_n += dec.add_symbol(&s).len();
-                src_ns += t.elapsed().as_nanos();
+                src_ns += t.sim_elapsed().as_nanos();
                 if i % 20 == 19 && i >= 200 {
                     let r = enc.generate_repair_range(i - 199, 200).unwrap();
-                    let t = Instant::now();
+                    let t = crate::clock::now();
                     out_n += dec.add_symbol(&r).len();
-                    rep_ns += t.elapsed().as_nanos();
+                    rep_ns += t.sim_elapsed().as_nanos();
                     n_rep += 1;
                 }
                 if i % 1_000 == 999 {
                     enc.advance(i.saturating_sub(400));
                 }
                 if i % every == every - 1 {
-                    let t = Instant::now();
+                    let t = crate::clock::now();
                     dec.advance(i.saturating_sub(400));
-                    let d = t.elapsed().as_nanos();
+                    let d = t.sim_elapsed().as_nanos();
                     adv_ns += d;
                     adv_max = adv_max.max(d);
                     n_adv += 1;

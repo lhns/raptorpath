@@ -1,3 +1,4 @@
+pub mod clock;
 pub mod config;
 pub mod control;
 pub mod fec;
@@ -10,6 +11,8 @@ pub mod readout;
 pub mod routing;
 pub mod runtime_obs;
 pub mod scheduler;
+#[cfg(feature = "sim")]
+pub mod sim;
 pub mod task_obs;
 pub mod transport;
 pub mod tun;

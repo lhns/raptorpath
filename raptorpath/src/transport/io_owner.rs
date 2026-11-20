@@ -35,6 +35,8 @@
 //! **The P2a lesson** (status §12 addendum): never multiplex loops into one
 //! task, never charge the coop budget per message.
 
+#[allow(unused_imports)]
+use crate::clock::SimElapsed;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -820,12 +822,12 @@ struct Section {
 }
 
 fn section_begin(on: bool) -> Option<Section> {
-    on.then(|| Section { wall: Instant::now(), cpu: thread_cpu_ns() })
+    on.then(|| Section { wall: crate::clock::now(), cpu: thread_cpu_ns() })
 }
 
 fn section_end(ctr: &OwnerCounters, s: Option<Section>) {
     let Some(s) = s else { return };
-    let wall = s.wall.elapsed().as_nanos() as u64;
+    let wall = s.wall.sim_elapsed().as_nanos() as u64;
     ctr.q_secs.fetch_add(1, Relaxed);
     ctr.q_wall_ns.fetch_add(wall, Relaxed);
     match (s.cpu, thread_cpu_ns()) {
@@ -859,7 +861,17 @@ fn bind_endpoint(
         // Threading Q3 step 1: time quinn's drivers and socket (delegating).
         runtime = Arc::new(crate::task_obs::TimedRuntime::new(runtime, format!("{role}-p{path_id}")));
     }
-    let ep = Endpoint::new(quinn::EndpointConfig::default(), server_config, sock, runtime)?;
+    #[allow(unused_mut)]
+    let mut ep_cfg = quinn::EndpointConfig::default();
+    #[cfg(feature = "sim")]
+    if crate::sim::net().is_some() {
+        runtime = Arc::new(crate::sim::SimRuntime(runtime));
+        if std::env::var("SIM_NO_QUINN_SEED").is_err()
+        {
+            ep_cfg.rng_seed(Some([(path_id as u8) ^ if role == "server" { 0x5a } else { 0xa5 }; 32]));
+        }
+    }
+    let ep = Endpoint::new(ep_cfg, server_config, sock, runtime)?;
     Ok((ep, probe, grant))
 }
 
@@ -1044,7 +1056,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     let mut shim_armed: Option<u64> = None;
     // The view refresh is driven by activity only (no timer: an idle owner
     // never wakes for it), rate-limited by snapshot age.
-    let mut last_full = Instant::now();
+    let mut last_full = crate::clock::now();
     let mut dirty = false;
     publish(conn, &view, true, copa_wire);
 
@@ -1165,7 +1177,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                     inbound_tx = b;
                                     if a.deep {
                                         ctr.ack_full.fetch_add(1, Relaxed);
-                                        ack_full_at = Some(Instant::now());
+                                        ack_full_at = Some(crate::clock::now());
                                     }
                                 }
                                 Err(mpsc::error::TrySendError::Closed(_)) => {}
@@ -1187,7 +1199,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                     view.recycle_inbound(std::mem::replace(&mut inbound, b));
                                     if a.deep {
                                         ctr.rx_full.fetch_add(1, Relaxed);
-                                        rx_full_at = Some(Instant::now());
+                                        rx_full_at = Some(crate::clock::now());
                                     }
                                 }
                                 Err(mpsc::error::TrySendError::Closed(_)) => {
@@ -1205,7 +1217,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
             }
             p = reserve_owned(readers.as_ref().map(|r| r.sender_tx.clone())), if !inbound_tx.is_empty() => {
                 if let Some(t) = ack_full_at.take() {
-                    ctr.ack_full_ns.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+                    ctr.ack_full_ns.fetch_add(t.sim_elapsed().as_nanos() as u64, Relaxed);
                 }
                 match p {
                     Some(permit) => {
@@ -1219,7 +1231,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
             }
             p = reserve_owned(readers.as_ref().map(|r| r.msg_tx.clone())), if !inbound.is_empty() => {
                 if let Some(t) = rx_full_at.take() {
-                    ctr.rx_full_ns.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+                    ctr.rx_full_ns.fetch_add(t.sim_elapsed().as_nanos() as u64, Relaxed);
                 }
                 match p {
                     Some(permit) => {
@@ -1276,7 +1288,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
         // traffic (a transfer's tail still wakes the owner: the peer's acks
         // and the receiver's reads are I/O), so a stale idle snapshot reads
         // what a fresh one would, up to quinn-internal packets.
-        let now = Instant::now();
+        let now = crate::clock::now();
         let full = dirty && now.duration_since(last_full) >= VIEW_REFRESH;
         if full || copa_wire {
             let sec = section_begin(a.gauge && full);
@@ -1529,9 +1541,9 @@ impl TxBatch {
                         Ok(()) => Ok(()),
                         Err(mpsc::error::TrySendError::Full(cmd)) => {
                             c.fl_full.fetch_add(1, Relaxed);
-                            let t0 = Instant::now();
+                            let t0 = crate::clock::now();
                             let r = s.io.tx.send(cmd).await.map_err(|_| ());
-                            c.fl_full_ns.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+                            c.fl_full_ns.fetch_add(t0.sim_elapsed().as_nanos() as u64, Relaxed);
                             r
                         }
                         Err(mpsc::error::TrySendError::Closed(_)) => Err(()),
