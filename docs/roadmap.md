@@ -380,7 +380,6 @@ flowchart TB
 | CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
 | Unwired-code and config audits | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
 | Model check of hole recovery | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
-| Recovery bookkeeping counters | ▶ in progress | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
 | Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
 | Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
 | Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
@@ -438,7 +437,6 @@ flowchart TB
 - `model-wasm-fixes`: Wasm model fixes
 - `infra-test-static-audits`: Unwired-code and config audits
 - `infra-test-recovery-model`: Model check of hole recovery
-- `infra-test-recovery-counters`: Recovery bookkeeping counters
 - `infra-test-sim-engine`: Deterministic simulation of the engine
 
 **no-cargo**
@@ -539,7 +537,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 ## Done, by month
 
 <!-- BEGIN GENERATED: done-by-month -->
-<details><summary><b>Nov 2026</b>: 85 done</summary>
+<details><summary><b>Nov 2026</b>: 86 done</summary>
 
 - `perf-s33-timer`: Lag tail timer hand-off (✔ done · unrated)
 - `perf-receiver-followups`: Receiver follow-ups (✔ done · successful)
@@ -624,6 +622,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `rate-spare-cwnd`: Is spare's cwnd enforced? (✔ done · unrated)
 - `infra-test-mutation`: Mutation testing of the laws (✔ done · successful)
 - `infra-test-pinned-law-check`: Pinned-law check from logs (✔ done · successful)
+- `infra-test-recovery-counters`: Recovery bookkeeping counters (✔ done · successful)
 - `infra-test-seat-coverage`: Coverage per seat (✔ done · successful)
 - `infra-test-sim-spike`: Deterministic simulation spike (✔ done · successful)
 
@@ -791,6 +790,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (16 done, 8 in progress, 2 next, 2 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (17 done, 7 in progress, 2 next, 2 blocked)
 <!-- END GENERATED: tracks -->
 

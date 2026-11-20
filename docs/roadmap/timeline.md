@@ -326,7 +326,7 @@ gantt
     Pinned-law check from logs :infra_test_pinned_law_check, 2026-11-20, 2026-11-20
     Model check of hole recovery :active, infra_test_recovery_model, 2026-11-20, 2026-11-20
     Deterministic simulation spike :infra_test_sim_spike, 2026-11-20, 2026-11-20
-    Recovery bookkeeping counters :active, infra_test_recovery_counters, 2026-11-20, 2026-11-20
+    Recovery bookkeeping counters :infra_test_recovery_counters, 2026-11-20, 2026-11-20
     Coverage per seat :infra_test_seat_coverage, 2026-11-20, 2026-11-20
     Mutation testing of the laws :infra_test_mutation, 2026-11-20, 2026-11-20
     Model check over the real code :infra_test_model_real_decisions, 2026-11-20, 2026-11-20
