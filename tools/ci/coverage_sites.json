@@ -20,14 +20,16 @@
    "desc": "slot-site shed: correction slot sheds a past-deadline candidate (emit_source.rs ~757-785)",
    "file": "raptorpath/src/net/emit_source.rs",
    "regex": "st\\.shed_total \\+= 1;",
-   "near": 775
+   "near": 775,
+   "miss_reason": "ADR-0079 deletes the slot site (the taper copy branch) and its shed call; no test can reach it (sim_shed_reach::slot_site_is_not_reached_here). Remove the site when the engine change lands."
   },
   {
    "id": "shed-slot-denied",
    "desc": "slot-site shed refused",
    "file": "raptorpath/src/net/emit_source.rs",
    "regex": "st\\.shed_denied \\+= 1;",
-   "near": 783
+   "near": 783,
+   "miss_reason": "ADR-0079 deletes the slot site (the taper copy branch) and its shed call; no test can reach it. Remove the site when the engine change lands."
   },
   {
    "id": "branch-S08",
@@ -49,7 +51,8 @@
    "audit": "R05",
    "audit_says": {
     "bulk_rho1": "NR"
-   }
+   },
+   "miss_reason": "Only runs under the RWM_COMPLETION_EXPOSURE gate (config.rs), which no seat-group test sets; the perf client sets it."
   }
  ]
 }

@@ -52,6 +52,11 @@ const PORT: u16 = 47_400;
 const K: u64 = 12_087;
 
 fn scenario(reliable: bool) -> ChildRun {
+    scenario_with(reliable, Some("0.05"))
+}
+
+/// `budget_frac`: the forced 1 - rho budget (`RWM_TEST_TS_BUDGET_FRAC`); `None` leaves the derived budget.
+fn scenario_with(reliable: bool, budget_frac: Option<&str>) -> ChildRun {
     let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     run(&Scenario {
         seed: 42,
@@ -63,15 +68,17 @@ fn scenario(reliable: bool) -> ChildRun {
         jitter_ms: 4,
         limit_s: 40,
         port: PORT,
-        env: vec![
+        env: [
             // A seq that never exists: the per-seq seams stay quiet but `gap_clamped`
             // is armed; SHED_ALL opens the shed trace.
             ("RWM_TEST_TS_SEQ", K.to_string()),
             ("RWM_TEST_TS_DROP", "dead".into()),
             ("RWM_TEST_TS_DEAD_MS", "1500".into()),
             ("RWM_TEST_TS_SHED_ALL", "1".into()),
-            ("RWM_TEST_TS_BUDGET_FRAC", "0.05".into()),
-        ],
+        ]
+        .into_iter()
+        .chain(budget_frac.map(|f| ("RWM_TEST_TS_BUDGET_FRAC", f.to_string())))
+        .collect(),
     })
 }
 
@@ -196,6 +203,17 @@ fn witness_nack_site_sheds_at_rho_below_1() {
     println!("rho<1: {c}");
     assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
     assert!(!r.tseam("gap_clamped").is_empty(), "the evicting NACK site never clamped a gap: {c}");
+}
+
+/// Witness (green): the NACK-path refusal runs. Without the forced budget the
+/// sim sender has no loss sample, the derived budget reads 0 and every past-D
+/// hole is refused (`denied`), so the shed site's other branch is reached here.
+#[test]
+fn witness_nack_denied_when_the_budget_is_zero() {
+    let r = scenario_with(false, None);
+    let c = counts(&r);
+    println!("rho<1, derived budget: {c}");
+    assert!(!r.tseam("denied").is_empty(), "the NACK-site refusal never ran: {c}");
 }
 
 /// Witness (green): the slot site stays at 0 in this scenario. When a change

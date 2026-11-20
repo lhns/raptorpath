@@ -24,3 +24,9 @@
 - The first weeks sort today's timing tests into tier A or quarantine. Some currently "green" tests will be quarantined.
 - Actions sees only pushes to `github`. If `origin` stays the main remote, a mirror push is part of every merge.
 - Open for the owner: canonical remote, push-only or required check, N, quarantine owner.
+
+## Implementation (2026-11-20, branch ci-gates)
+
+- The rule is `tools/ci/flake_rule.py`; the list is `raptorpath/tests/quarantine.txt` (`<test> | <owner> | <reason>`, malformed lines are errors). `tools/l1/suites_run.sh` still re-runs a failed test solo, but only to label it `FLAKE-FAILURE` or `REAL-FAILURE`; both fail the suite unless quarantined. The nightly `repeat` job runs the tier-A set N times, prints per-test pass counts, and exits 1 on any failure outside the list.
+- Not yet built: the automatic exit from quarantine after N clean runs (decision 3). The list is empty: run 44677402957 (30 iterations) had no failing test.
+- Companion gates: the shed-site rule (`coverage_by_row.py --check-sites`, nightly) and the expected-failure job (`tools/ci/expected_failure.py`, tier A).
