@@ -2742,7 +2742,7 @@ def make67(root, plan, path):
 
 
 def tree67(root, tree, rel):
-    return os.path.join(sb["root"], "seats", tree, "src", *rel.split("/"))
+    return os.path.join(root, "root", "seats", tree, "src", *rel.split("/"))
 
 
 def append67(root, tree, rel, text):
