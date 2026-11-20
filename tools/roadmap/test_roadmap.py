@@ -506,10 +506,23 @@ class BuildTests(unittest.TestCase):
     def region(out, name):
         return out.split(f"<!-- BEGIN GENERATED: {name} -->")[1].split("<!-- END")[0]
 
+    def test_done_by_month_groups_every_done_node(self):
+        out = self.region(built([
+            node("rec-a", state="done", overview=False, start="2026-07-02", end="2026-07-20"),
+            node("rec-b", state="done", overview=False, start="2026-08-01"),
+            node("rec-c", state="done", overview=False),
+            node("rec-d", state="next"),
+        ]), "done-by-month")
+        self.assertLess(out.index("Aug 2026"), out.index("Jul 2026"))
+        self.assertLess(out.index("Jul 2026"), out.index("Undated"))
+        for i in ("rec-a", "rec-b", "rec-c"):
+            self.assertIn(f"`{i}`", out)
+        self.assertNotIn("rec-d", out)
+
     def test_region_order(self):
         order = build.REGION_ORDER
-        self.assertEqual(order[:9], ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting",
-                                     "waiting-on-owner", "vm-queue", "timeline"])
+        self.assertEqual(order[:10], ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting",
+                                      "waiting-on-owner", "vm-queue", "timeline", "done-by-month"])
         self.assertEqual(order[-1], "tracks")
         out = built([node("rec-a")])
         pos = [out.index(f"<!-- BEGIN GENERATED: {n} -->") for n in order]

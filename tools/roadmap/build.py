@@ -47,7 +47,7 @@ BAND_MIN = 4        # past months are merged into one overview band until it hol
 GANTT_TITLE = 40    # gantt task names are truncated to this many characters
 
 REGION_ORDER = ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting", "waiting-on-owner",
-                "vm-queue", "timeline", "tracks"]
+                "vm-queue", "timeline", "done-by-month", "tracks"]
 MD_KEY = "roadmap.md"
 TIMELINE_KEY = "roadmap/timeline.md"  # the Gantt page, generated in full
 GENERATED_ON = "Generated from nodes.yaml on {}."  # check.py parses the date back out of this sentence
@@ -618,9 +618,26 @@ def r_vmqueue(nodes, today):
         for i, n in enumerate(q, 1)) or "_The VM queue is empty._"
 
 
+def r_done_by_month(nodes, today):
+    """Every done node, grouped by the month it ended (else started), newest month first; undated last."""
+    sel = [n for n in nodes if n["state"] == "done"]
+    if not sel:
+        return "_Nothing done yet._"
+    groups = {}
+    for n in sel:
+        groups.setdefault((n["end"] or n["start"])[:7], []).append(n)
+    parts = []
+    for ym in sorted((k for k in groups if k), reverse=True) + ([""] if "" in groups else []):
+        group = sorted(groups[ym], key=lambda n: (n["end"] or n["start"], n["id"]))
+        head = month_name(ym) if ym else "Undated"
+        lines = "\n".join(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})" for n in group)
+        parts.append(f"<details><summary><b>{head}</b>: {len(group)} done</summary>\n\n{lines}\n\n</details>")
+    return "\n\n".join(parts)
+
+
 RENDERERS = {"legend": r_legend, "overview": r_overview, "timeline": r_timeline_link, "tracks": r_tracks,
              "plain-words": r_plain, "ready-now": r_ready, "running": r_running, "built-waiting": r_built_waiting,
-             "waiting-on-owner": r_waiting, "vm-queue": r_vmqueue}
+             "waiting-on-owner": r_waiting, "vm-queue": r_vmqueue, "done-by-month": r_done_by_month}
 TRACK_RENDERERS = {f"track-{c}": r_track(c) for c in TRACKS} | {f"table-{c}": r_table(c) for c in TRACKS}
 
 
