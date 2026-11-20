@@ -263,16 +263,16 @@ flowchart TB
 | `meas-user-test-cost` | Owner call on test cost | Decision 14: sccache on host builds only; the reduced guard is not suggested by Fable (reuse already halves guard wall time). | status Owner decisions (2026-11-18) item 14 |
 | `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). | status §61a Result |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |
-| `meas-adr51-scenarios` | Canonical scenarios and goal gate | Owner 2026-07-02: "define a goal that we want to surpass tcp and that the model reacts correctly in our defined scenarios". Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0051 |
+| `meas-adr51-scenarios` | Canonical scenarios and goal gate | Owner 2026-07-02: set the goal of beating TCP and of the model reacting correctly in the defined scenarios. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0051 |
 | `meas-l1-harness` | Network-namespace harness and baselines | VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350). | commit f73704c2 |
 | `meas-l2-multipath` | Multipath and tail evaluation | C7 validated (23.9 vs MPTCP 15.4), C8 refuted (8.81); tail claim validated at C2; window-mode path-liveness bug fixed. Was titled 'L2/L3 multipath and tail evaluation'. The window-liveness defect is its own node since 2026-11-20 (perf-realtime-path-death). | commit beae05b1 |
 | `meas-c8-aggregation-arc` | Unequal two-path aggregation arc | RWM Phase C refuted C8 aggregation at L1 (2026-07-06); "final verdict" 2026-07-08 later shown to be measured under three hidden binders. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row "Arc concluded" aggregation verdict |
 | `meas-gen-inert-era` | Generation-inert measurement era | The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Generation-inert era; ADR-0053 |
 | `meas-regime-map` | Hardware-honest regime map | Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read). | commit acefc473 |
-| `meas-adr52-discipline` | Measurement discipline | Owner 2026-07-21: many changes performed worse and are off by default, "this does not speak for a principled approach". Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
+| `meas-adr52-discipline` | Measurement discipline | Owner 2026-07-21: many changes performed worse and are off by default, which in the owner's view did not show a principled approach. Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
 | `meas-adversarial-b1` | Adversarial policer map | Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design. | commit 754139c3 |
 | `meas-formula-first` | Formula-first review | Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27). | branch ADR-0070 |
-| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: "back off and re-think... analyze the different stages of our encoder-decoder pipeline". PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16. Split 2026-11-20: the anchor-era suspect, the queue fix and the ack-cadence checks are their own nodes; the latency-feedback merge moved to store-sf-latency-feedback. | branch PIPELINE VERIFICATION MATRIX |
+| `meas-pipeline-verification` | Pipeline verification matrix | Owner 2026-08-11: step back and analyse each stage of the encoder-decoder pipeline. PIPELINE VERIFICATION MATRIX (df52dc90): 24 stages scored, the suspect list ranked. Folds the 2026-08-12 paper refresh, the queue fix, the anchor-era suspect and the SF bench on measured inputs. The coupling model and the SF accounting axis are their own nodes since 2026-11-16. Split 2026-11-20: the anchor-era suspect, the queue fix and the ack-cadence checks are their own nodes; the latency-feedback merge moved to store-sf-latency-feedback. | branch PIPELINE VERIFICATION MATRIX |
 | `meas-coupling-model` | Coupling model (frontier span) | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: dead-end). cb422e2d: 'frontier span REAL but NEUTRALIZED at the gate by ADR-0060'. | commit 7ad65ef1; commit cb422e2d |
 | `meas-sf-accounting` | SF accounting axis | Split 2026-11-16 from the pipeline verification node (2026-08 audit outcome: mixed): the cell reproduces, the level at c7 does not. | commit 4f67ba7d; commit 4131d254 |
 | `meas-goal-0819` | Era battery: cumulative shipped effect | Era ledger item 1 (2026-08-19; owner: 'fix the ping probe in there. we cannot mislead ourselves'): the arc's cumulative shipped effect on two binaries (pre-registration 1d7094ef). The day's other items are their own nodes since 2026-11-16: meas-latency-truth, meas-c9-battery, meas-gap-phases, meas-cpuprof, meas-span-run, meas-sigma-c8, meas-eppen-c8. | commit f605f925; branch THE ERA LEDGER, SCORED |
@@ -285,7 +285,7 @@ flowchart TB
 | `meas-eppen-c8` | Eppen's condition on unequal paths | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL. | commit 33528562 |
 | `meas-attribution-audit` | Attribution audit | §2 row is undated; dates from the 2026-09-07 merges. The §16.80 law is its own node since 2026-11-20 (rec-seqclass-law). | status §2 row "Attribution audit (D0)" |
 | `meas-wire-v8` | Wire v8 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. The crown spot is its own node since 2026-11-20 (meas-crown-spot-v8). | status §2 row "Crown no-regression spot (wire v8 merges)" |
-| `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: "continue your measurements but they cannot take over 5 hours". | commit 3eb28db6 |
+| `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: measurements continue, each capped at 5 hours. | commit 3eb28db6 |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | §3.8 is undated in the raw record; dates from harness/datagram-truth (2026-09-30). Folds paper §11.1 open question 10. Fixed: the harness measures per-datagram truth ([TRUTH]). | status §3.8 |
 | `meas-v4-verification` | Verification of the new main | Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'V4 verification of new main'. | status §6 |
 | `meas-guard-41c` | Rank-minp merge guard | A/A-calibrated rank-minp guard at 12+12; used by §49, §50, §52. nsbench41c is its ns/stamp bench. End 2026-11-12 was a placeholder (status §41c: last edit or migration date); date from merge ?. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §41c; branch archive/nsbench41c |
@@ -361,12 +361,8 @@ flowchart TB
   - Latency-percentile harness and warm-flow object mode (2026-07-04, commit 6868180726629986c, commit 9814d79c)
   - Warm-geometry diagnostics and re-issued L2 claim table (2026-07-04, commit 6f7cb6fa, commit 4cf5697d)
 - `meas-c8-aggregation-arc`: Unequal two-path aggregation arc
-  - branch RWM Phase C
   - branch verification oracle + aggregation verdict + ADR-0046 fix
   - branch corrected temporal oracle + FINAL aggregation verdict
-  - branch C8 cross-path repair
-  - commit a8dd8675
-  - branch bench/full-rerun-20260708
   - Paper section 16 rewritten as reliable windowed multipath (2026-07-06, commit 1412f280, commit 5930083a)
   - Corrected temporal multipath oracle (2026-07-07, commit 18ee6606, commit caa22760)
 - `meas-gen-inert-era`: Generation-inert measurement era
@@ -382,8 +378,7 @@ flowchart TB
   - Discipline checklist: CRLF sync item (2026-07-19, commit 729327e7)
   - Discipline item 12: VM lock covers all VM activity (2026-08-06, commit a8dfbf9d)
   - Measurement discipline item 13: lock holder's own polling is co-tenancy (2026-08-07, commit 17c52efe)
-  - Measurement runs moved to in-memory storage (2026-10-26, session record)
-  - commit db8221d1
+  - Measurement runs moved to in-memory storage (2026-10-26, commit db8221d1)
 - `meas-adversarial-b1`: Adversarial policer map
   - commit 6c8c3d38
   - commit 9840854b
@@ -472,7 +467,7 @@ flowchart TB
   - commit f2cba2b7
   - Benchmark dashboard: Trend tab, Plotly performance and shadow DOM fixes (2026-03-20, commit 7019be4d, commit 24db6085, commit 98d02dfb)
 - `meas-user-consolidate-arc`: Owner call: consolidate aggregation arc
-  - Owner decision to consolidate the aggregation arc (2026-07-08, session record)
+  - Owner decision to consolidate the aggregation arc (2026-07-08, commit a8dd8675)
 - `meas-anchor-era-suspect`: Anchor-era suspect ruled out
   - branch anchor-era suspect REFUTED
 - `meas-ack-cadence`: Ack-cadence over-read checks
@@ -480,10 +475,11 @@ flowchart TB
   - branch ack-cadence measurement
 - `meas-defect-31mbit`: 31 Mbit/s cap: generation coding on
   - branch the 31 Mbit/s cap DIAGNOSED
-  - 31 Mbit/s throughput anomaly: generation coding left on (2026-08-20, session record)
+  - 31 Mbit/s throughput anomaly: generation coding left on (2026-08-20, commit 38050959)
 - `meas-crown-spot-v8`: Crown no-regression spot (wire v8)
   - branch THE CROWN SPOT
-  - Crown spot: invariant repairs inert at the presets (2026-09-08, session record)
+  - Crown spot: invariant repairs inert at the presets (2026-09-08, commit f671f61d)
 - `meas-rerun-0708`: Full benchmark re-run (8 July)
-  - Full benchmark re-run, 2026-07-08 (2026-07-08, session record)
+  - Full benchmark re-run, 2026-07-08 (2026-07-08, commit bfc71e8e)
+  - branch bench/full-rerun-20260708
 <!-- END GENERATED: table-meas -->

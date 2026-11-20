@@ -13,7 +13,7 @@ One node = ONE thing that got, or will get, its own verdict.
    - each §3.10 defect verdict;
    - each law in the law ledger.
 6. **Never a node:** a single commit, a bug fix inside a branch, a re-pin, a harness repair.
-7. **Sanity check:** 25–35 nodes in the overview; 8–20 per track.
+7. **Sanity check:** 50–60 nodes in the overview (`check.py` warns outside it). There is no per-track count: a track holds every node of its history, and its page lists them all.
 
 ## Fields
 ```yaml
@@ -32,7 +32,7 @@ One node = ONE thing that got, or will get, its own verdict.
   start: 2026-11-13
   end: ""                   # "" if open
   folded: ["status §53 amendment 1", "branch dup-diag"]   # source items absorbed
-  overview: true            # true for the ~25–35 nodes in the overview tree
+  overview: true            # true for the ~50–60 nodes in the overview tree
 ```
 
 ## Outcome scale (from a recorded verdict only; else `unrated`)

@@ -21,6 +21,9 @@ ID_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 # 3 and 8 per file rendered). The cause is not known; the cap is empirical and set to the most the shipped layout
 # was verified with (3 blocks on the main page; it has 2 now, the legend and the overview; every other page has 1).
 MAX_MERMAID_PER_FILE = 3
+# overview sanity range (NODE-SCHEMA.md rule 7): with one band per month, three nodes a row, the history
+# from March on needs about 50 boxes to show every month; beyond 60 the diagram stops being an overview
+OVERVIEW_MIN, OVERVIEW_MAX = 50, 60
 # the build date, written as a visible sentence on the main page and on the timeline page
 TODAY_RE = re.compile(re.escape(build.GENERATED_ON).replace(re.escape("{}"), r"(\d{4}-\d{2}-\d{2})"))
 
@@ -198,8 +201,8 @@ def validate_nodes(nodes):
                 warnings.append(f"{n['id']}: prerequisite '{d}' starts after it ({by[d]['start']} > {n['start']})")
 
     size = sum(1 for n in good if n["overview"])
-    if not 20 <= size <= 40:
-        warnings.append(f"overview has {size} nodes (target 20-40)")
+    if not OVERVIEW_MIN <= size <= OVERVIEW_MAX:
+        warnings.append(f"overview has {size} nodes (target {OVERVIEW_MIN}-{OVERVIEW_MAX})")
     return errors, warnings
 
 

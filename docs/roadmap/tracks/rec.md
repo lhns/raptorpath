@@ -12,12 +12,9 @@ flowchart TB
     rec_early_arq["✔ Early ACK, NACK and<br/>repair"]
     rec_nack_congestion["✔ Congestion-aware<br/>NACK throttle (first<br/>form)"]
     rec_plost_sack["✔ Rearchitecture<br/>phases: P_lost and<br/>SACK"]
-    rec_burst_state_loss["✖ Burst-state loss in<br/>retransmit choice"]
-    rec_loss_divisor["✖ Concurrent-loss<br/>divisor for P_retx"]
-    rec_hard_rto_cutover["✖ Hard retransmit-<br/>timeout cutover"]
     rec_bulk_arq["✔ Bulk ARQ and batch<br/>acknowledgements"]
-    rec_reliable_window["✔ Reliable window"]
     rec_p10a_repair_floor["✖ Inner-feedback<br/>repair floor"]
+    rec_reliable_window["✔ Reliable window"]
     rec_blockstart_orphan>"✔ Lost BlockStart<br/>orphans idle objects"]
     rec_p10b_reactive_repair["✔ Window-mode reactive<br/>repair (P10b)"]
     rec_rwm_phase_c["✔ Out-of-order object<br/>delivery (Phase C)"]
@@ -72,15 +69,12 @@ flowchart TB
     rec_fix_nack_throttle[/"○ NACK repair<br/>throttle: gauge, paper"/]
     rec_retx_behind_source["○ Retransmits queued<br/>behind source?"]
     rec_evict_blocker_unresolved>"⚠ Evicting seat<br/>strands a stalled<br/>blocker"]
-    rec_early_arq ~~~ rec_burst_state_loss
-    rec_nack_congestion ~~~ rec_loss_divisor
-    rec_plost_sack ~~~ rec_hard_rto_cutover
-    rec_burst_state_loss ~~~ rec_bulk_arq
-    rec_loss_divisor ~~~ rec_reliable_window
-    rec_hard_rto_cutover ~~~ rec_p10a_repair_floor
+    rec_early_arq ~~~ rec_bulk_arq
+    rec_nack_congestion ~~~ rec_p10a_repair_floor
+    rec_plost_sack ~~~ rec_reliable_window
     rec_bulk_arq ~~~ rec_blockstart_orphan
-    rec_reliable_window ~~~ rec_p10b_reactive_repair
-    rec_p10a_repair_floor ~~~ rec_rwm_phase_c
+    rec_p10a_repair_floor ~~~ rec_p10b_reactive_repair
+    rec_reliable_window ~~~ rec_rwm_phase_c
     rec_blockstart_orphan ~~~ rec_fec_vs_arq
     rec_p10b_reactive_repair ~~~ rec_inline_repair
     rec_rwm_phase_c ~~~ rec_c2_collapse_diag
@@ -169,7 +163,7 @@ flowchart TB
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 66,67,68,78 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 63,64,65,75 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -185,7 +179,8 @@ flowchart TB
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
     class rec_early_arq,rec_bulk_arq,rec_reliable_window,rec_blockstart_orphan,rec_p10b_reactive_repair,rec_arq_overrequest_bound,rec_per_path_clocks,rec_goal100,rec_wire_v9,rec_snapver_filter,rec_defect_realtime_framing succ
     class rec_nack_congestion,rec_plost_sack,rec_fec_vs_arq,rec_c2_collapse_diag,rec_recovery_bench,rec_alpha_sweep,rec_successor_arrival,rec_fire_cause,rec_seqclass_law,rec_snapver_law,rec_s54_session,rec_wire_clock_derivation,rec_s64_delay_lean,rec_realtime_delay_recheck unrated
-    class rec_burst_state_loss,rec_loss_divisor,rec_hard_rto_cutover,rec_p10a_repair_floor,rec_rwm_phase_c,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
+    class rec_p10a_repair_floor,rec_inline_repair,rec_proactive_repair,rec_present_at_stall,rec_mp_serial,rec_patience_derived,rec_clock_candidates,rec_rack_clocks,rec_cantelli_clock,rec_qnative_clock,rec_holddown_clock,rec_refresh_floor,rec_goal101,rec_receiver_law dead
+    class rec_rwm_phase_c mixed
     class rec_recov_sp,rec_dispersion_est,rec_realtime_srv_lag_lean,rec_leverb_guard parked
     class rec_gap_horizon waiting
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_evict_blocker_unresolved defect
@@ -257,12 +252,9 @@ flowchart TB
 | `rec-c2-collapse-diag` | Single-path loss collapse diagnosis | done | unrated |  | commit ac3bc9d1; commit ae7f3a86 |  |
 | `rec-recovery-bench` | Recovery-plane component bench | done | unrated |  | commit dd1319b4; commit 9898359b; commit 125844f4; docs/measurement-discipline.md |  |
 | `rec-fire-cause` | Recovery fire cause table | done | unrated |  | commit d9cc9cca |  |
-| `rec-burst-state-loss` | Burst-state loss in retransmit choice | abandoned | dead-end |  |  |  |
-| `rec-loss-divisor` | Concurrent-loss divisor for P_retx | abandoned | dead-end |  |  |  |
-| `rec-hard-rto-cutover` | Hard retransmit-timeout cutover | abandoned | dead-end |  |  |  |
 | `rec-blockstart-orphan` | Lost BlockStart orphans idle objects | done | unrated |  | commit fdac5f5e; commit edd35301 |  |
-| `rec-p10b-reactive-repair` | Window-mode reactive repair (P10b) | done | successful |  | commit cb66b934; commit e989e0e9 |  |
-| `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | done | dead-end |  | commit c775f7fb; commit 70393f92 |  |
+| `rec-p10b-reactive-repair` | Window-mode reactive repair (P10b) | done | successful | 3.49s -> 1.57s median | commit cb66b934; commit e989e0e9 |  |
+| `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | done | mixed |  | commit c775f7fb; commit 70393f92 |  |
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | done | successful |  | commit 663d3ec9; commit 6f2b084f |  |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | done | unrated |  | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |  |
 
@@ -313,7 +305,7 @@ flowchart TB
 | `rec-defect-base-duplicates` | Main's duplicates mostly unexplained | No raw record. §53 open item 6 ([HOLD] skewed on main; §3.10 item 5's "12 % wasted" to re-check) is attached to rec-defect-hole-law. | status §53 open item 3 |
 | `rec-s54-session` | Snapshot filter guard, store budget | Done when: the §54 Result is in status: the filter-only guard v2 against main PASSes and snapver-law merges, and the store-budget block (reduced RWM_STORE_PATH_POOL on BASE' and CAND', quinn evictions, tail/H0, in-order delay, the pool-arm causal test of §53 Erratum 1) is reported. | plan Live state items 1-2; branch p0-dwell-diag §8; branch levb54 |
 | `rec-w0-leg-question` | Retransmit leg choice with filter | Needs the RWM_PLACE_WDIV knob, which lives on the unmerged branch wdiv-diag (node place-wdiv). Option: run it as a reported block inside the lever-B guard session instead of a session of its own. Done when: a reported-only W0 row (retransmits placed like source) on main + filter + lever B answers the open leg question under the 64-gap horizon, with the duplicate account complete (pt_st and det explained). | status §53 open item 5 ("W0 with the filter is the row that answers it"); plan W3.6f |
-| `rec-leverb-guard` | Gap horizon guard, then merge | Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner's go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out. Owner 2026-11-19: chose to re-guard lever B, then reversed the same day ("we dont want a workaround, we want the proper solution"): lever B and a smaller pool constant are both workarounds; the fix is the store law (store-law-derivation). Decision 6 stands. C02's 20-gap literal is answered after the store law, from a horizon bind gauge. | plan Live state item 4; status §53 "What follows" |
+| `rec-leverb-guard` | Gap horizon guard, then merge | Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner's go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out. Owner 2026-11-19: chose to re-guard lever B, then reversed the same day (no workaround, the proper solution): lever B and a smaller pool constant are both workarounds; the fix is the store law (store-law-derivation). Decision 6 stands. C02's 20-gap literal is answered after the store law, from a horizon bind gauge. | plan Live state item 4; status §53 "What follows" |
 | `rec-recovery-timeouts` | Recovery timeouts after store law | Law ledger: C06 (rank 20, P2), the tail sweep, derived from self-heal lateness after E11. Done when: the tail-sweep and refresh clocks are re-derived on the store law's hold time H with measured inputs and a bind-fraction gauge; the 100 ms clamp no longer binds always at c8. | plan W3.6; status §3.10 items 4 and 6 |
 | `rec-wire-clock-derivation` | Recovery-clock derivation (wire clock) | No raw record (newer than the extract). The app-echo clock shares the flight stamp with the age it is compared against, and two cells reject a wire clock post hoc (c1d: loop 19-23 ms on a 2-3 ms wire RTT; c2: bbr_rs drops the wire RTT 5x with the loop unchanged). E01 stays dishonest for the store law and the other RTprop consumers (E03, S01, E12, R07), and for the recovery clocks it is inflated by the store defect, so it waits on the store fix. Unrated by the non-merge rule: recorded in status, but so far only forward nodes build on it. | branch wire-clock-derive (17bfcefb); docs/derivations/wire-clock.md; status §55 Erratum 1 (github/main 5e28791b) |
 | `rec-fix-perleg-clock-n1` | Per-leg recovery clock, one law | Law ledger: E11, C01, C04, C05. Replaces rec-fix-wire-clock (dissolved by §55 Erratum 1), and folds the former rec-fix-pooled-clock (E11), rec-fix-time-threshold (C01, C04) and rec-fix-cooldown (C05). Based on cand54 (both change the gap-batch tuple), so it waits for the §54 session; next once that session is done. Left out of this change: the latest-sample clock (with the per-leg state), the receiver refresh (rec-fix-refresh-clock) and the NACK throttle (rec-fix-nack-throttle, gauge first). The 10 ms floor is kept. Done when: the paper text is written first (§7.1, A.6, §11.2; drafted in the derivation's §8); red-first host tests show each seq's clock reads its own leg, the N = 1 age gate is gone with the SACK ranges handed to the packet-threshold evidence ingest (branch A), and a seq with no flight record does not re-fire on every report; then a guard v2 passes with a registered c2 goodput prediction (branch B as the falsifier) and fast/fired at N = 1 as a readout. The cooldown stays one session behind a bind counter predicted 0 and is deleted when the VM reads 0. | status §55 Erratum 1; docs/derivations/wire-clock.md §8; law ledger rows E11, C01, C04, C05 |
@@ -325,9 +317,6 @@ flowchart TB
 | `rec-c2-collapse-diag` | Single-path loss collapse diagnosis | Unrated: a diagnosis whose refuted hypothesis (congestion control) and shipped fix (bufferbloat) point different ways; the owner rates it. | commit ac3bc9d1; commit ae7f3a86 |
 | `rec-recovery-bench` | Recovery-plane component bench | Brought the standing component-bench rule (measurement discipline item 14). The law extraction commit 125844f4 is also folded in infra-net-seams. | commit dd1319b4; commit 9898359b; commit 125844f4; docs/measurement-discipline.md |
 | `rec-fire-cause` | Recovery fire cause table | Split 2026-11-20 from rec-goal101. | commit d9cc9cca |
-| `rec-burst-state-loss` | Burst-state loss in retransmit choice | From the session record; no committed artifact. A rejected alternative in the P_lost derivation (2026-03-21); the shipped form is in rec-plost-sack. |  |
-| `rec-loss-divisor` | Concurrent-loss divisor for P_retx | From the session record; no committed artifact. A rejected alternative in the P_lost derivation (2026-03-21). |  |
-| `rec-hard-rto-cutover` | Hard retransmit-timeout cutover | From the session record; no committed artifact. A rejected alternative in the P_lost derivation (2026-03-21). |  |
 | `rec-blockstart-orphan` | Lost BlockStart orphans idle objects | Split 2026-11-20 from rec-bulk-arq (own fix branch and verdict). | commit fdac5f5e; commit edd35301 |
 | `rec-p10b-reactive-repair` | Window-mode reactive repair (P10b) | Split 2026-11-20 from rec-bulk-arq. Its sibling P10a is rec-p10a-repair-floor. | commit cb66b934; commit e989e0e9 |
 | `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | Phase C of the reliable windowed multipath plan (2026-07-06); Phase A is rec-reliable-window, Phase B place-marginal-cost. | commit c775f7fb; commit 70393f92 |
@@ -351,22 +340,20 @@ flowchart TB
   - Burst-aware retransmit probability P_lost x (1 - e_burst) (2026-03-21, commit 344430737e)
   - Source preemption (C.1) resolved and paper glossary (2026-03-21, commit f305634b)
   - Retransmit timeout and time-to-FEC-recovery formulas (2026-03-21, commit 0ac8a4b1)
+  - Hard retransmit-timeout threshold replaced by the probabilistic P_lost(t) (2026-03-21, commit 5b9f6def)
+  - Burst discount e_burst added, then dropped as a simplification (2026-04-01, commit 34443073, commit 68ea7e6e)
+  - Concurrent-loss divisor for the retransmit probability, rejected; no commit records it (2026-03-21, session record)
 - `rec-bulk-arq`: Bulk ARQ and batch acknowledgements
   - branch feat/p4-bulk-arq-tailfec
   - branch P6
 - `rec-reliable-window`: Reliable window
-  - branch §16 Fountain Multipath Aggregation
   - branch §16 rewrite
   - RWM Phase A: reliable window with ARQ-layer retention (2026-07-06, commit 4c901536, commit 2699dd94)
 - `rec-fec-vs-arq`: Proactive FEC versus ARQ frontier
   - branch FEC-vs-ARQ crossover
   - branch proactive-FEC-vs-ARQ high-RTT
   - branch transport substrate sender fixes
-  - branch loss-recovery diagnosis
-  - branch FEC recovery bug fix
-  - branch FEC parity
   - branch transport store-bloat fix
-  - branch per-symbol perf fix
   - Receiver-tail parallelization and FEC regime sweep (2026-07-08, commit e74d005c, commit 9ec5793c)
   - Proactive FEC versus ARQ at high RTT (2026-07-08, commit 11c205cf, commit e9c7749b)
 - `rec-proactive-repair`: Repair-wait before ARQ
@@ -472,23 +459,23 @@ flowchart TB
 - `rec-f2-merge-guard`: Framing fix regression test
   - commit f36d9172
 - `rec-recov-sp`: Singles hole suppression
-  - Lossy-single residual accounting (2026-07-27, session record)
+  - Lossy-single residual accounting (2026-07-27, commit db40d2fc)
 - `rec-nack-congestion`: Congestion-aware NACK throttle (first form)
   - commit b255271c
   - NACK congestion awareness and consolidated bench suite (2026-03-20, commit f2cba2b7)
+- `rec-c2-collapse-diag`: Single-path loss collapse diagnosis
+  - branch loss-recovery diagnosis
 - `rec-fire-cause`: Recovery fire cause table
   - branch THE FIRE-CAUSE TABLE
-  - Recovery fire cause: timer versus gap reports (2026-08-21, session record)
-- `rec-burst-state-loss`: Burst-state loss in retransmit choice
-  - Refuted: current burst-state loss in the repair/retransmit choice (2026-03-21, session record)
-- `rec-loss-divisor`: Concurrent-loss divisor for P_retx
-  - Concurrent-loss divisor for the retransmit probability refuted (2026-03-21, session record)
-- `rec-hard-rto-cutover`: Hard retransmit-timeout cutover
-  - Refuted: hard retransmit-timeout cutover between repair and retransmit (2026-03-21, session record)
+  - Recovery fire cause: timer versus gap reports (2026-08-21, commit d9cc9cca)
 - `rec-blockstart-orphan`: Lost BlockStart orphans idle objects
   - branch idle-tail-recovery fix
 - `rec-p10b-reactive-repair`: Window-mode reactive repair (P10b)
   - branch P10b
+- `rec-rwm-phase-c`: Out-of-order object delivery (Phase C)
+  - branch RWM Phase C
+- `rec-arq-overrequest-bound`: Bounded ARQ over-request
+  - branch FEC parity
 - `rec-seqclass-law`: Sequential-classification repair law (§16.80)
   - branch paper 16.80
   - Three plans for false repairs and the formula that came out (2026-09-06, session record)

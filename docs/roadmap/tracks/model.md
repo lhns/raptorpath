@@ -10,17 +10,17 @@ Scope: the model, paper and visualizer: paper, wasm L0 model, NO-MODE-SWITCH aud
 ```mermaid
 flowchart TB
     model_paper_v1["✔ Unified FEC/ARQ<br/>model paper"]
-    model_poisson_rate["✖ Poisson derivation<br/>of repair rate"]
     model_open_points["✔ Resolve the paper's<br/>open points"]
     model_visualizer_v1["✔ First visualizer:<br/>triangle and BOCD"]
     model_wasm_l0["✔ raptorpath-math and<br/>wasm model"]
     model_math_verification["✔ Mathematical<br/>verification of the<br/>model"]
-    model_s16_fountain["✔ Fountain aggregation<br/>claim (paper #167;16)"]
+    model_s16_fountain["↷ Fountain aggregation<br/>claim (paper #167;16)"]
     model_vis_continuum["✔ Visualizer as one<br/>continuum law"]
     model_tier1_rescores["✔ Tier-1 literature<br/>re-scores"]
     model_tier0_corrections["✔ Tier-0 paper claim<br/>corrections"]
     model_mode_switch_debts>"⚠ Engine NO-MODE-<br/>SWITCH debts"]
     model_open_constants>"⚠ Open-constants<br/>register"]
+    model_paper_rewrite["✔ Concise rewrite of<br/>the model paper"]
     model_review_37["✔ Model review"]
     model_paper_recon["⏳ Paper versus engine<br/>reconciliation"]
     model_bound_tests["✔ Bounding tests for<br/>divergences"]
@@ -41,7 +41,7 @@ flowchart TB
     model_fix_paper_p2["○ Paper text for<br/>placement and bbr_rs"]
     model_fix_paper_p3["⛔ Paper-only law<br/>records"]
     model_paper_v1 ~~~ model_open_points
-    model_poisson_rate ~~~ model_visualizer_v1
+    model_paper_v1 ~~~ model_visualizer_v1
     model_open_points ~~~ model_wasm_l0
     model_visualizer_v1 ~~~ model_math_verification
     model_visualizer_v1 ~~~ model_s16_fountain
@@ -50,11 +50,11 @@ flowchart TB
     model_s16_fountain ~~~ model_tier0_corrections
     model_vis_continuum ~~~ model_mode_switch_debts
     model_tier1_rescores ~~~ model_open_constants
-    model_tier0_corrections ~~~ model_review_37
-    model_mode_switch_debts ~~~ model_paper_recon
+    model_tier0_corrections ~~~ model_paper_rewrite
+    model_mode_switch_debts ~~~ model_review_37
     model_open_constants ~~~ model_paper_recon
-    model_review_37 ~~~ model_paper_recon
-    model_paper_recon ~~~ model_bound_tests
+    model_paper_rewrite ~~~ model_paper_recon
+    model_review_37 ~~~ model_bound_tests
     model_paper_recon ~~~ model_wasm_audit
     model_bound_tests ~~~ model_defect_tcut
     model_wasm_audit ~~~ model_defect_dead_machine
@@ -107,9 +107,9 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class model_paper_v1,model_open_points,model_visualizer_v1,model_math_verification,model_tier1_rescores,model_bound_tests,model_law_ledger unrated
-    class model_poisson_rate,model_s16_fountain dead
+    class model_paper_v1,model_open_points,model_visualizer_v1,model_math_verification,model_tier1_rescores,model_paper_rewrite,model_bound_tests,model_law_ledger unrated
     class model_wasm_l0,model_vis_continuum,model_tier0_corrections,model_review_37,model_wasm_audit,model_defect_tcut,model_defect_dead_machine,model_shared_core_0,model_endspeed,model_giveup_law,model_viz_fix,model_warm_start succ
+    class model_s16_fountain dead
     class model_mode_switch_debts,model_open_constants,model_bound_tests_unrun,model_defect_rho_inert defect
     class model_paper_recon waiting
     class model_shared_core,model_wasm_fixes inprog
@@ -154,10 +154,10 @@ flowchart TB
 | `model-fix-paper-p3` | Paper-only law records | blocked | unrated |  | law ledger rows S10, C08, C10, E12 | meas-s51-session, store-fix-maxbw-minrtt |
 | `model-user-three-dials` | Owner call: three dials | done | n/a |  | commit 0a55b65c |  |
 | `model-user-no-mode-switch` | Owner rule: no mode switches | done | n/a |  | commit ee51b9c4; commit f2f1c782; CLAUDE.md |  |
-| `model-s16-fountain` | Fountain aggregation claim (paper §16) | done | dead-end |  | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16 |  |
+| `model-s16-fountain` | Fountain aggregation claim (paper §16) | abandoned | superseded |  | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16; commit 1412f280 |  |
 | `model-tier1-rescores` | Tier-1 literature re-scores | done | unrated |  | commit 80376c63 |  |
-| `model-tier0-corrections` | Tier-0 paper claim corrections | done | successful |  | commit 46c3e6a6 |  |
-| `model-poisson-rate` | Poisson derivation of repair rate | abandoned | dead-end |  |  |  |
+| `model-tier0-corrections` | Tier-0 paper claim corrections | done | successful |  | commit 46c3e6a6; commit 515e4143 |  |
+| `model-paper-rewrite` | Concise rewrite of the model paper | done | unrated |  | commit e22920d5; docs/fec-arq-model.md |  |
 
 ### Details per node
 
@@ -191,12 +191,11 @@ flowchart TB
 | `model-wasm-fixes` | Wasm model fixes | Law ledger: M01, M02, M03, M04, C13 (P3): the 512 pool waits for F01 (M01); the cartoon shed and T_cut wait for R03. Done when: the dead second machine and the T_cut steps are resolved per the owner calls, with continuity tests through every preset in test_visualizer.mjs and a deliberate golden re-capture if the model changes. Progress 2026-11-14: viz-fix (model-viz-fix) removed the dead machine and the W11 guard; the give-up law (ii) (model-giveup-law) replaced the cartoon shed choice and T_cut. | CLAUDE.md NO-MODE-SWITCH; plan W7 phase 6 |
 | `model-fix-paper-p2` | Paper text for placement and bbr_rs | Law ledger: K05, K10. Done when: the paper carries the placement cost lines (A.4) and the bbr_rs minimum-filter sign, checked against the code. | law ledger rows K05, K10 |
 | `model-fix-paper-p3` | Paper-only law records | Law ledger: S10, C08, C10, E12. Done when: the taper grant law, the gap-report minimum interval, the reactive repair margin and the send-rate anchor each have a paper line with provenance. | law ledger rows S10, C08, C10, E12 |
-| `model-user-three-dials` | Owner call: three dials | Owner decision 2026-03-21 (session record), written into the paper the same day as a new §6.10 with worked examples. | commit 0a55b65c |
+| `model-user-three-dials` | Owner call: three dials | Owner decision 2026-03-21 (session record): fix any two of the three, and the channel determines the third. Written into the paper the same day as a new §6.10 with worked examples. | commit 0a55b65c |
 | `model-user-no-mode-switch` | Owner rule: no mode switches | Owner statements 2026-07-02 (the protocol should have no hard cutoffs) and 2026-07-06 (no more switching between codes or between window and block mode), from the session record. Codified in CLAUDE.md; its provenance text was corrected on 2026-07-28 and a wrong attribution reverted on 2026-08-06 (the two commits in evidence). | commit ee51b9c4; commit f2f1c782; CLAUDE.md |
-| `model-s16-fountain` | Fountain aggregation claim (paper §16) | The 2026-07-06 rewrite as reliable windowed multipath is folded in meas-c8-aggregation-arc. | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16 |
+| `model-s16-fountain` | Fountain aggregation claim (paper §16) | The 2026-07-06 rewrite as reliable windowed multipath is folded in meas-c8-aggregation-arc. | commit 065ccbdd; commit e24541c6; commit 88b7432f; paper §16; commit 1412f280 |
 | `model-tier1-rescores` | Tier-1 literature re-scores | Split 2026-11-20 from store-delta-cap. Unrated: one reading supported, one refuted. | commit 80376c63 |
-| `model-tier0-corrections` | Tier-0 paper claim corrections | Split 2026-11-20 from store-delta-cap. | commit 46c3e6a6 |
-| `model-poisson-rate` | Poisson derivation of repair rate | From the session record; no committed artifact. March 2026 paper derivation. |  |
+| `model-tier0-corrections` | Tier-0 paper claim corrections | Split 2026-11-20 from store-delta-cap. | commit 46c3e6a6; commit 515e4143 |
 
 ### Folded items per node
 
@@ -243,6 +242,7 @@ flowchart TB
   - commit f6e0c4b2
   - commit 62977a39
   - commit 2f3fe69c
+  - Poisson per-symbol repair-rate model superseded by the binomial/normal one (2026-04-02, commit 298e1c00)
 - `model-math-verification`: Mathematical verification of the model
   - commit 1d29f454
   - commit 9381d945
@@ -299,10 +299,10 @@ flowchart TB
 - `model-user-no-mode-switch`: Owner rule: no mode switches
   - Owner rule: no hard cutoffs (2026-07-02, session record)
   - Owner rule: no mid-stream protocol switch (2026-07-06, session record)
+- `model-s16-fountain`: Fountain aggregation claim (paper §16)
+  - branch §16 Fountain Multipath Aggregation
 - `model-tier1-rescores`: Tier-1 literature re-scores
   - branch Tier-1 re-scores
 - `model-tier0-corrections`: Tier-0 paper claim corrections
   - branch Tier-0 corrections
-- `model-poisson-rate`: Poisson derivation of repair rate
-  - Refuted: Poisson derivation of the repair-rate formula (2026-03-21, session record)
 <!-- END GENERATED: table-model -->
