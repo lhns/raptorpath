@@ -325,7 +325,7 @@ fn wiring_of_the_controller_is_pinned() {
     let src = squash(include_str!("net/mod.rs"));
     assert!(
         src.contains(
-            "FecRateController::new_with_toggles( config.target_tail_loss, config.max_fec_overhead,              config.protocol_hint, effective_fec_backend, config.enable_pi_feedback, symbol_size, );"
+            "FecRateController::new_with_toggles( config.target_tail_loss, config.max_fec_overhead, config.protocol_hint, effective_fec_backend, config.enable_pi_feedback, symbol_size, );"
         ),
         "net::run no longer builds the controller as controller_probe does: update both"
     );
