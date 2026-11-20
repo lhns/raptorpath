@@ -25,7 +25,7 @@
 //! encoder and transport); D9 per-seq verdicts and D10 margin (inside
 //! `serve_gaps`); `mp_hole_ripe` (stays in the engine by design).
 //!
-//! Captured on main 766d9906 (untouched tree).
+//! Captured on main 766d9906 (untouched tree); `hole` on main 7123c754.
 //!
 //! Determinism: no clock, no RNG, no HashMap iteration (maps are read by
 //! sorted key). f64 results of pure IEEE arithmetic (+ - * / min max ceil
@@ -584,7 +584,7 @@ fn pin_hole_decisions() {
     check(
         "hole",
         hole_digest(),
-        "TBD",
+        "5be21e25622b04a114fa2268f45fd2577fe233169000be4739c6eabebad88060",
     );
 }
 
