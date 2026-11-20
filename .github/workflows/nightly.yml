@@ -33,8 +33,9 @@ jobs:
         with: { shared-key: "nightly-${{ matrix.name }}" }
       - run: ${{ matrix.cmd }}
   stubrun:
-    # Failed on ubuntu-latest (26.04) with 93 checks (the 60b/61b/63 launch paths end ABORT-SMOKE, rc 5); cause not
-    # diagnosed. Report-only until a green run on ubuntu-24.04 or a diagnosis.
+    # Fails on hosted runners (ubuntu-latest 26.04 and ubuntu-24.04): 93 FAIL checks in a full run, all downstream
+    # of the plan 62r0 rehearsal (its smoke-check.txt is never written). STUBRUN_ONLY=63 alone passes. Report-only
+    # until the 62r0 case is diagnosed (see tools/l1/quarantine.txt).
     continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 240
