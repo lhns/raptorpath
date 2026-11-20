@@ -131,7 +131,7 @@ check("run_all: the budget guard (plan67.py budget), no CAND commit / LD_BASE_SH
       and "test_s67.py test_harness67.py; do" in runall and '|| [ "$P65" = 1 ] || [ "$P67" = 1 ] || { [ "$P46" = 1 ]' in runall and '[ "$P65" = 1 ] || [ "$P67" = 1 ]; } && { tst bashtests' in runall)
 check("run_all: the build block is skipped for plan 67 (the seats are built by loopdiag_p67.sh)", 'if [ "$P67" = 1 ]; then\n  era "LD-ALL plan $PLAN: the seats are built / installed by loopdiag_p67.sh' in runall)
 check("the crlf guards name every new file (run_all, battery)", all(f in runall and f in bat for f in ("plan67.py", "s67_score.py", "s67_fixtures.py", "test_s67.py", "test_harness67.py", "tun67_battery.sh", "loopdiag_p67.sh")))
-for f in ("plan67.py", "s67_score.py", "s67_fixtures.py", "test_s67.py", "tun67_battery.sh", "loopdiag_p67.sh", "ref_manifest67.sh"):
+for f in ("plan67.py", "s67_score.py", "s67_fixtures.py", "test_s67.py", "tun67_battery.sh", "loopdiag_p67.sh", "ref_manifest67.sh", "repeat67_run.sh", "binid67_run.sh"):
     check(f"{f} exists", os.path.exists(os.path.join(HERE, f)))
 check("p67: every launch refuses to build (ABORT-BUILD, LD_BIN_PREBUILT_<SEAT> + LD_BIN_SHA_<SEAT> required), the rehearsal builds each seat in its own fresh target dir, the twins with --features test-seams (plan67.SEATS features)",
       "launches never build" in p67 and 'needs $_pin' in p67 and '${_feat:+--features $_feat}' in p67 and 'target-$_s' in p67 and "is not fresh" in p67)
@@ -169,6 +169,13 @@ check("tun67_battery: 5 transfers of 100 MB per (seat, hint) at c2, seed 42, hin
 tb = rd("tun_bulk.sh")
 check("tun_bulk.sh: the four object-mode fields of each endpoint's `resolved configuration` line are printed as TUNCFG (additive: TUNPIPE / TUNCAD / TUNREP are unchanged), the config / log level / tmp dir are opt-in seams",
       'echo "TUNCFG cli=$(cfg_of $TB_TMP/tb-c.log) srv=$(cfg_of $TB_TMP/tb-s.log)"' in tb and "${TB_CONFIG:+--config $TB_CONFIG}" in tb and "${TB_RUST_LOG:+RUST_LOG=$TB_RUST_LOG}" in tb and 'TB_TMP="${TB_TMPD:-/tmp}"' in tb)
+
+rep, bid = rd("repeat67_run.sh"), rd("binid67_run.sh")
+check("repeat67_run.sh: N = 30 default, S1 repeats `--lib -- config::`, S2 the three gating targets (every non-ignored test), the sim tests run twice with an equal-digest check, any failure is ABORT-REPEAT for THAT seat, a budget cut is written (REPEAT-CUT), no quarantine",
+      'N="${R67_N:-30}"' in rep and "-- config::" in rep and "--test s06_no_copy --test s06_reactive --test holeclass_reachability" in rep and "SIM-DIGEST-DIFFERS" in rep and "ABORT-REPEAT seat=$seat" in rep and "REPEAT-CUT seat=" in rep and "flake_rule" not in rep)
+check("binid67_run.sh: B0, S1 and S2 are packed with their COMMIT and built by binid_run.sh at one path; the shas must be pairwise different (BINID67 FAIL otherwise)",
+      "for seat in B0 S1 S2; do" in bid and 'bash ./binid_run.sh "${args[@]}"' in bid and "two seats built to the same binary" in bid and "BINID67 PASS" in bid)
+check("the crlf guards name the two new scripts", all(f in runall and f in bat for f in ("repeat67_run.sh", "binid67_run.sh")))
 
 if __name__ == "__main__":
     print("test_harness67: %d checks, %d failed" % (CHECKS, fails))

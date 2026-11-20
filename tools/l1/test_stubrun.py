@@ -106,11 +106,18 @@ case "$1" in
       echo "# fmt  RWM_PLACE_WDIV= RWM_RECOV_SNAPVER= tail"       # plan 53: both trees carry the WDIV and SNAPVER echoes (CW0 runs on CAND's, BASES on BASE's)
       { [ "$kind" = CAND ] && [ "${LD_PLAN:-}" = 64 ]; } && echo "# [SYMSZ] [UNFRAMABLE] F2 framing"      # plan 64: the F2 build holds both strings, main neither
       { [ "$kind" = BASE ] && [ -n "${STUB_BASE_SYMSZ:-}" ]; } && echo "# [SYMSZ] main with a stray size echo"      # plan 64's base-has-symsz path
+      [ -f ../COMMIT ] && echo "# commit $(cat ../COMMIT)"            # plan 67's binid: two trees with different commits build to different binaries
       echo 'exit 0'; } > "$T/release/raptorpath"
     chmod +x "$T/release/raptorpath" ;;
   test)
     case " $* " in
       *" --no-run "*) ;;
+      *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test
+        echo "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+        if [ -n "${STUB_REPEAT_FAIL:-}" ]; then
+          n=$(cat "$STUB_REPEAT_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_REPEAT_DIR/n"
+          if [ "$n" = "$STUB_REPEAT_FAIL" ]; then echo "test s06_no_copy::t_one ... FAILED"; echo "test result: FAILED. 2 passed; 1 failed; 0 ignored"; exit 101; fi
+        fi ;;
       *" framing_ns "*)      # plan 64's rehearsal: one run of the framing bench per call, the STUB_BENCH_DIR blocks b1..b3 in rotation
         n=$(cat "$STUB_BENCH_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_BENCH_DIR/n"
         cat "$STUB_BENCH_DIR/b$(( (n - 1) % 3 + 1 )).txt" ;;
@@ -3020,6 +3027,78 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
     EXECUTED.add((plan, path))
 
 
+
+# ── plan 67's session-0 steps that are scripts of their own: the repeat run (repeat67_run.sh: N gating runs per seat, zero failures, ABORT-REPEAT) and binid on three seats (binid67_run.sh) ──
+EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut")
+EXTRA_BINID = ("binid-pass", "binid-same")
+EXTRA67_DONE = set()
+
+
+def script67(sb, root, script, env):
+    e = dict(os.environ)
+    for k in [k for k in e if k.startswith(("LD_", "RWM_", "STUB_", "R67_", "B67_"))]:
+        del e[k]
+    e.update({"PATH": px(sb["bin"]) + os.pathsep + e.get("PATH", ""), "RWM_VM_LOCK": px(sb["locks"]) + "/vm.lock", "RWM_RP_LOCK": px(sb["locks"]) + "/rp.lock",
+              "STUB_CARGO_LOG": px(sb["logs"]) + "/cargo.log", "STUB_PYTHON": px(sys.executable), "STUB_PYSITE": os.path.abspath(sb["bin"]), "STUB_ROWLOG": px(sb["logs"]) + "/rows.log"})
+    e.update(env)
+    open(os.path.join(sb["logs"], "cargo.log"), "w").close()
+    cp = subprocess.run([BASH, px(os.path.join(sb["repo"], "tools", "l1", script))], env=e, capture_output=True, text=True, errors="replace", timeout=900)
+    return cp.returncode, cp.stdout + cp.stderr, open(os.path.join(sb["logs"], "cargo.log")).read().splitlines()
+
+
+def extra_repeat(kind):
+    """repeat67_run.sh on the stubs, N = 4: repeat-pass (zero failures: both seats read 4 of 4, the S2 sim tests ran twice), repeat-one-failure (the 3rd S2 run fails one test: ABORT-REPEAT for S2 only, guard 1 unaffected),
+    repeat-cut (a budget that fits two runs: REPEAT-CUT is on record with the reached N, not silent)."""
+    tag = "repeat67/" + kind
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make67(root, "67", "rehearse")
+        rd = os.path.join(sb["logs"], "repeat")
+        os.makedirs(rd)
+        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": "4" if kind == "repeat-cut" else "3600", "STUB_REPEAT_DIR": px(rd), "R67_T1_S": "1"}
+        if kind == "repeat-one-failure":
+            env["STUB_REPEAT_FAIL"] = "3"
+        rc, out, cargo = script67(sb, root, "repeat67_run.sh", env)
+        rep = txt67(root, "out", "REPEAT67.txt")
+        s06 = [c for c in cargo if "|test " in c and "--test s06_no_copy" in c and "--no-run" not in c]
+        sims = [c for c in cargo if "|test " in c and "--test sim_shed_reach" in c and "--no-run" not in c]
+        if kind == "repeat-pass":
+            check(f"{tag}: zero failures: rc 0, both seats read 4 of 4 with no failing run, the S2 gating tests ran 4 times, the sim tests twice, REPEAT67-DONE bad=0",
+                  rc == 0 and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "REPEAT67 seat=S2 reached=4 of 4 failing_runs=0" in rep and len(s06) == 4 and len(sims) == 2 and "REPEAT67-DONE bad=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep, len(s06), len(sims)))
+        elif kind == "repeat-one-failure":
+            check(f"{tag}: one failing run in 4 of S2's gating tests: ABORT-REPEAT seat=S2 (guard 2 does not launch), the failing test named, rc 5; S1 read zero failures and is not aborted",
+                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=1 failures=[s06_no_copy::t_one]" in rep and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        else:
+            check(f"{tag}: a budget of 4 s (2 s per seat) fits two timed runs: REPEAT-CUT with the reached N is on record (for the second amendment), the seats read that N with zero failures, rc 0",
+                  rc == 0 and rep.count("REPEAT-CUT seat=") == 2 and "reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
+        EXTRA67_DONE.add(kind)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def extra_binid(kind):
+    """binid67_run.sh on the stubs: binid-pass (three seats build at one path, three distinct shas recorded, BINTEST rc 0, BINID67 PASS), binid-same (B0 and S1 are the same tree: BINID67 FAIL, rc 1)."""
+    tag = "binid67/" + kind
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make67(root, "67", "rehearse")
+        if kind == "binid-same":
+            shutil.copyfile(os.path.join(sb["root"], "seats", "B0", "COMMIT"), os.path.join(sb["root"], "seats", "S1", "COMMIT"))
+        env = {"B67_ROOT": px(os.path.join(root, "out")), "B67_WORK": px(os.path.join(root, "work")), "B67_SEATS": px(os.path.join(sb["root"], "seats"))}
+        rc, out, cargo = script67(sb, root, "binid67_run.sh", env)
+        bi = txt67(root, "out", "BINID.txt")
+        shas = re.findall(r"^BINID (B0|S1|S2) sha256=([0-9a-f]{64})", bi, re.M)
+        builds = [c for c in cargo if "|build " in c]
+        if kind == "binid-pass":
+            check(f"{tag}: three seats built at the same path with a fresh target each (3 builds), three distinct shas on record, each seat's math + wasm tests ran (BINTEST rc=0), BINID67 PASS, rc 0",
+                  rc == 0 and len(shas) == 3 and len({h for _, h in shas}) == 3 and len(builds) == 3 and len({c.split("|")[0] for c in builds}) == 1 and bi.count("BINTEST ") == 3 and "rc=0" in bi and "BINID67 PASS" in bi, (rc, bi, len(builds)))
+        else:
+            check(f"{tag}: B0 and S1 built to the same binary: BINID67 FAIL (two seats are one tree), rc 1", rc == 1 and "BINID67 FAIL: two seats built to the same binary" in bi, (rc, bi))
+        EXTRA67_DONE.add(kind)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def case(plan, path):
     if plan in ALL67:
         return case67(plan, path)
@@ -3351,6 +3430,8 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
         j.result()
     jobs = [ex.submit(extra_flake, k) for k in EXTRA_FLAKE if want("48/" + k)]
     jobs += [ex.submit(timed, p, v) for p, v in phase2 if want(f"{p}/{v}")]
+    jobs += [ex.submit(extra_repeat, k) for k in EXTRA_REPEAT if want("repeat67/" + k)]
+    jobs += [ex.submit(extra_binid, k) for k in EXTRA_BINID if want("binid67/" + k)]
     jobs += [ex.submit(extra_mismatch, rel) for rel in EXTRA_MISMATCH if SUITES_DIR.get("prior") and want("mismatch:" + rel)]
     for j in jobs:
         j.result()
@@ -3367,6 +3448,7 @@ print(f"     (all cases: {time.time() - t_all:.0f} s wall, {JOBS} jobs, {'FULL d
 if not only:
     wanted = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
     check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == wanted, (wanted ^ EXECUTED))
+    check("plan 67's session-0 scripts run on the stubs: the repeat run (pass, one failure -> ABORT-REPEAT, a budget cut on record) and binid on three seats (pass, two seats one tree -> BINID67 FAIL)", EXTRA67_DONE == set(EXTRA_REPEAT) | set(EXTRA_BINID), (set(EXTRA_REPEAT) | set(EXTRA_BINID)) ^ EXTRA67_DONE)
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
     check("ADR-0080's flake rule runs in run_suites: a flake outside quarantine.txt aborts (flake-not-quarantined), one on it is recorded and passes (flake-quarantined)", FLAKE_DONE == set(EXTRA_FLAKE), set(EXTRA_FLAKE) ^ FLAKE_DONE)
     check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65, whose reuse is the reference manifest or none)",
