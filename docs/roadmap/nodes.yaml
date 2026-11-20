@@ -1113,6 +1113,7 @@ nodes:
   - branch test-debts
   verdict_quote: 'Verdict at c8: CONFIRMED AND EFFECTIVE (the decision rule''s first branch).'
   headline: CANDS duplicates (mean 1 291)
+  plain: 'Ignores repair requests built from an out-of-date view of the receiver, which cut duplicate packets from about 4 000 to about 1 300 per run.'
   depends_on:
   - rec-gap-horizon
   replaced_by: []
@@ -2664,6 +2665,7 @@ nodes:
   - commit a75bc9ca
   verdict_quote: 'By the decision rule no branch fires: the store law''s input stays open.'
   headline: knee is 1 024 at both cells
+  plain: 'Looked for what should feed the store-size law after the earlier anchor fix; none of the candidate inputs settled it, and the knee sat at 1 024 in both test cases, so the question stayed open.'
   depends_on:
   - perf-decoder-prune
   - store-dw-window
@@ -2990,6 +2992,7 @@ nodes:
   - commit 0367ea59
   verdict_quote: '60-pre Result (2026-11-15, 13:39–14:25Z): PASS.'
   headline: bin_sha e410d640…
+  plain: 'Prepared the measurement suites and a fixed reference build before the next test session; every suite passed, including the first Linux run of the gauge''s tests.'
   depends_on:
   - store-slaw-gauge
   replaced_by: []
@@ -3140,7 +3143,7 @@ nodes:
   - status §61a re-run Result, Erratum 1
   - status "The knee-margin re-derivation, closed post hoc"
   - branch knee-margin-rederive 399407f4
-  verdict_quote: 'closed post hoc after three rounds (399407f4, Fable-reviewed): these rows cannot settle decision 8; the count drop above 250 samples follows jitter; two cells can give every label'
+  verdict_quote: 'These rows cannot settle decision 8, and no further round on them can add evidence.'
   headline: ''
   depends_on:
   - store-s61a-rerun
@@ -3949,6 +3952,7 @@ nodes:
   - commit ac133b31
   verdict_quote: '`REGRESSES-AT(c1s-400@def)`: client CPU/GB +2.5 % against a 2.4 % tolerance, ranges disjoint; every other clause passes (without it, `CURED`); no WIRE row locked, against 10 of 24 MAIN rows at the static cells'
   headline: +2.5 %
+  plain: 'Tried placing traffic by the measured wire delay; it used about 2.5 % more client CPU per gigabyte than the 2.4 % allowed, so it was not shipped.'
   depends_on:
   - model-review-37
   replaced_by: []
@@ -6527,6 +6531,7 @@ nodes:
   - status §49
   verdict_quote: '§49 Result (session 6, CAND 54600e5d, BASE b3000701, launched 2026-11-12T08:32Z, LD-ALL-DONE 08:46:51Z): GATE-41c PASS, p = 0.9566.'
   headline: p = 0.9566
+  plain: 'A first cleanup that removed about 2 700 lines of code; the guard confirmed that behaviour did not change (p = 0.9566).'
   depends_on:
   - infra-adr73
   - meas-guard-41c
@@ -6549,6 +6554,7 @@ nodes:
   - status §50
   verdict_quote: Result — GATE-41c PASS, p = 0.1716; merged
   headline: p = 0.1716
+  plain: 'Later cleanup rounds, merged after the same guard confirmed that behaviour did not change (p = 0.1716).'
   depends_on:
   - infra-simplify-batch1
   replaced_by: []
@@ -8068,7 +8074,7 @@ nodes:
   evidence:
   - https://github.com/lhns/design-skills/pull/2 (merged ea48dcf9)
   - plan Live state TECH TREE (AFTERWARDS)
-  verdict_quote: 'Merged 2026-11-20 as design-skills ea48dcf9 (squash of PR 2): project-neutral, reviewed by Fable three times, 148 tests green on Windows and Linux'
+  verdict_quote: 'Adds the tech-tree skill: one node per verdict, ratings only from quoted verdicts, derived ready/running/waiting lists, a page builder and checker, a history gap scan and record validator for backfilling, with clean, library and broken fixtures. 148 tests pass on Windows and Linux.'
   headline: ''
   depends_on:
   - infra-inventory-merges
@@ -8644,7 +8650,7 @@ nodes:
   evidence:
   - docs/derivations/test-detection-plan.md
   - tools/l1/test_pinned_law_check.py
-  verdict_quote: 'Merged 33ef7ff6: green on the committed ledger, red on F01 with its verdict removed and on a stale owed line'
+  verdict_quote: 'GREEN, committed ledger and owed list: `python -I tools/l1/pinned_law_check.py` ends `pinned-law check: green`.'
   headline: ''
   depends_on: []
   replaced_by: []
@@ -8664,7 +8670,7 @@ nodes:
   outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
-  verdict_quote: 'Merged 2026-11-20 with a CI job (model, about 49 s): the evicting seat has the lost-tail counterexample at L = 1 (1.7 M states), the rho = 1 seat passes every property (1.5 M states).'
+  verdict_quote: 'merge: recovery-model - stateright model of the hole lifecycle with a CI job (plan S7, ADR-0083; red on the rho < 1 lost tail, green at rho = 1; CI 44764141961)'
   headline: ''
   depends_on: []
   replaced_by: []
@@ -8685,7 +8691,7 @@ nodes:
   evidence:
   - docs/derivations/test-detection-plan.md
   - branch sim-spike ed8405fb (docs/derivations/sim-spike.md)
-  verdict_quote: 'Verdict FEASIBLE with changes: both peers in one process on paused tokio time over an in-memory socket under quinn; same seed gives identical traces (20/20 one path, 32/32 two paths, 10/10 three paths, 2/2 for 140 MB)'
+  verdict_quote: 'Feasible, with the changes listed below.'
   headline: ''
   depends_on: []
   replaced_by: []
@@ -8705,7 +8711,7 @@ nodes:
   outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
-  verdict_quote: 'Red on the rho < 1 lost tail (O_strand, O with oldest_unchanged, inert sweeps, O_hwm above the cap), green on the rho = 1 controls.'
+  verdict_quote: 'merge: recovery-counters - the sender account and stuck witnesses (plan S4, option B; ADR-0081); release binary identical (binid 44742087564)'
   headline: ''
   depends_on: []
   replaced_by: []
@@ -8722,11 +8728,11 @@ nodes:
   track: infra
   kind: instrument
   state: done
-  outcome: successful
+  outcome: unrated
   evidence:
   - docs/derivations/test-detection-plan.md
   - docs/derivations/coverage-by-seat.md
-  verdict_quote: 'The NACK and slot shed sites are MISS in every seat, the evicting seat included: its two tests run clean links, and the heavier shed tests are ignored.'
+  verdict_quote: ''
   headline: ''
   depends_on: [infra-test-ci-gate]
   replaced_by: []
@@ -8746,7 +8752,7 @@ nodes:
   outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
-  verdict_quote: 'Merged mutation-ci 27202e2d: 1721 mutants, all in raptorpath-math (core is empty), ~7 s each, ~27 min over 20 shards; 486 survive (baseline, deterministic over two runs); the job fails only on new or stale survivors.'
+  verdict_quote: 'merge mutation-ci 27202e2d: weekly cargo-mutants on raptorpath-math (1721 mutants, 20 shards, ~27 min), fails only on new or stale survivors against a 486-survivor baseline (plan S6)'
   headline: ''
   depends_on: [infra-test-ci-gate, infra-test-pinned-law-check]
   replaced_by: []
@@ -8757,7 +8763,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Weekly mutation runs on the maths crates on CI, to find laws no test pins.'
-  notes: 'Plan S6. Merged mutation-ci 27202e2d: 1721 mutants, all in raptorpath-math (core is empty), ~7 s each, ~27 min over 20 shards; 486 survive (baseline, deterministic over two runs); the job fails only on new or stale survivors. Red: bulkness_of_delta (the dial''s shaping law) has no test in the math crate, so replacing its body survives (it is tested only from the engine crate). Owed: survivor triage; engine law files not yet in scope.'
+  notes: 'Plan S6. Merged mutation-ci 27202e2d: 1721 mutants, all in raptorpath-math (core is empty), ~7 s each, ~27 min over 20 shards; 486 survive (baseline, deterministic over two runs); the job fails only on new or stale survivors. Red: bulkness_of_delta (the dial''s shaping law) has no test in the math crate, so replacing its body survives (it is tested only from the engine crate). Owed: survivor triage; engine law files not yet in scope. 2026-11-20 rate-law triage (docs/derivations/mutation-triage-rate.md): 137 survivors in the rate-law functions, 105 killed by 28 absolute tests in raptorpath-math/tests/mutation_triage_rate.rs, 32 equivalent; baseline 486 -> 380. Seven class-(c) findings, among them r_saturation''s C_DILUTION = 0.5 with no derivation and three clamps that never bind (no bind gauges). Not yet triaged: find_t_cut, p_recovered_within, boost_params, derive_window, compute_buffer_max, beta_quantile, the estimators.'
 - id: infra-test-model-real-decisions
   title: Model check over the real code
   track: infra
