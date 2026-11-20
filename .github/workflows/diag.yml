@@ -10,7 +10,8 @@ jobs:
       - uses: actions/setup-python@v5.6.0
         with: { python-version: "3.12" }
       - run: |
-          STUBRUN_KEEP=1 STUBRUN_ONLY=62r0 python tools/l1/test_stubrun.py > out.txt 2>&1 || true
+          STUBRUN_KEEP=1 STUBRUN_ONLY=62r0/rehearse python tools/l1/test_stubrun.py > out.txt 2>&1 || true
           echo "FAIL lines $(grep -ac '^ *FAIL' out.txt)"
-          grep -a -v '^ ok' out.txt | cut -c1-1800 | head -40
-          for d in $(ls -d /tmp/stubrun-* 2>/dev/null | head -3); do echo "== $d"; ls $d | head; done
+          grep -a -v '^ ok' out.txt | cut -c1-3000 | head -40
+          ls -d /tmp/stubrun-* 2>/dev/null
+          for d in $(ls -d /tmp/stubrun-* 2>/dev/null | head -3); do echo "== $d"; find $d -name '*.log' -o -name 'era.txt' -o -name 'ABORT*' -o -name 'FAILED*' | head -20; done
