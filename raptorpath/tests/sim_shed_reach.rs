@@ -13,7 +13,8 @@
 //!   hole is ever shed (the refusal `denied` fires instead). 0.05 is twice the
 //!   link's loss rate.
 //! The natural 5 % scattered-loss scenario (30 MB) sheds on Windows (17) but
-//! not on Linux, so the blackout is the platform-independent trigger.
+//! not on Linux: the same seed is not the same run across platforms (see
+//! `docs/derivations/sim-engine.md`), so the blackout is the trigger.
 //!
 //! Sites: the NACK-path shed (`sender_phases.rs`, ev=`shed`) is reached.
 //! The slot-site shed (`emit_source.rs`, ev=`shed_slot`) is NOT: in every
@@ -28,8 +29,8 @@ fn child() {
     sim_support::child();
 }
 
-/// One child at a time: every scenario uses the same port (a different port
-/// perturbs the run, so the witness and the liveness test must share one).
+/// One child at a time, on one port (the port no longer perturbs the run,
+/// `sim_determinism::same_seed_two_ports_*`; kept for one temp dir per run).
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const PORT: u16 = 47_400;
 /// The 6 MB object is 12 147 source symbols; k is 60 from the end, inside the
