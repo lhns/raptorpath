@@ -147,6 +147,9 @@ def load_owed(path):
     return owed
 
 
+_SAID = set()
+
+
 def stale_summary(summary):
     import pinned_summary as ps
     bad = []
@@ -155,7 +158,9 @@ def stale_summary(summary):
     for arch, sha in summary["archives"].items():
         p = os.path.join(ROOT, arch)
         if not os.path.exists(p):
-            print("%s: archive absent (export-ignored): sha check skipped" % arch)
+            if arch not in _SAID:
+                _SAID.add(arch)
+                print("%s: archive absent (export-ignored): sha check skipped" % arch)
         elif ps.sha256(p) != sha:
             bad.append("summary is stale: %s changed (run pinned_summary.py --write)" % arch)
     return bad
