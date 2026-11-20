@@ -8634,7 +8634,7 @@ nodes:
   folded: []
   overview: false
   plain: Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it.
-  notes: 'Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard. Built and triaged on static-audits 86b5208f: 69 uncalled pub fns (43 test-only, 22 dead, 4 unwired) and 12 ignored params (9 intended, 2 dead, 1 unwired); unwired list: ADR-0050 Phase 3 proactive_rate, ADR-0017 MTU sizing (repair_wire_overhead, min_mtu), Scheduler::on_loss (paper 8.1), set_protocol_hint (Auto detection documented, never built), enable_pi_feedback. Red on main''s tunnel leak with the fix removed. Waits for tunnel-inorder-guard and a release-binary hash check of the main.rs refactor 4bbb2f96. 2026-11-20: updated to main (93232f8a, CI green; sim.rs helpers allowlisted, audits.rs prints moved to readout!). Merges after a release-binary identity check against main. Was titled ''Unwired-code and config audits''.'
+  notes: 'Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard. Built and triaged on static-audits 86b5208f: 69 uncalled pub fns (43 test-only, 22 dead, 4 unwired) and 12 ignored params (9 intended, 2 dead, 1 unwired); unwired list: ADR-0050 Phase 3 proactive_rate, ADR-0017 MTU sizing (repair_wire_overhead, min_mtu), Scheduler::on_loss (paper 8.1), set_protocol_hint (Auto detection documented, never built), enable_pi_feedback. Red on main''s tunnel leak with the fix removed. Waits for tunnel-inorder-guard and a release-binary hash check of the main.rs refactor 4bbb2f96. 2026-11-20: updated to main (93232f8a, CI green; sim.rs helpers allowlisted, audits.rs prints moved to readout!). Merges after a release-binary identity check against main. Was titled ''Unwired-code and config audits''. 2026-11-20: updated to main (35ba4fff, CI green; audit scanner fixed for inline test-seams gates). It changes the release binary because it carries the tunnel guard''s config refactor (resolve_perf, resolve_tunnel, reject_tunnel_object_modes), so it merges after VM batch 1 guard 1, or split into audits-only plus the config change.'
 - id: infra-test-pinned-law-check
   title: Pinned-law check from logs
   track: infra
@@ -8660,8 +8660,8 @@ nodes:
   title: Exhaustive check of resend logic
   track: infra
   kind: instrument
-  state: in-progress
-  outcome: unrated
+  state: done
+  outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
   verdict_quote: ''
@@ -8671,11 +8671,11 @@ nodes:
   qualified_by: []
   lane: host-cargo
   start: '2026-11-20'
-  end: ''
+  end: '2026-11-20'
   folded: []
   overview: false
   plain: A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run.
-  notes: 'Plan S7, ADR-0083 (Proposed). Done when red on the lost tail at rho < 1 and green at rho = 1. Kept outside the workspace lockfile. 2026-11-20: branch recovery-model pushed to github (82eb7a24, 2c81e8c2), not merged; CI has not run on it. Was titled ''Model check of hole recovery''.'
+  notes: 'Plan S7, ADR-0083 (Proposed). Done when red on the lost tail at rho < 1 and green at rho = 1. Kept outside the workspace lockfile. 2026-11-20: branch recovery-model pushed to github (82eb7a24, 2c81e8c2), not merged; CI has not run on it. Was titled ''Model check of hole recovery''. Merged 2026-11-20 with a CI job (model, about 49 s): the evicting seat has the lost-tail counterexample at L = 1 (1.7 M states), the rho = 1 seat passes every property (1.5 M states). It checks today''s behaviour; ADR-0084 changes the intended law. Owed: raptorpath-model in src_manifest and the harness path tests; Kani not built.'
 - id: infra-test-sim-spike
   title: Deterministic simulation spike
   track: infra

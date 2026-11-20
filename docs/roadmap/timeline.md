@@ -366,7 +366,7 @@ gantt
     CI on every push :active, infra_test_ci_gate, 2026-11-20, 2026-11-20
     Tests for unused code and config :active, infra_test_static_audits, 2026-11-20, 2026-11-20
     Pinned-law check from logs :infra_test_pinned_law_check, 2026-11-20, 2026-11-20
-    Exhaustive check of resend logic :active, infra_test_recovery_model, 2026-11-20, 2026-11-20
+    Exhaustive check of resend logic :infra_test_recovery_model, 2026-11-20, 2026-11-20
     Deterministic simulation spike :infra_test_sim_spike, 2026-11-20, 2026-11-20
     Recovery bookkeeping counters :infra_test_recovery_counters, 2026-11-20, 2026-11-20
     Coverage per seat :infra_test_seat_coverage, 2026-11-20, 2026-11-20

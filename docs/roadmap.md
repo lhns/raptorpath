@@ -460,7 +460,6 @@ flowchart TB
 | Tunnel must deliver in order | ⚠ open defect | Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins. |
 | CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
 | Tests for unused code and config | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
-| Exhaustive check of resend logic | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
 | Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
 | Make the compiler report dead code | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
 | Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
@@ -516,7 +515,6 @@ flowchart TB
 - `model-shared-core`: Visualizer and engine share one code
 - `model-wasm-fixes`: Visualizer model fixes
 - `infra-test-static-audits`: Tests for unused code and config
-- `infra-test-recovery-model`: Exhaustive check of resend logic
 - `infra-test-sim-engine`: Deterministic simulation of the engine
 
 **no-cargo**
@@ -620,7 +618,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 ## Done, by month
 
 <!-- BEGIN GENERATED: done-by-month -->
-<details><summary><b>Nov 2026</b>: 86 done, 2 abandoned</summary>
+<details><summary><b>Nov 2026</b>: 87 done, 2 abandoned</summary>
 
 - `perf-s33-timer`: Lag tail timer hand-off (✔ done · unrated)
 - `perf-receiver-followups`: Receiver follow-ups (✔ done · successful)
@@ -709,6 +707,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 - `infra-test-mutation`: Mutation testing of the laws (✔ done · successful). Weekly mutation runs on the maths crates on CI, to find laws no test pins.
 - `infra-test-pinned-law-check`: Pinned-law check from logs (✔ done · successful). A test over the committed logs that fails when a law reads pinned or never runs at a seat and the ledger has no verdict for it.
 - `infra-test-recovery-counters`: Recovery bookkeeping counters (✔ done · successful). Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing.
+- `infra-test-recovery-model`: Exhaustive check of resend logic (✔ done · successful). A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run.
 - `infra-test-seat-coverage`: Coverage per seat (✔ done · successful). Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up.
 - `infra-test-sim-spike`: Deterministic simulation spike (✔ done · successful). Try running both ends in one process on a virtual clock and check that two runs with the same seed match exactly.
 
@@ -1197,6 +1196,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 66 nodes (49 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 36 nodes (24 done, 8 in progress, 2 next, 1 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (18 done, 7 in progress, 1 next, 2 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (19 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->
 
