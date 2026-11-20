@@ -1837,7 +1837,7 @@ shed law derives both ends from the triangle (ADR-0084; it supersedes
 is pending):
 
 ```text
-   D(δ)    =  min( b(δ)·RTprop , 2·RTprop )                       shed deadline, read when the verdict is taken
+   D(δ)    =  min( b(δ)·RTprop , 2·RTprop )                       shed deadline, read when the verdict is taken (engine: EWMA RTT until a battery reads this form; Section 11.3)
    G_rx    =  |holes passed|  −  |late arrivals that fill a passed hole|
    Ab      =  G_rx  +  |{ v ∈ V : v ≥ F }|
    shed  ⇔  age > D(δ)   ∧   Ab + 1  ≤  (1 − ρ)·src_total

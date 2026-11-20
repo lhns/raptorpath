@@ -1,5 +1,16 @@
 # The verdict law for the evicting seat (derivation, no code)
 
+**Erratum (2026-11-20).** ADR-0084 and `docs/fec-arq-model.md` (§5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5) govern. This derivation is stale in these places:
+- §8's "with the engine change, not before" (the paper text landed first, per FORMULA-FIRST);
+- §8's branch S/W conditionals (branch S was chosen);
+- the §11.3 row count;
+- the "no Realtime ρ declared" row (0.99 is declared);
+- the claim that the store and the clamp still read the seat;
+- "deleted with ADR-0079" (the slot site is still on main);
+- v11 (it was promised to ADR-0078's timestamp field, which now moves);
+- the pause line's appendix (A.5, not A.4);
+- the contract wording (the end-of-run check reports a breach; it does not gate).
+
 Roadmap node `rec-evict-blocker-unresolved`. Owner decision of 2026-11-20:
 fix the defect with one rule, "every abandoned seq gets a verdict and the
 receiver is told". Inputs: `evict-fix-prechecks.md`, `core-extraction-recovery.md`,
