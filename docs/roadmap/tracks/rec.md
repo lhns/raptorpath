@@ -259,7 +259,7 @@ flowchart TB
 | `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | done | mixed |  | commit c775f7fb; commit 70393f92 |  |
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | done | successful |  | commit 663d3ec9; commit 6f2b084f |  |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | done | unrated |  | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |  |
-| `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | in-progress | unrated |  | raptorpath/tests/sim_mixed_rho.rs (branch adr84-amend) |  |
+| `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | in-progress | unrated |  | raptorpath/tests/sim_mixed_rho.rs |  |
 
 ### Details per node
 
@@ -327,7 +327,7 @@ flowchart TB
 | `rec-rwm-phase-c` | Out-of-order object delivery (Phase C) | Phase C of the reliable windowed multipath plan (2026-07-06); Phase A is rec-reliable-window, Phase B place-marginal-cost. | commit c775f7fb; commit 70393f92 |
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | Was folded in rec-present-at-stall, whose dead-end verdict is about the pacer, not this fix. | commit 663d3ec9; commit 6f2b084f |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | Split 2026-11-20 from meas-attribution-audit. Three parallel plans (session record 2026-09-06) led to it. | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |
-| `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation. | raptorpath/tests/sim_mixed_rho.rs (branch adr84-amend) |
+| `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation. | raptorpath/tests/sim_mixed_rho.rs |
 
 ### Folded items per node
 
