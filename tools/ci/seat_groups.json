@@ -1,0 +1,374 @@
+{
+ "note": "Seat groups for S5. A group is a list of (integration test binary, libtest name filters). Seat = (hint, rho, N) as the test sets it: hint via cfgs(.., hint, window_reliable) or --protocol-hint; rho=1 iff window_reliable (or the named point's preset); N = number of bind/peer addresses. Groups overlap (a Bulk rho=1 N=2 test is in bulk_rho1 and n2). A test that loops over several N or hints counts for every seat it loops over, so a hit there over-approximates (listed under 'mixed' in the table). No lib group: cargo llvm-cov report found no object files for a --lib-only run (tried split and single-command forms), so lib unit tests are not in the seat table.",
+ "mixed": [
+  "eta_reachability",
+  "lat_reachability",
+  "inbound_pool_reachability",
+  "io_owner_topology",
+  "emit_batch_scope_loopback",
+  "dead_peer_fail_fast",
+  "f2_unframable_closes",
+  "f2_mixed_symbol_size",
+  "f2_undeliverable_counter"
+ ],
+ "groups": {
+  "bulk_rho1": {
+   "seat": "Bulk, rho=1",
+   "tests": [
+    {
+     "test": "ack_merge_loopback",
+     "filters": []
+    },
+    {
+     "test": "ackdiag_loopback",
+     "filters": []
+    },
+    {
+     "test": "ackdiag_repair_recon",
+     "filters": []
+    },
+    {
+     "test": "copa_sole_loopback",
+     "filters": []
+    },
+    {
+     "test": "emit_batch_loopback",
+     "filters": []
+    },
+    {
+     "test": "mtu_blackhole_wedge",
+     "filters": []
+    },
+    {
+     "test": "recv_alloc_bound",
+     "filters": []
+    },
+    {
+     "test": "reliable_delivery_hold",
+     "filters": []
+    },
+    {
+     "test": "sum_cap_loopback",
+     "filters": []
+    },
+    {
+     "test": "three_term_loopback",
+     "filters": []
+    },
+    {
+     "test": "walldiag_loopback",
+     "filters": []
+    },
+    {
+     "test": "wire_compact_loopback",
+     "filters": []
+    },
+    {
+     "test": "f2_peer_symbol_size",
+     "filters": []
+    },
+    {
+     "test": "cpuprof_reachability",
+     "filters": []
+    },
+    {
+     "test": "gauge_reachability",
+     "filters": []
+    },
+    {
+     "test": "runtime_obs_reachability",
+     "filters": []
+    },
+    {
+     "test": "sigma_candidates_reachability",
+     "filters": []
+    },
+    {
+     "test": "sigma_diag_reachability",
+     "filters": []
+    },
+    {
+     "test": "tlag_reachability",
+     "filters": []
+    },
+    {
+     "test": "emit_batch_default_loopback",
+     "filters": []
+    },
+    {
+     "test": "quad_path_loopback",
+     "filters": []
+    },
+    {
+     "test": "recov_mp_loopback",
+     "filters": []
+    },
+    {
+     "test": "lock_order_loopback",
+     "filters": []
+    },
+    {
+     "test": "eta_reachability",
+     "filters": []
+    },
+    {
+     "test": "lat_reachability",
+     "filters": []
+    },
+    {
+     "test": "inbound_pool_reachability",
+     "filters": []
+    },
+    {
+     "test": "io_owner_topology",
+     "filters": []
+    },
+    {
+     "test": "emit_batch_scope_loopback",
+     "filters": []
+    },
+    {
+     "test": "dead_peer_fail_fast",
+     "filters": []
+    },
+    {
+     "test": "perf_loopback",
+     "filters": [
+      "reliable_window",
+      "out_of_order",
+      "coded_object",
+      "generation",
+      "systematic"
+     ]
+    }
+   ]
+  },
+  "auto_rho1": {
+   "seat": "Auto, rho=1 (the Auto preset)",
+   "tests": [
+    {
+     "test": "perf_loopback",
+     "filters": [
+      "default_config"
+     ]
+    }
+   ]
+  },
+  "realtime_rho1": {
+   "seat": "Realtime, rho=1",
+   "tests": [
+    {
+     "test": "f2_realtime_packed",
+     "filters": [],
+     "features": "test-seams"
+    },
+    {
+     "test": "f2_unframable_closes",
+     "filters": [],
+     "features": "test-seams"
+    },
+    {
+     "test": "f2_mixed_symbol_size",
+     "filters": [],
+     "features": "test-seams"
+    }
+   ]
+  },
+  "evicting_rho_lt1": {
+   "seat": "rho<1 (window_reliable=false), Bulk and Realtime hints",
+   "tests": [
+    {
+     "test": "f2_window_start_lost",
+     "filters": []
+    },
+    {
+     "test": "f2_undeliverable_counter",
+     "filters": []
+    }
+   ]
+  },
+  "n1": {
+   "seat": "N=1 (one path)",
+   "tests": [
+    {
+     "test": "ack_merge_loopback",
+     "filters": []
+    },
+    {
+     "test": "ackdiag_loopback",
+     "filters": []
+    },
+    {
+     "test": "ackdiag_repair_recon",
+     "filters": []
+    },
+    {
+     "test": "copa_sole_loopback",
+     "filters": []
+    },
+    {
+     "test": "emit_batch_loopback",
+     "filters": []
+    },
+    {
+     "test": "mtu_blackhole_wedge",
+     "filters": []
+    },
+    {
+     "test": "recv_alloc_bound",
+     "filters": []
+    },
+    {
+     "test": "reliable_delivery_hold",
+     "filters": []
+    },
+    {
+     "test": "sum_cap_loopback",
+     "filters": []
+    },
+    {
+     "test": "three_term_loopback",
+     "filters": []
+    },
+    {
+     "test": "walldiag_loopback",
+     "filters": []
+    },
+    {
+     "test": "wire_compact_loopback",
+     "filters": []
+    },
+    {
+     "test": "f2_peer_symbol_size",
+     "filters": []
+    },
+    {
+     "test": "cpuprof_reachability",
+     "filters": []
+    },
+    {
+     "test": "gauge_reachability",
+     "filters": []
+    },
+    {
+     "test": "runtime_obs_reachability",
+     "filters": []
+    },
+    {
+     "test": "sigma_candidates_reachability",
+     "filters": []
+    },
+    {
+     "test": "sigma_diag_reachability",
+     "filters": []
+    },
+    {
+     "test": "tlag_reachability",
+     "filters": []
+    },
+    {
+     "test": "emit_batch_default_loopback",
+     "filters": []
+    },
+    {
+     "test": "f2_realtime_packed",
+     "filters": [],
+     "features": "test-seams"
+    },
+    {
+     "test": "f2_window_start_lost",
+     "filters": []
+    },
+    {
+     "test": "f2_undeliverable_counter",
+     "filters": []
+    },
+    {
+     "test": "eta_reachability",
+     "filters": []
+    },
+    {
+     "test": "lat_reachability",
+     "filters": []
+    },
+    {
+     "test": "inbound_pool_reachability",
+     "filters": []
+    },
+    {
+     "test": "io_owner_topology",
+     "filters": []
+    },
+    {
+     "test": "emit_batch_scope_loopback",
+     "filters": []
+    },
+    {
+     "test": "perf_loopback",
+     "filters": [
+      "default_config",
+      "reliable_window",
+      "out_of_order",
+      "coded_object",
+      "generation_object"
+     ]
+    },
+    {
+     "test": "dead_peer_fail_fast",
+     "filters": [
+      "single_path"
+     ]
+    }
+   ]
+  },
+  "n2": {
+   "seat": "N=2 (two paths)",
+   "tests": [
+    {
+     "test": "lock_order_loopback",
+     "filters": []
+    },
+    {
+     "test": "recov_mp_loopback",
+     "filters": []
+    },
+    {
+     "test": "quad_path_loopback",
+     "filters": []
+    },
+    {
+     "test": "eta_reachability",
+     "filters": []
+    },
+    {
+     "test": "lat_reachability",
+     "filters": []
+    },
+    {
+     "test": "inbound_pool_reachability",
+     "filters": []
+    },
+    {
+     "test": "io_owner_topology",
+     "filters": []
+    },
+    {
+     "test": "emit_batch_scope_loopback",
+     "filters": []
+    },
+    {
+     "test": "perf_loopback",
+     "filters": [
+      "dual_path"
+     ]
+    },
+    {
+     "test": "dead_peer_fail_fast",
+     "filters": [
+      "two_path"
+     ]
+    }
+   ]
+  }
+ }
+}
