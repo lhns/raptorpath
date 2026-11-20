@@ -1,0 +1,3 @@
+# SIM SPIKE: tokio::runtime::Builder::rng_seed (select! branch order) needs tokio_unstable.
+[build]
+rustflags = ["--cfg", "tokio_unstable"]

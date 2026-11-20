@@ -227,7 +227,7 @@ mod tests {
     fn fed(on: bool) -> RecvDiagBlock {
         let mut b = block(on);
         // One arrival makes the SUCC gauge a receiver site — the block's gate.
-        b.succ.observe_high(1, Instant::now(), 0);
+        b.succ.observe_high(1, crate::clock::now(), 0);
         b
     }
 

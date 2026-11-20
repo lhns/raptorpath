@@ -294,14 +294,14 @@ impl SenderEta {
     /// `e = rtt − rtprop/2` — a reading about the wire, not a prediction — so
     /// the `eta == 0` test excludes them.
     pub fn on_ack(&mut self, path_id: u32, echo_send_ts_us: u64, rtt_us: u64, rtprop_us: u64) {
-        self.on_ack_at(path_id, echo_send_ts_us, rtt_us, rtprop_us, Instant::now());
+        self.on_ack_at(path_id, echo_send_ts_us, rtt_us, rtprop_us, crate::clock::now());
     }
 
     /// [`SenderEta::on_ack`] with the arrival instant supplied by the caller.
     ///
     /// The τ-lag admits a pair only inside `[τ, 2τ]` of real time, so a test
     /// that cannot say when a sample arrived cannot produce a `σ_e` to assert
-    /// on. `on_ack` is `on_ack_at(.., Instant::now())`.
+    /// on. `on_ack` is `on_ack_at(.., crate::clock::now())`.
     pub(crate) fn on_ack_at(
         &mut self,
         path_id: u32,
@@ -562,7 +562,7 @@ impl RecvEta {
         };
         let l = (d - base).max(0) as u64;
         p.lat.add(l);
-        p.lat_sig.push(Instant::now(), l, Duration::from_micros(tau_us));
+        p.lat_sig.push(crate::clock::now(), l, Duration::from_micros(tau_us));
     }
 
     /// Has this gauge seen any arrival — i.e. does it sit at a receiver?
@@ -617,7 +617,7 @@ mod tests {
         let mut t = Tlag::default();
         assert_eq!(t.sigma_us(tau), None);
         assert_eq!(t.pairs(tau), 0);
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         // Spacing 1.25 ms = τ/8, the decimation floor: every sample admitted.
         for i in 0..40u32 {
             t.push(t0 + Duration::from_micros(1250 * i as u64), (i as u64) * 100, tau);
@@ -641,7 +641,7 @@ mod tests {
     fn tlag_decimates_at_tau_over_eight() {
         let tau = Duration::from_millis(8);
         let mut t = Tlag::default();
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         for i in 0..1000u64 {
             t.push(t0 + Duration::from_micros(i * 10), i, tau);
         }

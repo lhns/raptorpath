@@ -293,10 +293,10 @@ impl LossEstimator {
             est_cadence: est_cadence_active(),
             bocd_acc_received: 0,
             bocd_acc_lost: 0,
-            bocd_last_flush: Instant::now(),
+            bocd_last_flush: crate::clock::now(),
             total_sent: 0,
             total_received: 0,
-            last_update: Instant::now(),
+            last_update: crate::clock::now(),
         }
     }
 
@@ -308,7 +308,7 @@ impl LossEstimator {
     /// per-symbol pattern (SACK gaps) should use `record_counts` +
     /// `record_symbol` instead for an unbiased burst estimate.
     pub fn record_batch(&mut self, sent: u32, received: u32) {
-        self.record_batch_at(sent, received, Instant::now());
+        self.record_batch_at(sent, received, crate::clock::now());
     }
 
     /// [`Self::record_batch`] on an explicit clock: `now` drives the
@@ -334,7 +334,7 @@ impl LossEstimator {
     /// lumped Gilbert-Elliott approximation. Pair with per-symbol
     /// `record_symbol` calls carrying the actual arrival pattern.
     pub fn record_counts(&mut self, sent: u32, received: u32) {
-        self.record_counts_at(sent, received, Instant::now());
+        self.record_counts_at(sent, received, crate::clock::now());
     }
 
     /// [`Self::record_counts`] on an explicit clock (see
@@ -680,7 +680,7 @@ mod tests {
     #[test]
     fn test_est_cadence_heartbeat_reads_the_fed_clock() {
         let mut est = LossEstimator::new_with_cadence_for_test();
-        let t0 = Instant::now() + Duration::from_secs(3600);
+        let t0 = crate::clock::now() + Duration::from_secs(3600);
         est.start_cadence_clock_at(t0);
         est.record_batch_at(10, 10, t0 + Duration::from_micros(9_999));
         assert_eq!(est.bocd_updates(), 0, "sub-heartbeat clean evidence must be held");

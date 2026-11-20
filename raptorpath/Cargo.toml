@@ -76,6 +76,8 @@ libc = "0.2"  # preflight: geteuid root check
 # Test-only fault-injection seams (ADR-0078's fail-closed test). Off by default:
 # the release binary never contains them.
 test-seams = []
+# SIM SPIKE: in-memory network under quinn on tokio's paused clock.
+sim = ["tokio/test-util"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -97,3 +99,7 @@ required-features = ["test-seams"]
 [[test]]
 name = "f2_realtime_packed"
 required-features = ["test-seams"]
+
+[[test]]
+name = "sim_spike"
+required-features = ["sim", "test-seams"]

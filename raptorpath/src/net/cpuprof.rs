@@ -28,7 +28,7 @@
 //!
 //! ## Three caveats
 //!
-//! **1. The seams are wall, the denominator is CPU.** `Instant::now()` is a
+//! **1. The seams are wall, the denominator is CPU.** `crate::clock::now()` is a
 //! ~20 ns vDSO read; `clock_gettime(CLOCK_THREAD_CPUTIME_ID)` is a real
 //! syscall at ~0.5–1 µs, and at ~18 000 sym/s two of those per seam per
 //! symbol would cost 10–18 % of a core — the instrument would move the number
@@ -75,6 +75,8 @@
 //! call of the closure it wraps — no clock read, no atomic, no branch beyond
 //! the null test.
 
+#[allow(unused_imports)]
+use crate::clock::SimElapsed;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -189,7 +191,7 @@ impl Default for CpuProfGauge {
 impl CpuProfGauge {
     pub fn new() -> Self {
         CpuProfGauge {
-            armed_at: Instant::now(),
+            armed_at: crate::clock::now(),
             armed_cpu_ns: proc_cpu_ns().unwrap_or(u64::MAX),
             ns: std::array::from_fn(|_| AtomicU64::new(0)),
             n: std::array::from_fn(|_| AtomicU64::new(0)),
@@ -206,7 +208,7 @@ impl CpuProfGauge {
     /// The run's reading. `None` when the gauge has no wall-clock span at all
     /// (rather than a 0/0).
     pub fn report(&self) -> Option<CpuProfReading> {
-        let run_ns = self.armed_at.elapsed().as_nanos() as u64;
+        let run_ns = self.armed_at.sim_elapsed().as_nanos() as u64;
         if run_ns == 0 {
             return None;
         }
@@ -276,9 +278,9 @@ pub fn timed<T>(seam: Seam, f: impl FnOnce() -> T) -> T {
     match gauge() {
         None => f(),
         Some(g) => {
-            let t0 = Instant::now();
+            let t0 = crate::clock::now();
             let out = f();
-            g.charge(seam, t0.elapsed().as_nanos() as u64);
+            g.charge(seam, t0.sim_elapsed().as_nanos() as u64);
             out
         }
     }
@@ -463,8 +465,8 @@ mod tests {
         }
         // Burn a little CPU so the denominator is nonzero and measurable.
         let mut acc = 0u64;
-        let t0 = Instant::now();
-        while t0.elapsed().as_millis() < 20 {
+        let t0 = crate::clock::now();
+        while t0.sim_elapsed().as_millis() < 20 {
             acc = acc.wrapping_add(1);
         }
         assert!(acc > 0);

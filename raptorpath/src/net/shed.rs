@@ -1,6 +1,8 @@
 //! δ-honest overload shedding, the completion feed, and the `[CHI]` /
 //! `[SHEDH]` gauges.
 
+#[allow(unused_imports)]
+use crate::clock::SimElapsed;
 use super::*;
 
 // ── δ-honest overload shedding (paper §5.6) ──────────────────────────────
@@ -131,11 +133,11 @@ impl CompletionFeed {
             remaining_bytes: AtomicU64::new(0),
             consumed_bytes: AtomicU64::new(0),
             set_at_us: AtomicU64::new(0),
-            epoch: std::time::Instant::now(),
+            epoch: crate::clock::now(),
         }
     }
     fn now_us(&self) -> u64 {
-        self.epoch.elapsed().as_micros() as u64
+        self.epoch.sim_elapsed().as_micros() as u64
     }
     /// The whole object is ahead of us: set at the start of a transfer, in
     /// the bytes the engine will read (the driver's encoded packets).

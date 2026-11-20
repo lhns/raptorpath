@@ -1143,7 +1143,7 @@ mod passthrough_cc_tests {
             window: window.clone(),
             stats: Arc::new(PassthroughCcStats::default()),
         });
-        f.build(Instant::now(), mtu)
+        f.build(crate::clock::now(), mtu)
     }
 
     /// The shim's window() follows the engine-owned atomic: what our engine
@@ -1191,8 +1191,8 @@ mod passthrough_cc_tests {
         let w = Arc::new(AtomicU64::new(100_000));
         let stats = Arc::new(PassthroughCcStats::default());
         let f = Arc::new(PassthroughFactory { window: w.clone(), stats: stats.clone() });
-        let mut c = f.build(Instant::now(), 1200);
-        let now = Instant::now();
+        let mut c = f.build(crate::clock::now(), 1200);
+        let now = crate::clock::now();
         c.on_congestion_event(now, now, false, 3_600);
         c.on_congestion_event(now, now, true, 1_200);
         assert_eq!(c.window(), 100_000, "loss must not move the engine-owned window");

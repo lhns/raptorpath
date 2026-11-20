@@ -58,6 +58,8 @@
 //! reach it, and with the gate off every feed site is a null check on a
 //! `OnceLock<Option<…>>` that resolved to `None`.
 
+#[allow(unused_imports)]
+use crate::clock::SimElapsed;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -128,7 +130,7 @@ pub struct RttDump {
 impl RttDump {
     fn new() -> Self {
         Self {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             cap: dump_max(),
             paths: Mutex::new(HashMap::new()),
         }
@@ -138,7 +140,7 @@ impl RttDump {
     /// same reason `ackdiag` does: the dumped series must be self-consistent
     /// without depending on any engine clock's lifetime.
     fn now_us(&self) -> u64 {
-        self.epoch.elapsed().as_micros() as u64
+        self.epoch.sim_elapsed().as_micros() as u64
     }
 
     /// Offer one RTT sample. Called from the single delegate every ack path
@@ -250,7 +252,7 @@ mod tests {
         // successive difference computed off the dump would be at the wrong
         // lag.
         let d = RttDump {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             cap: 1_000,
             paths: Mutex::new(HashMap::new()),
         };
@@ -281,7 +283,7 @@ mod tests {
         // scoring over an unknown subset. The cap must announce itself, and
         // exactly once however long the run continues.
         let d = RttDump {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             cap: 2,
             paths: Mutex::new(HashMap::new()),
         };
@@ -304,7 +306,7 @@ mod tests {
         // engine decision consumes. `note_rtt` returns `()` — there is no
         // value for a caller to branch on — and `totals` is test-facing.
         let d = RttDump {
-            epoch: Instant::now(),
+            epoch: crate::clock::now(),
             cap: 10,
             paths: Mutex::new(HashMap::new()),
         };

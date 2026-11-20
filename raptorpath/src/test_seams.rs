@@ -57,9 +57,7 @@ fn cfg() -> &'static Cfg {
 }
 
 fn t_us() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_micros() as u64)
+    crate::net::now_us()
 }
 
 /// Sends of source seq k seen so far (including swallowed ones).
