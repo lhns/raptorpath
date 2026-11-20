@@ -2,7 +2,9 @@
 //! `test-seams` trace (`src/test_seams.rs`), never inferred from counters.
 //!
 //! T2 `stalled_blocker_recovered_by_nack` (red on main: copies of k go out
-//! through the slot path).
+//! through the slot path). It gates in the deterministic sim now
+//! (`sim_s06_nack.rs`); this loopback version is record-only (`#[ignore]`,
+//! 9/10 on the candidate: a decode fill of k, not a NACK).
 //! T3 `past_deadline_blocker_*`: absolute time bounds from the code's own
 //! clocks. Bounds, green on both trees; they assert the deletion strands no
 //! past-deadline blocker.
@@ -101,6 +103,7 @@ fn first(evs: &[Ev], name: &str) -> Option<Ev> {
 /// recovered by the NACK path alone: no copy of k goes out through a
 /// proactive slot, and the NACK resends are spaced by the clock.
 #[test]
+#[ignore = "records, does not gate: T2 gates in sim_s06_nack.rs (deterministic); this loopback run reads 9/10 on the candidate"]
 fn stalled_blocker_recovered_by_nack() {
     let drop = ("RWM_TEST_TS_DROP", "first:2");
     let seq = ("RWM_TEST_TS_SEQ", K);
