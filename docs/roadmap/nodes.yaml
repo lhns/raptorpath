@@ -8453,7 +8453,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing.'
-  notes: 'Plan S4, ADR-0081 (Proposed). Held: it shares files with the S06 deletion and the gauges, and its slow-link assertions wait on the owner''s call on evicted packets.'
+  notes: 'Plan S4, ADR-0081 (Proposed). Owner 2026-11-20: decision 4 = option B now (debug and test-seams builds, release bytes unchanged), A on the next guard batch; decision 5 = an evicted seq is legal, counted in its own E term, with H + E bounded by 1 - rho. Shares files with the S06 deletion and the gauges, so it merges in sequence with them.'
 - id: infra-test-seat-coverage
   title: Coverage per seat
   track: infra

@@ -379,6 +379,11 @@ S1–S3 and S7 can start at once, in parallel, as four independent workers. Only
 8. The new dependency `stateright` in a separate `raptorpath-model` crate. (ADR-0083)
 9. When to schedule the `pub` narrowing.
 
+**Answered 2026-11-20 (owner):**
+- **4:** (B) now, under `cfg(any(debug_assertions, feature = "test-seams"))`, release bytes proven unchanged; (A) on the next guard batch.
+- **5:** yes. A seq that leaves the coding window on the evicting seat without a verdict is a legal outcome, counted in its own term `E` (evicted). The identity becomes `S_sent = A + H + E + O_serv + O_strand`, and the retention contract bounds `H + E` by the 1 − ρ budget. `E` is zero at ρ = 1 by construction (one formula, no seat branch). A completed transfer with `E` above the budget, or `O_strand` > 0 at the end, is a defect.
+- **7:** yes. The extraction grows to the gap clamp, the tail-sweep target and the intake pause, as core functions taking the window bounds and store state as numbers, with `reliable` replaced by a clamp bound. Done at the next quiet point, through the proof ladder and a guard batch. Whether the bound form keeps behaviour identical gets its own pin.
+
 ## 8. Not verified
 
 - The CI timings (tier A 25–35 min, tier B 1.5–2.5 h) and the instrumented-build factor are estimates from the VM's suite times, not runs.
