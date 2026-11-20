@@ -2,7 +2,7 @@
 
 ## THE NO-MODE-SWITCH INVARIANT (non-negotiable)
 
-The architecture's central claim (paper §16.20/§16.26, ADR-0064) is ONE
+The architecture's central claim (paper §5.10, ADR-0064) is ONE
 machine parameterized by the (δ, ρ, r) triangle on measured anchors —
 continuous in δ, with NO mode bit. This applies to the visualizer as much
 as the engine. The user rejected the architectural mode-switches twice
@@ -12,7 +12,7 @@ at a preset; a ρ-gated hint flip; a threshold-keyed hint boundary) — the
 user caught and rejected every one of them in direct review. The pattern,
 not the instances, is the enemy.
 
-Concretely, in the visualizer and any model of the machine:
+Concretely, in the engine, the visualizer and any model of the machine:
 
 - NO `if (hint === ...)`, NO threshold on δ or ρ that selects a different
   code path, law, or constructor argument. If two behaviors must both
@@ -21,10 +21,16 @@ Concretely, in the visualizer and any model of the machine:
   always computed, β = bulkness_of_delta(δ)).
 - ρ is the retention contract — an INDEPENDENT dial of the triangle. It
   must compose with δ everywhere; it never selects a machine.
+- A bit derived from a dial is the same mode bit renamed: `reliable =
+  (ρ ≥ 1)`, `realtime = (δ < x)` and the like are forbidden wherever they
+  select a branch.
 - The protocol hints (Bulk/Auto/Realtime) are NAMED POINTS on the dials,
   never modes.
 - A behavior step across any preset point is a defect even if each side
   is individually correct.
+- Existing engine branches on a hint, δ or ρ are recorded debt (law
+  ledger, paper §11.3), never precedent. Do not copy the pattern; retire a
+  site or bound it with a test.
 
 Enforcement (do not weaken these; extend them when touching this area):
 - `raptorpath-visualizer/test_visualizer.mjs` — law continuity+monotonicity
@@ -33,11 +39,36 @@ Enforcement (do not weaken these; extend them when touching this area):
 - `raptorpath-visualizer/test_visualizer_ui.mjs` — ONE hint string at every
   dial position including ρ < 1 (stub-DOM routing gate).
 - `raptorpath-wasm` `test_continuum_one_law_across_the_dial`.
-- `raptorpath-core` (ADR-0077, once the crate exists): builds for `wasm32-unknown-unknown` and
-  passes its source deny-list test in `build_visualizer.sh`; every core
-  function taking δ or ρ carries the preset ±2 % continuity test, every
-  function taking N an absolute test at N = 1 and N = 2.
-Both mjs gates run in `build_visualizer.sh`; a failure fails the build.
+- `raptorpath-core` (ADR-0077; the crate exists and is still empty):
+  builds for `wasm32-unknown-unknown` and passes its source deny-list test
+  in `build_visualizer.sh`; every core function taking δ or ρ carries the
+  preset ±2 % continuity test, every function taking N an absolute test at
+  N = 1 and N = 2.
+
+Both mjs gates run in `build_visualizer.sh`, which CI runs on every push;
+a failure fails the build.
+
+Engine enforcement (owed): an engine source deny test (ADR-0084 Amendment
+1) fails on any comparison on ρ that selects a branch in engine code. The
+only exceptions are sites the owner accepted in an ADR, pinned by name in
+the test, so the list can shrink and never grow. Add the test's path here
+when it lands. Hint and δ comparisons in the engine are not yet covered
+by any test.
+
+## Process rules (pointers; the detail lives where linked)
+
+- **No engine merge on a Bulk-only guard.** Bulk rows send no repair
+  slots, so they cannot see a change to the repair path. A guard for an
+  engine change carries off-Bulk stages with execution witnesses (roadmap
+  node `meas-guard-bulk-blind`).
+- **The release binary stays byte-identical** unless a change means to
+  alter it. `.github/workflows/binid.yml` compares the binary, `.text` and
+  `.rodata` on every push touching sim, clock, seam, account or manifest
+  code. A deliberate change says so with a `binid: expected-change
+  <reason>` commit line (ADR-0082).
+- **The roadmap moves with the work.** Each result, merge or owner
+  decision updates `docs/roadmap/nodes.yaml` in the same push, and
+  `tools/roadmap/build.py` and `check.py` run before it.
 
 ## Testing discipline (the lesson behind the gates)
 
