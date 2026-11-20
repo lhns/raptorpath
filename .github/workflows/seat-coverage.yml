@@ -1,4 +1,5 @@
-# Coverage per seat (test-detection plan S5). Report only: the job never fails on a coverage reading.
+# Coverage per seat (test-detection plan S5). The table is report-only; the one rule that fails the job is
+# the shed-site rule (a named site MISS in every seat needs a miss_reason in tools/ci/coverage_sites.json).
 # One cargo-llvm-cov run per seat group (tools/ci/seat_groups.json), mapped to law-ledger rows by
 # tools/ci/coverage_by_row.py. The table is uploaded as an artifact; commit it to docs/derivations/.
 name: seat-coverage
@@ -9,6 +10,8 @@ on:
 env:
   CARGO_TERM_COLOR: never
   CARGO_INCREMENTAL: "0"
+  # sim_shed_reach (evicting seat group) needs it; cfg only, no behaviour change in other groups
+  RUSTFLAGS: "--cfg tokio_unstable"
 permissions:
   contents: read
 jobs:
@@ -42,6 +45,8 @@ jobs:
         run: |
           python tools/ci/coverage_by_row.py out/lcov --md out/coverage-by-seat.md --json out/coverage-by-seat.json
           cat out/coverage-by-seat.md >> "$GITHUB_STEP_SUMMARY"
+      - name: shed-site rule (fails when a named site is MISS in every seat and has no miss_reason)
+        run: python tools/ci/coverage_by_row.py out/lcov --check-sites
       - uses: actions/upload-artifact@v4.6.2
         if: always()
         with:

@@ -45,6 +45,8 @@ jobs:
       - run: pip install pyyaml
       - name: tools/l1 tests (not the stub run; quarantine list in tools/l1/quarantine.txt)
         run: python tools/ci/run_py_tests.py
+      - name: CI checkers (flake rule, shed-site rule, expected-failure scanner), red and green on fixtures
+        run: python tools/ci/test_ci_tools.py
       - name: roadmap
         run: |
           python tools/roadmap/build.py
@@ -66,6 +68,19 @@ jobs:
         with: { tool: wasm-pack }
       - name: build visualizer and run both .mjs gates
         run: bash raptorpath-visualizer/build_visualizer.sh
+  defects:
+    # Expected-failure job: the #[ignore]d tests whose reason starts with a roadmap node id
+    # (e.g. "rec-evict-blocker-unresolved:") are run with --ignored and must all FAIL. One that
+    # passes means the fix landed or the test rotted. Found by grep, not a list (tools/ci/expected_failure.py).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: defects }
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - run: python tools/ci/expected_failure.py
   sim:
     # Deterministic simulation tests (ADR-0082, S8). tokio_unstable only here
     # (seeded select! order), never in .cargo/config.toml or the release build.

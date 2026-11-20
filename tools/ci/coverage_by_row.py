@@ -7,9 +7,16 @@ hit/instrumented lines. Also: named shed sites (coverage_sites.json), and the
 liveness audit (docs/derivations/liveness-audit.md) as a cross-check.
 
 Usage: coverage_by_row.py LCOV_DIR [--root REPO] [--md OUT.md] [--json OUT.json]
-Report only; always exits 0. Regenerate with tools/ci/run_seat_coverage.py + this script.
+Report only; exits 0, except with --check-sites (the shed-site rule, below).
+Regenerate with tools/ci/run_seat_coverage.py + this script.
+
+Shed-site rule (--check-sites, run by the nightly seat-coverage job): a named site in
+coverage_sites.json that no seat group executes is a failure unless the site carries a
+`miss_reason` (why no test reaches it). The reverse fails too: a `miss_reason` on a site
+that some seat now hits is stale, so the reason cannot rot. A site whose line is not found
+fails (the regex or the code moved).
 """
-import argparse, json, pathlib, re
+import argparse, json, pathlib, re, sys
 import yaml
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -116,7 +123,7 @@ def audit_says(cells, cols):
 def find_sites(cfg, lcovs, root):
     res = {}
     for s in cfg["sites"]:
-        res[s["id"]] = {"desc": s["desc"], "line": None, "by_group": {}, "audit": s.get("audit"), "audit_says": s.get("audit_says", {})}
+        res[s["id"]] = {"desc": s["desc"], "miss_reason": s.get("miss_reason"), "line": None, "by_group": {}, "audit": s.get("audit"), "audit_says": s.get("audit_says", {})}
         lines = (root / s["file"]).read_text(encoding="utf-8", errors="replace").splitlines()
         c = [i + 1 for i, l in enumerate(lines) if re.search(s["regex"], l) and abs(i + 1 - s["near"]) <= 80]
         if not c:
@@ -130,12 +137,30 @@ def find_sites(cfg, lcovs, root):
     return res
 
 
+def site_violations(stz, groups):
+    """The shed-site rule. -> list of messages; empty means the rule holds."""
+    if not groups:
+        return ["no seat group has an lcov file: nothing was measured"]
+    out = []
+    for k, s in stz.items():
+        reached = [g for g, v in s["by_group"].items() if v]
+        if s["line"] == "not found":
+            out.append(f"{k}: site not found (regex or file moved); fix coverage_sites.json")
+        elif not reached and not s.get("miss_reason"):
+            out.append(f"{k}: MISS in every seat group and no miss_reason in coverage_sites.json: "
+                       "add a test that reaches it, or a miss_reason that says why none can")
+        elif reached and s.get("miss_reason"):
+            out.append(f"{k}: reached by {', '.join(reached)} but still carries a miss_reason: remove it")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("lcov_dir")
     ap.add_argument("--root", default=str(HERE.parents[1]))
     ap.add_argument("--md")
     ap.add_argument("--json")
+    ap.add_argument("--check-sites", action="store_true", help="apply the shed-site rule; exit 1 on a violation")
     a = ap.parse_args()
     root = pathlib.Path(a.root).resolve()
     raw = {p.stem: read_lcov(p) for p in sorted(pathlib.Path(a.lcov_dir).glob("*.lcov"))}
@@ -171,10 +196,16 @@ def main():
                                    "UNEXPECTED-HIT" if says == "NR" and s == "HIT" else "")
         table.append(row)
     stz = find_sites(json.loads((HERE / "coverage_sites.json").read_text(encoding="utf-8")), lcovs, root)
+    bad = site_violations(stz, groups) if a.check_sites else []
+    for m in bad:
+        print("SHED-SITE RULE: " + m)
+    if a.check_sites and not bad:
+        print("shed-site rule: ok (%d named sites)" % len(stz))
     if a.json:
         pathlib.Path(a.json).write_text(json.dumps({"groups": groups, "runs": runs, "sites": stz, "rows": table}, indent=1), encoding="utf-8")
     if a.md:
         pathlib.Path(a.md).write_text(render(groups, runs, stz, table), encoding="utf-8")
+    return 1 if bad else 0
 
 
 def render(groups, runs, stz, table):
@@ -191,7 +222,7 @@ def render(groups, runs, stz, table):
         o.append("")
     o += ["## Named shed sites", "", "| site | line | " + " | ".join(groups) + " |", "|---|---|" + "---|" * len(groups)]
     for k, s in stz.items():
-        o.append(f"| {k}: {s['desc']} | {s['line']} | " + " | ".join(
+        o.append(f"| {k}: {s['desc']}{' (miss_reason: ' + s['miss_reason'] + ')' if s.get('miss_reason') else ''} | {s['line']} | " + " | ".join(
             ("n/a" if s["by_group"].get(g) is None else ("HIT %d" % s["by_group"][g] if s["by_group"][g] else "MISS")) for g in groups) + " |")
     o += ["", "## Ledger rows", "", "`audit` = the liveness audit's seven cells (c2 B, c2 A, c2 R, c8 B, c8 A, c8 R, E).", "",
           "| row | " + " | ".join(groups) + " | audit |", "|---|" + "---|" * len(groups) + "---|"]
@@ -227,4 +258,5 @@ def render(groups, runs, stz, table):
     return "\n".join(o)
 
 
-main()
+if __name__ == "__main__":
+    sys.exit(main())
