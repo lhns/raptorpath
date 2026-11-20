@@ -72,6 +72,8 @@ impl ReorderBuffer {
         data: Bytes,
         now: Instant,
     ) -> Vec<(u64, Bytes, Instant)> {
+        #[cfg(feature = "test-seams")]
+        crate::test_seams::on_arrive(seq);
         if seq < self.next_deliver_seq {
             // The in-order gate has already advanced past this sequence (an
             // expiry gave up on the hole). Holding a late fill buys no
@@ -89,7 +91,14 @@ impl ReorderBuffer {
             return self.force_drain_oldest();
         }
 
-        self.drain_contiguous()
+        let out = self.drain_contiguous();
+        #[cfg(feature = "test-seams")]
+        crate::test_seams::on_frontier(
+            self.next_deliver_seq,
+            self.pending.len(),
+            self.timeout.as_micros() as u64,
+        );
+        out
     }
 
     /// Drain the contiguous prefix starting from `next_deliver_seq`.
@@ -133,6 +142,8 @@ impl ReorderBuffer {
 
         // Release every pending entry up to and including k, in order.
         let to_deliver: Vec<u64> = self.pending.range(..=k).map(|(&seq, _)| seq).collect();
+        #[cfg(feature = "test-seams")]
+        crate::test_seams::on_give_up(self.next_deliver_seq, k + 1, &to_deliver);
         for seq in to_deliver {
             if let Some((data, at)) = self.pending.remove(&seq) {
                 result.push((seq, data, at));
@@ -147,6 +158,8 @@ impl ReorderBuffer {
 
     /// Force-drain the oldest entries to get back under capacity.
     pub fn force_drain_oldest(&mut self) -> Vec<(u64, Bytes, Instant)> {
+        #[cfg(feature = "test-seams")]
+        let before = self.next_deliver_seq;
         let mut result = Vec::new();
         while self.pending.len() > self.max_buffered / 2 {
             if let Some((&seq, _)) = self.pending.iter().next() {
@@ -159,6 +172,11 @@ impl ReorderBuffer {
             } else {
                 break;
             }
+        }
+        #[cfg(feature = "test-seams")]
+        {
+            let d: Vec<u64> = result.iter().map(|(s, _, _)| *s).collect();
+            crate::test_seams::on_force_drain(before, self.next_deliver_seq, &d);
         }
         result.extend(self.drain_contiguous());
         result

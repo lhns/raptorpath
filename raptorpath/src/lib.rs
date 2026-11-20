@@ -17,3 +17,5 @@ pub mod tun;
 pub mod clock;
 #[cfg(feature = "sim")]
 pub mod sim;
+#[cfg(feature = "test-seams")]
+pub mod test_seams;
