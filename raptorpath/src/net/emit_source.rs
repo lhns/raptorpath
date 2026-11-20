@@ -707,9 +707,9 @@ pub(crate) fn emit_source(
                 } else {
                     String::new()
                 };
-                let (rsat, rlaw) = diag_r_sat(ctx.fec_controller, ctx.scheduler, st.encoder.window_size());
+                let (rsat, rlaw, pfec) = diag_r_sat(ctx.fec_controller, ctx.scheduler, st.encoder.window_size());
                 crate::readout!(
-                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{} rsat={:.4} rlaw={}",
+                    "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{} rsat={:.4} rlaw={} pfec={:.4}",
                     dnow.saturating_sub(pol.span_diag_start_us) as f64 / 1e6,
                     ack,
                     ws,
@@ -727,6 +727,7 @@ pub(crate) fn emit_source(
                     dg,
                     rsat,
                     rlaw,
+                    pfec,
                 );
             }
         }
@@ -833,20 +834,20 @@ pub(crate) fn emit_source(
 
 }
 
-/// The live r_sat (`[SPAN] rsat=`) and rate-law term gauge (`rlaw=`) of the
-/// worst-ε path, read from the snapshot the rate mix evaluates. 1.0 / "-"
-/// when there is no path.
+/// The live r_sat (`[SPAN] rsat=`), rate-law term gauge (`rlaw=`) and the
+/// law's P_fec at its own rate (`pfec=`) of the worst-ε path, read from the
+/// snapshot the rate mix evaluates. 1.0 / "-" / 0.0 when there is no path.
 fn diag_r_sat(
     fec_controller: &FecRateController,
     scheduler: &crate::scheduler::Scheduler,
     window: usize,
-) -> (f64, String) {
+) -> (f64, String, f64) {
     match worst_eps_path(scheduler) {
         Some((_, est)) => {
             let snap = fec_controller.rate_snapshot(est, window);
-            (snap.r_sat(), snap.rlaw())
+            (snap.r_sat(), snap.rlaw(), snap.p_fec())
         }
-        None => (1.0, "-".to_string()),
+        None => (1.0, "-".to_string(), 0.0),
     }
 }
 

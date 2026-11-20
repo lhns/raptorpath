@@ -195,6 +195,15 @@ impl RateSnapshot {
             1.0
         }
     }
+
+    /// The P_fec the rate law reads at its own output (diagnostic read,
+    /// `[SPAN] pfec=`): the normal P_fec of paper §4.2 at r = `rate()`, with the
+    /// same ε̂ (`p_upper`), window and σ² the law and `r_saturation` use. Never
+    /// feeds a decision.
+    pub fn p_fec(&self) -> f64 {
+        let i = &self.inputs;
+        raptorpath_math::p_fec_normal(self.rate(), i.p_upper, i.window, i.sigma2)
+    }
 }
 
 /// Upper bound (µs) on the repair-rate cadence: the sender's derived
