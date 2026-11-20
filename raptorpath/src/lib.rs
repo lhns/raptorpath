@@ -16,3 +16,5 @@ pub mod tun;
 
 #[cfg(test)]
 mod audits;
+#[cfg(test)]
+mod config_round_trip;
