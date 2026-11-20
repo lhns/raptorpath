@@ -134,6 +134,70 @@ All three are `#[cfg(test)]` source-walk or resolution tests, in the style of `g
 - **Owner.** The threshold: ledger `pinned_threshold` is ≥ 0.5 of the range; the audit uses ≥ 90 % of ticks. Which one fails the test? No ADR: this applies rules 1, 17 and 18 as they already stand.
 - **Prerequisites:** none. **Parallel:** yes. Part 3 adds tests to `net::tests::law_shape` and the math crate. Coordinate with the shared-core moves, which re-home those laws, so each test is written once against the post-move path.
 
+### S3 result: parts 1 and 2 (branch `pinned-law-check`, Python only)
+
+**Part 1, what was built** (all in `tools/l1`):
+- `pinned_gauges.py`: for 32 ledger rows, a spec naming a log field and what "at its bound" means for it (taken from the evidence column of `liveness-audit.md` §1). No spec contains a class; the class is computed. A row without a spec is NG.
+- `pinned_summary.py --write | --check`: streams the four audit archives (`s51b/full/b51c{2,8}-full.tgz`, `s51e/s51e-session.tgz`, `diag-ld` only) and writes `pinned_summary.json`: integer counts per seat and gauge, the end-of-run values per row, each archive's sha256, and a fingerprint of the spec. `--check` rebuilds it and fails on any difference (about 20 s). The test does not run it; it checks the sha256 and the fingerprint instead (`PINNED_FULL=1` adds the rebuild).
+- `pinned_law_check.py`: classifies each cell and fails on a PIN, NR or UZ cell that has no ledger verdict covering that seat and is not on `pinned_owed.txt`, and on an owed entry that no longer reproduces. Options: `--table`, `--audit-diff`, `--write-owed`, `--ledger/--owed/--summary/--threshold` for scratch runs.
+- `test_pinned_law_check.py`: classifier fixtures, ledger reading, the committed state and the red runs below. The VM's `test_*.py` glob picks it up. 5.6 s; no yaml module (the ledger is read with regexes).
+
+**Rules as built.**
+- Cell classes: EX varies. PIN sits at one value or bound on at least the threshold share of ticks. NR the law's precondition never held (a tick predicate, the `[GATES]` echo, or an `n=0` / `on=0` line says off), or the seat prints no line of its own gauge where the spec says that means "not live". UZ a counter reads 0 and its witness (a field showing the code around it ran, such as `mpr.fired > 0`) never held. NG nothing printed.
+- Threshold: the ledger's `pinned_threshold` (0.5, parsed from the yaml; the test fails if it cannot parse it). "Share of range" is read as the share of per-tick readings at the bound. The audit's 0.9 is reported next to it; the owed list is at 0.5.
+- Verdict coverage: only a `PINNED(...)` or `DEGENERATE(...)` tag covers a cell, and only for the seats its scope names (an explicit map in `pinned_gauges.SCOPES`; an unknown scope string fails). `DISHONEST-INPUT`, `MODE-SWITCH` and the rest do not. `c1s` and `c1d` cover none of the seven seats. UZ is never covered by a verdict; it is a measurement defect.
+- The ledger md is stale against the yaml on main (`render.py --check` fails; the md summary reads `PINNED(c8,c1s,c2 at every δ)` for F01, the yaml `PINNED(c8,c1s)`). The check reads the yaml, so F01's c2 cells are owed.
+
+**First-day state** (224 cells = 32 gauged rows × 7 seats; the other 219 of the audit's 443 classified cells have no spec yet and are not counted):
+
+| | EX | PIN | NR | UZ | unverdicted (PIN+NR+UZ) |
+|---|---|---|---|---|---|
+| ledger threshold 0.5 | 72 | 104 | 46 | 2 | **122** (85 PIN, 35 NR, 2 UZ; 23 rows) |
+| audit threshold 0.9 | 104 | 72 | 46 | 2 | **92** (55 PIN, 35 NR, 2 UZ; 21 rows) |
+
+The 122 are `tools/l1/pinned_owed.txt`, one line per cell with its reading. The two UZ cells are S10 at c2 B and c8 B: `owed = 0` on every tick with no tick where r > 0, so the zero has no witness. Against the audit's hand classification the recompute agrees on 204 of 224 cells at 0.9. The 20 differences, with reasons:
+- C02 (7 cells): the audit weighs the 20-gap horizon and the SACK cap; the gauge is the `fast` counter alone (the packet threshold, 0 on every c2 and E tick).
+- F03 (4): the audit calls a constant law PIN by definition; the gauge only tells on from off.
+- S05 at c8 (3): the audit reads `mean_us = 200000` latched; the gauge reads `floor_frac`, which is 0 there (the hold sits at the cap).
+- S10 at c2 B, c8 B (2): audit PIN; recomputed UZ, as above.
+- C06 at c2 B: the audit says 100 ms on every row; the logs show `p05 = p95` in 4 of 6 rows.
+- C11 at c8 A: the audit reads EX from "debt non-zero on 7 %"; debt is 0 on 93 % of ticks, which is PIN at the audit's own 0.9.
+- E10 at c8 R: the audit's "also latched" is `p05 = p95` (C07); `w_us_min = w_us_max` holds in 0 of 6 rows.
+- F02 at c8 R: the gauge reads the store cap itself (the `win=` denominator), at its ceiling on 96 % of ticks: F01's pin seen through F02.
+
+**F01 replay.** F01 has a port (`docs/derivations/store-law/caplog_replay.py`) and its inputs in `[CAPLOG]`, but only in the §60 gauge-build logs (`s60/rep60a`, `rep60b`), not in the seven seats. `pinned_summary.py` runs the port over them. Result: 6 490 records, 0 mismatches between the logged cap and the law's output for the logged inputs; the unclamped law takes 5 074 and 1 287 distinct values (the law moves); the cap sits at the ceiling N·pool on 95.2 % and 84.9 % of pooled records. The test fails on a mismatch or a constant unclamped output.
+
+**Acceptance** (from the repo root; scratch copies outside the tree):
+- GREEN, committed ledger and owed list: `python -I tools/l1/pinned_law_check.py` ends `pinned-law check: green`.
+- RED on F01 with its verdict removed (a copy of the yaml with `verdicts: [DISHONEST-INPUT]`; that tag covers no pin): `python -I tools/l1/pinned_law_check.py --ledger <copy>` prints `FAIL UNVERDICTED F01 c8 A PIN (pin median 0.819 over 6 rows)`, the same for c8 B (0.742) and c8 R (0.942), and ends `RED, 3 failure(s)`, exit 1.
+- RED on a bogus owed line (`OWED E01 c2_A PIN | bogus entry` appended to a copy): `FAIL STALE owed entry E01 c2 A PIN no longer reproduces`, exit 1.
+- The test covers the same three, plus an owed line removed, a UZ cell (C04 at c2 A with its witness zeroed in a copy of the summary) and the replay check turned red.
+
+**Part 2: are each law's inputs logged?** "Logged" means a printed field in the committed seat logs (`[DIAG]`, `[SPAN]`, `[SUMCAP]`/`[DCAP]`, `[QCLK]`, `[LATE]`, `[SHEDH]`, `[ETA]`, `[HOLD]`; `[SLAW]` at E). Most fields are outputs. "Possible" means all inputs are printed; no port exists for those rows and none was written. Only F01 has an existing port wired.
+
+| rows | inputs logged? | fields | replay |
+|---|---|---|---|
+| F01 | not in the seats; yes in the §60 gauge logs | `[CAPLOG]` n, psum, q, gain, floor, pool, smax, boot, cap (§60 only). The seats print `[SUMCAP]`/`[DCAP]` pin, cap, ask, q, b: aggregates | **wired**: `caplog_replay.py` over §60 |
+| F07, E13, E14 | at E and §60 only | `[SLAW]` tmin, tp50, m, l, sig, b0p, q (b0p reads `-` on the E rows) | port exists (`s60replay.py`), not wired |
+| D01–D06 | yes | δ from `[GATES] RWM_DELTA` and the hint; outputs `[DCAP] b, q` | possible, closed forms |
+| E09, E11, R08, S02, K04 (N = 1) | yes | per-path and top-level `rtt`, `[DCAP] b`, `src`, `wsize`, `a_star`, `cwnd`, `infl` | possible |
+| S01 | yes, but D is not printed | `rtt`, `[DCAP] b` | possible |
+| F02, F03 | yes | `win=a/b` (store length, cap), `eb_bursts`, `eb_end` | possible, trivial |
+| S10, R07, C06, C07, C09 | partial | S10: `owed`, `rr`, `wsize`. R07: `rtt`, `src`, not W_over or W_bur. C06/C07: the mean `srtt_us_mean` and the clock's distribution `w_us_p05..p95`. C09: `nbud` against loss and rtt | partial |
+| E01–E04, E06–E08 | no | the estimators' samples (echo timestamps, ack intervals, per-batch loss, run-length posterior) are not printed; only `rtt`, `rtp_us`, `btlbw`, `pl`, `plu` | not possible |
+| E10, E12, S03–S07, C01, C02, C04, C05, C10, C11, K01, K05–K07, K09 | no or partial | counters and outputs only (`mpr supp/fast`, `owed`, `debt`, `cwnd`, `[SHEDH]`, `[ETA]`); the age, ewma, jitter, per-copy P and last-retx inputs are not printed | not possible |
+| R01–R06 | no | `rr` is the output; σ², B, P_fec, r_sat, χ inputs and the winning term are not printed (the audit's NG cells) | not possible |
+| E05 | n/a | it is a logged value (`wrtt`), not a law | n/a |
+| F04, F05, F06, R09, K02, K03, K08, C12, S08, S09 | n/a | off by gate (the `[GATES]` echo is the witness), set bookkeeping, or a hint equality with no law body | n/a |
+| C03, K10, C13, M01–M04 | n/a | branch only or wasm model | n/a |
+
+"Not possible" rows carry the note "inputs not logged", an NG cell in the audit's terms; the part-1 check over output shares stands in for them.
+
+**Open.**
+- The 219 audit-classified cells without a spec (the D rows, K04, the rate-law internals and others) need a spec each, and the NG ones a gauge in the engine. A new battery's seats go into `pinned_gauges.ARCHIVES`, then `pinned_summary.py --write`.
+- The 122 owed cells are the work list for verdicts. The owner picks which threshold fails the test: the ledger's 0.5 now; `--threshold 0.9` is one flag.
+- Part 3 (the cargo law-moves sweep) is not done here.
+
 ### S4. Conservation and stuck counters (detector 2)
 
 - **The identity.** One line per sender, at every DIAG tick and at the `final=1` exit flush:
@@ -314,6 +378,12 @@ S1–S3 and S7 can start at once, in parallel, as four independent workers. Only
 7. Model check: the extended core extraction (clamp, sweep target, intake pause), and `reliable` as a clamp bound instead of a bool: shared-core owner question 1. (ADR-0083)
 8. The new dependency `stateright` in a separate `raptorpath-model` crate. (ADR-0083)
 9. When to schedule the `pub` narrowing.
+
+**Answered 2026-11-20 (owner):**
+- **4:** (B) now, under `cfg(any(debug_assertions, feature = "test-seams"))`, release bytes proven unchanged; (A) on the next guard batch.
+- **5:** yes. A seq that leaves the coding window on the evicting seat without a verdict is a legal outcome, counted in its own term `E` (evicted). The identity becomes `S_sent = A + H + E + O_serv + O_strand`, and the retention contract bounds `H + E` by the 1 − ρ budget. `E` is zero at ρ = 1 by construction (one formula, no seat branch). A completed transfer with `E` above the budget, or `O_strand` > 0 at the end, is a defect. Wording refined with the fix direction for `rec-evict-blocker-unresolved` (owner, same day): eviction from the window is itself the verdict; a seq left in the sender's buffer with no verdict is the stuck state.
+  - **Superseded by ADR-0084** (owner, 2026-11-20): the `E` term is not bounded by 1 − ρ. The identity is `S_sent = A + H + E + |U|` (a verdict seq stays in its term after a later ack, and `O_strand ≡ 0` by construction), and the 1 − ρ budget counts abandonment at the receiver (`G_rx`, carried on the ack), not `H + E`. With a store at every ρ, `E` = 0 by data on every seat.
+- **7:** yes. The extraction grows to the gap clamp, the tail-sweep target and the intake pause, as core functions taking the window bounds and store state as numbers, with `reliable` replaced by a clamp bound. Done at the next quiet point, through the proof ladder and a guard batch. Whether the bound form keeps behaviour identical gets its own pin.
 
 ## 8. Not verified
 

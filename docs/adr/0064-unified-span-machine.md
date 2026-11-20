@@ -1,6 +1,6 @@
 # ADR-0064: One Machine Across the δ Axis — the Unified Span Machine + δ-Honest Shedding
 
-## Status: Accepted (`RWM_UNIFIED` default ON). The streaming machine was retired after its re-test (bccb32a); `RWM_UNIFIED=0` with Realtime now falls back to the legacy-RLC windowed machine, whose own retirement clause stays open
+## Status: Accepted (`RWM_UNIFIED` default ON). The streaming machine was retired after its re-test (bccb32a); `RWM_UNIFIED=0` with Realtime now falls back to the legacy-RLC windowed machine, whose own retirement clause stays open. Superseded in part by ADR-0084 (decision 3's budget operand; at ρ = 1 the budget is 0)
 
 ## Context
 

@@ -103,11 +103,51 @@ fn a_stalled_run_fails_as_a_dnf_not_as_a_gauge_reading() {
     assert!(msg.contains("STALL_MARKER_7"), "server tail missing: {msg}");
 
     let clean = format!(
-        "{}\n{run}\n{run}\n{}\n",
+        "{}\n{run}\n{run}\n{}\n{CLEAN_ACCT}\n",
         r#"{"warmup":true,"seconds":0.01}"#,
         r#"{"summary":true,"runs":2,"dnf":0}"#,
     );
     loopback::assert_no_dnf(&clean, Some(srv));
+}
+
+/// A clean sender exit line (ADR-0081): the identity closes, nothing is outstanding.
+const CLEAN_ACCT: &str = "[ACCT] reliable=0 S_sent=100 A=95 H=3 E=2 O_serv=0 O_strand=0 O_max=0 closes=1 inert_sweeps=0 sweeps=0 \
+    oldest_unchanged=0 oldest_unchanged_max=0 O_hwm=40 store_cap=64 bud=0.050000 shed_slot=1 shed_nack=2 \
+    shed_visit_slot=5 shed_visit_nack=9 clamp_evals=30 clamp_excl=4 final=1";
+
+fn panic_msg(f: impl FnOnce() + std::panic::UnwindSafe) -> Option<String> {
+    let err = std::panic::catch_unwind(f).err()?;
+    err.downcast_ref::<String>().cloned().or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+}
+
+/// The account check (ADR-0081) fails each way the account can be wrong, and a
+/// missing exit line fails too (the check must execute). Builds without the
+/// account have nothing to read and skip.
+#[test]
+fn the_account_check_fails_each_defect_and_a_missing_line() {
+    if !loopback::ACCOUNT_CARRIED {
+        return;
+    }
+    let ok = r#"{"proto":"rp-native","hint":"bulk","run":1,"seconds":1.5,"mbps":53.3}"#;
+    let fails = |what: &str, acct: String, expect: &str| {
+        let log = format!("{ok}\n{acct}\n");
+        let msg = panic_msg(move || loopback::assert_no_dnf(&log, None)).unwrap_or_else(|| panic!("{what}: did not fail"));
+        assert!(msg.contains(expect), "{what}: {msg}");
+    };
+    fails("O_strand", CLEAN_ACCT.replace("O_strand=0", "O_strand=3").replace("S_sent=100", "S_sent=103"), "O_strand = 3");
+    // Outstanding seqs: judged against the receiver's frontier (ack in flight vs stuck).
+    let o2 = CLEAN_ACCT.replace("O_serv=0", "O_serv=2").replace("S_sent=100", "S_sent=102").replace("O_max=0", "O_max=101");
+    let log = format!("{ok}\n{o2}\n");
+    let msg = panic_msg(|| loopback::assert_no_dnf(&log, Some("[ACCT-RX] frontier=100"))).expect("O above the frontier must fail");
+    assert!(msg.contains("not below the receiver's frontier 100"), "{msg}");
+    loopback::assert_no_dnf(&log, Some("[ACCT-RX] frontier=50\n[ACCT-RX] frontier=102 final=1"));
+    fails("identity", CLEAN_ACCT.replace("S_sent=100", "S_sent=101"), "does not close");
+    fails("inert", CLEAN_ACCT.replace("inert_sweeps=0", "inert_sweeps=4"), "inert_sweeps = 4");
+    fails("shed without budget", CLEAN_ACCT.replace("bud=0.050000", "bud=0.000000"), "no shed budget ever open");
+    // E over the budget is reported, not gated: E is an upper bound on abandonment.
+    loopback::assert_no_dnf(&format!("{ok}\n{}\n", CLEAN_ACCT.replace("E=2", "E=40").replace("A=95", "A=57")), None);
+    let none = panic_msg(|| loopback::assert_no_dnf(&format!("{ok}\n"), None)).expect("a missing exit line must fail");
+    assert!(none.contains("no `[ACCT]"), "{none}");
 }
 
 /// Control — every arm absent; every other reading is a difference from this row.

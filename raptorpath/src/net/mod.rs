@@ -45,7 +45,7 @@ mod recovery_clock;
 pub use recovery_clock::*;
 mod holddown;
 pub use holddown::*;
-mod shed;
+mod shed; #[cfg(any(debug_assertions, feature = "test-seams"))] mod account;
 pub use shed::*;
 mod copa_feed;
 pub(crate) use copa_feed::*;
@@ -528,9 +528,9 @@ pub(crate) fn now_pair() -> (u64, Instant) {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_micros() as u64)
             .unwrap_or(0);
-        (Instant::now(), wall_us.max(NOW_US_MIN_BASE))
+        (crate::clock::now(), crate::clock::wall_us(wall_us).max(NOW_US_MIN_BASE))
     });
-    let now = Instant::now();
+    let now = crate::clock::now();
     (base_us.saturating_add(now.saturating_duration_since(t0).as_micros() as u64), now)
 }
 
@@ -2037,7 +2037,7 @@ async fn run_window_sender(
         pol.gen_repair_floor,
         gen_last_source_us,
         last_source_send_us,
-    );
+    ); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct = account::Account::new(pol.reliable); }
     // The emission step's handles, built at each emission site: the
     // scheduler and the FEC controller are lent to it as `&mut` for that call
     // only (threading Q2).
@@ -2470,7 +2470,7 @@ async fn run_window_sender(
         } else {
             pol.store_max
         };
-        let tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full);
+        let tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.store_cap = effective_store_cap as u64; }
 
         // wnd2/relgap tracking (see decls): the release
         // frontier is max(highest SACK-released seq, cumulative ack) —
@@ -3034,7 +3034,7 @@ async fn run_window_sender(
                 last_tail_sweep_us = now_us();
                 if let Some((seq, _)) = st.retransmit_buffer.first() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
-                    dg.diag_sweeps += 1;
+                    dg.diag_sweeps += 1; #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.on_sweep(seq); }
                     // The tail sweep is the sender's own producer — no ack, and
                     // so no arrival path. `u32::MAX` is the gauge's existing
                     // unattributed sentinel and reads as cross-path by
@@ -3593,7 +3593,7 @@ async fn run_window_sender(
         // fully-decoded generations — so no size-pressure eviction is needed.
         if !generation && st.encoder.window_size() > pol.win_cap {
             let (oldest, _) = st.encoder.window_span();
-            st.encoder.advance(oldest + (st.encoder.window_size() - pol.win_cap) as u64);
+            st.encoder.advance(oldest + (st.encoder.window_size() - pol.win_cap) as u64); #[cfg(any(debug_assertions, feature = "test-seams"))] { let (ws, _) = st.encoder.window_span(); st.acct.note_window(ws, st.shed_budget_frac); }
             // Clean up source_path_map for evicted sequences (EVICT only:
             // reliable mode keeps attribution while the store holds them).
             if !reliable {
@@ -3836,7 +3836,7 @@ mod decision_trace_pin;
 /// `false` only if the listener could not be installed. One awaited future,
 /// one trigger — the two signals are not two shutdown paths.
 async fn shutdown_signal() -> bool {
-    #[cfg(unix)]
+    #[cfg(all(unix, not(feature = "sim")))] // sim: one body on every OS (tokio's select/watch RNG draws, sim-engine.md)
     {
         use tokio::signal::unix::{signal, SignalKind};
         let mut term = match signal(SignalKind::terminate()) {
@@ -3848,7 +3848,7 @@ async fn shutdown_signal() -> bool {
             _ = term.recv() => true,
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(not(all(unix, not(feature = "sim"))))]
     {
         tokio::signal::ctrl_c().await.is_ok()
     }

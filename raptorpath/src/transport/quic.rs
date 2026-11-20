@@ -723,7 +723,7 @@ impl QuicTransport {
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
         sender_tx: mpsc::Sender<InboundBatch>,
     ) {
-        let ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
+        let ids: crate::clock::PathIds<PathId> = self.paths.iter().map(|e| *e.key()).collect();
         for path_id in ids {
             self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone(), sender_tx.clone()).await;
         }
@@ -774,7 +774,7 @@ impl QuicTransport {
         //          the producer's batch for the path's I/O owner, not quinn's
         //          `send_datagram` (which the owner calls; see
         //          `net::cpuprof` module docs).
-        use crate::net::cpuprof::{timed, Seam};
+        #[cfg(feature = "test-seams")] if crate::test_seams::on_send(&batch.symbols, "batch") { return Ok(()); } use crate::net::cpuprof::{timed, Seam};
         if crate::transport::protocol::wire_compact_active() {
             let compact = timed(Seam::Ser, || {
                 crate::transport::protocol::serialize_data_compact(&batch)
@@ -807,7 +807,7 @@ impl QuicTransport {
         seqs: (u64, u64),
         eta_rel_us: u64,
         arena: &mut bytes::BytesMut,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<()> { #[cfg(feature = "test-seams")] if crate::test_seams::on_send(std::slice::from_ref(sym), "single") { return Ok(()); }
         if !crate::transport::protocol::wire_compact_active() {
             let batch = SymbolBatch::new(vec![sym.clone()], send_timestamp_us, seqs, path_id)
                 .with_eta(eta_rel_us);
@@ -926,7 +926,7 @@ impl QuicTransport {
     fn generate_self_signed_config(
         cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
     ) -> anyhow::Result<(ServerConfig, Vec<CertificateDer<'static>>)> {
-        let cert = rcgen::generate_simple_self_signed(vec!["raptorpath".into()])?;
+        let cert = crate::clock::self_signed(vec!["raptorpath".into()])?;
         let cert_der = CertificateDer::from(cert.cert);
         let key_der = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
 
@@ -992,7 +992,7 @@ impl QuicTransport {
             transport.congestion_controller_factory(cc);
         }
         config.transport_config(Arc::new(transport));
-        config
+        crate::clock::client_config(config)
     }
 }
 

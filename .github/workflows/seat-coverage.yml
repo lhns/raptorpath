@@ -1,0 +1,59 @@
+# Coverage per seat (test-detection plan S5). The table is report-only; the one rule that fails the job is
+# the shed-site rule (a named site MISS in every seat needs a miss_reason in tools/ci/coverage_sites.json).
+# One cargo-llvm-cov run per seat group (tools/ci/seat_groups.json), mapped to law-ledger rows by
+# tools/ci/coverage_by_row.py. The table is uploaded as an artifact; commit it to docs/derivations/.
+name: seat-coverage
+on:
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  # sim_shed_reach (evicting seat group) needs it; cfg only, no behaviour change in other groups
+  RUSTFLAGS: "--cfg tokio_unstable"
+permissions:
+  contents: read
+jobs:
+  seat-coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: llvm-tools-preview }
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: seat-coverage }
+      - uses: taiki-e/install-action@v2
+        with: { tool: "cargo-llvm-cov@0.6.16" }
+      - uses: actions/setup-python@v5.6.0
+        with: { python-version: "3.12" }
+      - run: pip install pyyaml
+      - name: does the spawned perf server write its profile on its signal exit?
+        continue-on-error: true
+        run: |
+          # lat_reachability (one path) = test process + perf server child (stop_with INT) + perf client
+          # child. Three profraw files means the server's came out; two means it was lost.
+          cargo llvm-cov clean --profraw-only
+          cargo llvm-cov --no-report --release -p raptorpath --test lat_reachability -- one_path
+          n=$(ls target/llvm-cov-target/*.profraw | wc -l)
+          ls -l target/llvm-cov-target/*.profraw
+          echo "profraw files: $n (3 expected when the server child writes its profile)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: coverage per seat group
+        run: python tools/ci/run_seat_coverage.py out/lcov 2>&1 | tee out-run.log
+      - name: map to ledger rows
+        run: |
+          python tools/ci/coverage_by_row.py out/lcov --md out/coverage-by-seat.md --json out/coverage-by-seat.json --source "seat-coverage run $GITHUB_RUN_ID"
+          cat out/coverage-by-seat.md >> "$GITHUB_STEP_SUMMARY"
+      - name: shed-site rule (fails when a named site is MISS in every seat and has no miss_reason)
+        run: python tools/ci/coverage_by_row.py out/lcov --check-sites
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: coverage-by-seat
+          path: |
+            out/coverage-by-seat.md
+            out/coverage-by-seat.json
+            out/lcov/runs.json
+            out/lcov/*.lcov
+            out-run.log

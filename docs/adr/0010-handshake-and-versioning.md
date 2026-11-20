@@ -1,8 +1,8 @@
 # ADR-0010: No Handshake or Protocol Versioning
 
-## Status: Accepted
+## Status: Accepted. Extended by ADR-0084 (wire v11: `WindowFloor`, `WindowAck.passed_undelivered`)
 
-Implemented: 8-byte magic+version header (`RPTQ` + `PROTOCOL_VERSION`, currently 8; `transport/protocol.rs`) on all WireMessages and the handshake. Handshake exchanged on bidi stream after QUIC connect/accept with version/capability negotiation. Version mismatch rejected at deserialization.
+Implemented: 8-byte magic+version header (`RPTQ` + `PROTOCOL_VERSION`, 10 on main as of 2026-11-20 (11 with ADR-0084); `transport/protocol.rs`) on all WireMessages and the handshake. Handshake exchanged on bidi stream after QUIC connect/accept with version/capability negotiation. Version mismatch rejected at deserialization.
 
 ## Context
 Peers connect via QUIC and immediately start sending symbol batches. There is no application-level handshake to negotiate capabilities, version, or exchange path metadata.
