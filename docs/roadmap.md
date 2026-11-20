@@ -379,7 +379,6 @@ flowchart TB
 | CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
 | Unwired-code and config audits | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
 | Model check of hole recovery | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
-| Deterministic simulation spike | ▶ in progress | Try running both ends in one process on a virtual clock and check that two runs with the same seed match exactly. |
 | Recovery bookkeeping counters | ○ next | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
 | Coverage per seat | ⛔ blocked | Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up. |
 | Mutation testing of the laws | ⛔ blocked | Weekly mutation runs on the maths crates on CI, to find laws no test pins. |
@@ -438,7 +437,6 @@ flowchart TB
 - `model-wasm-fixes`: Wasm model fixes
 - `infra-test-static-audits`: Unwired-code and config audits
 - `infra-test-recovery-model`: Model check of hole recovery
-- `infra-test-sim-spike`: Deterministic simulation spike
 
 **no-cargo**
 
@@ -550,6 +548,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 26 nodes (13 done, 7 in progress, 2 next, 4 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 26 nodes (14 done, 6 in progress, 2 next, 4 blocked)
 <!-- END GENERATED: tracks -->
 

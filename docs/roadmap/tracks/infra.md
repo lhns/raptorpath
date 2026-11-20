@@ -27,7 +27,7 @@ flowchart TB
     infra_test_static_audits["▶ Unwired-code and<br/>config audits"]
     infra_test_pinned_law_check["✔ Pinned-law check<br/>from logs"]
     infra_test_recovery_model["▶ Model check of hole<br/>recovery"]
-    infra_test_sim_spike["▶ Deterministic<br/>simulation spike"]
+    infra_test_sim_spike["✔ Deterministic<br/>simulation spike"]
     infra_test_recovery_counters["○ Recovery bookkeeping<br/>counters"]
     infra_test_seat_coverage["⛔ Coverage per seat"]
     infra_test_mutation["⛔ Mutation testing of<br/>the laws"]
@@ -83,11 +83,11 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class infra_early_platform,infra_mtu_floor,infra_consolidation,infra_net_seams,infra_cleanup_0927,infra_fix_program,infra_simplify_review,infra_simplify_batch1,infra_simplify_batch2,infra_test_pinned_law_check succ
+    class infra_early_platform,infra_mtu_floor,infra_consolidation,infra_net_seams,infra_cleanup_0927,infra_fix_program,infra_simplify_review,infra_simplify_batch1,infra_simplify_batch2,infra_test_pinned_law_check,infra_test_sim_spike succ
     class infra_defect_recorded_not_fixed,infra_tunnel_inorder_guard defect
     class infra_restructure waiting
     class infra_inventory_merges,infra_derivation_merges unrated
-    class infra_test_ci_gate,infra_test_static_audits,infra_test_recovery_model,infra_test_sim_spike inprog
+    class infra_test_ci_gate,infra_test_static_audits,infra_test_recovery_model inprog
     class infra_test_recovery_counters,infra_tech_tree_skill next
     class infra_test_seat_coverage,infra_test_mutation,infra_test_model_real_decisions,infra_test_pub_narrowing blocked
 ```
@@ -118,7 +118,7 @@ flowchart TB
 | `infra-test-static-audits` | Unwired-code and config audits | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
 | `infra-test-pinned-law-check` | Pinned-law check from logs | done | successful |  | docs/derivations/test-detection-plan.md; tools/l1/test_pinned_law_check.py |  |
 | `infra-test-recovery-model` | Model check of hole recovery | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
-| `infra-test-sim-spike` | Deterministic simulation spike | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
+| `infra-test-sim-spike` | Deterministic simulation spike | done | successful |  | docs/derivations/test-detection-plan.md; branch sim-spike ed8405fb (docs/derivations/sim-spike.md) |  |
 | `infra-test-recovery-counters` | Recovery bookkeeping counters | next | unrated |  | docs/derivations/test-detection-plan.md |  |
 | `infra-test-seat-coverage` | Coverage per seat | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-ci-gate |
 | `infra-test-mutation` | Mutation testing of the laws | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-ci-gate, infra-test-pinned-law-check |
@@ -149,7 +149,7 @@ flowchart TB
 | `infra-test-static-audits` | Unwired-code and config audits | Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard. | docs/derivations/test-detection-plan.md |
 | `infra-test-pinned-law-check` | Pinned-law check from logs | Plan S3. Done when red on the store-cap row with its ledger verdict removed. Existing unverdicted cells become a named owed list; the check fails on new ones. Merged 33ef7ff6: green on the committed ledger, red on F01 with its verdict removed and on a stale owed line; 122 unverdicted cells owed at the ledger threshold 0.5 (92 at 0.9); 32 of 65 rows have a gauge spec, the rest owed. Part 3 (cargo law-moves sweep) not started. | docs/derivations/test-detection-plan.md; tools/l1/test_pinned_law_check.py |
 | `infra-test-recovery-model` | Model check of hole recovery | Plan S7, ADR-0083 (Proposed). Done when red on the lost tail at rho < 1 and green at rho = 1. Kept outside the workspace lockfile. | docs/derivations/test-detection-plan.md |
-| `infra-test-sim-spike` | Deterministic simulation spike | Plan S8 spike, throwaway branch. Decides whether the full simulation (ADR-0082, Proposed) is feasible. No clock change goes to main from the spike. | docs/derivations/test-detection-plan.md |
+| `infra-test-sim-spike` | Deterministic simulation spike | Plan S8 spike, throwaway branch. Decides whether the full simulation (ADR-0082, Proposed) is feasible. No clock change goes to main from the spike. Verdict FEASIBLE with changes: both peers in one process on paused tokio time over an in-memory socket under quinn; same seed gives identical traces (20/20 one path, 32/32 two paths, 10/10 three paths, 2/2 for 140 MB); a 30 s stall runs in 0.7 s wall, a saturated bulk transfer only ~1.9x faster than real time. Blockers that bit: 114 Instant::now plus 44 elapsed sites, select! branch order (needs the runtime rng seed, --cfg tokio_unstable), hash order with 2+ paths (4 sites), engine rand (3 sites), quinn rng seed (1). The lost-tail stall reproduces deterministically. Costs: virtual time quantised to 1 ms (srtt variance exactly 0 on a fixed-delay link), no CPU-cost model for unbacked senders, Linux not run. | docs/derivations/test-detection-plan.md; branch sim-spike ed8405fb (docs/derivations/sim-spike.md) |
 | `infra-test-recovery-counters` | Recovery bookkeeping counters | Plan S4, ADR-0081 (Proposed). Held: it shares files with the S06 deletion and the gauges, and its slow-link assertions wait on the owner's call on evicted packets. | docs/derivations/test-detection-plan.md |
 | `infra-test-seat-coverage` | Coverage per seat | Plan S5. | docs/derivations/test-detection-plan.md |
 | `infra-test-mutation` | Mutation testing of the laws | Plan S6. | docs/derivations/test-detection-plan.md |
