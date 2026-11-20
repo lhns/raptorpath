@@ -253,7 +253,6 @@ flowchart TB
   - commit e49fbc80
   - commit 4a0890ac
   - commit 9b922b5f
-  - commit 72258063
   - Visualizer moved into raptorpath-visualizer/ with camelCase wasm wrappers (2026-04-10, commit 72258063a, commit 96145766c)
 - `model-wasm-l0`: raptorpath-math and wasm model
   - commit da837ee9
@@ -273,11 +272,10 @@ flowchart TB
   - Visualizer overhead split into channel floor and excess (2026-07-03, commit 15674b37)
   - Visualizer Auto window slider and saturation-pressure gauge (2026-07-04, commit 5426274e, commit aa87d818)
 - `model-vis-continuum`: Visualizer as one continuum law
-  - commit 9b527041
   - commit 149a0e48
   - commit 61dc8a18
   - commit 867d1976
-  - Visualizer refresh to the unified machine (2026-07-28, commit 6ae44967, commit c84c10f8, commit addb23e2)
+  - Visualizer refresh to the unified machine (2026-07-28, commit 6ae44967, commit c84c10f8, commit addb23e2, commit 9b527041)
 - `model-mode-switch-debts`: Engine NO-MODE-SWITCH debts
   - paper §11.1 open question 13
 - `model-open-constants`: Open-constants register

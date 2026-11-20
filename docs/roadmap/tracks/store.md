@@ -427,17 +427,15 @@ flowchart TB
 - `store-plain-rs`: Plain-mode send-interval sampler
   - commit 988960c1
 - `store-pool-deliv`: Delivery-clocked pool anchors
-  - commit f62caf78
-  - commit 8e9b489c
   - branch feat/pool-delivery-anchor
   - commit 47fdf550
-  - Ship The Wins 1b: delivery-clocked pool anchor (2026-08-07, commit a43bab82)
+  - Ship The Wins 1b: delivery-clocked pool anchor (2026-08-07, commit f62caf78, commit 8e9b489c, commit a43bab82)
 - `store-pool-anchor-flip`: Composed store flip
   - paper §10 row Pool anchor (`RWM_POOL_ANCHOR`): pooled cap = Σᵢ honest_store_cap on each path's send-interval anchor
   - commit 201ada44
   - commit a43bab82
 - `store-sack-prune`: SACK pruning of the store
-  - commit 3dcb39c7
+  - Delete SACK prune chain (2026-07-27, commit 3dcb39c7)
 - `store-sack-release`: SACK-clocked store release
   - commit 7145fcc6
   - commit a52105d0
@@ -492,10 +490,10 @@ flowchart TB
   - commit 2dd7bb2d
   - commit 79d2fa83
 - `store-cap-law-cluster`: Cap-law cluster: formulas first
-  - commit 8bab64c3
   - branch sweep item 5
   - branch sweep items 1+2+4
   - Boot cap derived as 128 and found to dissolve into the floor (2026-08-18, commit 94a6e6c3)
+  - Cap-law cluster: derived store floor and formula agreement tests (2026-08-18, commit 8bab64c3)
 - `store-honest-inputs`: Honest inputs and O(1) anchor
   - branch the flip battery
   - branch HONEST INPUTS phase 3
@@ -507,13 +505,11 @@ flowchart TB
   - branch ladder item 1
   - branch ADR-0071
   - branch ladder item 5
-  - commit 85b4d1df
-  - commit 5ddf7f6b
-  - commit 91c00ddf
   - commit 27e36e3f
   - commit 6a653802
   - commit 923aa9dc
-  - Ladder item 1: x-N deletion of the store cap, late brake extracted (2026-08-18, commit 6794dec9, commit fb85f8b0, commit 41296b7c)
+  - Ladder battery contract: pre-registered before any VM contact (2026-08-18, commit 91c00ddf)
+  - Ladder item 1: x-N deletion of the store cap, late brake extracted (2026-08-18, commit 6794dec9, commit fb85f8b0, commit 85b4d1df, commit 5ddf7f6b, commit 41296b7c)
   - FULL-arm expressibility check before the ladder pre-registration (2026-08-18, commit 07aedebd)
   - Ladder item 5: srtt RFC assert and two zero-assertion CI tests (2026-08-18, commit 6f14ccdb)
   - Composition ladder on the store cap (2026-08-19, commit 62f078bf)
@@ -533,7 +529,7 @@ flowchart TB
   - branch §23 store-cap input diagnosis
   - Store-cap input diagnosis (section 23) (2026-10-26, commit 3982bd10, commit 025bc526, commit 1b8ef4b9)
 - `store-power-law`: Power-seeking store law
-  - commit 317520f5
+  - Power-seeking store law and spread premises (2026-10-27, commit 317520f5)
 - `store-dw-window`: Noise-sized window
   - branch §30 store law D with a noise-sized window DOES-NOT-CLOSE
   - Delay-closed store law D with a noise-sized window (2026-10-28, commit 9133507d, commit 71aa3ee5)
@@ -567,8 +563,8 @@ flowchart TB
   - branch latency-lever instruments, pre-registration, and the specification-failure record
 - `store-sf-latency-feedback`: SF latency feedback
   - commit 4320fc48
-  - commit 2b14cc60
   - commit c0fb1d79
+  - Sf latency feedback: closed-loop Reno source and its pre-registration (2026-08-12, commit 2b14cc60)
   - branch latency-feedback REFUTED (no inner TCP exists)
 - `store-queue-fix-premise`: Queue fix premise refuted
   - branch the queue fix

@@ -65,7 +65,7 @@ flowchart TB
 ### Folded items per node
 
 - `obs-status-endpoint`: Runtime status endpoint
-  - commit 1534da9a
+  - Platform setup UX and runtime status endpoint (2026-03-12, commit 1534da9a)
 - `obs-gates-echo`: Gate-setting liveness echo
   - commit b30bf932
 <!-- END GENERATED: table-obs -->

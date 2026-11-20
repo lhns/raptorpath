@@ -206,8 +206,8 @@ flowchart TB
   - commit 35c24444
 - `cc-aimd-v1`: AIMD congestion control (first CC)
   - commit dc672631
-  - commit 8857788d
   - commit cbbbfdbd
+  - ACK delivery, AIMD congestion control and channel backpressure (2026-03-12, commit 8857788d)
 - `cc-btlbw-recovery`: BtlBw-anchored window recovery
   - branch P-CC
 <!-- END GENERATED: table-cc -->

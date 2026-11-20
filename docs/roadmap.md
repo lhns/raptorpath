@@ -380,7 +380,6 @@ flowchart TB
 | CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
 | Unwired-code and config audits | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
 | Model check of hole recovery | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
-| Recovery bookkeeping counters | ▶ in progress | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
 | Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
 | Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
 | Remove 24 dead functions | ○ next | Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies. |
@@ -438,7 +437,6 @@ flowchart TB
 - `model-wasm-fixes`: Wasm model fixes
 - `infra-test-static-audits`: Unwired-code and config audits
 - `infra-test-recovery-model`: Model check of hole recovery
-- `infra-test-recovery-counters`: Recovery bookkeeping counters
 - `infra-test-sim-engine`: Deterministic simulation of the engine
 
 **no-cargo**
@@ -539,7 +537,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 ## Done, by month
 
 <!-- BEGIN GENERATED: done-by-month -->
-<details><summary><b>Nov 2026</b>: 85 done, 2 abandoned</summary>
+<details><summary><b>Nov 2026</b>: 86 done, 2 abandoned</summary>
 
 - `perf-s33-timer`: Lag tail timer hand-off (✔ done · unrated)
 - `perf-receiver-followups`: Receiver follow-ups (✔ done · successful)
@@ -627,6 +625,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `rate-spare-cwnd`: Is spare's cwnd enforced? (✔ done · unrated)
 - `infra-test-mutation`: Mutation testing of the laws (✔ done · successful)
 - `infra-test-pinned-law-check`: Pinned-law check from logs (✔ done · successful)
+- `infra-test-recovery-counters`: Recovery bookkeeping counters (✔ done · successful)
 - `infra-test-seat-coverage`: Coverage per seat (✔ done · successful)
 - `infra-test-sim-spike`: Deterministic simulation spike (✔ done · successful)
 
@@ -638,8 +637,10 @@ History from March to June 2026 is reconstructed from commits only; dates marked
   - AVX and SIMD for the sender ruled out (2026-10-02)
 - `cod-block-pipeline`: RaptorQ block FEC pipeline (↷ superseded)
   - Block sizing, handshake and graceful shutdown (2026-03-12)
+  - Block interleaving for burst loss resilience (2026-03-13)
   - Block-mode in-order delivery and interleave depth 1 (2026-07-04)
 - `cod-one-pipeline`: One window pipeline (✔ done · successful)
+  - ADR-0069: block mode deprecated, default kept pinned (2026-08-10)
   - Window pipeline only, block pipeline deleted (2026-10-04)
 - `rate-est-cadence`: Batched BOCD estimator cadence (✔ done · very-successful)
   - Sender CPU profile with call graphs (2026-10-02)
@@ -674,6 +675,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `perf-receiver-r2`: Receiver cost with floor fix (✔ done · successful)
   - Receiver rewrite with latency floor fix (R2) (2026-10-26)
 - `perf-s20-r1-collapse`: First receiver rewrite collapse diagnosis (✔ done · successful)
+  - R1 c1s collapse diagnosis (section 20) (2026-10-26)
 - `store-adr72-one-law`: One store law (✔ done · successful)
 - `store-input-search`: Single-path anchor over-read (✔ done · unrated)
   - Store-cap input diagnosis (section 23) (2026-10-26)
@@ -686,6 +688,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `perf-threading-r3`: Receiver re-profile for threading (↷ superseded)
   - Receiver re-profile for threading (R3) (2026-10-26)
 - `store-power-law`: Power-seeking store law (✖ dead end)
+  - Power-seeking store law and spread premises (2026-10-27)
 - `store-s27-premises`: Spread law premises (✖ dead end)
 - `cod-debug-stall`: Decoder re-delivery stall fix (✔ done · successful)
   - Decoder re-delivery stall in debug suite (2026-10-28)
@@ -750,12 +753,14 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `cc-bbrrs-v1`: bbr_rs first version (✔ done · unrated)
 - `cod-mettle`: METTLE swappable FEC backend (✖ dead end)
   - Projected real-world scenarios in benchmark results (2026-03-13)
+  - METTLE swappable FEC backend and its edge-probability fix (2026-03-13)
 - `perf-recv-msg-wall`: Receiver per-message wall battery (✔ done · mixed)
   - Engine-receiver saturation probe (2026-07-19)
 - `store-pool-anchor-flip`: Composed store flip (✔ done · bad)
 - `store-pool-deliv`: Delivery-clocked pool anchors (✖ dead end)
   - Ship The Wins 1b: delivery-clocked pool anchor (2026-08-07)
 - `cod-backend-switch`: Mid-stream FEC backend switching (✖ dead end)
+  - Runtime FEC backend switching on loss (2026-03-16)
 - `meas-adr52-discipline`: Measurement discipline (✔ done · successful)
   - Discipline checklist: CRLF sync item (2026-07-19)
   - Discipline item 12: VM lock covers all VM activity (2026-08-06)
@@ -789,6 +794,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `store-deadwall-modehunt`: Deadwall and mode-hunt batteries (✔ done · unrated)
 - `store-queue-fix-premise`: Queue fix premise refuted (✔ done · dead-end)
 - `store-sf-latency-feedback`: SF latency feedback (✔ done · dead-end)
+  - Sf latency feedback: closed-loop Reno source and its pre-registration (2026-08-12)
 - `store-composed-cap`: Composed cap (✖ dead end)
   - Composed cap law: formula stated in the paper before the code (2026-08-12)
   - Composed cap gate and dead-wall onset instrument (ADR-0070 steps 2-3) (2026-08-12)
@@ -796,6 +802,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
   - Placement cold-start defect does not exist (retracted) (2026-08-17)
 - `store-cap-law-cluster`: Cap-law cluster: formulas first (✔ done · unrated)
   - Boot cap derived as 128 and found to dissolve into the floor (2026-08-18)
+  - Cap-law cluster: derived store floor and formula agreement tests (2026-08-18)
 - `store-slack-clock`: Slack-bench: queue-free slack clock (✖ dead end)
   - Slack bench: recovery-model driver moved to shared test module (2026-08-09)
 - `meas-c9-battery`: Four-path validation battery (✔ done · unrated)
@@ -824,6 +831,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `store-delta-cap`: Derived setpoint 1 + q(δ) (✔ done · very-successful)
   - Derived setpoint laws and the delta cap (2026-08-19)
 - `store-sum-cap`: Ladder battery: ×N deletion (✔ done · successful)
+  - Ladder battery contract: pre-registered before any VM contact (2026-08-18)
   - Ladder item 1: x-N deletion of the store cap, late brake extracted (2026-08-18)
   - FULL-arm expressibility check before the ladder pre-registration (2026-08-18)
   - Ladder item 5: srtt RFC assert and two zero-assertion CI tests (2026-08-18)
@@ -849,12 +857,15 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `rec-refresh-floor`: Refresh-floor lift (q, refresh) sweep (✖ dead end)
   - Recovery refresh floor lift and sweep (2026-08-21)
 - `rec-successor-arrival`: Successor-arrival distribution measured (✔ done · unrated)
+  - Successor-arrival distribution measurement (2026-08-21)
 
 </details>
 
 <details><summary><b>Jul 2026</b>: 44 done, 30 abandoned</summary>
 
 - `meas-adr51-scenarios`: Canonical scenarios and goal gate (✔ done · successful)
+  - ADR-0051 evaluation scenarios, win conditions and SimQuic class (2026-07-02)
+  - L0 goal gate suite green, production bugs fixed (2026-07-02)
   - Quality sweep and per-improvement ablation table (2026-07-02)
   - quality_hint_sweep diagnostic across the hints (2026-07-02)
   - LinkModel timeline made purely virtual (2026-07-02)
@@ -892,6 +903,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
   - Reliable windowed RLC for bulk breaks: 10 of 10 to 0 of 10 (2026-07-05)
   - Windowed RLC for all hints: bulk single-path fails (2026-07-05)
   - RLC encode and decode throughput against bulk needs (2026-07-06)
+  - Measured RLC decode throughput at three window sizes (2026-07-06)
 - `model-wasm-l0`: raptorpath-math and wasm model (✔ done · successful)
   - Visualizer runs the shared production controller (2026-07-02)
   - Sim ARQ driven by P_lost so Bulk beats Realtime (2026-07-02)
@@ -903,7 +915,9 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `place-marginal-cost`: Marginal-cost placement law (✔ done · successful)
   - Owner rule: no equal-weight striping (2026-07-06)
   - RWM Phase B: multipath striping with the placement law (2026-07-06)
+  - Placement as one marginal-cost law, not regimes (2026-07-06)
 - `rate-retention-is-rho`: Retention is the ρ dial (✔ done · n/a)
+  - Retention moves to the ARQ layer (2026-07-06)
 - `rec-reliable-window`: Reliable window (✔ done · successful)
   - RWM Phase A: reliable window with ARQ-layer retention (2026-07-06)
 - `rec-rwm-phase-c`: Out-of-order object delivery (Phase C) (✔ done · dead-end)
@@ -922,7 +936,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `rec-c2-collapse-diag`: Single-path loss collapse diagnosis (✔ done · unrated)
 - `store-sack-flowctl`: SACK sender flow control (✖ dead end)
 - `cod-gen-decoder-fix`: Generation decoder late-source fix (✔ done · successful)
-- `meas-rerun-0708`: Full benchmark re-run (8 July) (✔ fixed)
+- `meas-rerun-0708`: Full benchmark re-run (8 July) (✔ done · unrated)
   - Full benchmark re-run, 2026-07-08 (2026-07-08)
 - `meas-user-consolidate-arc`: Owner call: consolidate aggregation arc (✔ done · n/a)
   - Owner decision to consolidate the aggregation arc (2026-07-08)
@@ -940,6 +954,7 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 - `infra-mtu-floor`: MTU floor 1350 (PMTU wedge) (✔ done · successful)
 - `meas-gen-inert-era`: Generation-inert measurement era (✔ fixed)
   - Audit corrections to voided verdicts (2026-07-13)
+  - Generation-ON re-baseline (2026-07-13)
 - `place-anchor-consolidate`: Slow-path anchor consolidation (§16.14) (✔ done · dead-end)
 - `rate-rstar-window-mass`: r* window-mass provisioning (✔ done · successful)
 - `rate-taper-r`: Taper emission budget law (✔ done · successful)
@@ -979,13 +994,16 @@ History from March to June 2026 is reconstructed from commits only; dates marked
   - DAPS and BDP glossary entries (2026-07-12)
 - `place-rate-sample`: Per-path rate-sample estimator (↷ superseded)
 - `place-submax-anchor`: Sub-max quantile rate anchor (✖ dead end)
+  - Delete RATE_WIRE and RATE_Q (2026-07-27)
 - `rec-inline-repair`: Frontier-anchored proactive repair (↷ superseded)
   - Reactive-repair chain forensics counters (2026-07-13)
 - `rec-mp-serial`: Global loss serials under striping (↷ superseded)
   - Recovery under striping: snapshot coalescing and packet-threshold channel (2026-07-21)
+  - Delete recovery serial chain (2026-07-27)
 - `store-capw`: Capacity-weighted pool (✖ dead end)
   - C8-aware capacity-weighted pool law (2026-07-27)
 - `store-sack-prune`: SACK pruning of the store (↷ superseded)
+  - Delete SACK prune chain (2026-07-27)
 - `store-src-bp`: Source backpressure (↷ superseded)
 - `cod-fmtcp`: FMTCP-class decode-on-total (✖ dead end)
   - Literature map for the recovery-latency findings (2026-07-08)
@@ -994,9 +1012,13 @@ History from March to June 2026 is reconstructed from commits only; dates marked
   - FMTCP re-test and deletion (2026-07-27)
 - `cod-streaming-code`: Streaming two-layer Realtime code (↷ superseded)
   - Streaming backend auto-selection and multipath window scheduling (2026-03-14)
+  - Streaming crown re-test (2026-07-27)
   - Crown re-test harness hardening (2026-07-27)
+  - Delete streaming machine (2026-07-28)
 - `infra-consolidation`: Deprecation register and consolidation (✔ done · successful)
+  - ADR migration and vision triage (2026-07-21)
   - Scar cleanup after deletions (2026-07-27)
+  - Consolidation 2 wrap-up (2026-07-28)
   - Deprecation register: removal schedule for three closed A/B arms (2026-08-09)
   - Scheduler snapshot adjudication and its register row (2026-08-10)
 - `model-vis-continuum`: Visualizer as one continuum law (✔ done · successful)
@@ -1030,26 +1052,37 @@ History from March to June 2026 is reconstructed from commits only; dates marked
 <details><summary><b>Mar 2026</b>: 12 done, 5 abandoned</summary>
 
 - `obs-status-endpoint`: Runtime status endpoint (✔ done · successful)
+  - Platform setup UX and runtime status endpoint (2026-03-12)
 - `cc-aimd-v1`: AIMD congestion control (first CC) (↷ superseded)
+  - ACK delivery, AIMD congestion control and channel backpressure (2026-03-12)
 - `infra-early-platform`: Tunnel platform: handshake, TLS, migration (✔ done · successful)
+  - Optional TLS certificate pinning (2026-03-13)
+  - Runtime connection migration with path management API (2026-03-13)
+  - MTU-aware symbol sizing from path discovery (2026-03-13)
   - Production-grade test suite for FEC, pipeline, shutdown and congestion (2026-03-13)
   - RTCP-style keepalive, jitter tracking and dead path detection (2026-03-13)
   - Automatic routing, DNS management and wintun setup (2026-03-13)
 - `cod-gf256-simd`: SIMD GF(2^8) and gf256 crate (✔ done · successful)
+  - SIMD GF(2^8) multiply-accumulate kernels (2026-03-18)
 - `meas-transport-comparison`: QUIC/MPTCP comparison and overhead taxonomy (✔ done · unrated)
   - Transport comparison benchmark: RaptorQ FEC against QUIC and MPTCP (2026-03-17)
 - `cod-overhead-reduction`: Overhead reduction (packing, repair alignment) (✔ done · unrated)
+  - Overhead taxonomy and symbol packing for small packets (2026-03-18)
+  - FEC overhead reduction: budget cap, NACK age gate, fractional repair (2026-03-20)
 - `meas-l0-sim-bench`: Netsim harness and ablation benches (✔ done · unrated)
+  - Network simulation harness with Gilbert-Elliott channel and ablation benches (2026-03-17)
 - `meas-matrix-bench`: Matrix benchmark, audit and dashboard (✔ done · unrated)
   - Benchmark dashboard: Trend tab, Plotly performance and shadow DOM fixes (2026-03-20)
 - `rec-early-arq`: Early ACK, NACK and repair (✔ done · successful)
   - Fix eight critical ADRs: framing, block start, loss estimate, ACKs (2026-03-12)
   - Reorder buffer and network/FEC module refactor (2026-03-17)
 - `rec-nack-congestion`: Congestion-aware NACK throttle (first form) (✔ done · unrated)
+  - NACK congestion awareness and consolidated bench suite (2026-03-20)
 - `model-poisson-rate`: Poisson derivation of repair rate (✖ dead end)
   - Refuted: Poisson derivation of the repair-rate formula (2026-03-21)
 - `model-user-three-dials`: Owner call: three dials (✔ done · n/a)
 - `rate-fec-rate-v1`: BOCD FEC rate control (✔ done · successful)
+  - Principled FEC rate control: BOCD estimator, budget allocator, taper model (2026-03-21)
 - `rec-burst-state-loss`: Burst-state loss in retransmit choice (✖ dead end)
   - Refuted: current burst-state loss in the repair/retransmit choice (2026-03-21)
 - `rec-hard-rto-cutover`: Hard retransmit-timeout cutover (✖ dead end)
@@ -1087,6 +1120,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 66 nodes (49 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 35 nodes (24 done, 7 in progress, 2 next, 1 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (16 done, 8 in progress, 2 next, 2 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 28 nodes (17 done, 7 in progress, 2 next, 2 blocked)
 <!-- END GENERATED: tracks -->
 

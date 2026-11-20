@@ -145,15 +145,13 @@ flowchart TB
 ### Folded items per node
 
 - `place-marginal-cost`: Marginal-cost placement law
-  - commit 8c6c7e2d
-  - commit ee1ae3e0
   - branch L2-ws1
   - Owner rule: no equal-weight striping (2026-07-06, session record)
   - RWM Phase B: multipath striping with the placement law (2026-07-06, commit 4cf6b9b1, commit dfba099e)
+  - Placement as one marginal-cost law, not regimes (2026-07-06, commit 8c6c7e2d, commit ee1ae3e0)
 - `place-daps`: DAPS queue-management chain
   - branch DAPS queue-mgmt
   - branch feat/daps-rightsized-fec
-  - commit 34449977
   - commit 68d6b6c5
   - commit 9b48286e
   - commit 7387ad9d
@@ -179,7 +177,7 @@ flowchart TB
 - `place-wire-price`: Wire-RTT placement price
   - branch diag36
 - `place-submax-anchor`: Sub-max quantile rate anchor
-  - commit f1f32c5b
+  - Delete RATE_WIRE and RATE_Q (2026-07-27, commit f1f32c5b)
 - `place-early-window-sched`: Loss-ranked multipath window scheduling
   - commit 86e1f0f3
   - commit 628fdb1c

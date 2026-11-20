@@ -17,7 +17,7 @@ flowchart TB
     meas_l2_multipath["✔ Multipath and tail<br/>evaluation"]
     meas_c8_aggregation_arc["↷ Unequal two-path<br/>aggregation arc"]
     meas_gen_inert_era>"✔ Generation-inert<br/>measurement era"]
-    meas_rerun_0708>"✔ Full benchmark re-<br/>run (8 July)"]
+    meas_rerun_0708["✔ Full benchmark re-<br/>run (8 July)"]
     meas_regime_map["✔ Hardware-honest<br/>regime map"]
     meas_adr52_discipline["✔ Measurement<br/>discipline"]
     meas_adversarial_b1["✔ Adversarial policer<br/>map"]
@@ -169,8 +169,8 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_regime_map,meas_adversarial_b1,meas_gate_audit,meas_pipeline_verification,meas_ack_cadence,meas_goal_0819,meas_latency_truth,meas_c9_battery,meas_gap_phases,meas_cpuprof,meas_span_run,meas_sigma_c8,meas_eppen_c8,meas_attribution_audit,meas_crown_spot_v8,meas_guard_v2_impl,meas_s51_design,meas_s51_harness,meas_adversarial_cells_build unrated
-    class meas_adr51_scenarios,meas_gen_inert_era,meas_rerun_0708,meas_adr52_discipline,meas_formula_first,meas_defect_shared_seed,meas_defect_31mbit,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session,meas_harness_reuse,meas_s51_session,meas_blocke_pacing_gate,meas_blocke_steady_rule succ
+    class meas_l0_sim_bench,meas_transport_comparison,meas_matrix_bench,meas_l1_harness,meas_l2_multipath,meas_rerun_0708,meas_regime_map,meas_adversarial_b1,meas_gate_audit,meas_pipeline_verification,meas_ack_cadence,meas_goal_0819,meas_latency_truth,meas_c9_battery,meas_gap_phases,meas_cpuprof,meas_span_run,meas_sigma_c8,meas_eppen_c8,meas_attribution_audit,meas_crown_spot_v8,meas_guard_v2_impl,meas_s51_design,meas_s51_harness,meas_adversarial_cells_build unrated
+    class meas_adr51_scenarios,meas_gen_inert_era,meas_adr52_discipline,meas_formula_first,meas_defect_shared_seed,meas_defect_31mbit,meas_wire_v8,meas_gso_truth,meas_v4_verification,meas_guard_41c,meas_harness_consolidation,meas_guard_clause_dry,meas_s58_session,meas_harness_reuse,meas_s51_session,meas_blocke_pacing_gate,meas_blocke_steady_rule succ
     class meas_c8_aggregation_arc,meas_coupling_model,meas_anchor_era_suspect dead
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool defect
@@ -325,17 +325,14 @@ flowchart TB
 ### Folded items per node
 
 - `meas-l0-sim-bench`: Netsim harness and ablation benches
-  - commit 9cefef2c
-  - commit bb623de0
-  - commit d0fa7b00
   - commit ec62d02e
   - commit 98d02dfb
+  - Network simulation harness with Gilbert-Elliott channel and ablation benches (2026-03-17, commit 9cefef2c, commit bb623de0, commit d0fa7b00)
 - `meas-adr51-scenarios`: Canonical scenarios and goal gate
-  - commit 3fc7baa3
-  - commit 70a45c31
-  - commit 5ae9f04d
   - commit 344714c3
   - branch feat/p3-simquic
+  - ADR-0051 evaluation scenarios, win conditions and SimQuic class (2026-07-02, commit 3fc7baa3, commit 5ae9f04d)
+  - L0 goal gate suite green, production bugs fixed (2026-07-02, commit 70a45c31)
   - Quality sweep and per-improvement ablation table (2026-07-02, commit 3180d4ab)
   - quality_hint_sweep diagnostic across the hints (2026-07-02, commit 389d570e)
   - LinkModel timeline made purely virtual (2026-07-02, commit 09c1940d)
@@ -373,9 +370,9 @@ flowchart TB
   - Paper section 16 rewritten as reliable windowed multipath (2026-07-06, commit 1412f280, commit 5930083a)
   - Corrected temporal multipath oracle (2026-07-07, commit 18ee6606, commit caa22760)
 - `meas-gen-inert-era`: Generation-inert measurement era
-  - commit 161aff14
   - commit 7387ad9d
   - Audit corrections to voided verdicts (2026-07-13, commit 02d240c8, commit 50071d80, commit d82600ef)
+  - Generation-ON re-baseline (2026-07-13, commit 161aff14)
 - `meas-regime-map`: Hardware-honest regime map
   - branch diag/lossy-residual
   - paper §11.1 open question 0
@@ -432,7 +429,6 @@ flowchart TB
   - branch gap phase 1 SCORED
   - branch gap battery phase 1 launched
   - commit c2e20beb
-  - commit 99193218
   - Era ledger P1 reading bounded; gap phase 1 scored ledgers committed (2026-08-19, commit 77c95efe, commit 99193218450f)
 - `meas-cpuprof`: cpuprof: the sender's CPU ceiling
   - branch cpuprof SCORED
@@ -470,13 +466,11 @@ flowchart TB
 - `meas-defect-eta-witness`: ETA route and σ witness mismatch
   - Sender ETA exit flush (2026-09-30, commit d6c1c414)
 - `meas-transport-comparison`: QUIC/MPTCP comparison and overhead taxonomy
-  - commit ec62d02e
   - commit e508adf4
-  - Transport comparison benchmark: RaptorQ FEC against QUIC and MPTCP (2026-03-17, commit cf002bbf)
+  - Transport comparison benchmark: RaptorQ FEC against QUIC and MPTCP (2026-03-17, commit ec62d02e, commit cf002bbf)
 - `meas-matrix-bench`: Matrix benchmark, audit and dashboard
   - commit f2cba2b7
-  - commit 98d02dfb
-  - Benchmark dashboard: Trend tab, Plotly performance and shadow DOM fixes (2026-03-20, commit 7019be4d, commit 24db6085)
+  - Benchmark dashboard: Trend tab, Plotly performance and shadow DOM fixes (2026-03-20, commit 7019be4d, commit 24db6085, commit 98d02dfb)
 - `meas-user-consolidate-arc`: Owner call: consolidate aggregation arc
   - Owner decision to consolidate the aggregation arc (2026-07-08, session record)
 - `meas-anchor-era-suspect`: Anchor-era suspect ruled out

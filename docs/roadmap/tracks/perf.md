@@ -237,10 +237,7 @@ flowchart TB
 - `perf-threading-p1`: Threading lock and wake fixes
   - branch threading P1
 - `perf-threading-p2a`: Single logic-actor threading
-  - commit 39a97f3e
-  - commit 52da7db0
-  - commit 69fd846b
-  - Single scheduler-owning task (P2a) (2026-10-05, commit 3fb277ae, commit a27625fd, commit 0c91753c)
+  - Single scheduler-owning task (P2a) (2026-10-05, commit 3fb277ae, commit a27625fd, commit 0c91753c, commit 39a97f3e, commit 52da7db0, commit 69fd846b)
 - `perf-io-owner`: Per-path I/O owner
   - branch threading Q1
   - Per-path I/O owner for quinn (2026-10-06, commit 881cca2a, commit 272d0012, commit 0e2c0516, commit e76b11a9)
@@ -254,12 +251,10 @@ flowchart TB
   - branch §16 Q3 investigation
   - Quinn lock wait and the c1d receiver ceiling (2026-10-06, commit 81b53352, commit 18d6ad51)
 - `perf-receiver-r1`: Receiver per-datagram cost, first try
-  - commit a2625113
-  - Receiver per-datagram rewrite (R1) (2026-10-26, commit ae54b9f7)
+  - Receiver per-datagram rewrite (R1) (2026-10-26, commit a2625113, commit ae54b9f7)
 - `perf-s20-r1-collapse`: First receiver rewrite collapse diagnosis
   - branch §20 R1 c1s collapse diagnosed
-  - commit af0fc86c
-  - commit 4e505046
+  - R1 c1s collapse diagnosis (section 20) (2026-10-26, commit 4e505046, commit af0fc86c)
 - `perf-receiver-r2`: Receiver cost with floor fix
   - branch threading R2 DELIVERED (status §21)
   - Receiver rewrite with latency floor fix (R2) (2026-10-26, commit b30d80f9, commit acc0ed03)

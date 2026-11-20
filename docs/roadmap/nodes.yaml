@@ -32,8 +32,8 @@ nodes:
   folded:
   - commit dc672631
   - commit e2de447d
-  - commit c1a39caf
   - Block sizing, handshake and graceful shutdown (2026-03-12, commit 6f2852f1)
+  - Block interleaving for burst loss resilience (2026-03-13, commit c1a39caf)
   - Block-mode in-order delivery and interleave depth 1 (2026-07-04, commit a72151eb)
   overview: true
   plain: The original design sent data in fixed blocks of error-correcting code; it was replaced by one sliding window for every kind of traffic.
@@ -79,10 +79,9 @@ nodes:
   start: '2026-03-13'
   end: '2026-08-07'
   folded:
-  - commit 65d7b1b8
-  - commit 375708ff
   - commit 10ac80fc
   - Projected real-world scenarios in benchmark results (2026-03-13, commit ae66266b)
+  - METTLE swappable FEC backend and its edge-probability fix (2026-03-13, commit 65d7b1b8, commit 375708ff)
   overview: false
   notes: 'Removal was the owner''s call (user 2026-08-07). Dates: paper §10 rows carry an end (removal) date only.'
   plain: An experimental lighter error-correcting code that needed more spare data than the standard one, so it was dropped.
@@ -104,7 +103,7 @@ nodes:
   start: '2026-03-16'
   end: '2026-08-08'
   folded:
-  - commit cb99955d
+  - Runtime FEC backend switching on loss (2026-03-16, commit cb99955d)
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
   plain: Switching the error-correcting code in the middle of a transfer, which strands the data already in flight.
@@ -127,12 +126,11 @@ nodes:
   start: '2026-03-14'
   end: '2026-07-28'
   folded:
-  - commit 86e1f0f3
   - commit cf164aa9
-  - commit bf748653
-  - commit bccb32a2
-  - Streaming backend auto-selection and multipath window scheduling (2026-03-14, commit cad99bf0)
+  - Streaming backend auto-selection and multipath window scheduling (2026-03-14, commit 86e1f0f3, commit cad99bf0)
+  - Streaming crown re-test (2026-07-27, commit bf748653)
   - Crown re-test harness hardening (2026-07-27, commit 7f200577, commit 8cf2b6f5)
+  - Delete streaming machine (2026-07-28, commit bccb32a2)
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
   plain: A two-layer code built for real-time traffic, made unnecessary by the single unified design.
@@ -154,7 +152,7 @@ nodes:
   end: '2026-03-18'
   folded:
   - commit e43e87b2
-  - commit 544f4d82
+  - SIMD GF(2^8) multiply-accumulate kernels (2026-03-18, commit 544f4d82)
   overview: false
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: cod-rlc-all-profiles
@@ -176,10 +174,10 @@ nodes:
   end: '2026-07-06'
   folded:
   - commit c8fcc910
-  - commit 4663c38c
   - 'Reliable windowed RLC for bulk breaks: 10 of 10 to 0 of 10 (2026-07-05, session record)'
   - 'Windowed RLC for all hints: bulk single-path fails (2026-07-05, commit 59fc7c03)'
   - RLC encode and decode throughput against bulk needs (2026-07-06, session record)
+  - Measured RLC decode throughput at three window sizes (2026-07-06, commit 4663c38c)
   overview: false
 - id: cod-generation-coding
   title: Generation cross-path fungible coding
@@ -370,8 +368,8 @@ nodes:
   start: '2026-08-10'
   end: '2026-10-04'
   folded:
-  - commit 17f7fa91
   - branch exec/adr-0069-window-default
+  - 'ADR-0069: block mode deprecated, default kept pinned (2026-08-10, commit 17f7fa91)'
   - Window pipeline only, block pipeline deleted (2026-10-04, commit b074267a, commit d091e8a8, commit bc049ce5, commit 37d3f06c, commit 78ca2ae5, commit 140e3a9f)
   overview: true
   plain: Deleted the old block path so that every kind of traffic now goes through the same window, which was at least as fast everywhere.
@@ -659,8 +657,8 @@ nodes:
   start: '2026-07-21'
   end: '2026-07-27'
   folded:
-  - commit ade48ad6
   - 'Recovery under striping: snapshot coalescing and packet-threshold channel (2026-07-21, commit 2c632c05, commit a0dbd986)'
+  - Delete recovery serial chain (2026-07-27, commit ade48ad6)
   overview: false
   notes: 'Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-clock-candidates
@@ -798,9 +796,8 @@ nodes:
   - branch qnative sweep SCORED
   - branch qnative sweep launched
   - branch the quantile-native clock
-  - commit ab545cfe
   - commit 0183cf96
-  - Quantile-native recovery clock (2026-08-21, commit 993cdfa3, commit ff3e1651, commit a3d35377)
+  - Quantile-native recovery clock (2026-08-21, commit ab545cfe, commit 993cdfa3, commit ff3e1651, commit a3d35377)
   overview: false
   notes: 'Goal #101 arm (split 2026-11-16). The order statistic survives as qnative_window_n in net/recovery_clock.rs (paper row).'
 - id: rec-holddown-clock
@@ -905,8 +902,8 @@ nodes:
   folded:
   - branch the successor-arrival distribution MEASURED
   - commit 1064e8d1
-  - commit f497bdc4
   - commit 5481a0b9
+  - Successor-arrival distribution measurement (2026-08-21, commit f497bdc4)
   overview: false
   notes: 'Goal #101 measurement (split 2026-11-16): ''the anchor is refuted; the boundary is a LEVEL, and the level is 98%'' (5481a0b9).'
 - id: rec-goal100
@@ -1227,10 +1224,10 @@ nodes:
   start: '2026-03-18'
   end: '2026-03-21'
   folded:
-  - commit 1e07bf79
   - commit 05b576a7
   - commit e508adf4
   - commit f2cba2b7
+  - 'Principled FEC rate control: BOCD estimator, budget allocator, taper model (2026-03-21, commit 1e07bf79)'
   overview: false
   notes: 'Headline is the motivating inefficiency, not a gain. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
   plain: The first automatic way to decide how much error-correcting data to send.
@@ -1339,8 +1336,8 @@ nodes:
   start: '2026-07-06'
   end: '2026-07-06'
   folded:
-  - commit 62ffbb76
   - paper §11.1 open question 2
+  - Retention moves to the ARQ layer (2026-07-06, commit 62ffbb76)
   overview: true
   plain: The owner decided that how long data is kept for resending is one of the three main dials, not a separate setting.
   notes: Owner corrections 2026-07-06 (retention moves to the ARQ layer; retention is the triangle's ρ). Folds paper §11.1 open question 2 (is ρ a runtime dial).
@@ -1948,11 +1945,9 @@ nodes:
   start: '2026-08-07'
   end: '2026-08-07'
   folded:
-  - commit f62caf78
-  - commit 8e9b489c
   - branch feat/pool-delivery-anchor
   - commit 47fdf550
-  - 'Ship The Wins 1b: delivery-clocked pool anchor (2026-08-07, commit a43bab82)'
+  - 'Ship The Wins 1b: delivery-clocked pool anchor (2026-08-07, commit f62caf78, commit 8e9b489c, commit a43bab82)'
   overview: false
   notes: 'Split 2026-11-16 from the former family node ''Honest floor-clock cap family (6 arms)''. One battery, two arms (8afd4dd7: ''arm A''s MECHANISM lands completely and c7 gets WORSE ...; arm B fails both its clauses; NO FLIP''): arm A the delivery-clocked pool anchor (RWM_POOL_DELIV), arm B the floor-bound anchor (RWM_FLOOR_BOUND; paper: −14 % at c1). Attempt 2 after the composed flip (store-pool-anchor-flip). Was titled ''Ship The Wins 1b: pool anchors''.'
 - id: store-pool-anchor-flip
@@ -1999,7 +1994,7 @@ nodes:
   start: '2026-07-08'
   end: '2026-07-27'
   folded:
-  - commit 3dcb39c7
+  - Delete SACK prune chain (2026-07-27, commit 3dcb39c7)
   overview: false
   notes: 'Start date is a placeholder (the 2026-07-08 SACK work); the row carries the removal date only. Dates: paper §10 rows carry an end (removal) date only.'
 - id: store-sack-release
@@ -2317,10 +2312,10 @@ nodes:
   start: '2026-08-18'
   end: '2026-08-18'
   folded:
-  - commit 8bab64c3
   - branch sweep item 5
   - branch sweep items 1+2+4
   - Boot cap derived as 128 and found to dissolve into the floor (2026-08-18, commit 94a6e6c3)
+  - 'Cap-law cluster: derived store floor and formula agreement tests (2026-08-18, commit 8bab64c3)'
   overview: false
   notes: 'Split 2026-11-16 from ''Store-cap unification'' and ''Sum cap''. The formulas and adjudications went into the paper before the code (6335e206); the sweep items: K adjudicated into the formula, the slack-clock charge refuted, the floor derived to 10 (items 1+2+4), un-metered channels charged (5), the quad lock-in refuted (6). Item 6 is its own node since 2026-11-20 (place-quad-lockin).'
 - id: store-honest-inputs
@@ -2372,13 +2367,11 @@ nodes:
   - branch ladder item 1
   - branch ADR-0071
   - branch ladder item 5
-  - commit 85b4d1df
-  - commit 5ddf7f6b
-  - commit 91c00ddf
   - commit 27e36e3f
   - commit 6a653802
   - commit 923aa9dc
-  - 'Ladder item 1: x-N deletion of the store cap, late brake extracted (2026-08-18, commit 6794dec9, commit fb85f8b0, commit 41296b7c)'
+  - 'Ladder battery contract: pre-registered before any VM contact (2026-08-18, commit 91c00ddf)'
+  - 'Ladder item 1: x-N deletion of the store cap, late brake extracted (2026-08-18, commit 6794dec9, commit fb85f8b0, commit 85b4d1df, commit 5ddf7f6b, commit 41296b7c)'
   - FULL-arm expressibility check before the ladder pre-registration (2026-08-18, commit 07aedebd)
   - 'Ladder item 5: srtt RFC assert and two zero-assertion CI tests (2026-08-18, commit 6f14ccdb)'
   - Composition ladder on the store cap (2026-08-19, commit 62f078bf)
@@ -2569,7 +2562,7 @@ nodes:
   start: '2026-10-26'
   end: '2026-10-27'
   folded:
-  - commit 317520f5
+  - Power-seeking store law and spread premises (2026-10-27, commit 317520f5)
   overview: true
   plain: Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work.
   notes: '§29 NOT-VIABLE; code at archive/store-power. The noise-sized window (§30) is its own node (store-dw-window). Dates: archive/store-power archived 2026-10-27. Was titled ''Power-seeking store law D'' (candidate D).'
@@ -3693,11 +3686,10 @@ nodes:
   start: '2026-07-04'
   end: '2026-07-06'
   folded:
-  - commit 8c6c7e2d
-  - commit ee1ae3e0
   - branch L2-ws1
   - 'Owner rule: no equal-weight striping (2026-07-06, session record)'
   - 'RWM Phase B: multipath striping with the placement law (2026-07-06, commit 4cf6b9b1, commit dfba099e)'
+  - Placement as one marginal-cost law, not regimes (2026-07-06, commit 8c6c7e2d, commit ee1ae3e0)
   overview: false
   notes: 'Block-granular path affinity (2026-07-04) then one continuous marginal-cost law with striping (2026-07-06). Owner: no equal-weight striping, no hard mode switch (2026-07-06).'
 - id: place-daps
@@ -3721,7 +3713,6 @@ nodes:
   folded:
   - branch DAPS queue-mgmt
   - branch feat/daps-rightsized-fec
-  - commit 34449977
   - commit 68d6b6c5
   - commit 9b48286e
   - commit 7387ad9d
@@ -4625,10 +4616,7 @@ nodes:
   start: '2026-10-05'
   end: '2026-10-06'
   folded:
-  - commit 39a97f3e
-  - commit 52da7db0
-  - commit 69fd846b
-  - Single scheduler-owning task (P2a) (2026-10-05, commit 3fb277ae, commit a27625fd, commit 0c91753c)
+  - Single scheduler-owning task (P2a) (2026-10-05, commit 3fb277ae, commit a27625fd, commit 0c91753c, commit 39a97f3e, commit 52da7db0, commit 69fd846b)
   overview: false
   plain: Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted.
   notes: 'Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: "i rather think your impl is shit... rethink". Dates: status-section end dates are the section file''s last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end). Was titled ''Threading P2a logic actor''.'
@@ -4742,8 +4730,7 @@ nodes:
   start: '2026-10-26'
   end: '2026-10-26'
   folded:
-  - commit a2625113
-  - Receiver per-datagram rewrite (R1) (2026-10-26, commit ae54b9f7)
+  - Receiver per-datagram rewrite (R1) (2026-10-26, commit a2625113, commit ae54b9f7)
   overview: false
   notes: §17 REFUTED-WITH-RECORD; §20 (perf-s20-r1-collapse) traced the collapse to R1's [LAT] pending store; R2 is R1 with that fix. Tag archive/thread-r1 archived 2026-10-26.
 - id: perf-s20-r1-collapse
@@ -4766,8 +4753,7 @@ nodes:
   end: '2026-10-26'
   folded:
   - branch §20 R1 c1s collapse diagnosed
-  - commit af0fc86c
-  - commit 4e505046
+  - R1 c1s collapse diagnosis (section 20) (2026-10-26, commit 4e505046, commit af0fc86c)
   overview: false
   notes: Split 2026-11-16 from 'Receiver per-datagram cost R1'. Five arms, 10 rows, 3 profiles; its fix is R2.
 - id: perf-receiver-r2
@@ -4991,11 +4977,9 @@ nodes:
   start: '2026-03-17'
   end: '2026-03-20'
   folded:
-  - commit 9cefef2c
-  - commit bb623de0
-  - commit d0fa7b00
   - commit ec62d02e
   - commit 98d02dfb
+  - Network simulation harness with Gilbert-Elliott channel and ablation benches (2026-03-17, commit 9cefef2c, commit bb623de0, commit d0fa7b00)
   overview: false
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
   plain: A simulated network and benchmarks that switch each feature off in turn to see what it is worth.
@@ -5016,11 +5000,10 @@ nodes:
   start: '2026-07-02'
   end: '2026-07-02'
   folded:
-  - commit 3fc7baa3
-  - commit 70a45c31
-  - commit 5ae9f04d
   - commit 344714c3
   - branch feat/p3-simquic
+  - ADR-0051 evaluation scenarios, win conditions and SimQuic class (2026-07-02, commit 3fc7baa3, commit 5ae9f04d)
+  - L0 goal gate suite green, production bugs fixed (2026-07-02, commit 70a45c31)
   - Quality sweep and per-improvement ablation table (2026-07-02, commit 3180d4ab)
   - quality_hint_sweep diagnostic across the hints (2026-07-02, commit 389d570e)
   - LinkModel timeline made purely virtual (2026-07-02, commit 09c1940d)
@@ -5135,9 +5118,9 @@ nodes:
   start: '2026-07-07'
   end: '2026-07-13'
   folded:
-  - commit 161aff14
   - commit 7387ad9d
   - Audit corrections to voided verdicts (2026-07-13, commit 02d240c8, commit 50071d80, commit d82600ef)
+  - Generation-ON re-baseline (2026-07-13, commit 161aff14)
   overview: false
   notes: 'The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only.'
   plain: A period when tests silently ran with a key feature switched off, so those results cannot be trusted.
@@ -5405,7 +5388,6 @@ nodes:
   - branch gap phase 1 SCORED
   - branch gap battery phase 1 launched
   - commit c2e20beb
-  - commit 99193218
   - Era ledger P1 reading bounded; gap phase 1 scored ledgers committed (2026-08-19, commit 77c95efe, commit 99193218450f)
   overview: false
   notes: 'Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Measurement-truth item 3: phase 1 ''the drift is real, the ratio SURVIVED it'' (decf67a8), phase 2 ''no interaction to name'' (4323b2c7).'
@@ -5846,7 +5828,6 @@ nodes:
   - commit e49fbc80
   - commit 4a0890ac
   - commit 9b922b5f
-  - commit 72258063
   - Visualizer moved into raptorpath-visualizer/ with camelCase wasm wrappers (2026-04-10, commit 72258063a, commit 96145766c)
   overview: false
   notes: 'Split 2026-11-16 from ''raptorpath-math and wasm L0 model'': the first interactive visualizer (2026-04-07..10), connected to the triangle (4cd3abc3), with per-symbol P_lost mixing and T_cut stop (4a0890ac), adaptive r (BOCD) and the real RLC codec in wasm (468b7580), a calibrated channel (aa56ef51).'
@@ -5910,11 +5891,10 @@ nodes:
   start: '2026-07-28'
   end: '2026-07-28'
   folded:
-  - commit 9b527041
   - commit 149a0e48
   - commit 61dc8a18
   - commit 867d1976
-  - Visualizer refresh to the unified machine (2026-07-28, commit 6ae44967, commit c84c10f8, commit addb23e2)
+  - Visualizer refresh to the unified machine (2026-07-28, commit 6ae44967, commit c84c10f8, commit addb23e2, commit 9b527041)
   overview: true
   plain: Rebuilt the visualizer around one smooth law across the latency dial, with an automatic test that forbids any mode switch.
   notes: '2026-07-28: "kill the mode-switch class - ONE continuum law, executable invariant, standing rule" (G434).'
@@ -6116,7 +6096,7 @@ nodes:
   start: '2026-03-12'
   end: '2026-03-12'
   folded:
-  - commit 1534da9a
+  - Platform setup UX and runtime status endpoint (2026-03-12, commit 1534da9a)
   overview: false
   notes: 'Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date.'
 - id: obs-gates-echo
@@ -6225,9 +6205,9 @@ nodes:
   end: '2026-03-13'
   folded:
   - commit 6f2852f1
-  - commit 8e541e7b
-  - commit 8d9e272a
-  - commit 3c9f1ae8
+  - Optional TLS certificate pinning (2026-03-13, commit 3c9f1ae8)
+  - Runtime connection migration with path management API (2026-03-13, commit 8d9e272a)
+  - MTU-aware symbol sizing from path discovery (2026-03-13, commit 8e541e7b)
   - Production-grade test suite for FEC, pipeline, shutdown and congestion (2026-03-13, commit bf539e65)
   - RTCP-style keepalive, jitter tracking and dead path detection (2026-03-13, commit 4aca529a)
   - Automatic routing, DNS management and wintun setup (2026-03-13, commit d9bcc70c)
@@ -6274,10 +6254,10 @@ nodes:
   end: '2026-07-28'
   folded:
   - commit 3bcf8690
-  - commit 7387ad9d
   - commit be878cc6
-  - commit 7a3aff69
+  - ADR migration and vision triage (2026-07-21, commit 7387ad9d)
   - Scar cleanup after deletions (2026-07-27, commit 04d25177)
+  - Consolidation 2 wrap-up (2026-07-28, commit 7a3aff69)
   - 'Deprecation register: removal schedule for three closed A/B arms (2026-08-09, commit a993629d)'
   - Scheduler snapshot adjudication and its register row (2026-08-10, commit dd53215d)
   overview: false
@@ -6524,7 +6504,7 @@ nodes:
   start: '2026-07-12'
   end: '2026-07-27'
   folded:
-  - commit f1f32c5b
+  - Delete RATE_WIRE and RATE_Q (2026-07-27, commit f1f32c5b)
   overview: false
   notes: 'Split from place-daps (its parent). The row says the windowed max is the correct statistic for decode-clocked samples; it names no replacing node. Dates: paper §10 rows carry an end (removal) date only.'
 - id: rec-recov-sp
@@ -8308,8 +8288,8 @@ nodes:
   end: '2026-03-13'
   folded:
   - commit dc672631
-  - commit 8857788d
   - commit cbbbfdbd
+  - ACK delivery, AIMD congestion control and channel backpressure (2026-03-12, commit 8857788d)
   overview: false
   plain: The first congestion control backed off on loss like classic TCP and was replaced a day later by a delay-based one.
   notes: ADR-0009 closed the missing-CC gap with AIMD on 2026-03-12; replaced by BBR-style delay-based CC (ADR-0019) on 2026-03-13. End date is the replacement's start.
@@ -8357,9 +8337,8 @@ nodes:
   start: '2026-03-17'
   end: '2026-03-18'
   folded:
-  - commit ec62d02e
   - commit e508adf4
-  - 'Transport comparison benchmark: RaptorQ FEC against QUIC and MPTCP (2026-03-17, commit cf002bbf)'
+  - 'Transport comparison benchmark: RaptorQ FEC against QUIC and MPTCP (2026-03-17, commit ec62d02e, commit cf002bbf)'
   overview: false
   plain: A benchmark comparing the system with reliable QUIC and MPTCP, and a breakdown of where its 38-50% overhead came from.
   notes: 'ADR-0036 (Accepted) benchmark; ADR-0038 (Accepted) overhead taxonomy: five layers behind the 38-50% overhead.'
@@ -8384,10 +8363,9 @@ nodes:
   start: '2026-03-18'
   end: '2026-03-20'
   folded:
-  - commit e508adf4
   - commit 544f4d82
-  - commit b255271c
-  - commit 05b576a7
+  - Overhead taxonomy and symbol packing for small packets (2026-03-18, commit e508adf4)
+  - 'FEC overhead reduction: budget cap, NACK age gate, fractional repair (2026-03-20, commit 05b576a7, commit b255271c)'
   overview: false
   plain: 'Cutting the extra data the protocol sent: a benchmark fix, packing symbols tighter, and a per-batch repair cap.'
   notes: ADR-0047 raised timer resolution and fixed LTE recovery (1% to 100%) and WiFi overhead (39.6% to 21.4%); ADR-0048 reduced window-backend overhead further.
@@ -8412,8 +8390,7 @@ nodes:
   end: '2026-03-20'
   folded:
   - commit f2cba2b7
-  - commit 98d02dfb
-  - 'Benchmark dashboard: Trend tab, Plotly performance and shadow DOM fixes (2026-03-20, commit 7019be4d, commit 24db6085)'
+  - 'Benchmark dashboard: Trend tab, Plotly performance and shadow DOM fixes (2026-03-20, commit 7019be4d, commit 24db6085, commit 98d02dfb)'
   overview: false
   plain: One benchmark grid covering every backend and scenario, an audit of its methods, and a page to browse the results.
   notes: 'ADR-0044 methodology audit (LinkModel, CorrelatedFading); ADR-0045 matrix of 189 cells x 30 trials; ADR-0049 single-file HTML dashboard. Outcome unrated: no later node clearly replaced it.'
@@ -8436,8 +8413,8 @@ nodes:
   start: '2026-03-20'
   end: '2026-03-20'
   folded:
-  - commit f2cba2b7
   - commit b255271c
+  - NACK congestion awareness and consolidated bench suite (2026-03-20, commit f2cba2b7)
   overview: false
   plain: The first version of slowing resend requests when the network looks congested.
   notes: ADR-0046 (Accepted), prompted by the ADR-0045 matrix run. The ledger's defect on NackCongestionState is rec-fix-nack-throttle.
@@ -8488,8 +8465,8 @@ nodes:
   end: '2026-08-12'
   folded:
   - commit 4320fc48
-  - commit 2b14cc60
   - commit c0fb1d79
+  - 'Sf latency feedback: closed-loop Reno source and its pre-registration (2026-08-12, commit 2b14cc60)'
   - branch latency-feedback REFUTED (no inner TCP exists)
   overview: false
   plain: Tested whether delay feedback explains a collapse; it does not, the cause is idle time at the end.
@@ -8602,8 +8579,8 @@ nodes:
   title: Recovery bookkeeping counters
   track: infra
   kind: instrument
-  state: in-progress
-  outcome: unrated
+  state: done
+  outcome: successful
   evidence:
   - docs/derivations/test-detection-plan.md
   verdict_quote: ''
@@ -8613,11 +8590,11 @@ nodes:
   qualified_by: []
   lane: host-cargo
   start: '2026-11-20'
-  end: ''
+  end: '2026-11-20'
   folded: []
   overview: false
   plain: 'Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing.'
-  notes: 'Plan S4, ADR-0081 (Proposed). Owner 2026-11-20: decision 4 = option B now (debug and test-seams builds, release bytes unchanged), A on the next guard batch; decision 5 = an evicted seq is legal, counted in its own E term, with H + E bounded by 1 - rho. Shares files with the S06 deletion and the gauges, so it merges in sequence with them. 2026-11-20: implementation running on branch recovery-counters (option B, E term), red expected on the rho < 1 sim scenarios.'
+  notes: 'Plan S4, ADR-0081 (Proposed). Owner 2026-11-20: decision 4 = option B now (debug and test-seams builds, release bytes unchanged), A on the next guard batch; decision 5 = an evicted seq is legal, counted in its own E term, with H + E bounded by 1 - rho. Shares files with the S06 deletion and the gauges, so it merges in sequence with them. Merged 2026-11-20 (recovery-counters fd1b392c; release binary identical, binid 44742087564): net/account.rs, the [ACCT] exit line and stuck and execution witnesses, asserted by every loopback test through assert_no_dnf. Red on the rho < 1 lost tail (O_strand, O with oldest_unchanged, inert sweeps, O_hwm above the cap), green on the rho = 1 controls. E is reported as an upper bound on abandonment and not gated; a receiver [ACCT-RX] frontier line separates acks in flight from stuck seqs. First clean-link rho < 1 loopback test added. Open: rx_frontier 5030 against S_sent 8099 on that test, not explained.'
 - id: infra-test-seat-coverage
   title: Coverage per seat
   track: infra
@@ -9537,7 +9514,7 @@ nodes:
 - id: meas-rerun-0708
   title: Full benchmark re-run (8 July)
   track: meas
-  kind: defect-verdict
+  kind: research
   state: done
   outcome: unrated
   evidence:

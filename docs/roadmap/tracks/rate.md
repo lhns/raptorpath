@@ -217,10 +217,10 @@ flowchart TB
   - branch real-trace validation
   - Real-trace check of the Gilbert-Elliott loss model (2026-07-06, session record)
 - `rate-fec-rate-v1`: BOCD FEC rate control
-  - commit 1e07bf79
   - commit 05b576a7
   - commit e508adf4
   - commit f2cba2b7
+  - Principled FEC rate control: BOCD estimator, budget allocator, taper model (2026-03-21, commit 1e07bf79)
 - `rate-saturation-rstar`: Saturation-aware r* and window
   - branch feat/p5-saturation-cap
   - branch soft saturation + end-of-stream taper completion
@@ -231,8 +231,8 @@ flowchart TB
 - `rate-rstar-window-mass`: r* window-mass provisioning
   - branch feat/rstar-bursty
 - `rate-retention-is-rho`: Retention is the ρ dial
-  - commit 62ffbb76
   - paper §11.1 open question 2
+  - Retention moves to the ARQ layer (2026-07-06, commit 62ffbb76)
 - `rate-unified-shed`: δ-honest overload shedding
   - commit 120d8f89
   - Shed law as built and consolidation battery (2026-07-21, commit 8e77ba67, commit 5daceabf)

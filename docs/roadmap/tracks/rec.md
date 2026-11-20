@@ -382,8 +382,8 @@ flowchart TB
   - commit 6a95193b
   - commit 5ebbcda8
 - `rec-mp-serial`: Global loss serials under striping
-  - commit ade48ad6
   - Recovery under striping: snapshot coalescing and packet-threshold channel (2026-07-21, commit 2c632c05, commit a0dbd986)
+  - Delete recovery serial chain (2026-07-27, commit ade48ad6)
 - `rec-clock-candidates`: Derived recovery sweep
   - branch the derived recovery clamp
   - commit 58fbc575
@@ -405,9 +405,8 @@ flowchart TB
   - branch qnative sweep SCORED
   - branch qnative sweep launched
   - branch the quantile-native clock
-  - commit ab545cfe
   - commit 0183cf96
-  - Quantile-native recovery clock (2026-08-21, commit 993cdfa3, commit ff3e1651, commit a3d35377)
+  - Quantile-native recovery clock (2026-08-21, commit ab545cfe, commit 993cdfa3, commit ff3e1651, commit a3d35377)
 - `rec-holddown-clock`: Hold-down clock sweep
   - branch holddown sweep SCORED
   - branch the hold-down clock DERIVED (16.77) + sweep launched
@@ -431,8 +430,8 @@ flowchart TB
 - `rec-successor-arrival`: Successor-arrival distribution measured
   - branch the successor-arrival distribution MEASURED
   - commit 1064e8d1
-  - commit f497bdc4
   - commit 5481a0b9
+  - Successor-arrival distribution measurement (2026-08-21, commit f497bdc4)
 - `rec-goal100`: Recovery primitives and σ
   - branch item 2 local half
   - branch item 4 DELIVERED (paper 16.74) + item 5 closed by its own condition
@@ -475,8 +474,8 @@ flowchart TB
 - `rec-recov-sp`: Singles hole suppression
   - Lossy-single residual accounting (2026-07-27, session record)
 - `rec-nack-congestion`: Congestion-aware NACK throttle (first form)
-  - commit f2cba2b7
   - commit b255271c
+  - NACK congestion awareness and consolidated bench suite (2026-03-20, commit f2cba2b7)
 - `rec-fire-cause`: Recovery fire cause table
   - branch THE FIRE-CAUSE TABLE
   - Recovery fire cause: timer versus gap reports (2026-08-21, session record)

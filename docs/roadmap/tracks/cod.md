@@ -145,34 +145,32 @@ flowchart TB
 - `cod-block-pipeline`: RaptorQ block FEC pipeline
   - commit dc672631
   - commit e2de447d
-  - commit c1a39caf
   - Block sizing, handshake and graceful shutdown (2026-03-12, commit 6f2852f1)
+  - Block interleaving for burst loss resilience (2026-03-13, commit c1a39caf)
   - Block-mode in-order delivery and interleave depth 1 (2026-07-04, commit a72151eb)
 - `cod-s4-block-retest`: Block default re-test
   - Block re-test arm switch in the benchmark script (2026-09-27, commit 4e5c3af0)
 - `cod-mettle`: METTLE swappable FEC backend
-  - commit 65d7b1b8
-  - commit 375708ff
   - commit 10ac80fc
   - Projected real-world scenarios in benchmark results (2026-03-13, commit ae66266b)
+  - METTLE swappable FEC backend and its edge-probability fix (2026-03-13, commit 65d7b1b8, commit 375708ff)
 - `cod-backend-switch`: Mid-stream FEC backend switching
-  - commit cb99955d
+  - Runtime FEC backend switching on loss (2026-03-16, commit cb99955d)
 - `cod-streaming-code`: Streaming two-layer Realtime code
-  - commit 86e1f0f3
   - commit cf164aa9
-  - commit bf748653
-  - commit bccb32a2
-  - Streaming backend auto-selection and multipath window scheduling (2026-03-14, commit cad99bf0)
+  - Streaming backend auto-selection and multipath window scheduling (2026-03-14, commit 86e1f0f3, commit cad99bf0)
+  - Streaming crown re-test (2026-07-27, commit bf748653)
   - Crown re-test harness hardening (2026-07-27, commit 7f200577, commit 8cf2b6f5)
+  - Delete streaming machine (2026-07-28, commit bccb32a2)
 - `cod-gf256-simd`: SIMD GF(2^8) and gf256 crate
   - commit e43e87b2
-  - commit 544f4d82
+  - SIMD GF(2^8) multiply-accumulate kernels (2026-03-18, commit 544f4d82)
 - `cod-rlc-all-profiles`: Windowed RLC for every profile
   - commit c8fcc910
-  - commit 4663c38c
   - Reliable windowed RLC for bulk breaks: 10 of 10 to 0 of 10 (2026-07-05, session record)
   - Windowed RLC for all hints: bulk single-path fails (2026-07-05, commit 59fc7c03)
   - RLC encode and decode throughput against bulk needs (2026-07-06, session record)
+  - Measured RLC decode throughput at three window sizes (2026-07-06, commit 4663c38c)
 - `cod-generation-coding`: Generation cross-path fungible coding
   - branch generation-coding foundation (codec verified; multi-gen pending deficit feedback)
   - branch generation deficit feedback
@@ -207,17 +205,16 @@ flowchart TB
   - Paper section 15 unified sliding-window model (2026-07-04, commit c8fcc910, commit 961e23d4)
   - Window advance derived from the latency budget (planned) (2026-07-08, session record)
 - `cod-one-pipeline`: One window pipeline
-  - commit 17f7fa91
   - branch exec/adr-0069-window-default
+  - ADR-0069: block mode deprecated, default kept pinned (2026-08-10, commit 17f7fa91)
   - Window pipeline only, block pipeline deleted (2026-10-04, commit b074267a, commit d091e8a8, commit bc049ce5, commit 37d3f06c, commit 78ca2ae5, commit 140e3a9f)
 - `cod-debug-stall`: Decoder re-delivery stall fix
   - branch §31 debug-suite 300 s stall FIXED
   - Decoder re-delivery stall in debug suite (2026-10-28, commit 686aadf1)
 - `cod-overhead-reduction`: Overhead reduction (packing, repair alignment)
-  - commit e508adf4
   - commit 544f4d82
-  - commit b255271c
-  - commit 05b576a7
+  - Overhead taxonomy and symbol packing for small packets (2026-03-18, commit e508adf4)
+  - FEC overhead reduction: budget cap, NACK age gate, fractional repair (2026-03-20, commit 05b576a7, commit b255271c)
 - `cod-systematic-deficit`: Systematic plus deficit repair
   - branch oracle validation
   - branch systematic+repair build
