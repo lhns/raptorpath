@@ -2104,7 +2104,7 @@ pub(crate) async fn run_receiver(
                     if now.duration_since(last_nack_time) >= REPORT_INTERVAL
                         && highest_seen_seq > 0
                     {
-                        last_nack_time = now;
+                        last_nack_time = now; #[cfg(any(debug_assertions, feature = "test-seams"))] { crate::readout!("[ACCT-RX] frontier={} holes_given_up={}", next_expected, recv_shed_holes); }
 
                         // Controller feedback for the window decoder.
                         {
@@ -2226,7 +2226,7 @@ pub(crate) async fn run_receiver(
         seen_end,
         &mut rank_prev_seen,
     ));
-    blk.flush_final(probe);
+    blk.flush_final(probe); #[cfg(any(debug_assertions, feature = "test-seams"))] { crate::readout!("[ACCT-RX] frontier={} holes_given_up={} final=1", next_expected, recv_shed_holes); }
 }
 
 /// The decode-inert floor (paper §5.2 "Retained state"): everything below the

@@ -192,16 +192,18 @@ impl Account {
     pub fn line(&self, buf: &Buf, win_start: u64, fin: bool) -> String {
         let r = self.read(buf, win_start);
         format!(
-            "[ACCT] S_sent={} A={} H={} E={} O_serv={} O_strand={} closes={} \
+            "[ACCT] reliable={} S_sent={} A={} H={} E={} O_serv={} O_strand={} O_max={} closes={} \
              inert_sweeps={} sweeps_nosend={} sweeps={} oldest_unchanged={} oldest_unchanged_max={} \
              O_hwm={} cap_at_hwm={} store_cap={} bud={:.6} shed_slot={} shed_nack={} \
              shed_visit_slot={} shed_visit_nack={} clamp_evals={} clamp_excl={}{}",
+            u8::from(self.reliable),
             r.sent,
             r.a,
             r.h,
             r.e,
             r.o_serv,
             r.o_strand,
+            buf.last_key().unwrap_or(0),
             u8::from(r.closes()),
             self.inert_sweeps,
             self.sweeps_nosend,

@@ -6725,7 +6725,7 @@ mod account_arith {
         let b = buf_with(3, &mut a);
         let l = a.line(&b, 0, true);
         for k in [
-            "S_sent=3", "A=0", "H=0", "E=0", "O_serv=3", "O_strand=0", "closes=1", "inert_sweeps=0", "sweeps_nosend=0", "O_hwm=3", "cap_at_hwm=",
+            "reliable=0", "S_sent=3", "O_max=2", "A=0", "H=0", "E=0", "O_serv=3", "O_strand=0", "closes=1", "inert_sweeps=0", "sweeps_nosend=0", "O_hwm=3", "cap_at_hwm=",
             "store_cap=", "bud=", "shed_visit_slot=", "shed_visit_nack=", "clamp_evals=", "clamp_excl=", "final=1",
         ] {
             assert!(l.contains(k), "{k} missing: {l}");

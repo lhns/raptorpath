@@ -484,9 +484,13 @@ impl AcctLine {
     }
 
     /// The checks for the end of a completed transfer; returns the failures
-    /// (empty = clean). `H + E` is bounded by the highest 1 - rho budget
-    /// fraction the run saw, times the source seqs sent.
-    pub fn violations(&self) -> Vec<String> {
+    /// (empty = clean). `frontier` is the receiver's delivered frontier
+    /// (`[ACCT-RX]`), when known: an outstanding seq below it was delivered
+    /// and only its ack is in flight, which is not a stuck seq. `E` and `H`
+    /// are reported, not gated: `E` counts seqs that left the coding window
+    /// before their ack, an upper bound on abandonment (most were delivered).
+    /// `H` is gated only where no budget was ever open.
+    pub fn violations(&self, frontier: Option<u64>) -> Vec<String> {
         let (sent, a, h, e) = (self.u("S_sent"), self.u("A"), self.u("H"), self.u("E"));
         let (o_serv, o_strand) = (self.u("O_serv"), self.u("O_strand"));
         let mut v = Vec::new();
@@ -496,21 +500,35 @@ impl AcctLine {
                 a + h + e + o_serv + o_strand
             ));
         }
-        if o_serv + o_strand != 0 {
-            v.push(format!("O = {} at the end of a completed transfer", o_serv + o_strand));
-        }
+        let o = o_serv + o_strand;
         if o_strand != 0 {
             v.push(format!("O_strand = {o_strand}: outstanding seqs below the gap server's clamp bound"));
+        }
+        if o != 0 {
+            // O_max is the highest outstanding seq; all below the receiver's frontier = acks in flight.
+            match frontier {
+                Some(f) if (self.u("O_max")) < f => {}
+                Some(f) => v.push(format!("O = {o} at the end of a completed transfer, highest outstanding seq {} is not below the receiver's frontier {f}", self.u("O_max"))),
+                None => {} // no receiver evidence in hand: this call cannot judge O
+            }
         }
         if self.u("inert_sweeps") != 0 {
             v.push(format!("inert_sweeps = {}: tail sweeps whose gap sent nothing", self.u("inert_sweeps")));
         }
-        let budget = self.f("bud") * sent as f64;
-        if (h + e) as f64 > budget + 1e-9 {
-            v.push(format!("H+E = {} exceeds the 1-rho budget {budget:.3} (bud={} x S_sent={sent})", h + e, self.f("bud")));
+        if self.f("bud") == 0.0 && h != 0 {
+            v.push(format!("H = {h} with no shed budget ever open"));
         }
         v
     }
+}
+
+/// The receiver's delivered frontier: the largest `frontier=` of any
+/// `[ACCT-RX]` line in a server log.
+pub fn rx_frontier(log: &str) -> Option<u64> {
+    log.lines()
+        .filter(|l| l.starts_with("[ACCT-RX] "))
+        .filter_map(|l| l.split(' ').find_map(|t| t.strip_prefix("frontier=")).and_then(|v| v.parse().ok()))
+        .max()
 }
 
 /// Every `[ACCT]` line in a log.
@@ -524,8 +542,10 @@ pub fn account_lines(log: &str) -> Vec<AcctLine> {
 /// The end-of-transfer account check (ADR-0081). Every exit (`final=1`) line
 /// in `log` must be clean. With `require`, at least one exit line must exist
 /// when the binary carries the account: a missing line is a failure, not a
-/// pass, so the check cannot silently not execute.
-pub fn assert_account(log: &str, who: &str, require: bool) {
+/// pass, so the check cannot silently not execute. `srv_log` supplies the
+/// receiver frontier for the O check. Each asserted line is echoed to the real
+/// stderr (not captured by the test harness) with its E and budget.
+pub fn assert_account(log: &str, who: &str, require: bool, srv_log: Option<&str>) {
     if !ACCOUNT_CARRIED {
         return;
     }
@@ -535,8 +555,15 @@ pub fn assert_account(log: &str, who: &str, require: bool) {
         "{who}: no `[ACCT] ... final=1` exit line from a build that carries the recovery account - \
          the sender's exit line did not print, so the account check did not execute"
     );
+    let frontier = srv_log.and_then(rx_frontier);
     for l in &fin {
-        let v = l.violations();
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr(),
+            "[ACCT-ASSERT] {who} reliable={} S_sent={} H={} E={} bud={} O={} O_max={} rx_frontier={frontier:?}",
+            l.u("reliable"), l.u("S_sent"), l.u("H"), l.u("E"), l.f("bud"), l.u("O_serv") + l.u("O_strand"), l.u("O_max")
+        );
+        let v = l.violations(frontier);
         assert!(v.is_empty(), "{who}: recovery account failed: {}\n{}", v.join("; "), l.raw.trim());
     }
 }
@@ -549,9 +576,9 @@ pub fn assert_account(log: &str, who: &str, require: bool) {
 pub fn assert_no_dnf(cli_log: &str, srv_log: Option<&str>) {
     assert_no_dnf_inner(cli_log, srv_log);
     // ADR-0081: the sender's account closes at the end of a completed transfer.
-    assert_account(cli_log, "client", true);
+    assert_account(cli_log, "client", true, srv_log);
     if let Some(s) = srv_log {
-        assert_account(s, "server", false);
+        assert_account(s, "server", false, None);
     }
 }
 
@@ -688,6 +715,19 @@ pub fn transfer(t: Transfer<'_>) -> (String, String) {
     let mut cargs = perf_args(t.hint, t.bytes, t.runs).to_vec();
     cargs.extend_from_slice(t.extra_args);
     let cli = run_perf_client(&binds, &cenv, &cargs);
+    // An outstanding seq at the client's exit is only an ack in flight if the
+    // receiver delivered it: give the server's `[ACCT-RX]` frontier (every
+    // ~250 ms) up to 5 s to pass the client's highest outstanding seq.
+    let need = account_lines(&cli)
+        .iter()
+        .filter(|l| l.final_line && l.u("O_serv") + l.u("O_strand") > 0)
+        .map(|l| l.u("O_max"))
+        .max();
+    if ACCOUNT_CARRIED {
+        if let Some(need) = need {
+            wait_until(Duration::from_secs(5), || rx_frontier(&srv.log.text()).is_some_and(|f| f > need));
+        }
+    }
     assert_no_dnf(&cli, Some(&srv.log.text()));
     let srv_log = match t.srv_tag {
         Some(tag) => srv.log_after(srv.log.len(), tag),

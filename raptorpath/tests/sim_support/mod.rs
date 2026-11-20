@@ -108,7 +108,7 @@ impl Acct {
         }
         let budget = self.f("bud") * sent as f64;
         if (h + e) as f64 > budget + 1e-9 {
-            v.push(format!("H+E = {} > budget {budget:.3}", h + e));
+            v.push(format!("H+E = {} > budget {budget:.3} (E is an upper bound on abandonment: seqs that left the window before their ack, most of them delivered)", h + e));
         }
         v
     }
