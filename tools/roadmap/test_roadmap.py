@@ -525,14 +525,15 @@ class BuildTests(unittest.TestCase):
             self.assertIn(f"`{i}`", out)
         self.assertNotIn("rec-d", out)
 
-    def test_done_by_month_prints_plain_else_headline(self):
+    def test_done_by_month_prints_plain_never_headline(self):
         out = self.region(built([
             node("rec-a", state="done", overview=False, start="2026-07-02", plain="Said | plainly.", headline="9 ms"),
             node("rec-b", state="done", overview=False, start="2026-07-03", headline="3.49s -> 1.57s median"),
             node("rec-c", state="done", overview=False, start="2026-07-04"),
         ]), "done-by-month")
         self.assertIn("- `rec-a`: T rec-a (✔ done · unrated). Said \\| plainly.\n", out)
-        self.assertIn("- `rec-b`: T rec-b (✔ done · unrated). 3.49s -> 1.57s median\n", out)
+        self.assertIn("- `rec-b`: T rec-b (✔ done · unrated)\n", out)  # a headline is never printed in its place
+        self.assertNotIn("3.49s", out)
         self.assertIn("- `rec-c`: T rec-c (✔ done · unrated)\n", out)
 
     def test_overview_has_one_band_per_past_month(self):
@@ -770,7 +771,7 @@ class LegendTests(unittest.TestCase):
     def test_every_shape_and_arrow_kind_is_shown(self):
         lg = self.legend()
         shapes = {build.node_def(n, ident="x")[1:3] for n in build.LEGEND_SHAPES}  # the opening bracket(s)
-        self.assertEqual(shapes, {'[/', '>"', '["'})
+        self.assertEqual(shapes, {'[/', '>"', '["', '{{'})  # '{{': the owner-call hexagon
         drawn_kinds = {k for kind in build.KINDS if kind != "user-decision"
                        for k in [build.node_def(node("rec-a", kind=kind), ident="x")[1:3]]}
         self.assertLessEqual(drawn_kinds, shapes)

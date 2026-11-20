@@ -12,13 +12,13 @@ flowchart TB
     meas_l0_sim_bench["✔ Netsim harness and<br/>ablation benches"]
     meas_transport_comparison["✔ QUIC/MPTCP<br/>comparison and<br/>overhead taxonomy"]
     meas_matrix_bench["✔ Matrix benchmark,<br/>audit and dashboard"]
-    meas_adr51_scenarios["✔ Canonical scenarios<br/>and goal gate"]
-    meas_l1_harness["✔ Network-namespace<br/>harness and baselines"]
+    meas_adr51_scenarios["✔ Standard test<br/>scenarios and pass<br/>criteria"]
+    meas_l1_harness["✔ Emulated-network<br/>test rig and baselines"]
     meas_l2_multipath["✔ Multipath and tail<br/>evaluation"]
-    meas_c8_aggregation_arc["↷ Unequal two-path<br/>aggregation arc"]
-    meas_gen_inert_era>"✔ Generation-inert<br/>measurement era"]
+    meas_c8_aggregation_arc["↷ Combining a fast and<br/>slow path"]
+    meas_gen_inert_era>"✔ Tests ran with<br/>cross-path coding off"]
     meas_rerun_0708["✔ Full benchmark re-<br/>run (8 July)"]
-    meas_regime_map["✔ Hardware-honest<br/>regime map"]
+    meas_regime_map["✔ What works where, on<br/>real hardware"]
     meas_adr52_discipline["✔ Measurement<br/>discipline"]
     meas_adversarial_b1["✔ Adversarial policer<br/>map"]
     meas_gate_audit["✔ Gate-forwarding<br/>audit"]
@@ -38,39 +38,39 @@ flowchart TB
     meas_eppen_c8["✔ Eppen's condition on<br/>unequal paths"]
     meas_defect_shared_seed>"✔ Shared loss seed<br/>across legs"]
     meas_defect_31mbit>"✔ 31 Mbit/s cap:<br/>generation coding on"]
-    meas_attribution_audit["✔ Attribution audit"]
+    meas_attribution_audit["✔ What actually fills<br/>each gap"]
     meas_wire_v8["✔ Wire v8 instruments<br/>and owed findings"]
     meas_crown_spot_v8["✔ Crown no-regression<br/>spot (wire v8)"]
-    meas_defect_eta_witness>"⚠ ETA route and σ<br/>witness mismatch"]
-    meas_defect_c8_bimodal>"⚠ Two-path control<br/>bimodal collapse"]
+    meas_defect_eta_witness>"⚠ Finish-time check<br/>uses the wrong delay"]
+    meas_defect_c8_bimodal>"⚠ Two-path baseline<br/>runs sometimes<br/>collapse"]
     meas_defect_diag_rtp_ms>"⚠ Delay readout prints<br/>whole milliseconds"]
     meas_gso_truth>"✔ Per-datagram loss<br/>truth (GSO)"]
     meas_v4_verification["✔ Verification of the<br/>new main"]
-    meas_guard_41c["✔ Rank-minp merge<br/>guard"]
+    meas_guard_41c["✔ Statistical merge<br/>check"]
     meas_harness_consolidation["✔ Harness on main,<br/>rehearsal mode"]
-    meas_defect_rtp_floor>"⚠ Start-up floor<br/>clause measures drain"]
+    meas_defect_rtp_floor>"⚠ Merge check misreads<br/>start and end"]
     meas_guard_clause_dry["✔ Guard clause dry run"]
     meas_guard_v2_impl["✔ Guard v2<br/>implementation"]
     meas_s51_design["✔ Off-Bulk benchmark<br/>design"]
     meas_s58_session["✔ Dial-pin fix suites,<br/>binary identity"]
     meas_s51_harness["✔ Off-Bulk sweep<br/>harness and scorer"]
     meas_harness_reuse["✔ Cheaper sessions by<br/>reuse"]
-    meas_s51_session["✔ Off-Bulk baseline<br/>and δ sweep"]
+    meas_s51_session["✔ First measurements<br/>away from bulk setting"]
     meas_blocke_pacing_gate>"✔ Pacer late-send<br/>check replaced"]
     meas_blocke_steady_rule>"✔ Steady-window check<br/>passed untested<br/>windows"]
     meas_w1_bracket_fix["▶ Repair-share bound<br/>counts every slot"]
-    meas_defect_cr61_large_pool>"⚠ Collapse rule blind<br/>at large pools"]
-    meas_s51b_rho["⛔ Partial-reliability<br/>measurement block"]
-    meas_guard_bulk_blind["○ Merge guard blind<br/>off Bulk"]
-    meas_s51_c8_gauges["○ Per-leg clamp and<br/>saturation gauges"]
+    meas_defect_cr61_large_pool>"⚠ Collapse detector<br/>misfires on large<br/>limits"]
+    meas_s51b_rho["⛔ Measurements with<br/>droppable data"]
+    meas_guard_bulk_blind["○ Merge check only<br/>tests bulk"]
+    meas_s51_c8_gauges["○ Per-path readouts<br/>for two-path runs"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
-    meas_harness_robustness["○ Harness robustness<br/>for every plan"]
-    meas_guard_resolution["○ Guard CPU and lag<br/>resolution"]
+    meas_harness_robustness["○ Every test plan<br/>rehearsable offline"]
+    meas_guard_resolution["○ Merge check sees<br/>smaller changes"]
     meas_test_hygiene["○ Test hygiene fixes"]
-    meas_adversarial_cells_run["⛔ Adversarial cells<br/>measured"]
-    meas_competitor_battery["⛔ Competitor battery"]
+    meas_adversarial_cells_run["⛔ Harder network<br/>conditions measured"]
+    meas_competitor_battery["⛔ Outside protocols on<br/>the same tests"]
     meas_progress_baseline["○ Cumulative progress<br/>benchmark"]
-    meas_fix_gauges_p3["⛔ Gauges for the<br/>remaining constants"]
+    meas_fix_gauges_p3["⛔ Readouts for the<br/>last hand-set numbers"]
     meas_l0_sim_bench ~~~ meas_transport_comparison
     meas_l0_sim_bench ~~~ meas_matrix_bench
     meas_l0_sim_bench ~~~ meas_adr51_scenarios
@@ -142,6 +142,7 @@ flowchart TB
     meas_l0_sim_bench --> meas_matrix_bench
     meas_adr51_scenarios --> meas_l1_harness
     meas_c8_aggregation_arc -.-> meas_regime_map
+    meas_c8_aggregation_arc --> meas_regime_map
     meas_pipeline_verification --> meas_coupling_model
     meas_pipeline_verification --> meas_sf_accounting
     meas_wire_v8 -.-> meas_defect_eta_witness
@@ -155,7 +156,7 @@ flowchart TB
     meas_s51_session --> meas_s51_c8_gauges
     meas_adversarial_cells_build --> meas_adversarial_cells_run
     meas_s51_session --> meas_fix_gauges_p3
-    linkStyle 73 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 74 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -190,14 +191,14 @@ flowchart TB
 | `meas-blocke-steady-rule` | Steady-window check passed untested windows | done | unrated | Fixed: PM 114 -> 0 steady, PL 149 -> 40 | status §51 Amendment 5; branch e-tree-f2-pace 8899fef8 | meas-blocke-pacing-gate |
 | `meas-harness-reuse` | Cheaper sessions by reuse | done | successful | guard ran no suites and no builds | status §64 Amendments 1-2; status owner decision 14 |  |
 | `meas-user-test-cost` | Owner call on test cost | done | n/a | compiler cache yes, reduced guard no | status Owner decisions (2026-11-18) item 14 |  |
-| `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | next | unrated | CR61 ratio 1.51-1.90 on healthy c3 controls | status §61a Result | store-s61a |
+| `meas-defect-cr61-large-pool` | Collapse detector misfires on large limits | next | unrated | CR61 ratio 1.51-1.90 on healthy c3 controls | status §61a Result | store-s61a |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | done | unrated |  | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |  |
-| `meas-adr51-scenarios` | Canonical scenarios and goal gate | done | successful |  | ADR-0051 |  |
-| `meas-l1-harness` | Network-namespace harness and baselines | done | unrated |  | commit f73704c2 | meas-adr51-scenarios |
+| `meas-adr51-scenarios` | Standard test scenarios and pass criteria | done | successful |  | ADR-0051 |  |
+| `meas-l1-harness` | Emulated-network test rig and baselines | done | unrated |  | commit f73704c2 | meas-adr51-scenarios |
 | `meas-l2-multipath` | Multipath and tail evaluation | done | unrated |  | commit beae05b1 |  |
-| `meas-c8-aggregation-arc` | Unequal two-path aggregation arc | abandoned | superseded |  | paper §10 row "Arc concluded" aggregation verdict | place-marginal-cost |
-| `meas-gen-inert-era` | Generation-inert measurement era | done | unrated |  | paper §10 row Generation-inert era; ADR-0053 |  |
-| `meas-regime-map` | Hardware-honest regime map | done | unrated |  | commit acefc473 |  |
+| `meas-c8-aggregation-arc` | Combining a fast and slow path | abandoned | superseded |  | paper §10 row "Arc concluded" aggregation verdict | place-marginal-cost |
+| `meas-gen-inert-era` | Tests ran with cross-path coding off | done | unrated |  | paper §10 row Generation-inert era; ADR-0053 |  |
+| `meas-regime-map` | What works where, on real hardware | done | unrated |  | commit acefc473 | meas-user-consolidate-arc |
 | `meas-adr52-discipline` | Measurement discipline | done | successful |  | ADR-0052 |  |
 | `meas-adversarial-b1` | Adversarial policer map | done | unrated |  | commit 754139c3 |  |
 | `meas-formula-first` | Formula-first review | done | successful |  | branch ADR-0070 |  |
@@ -212,38 +213,38 @@ flowchart TB
 | `meas-span-run` | Span run: span instrument, anchors | done | unrated |  | commit 0d30724a |  |
 | `meas-sigma-c8` | Measured σ on unequal paths | done | unrated |  | commit d20b0863; commit b5d8a14c |  |
 | `meas-eppen-c8` | Eppen's condition on unequal paths | done | unrated |  | commit 33528562 |  |
-| `meas-attribution-audit` | Attribution audit | done | unrated | 0.0077 (c1) | status §2 row "Attribution audit (D0)" |  |
+| `meas-attribution-audit` | What actually fills each gap | done | unrated | 0.0077 (c1) | status §2 row "Attribution audit (D0)" |  |
 | `meas-wire-v8` | Wire v8 instruments and owed findings | done | successful |  | status §2 row "Crown no-regression spot (wire v8 merges)" |  |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | done | n/a |  | commit 3eb28db6 |  |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | done | unrated | 5 300 datagrams lost at 5 per skb while dropped read 1 060 | status §3.8 |  |
 | `meas-v4-verification` | Verification of the new main | done | successful |  | status §6 | cod-one-pipeline |
-| `meas-guard-41c` | Rank-minp merge guard | done | successful | p = 0.2256 | status §41c; branch archive/nsbench41c |  |
+| `meas-guard-41c` | Statistical merge check | done | successful | p = 0.2256 | status §41c; branch archive/nsbench41c |  |
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | done | successful |  | branch harness-main |  |
-| `meas-defect-rtp-floor` | Start-up floor clause measures drain | in-progress | unrated | 6/12 BASE and 5/12 CAND rows | status §3.10 item 7 | rec-snapver-filter |
+| `meas-defect-rtp-floor` | Merge check misreads start and end | in-progress | unrated | 6/12 BASE and 5/12 CAND rows | status §3.10 item 7 | rec-snapver-filter |
 | `meas-guard-clause-dry` | Guard clause dry run | done | successful |  | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d | meas-defect-rtp-floor, meas-guard-41c |
 | `meas-s58-session` | Dial-pin fix suites, binary identity | done | successful | tree X = control 8f313616… | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed | store-defect-delta-nan, model-shared-core-0 |
 | `meas-guard-v2` | Merge guard v2 accepted | done | n/a |  | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md | meas-guard-clause-dry, meas-defect-rtp-floor, meas-guard-41c |
-| `meas-defect-eta-witness` | ETA route and σ witness mismatch | in-progress | unrated |  | status §3.1 item 3 |  |
-| `meas-defect-c8-bimodal` | Two-path control bimodal collapse | in-progress | unrated | 4/8 reps | status §3.1 item 4 |  |
+| `meas-defect-eta-witness` | Finish-time check uses the wrong delay | in-progress | unrated |  | status §3.1 item 3 |  |
+| `meas-defect-c8-bimodal` | Two-path baseline runs sometimes collapse | in-progress | unrated | 4/8 reps | status §3.1 item 4 |  |
 | `meas-defect-diag-rtp-ms` | Delay readout prints whole milliseconds | in-progress | unrated |  | status §3.5 item 4 |  |
 | `meas-guard-v2-impl` | Guard v2 implementation | done | unrated |  | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 | meas-guard-v2 |
 | `meas-s51-design` | Off-Bulk benchmark design | done | unrated |  | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) | meas-guard-v2 |
 | `meas-s51-harness` | Off-Bulk sweep harness and scorer | done | unrated |  | docs/derivations/s51-design.md §8 P1; status §51 "Host checks so far"; status §51 Amendment 1; branch harness51 a59efa60 | rec-s54-session |
-| `meas-s51b-rho` | Partial-reliability measurement block | blocked | unrated |  | docs/derivations/s51-design.md §2.3, §8 P4 | meas-s51-session |
-| `meas-guard-bulk-blind` | Merge guard blind off Bulk | next | unrated |  | docs/derivations/s06-delete-plan.md (merge gate) |  |
-| `meas-s51-c8-gauges` | Per-leg clamp and saturation gauges | next | unrated |  | status §51 block 51 Result, gauge defects; status §51 block 51 rehearsal (crlf_guard) | meas-s51-session |
+| `meas-s51b-rho` | Measurements with droppable data | blocked | unrated |  | docs/derivations/s51-design.md §2.3, §8 P4 | meas-s51-session |
+| `meas-guard-bulk-blind` | Merge check only tests bulk | next | unrated |  | docs/derivations/s06-delete-plan.md (merge gate) |  |
+| `meas-s51-c8-gauges` | Per-path readouts for two-path runs | next | unrated |  | status §51 block 51 Result, gauge defects; status §51 block 51 rehearsal (crlf_guard) | meas-s51-session |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | done | unrated |  | plan W5.3; branch adv-cells |  |
-| `meas-harness-robustness` | Harness robustness for every plan | next | unrated |  | plan W5.2 |  |
-| `meas-guard-resolution` | Guard CPU and lag resolution | next | unrated |  | plan W5.4 |  |
+| `meas-harness-robustness` | Every test plan rehearsable offline | next | unrated |  | plan W5.2 |  |
+| `meas-guard-resolution` | Merge check sees smaller changes | next | unrated |  | plan W5.4 |  |
 | `meas-test-hygiene` | Test hygiene fixes | next | unrated |  | plan W5.5 |  |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | done | successful | 152 of 152 rows live; δ-continuous at every preset in both cells; named Realtime steps, as predicted | status §51; status §51 Amendment 2; status §63 Result; status §51 Amendment 6; status §51 block 51 rehearsal; status §51 block 51 Result; docs/l1-raw/s51b; plan W5.1 | meas-s51-design, meas-s51-harness, store-defect-delta-nan, rec-f2-merge-guard |
-| `meas-adversarial-cells-run` | Adversarial cells measured | blocked | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build, cc-s48d-session |
-| `meas-competitor-battery` | Competitor battery | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
-| `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |  |
-| `meas-fix-gauges-p3` | Gauges for the remaining constants | blocked | unrated |  | law ledger rows S03, S07, R06, K06, K07, C11, F04 | rate-fix-estimators, model-fix-paper-p2, meas-s51-session, store-engine-form-impl |
+| `meas-s51-session` | First measurements away from bulk setting | done | successful | 152 of 152 rows live; δ-continuous at every preset in both cells; named Realtime steps, as predicted | status §51; status §51 Amendment 2; status §63 Result; status §51 Amendment 6; status §51 block 51 rehearsal; status §51 block 51 Result; docs/l1-raw/s51b; plan W5.1 | meas-s51-design, meas-s51-harness, store-defect-delta-nan, rec-f2-merge-guard |
+| `meas-adversarial-cells-run` | Harder network conditions measured | blocked | unrated |  | plan W5.3, W2.3 | meas-adversarial-cells-build, cc-s48d-session |
+| `meas-competitor-battery` | Outside protocols on the same tests | blocked | unrated |  | plan W5.6 (at the W1 milestone) | cc-bbrrs-promote |
+| `meas-progress-baseline` | Cumulative progress benchmark | next | unrated |  | user-requests 2026-08-19 (asked which attributes improved, and by how much); user-requests 2026-11-11 (asked whether the performance gains show yet) |  |
+| `meas-fix-gauges-p3` | Readouts for the last hand-set numbers | blocked | unrated |  | law ledger rows S03, S07, R06, K06, K07, C11, F04 | rate-fix-estimators, model-fix-paper-p2, meas-s51-session, store-engine-form-impl |
 | `meas-transport-comparison` | QUIC/MPTCP comparison and overhead taxonomy | done | unrated |  | ADR-0036; ADR-0038 | meas-l0-sim-bench |
 | `meas-matrix-bench` | Matrix benchmark, audit and dashboard | done | unrated |  | ADR-0044; ADR-0045; ADR-0049 | meas-l0-sim-bench |
-| `meas-user-consolidate-arc` | Owner call: consolidate aggregation arc | done | n/a |  | commit a8dd8675 |  |
+| `meas-user-consolidate-arc` | Owner call: stop, consolidate two-path results | done | n/a |  | commit a8dd8675 | meas-c8-aggregation-arc |
 | `meas-defect-shared-seed` | Shared loss seed across legs | done | unrated |  | commit e1fb2f64 |  |
 | `meas-anchor-era-suspect` | Anchor-era suspect ruled out | done | dead-end |  | commit cc8e3c01 |  |
 | `meas-ack-cadence` | Ack-cadence over-read checks | done | unrated |  | commit c0d93050; commit f1dc8ac5 |  |
@@ -261,14 +262,14 @@ flowchart TB
 | `meas-blocke-steady-rule` | Steady-window check passed untested windows | A_star is sampled every 0.5 s against a 0.75 s window. The fixed rule is stricter than the design sentence (a change up to 0.5 s outside the span fails). PL on the fixed binary clears the 30-window floor at 40; the old binary read 23 and 38. | status §51 Amendment 5; branch e-tree-f2-pace 8899fef8 |
 | `meas-harness-reuse` | Cheaper sessions by reuse | Suites reused via a wider source manifest (ref64, Cargo.* and every engine crate); the launch takes its rehearsal binaries (sha-checked) and tools-test result; s62 used a prebuilt binary; sccache on host builds as a trial (owner decision 14). Measured: compile is 60-70 % of a suite run (release 16.6 of ~24 min). Also fixed: the harness63 F2 grep under set -e that marked every row VOID-RC; owed: harness64 keeps [SYMSZ] (KEEP_PAT) before its tools reach main. | status §64 Amendments 1-2; status owner decision 14 |
 | `meas-user-test-cost` | Owner call on test cost | Decision 14: sccache on host builds only; the reduced guard is not suggested by Fable (reuse already halves guard wall time). | status Owner decisions (2026-11-18) item 14 |
-| `meas-defect-cr61-large-pool` | Collapse rule blind at large pools | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). | status §61a Result |
+| `meas-defect-cr61-large-pool` | Collapse detector misfires on large limits | Amendment 2 routes around it (W 512 control) and does not fix it. Needed before any reading uses a >= 2048 control at c3. Candidate cause, undiagnosed: netem's 1000-packet limit under a ~1.1 s standing queue. c2 controls read 0.97-1.04 (§60) and 0.99-1.06 (61b). Was titled 'Collapse rule blind at large pools'. | status §61a Result |
 | `meas-l0-sim-bench` | Netsim harness and ablation benches | Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0031; ADR-0042; ADR-0032; ADR-0033; ADR-0034; ADR-0035 |
-| `meas-adr51-scenarios` | Canonical scenarios and goal gate | Owner 2026-07-02: set the goal of beating TCP and of the model reacting correctly in the defined scenarios. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0051 |
-| `meas-l1-harness` | Network-namespace harness and baselines | VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350). | commit f73704c2 |
+| `meas-adr51-scenarios` | Standard test scenarios and pass criteria | Owner 2026-07-02: set the goal of beating TCP and of the model reacting correctly in the defined scenarios. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. Was titled 'Canonical scenarios and goal gate'. | ADR-0051 |
+| `meas-l1-harness` | Emulated-network test rig and baselines | VM access given 2026-07-02. Folds paper §11.1 open question 11 (beat BBR-class stacks; no same-session competitor battery). L1 harness phase 1 is built for ADR-0051's cells (G350). Was titled 'Network-namespace harness and baselines'. | commit f73704c2 |
 | `meas-l2-multipath` | Multipath and tail evaluation | C7 validated (23.9 vs MPTCP 15.4), C8 refuted (8.81); tail claim validated at C2; window-mode path-liveness bug fixed. Was titled 'L2/L3 multipath and tail evaluation'. The window-liveness defect is its own node since 2026-11-20 (perf-realtime-path-death). | commit beae05b1 |
-| `meas-c8-aggregation-arc` | Unequal two-path aggregation arc | RWM Phase C refuted C8 aggregation at L1 (2026-07-06); "final verdict" 2026-07-08 later shown to be measured under three hidden binders. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row "Arc concluded" aggregation verdict |
-| `meas-gen-inert-era` | Generation-inert measurement era | The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Generation-inert era; ADR-0053 |
-| `meas-regime-map` | Hardware-honest regime map | Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read). | commit acefc473 |
+| `meas-c8-aggregation-arc` | Combining a fast and slow path | RWM Phase C refuted C8 aggregation at L1 (2026-07-06); "final verdict" 2026-07-08 later shown to be measured under three hidden binders. Dates: paper §10 rows carry an end (removal) date only. Was titled 'Unequal two-path aggregation arc'. | paper §10 row "Arc concluded" aggregation verdict |
+| `meas-gen-inert-era` | Tests ran with cross-path coding off | The harness never enabled generation coding; the re-baseline with a liveness guard is G372 (2026-07-13). Fixed by the 2026-07-13 re-baseline with a liveness guard (G372); the measurement era it voided is superseded by the regime map. Dates: paper §10 rows carry an end (removal) date only. Was titled 'Generation-inert measurement era'. | paper §10 row Generation-inert era; ADR-0053 |
+| `meas-regime-map` | What works where, on real hardware | Consolidated verdict and paper §17 (2026-07-19). Folds paper §11.1 open question 0 (do sc3 and c7 still read). Was titled 'Hardware-honest regime map'. | commit acefc473 |
 | `meas-adr52-discipline` | Measurement discipline | Owner 2026-07-21: many changes performed worse and are off by default, which in the owner's view did not show a principled approach. Folds discipline 14 (component benches, 2026-08-08). ADR date is the migration. Start date from commit 3bcf8690 (the deprecation register and discipline item 11, 2026-07-21), not from the ADR migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0052 |
 | `meas-adversarial-b1` | Adversarial policer map | Added 2026-11-16 (uncited 2026-08 cluster 'adversarial cells'). Pre-registration 6c8c3d38. The November adversarial cells (meas-adversarial-cells-build/-run) are a separate, later design. | commit 754139c3 |
 | `meas-formula-first` | Formula-first review | Store-cap law on trial (2026-08-12) after the owner asked for the formula, not the diff; ADR-0070 later deleted in the cleanup, the rules moved to CLAUDE.md (2026-09-27). | branch ADR-0070 |
@@ -283,38 +284,38 @@ flowchart TB
 | `meas-span-run` | Span run: span instrument, anchors | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). The [CCAP] span field the c9 battery missed, closed locally (6d4c3548). | commit 0d30724a |
 | `meas-sigma-c8` | Measured σ on unequal paths | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Item 5's measurement clause: 'the delta agreement is DEAD by 75x' (b5d8a14c). | commit d20b0863; commit b5d8a14c |
 | `meas-eppen-c8` | Eppen's condition on unequal paths | Era ledger item, 2026-08-19 (split 2026-11-16 from the era-battery node). Verdict PARTIAL. | commit 33528562 |
-| `meas-attribution-audit` | Attribution audit | §2 row is undated; dates from the 2026-09-07 merges. The §16.80 law is its own node since 2026-11-20 (rec-seqclass-law). | status §2 row "Attribution audit (D0)" |
+| `meas-attribution-audit` | What actually fills each gap | §2 row is undated; dates from the 2026-09-07 merges. The §16.80 law is its own node since 2026-11-20 (rec-seqclass-law). Was titled 'Attribution audit'. | status §2 row "Attribution audit (D0)" |
 | `meas-wire-v8` | Wire v8 instruments and owed findings | Wire v8 + [LAT]/[ETA]/[LATE]/[RANK], the crown spot (2026-09-08) and the Stage-2 close (2026-09-09). Its two open owed findings are their own defect nodes. The crown spot is its own node since 2026-11-20 (meas-crown-spot-v8). | status §2 row "Crown no-regression spot (wire v8 merges)" |
 | `meas-5h-cap` | Owner rule: 5 h measurement cap | Owner 2026-09-08: measurements continue, each capped at 5 hours. | commit 3eb28db6 |
 | `meas-gso-truth` | Per-datagram loss truth (GSO) | §3.8 is undated in the raw record; dates from harness/datagram-truth (2026-09-30). Folds paper §11.1 open question 10. Fixed: the harness measures per-datagram truth ([TRUTH]). | status §3.8 |
 | `meas-v4-verification` | Verification of the new main | Verifies the window-only main with the sender allocation/clock cleanup and the cadence on; its finding 1 led to §7. Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'V4 verification of new main'. | status §6 |
-| `meas-guard-41c` | Rank-minp merge guard | A/A-calibrated rank-minp guard at 12+12; used by §49, §50, §52. nsbench41c is its ns/stamp bench. End 2026-11-12 was a placeholder (status §41c: last edit or migration date); date from merge ?. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §41c; branch archive/nsbench41c |
+| `meas-guard-41c` | Statistical merge check | A/A-calibrated rank-minp guard at 12+12; used by §49, §50, §52. nsbench41c is its ns/stamp bench. End 2026-11-12 was a placeholder (status §41c: last edit or migration date); date from merge ?. Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'Rank-minp merge guard'. | status §41c; branch archive/nsbench41c |
 | `meas-harness-consolidation` | Harness on main, rehearsal mode | Plan W5.0; LD_REHEARSE and verified LD_PRIOR_TESTS. | branch harness-main |
-| `meas-defect-rtp-floor` | Start-up floor clause measures drain | Open until guard v2 is implemented (meas-guard-v2-impl). | status §3.10 item 7 |
+| `meas-defect-rtp-floor` | Merge check misreads start and end | Open until guard v2 is implemented (meas-guard-v2-impl). Was titled 'Start-up floor clause measures drain'. | status §3.10 item 7 |
 | `meas-guard-clause-dry` | Guard clause dry run | No raw record. Dry run done (status §3.10 item 7: "the source-phase floor is degenerate on guard rows; in-order delay resolves only on long rows"); feeds §41d. Branch unmerged (inventory merge). | branch guard-clause-dry (5f73fc6b); docs/derivations/guard-clause-dry.md; status §3.10 item 7; status §41d |
 | `meas-s58-session` | Dial-pin fix suites, binary identity | Part A (suites on the F1 tree): PASS, F1 merged (store-defect-delta-nan). Part B (Linux release-binary identity, binid_run.sh): run 1 not read (control mismatch: the runner built from the workspace root; fixed, and a test pins it); run 2: control = known answer, base ≠ control diagnosed as the two-line cfg(test) mod declaration shifting line numbers (tree X builds the control's sha). Amendment 3: the re-laid endspeed candidate equals main's sha and merges (model-endspeed); tree Y confirms raptorpath-core does not touch the engine binary. phase6-forms and viz-endspeed are superseded by endspeed-relaid. §58 closed. | status §58; status §58 Amendment 2; status §58 Amendment 3; commit ba6637d7; commit f5bbb7c7; commit 504c4ea6; commit e7d7228e; branch s58-tools; branch phase6-forms; branch viz-endspeed |
 | `meas-guard-v2` | Merge guard v2 accepted | No raw record (status §41d is newer than the extract). The owner accepted the v2 spec on 2026-11-13 with two calls: the start-up RTT floor is reported only everywhere, and the +34 min guard cost is accepted (f73338f8). The spec: in-order delay mean scored on 600 MB c2/c8 rows; splice dry run flips no verdict; §48b addendum: bbr_rs raised c8 in-order delay by 46 %. Merged with the former meas-user-guard-v2 node. Implementation: meas-guard-v2-impl. | status §41d (github/main 005cf240, f73338f8); docs/derivations/guard-clause-dry.md |
-| `meas-defect-eta-witness` | ETA route and σ witness mismatch | Status §3.1 item 3: exit flush fixed, but eta_s4.py uses RTprop where the law uses SRTT and the σ̂ witness fails at c7/sc3. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 3 |
-| `meas-defect-c8-bimodal` | Two-path control bimodal collapse | Status §3.1 item 4; not re-checked on the current stack. Undated raw record; date approximate (Stage-2 close). | status §3.1 item 4 |
+| `meas-defect-eta-witness` | Finish-time check uses the wrong delay | Status §3.1 item 3: exit flush fixed, but eta_s4.py uses RTprop where the law uses SRTT and the σ̂ witness fails at c7/sc3. Undated raw record; date approximate (Stage-2 close). Was titled 'ETA route and σ witness mismatch'. | status §3.1 item 3 |
+| `meas-defect-c8-bimodal` | Two-path baseline runs sometimes collapse | Status §3.1 item 4; not re-checked on the current stack. Undated raw record; date approximate (Stage-2 close). Was titled 'Two-path control bimodal collapse'. | status §3.1 item 4 |
 | `meas-defect-diag-rtp-ms` | Delay readout prints whole milliseconds | Status §3.5 item 4. Undated raw record; date approximate (the cleanup). | status §3.5 item 4 |
 | `meas-guard-v2-impl` | Guard v2 implementation | Merged to main (9e687938 "Merge guard v2 (status 41d)", batch ending 0ed6d383): selectable clause set, plan 41d, v1 bit-identical, VOID rule, 600 MB d80 table. Unrated by the non-merge rule until a done node builds on it. Done when: the clause set is selectable (v1 kept; guard47_checks.py and test_bbr48_parse still pass), the guard-clause-dry functions are merged, the c2/c8 600 MB size and timeout, the void rule and a stub-run path exist and pass, and the 600 MB d80 table is committed. Every later guard needs it. | status §41d implementation prerequisites; merge 9e687938 (guard v2), main 0ed6d383 |
 | `meas-s51-design` | Off-Bulk benchmark design | No raw record. Design only: 76 rows per cell (c2-100, c8-100 at 600 MB), named hints against the same δ as a number (T2), ±2 % nudges at each preset, four interior points; ρ < 1 excluded with reasons (a follow-on block). Its prerequisites became meas-s51-harness, rate-fix-rate-readout, meas-s51b-rho; the hint-keyed paths it found are model-fix-hint-keyed-paths. Unrated by the non-merge rule (recorded in status §3.3, but only forward nodes build on it). | branch s51-design (5a9dc401); docs/derivations/s51-design.md; status §3.3 additions (github/main 695c7f4f) |
 | `meas-s51-harness` | Off-Bulk sweep harness and scorer | Built on harness51 a59efa60 (plans 51 and 51e, parser, scorers, the d80 table, stub paths): unfiltered test_stubrun 722 ok, plan and scorer tests pass (status §51 'Host checks'); the Linux shell tests passed in E-pre (§51 Amendment 1). Merged into b51-tree and e-tree, not into main: main takes the harness only after the §51 Result. The rehearsal is part of the session (meas-s51-session, schema rule 1). Done when (met): plan 51, its parser, score51, the d80 table and a stub-run path exist and pass (design §6 items 1-7). | docs/derivations/s51-design.md §8 P1; status §51 "Host checks so far"; status §51 Amendment 1; branch harness51 a59efa60 |
-| `meas-s51b-rho` | Partial-reliability measurement block | This is where the P_fec step (R03) becomes visible in δ (the shed budget). Lane: host-cargo for the CLI and perf changes, then the VM session. Done when: a numeric (or at least carrier-independent) ρ is settable on the CLI, the perf driver completes with declared loss (delivered fraction), chunks carry a send stamp, and a reported session measures ρ < 1 rows with resolution delay and the abandoned fraction. | docs/derivations/s51-design.md §2.3, §8 P4 |
-| `meas-guard-bulk-blind` | Merge guard blind off Bulk | Found by the S06 deletion plan: the 41d guard rows run hint=bulk (no proactive slots), so Stage G only checks Bulk did not regress. The plan adds Stage A (Auto at c2 / c8 with per-row execution witnesses) and Stage R (paced evicting seat). Process rule (2026-11-19, Fable review): no engine merge on a Bulk-only guard; an inert / never-fires reading needs a witness that its precondition held; an accepted ADR needs a non-test call site or a not-implemented status. The repair half of the engine first ran in scored rows this week. Done when: the guard has off-Bulk stages with witnesses as a reusable plan, not per-change additions. | docs/derivations/s06-delete-plan.md (merge gate) |
-| `meas-s51-c8-gauges` | Per-leg clamp and saturation gauges | s51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows. Tools half on main (scorer per-leg gauges fae17588, crlf continuation 2c6d8690, cherry-picked). Engine half (scw=, plx=, shed_slot/shed_nack, rsat=, rlaw=) on c8-gauges 311f8284, stub run ALL OK; joins the measurement build by cherry-pick, behind a guard. 2026-11-20: branch c8-gauges updated to main (697eeb73, CI green; shed counters kept beside main's test-seams hooks). Engine change: waits on the VM guard. | status §51 block 51 Result, gauge defects; status §51 block 51 rehearsal (crlf_guard) |
+| `meas-s51b-rho` | Measurements with droppable data | This is where the P_fec step (R03) becomes visible in δ (the shed budget). Lane: host-cargo for the CLI and perf changes, then the VM session. Done when: a numeric (or at least carrier-independent) ρ is settable on the CLI, the perf driver completes with declared loss (delivered fraction), chunks carry a send stamp, and a reported session measures ρ < 1 rows with resolution delay and the abandoned fraction. Was titled 'Partial-reliability measurement block'. | docs/derivations/s51-design.md §2.3, §8 P4 |
+| `meas-guard-bulk-blind` | Merge check only tests bulk | Found by the S06 deletion plan: the 41d guard rows run hint=bulk (no proactive slots), so Stage G only checks Bulk did not regress. The plan adds Stage A (Auto at c2 / c8 with per-row execution witnesses) and Stage R (paced evicting seat). Process rule (2026-11-19, Fable review): no engine merge on a Bulk-only guard; an inert / never-fires reading needs a witness that its precondition held; an accepted ADR needs a non-test call site or a not-implemented status. The repair half of the engine first ran in scored rows this week. Done when: the guard has off-Bulk stages with witnesses as a reusable plan, not per-change additions. Was titled 'Merge guard blind off Bulk'. | docs/derivations/s06-delete-plan.md (merge gate) |
+| `meas-s51-c8-gauges` | Per-path readouts for two-path runs | s51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows. Tools half on main (scorer per-leg gauges fae17588, crlf continuation 2c6d8690, cherry-picked). Engine half (scw=, plx=, shed_slot/shed_nack, rsat=, rlaw=) on c8-gauges 311f8284, stub run ALL OK; joins the measurement build by cherry-pick, behind a guard. 2026-11-20: branch c8-gauges updated to main (697eeb73, CI green; shed counters kept beside main's test-seams hooks). Engine change: waits on the VM guard. Was titled 'Per-leg clamp and saturation gauges'. | status §51 block 51 Result, gauge defects; status §51 block 51 rehearsal (crlf_guard) |
 | `meas-adversarial-cells-build` | Adversarial cells: build and validate | Done when: the netem cells (jitter 0/5/15/25 ms, an 8-packet shallow buffer, a 100 Mbit policer) exist in the harness, each mechanism-validated by a stub run and a check that the shaper does what it claims. Built on branch adv-cells (106 checks off the VM, 2026-11-13); still waiting on the VM check of the 7 cells (a waiting_on field would warn on a done node, so it is kept here). | plan W5.3; branch adv-cells |
-| `meas-harness-robustness` | Harness robustness for every plan | Done when: LD_REHEARSE covers every plan, each plan path has an end-to-end stub-run test, the sudo env-propagation contract is pinned by a test, and one HARNESS_PATHS table ties plans to tested paths. | plan W5.2 |
-| `meas-guard-resolution` | Guard CPU and lag resolution | Done when: a per-row CPU instrument over the measured window only (per-thread getrusage or perf task-clock) with lower variance is in the harness, and lag questions are either raised in n or reported only, written into the guard rules. | plan W5.4 |
+| `meas-harness-robustness` | Every test plan rehearsable offline | Done when: LD_REHEARSE covers every plan, each plan path has an end-to-end stub-run test, the sudo env-propagation contract is pinned by a test, and one HARNESS_PATHS table ties plans to tested paths. Was titled 'Harness robustness for every plan'. | plan W5.2 |
+| `meas-guard-resolution` | Merge check sees smaller changes | Done when: a per-row CPU instrument over the measured window only (per-thread getrusage or perf task-clock) with lower variance is in the harness, and lag questions are either raised in n or reported only, written into the guard rules. Was titled 'Guard CPU and lag resolution'. | plan W5.4 |
 | `meas-test-hygiene` | Test hygiene fixes | Done when: recv_alloc_bound uses a per-platform measured baseline (or is VM-only with a named reason), every reachability test asserts the regime it needs, and sigma_candidates/tlag are audited in a VM pre-flight. | plan W5.5 |
-| `meas-s51-session` | Off-Bulk baseline and δ sweep | Before the launch: rebuild its tree (b51-tree) on main with the merged framing fix and re-pin it; the old tree predates the merge. Law ledger: R01 (rank 17, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51's block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). §51 Amendment 6 (2026-11-19) re-bases it on b51-tree-v11 6306959 (engine identical to main d9dd18dd, LD_BASE_SHA pinned there for all three launches), adds a stop rule on each cell's block 1 (every arm's first real row), a c2-to-c8 chain rule and a host quiet check; next is the 51 rehearsal. Result (2026-11-19): REPORTED-WITH-SCORED, T1 PASS at all three presets in both cells, T2 Auto / Bulk PASS, T2 Realtime FAIL in both (predicted); δ* 0.0158 in both (consistent with both predictions at the grid's resolution). Two unpredicted c8 findings went to rate-c8-frontier-recopy and model-fix-hint-keyed-paths; the c8 gauge defects to meas-s51-c8-gauges. | status §51; status §51 Amendment 2; status §63 Result; status §51 Amendment 6; status §51 block 51 rehearsal; status §51 block 51 Result; docs/l1-raw/s51b; plan W5.1 |
-| `meas-adversarial-cells-run` | Adversarial cells measured | Done when: BASE, bbr_rs and Copa-sole are measured on the jitter, shallow-buffer and policer cells on the current substrate, results in status. Waits for the controller's round-two session (cc-s48d-session): it measures the controllers after those changes (its former queue reason, 'after the controller changes it is meant to measure'). | plan W5.3, W2.3 |
-| `meas-competitor-battery` | Competitor battery | Done when: kernel BBRv1 and CUBIC are measured in the same session over the same cells and the result answers paper §11.1 open question 11. | plan W5.6 (at the W1 milestone) |
-| `meas-progress-baseline` | Cumulative progress benchmark | Owner request with no node; asked twice, answered only in conversation. Done when: one same-session battery of current main against an early-July baseline on the canonical cells reports, per readout (goodput, CPU per byte, delivered delay), how much each improved, written into status. | user-requests 2026-08-19 ("tell me which attributes improved by how much"); user-requests 2026-11-11 ("can we already see the performance improvements") |
-| `meas-fix-gauges-p3` | Gauges for the remaining constants | Law ledger: S03, S07, R06, K06, K07, C11, F04. Done when: each listed constant has a gauge or a derivation: the trailing offset, the taper-cache staleness, the burst-tail provisioning bind, the placement temperature, the diversity weight, the repair-debt reduction, and the store-cap control arm (deleted once the store-law fix lands). | law ledger rows S03, S07, R06, K06, K07, C11, F04 |
+| `meas-s51-session` | First measurements away from bulk setting | Before the launch: rebuild its tree (b51-tree) on main with the merged framing fix and re-pin it; the old tree predates the merge. Law ledger: R01 (rank 17, P1): the rate mix has never run off the Bulk corner; this session is that measurement, on main with no engine change. It reads r per cell, which the rate-law owner call needs; the term-win gauge (rate-fix-term-gauge) sharpens a later re-run but does not gate this one. Done when: the §51 Result is in status: behaviour continuous in δ through every preset within the noise floor (or the step named as a defect), and r read per cell to settle which side of the P_fec crossing the engine runs on. Registered as status §51's block 51 (s51-design.md at 2aaac8e8): 51 rehearsal, then 51-c2 and 51-c8 (≈ 5 h each), unpaced, on b51-tree b19c4be9 (main 14954df7 + harness51 a59efa60). §51 Amendment 2: its Realtime rows packed on the old binary, so it waits for F2 and its tree is re-based on the merged main by amendment; §63 Result: block 51 needs the merged binary (merged f36d9172). No 51 rule reads an E result. Every prerequisite is done; its place after the evicting-seat test is queue order only (vm_order). §51 Amendment 6 (2026-11-19) re-bases it on b51-tree-v11 6306959 (engine identical to main d9dd18dd, LD_BASE_SHA pinned there for all three launches), adds a stop rule on each cell's block 1 (every arm's first real row), a c2-to-c8 chain rule and a host quiet check; next is the 51 rehearsal. Result (2026-11-19): REPORTED-WITH-SCORED, T1 PASS at all three presets in both cells, T2 Auto / Bulk PASS, T2 Realtime FAIL in both (predicted); δ* 0.0158 in both (consistent with both predictions at the grid's resolution). Two unpredicted c8 findings went to rate-c8-frontier-recopy and model-fix-hint-keyed-paths; the c8 gauge defects to meas-s51-c8-gauges. Was titled 'Off-Bulk baseline and δ sweep'. | status §51; status §51 Amendment 2; status §63 Result; status §51 Amendment 6; status §51 block 51 rehearsal; status §51 block 51 Result; docs/l1-raw/s51b; plan W5.1 |
+| `meas-adversarial-cells-run` | Harder network conditions measured | Done when: BASE, bbr_rs and Copa-sole are measured on the jitter, shallow-buffer and policer cells on the current substrate, results in status. Waits for the controller's round-two session (cc-s48d-session): it measures the controllers after those changes (its former queue reason, 'after the controller changes it is meant to measure'). Was titled 'Adversarial cells measured'. | plan W5.3, W2.3 |
+| `meas-competitor-battery` | Outside protocols on the same tests | Done when: kernel BBRv1 and CUBIC are measured in the same session over the same cells and the result answers paper §11.1 open question 11. Was titled 'Competitor battery'. | plan W5.6 (at the W1 milestone) |
+| `meas-progress-baseline` | Cumulative progress benchmark | Owner request with no node; asked twice, answered only in conversation. Done when: one same-session battery of current main against an early-July baseline on the canonical cells reports, per readout (goodput, CPU per byte, delivered delay), how much each improved, written into status. | user-requests 2026-08-19 (asked which attributes improved, and by how much); user-requests 2026-11-11 (asked whether the performance gains show yet) |
+| `meas-fix-gauges-p3` | Readouts for the last hand-set numbers | Law ledger: S03, S07, R06, K06, K07, C11, F04. Done when: each listed constant has a gauge or a derivation: the trailing offset, the taper-cache staleness, the burst-tail provisioning bind, the placement temperature, the diversity weight, the repair-debt reduction, and the store-cap control arm (deleted once the store-law fix lands). Was titled 'Gauges for the remaining constants'. | law ledger rows S03, S07, R06, K06, K07, C11, F04 |
 | `meas-transport-comparison` | QUIC/MPTCP comparison and overhead taxonomy | ADR-0036 (Accepted) benchmark; ADR-0038 (Accepted) overhead taxonomy: five layers behind the 38-50% overhead. | ADR-0036; ADR-0038 |
 | `meas-matrix-bench` | Matrix benchmark, audit and dashboard | ADR-0044 methodology audit (LinkModel, CorrelatedFading); ADR-0045 matrix of 189 cells x 30 trials; ADR-0049 single-file HTML dashboard. Outcome unrated: no later node clearly replaced it. | ADR-0044; ADR-0045; ADR-0049 |
-| `meas-user-consolidate-arc` | Owner call: consolidate aggregation arc | Owner 2026-07-08 (session record): stop and consolidate the arc; the consolidated verdict is a8dd8675, folded in meas-c8-aggregation-arc. | commit a8dd8675 |
+| `meas-user-consolidate-arc` | Owner call: stop, consolidate two-path results | Owner 2026-07-08 (session record): stop and consolidate the arc; the consolidated verdict is a8dd8675, folded in meas-c8-aggregation-arc. Was titled 'Owner call: consolidate aggregation arc'. | commit a8dd8675 |
 | `meas-anchor-era-suspect` | Anchor-era suspect ruled out | Split 2026-11-20 from meas-pipeline-verification (one of its suspects, with its own refuted verdict). | commit cc8e3c01 |
 | `meas-ack-cadence` | Ack-cadence over-read checks | Split 2026-11-20 from meas-pipeline-verification: the gauge (c0d93050) and the wire measurement (f1dc8ac5), one suspect with its own verdict. | commit c0d93050; commit f1dc8ac5 |
 | `meas-defect-31mbit` | 31 Mbit/s cap: generation coding on | Split 2026-11-20 from rec-goal100 (a measurement defect, not a goal item). | commit 38050959 |
@@ -328,7 +329,7 @@ flowchart TB
   - commit ec62d02e
   - commit 98d02dfb
   - Network simulation harness with Gilbert-Elliott channel and ablation benches (2026-03-17, commit 9cefef2c, commit bb623de0, commit d0fa7b00)
-- `meas-adr51-scenarios`: Canonical scenarios and goal gate
+- `meas-adr51-scenarios`: Standard test scenarios and pass criteria
   - commit 344714c3
   - branch feat/p3-simquic
   - ADR-0051 evaluation scenarios, win conditions and SimQuic class (2026-07-02, commit 3fc7baa3, commit 5ae9f04d)
@@ -336,7 +337,7 @@ flowchart TB
   - Quality sweep and per-improvement ablation table (2026-07-02, commit 3180d4ab)
   - quality_hint_sweep diagnostic across the hints (2026-07-02, commit 389d570e)
   - LinkModel timeline made purely virtual (2026-07-02, commit 09c1940d)
-- `meas-l1-harness`: Network-namespace harness and baselines
+- `meas-l1-harness`: Emulated-network test rig and baselines
   - commit 7851659b
   - commit bcec1fb2
   - commit 7228bf87
@@ -360,16 +361,16 @@ flowchart TB
   - quinn message-tail benchmark vs raptorpath (2026-07-04, commit e168fcc5)
   - Latency-percentile harness and warm-flow object mode (2026-07-04, commit 6868180726629986c, commit 9814d79c)
   - Warm-geometry diagnostics and re-issued L2 claim table (2026-07-04, commit 6f7cb6fa, commit 4cf5697d)
-- `meas-c8-aggregation-arc`: Unequal two-path aggregation arc
+- `meas-c8-aggregation-arc`: Combining a fast and slow path
   - branch verification oracle + aggregation verdict + ADR-0046 fix
   - branch corrected temporal oracle + FINAL aggregation verdict
   - Paper section 16 rewritten as reliable windowed multipath (2026-07-06, commit 1412f280, commit 5930083a)
   - Corrected temporal multipath oracle (2026-07-07, commit 18ee6606, commit caa22760)
-- `meas-gen-inert-era`: Generation-inert measurement era
+- `meas-gen-inert-era`: Tests ran with cross-path coding off
   - commit 7387ad9d
   - Audit corrections to voided verdicts (2026-07-13, commit 02d240c8, commit 50071d80, commit d82600ef)
   - Generation-ON re-baseline (2026-07-13, commit 161aff14)
-- `meas-regime-map`: Hardware-honest regime map
+- `meas-regime-map`: What works where, on real hardware
   - branch diag/lossy-residual
   - paper §11.1 open question 0
   - Default-stack smoke and paper 17.7 (2026-07-21, commit 1e2cb9e5, commit 14d69271)
@@ -441,7 +442,7 @@ flowchart TB
   - branch Eppen at c8
   - Eppen at c8: ordering confirmed, partially; loss correlation partly an output (2026-08-19, commit b98d5377)
   - Eppen condition at the c8 cell (2026-08-19, commit 335285622890c)
-- `meas-attribution-audit`: Attribution audit
+- `meas-attribution-audit`: What actually fills each gap
   - branch THE ATTRIBUTION AUDIT
   - branch 16.80 on measured pi0
 - `meas-wire-v8`: Wire v8 instruments and owed findings
@@ -458,7 +459,7 @@ flowchart TB
 - `meas-s58-session`: Dial-pin fix suites, binary identity
   - commit 17eb3c87
   - commit a7c93722
-- `meas-defect-eta-witness`: ETA route and σ witness mismatch
+- `meas-defect-eta-witness`: Finish-time check uses the wrong delay
   - Sender ETA exit flush (2026-09-30, commit d6c1c414)
 - `meas-transport-comparison`: QUIC/MPTCP comparison and overhead taxonomy
   - commit e508adf4
@@ -466,7 +467,7 @@ flowchart TB
 - `meas-matrix-bench`: Matrix benchmark, audit and dashboard
   - commit f2cba2b7
   - Benchmark dashboard: Trend tab, Plotly performance and shadow DOM fixes (2026-03-20, commit 7019be4d, commit 24db6085, commit 98d02dfb)
-- `meas-user-consolidate-arc`: Owner call: consolidate aggregation arc
+- `meas-user-consolidate-arc`: Owner call: stop, consolidate two-path results
   - Owner decision to consolidate the aggregation arc (2026-07-08, commit a8dd8675)
 - `meas-anchor-era-suspect`: Anchor-era suspect ruled out
   - branch anchor-era suspect REFUTED
