@@ -76,6 +76,10 @@ libc = "0.2"  # preflight: geteuid root check
 # Test-only fault-injection seams (ADR-0078's fail-closed test). Off by default:
 # the release binary never contains them.
 test-seams = []
+# Deterministic simulation (ADR-0082, src/sim.rs): engine clock on tokio's
+# paused clock, in-memory network under quinn. Needs RUSTFLAGS="--cfg
+# tokio_unstable" (seeded select! order); never in the release binary.
+sim = ["tokio/test-util"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -97,3 +101,11 @@ required-features = ["test-seams"]
 [[test]]
 name = "f2_realtime_packed"
 required-features = ["test-seams"]
+
+[[test]]
+name = "sim_determinism"
+required-features = ["sim", "test-seams"]
+
+[[test]]
+name = "sim_lost_tail"
+required-features = ["sim", "test-seams"]

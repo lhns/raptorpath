@@ -1,0 +1,4755 @@
+{
+ "groups": [
+  "bulk_rho1",
+  "auto_rho1",
+  "realtime_rho1",
+  "evicting_rho_lt1",
+  "n1",
+  "n2"
+ ],
+ "runs": {
+  "bulk_rho1": {
+   "seat": "Bulk, rho=1",
+   "steps": [
+    {
+     "sel": "--test ack_merge_loopback",
+     "rc": 0,
+     "secs": 75.7
+    },
+    {
+     "sel": "--test ackdiag_loopback",
+     "rc": 0,
+     "secs": 47.0
+    },
+    {
+     "sel": "--test ackdiag_repair_recon",
+     "rc": 0,
+     "secs": 49.3
+    },
+    {
+     "sel": "--test copa_sole_loopback",
+     "rc": 0,
+     "secs": 46.2
+    },
+    {
+     "sel": "--test emit_batch_loopback",
+     "rc": 0,
+     "secs": 46.4
+    },
+    {
+     "sel": "--test mtu_blackhole_wedge",
+     "rc": 0,
+     "secs": 48.8
+    },
+    {
+     "sel": "--test recv_alloc_bound",
+     "rc": 0,
+     "secs": 50.5
+    },
+    {
+     "sel": "--test reliable_delivery_hold",
+     "rc": 0,
+     "secs": 50.3
+    },
+    {
+     "sel": "--test sum_cap_loopback",
+     "rc": 0,
+     "secs": 47.7
+    },
+    {
+     "sel": "--test three_term_loopback",
+     "rc": 0,
+     "secs": 46.4
+    },
+    {
+     "sel": "--test walldiag_loopback",
+     "rc": 0,
+     "secs": 47.9
+    },
+    {
+     "sel": "--test wire_compact_loopback",
+     "rc": 0,
+     "secs": 46.5
+    },
+    {
+     "sel": "--test f2_peer_symbol_size",
+     "rc": 0,
+     "secs": 46.2
+    },
+    {
+     "sel": "--test cpuprof_reachability",
+     "rc": 0,
+     "secs": 24.4
+    },
+    {
+     "sel": "--test gauge_reachability",
+     "rc": 0,
+     "secs": 48.3
+    },
+    {
+     "sel": "--test runtime_obs_reachability",
+     "rc": 0,
+     "secs": 15.8
+    },
+    {
+     "sel": "--test sigma_candidates_reachability",
+     "rc": 0,
+     "secs": 19.4
+    },
+    {
+     "sel": "--test sigma_diag_reachability",
+     "rc": 0,
+     "secs": 24.9
+    },
+    {
+     "sel": "--test tlag_reachability",
+     "rc": 0,
+     "secs": 19.2
+    },
+    {
+     "sel": "--test emit_batch_default_loopback",
+     "rc": 0,
+     "secs": 19.3
+    },
+    {
+     "sel": "--test quad_path_loopback",
+     "rc": 0,
+     "secs": 48.3
+    },
+    {
+     "sel": "--test recov_mp_loopback",
+     "rc": 0,
+     "secs": 46.1
+    },
+    {
+     "sel": "--test lock_order_loopback",
+     "rc": 0,
+     "secs": 48.0
+    },
+    {
+     "sel": "--test eta_reachability",
+     "rc": 0,
+     "secs": 19.9
+    },
+    {
+     "sel": "--test lat_reachability",
+     "rc": 0,
+     "secs": 19.8
+    },
+    {
+     "sel": "--test inbound_pool_reachability",
+     "rc": 0,
+     "secs": 15.9
+    },
+    {
+     "sel": "--test io_owner_topology",
+     "rc": 0,
+     "secs": 16.5
+    },
+    {
+     "sel": "--test emit_batch_scope_loopback",
+     "rc": 0,
+     "secs": 20.9
+    },
+    {
+     "sel": "--test dead_peer_fail_fast",
+     "rc": 0,
+     "secs": 46.0
+    },
+    {
+     "sel": "--test perf_loopback -- reliable_window out_of_order coded_object generation systematic",
+     "rc": 0,
+     "secs": 64.3
+    }
+   ],
+   "report_rc": 0,
+   "wall_s": 1168.7
+  },
+  "auto_rho1": {
+   "seat": "Auto, rho=1 (the Auto preset)",
+   "steps": [
+    {
+     "sel": "--test perf_loopback -- default_config",
+     "rc": 0,
+     "secs": 79.4
+    }
+   ],
+   "report_rc": 0,
+   "wall_s": 80.0
+  },
+  "realtime_rho1": {
+   "seat": "Realtime, rho=1",
+   "steps": [
+    {
+     "sel": "--features test-seams --test f2_realtime_packed",
+     "rc": 0,
+     "secs": 79.6
+    },
+    {
+     "sel": "--features test-seams --test f2_unframable_closes",
+     "rc": 0,
+     "secs": 49.9
+    },
+    {
+     "sel": "--features test-seams --test f2_mixed_symbol_size",
+     "rc": 0,
+     "secs": 47.3
+    }
+   ],
+   "report_rc": 0,
+   "wall_s": 177.5
+  },
+  "evicting_rho_lt1": {
+   "seat": "rho<1 (window_reliable=false), Bulk and Realtime hints",
+   "steps": [
+    {
+     "sel": "--test f2_window_start_lost",
+     "rc": 0,
+     "secs": 77.7
+    },
+    {
+     "sel": "--test f2_undeliverable_counter",
+     "rc": 0,
+     "secs": 46.5
+    }
+   ],
+   "report_rc": 0,
+   "wall_s": 124.8
+  },
+  "n1": {
+   "seat": "N=1 (one path)",
+   "steps": [
+    {
+     "sel": "--test ack_merge_loopback",
+     "rc": 0,
+     "secs": 79.1
+    },
+    {
+     "sel": "--test ackdiag_loopback",
+     "rc": 0,
+     "secs": 49.3
+    },
+    {
+     "sel": "--test ackdiag_repair_recon",
+     "rc": 0,
+     "secs": 50.5
+    },
+    {
+     "sel": "--test copa_sole_loopback",
+     "rc": 0,
+     "secs": 46.8
+    },
+    {
+     "sel": "--test emit_batch_loopback",
+     "rc": 0,
+     "secs": 47.1
+    },
+    {
+     "sel": "--test mtu_blackhole_wedge",
+     "rc": 0,
+     "secs": 47.4
+    },
+    {
+     "sel": "--test recv_alloc_bound",
+     "rc": 0,
+     "secs": 50.0
+    },
+    {
+     "sel": "--test reliable_delivery_hold",
+     "rc": 0,
+     "secs": 48.8
+    },
+    {
+     "sel": "--test sum_cap_loopback",
+     "rc": 0,
+     "secs": 46.9
+    },
+    {
+     "sel": "--test three_term_loopback",
+     "rc": 0,
+     "secs": 46.0
+    },
+    {
+     "sel": "--test walldiag_loopback",
+     "rc": 0,
+     "secs": 47.9
+    },
+    {
+     "sel": "--test wire_compact_loopback",
+     "rc": 0,
+     "secs": 46.1
+    },
+    {
+     "sel": "--test f2_peer_symbol_size",
+     "rc": 0,
+     "secs": 45.9
+    },
+    {
+     "sel": "--test cpuprof_reachability",
+     "rc": 0,
+     "secs": 24.6
+    },
+    {
+     "sel": "--test gauge_reachability",
+     "rc": 0,
+     "secs": 48.5
+    },
+    {
+     "sel": "--test runtime_obs_reachability",
+     "rc": 0,
+     "secs": 15.8
+    },
+    {
+     "sel": "--test sigma_candidates_reachability",
+     "rc": 0,
+     "secs": 19.5
+    },
+    {
+     "sel": "--test sigma_diag_reachability",
+     "rc": 0,
+     "secs": 25.3
+    },
+    {
+     "sel": "--test tlag_reachability",
+     "rc": 0,
+     "secs": 19.5
+    },
+    {
+     "sel": "--test emit_batch_default_loopback",
+     "rc": 0,
+     "secs": 20.2
+    },
+    {
+     "sel": "--features test-seams --test f2_realtime_packed",
+     "rc": 0,
+     "secs": 78.0
+    },
+    {
+     "sel": "--test f2_window_start_lost",
+     "rc": 0,
+     "secs": 46.6
+    },
+    {
+     "sel": "--test f2_undeliverable_counter",
+     "rc": 0,
+     "secs": 46.3
+    },
+    {
+     "sel": "--test eta_reachability",
+     "rc": 0,
+     "secs": 20.1
+    },
+    {
+     "sel": "--test lat_reachability",
+     "rc": 0,
+     "secs": 19.9
+    },
+    {
+     "sel": "--test inbound_pool_reachability",
+     "rc": 0,
+     "secs": 16.0
+    },
+    {
+     "sel": "--test io_owner_topology",
+     "rc": 0,
+     "secs": 16.8
+    },
+    {
+     "sel": "--test emit_batch_scope_loopback",
+     "rc": 0,
+     "secs": 21.7
+    },
+    {
+     "sel": "--test perf_loopback -- default_config reliable_window out_of_order coded_object generation_object",
+     "rc": 0,
+     "secs": 52.0
+    },
+    {
+     "sel": "--test dead_peer_fail_fast -- single_path",
+     "rc": 0,
+     "secs": 45.3
+    }
+   ],
+   "report_rc": 0,
+   "wall_s": 1190.5
+  },
+  "n2": {
+   "seat": "N=2 (two paths)",
+   "steps": [
+    {
+     "sel": "--test lock_order_loopback",
+     "rc": 0,
+     "secs": 79.1
+    },
+    {
+     "sel": "--test recov_mp_loopback",
+     "rc": 0,
+     "secs": 46.5
+    },
+    {
+     "sel": "--test quad_path_loopback",
+     "rc": 0,
+     "secs": 48.6
+    },
+    {
+     "sel": "--test eta_reachability",
+     "rc": 0,
+     "secs": 20.2
+    },
+    {
+     "sel": "--test lat_reachability",
+     "rc": 0,
+     "secs": 20.1
+    },
+    {
+     "sel": "--test inbound_pool_reachability",
+     "rc": 0,
+     "secs": 16.0
+    },
+    {
+     "sel": "--test io_owner_topology",
+     "rc": 0,
+     "secs": 16.6
+    },
+    {
+     "sel": "--test emit_batch_scope_loopback",
+     "rc": 0,
+     "secs": 21.5
+    },
+    {
+     "sel": "--test perf_loopback -- dual_path",
+     "rc": 0,
+     "secs": 56.4
+    },
+    {
+     "sel": "--test dead_peer_fail_fast -- two_path",
+     "rc": 0,
+     "secs": 45.2
+    }
+   ],
+   "report_rc": 0,
+   "wall_s": 371.8
+  },
+  "lib": {
+   "seat": "lib unit tests (no seat: each test builds its own config in-process)",
+   "steps": [
+    {
+     "sel": "--lib",
+     "rc": 1,
+     "secs": 90.4
+    }
+   ],
+   "report_rc": 1,
+   "wall_s": 90.4
+  }
+ },
+ "sites": {
+  "shed-nack": {
+   "desc": "NACK-path shed: hole shed, removed from retransmit buffer (sender_phases.rs ~846-869)",
+   "line": 863,
+   "by_group": {
+    "bulk_rho1": 0,
+    "auto_rho1": 0,
+    "realtime_rho1": 0,
+    "evicting_rho_lt1": 0,
+    "n1": 0,
+    "n2": 0
+   },
+   "audit": null,
+   "audit_says": {}
+  },
+  "shed-nack-denied": {
+   "desc": "NACK-path shed refused, past deadline (shed_denied)",
+   "line": 867,
+   "by_group": {
+    "bulk_rho1": 0,
+    "auto_rho1": 0,
+    "realtime_rho1": 0,
+    "evicting_rho_lt1": 0,
+    "n1": 0,
+    "n2": 0
+   },
+   "audit": null,
+   "audit_says": {}
+  },
+  "shed-slot": {
+   "desc": "slot-site shed: correction slot sheds a past-deadline candidate (emit_source.rs ~757-785)",
+   "line": 785,
+   "by_group": {
+    "bulk_rho1": 0,
+    "auto_rho1": 0,
+    "realtime_rho1": 0,
+    "evicting_rho_lt1": 0,
+    "n1": 0,
+    "n2": 0
+   },
+   "audit": null,
+   "audit_says": {}
+  },
+  "shed-slot-denied": {
+   "desc": "slot-site shed refused",
+   "line": 793,
+   "by_group": {
+    "bulk_rho1": 0,
+    "auto_rho1": 0,
+    "realtime_rho1": 0,
+    "evicting_rho_lt1": 0,
+    "n1": 0,
+    "n2": 0
+   },
+   "audit": null,
+   "audit_says": {}
+  },
+  "branch-S08": {
+   "desc": "S08 Realtime duplicate source send: redundant_source_path call, inside `if protocol_hint == Realtime` (emit_source.rs ~512)",
+   "line": 512,
+   "by_group": {
+    "bulk_rho1": 0,
+    "auto_rho1": 0,
+    "realtime_rho1": 230,
+    "evicting_rho_lt1": 88,
+    "n1": 88,
+    "n2": 0
+   },
+   "audit": "S08",
+   "audit_says": {
+    "bulk_rho1": "NR"
+   }
+  },
+  "branch-R05": {
+   "desc": "R05 completion exposure: set_completion_exposure(chi), only under RWM_COMPLETION_EXPOSURE (sender_phases.rs ~1313)",
+   "line": 1313,
+   "by_group": {
+    "bulk_rho1": 0,
+    "auto_rho1": 0,
+    "realtime_rho1": 0,
+    "evicting_rho_lt1": 0,
+    "n1": 0,
+    "n2": 0
+   },
+   "audit": "R05",
+   "audit_says": {
+    "bulk_rho1": "NR"
+   }
+  }
+ },
+ "rows": [
+  {
+   "id": "E01",
+   "name": "app-echo RTT EWMA (est.rtt())",
+   "refs": [
+    "raptorpath/src/control/estimator.rs:465",
+    "raptorpath/src/control/estimator.rs:523",
+    "raptorpath/src/net/control_msg.rs:298",
+    "raptorpath/src/net/control_msg.rs:572",
+    "raptorpath/src/control/estimator.rs:281"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E02",
+   "name": "Copa srtt / PathState::srtt()",
+   "refs": [
+    "raptorpath/src/scheduler/copa.rs:942-949",
+    "raptorpath/src/scheduler/path.rs:690",
+    "raptorpath/src/scheduler/copa.rs:248"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E03",
+   "name": "Copa min_rtt (RTprop)",
+   "refs": [
+    "raptorpath/src/scheduler/copa.rs:1000-1008",
+    "raptorpath/src/scheduler/copa.rs:641",
+    "raptorpath/src/scheduler/copa.rs:1490",
+    "raptorpath/src/scheduler/path.rs:1070"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 11,
+     "n": 11,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 11,
+     "n": 11,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 11,
+     "n": 11,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 11,
+     "n": 11,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 11,
+     "n": 11,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 11,
+     "n": 11,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E04",
+   "name": "Copa max_bw / btlbw (delivery-rate max)",
+   "refs": [
+    "raptorpath/src/scheduler/copa.rs:746",
+    "raptorpath/src/scheduler/path.rs:484",
+    "raptorpath/src/scheduler/copa.rs:850",
+    "raptorpath/src/net/copa_feed.rs:172",
+    "raptorpath/src/scheduler/copa.rs:723",
+    "raptorpath/src/scheduler/copa.rs:1472"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 2,
+     "n": 5,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 2,
+     "n": 5,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 5,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E05",
+   "name": "quinn wire SRTT (wire_rtt mirror)",
+   "refs": [
+    "raptorpath/src/transport/io_owner.rs:344",
+    "raptorpath/src/scheduler/mod.rs:196",
+    "raptorpath/src/scheduler/path.rs:679",
+    "raptorpath/src/net/control_msg.rs:236"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 3,
+     "n": 4,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 2,
+     "n": 4,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 4,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 3,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 4,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E06",
+   "name": "per-path loss estimate eps-hat (tx EWMA) and its feed",
+   "refs": [
+    "raptorpath/src/control/estimator.rs:310",
+    "raptorpath/src/control/estimator.rs:498",
+    "raptorpath/src/control/estimator.rs:35-57",
+    "raptorpath/src/net/mod.rs:3698"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 13,
+     "n": 16,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 8,
+     "n": 16,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 8,
+     "n": 16,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 8,
+     "n": 16,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 13,
+     "n": 16,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 13,
+     "n": 16,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E07",
+   "name": "BOCD predictive_loss_upper (eps upper quantile)",
+   "refs": [
+    "raptorpath-math/src/changepoint.rs:203",
+    "raptorpath/src/control/estimator.rs:515",
+    "raptorpath/src/control/fec_rate.rs:491",
+    "raptorpath/src/control/fec_rate.rs:543",
+    "raptorpath/src/net/mod.rs:3235"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 2,
+     "n": 5,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 5,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E08",
+   "name": "Gilbert-Elliott estimator (sigma2_burst, mean burst, mass stats)",
+   "refs": [
+    "raptorpath/src/control/estimator.rs:310"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "E09",
+   "name": "RTTVAR stand-ins (0.1*SRTT for P_lost, 0.125*SRTT for chi)",
+   "refs": [
+    "raptorpath/src/net/channel_set.rs:69",
+    "raptorpath/src/net/sender_phases.rs:1316",
+    "raptorpath/src/scheduler/copa.rs:970",
+    "raptorpath/src/scheduler/copa.rs:979",
+    "raptorpath/src/scheduler/path.rs:798",
+    "raptorpath/src/scheduler/path.rs:943"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 5,
+     "n": 6,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 4,
+     "n": 6,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 6,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 4,
+     "n": 6,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 5,
+     "n": 6,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "E10",
+   "name": "receiver's srtt for the refresh clock (published TX view)",
+   "refs": [
+    "raptorpath/src/net/receiver.rs:729-736",
+    "raptorpath/src/net/receiver.rs:2258",
+    "raptorpath/src/scheduler/mod.rs:467-479"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 14,
+     "n": 15,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 11,
+     "n": 15,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 11,
+     "n": 15,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 11,
+     "n": 15,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 14,
+     "n": 15,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 14,
+     "n": 15,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E11",
+   "name": "pooled recovery srtt (max over live paths of est.rtt())",
+   "refs": [
+    "raptorpath/src/net/recovery_laws.rs:311",
+    "raptorpath/src/net/recovery_laws.rs:251",
+    "raptorpath/src/net/mod.rs:2719",
+    "raptorpath/src/net/sender_phases.rs:708-716"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 5,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 5,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "FAIL",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "FAIL",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "E12",
+   "name": "SendRateAnchor (the rate A* multiplies)",
+   "refs": [
+    "raptorpath/src/control/anchor.rs:185-335",
+    "raptorpath/src/control/anchor.rs:197",
+    "raptorpath/src/control/anchor.rs:201",
+    "raptorpath/src/net/emit_source.rs:563"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 59,
+     "n": 84,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 52,
+     "n": 84,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 52,
+     "n": 84,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 41,
+     "n": 84,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 59,
+     "n": 84,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 59,
+     "n": 84,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "E13",
+   "name": "lifetime echo minimum l-hat (WinSampler::life_min; gauge branch github/slaw-gauge, not on main)",
+   "refs": [],
+   "reanchored": 0,
+   "audit": [
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "E14",
+   "name": "boot brake b-hat0+ (WinSampler::close; gauge branch github/slaw-gauge, not on main)",
+   "refs": [],
+   "reanchored": 0,
+   "audit": [
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "D01",
+   "name": "delta(hint) named points / delta_price",
+   "refs": [
+    "raptorpath/src/net/store_cap.rs:316",
+    "raptorpath/src/scheduler/copa.rs:47",
+    "raptorpath/src/control/fec_rate.rs:70"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "D02",
+   "name": "b(delta) span horizon",
+   "refs": [
+    "raptorpath-math/src/lib.rs:183",
+    "raptorpath/src/net/store_cap.rs:299"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "D03",
+   "name": "q(delta) CoDel setpoint",
+   "refs": [
+    "raptorpath/src/net/store_cap.rs:130",
+    "raptorpath/src/net/store_cap.rs:141",
+    "raptorpath/src/net/store_cap.rs:146"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "D04",
+   "name": "beta(delta) bulkness",
+   "refs": [
+    "raptorpath-math/src/lib.rs:196",
+    "raptorpath/src/control/fec_rate.rs:340"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "D05",
+   "name": "w_bw(delta) placement loss weight",
+   "refs": [
+    "raptorpath/src/scheduler/mod.rs:90-93"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NG",
+    "NG",
+    "NG",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": ""
+   }
+  },
+  {
+   "id": "D06",
+   "name": "t_tail(delta) tail target",
+   "refs": [
+    "raptorpath/src/control/fec_rate.rs:335-337",
+    "raptorpath/src/config.rs:337"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NG",
+    "NG",
+    "NR",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "F01",
+   "name": "pooled store cap",
+   "refs": [
+    "raptorpath/src/net/store_cap.rs:76",
+    "raptorpath/src/net/store_cap.rs:177",
+    "raptorpath/src/net/store_cap.rs:162",
+    "raptorpath/src/net/sender_phases.rs:191",
+    "raptorpath/src/net/sender_phases.rs:64",
+    "raptorpath/src/net/channel_set.rs:125",
+    "raptorpath/src/net/mod.rs:2393"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "PIN",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 4,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "F02",
+   "name": "store gate scope (tx_paused / plain_dyn_cap require reliable)",
+   "refs": [
+    "raptorpath/src/net/mod.rs:2393",
+    "raptorpath/src/net/sender_policy.rs:521"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "none"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "none"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "none"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "none"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "none"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "none"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "F03",
+   "name": "emission burst bound (Law 0, RWM_EMIT_BURST = 64)",
+   "refs": [
+    "raptorpath/src/net/emit_burst.rs:28",
+    "raptorpath/src/gates.rs:363-365",
+    "raptorpath/src/net/mod.rs:3135"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "NR",
+    "PIN",
+    "PIN",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "UNEXPECTED-HIT",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "F04",
+   "name": "store-cap control and off arms (RWM_STORE_PATHS=0, RWM_DELTA_CAP=0, RWM_SUM_CAP=0, RWM_THREE_TERM)",
+   "refs": [
+    "raptorpath/src/net/sender_phases.rs:179",
+    "raptorpath/src/net/sender_phases.rs:210",
+    "raptorpath/src/net/store_cap.rs:162",
+    "raptorpath/src/net/store_cap.rs:190",
+    "raptorpath/src/net/store_cap.rs:552"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "UNEXPECTED-HIT",
+    "realtime_rho1": "UNEXPECTED-HIT",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "F05",
+   "name": "generation pipeline depth M* (opt-in seat)",
+   "refs": [
+    "raptorpath/src/net/mod.rs:473",
+    "raptorpath/src/net/mod.rs:448",
+    "raptorpath/src/net/mod.rs:2245-2271"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 17,
+     "n": 18,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 18,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 18,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 18,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 17,
+     "n": 18,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 17,
+     "n": 18,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "F06",
+   "name": "SACK-clocked release (store_gate_released)",
+   "refs": [
+    "raptorpath/src/net/sack.rs:397",
+    "raptorpath/src/net/sack.rs:361",
+    "raptorpath/src/net/sack.rs:387",
+    "raptorpath/src/net/mod.rs:2223",
+    "raptorpath/src/net/sack.rs:461"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 4,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 4,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "F07",
+   "name": "store-law candidate allowance sigma + q(delta)*l-hat (R6.2 / R6.7 line; derivation only, not built)",
+   "refs": [],
+   "reanchored": 0,
+   "audit": [
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "R01",
+   "name": "rate mix r(beta)",
+   "refs": [
+    "raptorpath/src/control/fec_rate.rs:130",
+    "raptorpath/src/net/emit_source.rs:921"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "PIN",
+    "EX",
+    "EX",
+    "PIN",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "R02",
+   "name": "controller_rate (anchor term body)",
+   "refs": [
+    "raptorpath-math/src/lib.rs:735",
+    "raptorpath/src/control/fec_rate.rs:451-530"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "EX",
+    "EX",
+    "NR",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 47,
+     "n": 47,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 45,
+     "n": 47,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 45,
+     "n": 47,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 45,
+     "n": 47,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 47,
+     "n": 47,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 47,
+     "n": 47,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "R03",
+   "name": "P_fec normal approximation (truncated)",
+   "refs": [
+    "raptorpath-math/src/lib.rs:885",
+    "raptorpath-math/src/lib.rs:886-888",
+    "raptorpath/src/lib.rs:917",
+    "raptorpath/src/net/emit_source.rs:588"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NG",
+    "NG",
+    "NR",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 5,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 5,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 5,
+     "n": 5,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "R04",
+   "name": "r_saturation soft cap",
+   "refs": [
+    "raptorpath-math/src/lib.rs:917",
+    "raptorpath/src/lib.rs:1058"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NG",
+    "NG",
+    "NR",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "R05",
+   "name": "completion exposure chi and BULK_TAIL_BUDGET",
+   "refs": [
+    "raptorpath-math/src/lib.rs:564",
+    "raptorpath-math/src/lib.rs:123",
+    "raptorpath/src/net/sender_phases.rs:1316"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "UNEXPECTED-HIT",
+    "realtime_rho1": "UNEXPECTED-HIT",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "R06",
+   "name": "r*_mass burst-tail provisioning (RWM_RSTAR_TAIL)",
+   "refs": [
+    "raptorpath-math/src/lib.rs:479",
+    "raptorpath-math/src/lib.rs:285"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NG",
+    "NG",
+    "NR",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "R07",
+   "name": "W* derived window and the keep-behind clip",
+   "refs": [
+    "raptorpath-math/src/lib.rs:1000",
+    "raptorpath/src/control/fec_rate.rs:531-553",
+    "raptorpath/src/net/sender_phases.rs:1375"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 21,
+     "n": 21,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 5,
+     "n": 21,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 5,
+     "n": 21,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 5,
+     "n": 21,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 20,
+     "n": 21,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 20,
+     "n": 21,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "R08",
+   "name": "rate cadence min(5 ms, SRTT/4)",
+   "refs": [
+    "raptorpath/src/control/fec_rate.rs:181",
+    "raptorpath/src/control/fec_rate.rs:234"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "R09",
+   "name": "generation repair floor 0.15 / 0.20 (opt-in seat)",
+   "refs": [
+    "raptorpath/src/net/sender_policy.rs:349",
+    "raptorpath/src/net/emit_source.rs:686"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "UNEXPECTED-HIT",
+    "realtime_rho1": "UNEXPECTED-HIT",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "S01",
+   "name": "span deadline D",
+   "refs": [
+    "raptorpath/src/net/shed.rs:31",
+    "raptorpath/src/net/emit_source.rs:567-583"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 12,
+     "n": 13,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 12,
+     "n": 13,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 12,
+     "n": 13,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 13,
+     "n": 13,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 13,
+     "n": 13,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 12,
+     "n": 13,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "S02",
+   "name": "span width A*",
+   "refs": [
+    "raptorpath/src/net/emit_source.rs:573"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "S03",
+   "name": "trailing offset Delta",
+   "refs": [
+    "raptorpath/src/net/emit_source.rs:575-577",
+    "raptorpath/src/control/estimator.rs:550"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "S04",
+   "name": "shed budget",
+   "refs": [
+    "raptorpath/src/net/emit_source.rs:587",
+    "raptorpath/src/control/fec_rate.rs:784",
+    "raptorpath/src/net/shed.rs:39"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 3,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 3,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 3,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 3,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "UNEXPECTED-HIT",
+    "realtime_rho1": "UNEXPECTED-HIT",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "S05",
+   "name": "receiver shed hold",
+   "refs": [
+    "raptorpath/src/net/shed.rs:58",
+    "raptorpath/src/net/shed.rs:389",
+    "raptorpath/src/net/mod.rs:215-216"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "S06",
+   "name": "taper copy decision (P_lost)",
+   "refs": [
+    "raptorpath/src/net/emit_source.rs:703-757",
+    "raptorpath-math/src/lib.rs:64",
+    "raptorpath/src/net/channel_set.rs:65-73"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "EX",
+    "EX",
+    "NR",
+    "PIN",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 25,
+     "n": 39,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 19,
+     "n": 39,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 19,
+     "n": 39,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 19,
+     "n": 39,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 37,
+     "n": 39,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 25,
+     "n": 39,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "S07",
+   "name": "taper-cache staleness 50 ms",
+   "refs": [
+    "raptorpath/src/net/emit_source.rs:51",
+    "raptorpath/src/net/emit_burst.rs:38"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "S08",
+   "name": "Realtime duplicate source send",
+   "refs": [
+    "raptorpath/src/net/emit_source.rs:461",
+    "raptorpath/src/scheduler/mod.rs:552"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "EX",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "FAIL"
+   }
+  },
+  {
+   "id": "S09",
+   "name": "symbol packing and emission-batching scope (use_packing, emit_batch_on)",
+   "refs": [
+    "raptorpath/src/net/sender_policy.rs:678",
+    "raptorpath/src/net/sender_policy.rs:737"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "EX",
+    "NR",
+    "NR",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "UNEXPECTED-HIT",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "S10",
+   "name": "proactive repair emission (taper density and TaperBudget accrual)",
+   "refs": [
+    "raptorpath/src/control/fec_rate.rs:600-640",
+    "raptorpath/src/control/fec_rate.rs:678-740",
+    "raptorpath/src/net/emit_source.rs:680"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 46,
+     "n": 48,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 42,
+     "n": 48,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 42,
+     "n": 48,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 42,
+     "n": 48,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 46,
+     "n": 48,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 46,
+     "n": 48,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C01",
+   "name": "per-path time threshold 9/8 * max(srtt, ewma)",
+   "refs": [
+    "raptorpath/src/net/recovery_laws.rs:118",
+    "raptorpath/src/net/sender_phases.rs:683-748"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "EX",
+    "EX",
+    "EX",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 37,
+     "n": 39,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 39,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 31,
+     "n": 39,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 39,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 37,
+     "n": 39,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 37,
+     "n": 39,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "FAIL",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C02",
+   "name": "packet threshold 3 and the 20-gap report horizon",
+   "refs": [
+    "raptorpath/src/net/recovery_laws.rs:142",
+    "raptorpath/src/net/recovery_laws.rs:166",
+    "raptorpath/src/net/mod.rs:223",
+    "raptorpath/src/net/sack.rs:52-91"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "PIN",
+    "PIN",
+    "PIN",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 14,
+     "n": 24,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 24,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 24,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 24,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 14,
+     "n": 24,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 13,
+     "n": 24,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "FAIL",
+    "realtime_rho1": "FAIL",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C03",
+   "name": "snapshot-order filter (branch github/snapver-law, not on main)",
+   "refs": [
+    "raptorpath/src/net/sender_phases.rs:658-666"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 6,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 6,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 6,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 6,
+     "n": 6,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "C04",
+   "name": "legacy age gate srtt/2 (the shipped N = 1 recovery law)",
+   "refs": [
+    "raptorpath/src/net/recovery_laws.rs:266",
+    "raptorpath/src/net/sender_phases.rs:958-964"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "NR",
+    "NR",
+    "NR",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 5,
+     "n": 7,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 7,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 2,
+     "n": 7,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 7,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 7,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 7,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "FAIL",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "FAIL",
+    "n1": "AGREE",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "C05",
+   "name": "per-sequence retransmit cooldown",
+   "refs": [
+    "raptorpath/src/net/recovery_laws.rs:317",
+    "raptorpath/src/net/recovery_laws.rs:323",
+    "raptorpath/src/net/sender_phases.rs:716",
+    "raptorpath/src/net/sender_phases.rs:882"
+   ],
+   "reanchored": 2,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "FAIL",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "FAIL",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C06",
+   "name": "tail-sweep timeout",
+   "refs": [
+    "raptorpath/src/net/recovery_laws.rs:331",
+    "raptorpath/src/net/mod.rs:2708-2734",
+    "raptorpath/src/net/mod.rs:2951-2963",
+    "raptorpath/src/net/mod.rs:248-249"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 7,
+     "n": 18,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 18,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 18,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 18,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 7,
+     "n": 18,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 7,
+     "n": 18,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C07",
+   "name": "receiver hole refresh (hole_nack_refresh)",
+   "refs": [
+    "raptorpath/src/net/recovery_laws.rs:340",
+    "raptorpath/src/net/receiver.rs:741",
+    "raptorpath/src/net/mod.rs:239-240"
+   ],
+   "reanchored": 1,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 2,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 2,
+     "n": 2,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "FAIL",
+    "realtime_rho1": "FAIL",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C08",
+   "name": "gap-report minimum interval GAP_ACK_MIN_INTERVAL = 2 ms",
+   "refs": [
+    "raptorpath/src/net/mod.rs:234",
+    "raptorpath/src/net/receiver.rs:1929-1932"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 4,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 4,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 4,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 4,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "FAIL",
+    "realtime_rho1": "FAIL",
+    "evicting_rho_lt1": "FAIL",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C09",
+   "name": "NACK repair throttle (NackCongestionState x MAX_NACK_REPAIRS_PER_NACK, per-period nack cap)",
+   "refs": [
+    "raptorpath/src/net/mod.rs:255-344",
+    "raptorpath/src/net/mod.rs:225",
+    "raptorpath/src/net/mod.rs:350",
+    "raptorpath/src/net/mod.rs:3190-3257",
+    "raptorpath/src/net/sender_phases.rs:672",
+    "raptorpath/src/net/sender_phases.rs:814"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "PIN"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 82,
+     "n": 86,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 29,
+     "n": 86,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 30,
+     "n": 86,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 27,
+     "n": 86,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 82,
+     "n": 86,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 82,
+     "n": 86,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C10",
+   "name": "reactive repair margin ceil(retx*eps)",
+   "refs": [
+    "raptorpath/src/net/sender_phases.rs:1108-1164"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG",
+    "NG"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 27,
+     "n": 38,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 38,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 14,
+     "n": 38,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 38,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 27,
+     "n": 38,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 27,
+     "n": 38,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "C11",
+   "name": "repair debt reduction (debt -= nacked*r)",
+   "refs": [
+    "raptorpath/src/net/sender_phases.rs:1166-1176",
+    "raptorpath/src/net/sender_phases.rs:1331",
+    "raptorpath/src/net/emit_source.rs:680-694"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "EX",
+    "EX",
+    "NR",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 17,
+     "n": 18,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 18,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 10,
+     "n": 18,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 3,
+     "n": 18,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 17,
+     "n": 18,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 17,
+     "n": 18,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "C12",
+   "name": "receiver request law (l*, request_bar, request_m; off)",
+   "refs": [
+    "raptorpath/src/net/late.rs:99",
+    "raptorpath/src/net/late.rs:135",
+    "raptorpath/src/net/late.rs:241",
+    "raptorpath/src/net/late.rs:317-358"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 21,
+     "n": 29,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 29,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 29,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 29,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 21,
+     "n": 29,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 19,
+     "n": 29,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "C13",
+   "name": "T_cut give-up horizon (wasm model)",
+   "refs": [
+    "raptorpath-math/src/lib.rs:1254",
+    "raptorpath-wasm/src/lib.rs:1397-1420"
+   ],
+   "reanchored": 1,
+   "audit": null,
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    }
+   },
+   "flags": {}
+  },
+  {
+   "id": "K01",
+   "name": "Copa app-echo cwnd law (queue target, P10 floor, anchor floor and pull)",
+   "refs": [
+    "raptorpath/src/scheduler/copa.rs:314",
+    "raptorpath/src/scheduler/copa.rs:1157",
+    "raptorpath/src/scheduler/copa.rs:1227-1250",
+    "raptorpath/src/scheduler/copa.rs:1316-1338",
+    "raptorpath/src/scheduler/copa.rs:1483",
+    "raptorpath/src/scheduler/path.rs:1092"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 27,
+     "n": 28,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 25,
+     "n": 28,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 24,
+     "n": 28,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 22,
+     "n": 28,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 27,
+     "n": 28,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 26,
+     "n": 28,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "K02",
+   "name": "Copa delta off the wire signal (constant 0.5)",
+   "refs": [
+    "raptorpath/src/scheduler/copa.rs:611"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "UNEXPECTED-HIT",
+    "realtime_rho1": "UNEXPECTED-HIT",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "K03",
+   "name": "Copa wire-mode law and TCP-compete mode (opt-in)",
+   "refs": [
+    "raptorpath/src/scheduler/copa.rs:1191-1203",
+    "raptorpath/src/scheduler/copa.rs:1388-1428",
+    "raptorpath/src/scheduler/copa.rs:1382",
+    "raptorpath/src/scheduler/copa.rs:1054-1140"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 41,
+     "n": 93,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 93,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 93,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 3,
+     "n": 93,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 41,
+     "n": 93,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 93,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "UNEXPECTED-HIT",
+    "auto_rho1": "UNEXPECTED-HIT",
+    "realtime_rho1": "UNEXPECTED-HIT",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "UNEXPECTED-HIT"
+   }
+  },
+  {
+   "id": "K04",
+   "name": "spare capacity and the active_paths saturation filter",
+   "refs": [
+    "raptorpath/src/scheduler/path.rs:467",
+    "raptorpath/src/scheduler/mod.rs:226",
+    "raptorpath/src/scheduler/mod.rs:568",
+    "raptorpath/src/net/emit_source.rs:526"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "PIN(slack)",
+    "PIN(slack)",
+    "PIN(slack)",
+    "NG",
+    "NG",
+    "PIN(0)",
+    "PIN(slack)"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 2,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "K05",
+   "name": "placement cost (place_costs)",
+   "refs": [
+    "raptorpath/src/scheduler/place.rs:288",
+    "raptorpath/src/scheduler/path.rs:441",
+    "raptorpath/src/scheduler/place.rs:347",
+    "raptorpath/src/scheduler/place.rs:38"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "EX",
+    "EX",
+    "EX",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "K06",
+   "name": "placement temperature T = 0.15",
+   "refs": [
+    "raptorpath/src/scheduler/place.rs:18",
+    "raptorpath/src/scheduler/place.rs:160"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NG",
+    "NG",
+    "NG",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 1,
+     "n": 1,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "UNEXPECTED-HIT",
+    "n2": ""
+   }
+  },
+  {
+   "id": "K07",
+   "name": "diversity weight w_div = 1.0",
+   "refs": [
+    "raptorpath/src/scheduler/mod.rs:93",
+    "raptorpath/src/scheduler/place.rs:366-371"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NG",
+    "NG",
+    "NG",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 1,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 4,
+     "n": 5,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "UNEXPECTED-HIT",
+    "n1": "UNEXPECTED-HIT",
+    "n2": ""
+   }
+  },
+  {
+   "id": "K08",
+   "name": "repair spare near-tie band 0.8 / floor 0.25 (opt-in)",
+   "refs": [
+    "raptorpath/src/scheduler/place.rs:119"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR",
+    "NR"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 1,
+     "status": "MISS"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "K09",
+   "name": "quinn BBR (the default substrate CC)",
+   "refs": [
+    "raptorpath/src/transport/quic.rs:79",
+    "raptorpath/src/transport/quic.rs:192-196"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX",
+    "EX"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "auto_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "realtime_rho1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "evicting_rho_lt1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n1": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    },
+    "n2": {
+     "hit": 3,
+     "n": 3,
+     "status": "HIT"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "AGREE",
+    "auto_rho1": "AGREE",
+    "realtime_rho1": "AGREE",
+    "evicting_rho_lt1": "AGREE",
+    "n1": "AGREE",
+    "n2": "AGREE"
+   }
+  },
+  {
+   "id": "K10",
+   "name": "bbr_rs (branch github/bbrrs-r3, not default)",
+   "refs": [
+    "raptorpath/src/transport/bbr_rs.rs:190-340",
+    "raptorpath/src/transport/bbr_rs.rs:75-160",
+    "raptorpath/src/transport/bbr_rs.rs:906-915",
+    "raptorpath/src/transport/bbr_rs.rs:658-720",
+    "raptorpath/src/transport/bbr_rs.rs:723",
+    "raptorpath/src/transport/bbr_rs.rs:750-773"
+   ],
+   "reanchored": 0,
+   "audit": [
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a",
+    "n/a"
+   ],
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 181,
+     "status": "MISS"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 181,
+     "status": "MISS"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 181,
+     "status": "MISS"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 181,
+     "status": "MISS"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 181,
+     "status": "MISS"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 181,
+     "status": "MISS"
+    }
+   },
+   "flags": {
+    "bulk_rho1": "",
+    "auto_rho1": "",
+    "realtime_rho1": "",
+    "evicting_rho_lt1": "",
+    "n1": "",
+    "n2": ""
+   }
+  },
+  {
+   "id": "M01",
+   "name": "wasm store pool 512 per path",
+   "refs": [
+    "raptorpath-wasm/src/lib.rs:352",
+    "raptorpath-wasm/src/lib.rs:1303"
+   ],
+   "reanchored": 0,
+   "audit": null,
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    }
+   },
+   "flags": {}
+  },
+  {
+   "id": "M02",
+   "name": "wasm tail target interpolation (Bulk anchor 0.05)",
+   "refs": [
+    "raptorpath-wasm/src/lib.rs:247-261"
+   ],
+   "reanchored": 0,
+   "audit": null,
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    }
+   },
+   "flags": {}
+  },
+  {
+   "id": "M03",
+   "name": "wasm rate beta-guard and the dead classic-hint machine",
+   "refs": [
+    "raptorpath-wasm/src/lib.rs:883",
+    "raptorpath-wasm/src/lib.rs:1022-1044",
+    "raptorpath-wasm/src/lib.rs:1751"
+   ],
+   "reanchored": 1,
+   "audit": null,
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    }
+   },
+   "flags": {}
+  },
+  {
+   "id": "M04",
+   "name": "wasm give-up law (cartoon + sim; was V5/V6 and W14)",
+   "refs": [],
+   "reanchored": 0,
+   "audit": null,
+   "groups": {
+    "bulk_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "auto_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "realtime_rho1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "evicting_rho_lt1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n1": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    },
+    "n2": {
+     "hit": 0,
+     "n": 0,
+     "status": "nofile"
+    }
+   },
+   "flags": {}
+  }
+ ]
+}

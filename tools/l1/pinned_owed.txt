@@ -1,0 +1,126 @@
+# Pinned-law cells that read PIN, NR or UZ with no ledger verdict (first-day state, threshold 0.5).
+# Remove a line when the ledger row gets a verdict covering the seat or the reading changes; the test fails
+# on a line that no longer reproduces and on any unlisted cell. UZ = a counter reads 0 without its witness.
+# OWED row seat class | reading
+OWED C01 E NR | precondition np_multi never held in 1165 ticks
+OWED C01 c2_A NR | precondition np_multi never held in 1466 ticks
+OWED C01 c2_B NR | precondition np_multi never held in 1231 ticks
+OWED C01 c2_R NR | precondition np_multi never held in 1645 ticks
+OWED C02 E PIN | mpr.fast = 0 on all 1165 ticks (witness reports on 1165)
+OWED C02 c2_A PIN | mpr.fast = 0 on all 1466 ticks (witness reports on 1466)
+OWED C02 c2_B PIN | mpr.fast = 0 on all 1231 ticks (witness reports on 1231)
+OWED C02 c2_R PIN | mpr.fast = 0 on all 1645 ticks (witness reports on 1645)
+OWED C04 E PIN | mpr.supp.1 = 0 on all 1165 ticks (witness fired on 1165)
+OWED C04 c2_A PIN | mpr.supp.1 = 0 on all 1466 ticks (witness fired on 1466)
+OWED C04 c2_B PIN | mpr.supp.1 = 0 on all 1231 ticks (witness fired on 1231)
+OWED C04 c2_R PIN | mpr.supp.1 = 0 on all 1645 ticks (witness fired on 1645)
+OWED C04 c8_A NR | precondition np1 never held in 1254 ticks
+OWED C04 c8_B NR | precondition np1 never held in 1017 ticks
+OWED C04 c8_R NR | precondition np1 never held in 1311 ticks
+OWED C06 c2_A PIN | latched in 6/6 rows
+OWED C06 c2_B PIN | latched in 4/6 rows
+OWED C06 c2_R PIN | latched in 6/6 rows
+OWED C08 E PIN | sampler_bind median 0.984 over 5 rows
+OWED C08 c2_A PIN | sampler_bind median 1.000 over 6 rows
+OWED C08 c2_B PIN | sampler_bind median 1.000 over 6 rows
+OWED C08 c2_R PIN | sampler_bind median 1.000 over 6 rows
+OWED C08 c8_A PIN | sampler_bind median 0.932 over 6 rows
+OWED C08 c8_B PIN | sampler_bind median 0.900 over 6 rows
+OWED C08 c8_R PIN | sampler_bind median 0.966 over 6 rows
+OWED C09 E PIN | nbud10 on 0.938 of 1165 ticks
+OWED C09 c2_A PIN | nbud10 on 0.894 of 1466 ticks
+OWED C09 c2_B PIN | nbud10 on 0.876 of 1231 ticks
+OWED C09 c2_R PIN | nbud10 on 0.830 of 1645 ticks
+OWED C09 c8_A PIN | nbud10 on 0.864 of 1254 ticks
+OWED C09 c8_B PIN | nbud10 on 0.799 of 1017 ticks
+OWED C09 c8_R PIN | nbud10 on 0.700 of 1311 ticks
+OWED C11 E PIN | debt_zero on 0.540 of 580 ticks
+OWED C11 c2_A PIN | debt_zero on 0.856 of 729 ticks
+OWED C11 c8_A PIN | debt_zero on 0.931 of 624 ticks
+OWED C11 c8_R PIN | debt_zero on 0.695 of 653 ticks
+OWED C12 E NR | RWM_RECV_REQUEST_LAW=0 on 5/5 rows
+OWED C12 c2_A NR | RWM_RECV_REQUEST_LAW=0 on 6/6 rows
+OWED C12 c2_B NR | RWM_RECV_REQUEST_LAW=0 on 6/6 rows
+OWED C12 c2_R NR | RWM_RECV_REQUEST_LAW=0 on 6/6 rows
+OWED C12 c8_A NR | RWM_RECV_REQUEST_LAW=0 on 6/6 rows
+OWED C12 c8_B NR | RWM_RECV_REQUEST_LAW=0 on 6/6 rows
+OWED C12 c8_R NR | RWM_RECV_REQUEST_LAW=0 on 6/6 rows
+OWED E06 E PIN | pl mode 0 on 0.761 of 1165 ticks
+OWED E06 c2_A PIN | pl mode 0 on 0.825 of 1466 ticks
+OWED E06 c2_B PIN | pl mode 0 on 0.863 of 1231 ticks
+OWED E06 c2_R PIN | pl mode 0 on 0.829 of 1645 ticks
+OWED E06 c8_A PIN | pl mode 0 on 0.856 of 1254 ticks
+OWED E06 c8_B PIN | pl mode 0 on 0.878 of 1017 ticks
+OWED E06 c8_R PIN | pl mode 0 on 0.881 of 1311 ticks
+OWED F01 E NR | no SUMCAP line at the seat
+OWED F01 c2_A PIN | pin median 0.835 over 6 rows
+OWED F01 c2_B PIN | pin median 0.803 over 6 rows
+OWED F01 c2_R PIN | pin median 0.857 over 6 rows
+OWED F02 E PIN | win.1 mode 1024 on 1.000 of 1165 ticks
+OWED F02 c2_A PIN | win.1 mode 2048 on 0.857 of 1466 ticks
+OWED F02 c2_B PIN | win.1 mode 2048 on 0.781 of 1231 ticks
+OWED F02 c2_R PIN | win.1 mode 2048 on 0.880 of 1645 ticks
+OWED F02 c8_A PIN | win.1 mode 4096 on 0.842 of 1254 ticks
+OWED F02 c8_B PIN | win.1 mode 4096 on 0.803 of 1017 ticks
+OWED F02 c8_R PIN | win.1 mode 4096 on 0.958 of 1311 ticks
+OWED F03 E NR | eb_bursts=0 on 5/5 rows
+OWED F03 c2_R NR | eb_bursts=0 on 6/6 rows
+OWED F03 c8_R NR | eb_bursts=0 on 6/6 rows
+OWED F04 E NR | RWM_THREE_TERM=0 on 5/5 rows
+OWED F04 c2_A NR | RWM_THREE_TERM=0 on 6/6 rows
+OWED F04 c2_B NR | RWM_THREE_TERM=0 on 6/6 rows
+OWED F04 c2_R NR | RWM_THREE_TERM=0 on 6/6 rows
+OWED F04 c8_A NR | RWM_THREE_TERM=0 on 6/6 rows
+OWED F04 c8_B NR | RWM_THREE_TERM=0 on 6/6 rows
+OWED F04 c8_R NR | RWM_THREE_TERM=0 on 6/6 rows
+OWED F06 E NR | no srel.1 field at the seat
+OWED K01 c2_A PIN | cwnd_max on 0.698 of 1466 ticks
+OWED K01 c2_B PIN | cwnd_max on 0.591 of 1231 ticks
+OWED K01 c2_R PIN | cwnd_max on 0.759 of 1645 ticks
+OWED K01 c8_R PIN | cwnd_max on 0.787 of 1311 ticks
+OWED K08 E NR | RWM_XPATH_REPAIR=0 on 5/5 rows
+OWED K08 c2_A NR | RWM_XPATH_REPAIR=0 on 6/6 rows
+OWED K08 c2_B NR | RWM_XPATH_REPAIR=0 on 6/6 rows
+OWED K08 c2_R NR | RWM_XPATH_REPAIR=0 on 6/6 rows
+OWED K08 c8_A NR | RWM_XPATH_REPAIR=0 on 6/6 rows
+OWED K08 c8_B NR | RWM_XPATH_REPAIR=0 on 6/6 rows
+OWED K08 c8_R NR | RWM_XPATH_REPAIR=0 on 6/6 rows
+OWED R02 c2_B NR | precondition rr_pos never held in 612 ticks
+OWED R02 c8_B NR | precondition rr_pos never held in 505 ticks
+OWED R07 E PIN | wsize_clip on 0.888 of 580 ticks
+OWED R07 c2_A PIN | wsize_clip on 0.948 of 729 ticks
+OWED R07 c2_B PIN | wsize_clip on 0.961 of 612 ticks
+OWED R07 c2_R PIN | wsize_clip on 1.000 of 823 ticks
+OWED R07 c8_A PIN | wsize_clip on 0.952 of 624 ticks
+OWED R07 c8_B PIN | wsize_clip on 0.960 of 505 ticks
+OWED R07 c8_R PIN | wsize_clip on 1.000 of 653 ticks
+OWED R08 c2_A PIN | rtt_gt20 on 1.000 of 1466 ticks
+OWED R08 c2_B PIN | rtt_gt20 on 1.000 of 1231 ticks
+OWED R08 c2_R PIN | rtt_gt20 on 1.000 of 1645 ticks
+OWED R08 c8_A PIN | rtt_gt20 on 1.000 of 1254 ticks
+OWED R08 c8_B PIN | rtt_gt20 on 1.000 of 1017 ticks
+OWED R08 c8_R PIN | rtt_gt20 on 1.000 of 1311 ticks
+OWED S02 c2_A PIN | astar_ge_w on 0.978 of 729 ticks
+OWED S02 c2_B PIN | astar_ge_w on 0.980 of 612 ticks
+OWED S02 c2_R PIN | astar_ge_w on 1.000 of 823 ticks
+OWED S02 c8_A PIN | astar_ge_w on 0.973 of 624 ticks
+OWED S02 c8_B PIN | astar_ge_w on 0.972 of 505 ticks
+OWED S02 c8_R PIN | astar_ge_w on 1.000 of 653 ticks
+OWED S03 E PIN | delta mode 1 on 1.000 of 580 ticks
+OWED S03 c2_A PIN | delta mode 1 on 1.000 of 729 ticks
+OWED S03 c2_B PIN | delta mode 1 on 1.000 of 612 ticks
+OWED S03 c2_R PIN | delta mode 1 on 1.000 of 823 ticks
+OWED S03 c8_A PIN | delta mode 1 on 1.000 of 624 ticks
+OWED S03 c8_B PIN | delta mode 1 on 1.000 of 505 ticks
+OWED S03 c8_R PIN | delta mode 1 on 1.000 of 653 ticks
+OWED S05 E PIN | floor_frac median 1.000 over 5 rows
+OWED S05 c2_A PIN | floor_frac median 1.000 over 6 rows
+OWED S05 c2_B PIN | floor_frac median 1.000 over 6 rows
+OWED S05 c2_R PIN | floor_frac median 1.000 over 6 rows
+OWED S10 E PIN | owed mode 0 on 1.000 of 580 ticks
+OWED S10 c2_A PIN | owed mode 0 on 1.000 of 729 ticks
+OWED S10 c2_B UZ | owed = 0 on 1.000 of 612 ticks, witness rr_pos never held
+OWED S10 c2_R PIN | owed mode 0 on 1.000 of 823 ticks
+OWED S10 c8_A PIN | owed mode 0 on 1.000 of 624 ticks
+OWED S10 c8_B UZ | owed = 0 on 1.000 of 505 ticks, witness rr_pos never held
+OWED S10 c8_R PIN | owed mode 0 on 1.000 of 653 ticks

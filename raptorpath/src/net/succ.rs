@@ -418,7 +418,7 @@ impl SuccGauge {
         Self {
             open: BTreeMap::new(),
             hi: None,
-            hi_at: Instant::now(),
+            hi_at: crate::clock::now(),
             orig: Hist::default(),
             rep: Hist::default(),
             aban: Hist::default(),

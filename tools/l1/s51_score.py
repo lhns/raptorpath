@@ -48,7 +48,20 @@ _DGEV = re.compile(r" dgev(\d+)=(\d+)")
 _PLU = re.compile(r" p(\d+):infl=.*? plu=([\d.]+) plc=([\d.]+)")
 _SPAN = re.compile(r"\[SPAN\] t=([\d.]+)s .*? wsize=(\d+) .*? rr=([-+\d.eE]+) ")
 _SUMCAP_PIN = re.compile(r"\[SUMCAP\] .*? pin=([\d.]+)")
+_LEGHD = re.compile(r" p(\d+):infl=(\d+)/")
+_SCW = re.compile(r" scw=(\d+)")
 MAX_CWND = 10000
+NO_LEG_CWND = "n/a (no per-leg cwnd)"
+
+
+def _legs(ln):
+    """[(leg id, infl, scw|None)] of a [DIAG] line's per-leg blocks. `scw=` is the leg's scheduler cwnd (the value spare_capacity reads); absent on logs from before it was printed."""
+    hs = list(_LEGHD.finditer(ln))
+    out = []
+    for i, h in enumerate(hs):
+        sc = _SCW.search(ln, h.end(), hs[i + 1].start() if i + 1 < len(hs) else len(ln))
+        out.append((int(h.group(1)), int(h.group(2)), int(sc.group(1)) if sc else None))
+    return out
 
 # section 5.1: the registered r(delta) bands (plu - plc) per cell, printed beside the consumed / granted readings. key = the sweep point.
 R_BANDS = {  # point: (delta, c2 band, c8 (c3 leg) band)
@@ -79,6 +92,20 @@ def mean(v):
 
 def _f(x, nd=3):
     return "-" if x is None else f"{x:.{nd}f}"
+
+
+def _leg_gauge(rs, agg_key, leg_key):
+    """A bind / tau gauge over rows. The aggregate (`cwnd=` sum vs the per-path MAX_CWND) counts only on a one-leg row; a multipath row counts only when it carries per-leg `scw=` values
+    (a stored t51 without `maxcwnd_leg` predates them: its aggregate is the wrong reading). -> `X (any leg; p0 x, p1 y)`, `p0 x, p1 y` (agg_key None), or NO_LEG_CWND ('' for tau on a one-leg row)."""
+    multi = [rv for rv in rs if rv.cell != plan51.C2]
+    legs = [rv.t.get(leg_key) for rv in multi if rv.t.get(leg_key)]
+    if legs:
+        ids = sorted({i for d in legs for i in d})
+        per = ", ".join(f"p{i} {_f(med([d.get(i) for d in legs]), 3)}" for i in ids)
+        return f"{_f(med([rv.t.get(agg_key) for rv in multi if rv.t.get(leg_key)]), 3)} (any leg; {per})" if agg_key else per
+    if multi:
+        return NO_LEG_CWND
+    return _f(med([rv.t.get(agg_key) for rv in rs]), 3) if agg_key else ""
 
 
 def _share(num, den):
@@ -120,7 +147,7 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=plan51.C2, arm="HB", mbps=None)
             ev = {int(a): int(b) for a, b in _DGEV.findall(ln)}
             ticks.append({"t": float(mt.group(1)), "src": int(sr.group(1)) if sr else None, "paused": int(pa.group(1)) if pa else None, "cwnd": int(cw.group(1)) if cw else None,
                           "infl": int(cw.group(2)) if cw else None, "cum": tuple(int(x) for x in cu.groups()) if cu else None, "taper": int(tp.group(1)) if tp else None,
-                          "retx": int(rx.group(1)) if rx else None, "dgq": dq, "dgev": ev, "plu": {int(a): (float(b), float(c)) for a, b, c in _PLU.findall(ln)}})
+                          "retx": int(rx.group(1)) if rx else None, "legs": _legs(ln), "dgq": dq, "dgev": ev, "plu": {int(a): (float(b), float(c)) for a, b, c in _PLU.findall(ln)}})
         else:
             sp = _SPAN.search(ln)
             if sp:
@@ -135,7 +162,24 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=plan51.C2, arm="HB", mbps=None)
     sending = [k for k in sat if k["paused"] == 0]
     m["tau_x"] = _share(sum(1 for k in sending if k["infl"] >= k["cwnd"]), len(sending))
     cw = [k for k in send if k["cwnd"] is not None]
-    m["maxcwnd_share"] = _share(sum(1 for k in cw if k["cwnd"] == MAX_CWND), len(cw))                       # section 3.2: MAX_CWND bind share
+    # `cwnd=` / `infl=` are SUMS over the paths while MAX_CWND is per path: the aggregate is a valid bind / spare reading on a one-leg row only. A multipath row reads
+    # the per-leg `scw=` when printed and is n/a (None) otherwise.
+    seen = [k["legs"] for k in ticks if k["legs"]]
+    multi = cell != plan51.C2 or (bool(seen) and max(len(x) for x in seen) > 1)
+    pl = [k for k in ticks if k["legs"] and all(x[2] is not None for x in k["legs"])]
+    plsend = [k for k in pl if (k["src"] or 0) > 0]
+    plsat = [k for k in pl if (k["src"] or 0) > 1000]
+    legids = sorted({x[0] for k in pl for x in k["legs"]})
+    m["leg_cwnd"] = bool(pl)
+    if multi and pl:
+        m["maxcwnd_share"] = _share(sum(1 for k in plsend if any(x[2] == MAX_CWND for x in k["legs"])), len(plsend))     # any leg at the per-path cap
+        m["maxcwnd_leg"] = {str(i): _share(sum(1 for k in plsend if any(x[0] == i and x[2] == MAX_CWND for x in k["legs"])), len(plsend)) for i in legids}
+        m["tau_leg"] = {str(i): _share(sum(1 for k in plsat if any(x[0] == i and x[1] >= x[2] for x in k["legs"])), len(plsat)) for i in legids}
+    elif multi:
+        m["maxcwnd_share"], m["maxcwnd_leg"], m["tau_leg"] = None, None, None
+    else:
+        m["maxcwnd_share"] = _share(sum(1 for k in cw if k["cwnd"] == MAX_CWND), len(cw))                   # section 3.2: MAX_CWND bind share
+        m["maxcwnd_leg"] = m["tau_leg"] = None
     last = ticks[-1] if ticks else None
     hand = {i: v[0] for i, v in (last["dgq"] if last else {}).items()}
     tx = {i: v[1] for i, v in (last["dgq"] if last else {}).items()}
@@ -144,13 +188,19 @@ def row_metrics(cli, srv, drv, nbytes=None, cell=plan51.C2, arm="HB", mbps=None)
     th, tt = sum(hand.values()), sum(tx.values())
     m["evict_share"] = (th - tt) / th if th else None
     m["dgev_over_hand"] = (sum(dgev.values()) / th) if (th and dgev) else None                                # the smoke witness: dgev / hand at the end
-    # the spare-clamp tick bracket (c2 only: single path, spare_capacity is that leg's own); c8 has no per-leg scheduler cwnd print: MISSING
-    if cell == plan51.C2:
+    # the spare-clamp tick bracket: the one-leg aggregate is that leg's own spare_capacity; a multipath row takes the min over legs of (scw - infl) / infl (legs with
+    # infl = 0 have infinite spare), and is None without `scw=`
+    if multi:
+        s = []
+        for k in plsend:
+            v = [max(0, x[2] - x[1]) / x[1] for x in k["legs"] if x[1]]
+            if v:
+                s.append(min(v))
+        m["spare_lo"], m["spare_hi"] = (_share(sum(1 for x in s if x == 0), len(s)), _share(sum(1 for x in s if x < 0.5), len(s))) if pl else (None, None)
+    else:
         pts = [k for k in send if k["cwnd"] is not None and k["infl"]]
         s = [max(0, k["cwnd"] - k["infl"]) / k["infl"] for k in pts]
         m["spare_lo"], m["spare_hi"] = _share(sum(1 for x in s if x == 0), len(s)), _share(sum(1 for x in s if x < 0.5), len(s))
-    else:
-        m["spare_lo"] = m["spare_hi"] = None
     m["headroom_med"] = med([(k["cwnd"] - k["infl"]) / k["cwnd"] for k in send if k["cwnd"] and k["infl"] is not None])
     # consumed r = (cod + taper) / src from the last [DIAG]; the coded share
     cum = [k for k in ticks if k["cum"]]
@@ -422,14 +472,13 @@ def score(paths, out=print, d80_path=D80_FILE, aa_draws=40):
                 f"consumed r {_f(med([rv.t.get('r_consumed') for rv in rs]), 4)}; granted rr mean {_f(med([rv.t.get('rr_mean') for rv in rs]), 4)} p50 {_f(med([rv.t.get('rr_p50') for rv in rs]), 3)} nz {_f(med([rv.t.get('rr_nz_frac') for rv in rs]), 2)}; "
                 f"W {_f(med([rv.t.get('wsize_med') for rv in rs]), 0)}; SUMCAP pin {_f(med([rv.t.get('sumcap_pin') for rv in rs]), 2)}; src/byte {_f(med([rv.t.get('src_per_byte') for rv in rs]), 7)}")
             out(f"      s51-evict 3.2: tau_x {_f(med([rv.t.get('tau_sat') for rv in rs]), 3)} (saturated-tick share); eviction share {_f(med([rv.t.get('evict_share') for rv in rs]), 4)}; dgev/hand {_f(med([rv.t.get('dgev_over_hand') for rv in rs]), 4)}; "
-                f"MAX_CWND bind {_f(med([rv.t.get('maxcwnd_share') for rv in rs]), 3)}; " + (f"spare-clamp bracket: lower share(s = 0) {_f(med([rv.t.get('spare_lo') for rv in rs]), 3)}, upper share(s < 0.5) {_f(med([rv.t.get('spare_hi') for rv in rs]), 3)}" if cell == plan51.C2 else "spare-clamp bracket: MISSING at c8 ([DIAG] prints no per-leg scheduler cwnd)"))
+                f"MAX_CWND bind {_leg_gauge(rs, 'maxcwnd_share', 'maxcwnd_leg')}; " + (f"tau per leg {_leg_gauge(rs, None, 'tau_leg')}; " if cell != plan51.C2 else "") + "spare-clamp bracket: " + (f"lower share(s = 0) {_f(med([rv.t.get('spare_lo') for rv in rs]), 3)}, upper share(s < 0.5) {_f(med([rv.t.get('spare_hi') for rv in rs]), 3)}" if any(rv.t.get("spare_lo") is not None for rv in rs) else NO_LEG_CWND))
         # W-ROUTE
         hbz, inert, attr = rr_inert(rvs, cell)
         out(f"  W-ROUTE {short}: rr exactly 0 on every H-B / B- row: {hbz}; R-INERT (rr = 0 on every beta < 1 row): {inert}" + (f" -> attributed {attr}" if inert else ""))
         lab(f"W-ROUTE-{short}", ("FAIL" if hbz is False else "PASS" if hbz else "UNSCOREABLE") + (" R-INERT" if inert else ""))
         # the r(delta) table, the P_fec side and delta*
-        out(f"  r(delta) {short}: point | consumed r (minus the H-B coded share) | granted rr mean | registered band (plu - plc) | plu/(1-plu) | plc/(1-plc)   [r_sat {R_SAT[cell]}, crossing eps/(1-eps) {CROSS[cell]}]")
-        hb_cs = med([rv.t.get("coded_share") for rv in rvs if rv.cell == cell and rv.arm == "HB" and rv.live])
+        out(f"  r(delta) {short}: point | consumed r (minus the H-B consumed r) | granted rr mean | registered band (plu - plc) | plu/(1-plu) | plc/(1-plc)   [r_sat {R_SAT[cell]}, crossing eps/(1-eps) {CROSS[cell]}]")
         hb_rc = med([rv.t.get("r_consumed") for rv in rvs if rv.cell == cell and rv.arm == "HB" and rv.live])
         star = None
         for name, arms, dl in sweep_points():

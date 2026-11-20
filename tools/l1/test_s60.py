@@ -699,7 +699,7 @@ check("G/C: the median of the pair log-ratios (not the ratio of medians)", has(o
 check("G/C: goodput minimum detectable difference reported (s60size.py t quantiles)", has(ogc5, "minimum detectable difference at n=6"))
 
 # ═══ 15. EVICT rows: m-bar, W1, K4 steady windows ═══
-def evict_cli(adv=10, dbt_em=1, n_ticks=60, span_none_at=None, a_change_at=None, fec_n=3):
+def evict_cli(adv=10, dbt_em=30, n_ticks=60, span_none_at=None, a_change_at=None, fec_n=3):
     L = ['{"seconds":0.01,"warmup":true}']
     for k in range(1, n_ticks + 1):
         t = 0.25 * k
@@ -707,10 +707,10 @@ def evict_cli(adv=10, dbt_em=1, n_ticks=60, span_none_at=None, a_change_at=None,
         ack = sum(200 if j % 2 == 0 else 280 for j in range(1, kk + 1))
         src = 2000 if k <= 48 else 0
         L.append(f"[DIAG] t={t:.1f}s win=800/1000 paused=0% good={80.0 + k:.1f}Mbit src={src}sym/s cod={320 if src else 0}sym/s cum={250 * kk}/{40 * kk}/{ack} np=1 np_act=1 rtt=5.0ms bdp100=165sym "
-                 f"p0:infl=1/sinfl=0/bdp1(cap0) sout=0 khr=1.00/kraw=- btlbw=1 sr=0/g0d0 est=Y pl=0.0150 cmp=- rtt=5/wrtt=3/rtp2ms rtp_us=1 "
+                 f"mpr[rep=0 plost=0 taper=0 age=1ms] p0:infl=1/sinfl=0/bdp1(cap0) sout=0 khr=1.00/kraw=- btlbw=1 sr=0/g0d0 est=Y pl=0.0150 cmp=- rtt=5/wrtt=3/rtp2ms rtp_us=1 "
                  f"wait[tun=1% ack=82% cmd=0% n={80 if k % 2 == 0 else 120} us=250000 busy=45% busy_us=112500] wake[tun=1 ack={20 * k} cmd=1]")
         L.append(f"[WSTORE] t={t:.2f} k={k} tw=250.0 n=100 W=50 aw=0.5 awmin=0.5 relb=1/12/12/12 emb=2/16/16/16 adv={adv}/30/30/30 ackw=1 fec=0.020000/4.0000/0.20000/12.00/{fec_n} "
-                 f"dbt_acc=1.00 dbt_em={dbt_em} dbt_share=0.5000 dbt_rm_ack=0.00")
+                 f"dbt_acc=30.00 dbt_em={dbt_em} dbt_share=0.5000 dbt_rm_ack=0.00")
         if k % 2 == 0:
             j = k // 2
             a, d = "Some(12)", "Some(0.5)"
@@ -732,8 +732,8 @@ es, t60e = evict_stats_of(evict_cli())
 check("EVICT m-bar = d(cum ack)/sum(adv count): LATE ticks 5.0..12.0 s -> d(ack) 6720, 28 windows x adv 10 = 280 -> 24.0, and mbar_lo (2.4) <= m-bar witness ok", near(es["mbar"], 24.0) and near(es["mbar_lo"], 2.4) and es["mbar_ok"] is True, es)
 es_bad, _ = evict_stats_of(evict_cli(adv=3000))
 check("EVICT witness mbar_lo <= m-bar FAILS when the adv counts are huge (m-bar 0.08 < 2.4)", es_bad["mbar_ok"] is False, es_bad["mbar"])
-check("EVICT row W1 = sum dbt_em / sum dbt_acc over LATE windows (t >= 5): 1.0, inside plan 59's bracket [0, 1.333]", near(es["w1"], 1.0) and es["w1_ok"] is True and near(es["w1_hi"], 0.16 / 0.12, 1e-9), es)
-es_w, _ = evict_stats_of(evict_cli(dbt_em=3))
+check("EVICT row W1 = sum dbt_em / sum dbt_acc over LATE windows (t >= 5): 1.0, inside plan 59's count-form bracket [0, 1.333] (d cod 1120 / sum dbt_acc 840, plost 0)", near(es["w1"], 1.0) and es["w1_ok"] is True and near(es["w1_hi"], 0.16 / 0.12, 1e-9), es)
+es_w, _ = evict_stats_of(evict_cli(dbt_em=90))
 check("EVICT W1 witness FAILS when W1 (3.0) lies outside the bracket", es_w["w1_ok"] is False)
 check("EVICT K4: every [SPAN] line constant -> steady windows = the 40 LATE windows with a successor (k=20..59)", es["n_steady"] == 40 and es["n_late"] == 41 and es["unscoreable"] is False, (es["n_steady"], es["n_late"]))
 es_n, _ = evict_stats_of(evict_cli(span_none_at=12))

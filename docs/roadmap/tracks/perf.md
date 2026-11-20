@@ -36,6 +36,7 @@ flowchart TB
     perf_bbrrs_ns_cost["✔ bbr_rs per-packet<br/>cost bench"]
     perf_bbrrs_ring_fix["⏳ bbr_rs send-record<br/>ring fix"]
     perf_fix_burst_bound[/"○ Emission burst bound<br/>derivation"/]
+    perf_config_dropped>"⚠ Perf ignores the<br/>config file"]
     perf_parallelisation ~~~ perf_ack_merge
     perf_emit_batch_v1 ~~~ perf_rcvbuf
     perf_recv_msg_wall ~~~ perf_rcvbuf
@@ -65,7 +66,7 @@ flowchart TB
     perf_decoder_prune ~~~ perf_bbrrs_ns_cost
     perf_s33_timer ~~~ perf_bbrrs_ring_fix
     perf_receiver_followups ~~~ perf_fix_burst_bound
-    perf_bbrrs_ns_cost ~~~ perf_fix_burst_bound
+    perf_bbrrs_ns_cost ~~~ perf_config_dropped
     perf_emit_batch_v1 -.-> perf_emit_batch_law0
     perf_rcvbuf --> perf_emit_batch_law0
     perf_quic_feeder -.-> perf_io_owner
@@ -106,6 +107,7 @@ flowchart TB
     class perf_c8_lag,perf_s33_timer,perf_bbrrs_ns_cost unrated
     class perf_bbrrs_ring_fix waiting
     class perf_fix_burst_bound next
+    class perf_config_dropped defect
 ```
 <!-- END GENERATED: track-perf -->
 
@@ -141,6 +143,7 @@ flowchart TB
 | `perf-bbrrs-ns-cost` | bbr_rs per-packet cost bench | done | unrated |  | branch nsbench48; branch nsbench48-2 | cc-bbrrs-r1 |
 | `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | in-progress | unrated |  | plan W3.6e; branch bbrrs-r4 (fa9947dd) | perf-bbrrs-ns-cost |
 | `perf-fix-burst-bound` | Emission burst bound derivation | next | unrated |  | law ledger rows F03 | model-law-ledger |
+| `perf-config-dropped` | Perf ignores the config file | next | unrated |  | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |  |
 
 ### Details per node
 
@@ -173,4 +176,5 @@ flowchart TB
 | `perf-bbrrs-ns-cost` | bbr_rs per-packet cost bench | nsbench48 folded into its rebased successor nsbench48-2 (unmerged). Result recorded in status §48b (nm.txt fee4f580, 78156b46): bbr_rs +417 ns/packet net over quinn BBR (x4.9), +339 ns at 200 in flight, a fixed per-packet cost. | branch nsbench48; branch nsbench48-2 |
 | `perf-bbrrs-ring-fix` | bbr_rs send-record ring fix | Built on branch bbrrs-r4 (fa9947dd): the send-record map is a fixed-bound ring; the ns gate (db2cb4f4) went red at baseline (7.72x) and green after the fix (net ratio 7.7x -> 1.3-1.7x). Kept in-progress, not done, because it merges with the round-2 session. Done when: the send-record map is a fixed ring (or sampled) and a red-first ns gate holds bbr_rs at <= 2x quinn BBR per packet on the VM release bench. | plan W3.6e; branch bbrrs-r4 (fa9947dd) |
 | `perf-fix-burst-bound` | Emission burst bound derivation | Law ledger: F03. Done when: the 64-symbol burst bound is derived as a CPU/latency quantum in the paper, or swept and recorded as a declared constant with its bind fraction. | law ledger rows F03 |
+| `perf-config-dropped` | Perf ignores the config file | main.rs:263 cmd_perf gets no config though --config is global (main.rs:12) and the README documents it. Blocks the tail-target flag sweep (VM queue 4) and rho < 1 at Bulk/Auto in perf. Also: ge_burst_factor and realtime_burst_extra have no consumer anywhere (config.rs:64-67). Done when: the S2c round-trip cells for perf move, red first. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
 <!-- END GENERATED: table-perf -->

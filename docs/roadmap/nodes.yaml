@@ -1695,7 +1695,7 @@ nodes:
   title: Repair-share bound counts every slot
   track: meas
   kind: infra
-  state: next
+  state: in-progress
   outcome: unrated
   evidence:
   - status "The two K4 input checks, post hoc"
@@ -1706,12 +1706,12 @@ nodes:
   replaced_by: []
   qualified_by: []
   lane: no-cargo
-  start: ''
+  start: '2026-11-19'
   end: ''
   folded: []
   overview: false
   plain: 'The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model''s definition is checked to mean the same thing.'
-  notes: 'mbar59_score w1_hi in count form (Δcod + Δplost)/Σdbt_acc, red-first on the block E rows; then one W1 definition for K4 on both sides (pfec-oracle-spec §6.2 uses cod/(rr*src)).'
+  notes: 'mbar59_score w1_hi in count form (Δcod + Δplost)/Σdbt_acc, red-first on the block E rows; then one W1 definition for K4 on both sides (pfec-oracle-spec §6.2 uses cod/(rr*src)). Scorer half merged 39096c9f (stub run ALL OK): block E PM W1 0.856-0.860 under the new bound 0.863-0.868 (old bound 0.738-0.788 sat below W1 on every PM row); PL 0.511-0.521 under 0.536-0.544. Thin margin; the window starts after t=4.76. Owed: one W1 definition on both sides of K4.'
 - id: rate-spare-cwnd
   title: Is spare's cwnd enforced?
   track: rate
@@ -6789,22 +6789,23 @@ nodes:
   title: Tunnel in-order guard
   track: infra
   kind: defect-verdict
-  state: next
+  state: in-progress
   outcome: unrated
   evidence:
   - docs/derivations/liveness-audit.md item 3
+  - branch tunnel-inorder-guard 987b0360
   verdict_quote: ''
   headline: ''
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: host-cargo
-  start: ''
+  start: '2026-11-19'
   end: ''
   folded: []
   overview: false
   plain: Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins.
-  notes: 'Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test.'
+  notes: 'Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test. Branch tunnel-inorder-guard 987b0360: run and check reject the four object modes from a config file and pin them false; --lib config:: 17/17, red then green. Waits for the VM pre-flight suites (binary changes; startup validation only), or an owner waiver.'
 - id: rate-shed-budget-rho
   title: Shed budget ignores ρ
   track: rate
@@ -6886,7 +6887,7 @@ nodes:
   folded: []
   overview: false
   plain: Fix the measurements that only work on one path, so the next two-path run can read the congestion-window clamp and saturation per path.
-  notes: 's51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows.'
+  notes: 's51_score compares the sum over paths of [DIAG] cwnd= against the per-path MAX_CWND (MAX_CWND bind reads 0.000 on every c8 row) and tau_x is aggregate tau_sat; the design definition (s51-evict-design.md :81) has the same single-path assumption. Needs a per-leg cwnd / in-flight print under RWM_DIAG (engine, diagnostic only), the live r_sat printed, a per-leg scorer, the "minus the H-B coded share" label fixed (it subtracts consumed r), and the crlf_guard continuation in loopdiag_run_all.sh restored. Done when: the gauges read per leg, red-first on the committed s51b c8 rows. Tools half on main (scorer per-leg gauges fae17588, crlf continuation 2c6d8690, cherry-picked). Engine half (scw=, plx=, shed_slot/shed_nack, rsat=, rlaw=) on c8-gauges 311f8284, stub run ALL OK; joins the measurement build by cherry-pick, behind a guard.'
 - id: model-fix-hint-keyed-paths
   title: Hint-keyed engine paths made continuous
   track: model
@@ -7133,7 +7134,7 @@ nodes:
   folded: []
   overview: false
   plain: Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait.
-  notes: 'Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out.'
+  notes: 'Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out. Owner 2026-11-19: chose to re-guard lever B, then reversed the same day ("we dont want a workaround, we want the proper solution"): lever B and a smaller pool constant are both workarounds; the fix is the store law (store-law-derivation). Decision 6 stands. C02''s 20-gap literal is answered after the store law, from a horizon bind gauge.'
 - id: meas-s51-session
   title: Off-Bulk baseline and δ sweep
   track: meas
@@ -8329,6 +8330,294 @@ nodes:
   overview: false
   plain: Tested whether delay feedback explains a collapse; it does not, the cause is idle time at the end.
   notes: 'REFUTED: dead-end. Track store: its verdict re-attributes the c8 collapse to dead wall, which the paper places in the store-cap-unification arm.'
+- id: infra-test-ci-gate
+  title: CI on every push
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  - .github/workflows/ci.yml
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests.'
+  notes: 'Plan S1, ADR-0080 (Proposed). Done when the workflow is red on a branch at 0bf43c11 (main''s two failing gate tests) and green at e304921b. The flake-rule change in suites_run.sh waits until the repeat job has seeded the quarantine list. Merged ci-gate 1a785728: tier A about 5 min (gates, math+core, lib release, tools, visualizer), red on 0bf43c11 (run 44656256273), green on ci-gate (run 44658344625); nightly about 18 min with release 1151 and debug 1003 passing. Follow-ups merged 13042538: the full stub run is green on Linux (its stub binaries lacked the execute bit, invisible on Windows), plans 61-63''s frozen-base witnesses run only at their launch (HARNESS_FROZEN_BASE=1), quarantine list empty. Owed: the flake-rule change in suites_run.sh, after the nightly repeat job has run.'
+- id: infra-test-static-audits
+  title: Unwired-code and config audits
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  - branch static-audits 86b5208f
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it.'
+  notes: 'Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard. Built and triaged on static-audits 86b5208f: 69 uncalled pub fns (43 test-only, 22 dead, 4 unwired) and 12 ignored params (9 intended, 2 dead, 1 unwired); unwired list: ADR-0050 Phase 3 proactive_rate, ADR-0017 MTU sizing (repair_wire_overhead, min_mtu), Scheduler::on_loss (paper 8.1), set_protocol_hint (Auto detection documented, never built), enable_pi_feedback. Red on main''s tunnel leak with the fix removed. Waits for tunnel-inorder-guard and a release-binary hash check of the main.rs refactor 4bbb2f96.'
+- id: infra-test-pinned-law-check
+  title: Pinned-law check from logs
+  track: infra
+  kind: instrument
+  state: done
+  outcome: successful
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  - tools/l1/test_pinned_law_check.py
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-20'
+  end: '2026-11-20'
+  folded: []
+  overview: false
+  plain: 'A test over the committed logs that fails when a law reads pinned or never runs at a seat and the ledger has no verdict for it.'
+  notes: 'Plan S3. Done when red on the store-cap row with its ledger verdict removed. Existing unverdicted cells become a named owed list; the check fails on new ones. Merged 33ef7ff6: green on the committed ledger, red on F01 with its verdict removed and on a stale owed line; 122 unverdicted cells owed at the ledger threshold 0.5 (92 at 0.9); 32 of 65 rows have a gauge spec, the rest owed. Part 3 (cargo law-moves sweep) not started.'
+- id: infra-test-recovery-model
+  title: Model check of hole recovery
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run.'
+  notes: 'Plan S7, ADR-0083 (Proposed). Done when red on the lost tail at rho < 1 and green at rho = 1. Kept outside the workspace lockfile.'
+- id: infra-test-sim-spike
+  title: Deterministic simulation spike
+  track: infra
+  kind: instrument
+  state: done
+  outcome: successful
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  - branch sim-spike ed8405fb (docs/derivations/sim-spike.md)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: '2026-11-20'
+  folded: []
+  overview: false
+  plain: 'Try running both ends in one process on a virtual clock and check that two runs with the same seed match exactly.'
+  notes: 'Plan S8 spike, throwaway branch. Decides whether the full simulation (ADR-0082, Proposed) is feasible. No clock change goes to main from the spike. Verdict FEASIBLE with changes: both peers in one process on paused tokio time over an in-memory socket under quinn; same seed gives identical traces (20/20 one path, 32/32 two paths, 10/10 three paths, 2/2 for 140 MB); a 30 s stall runs in 0.7 s wall, a saturated bulk transfer only ~1.9x faster than real time. Blockers that bit: 114 Instant::now plus 44 elapsed sites, select! branch order (needs the runtime rng seed, --cfg tokio_unstable), hash order with 2+ paths (4 sites), engine rand (3 sites), quinn rng seed (1). The lost-tail stall reproduces deterministically. Costs: virtual time quantised to 1 ms (srtt variance exactly 0 on a fixed-delay link), no CPU-cost model for unbacked senders, Linux not run.'
+- id: infra-test-recovery-counters
+  title: Recovery bookkeeping counters
+  track: infra
+  kind: instrument
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing.'
+  notes: 'Plan S4, ADR-0081 (Proposed). Held: it shares files with the S06 deletion and the gauges, and its slow-link assertions wait on the owner''s call on evicted packets.'
+- id: infra-test-seat-coverage
+  title: Coverage per seat
+  track: infra
+  kind: instrument
+  state: done
+  outcome: successful
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  - docs/derivations/coverage-by-seat.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-ci-gate]
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-20'
+  end: '2026-11-20'
+  folded: []
+  overview: false
+  plain: 'Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up.'
+  notes: 'Plan S5, report-only baseline (seat-coverage run 44678200818, 57 min, nightly and on dispatch). The NACK and slot shed sites are MISS in every seat, the evicting seat included: its two tests run clean links, and the heavier shed tests are ignored. Auto has one test, the evicting seat two. Row hits mean the function ran, not the law branch; branch sites exist only for S08 and R05. Open: no lib unit-test column (no lcov from a --lib run); some ledger loc lines have drifted from main.'
+- id: infra-test-mutation
+  title: Mutation testing of the laws
+  track: infra
+  kind: instrument
+  state: done
+  outcome: successful
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-ci-gate, infra-test-pinned-law-check]
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-20'
+  end: '2026-11-20'
+  folded: []
+  overview: false
+  plain: 'Weekly mutation runs on the maths crates on CI, to find laws no test pins.'
+  notes: 'Plan S6. Merged mutation-ci 27202e2d: 1721 mutants, all in raptorpath-math (core is empty), ~7 s each, ~27 min over 20 shards; 486 survive (baseline, deterministic over two runs); the job fails only on new or stale survivors. Red: bulkness_of_delta (the dial''s shaping law) has no test in the math crate, so replacing its body survives (it is tested only from the engine crate). Owed: survivor triage; engine law files not yet in scope.'
+- id: infra-test-model-real-decisions
+  title: Model check over the real code
+  track: infra
+  kind: instrument
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-recovery-model]
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Point the recovery model at the engine''s own decision functions, once those are extracted.'
+  notes: 'Plan S9. Needs the extended shared-core extraction (owner question 1).'
+- id: infra-test-pub-narrowing
+  title: Narrow pub so dead code warns
+  track: infra
+  kind: instrument
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-static-audits]
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Make most of the engine''s items crate-private so the compiler reports dead code.'
+  notes: 'Plan S10, at a quiet point.'
+- id: rec-evict-blocker-unresolved
+  title: Evicting seat strands a stalled blocker
+  track: rec
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - status "S06 deletion review and an evicting-seat defect (2026-11-20)"
+  - branch wedge-diag bc383f29
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'In the slow-link mode (rho < 1) a lost packet can be neither resent nor dropped, and the transfer then waits on the receiver to skip it; a lost tail with nothing after it is never resolved.'
+  notes: 'Local runs on main (unpaced source ~5x an emulated 40 Mbit link): no source-rate bound on the evicting seat (intake pause reliable-only, net/mod.rs:2473); the NACK site clamps gaps to the 200-symbol window before the shed check (sender_phases.rs:790-805), so resend and shed act only while the blocker is inside it; the tail sweep re-targets a below-window first() (net/mod.rs:2789, :3035). Stalled-blocker case unresolved 19/30 (main-equivalent) and 15/30 (s06-delete). Owed: which site produced block E''s 1 934 sheds; whether paced VM rows show it. Fix direction is an owner decision (source-rate gate, shed below the window, sweep target). Done when: a red-first test of the lost tail and the stalled blocker goes green, with the S4 counters as the oracle.'
+- id: perf-config-dropped
+  title: Perf ignores the config file
+  track: perf
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The perf client and server never read --config, so the tail target, the overhead cap, certificate pinning and the slow-link setting cannot be set for a perf run.'
+  notes: 'main.rs:263 cmd_perf gets no config though --config is global (main.rs:12) and the README documents it. Blocks the tail-target flag sweep (VM queue 4) and rho < 1 at Bulk/Auto in perf. Also: ge_burst_factor and realtime_burst_extra have no consumer anywhere (config.rs:64-67). Done when: the S2c round-trip cells for perf move, red first.'
+- id: infra-dead-code-batch
+  title: Remove 24 dead functions
+  track: infra
+  kind: simplification
+  state: next
+  outcome: unrated
+  evidence:
+  - branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Delete code the audit found dead (22 functions, 2 parameters) and the tests that only test those dead copies.'
+  notes: 'D list in audits.rs on static-audits 86b5208f (callers deleted in dacfd7cc / ADR-0069 and others). Tests that exercise a dead copy instead of the live path: compute_repair_rate_capped, get_or_eval, pooled_recovery_srtt_of, Scheduler::schedule, compute_repair_count, compute_gap_ranges. Release-binary hash check; guard only if bytes change. Stale docs to fix with it: net/tests.rs:3807, fec_rate.rs:46, paper 8.1, loss_clamp_witness doc.'
+- id: infra-test-sim-engine
+  title: Deterministic simulation of the engine
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/sim-engine.md
+  - raptorpath/tests/sim_lost_tail.rs
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - infra-test-sim-spike
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Run both ends of a transfer in one process on a virtual clock, so a stall or timeout test replays exactly and runs in a fraction of a second.'
+  notes: 'Plan S8, ADR-0082 (Proposed, awaiting the owner). Phase 1 merged (squash of sim-engine c907d207): release binary byte-identical to main on Linux; same-seed traces identical on 1 and 2 paths; lost tail at rho < 1 stalls (known defect), rho = 1 recovers; 0.1-0.3 s per scenario. Phase 2 owed: Gilbert-Elliott and Weibull links, a CPU-cost model for senders with no backpressure, porting the flaky timing tests, the 3 SystemTime reads. Branches carrying their own test_seams.rs (s06-delete, wedge-diag) must switch to the main copy: s06-delete''s copy uses eprintln! and likely fails the no_eprintln gate; merging it also leaves a duplicate pub mod test_seams line that git merges silently.'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere
