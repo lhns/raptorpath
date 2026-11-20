@@ -638,12 +638,7 @@ pub(crate) fn emit_source(
                                     flat_rate,
                                     a_star as f64,
                                     crate::control::fec_rate::burst_variance_factor(est),
-                                );
-                            #[cfg(feature = "test-seams")]
-                            {
-                                st.shed_budget_frac =
-                                    crate::test_seams::budget_frac(st.shed_budget_frac);
-                            }
+                                ); #[cfg(feature = "test-seams")] { st.shed_budget_frac = crate::test_seams::budget_frac(st.shed_budget_frac); }
                         }
                         Some((a_star, delta))
                     } else {
@@ -787,9 +782,7 @@ pub(crate) fn emit_source(
                             st.retransmit_buffer.remove(&seq);
                             st.nack_retx_at.remove(&seq);
                             st.shed_seqs.insert(seq);
-                            st.shed_total += 1;
-                            #[cfg(feature = "test-seams")]
-                            crate::test_seams::on_shed_slot(seq, age_us_c, st.shed_deadline_us_live);
+                            st.shed_total += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_shed_slot(seq, age_us_c, st.shed_deadline_us_live);
                         } else {
                             if pol.shed_on
                                 && st.shed_deadline_us_live > 0
@@ -797,9 +790,7 @@ pub(crate) fn emit_source(
                             {
                                 // Past deadline but ρ-budget-refused: the
                                 // serialize arm (visible in DIAG).
-                                st.shed_denied += 1;
-                                #[cfg(feature = "test-seams")]
-                                crate::test_seams::on_denied_slot(seq);
+                                st.shed_denied += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_denied_slot(seq);
                             }
                             use_retransmit = true;
                             retransmit_seq = seq;

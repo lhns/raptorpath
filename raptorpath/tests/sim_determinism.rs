@@ -74,5 +74,8 @@ fn jitter_reaches_the_rtt_variance() {
     let (s_on, s_off) = (sigma(&on), sigma(&off));
     println!("sigma_us_mean jitter=4ms {s_on:?}, jitter=0 {s_off:?}");
     assert!(!s_on.is_empty(), "no [QCLK] line: the recovery clock never evaluated (witness missing)");
-    assert!(s_on.iter().any(|&s| s > 0.0), "jitter on, but RTT sigma is 0: {s_on:?}");
+    // With jitter off the sigma is not exactly 0 either (queueing and
+    // retransmits at 1 % loss), so the witness is the ratio, not > 0.
+    let max = |v: &[f64]| v.iter().cloned().fold(0.0, f64::max);
+    assert!(max(&s_on) > 2.0 * max(&s_off), "jitter does not move the RTT sigma: on {s_on:?}, off {s_off:?}");
 }

@@ -70,7 +70,8 @@ jobs:
       - uses: actions/upload-artifact@v4.6.2
         with: { name: "bin-${{ matrix.label }}", path: out, retention-days: 14 }
   compare:
-    needs: build
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4.3.0
@@ -82,8 +83,9 @@ jobs:
           echo "| build | ref | binary | .text | .rodata | bytes differing (bin/.text/.rodata) |" >> $s
           echo "|---|---|---|---|---|---|" >> $s
           rc=0
-          for d in bin-*; do
-            l=${d#bin-}
+          for l in $(echo '${{ needs.plan.outputs.matrix }}' | python3 -c 'import json,sys; print(" ".join(r["label"] for r in json.load(sys.stdin)["include"]))'); do
+            d=bin-$l
+            if [ ! -f "$d/raptorpath" ]; then echo "| $l | - | build failed | | | |" >> $s; [ "$l" = base ] || [ "$l" = base2 ] && rc=2; continue; fi
             row="| $l | $(cut -c1-8 $d/ref.txt)"
             diffs=""
             for f in raptorpath text.bin rodata.bin; do
