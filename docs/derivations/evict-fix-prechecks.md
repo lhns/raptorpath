@@ -79,11 +79,12 @@ code never records: eviction itself must be the verdict.
   `source_path_map` prune (`net/mod.rs:3594–3602`, `net/sender_phases.rs:1374`,
   `:1399–1401`).
 - **[E] After the source is exhausted, nothing is sent at all** when
-  `first()` is below the window. In the lost-tail run below (`lt_evict`) the
-  last data symbol leaves at t ≈ 0.05 s: the seam's send tick, which prints at
-  most every 100 ms *on a send*, prints once (at k's send). For the remaining
-  30 s the sender's `[DIAG]` reads `src=0 cod=0 retx=0`, and its 298 sweeps
-  are all clamped. When `first()` is inside the window the sweep does resend
+  `first()` is below the window. In the lost-tail run below (`lt_evict`), the
+  sim's link trace shows the last data-sized client→server datagram at
+  t = 0.822 s (`ord=3965 len=564`). After that only datagrams of at most a few
+  hundred bytes (control) cross, until t = 28.1 s. The sender's `[DIAG]` reads
+  `src=0 cod=0 retx=0` for the rest of the 30 s, and all 298 sweeps are
+  clamped. When `first()` is inside the window the sweep does resend
   (section 3, `sr_evict`), but a resend is data, not a verdict.
 - **[E] `Shutdown` is no substitute.** The sender sends it only on engine
   shutdown (`net/mod.rs:3046–3061`). The receiver only logs it
@@ -125,10 +126,14 @@ builds, with `SIM_RELIABLE` set per row.
 
 **[E] The divergence starts at the source, not at the resend.** At ρ < 1 the
 whole object goes through the encoder before any loss is judged. k = 11 800's
-first send is at t = 44 ms (ρ = 1: t = 1.535 s, paced by the store cap). The
-first gap report, at t = 72–79 ms, already shows the window frozen at
-`win=[11947,12146]`, while the receiver's frontier is at 3 953 (t = 130 ms).
-This is D1b: there is no source-rate bound at ρ < 1 (`net/mod.rs:2473`).
+first send is at t = 44 ms. At ρ = 1 it is at t = 1.535 s, so the source is
+bounded there; which brake binds was not separated. The first gap report, at
+t = 72–79 ms, already shows the window frozen at `win=[11947,12146]`, while the
+receiver's frontier is at 3 953 (t = 130 ms). The link pays for this. The sim's
+40 Mbit link drops **1 110 client→server datagrams on queue overflow**
+(`drop_queue`, t = 0.574–0.820 s) against 91 random losses. In the other ρ < 1
+scenario it drops 1 158 against 108, and at ρ = 1 none against 170. This is
+D1b: there is no source-rate bound at ρ < 1 (`net/mod.rs:2473`).
 
 **[E] The lost tail (lt_evict): resends never start.** k is below the window
 from its first judgment. The first sweep line naming k is
@@ -148,12 +153,16 @@ through to the resend (`net/sender_phases.rs:866–1091`). The sweep resends
 one seq per sweep, the receiver's frontier walks 12 088 → 12 146 at about two
 seqs per 100 ms, and the sender's ack reaches 12 147. Why `first()` is in the
 window here: the earlier below-window holes (e.g. 11 482, clamped at
-t = 0.94 s) had data above them, so the receiver's hold expiry passed them and
-the bare ack pruned them. **The transfer still never completes.** The perf
-server completes an object only when every chunk was delivered
-(`perf.rs:144`, `got.len() == total`). The receiver gave up 4 212 holes
-(`[SHED-R] holes=4212`), each a seq evicted before it could be resent. So at
-ρ < 1 `client_ok` is not a liveness oracle: any abandoned seq fails it.
+t = 0.94 s) had data above them, so the receiver passed them and its ack
+pruned them [E for the ack; whether by hold expiry or by force-drain was not
+separated]. **The transfer still never completes.** The perf server completes
+an object only when every chunk was delivered (`perf.rs:144`,
+`got.len() == total`). Those passed holes are missing chunks. Their count
+was not totalled: the only `[SHED-R]` sample, `holes=4212` at frontier
+11 508, is rate-limited and counts expiry passes only. [I] Most of them are
+the queue-overflow drops above, which the sender never sees as such: they
+were evicted from the window before any report named them. So at ρ < 1
+`client_ok` is not a liveness oracle: any abandoned seq fails it.
 
 **[E] The forced-budget shape (sr_evict_b05).** All 60 tail seqs are shed, no
 copy is sent, the ack stays at 12 087 and nothing tells the receiver. The node's
@@ -165,6 +174,9 @@ stop. The receiver's own ack shows its frontier reached 12 087.
 - **[E]** It is refreshed only inside `emit_source` (`net/emit_source.rs:620–641`,
   in `fn emit_source` at `:315`), so it freezes at the last source emission,
   here t ≈ 0.05 s. `bud=0.0000` is printed on every `[DIAG]` line of `sr_evict`.
+  The shed deadline `shed_deadline_us_live` is refreshed in the same block and
+  freezes with it: every client `[DIAG]` line reads `D=13ms` (32 of 32) while
+  the same lines read `rtt=844.4ms` once the queue has filled.
 - **[E]** The law is `residual_loss_after_fec(ε̂, r, A*, σ²) = ε̂·(1 − P_fec)`,
   which returns 0 for ε̂ = 0 (`control/fec_rate.rs:784–790`). It has no ρ
   argument, and `contract_rho` is the literal 1.0 (`net/sender_policy.rs:616`),
@@ -174,7 +186,8 @@ stop. The receiver's own ack shows its frontier reached 12 087.
 
 **Answer.** At the natural budget the *lost tail* stalls because it is below
 the window from its first judgment. The source has no rate bound, so the
-window passed k about 1 ms after k was sent. The clamp removes every sweep and
+window passed k within 35 ms of k's send (sent at 44 ms, window at the end of
+the object by 79 ms). The clamp removes every sweep and
 NACK before either the shed or the resend is reached, and nothing above k
 ever reaches the receiver. The 0 budget is a separate defect (cold, ρ-blind,
 frozen after the last source). It decides shed versus resend only for
@@ -186,6 +199,11 @@ in-window seqs. In-window, a refusal means "resend", which works but is slow
 The owner's rule (node `rec-evict-blocker-unresolved`, main `13fe8637`) has
 three parts plus the budget law. For each: what the answers establish, what
 the derivation must settle, and any contradiction.
+
+**Sufficiency, in one line.** Shedding below the window and telling the
+receiver should end the stall [I]: the floor lets the receiver pass k, and
+`first()` moves to a servable seq. But it does not bound how much is
+abandoned (part 3 does), and it cannot turn a completion-based test green.
 
 **(1) The verdict is judged on the unclamped gap; the clamp bounds only what
 is served.**
@@ -199,6 +217,11 @@ is served.**
 - To settle: what the tail sweep targets. It names only `first()`
   (`net/mod.rs:3035`). With part 2 removing abandoned seqs, `first()` moves to
   the oldest servable seq, which settles it, but the derivation should say so.
+- To settle, and a hazard [E for the freeze]: judging before the clamp uses
+  `shed_deadline_us_live`, which freezes with the budget (`D=13ms` all run,
+  beside `rtt=844.4ms`). Judged against a stale 13 ms, every queued seq is
+  past its deadline. The verdict's D and budget must be refreshed where
+  verdicts are taken, not on source emission.
 
 **(2) Every verdict removes the seq and reaches the receiver, even when no
 data follows.**
@@ -228,11 +251,12 @@ data follows.**
 **(3) A ρ-continuous source-rate bound replaces the reliable-only intake
 pause.**
 - Established: this is where the stall starts. The unpaced source put the
-  whole object through the 200-symbol window in about 44 ms, so most losses
-  became below-window abandonments before their first judgment (4 212
-  receiver give-ups in a 12 147-symbol run at 2.5 % link loss). Parts 1–2
-  turn these into prompt verdicts but do not reduce their number. Only (3)
-  does.
+  whole object through the 200-symbol window in about 44 ms. The link then
+  dropped 1 110 datagrams on queue overflow against 91 random losses, and
+  those symbols were evicted before any report named them. Parts 1–2 turn
+  these into prompt verdicts but do not reduce their number. Only (3) does.
+  The overflow is a third kind of abandonment, next to sheds and evictions,
+  and today nothing charges it.
 - To settle: the bound's form. At ρ = 1 it must reduce to today's
   `store_len ≥ cap ∨ cwnd_full` (`net/mod.rs:2473`). At ρ < 1 it must keep
   abandonment ≤ (1 − ρ) of the source. A natural candidate is
@@ -248,8 +272,8 @@ pause.**
 - Established: today it is ε̂·(1 − P_fec). It reads no ρ, is 0 on a cold
   estimator, is refreshed only on source emission (so frozen once the source
   is exhausted), and charges only NACK and slot sheds. Evictions are never
-  charged, and neither are receiver give-ups (4 212 here against 0 sender
-  sheds).
+  charged, and neither are receiver give-ups (thousands here, the
+  `[SHED-R]` sample reads 4 212, against 0 sender sheds).
 - What it must become: a bound on all abandonment (sender sheds plus evicted
   un-acked seqs, the set part 2 makes visible) against the *declared* 1 − ρ,
   refreshed where verdicts are taken. At ρ = 1 it is 0, which is the identity
