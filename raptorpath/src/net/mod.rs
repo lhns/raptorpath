@@ -528,9 +528,9 @@ pub(crate) fn now_pair() -> (u64, Instant) {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_micros() as u64)
             .unwrap_or(0);
-        (Instant::now(), wall_us.max(NOW_US_MIN_BASE))
+        (crate::clock::now(), crate::clock::wall_us(wall_us).max(NOW_US_MIN_BASE))
     });
-    let now = Instant::now();
+    let now = crate::clock::now();
     (base_us.saturating_add(now.saturating_duration_since(t0).as_micros() as u64), now)
 }
 

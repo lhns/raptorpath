@@ -744,7 +744,7 @@ pub fn armed() -> bool {
 /// The armed path of [`arm`].
 fn arm_unconditionally() {
     let handle = tokio::runtime::Handle::current();
-    let origin = Instant::now();
+    let origin = crate::clock::now();
     // Read next to `origin`: the OS reference thread's `at_us` axis.
     #[cfg(target_os = "linux")]
     let origin_mono_ns = mono_clock_ns();
@@ -799,7 +799,7 @@ pub fn snapshot() -> Option<Snapshot> {
         })
         .collect();
     Some(Snapshot {
-        at: Instant::now(),
+        at: crate::clock::now(),
         workers,
         threads: read_threads(crate::task_obs::deep()),
         owners: owner_samples(),

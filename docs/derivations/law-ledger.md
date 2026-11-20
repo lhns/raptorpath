@@ -107,12 +107,12 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 |---|---|---|---|---|---|
 | [E04](#e04) | Copa max_bw / btlbw (delivery-rate max) | DISHONEST-INPUT | P0 | 1 | - |
 | [E03](#e03) | Copa min_rtt (RTprop) | DISHONEST-INPUT | P0 | 2 | - |
-| [F01](#f01) | pooled store cap | PINNED(c8,c1s), DISHONEST-INPUT | P0 | 3 | E03, E04 |
+| [F01](#f01) | pooled store cap | PINNED(c8,c1s,c2 at every δ), DISHONEST-INPUT | P0 | 3 | E03, E04 |
 | [E13](#e13) | lifetime echo minimum l-hat (WinSampler::life_min; gauge branch github/slaw-gauge, not on main) | DISHONEST-INPUT | P0 | 4 | - |
 | [E14](#e14) | boot brake b-hat0+ (WinSampler::close; gauge branch github/slaw-gauge, not on main) | UNDERIVED, DISHONEST-INPUT | P0 | 5 | - |
 | [F07](#f07) | store-law candidate allowance sigma + q(delta)*l-hat (R6.2 / R6.7 line; derivation only, not built) | UNDERIVED, DISHONEST-INPUT | P0 | 6 | E13 |
 | [C02](#c02) | packet threshold 3 and the 20-gap report horizon | UNDERIVED, DEGENERATE(c8: the law sees only old holes) | P0 | 7 | - |
-| [C03](#c03) | snapshot-order filter (branch github/snapver-law, not on main) | OK | P0 | 8 | - |
+| [C03](#c03) | snapshot-order filter (on main since §54, merge 516dc13a) | OK | P0 | 8 | - |
 | [K09](#k09) | quinn BBR (the default substrate CC) | DISHONEST-INPUT | P1 | 9 | - |
 | [E01](#e01) | app-echo RTT EWMA (est.rtt()) | DISHONEST-INPUT | P1 | 10 | - |
 | [E11](#e11) | pooled recovery srtt (max over live paths of est.rtt()) | DISHONEST-INPUT | P1 | 11 | E01 |
@@ -142,7 +142,7 @@ battery, gauge, paper, owner call, delete, merge, model, measurement.
 | [S09](#s09) | symbol packing and emission-batching scope (use_packing, emit_batch_on) | MODE-SWITCH(live), UNDERIVED | P2 | 35 | - |
 | [K05](#k05) | placement cost (place_costs) | DIVERGENT, UNDERIVED | P2 | 36 | - |
 | [K10](#k10) | bbr_rs (branch github/bbrrs-r3, not default) | DIVERGENT | P2 | 37 | - |
-| [S10](#s10) | proactive repair emission (taper density and TaperBudget accrual) | DIVERGENT, DEGENERATE(r = 0) | P3 | 38 | R01 |
+| [S10](#s10) | proactive repair emission (taper density and TaperBudget accrual) | DIVERGENT, PINNED(owed = 0 at every r) | P3 | 38 | R01 |
 | [C13](#c13) | T_cut give-up horizon (wasm model) | PINNED(every measured rho < 1 point) | P3 | 39 | R03 |
 | [M04](#m04) | wasm give-up law (cartoon + sim; was V5/V6 and W14) | DEGENERATE(rho inert at Auto and Realtime under the shipped R), DIVERGENT | P3 | 40 | R03 |
 | [M03](#m03) | wasm rate beta-guard and the dead classic-hint machine | MODE-SWITCH(live), MODE-SWITCH(dead) | P3 | 41 | - |
@@ -846,7 +846,7 @@ a branch.
 - *6. clamp bind:* ceiling N*2048: gauge [SUMCAP] pin=, 0.74-0.98 (c8), ~0.7 (c1s); floor 10: [SUMCAP] floor=; boot 128: no gauge; law asks 12-43 k at c8 ([DCAP] ask=)
 - *7. inputs honest?:* both inputs DISHONEST (E03 min_rtt 7-33x, E04 max_bw 11-24x), so ask = 3-10x the ceiling and a positive loop queue -> min_rtt -> ask is cut only by the clamp (p0-dwell-diag §4). With honest inputs the law undershoots (no hole/dwell term): W1 H1, §44 erratum (b0 offset has no engine source)
 - *8. NO-MODE-SWITCH:* none on the default seat. Path-count: none (ADR-0072). rho: see F02
-- *9. verdict:* **PINNED(c8,c1s), DISHONEST-INPUT**: pin = 0.74-0.98 at c8 on main (§53 Erratum 1); ask 12-43 k vs 4096; honest-input form collapses to the floor at c2 (W1 H1) - the law needs its hole/dwell term in the same change as honest inputs. The replacement law (store-law R6.2/R6.7) carries its own rows: F07 (allowance SHORT at c2, s60) and E13 (l-hat)
+- *9. verdict:* **PINNED(c8,c1s), DISHONEST-INPUT**: pin = 0.74-0.98 at c8 on main (§53 Erratum 1); ask 12-43 k vs 4096; honest-input form collapses to the floor at c2 (W1 H1) - the law needs its hole/dwell term in the same change as honest inputs. The replacement law (store-law R6.2/R6.7) carries its own rows: F07 (allowance SHORT at c2, s60) and E13 (l-hat) **Pinned at every δ, and it sets the c2 delay** (status §51, the store-law state entry, 2026-11-19; `store-law-state` `bdc9f431`): on the 152 sweep rows the cap sits at N·2048 on 97–100 % of LATE ticks (arm medians) at every δ. The ask (1+q)·Σ max_bw·min_rtt is 3–34× above that ceiling, because `btlbw` reads 6–19× the link and `rtp` 5–25× the floor (E03, E04), so δ (through q) moves nothing. At c2 the in-order delay is 1.49–1.60 × 2048/λ_src on all 14 arms (coordinator-reproduced from the score file: Bulk 0.215 s → 340 ms, Auto 0.255 s → 394–403 ms, named Realtime 0.120 s → 187 ms), so the delay is the store's standing queue. Delay rises with δ only because repair lowers the source rate through a fixed store. At c8 it is 10–14 × 2048/λ_src (the old holes). The (1+r) unit mismatch is still on main: `max_bw` counts every datagram on the path (1.03 at Bulk, 1.22–1.32 at Auto).
 - *10. fix class, priority:* law change needing a battery, shipped with the input fixes; **P0**, rank 3; depends on E03, E04; ships with E03, E04, F07, E13
 - *flags:* measured yes, gauge yes
 
@@ -1017,7 +1017,7 @@ a branch.
 - *6. clamp bind:* max_overhead 0.5 and soft_sat: no engine gauge of either bind or of which max() term wins (the wasm has get_saturation_pressure)
 - *7. inputs honest?:* p = E07 upper quantile, sigma2/B = E08, srtt = E01, t_symbols = srtt*tput/sym
 - *8. NO-MODE-SWITCH:* bulk_late_is_fine bool selects the term inside R01's always-computed mix (a term selector, not a mode)
-- *9. verdict:* **UNDERIVED**: the composition max(core, burst, mass) has no derivation of why max (§4.4 'partial' in §9.10); no gauge of which term or clamp binds **DISHONEST-INPUT, UNDERIVED parts named** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): off Bulk the core term's margin z·S is 85–90 % of r at c8. That margin rests on the tail target t_tail = 10⁻⁵·0.5/δ, a config default with no derivation. The law gives the NACK channel no credit at ρ = 1, and `max(r_core, r_burst, r_mass)` has no stated reason. Which term wins at c2 is **undecided**: the core term needs σ² ≈ 30 against an honest 13, so the window-mass term cannot be excluded without the term gauge (`rate-fix-term-gauge`). The 0.5 overhead cap binds on 6–8 % of c2 ticks and 12–16 % of c8 ticks at Auto and above (inferred from a port of the law, not yet checked on a row).
+- *9. verdict:* **UNDERIVED**: the composition max(core, burst, mass) has no derivation of why max (§4.4 'partial' in §9.10); no gauge of which term or clamp binds **DISHONEST-INPUT, UNDERIVED parts named** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): off Bulk the core term's margin z·S is 85–90 % of r at c8. That margin rests on the tail target t_tail = `target_tail_loss`·ζ(δ) (default 10⁻⁵; ζ = 0.5/δ), a **declared dial**: the `--target-tail-loss` CLI flag, the Home (10⁻⁴) and Datacenter (10⁻⁶) profiles, and ADR-0050 (Accepted), ADR-0012, ADR-0013. What is missing is a delivered-tail gauge and the margin's derivation to that target (erratum 2026-11-19: an earlier line here called it a config default with no derivation). The law gives the NACK channel no credit at ρ = 1, and `max(r_core, r_burst, r_mass)` has no stated reason. Which term wins at c2 is **undecided**: the core term needs σ² ≈ 30 against an honest 13, so the window-mass term cannot be excluded without the term gauge (`rate-fix-term-gauge`). The 0.5 overhead cap binds on 6–8 % of c2 ticks and 12–16 % of c8 ticks at Auto and above (inferred from a port of the law, not yet checked on a row).
 - *10. fix class, priority:* gauge (term-win tally) then measurement; **P1**, rank 18; depends on E07, E08, E01
 - *flags:* measured no, gauge no
 
@@ -1389,7 +1389,7 @@ a branch.
 - *6. clamp bind:* spare and the 1.0-per-source cap: no gauge
 - *7. inputs honest?:* r from R01, q from E08, spare from K04 (inflated cwnd)
 - *8. NO-MODE-SWITCH:* RWM_TAPER_R experiment gate
-- *9. verdict:* **DIVERGENT, DEGENERATE(r = 0)**: A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code **Evidence** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): `TaperBudget::accrue` passes the rate straight through, with `owed=0.00` on all 16 843 `[SPAN]` lines, so the emitted rate is min(r, spare).
+- *9. verdict:* **DIVERGENT, DEGENERATE(r = 0)**: A.2's formula is the emitter §3.3 says was fixed; the shipped grant law appears only in code **Evidence** (status §51 block 51 Result, Addendum 3, 2026-11-19; `rate-overprovision` doc): `TaperBudget::accrue` passes the rate straight through, with `owed=0.00` on all 16 843 `[SPAN]` lines, so the emitted rate is min(r, spare). **Reason corrected** (liveness audit, 2026-11-19): it is PINNED at `owed = 0` at every r, not DEGENERATE(r = 0); the emitted rate is min(r, spare).
 - *10. fix class, priority:* paper (write the grant law on its own line; retire A.2's raw-density line); **P3**, rank 38; depends on R01
 - *flags:* measured no, gauge no
 
@@ -1476,7 +1476,7 @@ a branch.
 - *6. clamp bind:* none (10 ms only via the pool fallback)
 - *7. inputs honest?:* DISHONEST: srtt_pool = E11 (dwell-inclusive) against an age from the original send
 - *8. NO-MODE-SWITCH:* path-count switch: N = 1 runs this, N >= 2 runs C01/C02 (column-8 note; a step at N = 1 -> 2, like the guard ADR-0072 removed from the store)
-- *9. verdict:* **DIVERGENT, UNDERIVED, DISHONEST-INPUT**: code: sender_phases.rs:898 needs mp_n_paths > 1 and :937 needs RWM_RECOV_SP (off), so :958 is the N = 1 law; paper §11.2 says it runs only with per-path detection off. Likely inert in effect, never gauged
+- *9. verdict:* **DIVERGENT, UNDERIVED, DISHONEST-INPUT**: code: sender_phases.rs:898 needs mp_n_paths > 1 and :937 needs RWM_RECOV_SP (off), so :958 is the N = 1 law; paper §11.2 says it runs only with per-path detection off. Likely inert in effect, never gauged **The N = 1 age gate never suppressed** (liveness audit, 2026-11-19, worker read): the age-suppression counter is 0 on every tick of the 24 c2 rows and the 12 block E rows read, against about 13.5k fires per row. So the shipped N = 1 law is effectively constant true.
 - *10. fix class, priority:* paper correction now; law (C01 at N = 1, RWM_RECOV_SP exists as the off arm) with a battery; **P2**, rank 19; depends on E11
 - *flags:* measured no, gauge yes
 

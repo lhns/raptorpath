@@ -15,7 +15,9 @@ What is read (client = the bulk sender, `[DIAG]` ticks after the last warm-up ma
     The cum field is the ACK field (sources actually acked; they differ from sent under shedding) for mbar_lo, and the SRC field (the registered form) is reported beside it. The per-tick
     range (median / min / max over consecutive LATE ticks) is the gauge range the spec asks for.
   * W1 bracket (spec 6.2, W1 = emitted / (r x sources)): lower W1 >= max(0, 1 - 1/(rr x mbar_lo)) with rr the median [SPAN] rr and the LOWER-bound m-bar (a larger m-bar only raises it);
-    upper W1 <= (cod/src) / rr, cod including margin and request repairs, so it over-counts the proactive share.
+    upper W1 <= (d cod + d plost) / sum dbt_acc, in COUNTS over the LATE ticks (first LATE tick < t <= last) with the [WSTORE] dbt_acc windows of the same span. Every debt slot is counted as
+    emitted before it is spent on a coded repair (cod) or a P_lost retransmit copy ([DIAG] plost=), so cod alone omits the plost slots; the old rate form (cod/src)/rr also took rr from the
+    grant median instead of the booked accrual. n/a (None) when a counter is missing: never the rate form.
   * eps_hat = the median per-path `pl=` of [DIAG] (loss_rate(), the per-ack EWMA) over LATE. The engine prints NO sigma^2 token (burst_variance_factor is computed in emit_source.rs and
     not echoed). [FDIAG] (the receiver's rf= ru= counts) needs RWM_FDIAG=1 on the server, which this plan does not set (it times every symbol); its last rf / ru are read when present.
   * cod/src         = sum(cod rate) / sum(src rate) over LATE ticks with src > 1000 sym/s (the DIAG rates); the cumulative form d(cum cod) / d(cum src) is reported beside it.
@@ -46,6 +48,7 @@ _WAIT_N = re.compile(r"wait\[[^\]]*? n=(\d+) ")
 _SRC = re.compile(r" src=([\d.]+)sym/s")
 _COD = re.compile(r" cod=([\d.]+)sym/s")
 _PL0 = re.compile(r" p0:infl=\S+ .*? pl=([\d.]+)")
+_PLOST = re.compile(r" mpr\[[^\]]*?plost=(\d+)")
 _FDIAG = re.compile(r"\[FDIAG\].* rf=(\d+) ru=(\d+)")
 _GOOD = re.compile(r" good=([\d.]+)Mbit")
 _SHED = re.compile(r" shed=(\d+)/(\d+)")
@@ -84,7 +87,7 @@ def diag_ticks(cli):
             continue
         cum, wk, wn, sr, cd, gd, sh = _CUM.search(ln), _WAKE_ACK.search(ln), _WAIT_N.search(ln), _SRC.search(ln), _COD.search(ln), _GOOD.search(ln), _SHED.search(ln)
         out.append({"t": float(mt.group(1)), "src": _f(sr, 1), "cod": _f(cd, 1), "good": _f(gd, 1), "pl": _f(_PL0.search(ln), 1),
-                    "cum": tuple(int(x) for x in cum.groups()) if cum else None,
+                    "cum": tuple(int(x) for x in cum.groups()) if cum else None, "plost": _f(_PLOST.search(ln), 1),
                     "wack": int(wk.group(1)) if wk else None, "n": int(wn.group(1)) if wn else None,
                     "shed": (int(sh.group(1)), int(sh.group(2))) if sh else None})
     return out
@@ -101,6 +104,34 @@ def span_lines(cli):
         out.append({"t": float(m.group(1)), "a_star": _f(m, 2), "delta": _f(m, 3), "rr": float(m.group(4)), "debt": float(m.group(5)),
                     "shed": int(sh.group(1)) if sh else None, "denied": int(sh.group(2)) if sh else None, "bud": float(sh.group(3)) if sh else None})
     return out
+
+
+def wstore_acc(cli):
+    """[(t, dbt_acc)] of the client's [WSTORE] windows after the last warm-up marker (slaw_parse's reader, as s60_score._evict); dbt_acc None where the engine printed `-`."""
+    import slaw_parse as sp_
+    lines = list(cli or [])
+    idx = [i for i, ln in enumerate(lines) if '"warmup":true' in ln]
+    if idx:
+        lines = lines[idx[-1] + 1:]
+    out = []
+    for ln in lines:
+        r = sp_.parse_line(ln) if ln.startswith("[WSTORE] ") else None
+        if r and r[0] == "WSTORE" and r[1].get("t") is not None:
+            out.append((r[1]["t"], r[1].get("dbt_acc")))
+    return out
+
+
+def w1_hi_counts(late, cli):
+    """The W1 upper bracket in counts: (d cod + d plost) / sum dbt_acc over the LATE interval. None when any counter is missing (no rate-form fallback)."""
+    if len(late) < 2:
+        return None
+    a, b = late[0], late[-1]
+    if not (a["cum"] and b["cum"]) or a["plost"] is None or b["plost"] is None:
+        return None
+    win = [acc for t, acc in wstore_acc(cli) if a["t"] < t <= b["t"]]
+    if not win or any(x is None for x in win) or sum(win) <= 0:
+        return None
+    return ((b["cum"][1] - a["cum"][1]) + (b["plost"] - a["plost"])) / sum(win)
 
 
 def ratio(num, den):
@@ -162,7 +193,7 @@ def row_metrics(cli, srv, drv, nbytes=None, cell="c2-100", mbps=None):
     m["mbar_lo"], m["mbar_lo_src"] = m["loop_ack"], m["loop_src"]
     rr = m["rr"]
     m["w1_lo"] = max(0.0, 1.0 - 1.0 / (rr * m["mbar_lo"])) if (rr and m["mbar_lo"]) else None
-    m["w1_hi"] = m["cod_src_rate"] / rr if (rr and m["cod_src_rate"] is not None) else None
+    m["w1_hi"] = w1_hi_counts(late, cli)
     m["grid_above"] = [g for g in GRID if m["mbar_lo"] is not None and g >= m["mbar_lo"]]      # the sweep points not excluded by the lower bound
     return m
 
@@ -181,8 +212,8 @@ def is_void(row):
     return row["status"] != "LIVE"
 
 
-def fmt(x, nd=1):
-    return "-" if x is None else f"{x:.{nd}f}"
+def fmt(x, nd=1, na="-"):
+    return na if x is None else f"{x:.{nd}f}"
 
 
 def smoke(path, out=print):
@@ -240,7 +271,7 @@ def _rng(rs, k, nd):
 
 READOUTS = [
     ("mbar_lo  d(cum ack)/sum(wait n)  [<= m-bar]", "mbar_lo", 3), ("mbar_lo  d(cum src)/sum(wait n)  [<= m-bar]", "mbar_lo_src", 3),
-    ("W1 lower  1-1/(rr x mbar_lo)", "w1_lo", 3), ("W1 upper  (cod/src)/rr", "w1_hi", 3),
+    ("W1 lower  1-1/(rr x mbar_lo)", "w1_lo", 3), ("W1 upper  (d cod + d plost)/sum dbt_acc", "w1_hi", 3),
     ("per-tick mbar_lo (ack): median", "loop_ack_med", 3), ("   min over ticks", "loop_ack_min", 3), ("   max over ticks", "loop_ack_max", 3),
     ("release batch d(cum src)/d(wake ack) [no bound]", "rel_src", 2), ("release batch d(cum ack)/d(wake ack) [no bound]", "rel_ack", 2),
     ("per-tick release batch (ack): median [no bound]", "rel_ack_med", 2), ("   min over ticks", "rel_ack_min", 2), ("   max over ticks", "rel_ack_max", 2),
@@ -283,11 +314,11 @@ def score(paths, out=print):
     if lo is not None:
         out(f"m-bar LOWER BOUND (ack field, median over rows): m-bar >= {lo:.3f} (sources per loop iteration; only an upper limit is missing: no token bounds m-bar from above); "
             f"sweep points {{1, 4, 16, 64, 256}} not excluded by it: {', '.join(str(g) for g in GRID if g >= lo) or 'none'}")
-        out(f"W1 BRACKET (medians over rows): {fmt(wl, 3)} <= W1 <= {fmt(wh, 3)}  (lower = max(0, 1 - 1/(rr x mbar_lo)); upper = (cod/src)/rr, cod includes margin and request repairs)")
+        out(f"W1 BRACKET (medians over rows): {fmt(wl, 3)} <= W1 <= {fmt(wh, 3, na='n/a')}  (lower = max(0, 1 - 1/(rr x mbar_lo)); upper = (d cod + d plost) / sum dbt_acc, counts over the LATE windows; n/a when a counter is missing)")
     else:
         out("m-bar LOWER BOUND: not computable (no live row with the per-loop value)")
     n_dnf = sum(1 for r in live if r.get("dnf"))
-    out(f"VERDICT59 REPORTED-ONLY slots={len(ps.slots(rows_all))}/{n_exp} live={len(live)} void={len(voids)} replaced={len(replaced)} dnf={n_dnf} mbar_lo_med={fmt(lo, 3)} w1_lo_med={fmt(wl, 3)} w1_hi_med={fmt(wh, 3)} release_ack_med={fmt(hi, 2)}")
+    out(f"VERDICT59 REPORTED-ONLY slots={len(ps.slots(rows_all))}/{n_exp} live={len(live)} void={len(voids)} replaced={len(replaced)} dnf={n_dnf} mbar_lo_med={fmt(lo, 3)} w1_lo_med={fmt(wl, 3)} w1_hi_med={fmt(wh, 3, na='n/a')} release_ack_med={fmt(hi, 2)}")
     return 0
 
 

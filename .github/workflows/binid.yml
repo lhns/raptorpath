@@ -1,0 +1,103 @@
+# Release-binary identity (test-detection plan S8, ADR-0082): build
+# `raptorpath` in release on the base and on every commit since it that
+# touches the engine, on ubuntu-24.04, and compare the binary and its
+# .text/.rodata sections. The base is built twice as a control: if base and
+# base2 differ the job is broken, not the candidate. Builds run from the
+# crate dir, as tools/l1/binid_run.sh does (from the workspace root cargo
+# unifies features across members and the binary differs, status §58).
+name: binid
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "base ref (default: merge base with origin/main)"
+        default: ""
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with: { fetch-depth: 0 }
+      - id: m
+        run: |
+          base="${{ inputs.base }}"
+          [ -n "$base" ] || base=$(git merge-base HEAD origin/main)
+          base=$(git rev-parse "$base")
+          rows="{\"label\":\"base\",\"ref\":\"$base\"},{\"label\":\"base2\",\"ref\":\"$base\"}"
+          n=0
+          for c in $(git rev-list --reverse --first-parent "$base..HEAD" -- raptorpath Cargo.toml Cargo.lock); do
+            n=$((n + 1))
+            rows="$rows,{\"label\":\"c$n-${c:0:8}\",\"ref\":\"$c\"}"
+          done
+          echo "matrix={\"include\":[$rows]}" >> "$GITHUB_OUTPUT"
+          echo "base=$base commits=$n" | tee -a "$GITHUB_STEP_SUMMARY"
+  build:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with: { ref: "${{ matrix.ref }}", path: src }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: build (crate dir, fixed paths)
+        run: |
+          rustc -vV
+          cd src/raptorpath
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/tgt" cargo build --release --locked --bin raptorpath
+      - name: hash binary and sections
+        run: |
+          mkdir out
+          b="$GITHUB_WORKSPACE/tgt/release/raptorpath"
+          cp "$b" out/raptorpath
+          objcopy -O binary --only-section=.text "$b" out/text.bin
+          objcopy -O binary --only-section=.rodata "$b" out/rodata.bin
+          readelf -SW "$b" > out/sections.txt
+          rustc -vV > out/rustc.txt
+          echo "${{ matrix.ref }}" > out/ref.txt
+          (cd out && sha256sum raptorpath text.bin rodata.bin | tee sha.txt)
+      - uses: actions/upload-artifact@v4.6.2
+        with: { name: "bin-${{ matrix.label }}", path: out, retention-days: 14 }
+  compare:
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4.3.0
+        with: { path: bins }
+      - name: compare every build with the base
+        run: |
+          cd bins
+          s=$GITHUB_STEP_SUMMARY
+          echo "| build | ref | binary | .text | .rodata | bytes differing (bin/.text/.rodata) |" >> $s
+          echo "|---|---|---|---|---|---|" >> $s
+          rc=0
+          for l in $(echo '${{ needs.plan.outputs.matrix }}' | python3 -c 'import json,sys; print(" ".join(r["label"] for r in json.load(sys.stdin)["include"]))'); do
+            d=bin-$l
+            if [ ! -f "$d/raptorpath" ]; then echo "| $l | - | build failed | | | |" >> $s; [ "$l" = base ] || [ "$l" = base2 ] && rc=2; continue; fi
+            row="| $l | $(cut -c1-8 $d/ref.txt)"
+            diffs=""
+            for f in raptorpath text.bin rodata.bin; do
+              if cmp -s "$d/$f" "bin-base/$f"; then row="$row | same"; diffs="$diffs/0"
+              else row="$row | **differs**"; diffs="$diffs/$(cmp -l "$d/$f" "bin-base/$f" 2>/dev/null | wc -l)"
+                [ "$(stat -c%s "$d/$f")" = "$(stat -c%s "bin-base/$f")" ] || diffs="$diffs(size $(stat -c%s "bin-base/$f")->$(stat -c%s "$d/$f"))"
+              fi
+            done
+            echo "$row | ${diffs#/} |" >> $s
+            echo "$l $(cat $d/sha.txt | tr '\n' ' ')"
+            if ! cmp -s "$d/raptorpath" bin-base/raptorpath; then
+              [ "$l" = base2 ] && { echo "CONTROL MISMATCH: base vs base2 differ, the job is broken" | tee -a $s; rc=2; } || rc=${rc/0/1}
+            fi
+          done
+          cmp -s bin-base/rustc.txt bin-base2/rustc.txt || { echo "toolchains differ" | tee -a $s; rc=2; }
+          echo "rc=$rc (0 identical, 1 a candidate differs, 2 control broken)" | tee -a $s
+          exit $rc

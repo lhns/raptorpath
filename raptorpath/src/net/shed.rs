@@ -131,11 +131,11 @@ impl CompletionFeed {
             remaining_bytes: AtomicU64::new(0),
             consumed_bytes: AtomicU64::new(0),
             set_at_us: AtomicU64::new(0),
-            epoch: std::time::Instant::now(),
+            epoch: crate::clock::now(),
         }
     }
     fn now_us(&self) -> u64 {
-        self.epoch.elapsed().as_micros() as u64
+        self.epoch.clock_elapsed().as_micros() as u64
     }
     /// The whole object is ahead of us: set at the start of a transfer, in
     /// the bytes the engine will read (the driver's encoded packets).
@@ -389,3 +389,6 @@ pub(crate) fn shedh_report_line() -> String {
 pub(crate) fn shed_recv_budget_ok(holes_given_up: u64, frontier_seqs: u64, eps_recv: f64) -> bool {
     (holes_given_up as f64) < eps_recv * (frontier_seqs as f64)
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

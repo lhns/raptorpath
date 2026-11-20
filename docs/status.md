@@ -1907,7 +1907,7 @@ The launch sha is pinned by an amendment.
 - **Evidence:** `docs/l1-raw/s51b/recopy/`: the scripts (`acct.py`, `red.py`, `wire.py`, `age.py`), the two tables, and `recopy-extract.tgz`, which holds the lines the scripts read from all 152 rows and reproduces both tables byte for byte.
 - **Order:** the S06 derivation goes into the paper first (`rate-s06-plost-derivation`, running). It is followed by a red-first host test counting copies per seq. S06 goes before the jitter fix (`rate-delta-jitter-fix`), because Δ places coded symbols that c8 never sends. The spare-clamp verdict and the S08 fix are held until S06 lands, since all three edit the proactive-slot path.
 
-**§51 block 51 Result, Addendum 3 (2026-11-19, post hoc, code and ledgers only; the findings Fable-reviewed, this text not yet): the owner deletes the taper copy branch (S06), and the repair-rate law (R02) is recorded as over-provisioned against what the δ dial needs at ρ = 1. The new rate formula waits for a reading without copies.**
+**§51 block 51 Result, Addendum 3 (2026-11-19, post hoc, code and ledgers only; Fable-reviewed, corrected the same day): the owner deletes the taper copy branch (S06), and the repair-rate law (R02) is recorded as not derived to its declared target and not delivering it, with the direction of any fix open. The new rate formula waits for a reading without copies.**
 - **Owner decision 2026-11-19, S06:** delete the copy branch, so every proactive slot carries a coded symbol. The alternative, S06′, was a posterior over resends in flight (`docs/derivations/s06-plost-resend.md` on `s06-derivation` `5ebf41a5`). It kept "copy with probability π", which that derivation calls UNDERIVED, so it would have needed a FORMULA-FIRST waiver.
   - **Why delete:** at ρ = 1 a copy adds no degree of freedom the NACK resend does not send. It is only a second, earlier trigger for the same correction.
   - **What it keeps:** ADR-0064's shed law and budget. The NACK path applies the same `shed_allowed` test to every judged gap seq (`sender_phases.rs:846–869`), a superset of the slot path's `first()`.
@@ -1936,14 +1936,14 @@ The launch sha is pinned by an amendment.
 
   - **c8:** the margin z·S is 85–90 % of r, and the floor ε̂/(1−ε̂) is only 0.015–0.04. Inferred from a tick-level port of the law, since no term-win gauge exists.
   - **c2: which term wins is undecided.** The core term reproduces r only at σ² ≈ 30 against an honest 13, so the window-mass term cannot be excluded without the gauge.
-  - **The 10⁻⁵ base has no derivation.** The law gives the NACK channel no credit at ρ = 1, and the `max` has no stated reason.
+  - **The 10⁻⁵ base is a declared dial**, not a constant (erratum below): `--target-tail-loss`, the Home / Datacenter profiles, ADR-0050. What is missing is the margin's derivation to that target and a gauge of the delivered tail. The law gives the NACK channel no credit at ρ = 1, and the `max` has no stated reason.
   - `TaperBudget` passes the rate straight through: `owed=0.00` on all 16 843 `[SPAN]` lines.
   - The 0.5 cap binds on 6–8 % of ticks at c2 Auto and above and 12–16 % at c8. These are plu spikes; the figure is inferred, not yet checked on a row.
   - c8's consumed r above the predicted r_sat comes from r_sat's dwell-inclusive srtt (564–600 ms against the design's 250), not from a breach of the cap.
 - **Over-provisioned against what, and by how much:**
   - **Against the δ dial at ρ = 1:** yes. ARQ delivers every byte, so delivery alone needs r = 0, and r ≈ 0.20–0.26 costs the 15 % of goodput.
   - **Against the law's own tail target (10⁻⁵ residual per window):** the exact-tail arithmetic says r is too low (0.32 / 0.36 needed). But that arithmetic assumes every slot is coded, and today 64 % (c2) and 98 % (c8) are copies.
-  - **Measured residual today at c2 Auto:** about 0.014 holes per source still fall to resends (losses 0.032 minus decode closes 0.011–0.012 per source), against the 10⁻⁵ target.
+  - **Measured residual today at c2 Auto:** about 0.014–0.021 holes per source still fall to resends. That is source losses of 0.026 (from NACK resends) to 0.032 (wire losses, an upper bound), minus decode closes of 0.011–0.012 per source. The target bounds P(late) per source symbol (late = delivered by ARQ, not FEC; the law enforces it per window as the allowance t/ε̂), so the comparison is in one unit: 0.013–0.014 against 10⁻⁵, a miss of 1 300–2 100× (Addendum 4).
   - So **the size of any r fix waits for a reading without copies.** The copy-branch deletion and the rate arms can share one VM session: reported-only arms over the tail base on the no-copy binary, if the base is settable at launch (to be checked).
 - **The fix direction is not adopted.** The rate doc's candidate replaces t_tail/ε̂ with a critical fractile priced by the cost of a hole falling to ARQ. On two of its three readings it is clamp-bound from Bulk through Auto (r = 0), which is a defect by FORMULA-FIRST. Its D_arq/d of 94 at c2 does not match the measured close times. It goes back for a definition of d.
 - **Ledger** (evidence and verdicts, `law-ledger.md`):
@@ -1953,7 +1953,159 @@ The launch sha is pinned by an amendment.
   - R01 is measured off Bulk;
   - S10 gets the pass-through evidence;
   - **C02 gains the SACK encoding cap:** `MAX_SACK_RANGES` = 64 binds on every c8 report (63.7 ranges per report on c8 HA s42 r1, 1 754 631 / 27 557, against 3.7 at c2). Which holes a c8 report can name is set by the cap, not by the loss pattern.
-- **Owner question:** is the 10⁻⁵ residual per window a promise to keep, or a default? Today's delivered residual at c2 Auto is about 0.014 holes per source to resends, against 10⁻⁵. Every byte still arrives, by ARQ.
+- **Owner question, answered by delegation to Fable (2026-11-19), then corrected the same day.** `target_tail_loss` is neither a promise nor a bare default. It is a **declared dial** that the engine does not deliver and that no gauge reads.
+  - It is the `--target-tail-loss` flag, the Home (10⁻⁴) and Datacenter (10⁻⁶) profiles, and ADR-0050 (Accepted): "the protocol hint maps to target_tail_loss … the BOCD quantile at the adjusted confidence level IS the entire control mechanism".
+  - **Kept unchanged for now.** Removing or redefining it needs an ADR superseding ADR-0050, and that is the owner's call.
+  - **The deciding test is ADR-0050's own claim:** a tighter target buys less resend latency. It is registered two-sided for the no-copy VM session as a sweep of the flag at fixed δ, which separates it from β. If in-order delay falls as the target tightens, the dial is kept and r is derived to meet it. If it does not fall, the dial is superseded.
+  - **Erratum:** an earlier line in this addendum (and ledger R02) called the base "a config default with no derivation", and the coordinator told the owner the rate was "set too high". Both are withdrawn. Against the δ dial at ρ = 1 the rate is more than delivery needs; against its declared target it under-delivers. Option (b) stands as an investigation, not a verdict that r is too high.
+
+**§51 block 51 Result, Addendum 4 (2026-11-19, post hoc, code and the committed logs only; Fable-reviewed): four code reads on the repair and loss path, the tail target's unit and reach, and the full sweep logs committed.**
+- **Full logs committed:** `docs/l1-raw/s51b/full/b51c2-full.tgz` and `b51c8-full.tgz` (23 MB, scrubbed, export-ignored). Addenda 2–4, ADR-0079 and both derivation branches rest on them. The VM copies sit on the cluster the owner reported unstable.
+- **ADR-0050's Phase 3 split is decided but not wired (code-verified).** ADR-0050 (Accepted) decides `proactive_budget = total_budget − nack_expected`. `BudgetAllocator::proactive_rate` is called only from tests (`control/fec_rate/tests.rs:629–650`); the rate law never subtracts the NACK channel.
+- **A decode close does not cancel the pending NACK resend** (code read, `rate-overprovision` round 2).
+  - The receiver reports the gap within about 2 ms (`receiver.rs:1954–1957`), and the covering coded symbol lands at about 9 ms.
+  - The sender serves judged gaps (`sender_phases.rs:789–803`). Its only gates at N = 1 are the per-seq cooldown after a first resend and the age gate age ≥ srtt/2 (`recovery_laws.rs:266`). Nothing checks decoder state before the fire.
+  - A decode close suppresses only later re-resends, via `received_seqs` (`receiver.rs:1482`).
+  - Its size is a ratio, not a count: resends stay at about 1.0–1.09 per source loss on every arm while decoding closes 42–52 % of holes.
+  - **Open:** whether the srtt/2 age gate can ever hold at N = 1. Age runs from the original send, and the first report cannot arrive much sooner than one dwell-inclusive srtt. A gate that always passes needs a ledger verdict. Any fix is a candidate law, not work started.
+- **The loss estimate `loss_rate()` averages per-ack loss fractions unweighted** (code-verified, `control/estimator.rs:342–351`): `tx_ewma = α·(lost/sent) + (1−α)·tx_ewma` per call, α = 0.1, whatever `sent` is.
+  - Under `ACK_MERGE` the counters ride every data ack, about one sample per received datagram. A burst arrives as one sample, so the mean is about bursts per ack, not losses per datagram. That gives about 0.003 against a true 0.026, and it matches the "0.003 when non-zero" reading.
+  - It falls below the 4-decimal print within about 8 ms, against one burst every about 36 ms. That predicts about 79 % printed-zero ticks; 82–86 % were measured at c2.
+  - Empty deltas never reach it: sentinel acks carry `cum_expected: 0` and `record_batch` runs only when the delta is positive (`control_msg.rs:635–637`).
+  - **This is a wrong shape, not only a fast decay:** DISHONEST-INPUT for every reader that takes it as a per-datagram loss probability. After the S06 deletion its one live rate-law use is picking the worst path. plu (E07) is fed the same samples.
+- **The tail target: unit, reach, profiles.**
+  - **Unit:** per source symbol. It bounds P(late), where late means delivered by ARQ rather than FEC. At c2 Auto P(late) is 0.013–0.014 (54–58 % of holes fall to ARQ) against 10⁻⁵. At R± it is 0.012–0.014, so the delivered lateness is nearly flat in δ.
+  - **Reach:** `--target-tail-loss` does not reach the perf client the sweep ran. `cmd_perf` builds its config with `..Default::default()` (`main.rs:268–300`), and all 152 rows log 1e-5. A flag sweep needs a perf pass-through, which means a new binary.
+  - **Profiles (arithmetic from the exact-tail script, ideal code, not measurement):**
+    - **Datacenter** (10⁻⁶ with hint bulk): inert in the rate law, because β = 1 weights the anchor term 0. That is the sweep's H-B rr = 0.
+    - **Home** (10⁻⁴, cap 0.3): needs about 0.225 / 0.285 (c2 / c8), against a law that gives about 0.7× that.
+    - **Realtime** (target × 0.01): its need sits at the 0.5 cap within grid error, and above r_sat (about 0.3–0.4). So it is not meetable under the soft cap.
+    - **Still owed:** the arithmetic at the coded rate actually sent (about 0.075 at c2 Auto), which splits the miss between the law, the copies and the code. Which of c8's two default figures is right (0.36 or 0.395) also needs settling.
+  - **The base's other readers are pinned off:**
+    - the window W\* clip reads `wsize` 201 on every row;
+    - the NACK budget's confidence reads `nbud=10` on 84 % of ticks.
+    - Both are clamp readings for their ledger rows, still to be added. Whether 10 is a floor or `MAX_NACK_REPAIRS_PER_NACK` (10, `net/mod.rs:227`) is not yet read.
+- **Flag-sweep registration: a draft, not registered.** It lives in `docs/derivations/rate-overprovision.md` §9 on `rate-overprovision` `c6035a28`, and needs the perf pass-through, derived outcome thresholds, and two more readouts (the stalled-time share, and redundant source arrivals per resend).
+  - **The tight arms already ran, with copies.** t_tail = base·0.5/δ, so I4 and R± are about the 10⁻⁶ and 10⁻⁷ arms, if β ≈ 0 from Auto up and the clamp does not bind (both to be checked).
+  - From Auto to R±, P(late) and in-order delay stayed flat and goodput fell about 2 %. That is the with-copies baseline.
+
+**Liveness and wiring audit (2026-11-19, committed logs and code only; `docs/derivations/liveness-audit.md`, merged as a record; Fable-reviewed): the repair half of the engine first ran in scored rows this week. At the default hint (Auto), 41 of 126 ledger cells clearly vary. The fixes are ordered by this ranking, not by arrival.**
+- **Why it went unseen:** the merge guard runs Bulk only, and every r-driven law is weighted 0 there. A third of the Bulk cells never run (Bulk c2 + c8: 41 execute, 27 pinned, 42 never run, 16 no gauge). Process rules are on `meas-guard-bulk-blind`.
+- **Counts:** 65 engine ledger lines × 7 seats = 455 cells, 12 n/a, 443 classified. Of those, 163 execute (21 near-pinned), 87 are pinned, 121 never run and 72 have no gauge. At Auto (126 cells): 48 execute (7 near-pinned), 26 pinned, 28 never run, 24 no gauge.
+- **Sized** (in order):
+  1. **The repair rate r at ρ = 1.** Against Bulk it costs −15 % goodput, +39 % client CPU per GB and +18 % in-order delay at c2 (c8: −15 %, +27 %, +16 %, the last below resolution). It buys earlier closes for 42–46 % of losses, with no measured drop in delay. One cost, four candidate causes, not additive: the S06 copies (ADR-0079, in progress), ADR-0050's Phase 3 split unwired, the decode close not cancelling the NACK resend, and R02 not derived to its target. The cause split needs the rate-law gauges.
+  2. **c8 in-order delay of 4.7–6.1 s**, the largest delay effect. Its causes are the 20-gap horizon (C02) and the 64-range SACK cap, which binds on every c8 report. Lever B measured about 1.0 s against 5.3 s at §53 and is not on main (`rec-gap-horizon`, `rec-leverb-guard`).
+  3. **The TCP tunnel's in-order guard is a comment only** (coordinator-verified). The CLI overlay sets `window_out_of_order` / `_coded_only` / `_generation_coding` / `_systematic_repair` to None (`main.rs:387–396`), and `merge` takes `overlay.or(base)` (`config.rs:204`). So a TOML value reaches the tunnel. This is a product-path correctness item, conditional on a config file setting it; not measured.
+  4. **ρ is not an input to the "1 − ρ" shed budget** (coordinator-verified, matters at ρ < 1).
+     - The budget is `residual_loss_after_fec(est.loss_rate(), r, A*, σ²)` (`emit_source.rs:635`), and `contract_rho` is a literal 1.0 (`sender_policy.rs:616`).
+     - It reads the unweighted per-ack loss EWMA (Addendum 4), which spikes after a burst and decays below print within about 8 ms.
+     - On block E PM s42 r1, `bud=` reads 0.0000 on 351 of 366 printed ticks (0.0001–0.0272 on the other 15). Meanwhile shed rises 11 → 1 934 and denied 133 → 25 530, so 0.36 % of the source is dropped with no defined relation to 1 − ρ.
+  5. **Hint-keyed Realtime paths** (T2 FAIL), `model-fix-hint-keyed-paths`.
+- **Pinned, no measured cost:**
+  - **The NACK budget at its floor of 10** on 70–97 % of ticks. The 10 is `.max(MAX_NACK_REPAIRS_PER_NACK)` (`net/mod.rs:3331–3333`, coordinator-verified). It answers Addendum 4's question. Resends still run 1.01–1.09 per loss and `wait.nack` is 0 %, so nothing shows the floor starving them.
+  - **The scheduler cwnd at MAX_CWND on 59–76 % of c2 ticks**, with the spare clamp slack (K01, K04).
+  - **The N = 1 age gate never suppresses** (C04, worker read), which answers Addendum 4's other question.
+  - **Δ = 1, A\* ≥ W on 96–100 % of ticks, and W = 201** (S03, S02, R07): the coded span is pinned to the whole window.
+- **Needs a gauge:** rate-law internals (term win, r_sat, P_fec, t_tail; on `c8-gauges`), and the per-leg cwnd and spare at c8.
+- **Wiring:**
+  - 65 decision rows: 36 wired, 7 wired but off by default, 10 partial, 7 unwired, 5 superseded. All 7 unwired rows are hand-checked: 0017, 0018, two in 0050, 0054's endstate, 0077's core, and 0079.
+  - **Two decisions changed in code with no superseding ADR:**
+    - ADR-0050's `NackAck` message has no `ControlMessage` variant (`protocol.rs:400–573`); RX loss comes from data batches instead.
+    - ADR-0017's MTU-derived symbol size: `min_mtu` (`scheduler/mod.rs:578`) has no caller, and the size comes from the hint-keyed `symbol_size_for_hint`.
+  - `enable_pi_feedback` is passed (`net/mod.rs:782`) but ignored (`fec_rate.rs:317`). `ge_burst_factor` and `realtime_burst_extra` stop at merge. `set_protocol_hint` has no non-test caller, so the documented Auto detection does not happen.
+  - The perf client takes no tail target, overhead cap or profile, and silently drops `--config`.
+- **Ledger:** S10's reason is corrected (PINNED at `owed = 0` at every r), and C04 gets the age-gate reading.
+
+**Owner decision 2026-11-19, the c8 delay: the store law, not lever B.** The owner chose to re-guard lever B, then reversed it the same day: "we dont want a workaround actually, we want the proper solution".
+- **Basis:** in §54b the store cap binds on 99.7–100 % of ticks on every arm, so the pool constant is the law. The constant's value alone moves c8 in-order delay from 4.4 s (pool 2048) to 0.38 s (pool 640). Lever B adds about 0.06 s on top (L640 0.32 s), and it sets a 20-gap horizon to the 64-range cap, which already binds at c8.
+- **So lever B (20 → 64) and a smaller pool constant (2048 → 640) are both workarounds.** The fix is the derived store law (`store-law-derivation`), a time law: how much each path may hold outstanding follows from its delay targets and δ, with the rate cancelling in the update (see the store-law state entry; the earlier "rate and delay" wording was the coordinator's). Decision 6 stands; `rec-leverb-guard` is parked again.
+- C02's 20-gap literal gets its answer after the store law, from a horizon bind gauge. The condition to derive is that the holes outstanding under the law fit in one report. The SACK cap and the horizon then become witnesses, not fixes.
+- **Process:** two owner choices today were asked without their history. A question now carries the node's earlier decisions in its own text.
+
+**Store law, state of the work (2026-11-19, docs and committed logs only; `docs/derivations/store-law-state.md` on `store-law-state` `bdc9f431`; Fable-reviewed): the formula is mostly there, the inputs are not. Until the estimators are honest, the c8 delay stays, because the owner ruled out workarounds.**
+- **One cause behind several of today's delay readings** (coordinator-reproduced). At c2 the in-order delay is the store's standing queue: 1.49–1.60 × 2048/λ_src on all 14 arms.
+  - Bulk: 2048/9 517 = 0.215 s, measured 340 ms.
+  - Auto: 0.255 s, measured 394–403 ms.
+  - Named Realtime, whose 512 B symbols halve the store's time: 0.120 s, measured 187 ms.
+  - The store cap sits at N·2048 on 97–100 % of LATE ticks at every δ; one Auto row reads pin 0.84 of 11 108 ticks, mean ask 10 725 against cap 1 826.
+  - **Erratum, readings that all read this one queue:**
+    - the +16–18 % in-order delay from Bulk to Auto is the goodput ratio (90 / 76), through a fixed store;
+    - "a coded slot buys no drop in delay" (Addendum 3 and the audit);
+    - T2 Realtime's delay step at c2;
+    - "Auto's delay is no lower than Bulk's".
+    None of them is evidence about the repair path's latency value.
+- **δ moves nothing in the store cap.** The shipped law is clamp((1+q)·Σ max_bw·min_rtt, 10, N·2048). Its ask is 3–34× above the ceiling, because `btlbw` reads 6–19× the link and `rtp` 5–25× the floor (E03, E04). The (1+r) unit mismatch is still on main. Ledger F01 is updated.
+- **Consequence for open registrations.** At the default pool, a tighter tail target lowers the source rate, so delay can only rise. The flag-sweep draft would therefore read "supersede ADR-0050" by construction, and ADR-0079's c8-delay registration is confounded the same way.
+  - Both must read hole-close time, not in-order delay.
+  - Both add arms at a pool inside §56's flat region, set by env. That is a measurement condition, not a shipped workaround.
+- **Correction:** the derived store law is a **time law**. Its update n′ = n·Σwᵢ·T*ᵢ / Σwᵢ·T̂ᵢ reads no rate, because the rate cancels, and its fixed point is n* = Σλᵢ·T*ᵢ + H. The earlier owner-decision entry's "a formula in that path's measured rate and delay" was the coordinator's wording, not the owner's.
+- **Where it stands:**
+  - **Derived:** G = 1, uniqueness, no separate H term, the coupled floor Φᵢ, q(δ) from RFC 8289.
+  - **Not sourced in the engine:**
+    - the window sampler (on unmerged `slaw-gauge`);
+    - the floor and brake estimators (E13 and E14 convicted);
+    - the allowance (F07 UNDERIVED: decision 8's g·S_F failed out of sample, need/S_F 0.46 at c3 against 0.80 at c2).
+  - **The sampler redesign waits on M1** (four RTT-dump rows, about 1 h, no build, needing a tools-only plan).
+  - **The per-leg refactor:** `perleg-phase-a` `e5246d7f` is unmerged and waits for its guard; Phase B and W3.3 are not started.
+- **The candidate is held.** On logged inputs it fails like the shipped law. On netem truth and the §60 floors it lands near §54b's working sizes and the §56 knees, but only in sample: its allowance was set at c2, and the floors come from the same cells.
+  - Out of sample it failed at c3 and costs at least 21 % at c1s. **c1s is a falsifier, not an owner question.**
+  - Owed:
+    - the §57a and §57b readings;
+    - c1d evaluated on netem truth;
+    - all predicted caps in one unit (per path or total);
+    - an independent check of the report-fit condition, whose κ ≈ 2 was fitted to §54b.
+- **The report-fit condition** (derived, not yet validated): G(n*) ≤ 64 (the SACK prefix) and κ·Σε_run,ᵢ·n*ᵢ ≤ 20 (the horizon). Two bind gauges are owed: a SACK-prefix bind fraction on the receiver and a horizon ripe-overflow fraction on the sender.
+- **Next:**
+  - M1 runs first when the owner clears Ceph; its tools-only plan is prepared before.
+  - The candidate and the doc's proposed ledger and paper text stay held until M1 and the out-of-sample checks.
+
+**VM queue (2026-11-19, waits for the owner to clear Ceph; one binary per line).**
+
+| # | session | binary | build? | state |
+|---|---|---|---|---|
+| 1 | **M1** (sampler inputs: four RTT-dump rows with their four gauge twins and a smoke row, sampler-design §4.1; `m1-plan.md` on `store-law-state` `d1b703c9`) | pre-F2 gauge binary **`e410d640`**: its scored g_R compares against need₅₀, F̂₅₀ and IQR bands frozen on that binary. **Carry-over assumption:** floor location, spread and knee need are the same on post-F2 main within M1's bands (F2 adds bytes per symbol, about 4 µs at 20 Mbit/s against 0.6–1.1 ms bands). Owed before any engine form ships: one c2-100 G16/D16 pair on post-F2 `a6a7e7e6` inside M1's c2 band | no | plan reviewed; plan code (plan 66, `m1-plan.md` §B) waits for the harness base below |
+| 2 | **Engine pre-flight** (suites, `--lib gates`, decision pins) for `tunnel-inorder-guard` `987b0360` and `c8-gauges` `311f8284` | one build each | yes | both branches ready on host; both change the binary, so neither merges before it (the gauges merge is not "after its stub run" alone) |
+| 3 | **S06 deletion guard** (ADR-0079): BASE = measurement tree, CAND = measurement tree + `s06-delete`; Stage G (Bulk) + Stage A (Auto c2 / c8, hole-close time and in-order delay, pool arms at the knee, the store-law candidate and 640) + Stage R (paced evicting seat) | two builds | yes | `s06-delete` being built; the off-Bulk stages have no harness owner yet |
+| 4 | **Tail-target flag sweep** (ADR-0050's claim, a draft) | the measurement tree | rides #3's BASE | needs the perf pass-through for `--target-tail-loss` (no owner) |
+| 5 | **c1s store arm set** (G256 / G384 / G640 / G1024, n = 3, plan 60's c1s bytes; the store-law candidate's falsifier) | the gauge binary of #1 | no | rides M1's session as a `66c` table, launched right after M1 (`m1-plan.md` §C, about +45 min) |
+
+- **Measurement tree** = main + `c8-gauges` (diagnostic prints) + the perf pass-through + the block E pacer (`4ee1df9b`) for Stage R. One BASE build serves #3 and #4.
+- **Harness base:** W1 (`w1-bracket-fix`) and the tools-only commits of `c8-gauges` (scorer, `crlf_guard`) land on main first. Then one harness worker takes plan 66 and the off-Bulk guard stages together.
+
+**Store law, review round 2 (2026-11-19, docs only; `store-law-state` `d1b703c9`; Fable-reviewed):**
+- **The c1s cost is real:** about −20 % at Bulk, on c1s's honest, jitter-free floor. Ruled out as an input artefact: on c1s, netem truth shrinks the margin further.
+- **The proposed release-interval term τ_rel is a hypothesis, most likely an engine clock**, so it is not adopted.
+  - It reads 0.8–1.3 ms flat on c2 and c8 across a 16× change in the store. That matches `LOOP_WAKE_US` = 1 000 µs (`recovery_laws.rs:29`).
+  - Gap-advertising reports are held to one per `GAP_ACK_MIN_INTERVAL` = 2 ms (`net/mod.rs:236`, `receiver.rs:1956–1957`), and that floor binds on every report (`[LATE] sampler_bind=1.0000` at c2, c1s and c1d).
+  - Adding τ_rel as measured would carry an engine timer into the law, the workaround shape the owner rejected. Only its growth above 1 ms at c1s and c1d (0.93 → 2.24 ms as the store grows) could be a receiver effect.
+  - With τ_rel, the fixed point's restoring force G drops from 0.85 to 0.62 (stability needs 0 < G < 2).
+  - **New pinned constant:** the 2 ms report floor binds on 100 % of reports and needs a ledger row beside C02 (to add).
+- **κ is read per row** (`[SUCC] rep_mean` over the LATE loop), and the fitted constant is withdrawn. With the measured κ, B1024 (κ = 3.1) sits at the old-hole edge with no fit. At the candidate's point (κ = 1.23) the horizon condition holds about 7× and the SACK-prefix condition about 3×.
+- **Future pool arms go at the knee, the candidate and 640 per path:** c8 170 / 256 / 640. Off Bulk the knee arms are rescaled estimates, and the measured knee is the readout.
+
+**S06 deletion review and an evicting-seat defect (2026-11-20, local loopback runs and code only; Fable-reviewed): ADR-0079's "superset" claim is false at ρ < 1 (Amendment 1, pending the owner). No delivery difference is measured. The evicting seat leaves a stalled blocker unresolved on main itself.**
+- **Main's harness forward list (fixed, `e304921b`).** The tools-only merge `1a0258b7` kept `RWM_PERF_RATE_MBIT` and `RWM_SLAW` in `lib.sh`'s `RWM_FORWARD`, but not the engine code that reads them, so both `gates::forwarding_audit` tests failed on main. Both are now green on the fix. A tree that cherry-picks the pacer or the slaw gauge re-adds its own line.
+- **The claim.** On the evicting seat the NACK site clamps each gap to the 200-symbol coding window before its shed check (`sender_phases.rs:790–805`). The slot site judged `retransmit_buffer.first()` with no window limit. So after the deletion no sender path judges a blocker below the window. A shed is sender state only: it never reaches the receiver, which moves past a hole by force-drain or hold expiry. Its two sender-side effects, a shared 1 − ρ budget and the sweep target, are in ADR-0079 Amendment 1.
+- **Measured** (`s06-delete`, one target dir per tree, the binaries' sha256 recorded). In the stalled-blocker case, 30 runs per tree:
+  - quick shed: 7/30 before, 8/30 after (p = 1.0);
+  - unresolved: 19/30 and 15/30 (p = 0.43);
+  - the slot site never shed the blocker in its 9 live runs.
+
+  Earlier figures are withdrawn: "the deletion loses no drops", "never recovered within 25 s" (it was passed at +160 ms by force-drain), "27–51 ms later" and the 373 ms bound. Two odd counter readings came from a stale binary, built in a target dir the two trees shared.
+- **Defect on main** (diagnosis `wedge-diag` `bc383f29`; local runs, an unpaced source at about 5× an emulated 40 Mbit link):
+  - the source rate has no bound on the evicting seat, because the intake pause is reliable-only (`net/mod.rs:2473`);
+  - the window then covers only the last few milliseconds, so the NACK site's resend and shed act only while a blocker is still inside it;
+  - the tail sweep re-targets a below-window `first()` that the same clamp then drops;
+  - a lost tail with no later traffic is never resolved.
+
+  Continuous traffic still recovers, one reorder hold later. Node `rec-evict-blocker-unresolved`. Owed:
+  - which site produced block E's 1 934 sheds;
+  - whether the paced VM rows show the same.
+- **Tests on `s06-delete`:** `stall_budget_open`, `arrivals_continue` and `stall_budget_closed` are record-only (`#[ignore]` with their measured rates). T2 (`stalled_blocker_recovered_by_nack`) still gates, at 9/10 on the candidate: its one miss was a decode fill.
+- **The S06 guard candidate is held.** It waits on:
+  - the owner on Amendment 1;
+  - the shed-conservation test and the guard's ρ < 1 shed registration, re-read, since conservation is no longer the expected result;
+  - T2 accepting a witnessed decode fill.
 
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
