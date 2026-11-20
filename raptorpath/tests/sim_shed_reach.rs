@@ -16,9 +16,18 @@
 //! not on Linux, so the blackout is the platform-independent trigger.
 //!
 //! Sites: the NACK-path shed (`sender_phases.rs`, ev=`shed`) is reached.
-//! The slot-site shed (`emit_source.rs`, ev=`shed_slot`) is NOT: in every
-//! cell explored (loss 2-20 %, 1-300 MB, budget forced open, epsilon at send
-//! forced to 0.9) it read 0; see `slot_site_is_not_reached_here`.
+//! The slot-site shed (`emit_source.rs`, ev=`shed_slot`) is NOT reached by
+//! that scenario (`slot_site_is_not_reached_here`): `perf::client` hands the
+//! whole object over at once and the evicting seat has no intake bound, so
+//! every source symbol is emitted at one virtual instant. The slot site runs
+//! only at a source emission (`emit_source`), so it sees age 0 against D,
+//! eps-at-send 0 (no ack yet) and a repair rate of 0 (no spare window).
+//!
+//! The paced scenario (`paced`) feeds the same object at 20 Mbit/s, half
+//! the link (`SIM_PACE_MBIT`, `sim_support::paced_client`). Emission then
+//! interleaves with acks, and the slot site sheds (seed 42: 90 with the
+//! budget forced to 0.05; 0 to 4 per seed with the derived budget, which
+//! binds). `witness_slot_site_sheds_paced` gates that.
 
 mod sim_support;
 use sim_support::{run, ChildRun, Scenario};
@@ -62,6 +71,30 @@ fn scenario(reliable: bool) -> ChildRun {
     })
 }
 
+/// The same link, ρ < 1, the object fed at 20 Mbit/s and no blackout: the
+/// holes are the link's own 2.5 % losses, judged while emission continues.
+/// Budget forced to 0.05 (twice the loss rate), as above: the derived one
+/// sheds 0 to 4 per seed at the slot site, too few to gate on.
+fn paced() -> ChildRun {
+    let _g = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    run(&Scenario {
+        seed: 42,
+        paths: 1,
+        bytes: 6_000_000,
+        hint: "realtime",
+        reliable: Some(false),
+        loss: 0.025,
+        jitter_ms: 4,
+        limit_s: 40,
+        port: PORT,
+        env: vec![
+            ("SIM_PACE_MBIT", "20".into()),
+            ("RWM_TEST_TS_SHED_ALL", "1".into()),
+            ("RWM_TEST_TS_BUDGET_FRAC", "0.05".into()),
+        ],
+    })
+}
+
 fn field(l: &str, k: &str) -> u64 {
     l.split(' ').find_map(|f| f.strip_prefix(k)).and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("no {k} in {l}"))
 }
@@ -91,6 +124,19 @@ fn counts(r: &ChildRun) -> String {
     )
 }
 
+/// The failure shape per site: of each site's shed seqs, how many the
+/// receiver's frontier (sampled every 100 ms) ever passed, and the lowest one
+/// it never passed.
+fn pass_shape(r: &ChildRun) -> String {
+    let last = r.tseam("frontier").iter().map(|l| field(l, "next=")).max().unwrap_or(0);
+    let site = |ev: &str| {
+        let seqs: Vec<u64> = r.tseam(ev).iter().map(|l| field(l, "seq=")).collect();
+        let stuck: Vec<u64> = seqs.iter().copied().filter(|&s| s >= last).collect();
+        format!("{ev}: {} shed, {} never passed (lowest {:?})", seqs.len(), stuck.len(), stuck.iter().min())
+    };
+    format!("max_frontier_next={last}; {}; {}", site("shed"), site("shed_slot"))
+}
+
 /// Liveness: the transfer completes, and every shed hole is passed by the
 /// receiver's in-order frontier within a bound derived from the deadline.
 ///
@@ -103,6 +149,7 @@ fn counts(r: &ChildRun) -> String {
 ///     t_pass(s) <= t_s + H_max + 100 ms + d_us,
 /// where t_pass(s) is the first frontier sample with next > s.
 fn assert_live(r: &ChildRun, what: &str) {
+    println!("{what}: {}", pass_shape(r));
     let c = counts(r);
     assert_eq!(r.outcome, "client_ok", "{what}: transfer did not complete: {c}");
     let frontier: Vec<(u64, u64, u64)> =
@@ -150,4 +197,25 @@ fn control_liveness_at_rho_1() {
     let r = scenario(true);
     println!("rho=1: {}", counts(&r));
     assert_live(&r, "rho=1");
+}
+
+/// Witness (green): the slot site sheds at rho < 1 once emission is paced.
+/// Red with the slot-site shed stubbed out (and on a tree without it).
+#[test]
+fn witness_slot_site_sheds_paced() {
+    let r = paced();
+    let c = counts(&r);
+    println!("paced rho<1: {c}");
+    assert!(r.tseam("shed_slot").len() >= 10, "slot-site shed (nearly) never ran: {c}");
+    assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
+}
+
+/// Liveness of the paced scenario, by the bound of `assert_live`. Record
+/// only (see the ignore reason); prints both sites' counts and the shape.
+#[test]
+#[ignore = "record only: liveness at rho < 1 is the open defect rec-evict-blocker-unresolved"]
+fn liveness_after_shed_paced() {
+    let r = paced();
+    println!("paced rho<1: {}", counts(&r));
+    assert_live(&r, "paced rho<1");
 }

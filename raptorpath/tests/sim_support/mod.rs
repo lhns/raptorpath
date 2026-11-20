@@ -34,7 +34,8 @@ pub struct Scenario {
     /// Virtual-time limit for the client, s.
     pub limit_s: u64,
     pub port: u16,
-    /// Extra env for the child (seams, gates).
+    /// Extra env for the child (seams, gates). `SIM_PACE_MBIT=<f>` feeds the
+    /// object at f Mbit/s through [`paced_client`] instead of `perf::client`.
     pub env: Vec<(&'static str, String)>,
 }
 
@@ -138,6 +139,7 @@ pub fn child() {
     let limit = Duration::from_secs(env("SIM_LIMIT_S"));
     let port: u16 = env("SIM_PORT");
     let out: String = env("SIM_OUT");
+    let pace_mbit: Option<f64> = std::env::var("SIM_PACE_MBIT").ok().and_then(|v| v.parse().ok());
 
     let _ = rustls::crypto::ring::default_provider().install_default();
     let wall0 = std::time::Instant::now();
@@ -173,7 +175,10 @@ pub fn child() {
         let t0 = tokio::time::Instant::now();
         let server = tokio::spawn(perf::server(srv));
         tokio::time::sleep(Duration::from_millis(20)).await;
-        let r = tokio::time::timeout(limit, perf::client(cli, bytes, 1)).await;
+        let r = match pace_mbit {
+            None => tokio::time::timeout(limit, perf::client(cli, bytes, 1)).await,
+            Some(mbit) => tokio::time::timeout(limit, paced_client(cli, bytes, &hint, mbit)).await,
+        };
         let virt = t0.elapsed().as_secs_f64();
         server.abort();
         let outcome = match r {
@@ -190,4 +195,72 @@ pub fn child() {
         wall0.elapsed().as_secs_f64(),
         net.events.load(Relaxed)
     );
+}
+
+// ── Paced source ─────────────────────────────────────────────────────────
+//
+// `perf::client` hands the whole object to the memory TUN at once, and on the
+// evicting seat nothing bounds the sender's intake, so every source symbol is
+// emitted at one virtual instant: no ack, no loss sample and no age between
+// the first and the last emission. `paced_client` feeds the same perf object
+// protocol (`src/perf.rs`: magic, obj_id, chunk_idx, total, all big-endian;
+// ack chunk index u32::MAX) at a fixed rate, so emission interleaves with
+// acks the way a paced application does. Test-only: engine untouched.
+
+const PERF_MAGIC: u16 = 0x5250;
+const PERF_HDR: usize = 14;
+
+fn perf_chunk(obj: u32, idx: u32, total: u32, len: usize) -> bytes::Bytes {
+    let mut b = Vec::with_capacity(PERF_HDR + len);
+    b.extend_from_slice(&PERF_MAGIC.to_be_bytes());
+    b.extend_from_slice(&obj.to_be_bytes());
+    b.extend_from_slice(&idx.to_be_bytes());
+    b.extend_from_slice(&total.to_be_bytes());
+    b.resize(PERF_HDR + len, 0xA5);
+    b.into()
+}
+
+async fn await_ack(mem: &mut raptorpath::tun::MemTun, obj: u32) -> anyhow::Result<()> {
+    loop {
+        let p = mem.delivered.recv().await.ok_or_else(|| anyhow::anyhow!("delivery channel closed"))?;
+        if p.len() >= PERF_HDR
+            && p[..2] == PERF_MAGIC.to_be_bytes()
+            && p[2..6] == obj.to_be_bytes()
+            && p[6..10] == u32::MAX.to_be_bytes()
+        {
+            return Ok(());
+        }
+    }
+}
+
+/// Warm-up object (one chunk, acked), then one `nbytes` object fed at
+/// `mbit` Mbit/s, then its ack. Chunk payload size as `perf::client`'s
+/// (`chunk_payload_len`: 508 B symbols at Realtime, 1196 B otherwise, minus
+/// the header).
+async fn paced_client(cfg: raptorpath::net::PeerConfig, nbytes: usize, hint: &str, mbit: f64) -> anyhow::Result<()> {
+    let plen = if hint == "realtime" { 508 - PERF_HDR } else { 1196 - PERF_HDR };
+    let (tun, mut mem) = raptorpath::tun::TunInterface::memory(1500);
+    let mut engine = tokio::spawn(raptorpath::net::run_with_tun(cfg, tun));
+    let body = async {
+        mem.feed.send(perf_chunk(0, 0, 1, 64)).await?;
+        await_ack(&mut mem, 0).await?;
+        let total = nbytes.max(1).div_ceil(plen) as u32;
+        let dt_ns = ((plen + PERF_HDR) as f64 * 8.0 / (mbit * 1e6) * 1e9) as u64;
+        let t0 = tokio::time::Instant::now();
+        let mut left = nbytes.max(1);
+        for i in 0..total {
+            let due = t0 + Duration::from_nanos(dt_ns * i as u64);
+            if due > tokio::time::Instant::now() {
+                tokio::time::sleep_until(due).await;
+            }
+            let k = left.min(plen);
+            left -= k;
+            mem.feed.send(perf_chunk(1, i, total, k)).await?;
+        }
+        await_ack(&mut mem, 1).await
+    };
+    tokio::select! {
+        r = body => r,
+        r = &mut engine => Err(anyhow::anyhow!("engine ended: {r:?}")),
+    }
 }
