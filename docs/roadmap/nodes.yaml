@@ -8514,7 +8514,7 @@ nodes:
   folded: []
   overview: false
   plain: 'Point the recovery model at the engine''s own decision functions, once those are extracted.'
-  notes: 'Plan S9. Owner 2026-11-20 (plan decision 7): the extraction grows to the gap clamp, the tail-sweep target and the intake pause, with reliable as a clamp bound; at the next quiet point, through the proof ladder and a guard batch. Still blocked on infra-test-recovery-model and the extraction design.'
+  notes: 'Plan S9. Owner 2026-11-20 (plan decision 7): the extraction grows to the gap clamp, the tail-sweep target and the intake pause, with reliable as a clamp bound; at the next quiet point, through the proof ladder and a guard batch. Design merged: docs/derivations/core-extraction-recovery.md (Fable-reviewed). Steps 0-1 (decision pin digest, core functions) can land now; steps 2-4 need the VM guard and go after s06-delete, c8-gauges and recovery-counters merge. The intake pause keeps its seat mapping in the engine until the evicting-seat fix is chosen. Still blocked on infra-test-recovery-model.'
 - id: infra-test-pub-narrowing
   title: Narrow pub so dead code warns
   track: infra
