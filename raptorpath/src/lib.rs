@@ -13,3 +13,6 @@ pub mod scheduler;
 pub mod task_obs;
 pub mod transport;
 pub mod tun;
+
+#[cfg(test)]
+mod audits;
