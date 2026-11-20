@@ -6789,22 +6789,23 @@ nodes:
   title: Tunnel in-order guard
   track: infra
   kind: defect-verdict
-  state: next
+  state: in-progress
   outcome: unrated
   evidence:
   - docs/derivations/liveness-audit.md item 3
+  - branch tunnel-inorder-guard 987b0360
   verdict_quote: ''
   headline: ''
   depends_on: []
   replaced_by: []
   qualified_by: []
   lane: host-cargo
-  start: ''
+  start: '2026-11-19'
   end: ''
   folded: []
   overview: false
   plain: Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins.
-  notes: 'Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test.'
+  notes: 'Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test. Branch tunnel-inorder-guard 987b0360: run and check reject the four object modes from a config file and pin them false; --lib config:: 17/17, red then green. Waits for the VM pre-flight suites (binary changes; startup validation only), or an owner waiver.'
 - id: rate-shed-budget-rho
   title: Shed budget ignores ρ
   track: rate
@@ -7133,7 +7134,7 @@ nodes:
   folded: []
   overview: false
   plain: Checking and merging the change that lets the sender hear about more missing packets at once, which removed most of the end-of-transfer wait.
-  notes: 'Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out.'
+  notes: 'Law ledger: C02 (rank 7, P0), ships with C03: lever B must not merge without the filter. Done when: lever B on the new main (main + the snapshot-order law) passes its own guard v2 and the owner''s go merges it, with its c1d duplicate cost and the leg answer in the merge question (cand52 superseded). Paused by the owner 2026-11-14: §54b showed a smaller store clears the same old holes, so lever B is re-decided after the store-law derivation. Owner decision 6 (2026-11-16): stays paused; its case is weaker, since §54 showed a smaller store pool alone clears the holes and the store law it waits on moved further out. Owner 2026-11-19: chose to re-guard lever B, then reversed the same day ("we dont want a workaround, we want the proper solution"): lever B and a smaller pool constant are both workarounds; the fix is the store law (store-law-derivation). Decision 6 stands. C02''s 20-gap literal is answered after the store law, from a horizon bind gauge.'
 - id: meas-s51-session
   title: Off-Bulk baseline and δ sweep
   track: meas
@@ -8329,6 +8330,206 @@ nodes:
   overview: false
   plain: Tested whether delay feedback explains a collapse; it does not, the cause is idle time at the end.
   notes: 'REFUTED: dead-end. Track store: its verdict re-attributes the c8 collapse to dead wall, which the paper places in the store-cap-unification arm.'
+- id: infra-test-ci-gate
+  title: CI on every push
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests.'
+  notes: 'Plan S1, ADR-0080 (Proposed). Done when the workflow is red on a branch at 0bf43c11 (main''s two failing gate tests) and green at e304921b. The flake-rule change in suites_run.sh waits until the repeat job has seeded the quarantine list.'
+- id: infra-test-static-audits
+  title: Unwired-code and config audits
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it.'
+  notes: 'Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard.'
+- id: infra-test-pinned-law-check
+  title: Pinned-law check from logs
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'A test over the committed logs that fails when a law reads pinned or never runs at a seat and the ledger has no verdict for it.'
+  notes: 'Plan S3. Done when red on the store-cap row with its ledger verdict removed. Existing unverdicted cells become a named owed list; the check fails on new ones.'
+- id: infra-test-recovery-model
+  title: Model check of hole recovery
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run.'
+  notes: 'Plan S7, ADR-0083 (Proposed). Done when red on the lost tail at rho < 1 and green at rho = 1. Kept outside the workspace lockfile.'
+- id: infra-test-sim-spike
+  title: Deterministic simulation spike
+  track: infra
+  kind: instrument
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Try running both ends in one process on a virtual clock and check that two runs with the same seed match exactly.'
+  notes: 'Plan S8 spike, throwaway branch. Decides whether the full simulation (ADR-0082, Proposed) is feasible. No clock change goes to main from the spike.'
+- id: infra-test-recovery-counters
+  title: Recovery bookkeeping counters
+  track: infra
+  kind: instrument
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing.'
+  notes: 'Plan S4, ADR-0081 (Proposed). Held: it shares files with the S06 deletion and the gauges, and its slow-link assertions wait on the owner''s call on evicted packets.'
+- id: infra-test-seat-coverage
+  title: Coverage per seat
+  track: infra
+  kind: instrument
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-ci-gate]
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up.'
+  notes: 'Plan S5.'
+- id: infra-test-mutation
+  title: Mutation testing of the laws
+  track: infra
+  kind: instrument
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-ci-gate, infra-test-pinned-law-check]
+  replaced_by: []
+  qualified_by: []
+  lane: none
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Weekly mutation runs on the maths crates on CI, to find laws no test pins.'
+  notes: 'Plan S6.'
+- id: infra-test-model-real-decisions
+  title: Model check over the real code
+  track: infra
+  kind: instrument
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-recovery-model]
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Point the recovery model at the engine''s own decision functions, once those are extracted.'
+  notes: 'Plan S9. Needs the extended shared-core extraction (owner question 1).'
+- id: infra-test-pub-narrowing
+  title: Narrow pub so dead code warns
+  track: infra
+  kind: instrument
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/test-detection-plan.md
+  verdict_quote: ''
+  headline: ''
+  depends_on: [infra-test-static-audits]
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-20'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Make most of the engine''s items crate-private so the compiler reports dead code.'
+  notes: 'Plan S10, at a quiet point.'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere

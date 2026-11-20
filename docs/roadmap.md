@@ -375,6 +375,16 @@ flowchart TB
 | Recorded, not fixed | ⚠ open defect | Open problems recorded but not fixed: a loss estimate that never drops below a small floor, extra sender CPU when spreading over two paths, and an old acknowledgement option that releases too much. |
 | Tunnel in-order guard | ⚠ open defect | Stop a config file from switching the TCP tunnel to out-of-order or bulk-object delivery; today the command line leaves the setting unset and the file value wins. |
 | tech-tree skill PR | ○ next | Packaging this roadmap tool so other projects can use it, offered as a proposal to the shared skills repository. |
+| CI on every push | ▶ in progress | Run the gate tests, the math and core tests and the harness tests on GitHub Actions for every push, plus a nightly full run with a repeat job for flaky tests. |
+| Unwired-code and config audits | ▶ in progress | Tests that fail when a function has no production caller, a passed parameter is ignored, or a config key does not reach the entry point that should read it. |
+| Pinned-law check from logs | ▶ in progress | A test over the committed logs that fails when a law reads pinned or never runs at a seat and the ledger has no verdict for it. |
+| Model check of hole recovery | ▶ in progress | A small model of the resend and drop logic, checked over every loss pattern at tiny sizes, so stuck states show up without a run. |
+| Deterministic simulation spike | ▶ in progress | Try running both ends in one process on a virtual clock and check that two runs with the same seed match exactly. |
+| Recovery bookkeeping counters | ○ next | Counters that prove every sent packet ends acked, dropped or still owed, and flag sweeps that do nothing. |
+| Coverage per seat | ⛔ blocked | Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up. |
+| Mutation testing of the laws | ⛔ blocked | Weekly mutation runs on the maths crates on CI, to find laws no test pins. |
+| Model check over the real code | ⛔ blocked | Point the recovery model at the engine's own decision functions, once those are extracted. |
+| Narrow pub so dead code warns | ⛔ blocked | Make most of the engine's items crate-private so the compiler reports dead code. |
 <!-- END GENERATED: plain-words -->
 
 ## Ready now
@@ -388,13 +398,13 @@ flowchart TB
 
 - `rate-delta-jitter-fix`: Jitter margin reads wrong direction
 - `rate-fix-rate-readout`: Repair-rate readout
-- `infra-tunnel-inorder-guard`: Tunnel in-order guard
 - `meas-s51-c8-gauges`: Per-leg clamp and saturation gauges
 - `model-fix-hint-keyed-paths`: Hint-keyed engine paths made continuous
 - `meas-guard-resolution`: Guard CPU and lag resolution
 - `meas-test-hygiene`: Test hygiene fixes
 - `rec-fix-perleg-clock-n1`: Per-leg recovery clock, one law
 - `rec-fix-nack-throttle`: NACK repair throttle: gauge, paper
+- `infra-test-recovery-counters`: Recovery bookkeeping counters
 
 **no-cargo**
 
@@ -426,10 +436,18 @@ flowchart TB
 
 - `model-shared-core`: Shared engine laws and decisions
 - `model-wasm-fixes`: Wasm model fixes
+- `infra-test-static-audits`: Unwired-code and config audits
+- `infra-test-recovery-model`: Model check of hole recovery
+- `infra-test-sim-spike`: Deterministic simulation spike
 
 **no-cargo**
 
 - `store-law-derivation`: Store-law derivation
+- `infra-test-pinned-law-check`: Pinned-law check from logs
+
+**none**
+
+- `infra-test-ci-gate`: CI on every push
 <!-- END GENERATED: running -->
 
 ## Built, waiting
@@ -512,7 +530,7 @@ _The VM queue is empty._
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated from nodes.yaml on 2026-11-19.
+Generated from nodes.yaml on 2026-11-20.
 <!-- END GENERATED: timeline -->
 
 History from March to June 2026 is reconstructed from commits only; dates marked as placeholders in a node's notes are approximate.
@@ -532,6 +550,6 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 58 nodes (41 done, 4 in progress, 8 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 29 nodes (19 done, 7 in progress, 2 next, 1 blocked)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 16 nodes (12 done, 2 in progress, 2 next)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 26 nodes (12 done, 8 in progress, 2 next, 4 blocked)
 <!-- END GENERATED: tracks -->
 

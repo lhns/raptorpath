@@ -2016,6 +2016,73 @@ The launch sha is pinned by an amendment.
   - The perf client takes no tail target, overhead cap or profile, and silently drops `--config`.
 - **Ledger:** S10's reason is corrected (PINNED at `owed = 0` at every r), and C04 gets the age-gate reading.
 
+**Owner decision 2026-11-19, the c8 delay: the store law, not lever B.** The owner chose to re-guard lever B, then reversed it the same day: "we dont want a workaround actually, we want the proper solution".
+- **Basis:** in §54b the store cap binds on 99.7–100 % of ticks on every arm, so the pool constant is the law. The constant's value alone moves c8 in-order delay from 4.4 s (pool 2048) to 0.38 s (pool 640). Lever B adds about 0.06 s on top (L640 0.32 s), and it sets a 20-gap horizon to the 64-range cap, which already binds at c8.
+- **So lever B (20 → 64) and a smaller pool constant (2048 → 640) are both workarounds.** The fix is the derived store law (`store-law-derivation`), a time law: how much each path may hold outstanding follows from its delay targets and δ, with the rate cancelling in the update (see the store-law state entry; the earlier "rate and delay" wording was the coordinator's). Decision 6 stands; `rec-leverb-guard` is parked again.
+- C02's 20-gap literal gets its answer after the store law, from a horizon bind gauge. The condition to derive is that the holes outstanding under the law fit in one report. The SACK cap and the horizon then become witnesses, not fixes.
+- **Process:** two owner choices today were asked without their history. A question now carries the node's earlier decisions in its own text.
+
+**Store law, state of the work (2026-11-19, docs and committed logs only; `docs/derivations/store-law-state.md` on `store-law-state` `bdc9f431`; Fable-reviewed): the formula is mostly there, the inputs are not. Until the estimators are honest, the c8 delay stays, because the owner ruled out workarounds.**
+- **One cause behind several of today's delay readings** (coordinator-reproduced). At c2 the in-order delay is the store's standing queue: 1.49–1.60 × 2048/λ_src on all 14 arms.
+  - Bulk: 2048/9 517 = 0.215 s, measured 340 ms.
+  - Auto: 0.255 s, measured 394–403 ms.
+  - Named Realtime, whose 512 B symbols halve the store's time: 0.120 s, measured 187 ms.
+  - The store cap sits at N·2048 on 97–100 % of LATE ticks at every δ; one Auto row reads pin 0.84 of 11 108 ticks, mean ask 10 725 against cap 1 826.
+  - **Erratum, readings that all read this one queue:**
+    - the +16–18 % in-order delay from Bulk to Auto is the goodput ratio (90 / 76), through a fixed store;
+    - "a coded slot buys no drop in delay" (Addendum 3 and the audit);
+    - T2 Realtime's delay step at c2;
+    - "Auto's delay is no lower than Bulk's".
+    None of them is evidence about the repair path's latency value.
+- **δ moves nothing in the store cap.** The shipped law is clamp((1+q)·Σ max_bw·min_rtt, 10, N·2048). Its ask is 3–34× above the ceiling, because `btlbw` reads 6–19× the link and `rtp` 5–25× the floor (E03, E04). The (1+r) unit mismatch is still on main. Ledger F01 is updated.
+- **Consequence for open registrations.** At the default pool, a tighter tail target lowers the source rate, so delay can only rise. The flag-sweep draft would therefore read "supersede ADR-0050" by construction, and ADR-0079's c8-delay registration is confounded the same way.
+  - Both must read hole-close time, not in-order delay.
+  - Both add arms at a pool inside §56's flat region, set by env. That is a measurement condition, not a shipped workaround.
+- **Correction:** the derived store law is a **time law**. Its update n′ = n·Σwᵢ·T*ᵢ / Σwᵢ·T̂ᵢ reads no rate, because the rate cancels, and its fixed point is n* = Σλᵢ·T*ᵢ + H. The earlier owner-decision entry's "a formula in that path's measured rate and delay" was the coordinator's wording, not the owner's.
+- **Where it stands:**
+  - **Derived:** G = 1, uniqueness, no separate H term, the coupled floor Φᵢ, q(δ) from RFC 8289.
+  - **Not sourced in the engine:**
+    - the window sampler (on unmerged `slaw-gauge`);
+    - the floor and brake estimators (E13 and E14 convicted);
+    - the allowance (F07 UNDERIVED: decision 8's g·S_F failed out of sample, need/S_F 0.46 at c3 against 0.80 at c2).
+  - **The sampler redesign waits on M1** (four RTT-dump rows, about 1 h, no build, needing a tools-only plan).
+  - **The per-leg refactor:** `perleg-phase-a` `e5246d7f` is unmerged and waits for its guard; Phase B and W3.3 are not started.
+- **The candidate is held.** On logged inputs it fails like the shipped law. On netem truth and the §60 floors it lands near §54b's working sizes and the §56 knees, but only in sample: its allowance was set at c2, and the floors come from the same cells.
+  - Out of sample it failed at c3 and costs at least 21 % at c1s. **c1s is a falsifier, not an owner question.**
+  - Owed:
+    - the §57a and §57b readings;
+    - c1d evaluated on netem truth;
+    - all predicted caps in one unit (per path or total);
+    - an independent check of the report-fit condition, whose κ ≈ 2 was fitted to §54b.
+- **The report-fit condition** (derived, not yet validated): G(n*) ≤ 64 (the SACK prefix) and κ·Σε_run,ᵢ·n*ᵢ ≤ 20 (the horizon). Two bind gauges are owed: a SACK-prefix bind fraction on the receiver and a horizon ripe-overflow fraction on the sender.
+- **Next:**
+  - M1 runs first when the owner clears Ceph; its tools-only plan is prepared before.
+  - The candidate and the doc's proposed ledger and paper text stay held until M1 and the out-of-sample checks.
+
+**VM queue (2026-11-19, waits for the owner to clear Ceph; one binary per line).**
+
+| # | session | binary | build? | state |
+|---|---|---|---|---|
+| 1 | **M1** (sampler inputs: four RTT-dump rows with their four gauge twins and a smoke row, sampler-design §4.1; `m1-plan.md` on `store-law-state` `d1b703c9`) | pre-F2 gauge binary **`e410d640`**: its scored g_R compares against need₅₀, F̂₅₀ and IQR bands frozen on that binary. **Carry-over assumption:** floor location, spread and knee need are the same on post-F2 main within M1's bands (F2 adds bytes per symbol, about 4 µs at 20 Mbit/s against 0.6–1.1 ms bands). Owed before any engine form ships: one c2-100 G16/D16 pair on post-F2 `a6a7e7e6` inside M1's c2 band | no | plan reviewed; plan code (plan 66, `m1-plan.md` §B) waits for the harness base below |
+| 2 | **Engine pre-flight** (suites, `--lib gates`, decision pins) for `tunnel-inorder-guard` `987b0360` and `c8-gauges` `311f8284` | one build each | yes | both branches ready on host; both change the binary, so neither merges before it (the gauges merge is not "after its stub run" alone) |
+| 3 | **S06 deletion guard** (ADR-0079): BASE = measurement tree, CAND = measurement tree + `s06-delete`; Stage G (Bulk) + Stage A (Auto c2 / c8, hole-close time and in-order delay, pool arms at the knee, the store-law candidate and 640) + Stage R (paced evicting seat) | two builds | yes | `s06-delete` being built; the off-Bulk stages have no harness owner yet |
+| 4 | **Tail-target flag sweep** (ADR-0050's claim, a draft) | the measurement tree | rides #3's BASE | needs the perf pass-through for `--target-tail-loss` (no owner) |
+| 5 | **c1s store arm set** (G256 / G384 / G640 / G1024, n = 3, plan 60's c1s bytes; the store-law candidate's falsifier) | the gauge binary of #1 | no | rides M1's session as a `66c` table, launched right after M1 (`m1-plan.md` §C, about +45 min) |
+
+- **Measurement tree** = main + `c8-gauges` (diagnostic prints) + the perf pass-through + the block E pacer (`4ee1df9b`) for Stage R. One BASE build serves #3 and #4.
+- **Harness base:** W1 (`w1-bracket-fix`) and the tools-only commits of `c8-gauges` (scorer, `crlf_guard`) land on main first. Then one harness worker takes plan 66 and the off-Bulk guard stages together.
+
+**Store law, review round 2 (2026-11-19, docs only; `store-law-state` `d1b703c9`; Fable-reviewed):**
+- **The c1s cost is real:** about −20 % at Bulk, on c1s's honest, jitter-free floor. Ruled out as an input artefact: on c1s, netem truth shrinks the margin further.
+- **The proposed release-interval term τ_rel is a hypothesis, most likely an engine clock**, so it is not adopted.
+  - It reads 0.8–1.3 ms flat on c2 and c8 across a 16× change in the store. That matches `LOOP_WAKE_US` = 1 000 µs (`recovery_laws.rs:29`).
+  - Gap-advertising reports are held to one per `GAP_ACK_MIN_INTERVAL` = 2 ms (`net/mod.rs:236`, `receiver.rs:1956–1957`), and that floor binds on every report (`[LATE] sampler_bind=1.0000` at c2, c1s and c1d).
+  - Adding τ_rel as measured would carry an engine timer into the law, the workaround shape the owner rejected. Only its growth above 1 ms at c1s and c1d (0.93 → 2.24 ms as the store grows) could be a receiver effect.
+  - With τ_rel, the fixed point's restoring force G drops from 0.85 to 0.62 (stability needs 0 < G < 2).
+  - **New pinned constant:** the 2 ms report floor binds on 100 % of reports and needs a ledger row beside C02 (to add).
+- **κ is read per row** (`[SUCC] rep_mean` over the LATE loop), and the fitted constant is withdrawn. With the measured κ, B1024 (κ = 3.1) sits at the old-hole edge with no fit. At the candidate's point (κ = 1.23) the horizon condition holds about 7× and the SACK-prefix condition about 3×.
+- **Future pool arms go at the knee, the candidate and 640 per path:** c8 170 / 256 / 640. Off Bulk the knee arms are rescaled estimates, and the measured knee is the readout.
+
 ## Engine defect F2 (2026-11-17): a Realtime receiver can misread every packed symbol for the whole connection
 - **Mechanism** (code-proven; diagnosis from the §51 E rehearsal logs, checked on main `756afa66`):
   - The receiver's `window_packed` starts false (`receiver.rs:138`), and only a `WindowStart` control message sets it (`:2153`).

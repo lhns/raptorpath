@@ -21,8 +21,18 @@ flowchart TB
     infra_simplify_batch2["✔ Later simplify<br/>batches"]
     infra_restructure["⏳ Workspace<br/>restructure"]
     infra_inventory_merges["✔ Inventory merges<br/>(first batch)"]
-    infra_derivation_merges["✔ Derivation and<br/>harness branches to<br/>main"]
     infra_tunnel_inorder_guard>"⚠ Tunnel in-order<br/>guard"]
+    infra_derivation_merges["✔ Derivation and<br/>harness branches to<br/>main"]
+    infra_test_ci_gate["▶ CI on every push"]
+    infra_test_static_audits["▶ Unwired-code and<br/>config audits"]
+    infra_test_pinned_law_check["▶ Pinned-law check<br/>from logs"]
+    infra_test_recovery_model["▶ Model check of hole<br/>recovery"]
+    infra_test_sim_spike["▶ Deterministic<br/>simulation spike"]
+    infra_test_recovery_counters["○ Recovery bookkeeping<br/>counters"]
+    infra_test_seat_coverage["⛔ Coverage per seat"]
+    infra_test_mutation["⛔ Mutation testing of<br/>the laws"]
+    infra_test_model_real_decisions["⛔ Model check over the<br/>real code"]
+    infra_test_pub_narrowing["⛔ Narrow pub so dead<br/>code warns"]
     infra_tech_tree_skill["○ tech-tree skill PR"]
     infra_early_platform ~~~ infra_net_seams
     infra_mtu_floor ~~~ infra_cleanup_0927
@@ -35,14 +45,31 @@ flowchart TB
     infra_simplify_batch1 ~~~ infra_simplify_batch2
     infra_simplify_batch1 ~~~ infra_restructure
     infra_simplify_batch1 ~~~ infra_inventory_merges
-    infra_simplify_batch2 ~~~ infra_derivation_merges
-    infra_restructure ~~~ infra_tunnel_inorder_guard
-    infra_inventory_merges ~~~ infra_tech_tree_skill
+    infra_simplify_batch2 ~~~ infra_tunnel_inorder_guard
+    infra_restructure ~~~ infra_derivation_merges
+    infra_inventory_merges ~~~ infra_test_ci_gate
+    infra_tunnel_inorder_guard ~~~ infra_test_static_audits
+    infra_derivation_merges ~~~ infra_test_pinned_law_check
+    infra_test_ci_gate ~~~ infra_test_recovery_model
+    infra_test_static_audits ~~~ infra_test_sim_spike
+    infra_test_pinned_law_check ~~~ infra_test_recovery_counters
+    infra_test_recovery_model ~~~ infra_test_seat_coverage
+    infra_test_sim_spike ~~~ infra_test_mutation
+    infra_test_recovery_counters ~~~ infra_test_model_real_decisions
+    infra_test_seat_coverage ~~~ infra_test_pub_narrowing
+    infra_test_mutation ~~~ infra_tech_tree_skill
+    infra_test_model_real_decisions ~~~ infra_tech_tree_skill
+    infra_test_pub_narrowing ~~~ infra_tech_tree_skill
     infra_fix_program -.-> infra_defect_recorded_not_fixed
     infra_simplify_review --> infra_simplify_batch1
     infra_simplify_batch1 --> infra_simplify_batch2
+    infra_test_ci_gate --> infra_test_seat_coverage
+    infra_test_ci_gate --> infra_test_mutation
+    infra_test_pinned_law_check --> infra_test_mutation
+    infra_test_recovery_model --> infra_test_model_real_decisions
+    infra_test_static_audits --> infra_test_pub_narrowing
     infra_inventory_merges --> infra_tech_tree_skill
-    linkStyle 14 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 26 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -60,7 +87,9 @@ flowchart TB
     class infra_defect_recorded_not_fixed,infra_tunnel_inorder_guard defect
     class infra_restructure waiting
     class infra_inventory_merges,infra_derivation_merges unrated
-    class infra_tech_tree_skill next
+    class infra_test_ci_gate,infra_test_static_audits,infra_test_pinned_law_check,infra_test_recovery_model,infra_test_sim_spike inprog
+    class infra_test_recovery_counters,infra_tech_tree_skill next
+    class infra_test_seat_coverage,infra_test_mutation,infra_test_model_real_decisions,infra_test_pub_narrowing blocked
 ```
 <!-- END GENERATED: track-infra -->
 
@@ -81,10 +110,20 @@ flowchart TB
 | `infra-simplify-batch2` | Later simplify batches | done | successful | p = 0.1716 | status §50 | infra-simplify-batch1 |
 | `infra-restructure` | Workspace restructure | in-progress | unrated |  | ADR-0076; status §58 Amendment 3 |  |
 | `infra-defect-recorded-not-fixed` | Recorded, not fixed | in-progress | unrated | ≈ 0.0354 | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |  |
-| `infra-tunnel-inorder-guard` | Tunnel in-order guard | next | unrated |  | docs/derivations/liveness-audit.md item 3 |  |
+| `infra-tunnel-inorder-guard` | Tunnel in-order guard | in-progress | unrated |  | docs/derivations/liveness-audit.md item 3; branch tunnel-inorder-guard 987b0360 |  |
 | `infra-inventory-merges` | Inventory merges (first batch) | done | unrated |  | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |  |
 | `infra-derivation-merges` | Derivation and harness branches to main | done | unrated |  | branch tools-to-main 49343157; status §61 (s61-c3-design, harness61); status §62 (s62-design) and Amendment 1 (harness62); status §63 Amendment 1 (harness63); status §64 (f2-guard-design) and Result (harness64); status "The count-rule derivation" (count-rule); status "The knee-margin re-derivation, closed post hoc" |  |
 | `infra-tech-tree-skill` | tech-tree skill PR | next | unrated |  | plan Live state TECH TREE (AFTERWARDS) | infra-inventory-merges, model-law-ledger |
+| `infra-test-ci-gate` | CI on every push | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
+| `infra-test-static-audits` | Unwired-code and config audits | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
+| `infra-test-pinned-law-check` | Pinned-law check from logs | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
+| `infra-test-recovery-model` | Model check of hole recovery | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
+| `infra-test-sim-spike` | Deterministic simulation spike | in-progress | unrated |  | docs/derivations/test-detection-plan.md |  |
+| `infra-test-recovery-counters` | Recovery bookkeeping counters | next | unrated |  | docs/derivations/test-detection-plan.md |  |
+| `infra-test-seat-coverage` | Coverage per seat | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-ci-gate |
+| `infra-test-mutation` | Mutation testing of the laws | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-ci-gate, infra-test-pinned-law-check |
+| `infra-test-model-real-decisions` | Model check over the real code | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-recovery-model |
+| `infra-test-pub-narrowing` | Narrow pub so dead code warns | blocked | unrated |  | docs/derivations/test-detection-plan.md | infra-test-static-audits |
 
 ### Details per node
 
@@ -102,8 +141,18 @@ flowchart TB
 | `infra-simplify-batch2` | Later simplify batches | Dates: status-section end dates are the section file's last edit, not the verdict date. Was titled 'Simplify batches 1b–3'. | status §50 |
 | `infra-restructure` | Workspace restructure | Owner request 2026-11-12; decisions the same day. Phases 0, 1, 2, 3, 4 merged; phase 6's five closed forms moved to raptorpath-math with endspeed-relaid (status §58 Amendment 3, model-endspeed), after ADR-0076's status line (dated 2026-11-14) was last updated, so that line still reads 'not executed'; phase 5 open. | ADR-0076; status §58 Amendment 3 |
 | `infra-defect-recorded-not-fixed` | Recorded, not fixed | Status §3.7 rows: the BOCD predictive_loss_upper floor (≈ 0.0354 on clean links, unverified), balanced v9 striping at ≈ 1.34x sender kernel CPU at the dual c1 cell, and the per-batch Ack arm releasing more than was sent under reorder. Undated raw records; date approximate (fix-program VM runs). | status §3.7 row 234; status §3.7 row 235; status §3.7 row 237 |
-| `infra-tunnel-inorder-guard` | Tunnel in-order guard | Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test. | docs/derivations/liveness-audit.md item 3 |
+| `infra-tunnel-inorder-guard` | Tunnel in-order guard | Liveness audit item 3 (coordinator-verified): main.rs:387-396 sets window_out_of_order / coded_only / generation_coding / systematic_repair to None, merge takes overlay.or(base) (config.rs:204), so a TOML value reaches the tunnel. Product-path correctness, conditional on a config file. Done when: the tunnel path cannot be configured out of in-order delivery, with a red-first test. Branch tunnel-inorder-guard 987b0360: run and check reject the four object modes from a config file and pin them false; --lib config:: 17/17, red then green. Waits for the VM pre-flight suites (binary changes; startup validation only), or an owner waiver. | docs/derivations/liveness-audit.md item 3; branch tunnel-inorder-guard 987b0360 |
 | `infra-inventory-merges` | Inventory merges (first batch) | Merged to main 2026-11-13: guard-v2, law-ledger, p0-dwell-diag, roadmap, test-debts (docs/tools/tests only). The derivation-branch merges are infra-derivation-merges. | merges 40464d2d guard-v2, 9e3764c9 law-ledger, 6e2b2915 p0-dwell-diag, c4df0142 roadmap-layout, 0ed6d383 test-debts |
 | `infra-derivation-merges` | Derivation and harness branches to main | harness64 merged to main 2026-11-18 (after the regression test's Result; its [SYMSZ] table fix included). Checked by content against github/main 93f29d77 (tools merge by path, so ancestry is not the test). Registered verbatim or run from, not on main: harness61 3cdc4470 (plan61, s61_score), harness62 95dafa59 (plan62, s62_score; owed first: the full unfiltered test_stubrun), harness63 16a6ed17 (plan63 and the set -e fix), harness64 4feeb8fd (plan64; owed first: keep [SYMSZ] in KEEP_PAT and fail closed on its absence, with a stub test; §64 Result: 'harness64's tools to main with it'), s62-design 0f40a59d (s62-registration.md, s62pred), f2-guard-design 39269746 (f2-guard-registration.md, the framing_ns pre-reads), count-rule 2d557191 (count-rule.md, crdump/crfollow/crrule), knee-margin-rederive 399407f4 (knee-margin-rederive.md, kmr). harness51 waits for the §51 Result by design; s64-lean waits for its review (rec-s64-delay-lean). Older docs-only branches, still unmerged: derive-w1, w1r2, perleg-design, paper-recon, otel-design, adr68-amend, wire-clock-derive (wasm-modeswitch-audit, guard-clause-dry and s51-design's doc are on main). Done when: each branch is merged to main by path or recorded as kept-unmerged with a reason. | branch tools-to-main 49343157; status §61 (s61-c3-design, harness61); status §62 (s62-design) and Amendment 1 (harness62); status §63 Amendment 1 (harness63); status §64 (f2-guard-design) and Result (harness64); status "The count-rule derivation" (count-rule); status "The knee-margin re-derivation, closed post hoc" |
 | `infra-tech-tree-skill` | tech-tree skill PR | Done when: a project-neutral tech-tree skill is opened as a PR to the design-skills repo (no direct commit to its main, no link in ~/.claude/skills) and tested with skill-creator on a fixture or a second project. | plan Live state TECH TREE (AFTERWARDS) |
+| `infra-test-ci-gate` | CI on every push | Plan S1, ADR-0080 (Proposed). Done when the workflow is red on a branch at 0bf43c11 (main's two failing gate tests) and green at e304921b. The flake-rule change in suites_run.sh waits until the repeat job has seeded the quarantine list. | docs/derivations/test-detection-plan.md |
+| `infra-test-static-audits` | Unwired-code and config audits | Plan S2. Done when red on proactive_rate, set_protocol_hint, enable_pi_feedback and the tunnel config leak. The config round trip builds on tunnel-inorder-guard. | docs/derivations/test-detection-plan.md |
+| `infra-test-pinned-law-check` | Pinned-law check from logs | Plan S3. Done when red on the store-cap row with its ledger verdict removed. Existing unverdicted cells become a named owed list; the check fails on new ones. | docs/derivations/test-detection-plan.md |
+| `infra-test-recovery-model` | Model check of hole recovery | Plan S7, ADR-0083 (Proposed). Done when red on the lost tail at rho < 1 and green at rho = 1. Kept outside the workspace lockfile. | docs/derivations/test-detection-plan.md |
+| `infra-test-sim-spike` | Deterministic simulation spike | Plan S8 spike, throwaway branch. Decides whether the full simulation (ADR-0082, Proposed) is feasible. No clock change goes to main from the spike. | docs/derivations/test-detection-plan.md |
+| `infra-test-recovery-counters` | Recovery bookkeeping counters | Plan S4, ADR-0081 (Proposed). Held: it shares files with the S06 deletion and the gauges, and its slow-link assertions wait on the owner's call on evicted packets. | docs/derivations/test-detection-plan.md |
+| `infra-test-seat-coverage` | Coverage per seat | Plan S5. | docs/derivations/test-detection-plan.md |
+| `infra-test-mutation` | Mutation testing of the laws | Plan S6. | docs/derivations/test-detection-plan.md |
+| `infra-test-model-real-decisions` | Model check over the real code | Plan S9. Needs the extended shared-core extraction (owner question 1). | docs/derivations/test-detection-plan.md |
+| `infra-test-pub-narrowing` | Narrow pub so dead code warns | Plan S10, at a quiet point. | docs/derivations/test-detection-plan.md |
 <!-- END GENERATED: table-infra -->
