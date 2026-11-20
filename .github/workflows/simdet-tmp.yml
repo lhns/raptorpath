@@ -19,7 +19,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with: { toolchain: "${{ matrix.tc }}" }
       - uses: Swatinem/rust-cache@v2.7.8
-        with: { shared-key: sim-${{ matrix.tc }} }
+        with: { shared-key: "sim-${{ matrix.tc }}" }
       - run: |
           BIN=$(cargo test -p raptorpath --features sim,test-seams --test sim_shed_reach --no-run --message-format=json | jq -r 'select(.executable != null) | .executable' | tail -1)
           echo "BIN=$BIN"
