@@ -151,3 +151,27 @@ fn control_liveness_at_rho_1() {
     println!("rho=1: {}", counts(&r));
     assert_live(&r, "rho=1");
 }
+
+/// KNOWN DEFECT `rec-evict-blocker-unresolved`: once fixed, the account of the
+/// completed blackout transfer at rho < 1 is clean. Red on main.
+#[test]
+#[ignore = "rec-evict-blocker-unresolved: at rho < 1 a hole below the coding window is neither resent nor resolved; the account ends with O > 0"]
+fn account_is_clean_after_shed_at_rho_below_1() {
+    let r = scenario(false);
+    let a = r.acct();
+    println!("rho<1 account:{}", a.0);
+    assert!(a.violations().is_empty(), "account: {:?}\n{}", a.violations(), a.0);
+    assert_eq!(r.outcome, "client_ok", "transfer did not complete: {}", counts(&r));
+}
+
+/// Control (not ignored): the account at rho = 1 is clean after the blackout,
+/// and the clamp site ran.
+#[test]
+fn control_account_is_clean_at_rho_1_after_blackout() {
+    let r = scenario(true);
+    let a = r.acct();
+    println!("rho=1 account:{}", a.0);
+    assert_eq!(r.outcome, "client_ok", "transfer did not complete: {}", counts(&r));
+    assert!(a.violations().is_empty(), "account: {:?}\n{}", a.violations(), a.0);
+    assert!(a.u("clamp_evals") > 0, "the clamp site never ran:{}", a.0);
+}

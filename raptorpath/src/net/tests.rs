@@ -6617,3 +6617,114 @@ fn f2_reconcile_peer_symbol_size() {
     assert_eq!(reconcile_peer_symbol_size(&[72]).unwrap(), 72);
     assert_eq!(reconcile_peer_symbol_size(&[1200]).unwrap(), 1200);
 }
+
+// ── Recovery conservation account (ADR-0081): counter arithmetic ──
+
+#[cfg(any(debug_assertions, feature = "test-seams"))]
+mod account_arith {
+    use super::super::account::{clamp_lo, Account, Buf};
+    use super::super::sender_phases::gap_clamp;
+
+    fn buf_with(n: u64, acct: &mut Account) -> Buf {
+        let mut b = Buf::new();
+        for s in 0..n {
+            b.insert(s, (0, 0.0, 0));
+            acct.on_sent(&b);
+        }
+        b
+    }
+
+    /// `clamp_lo` is the lower bound `serve_gaps` clamps with, on both seats:
+    /// the account's bound and the server's cannot drift apart.
+    #[test]
+    fn clamp_lo_is_the_lower_bound_of_gap_clamp() {
+        for reliable in [true, false] {
+            for (gs, ge, ws, we) in [(0, 5, 10, 20), (5, 15, 10, 20), (12, 14, 10, 20), (15, 30, 10, 20), (0, 0, 0, 0)] {
+                let (cs, _) = gap_clamp(reliable, gs, ge, ws, we);
+                assert_eq!(cs, gs.max(clamp_lo(reliable, ws)), "reliable={reliable} gap=({gs},{ge}) win=({ws},{we})");
+            }
+        }
+        assert_eq!(clamp_lo(true, 1_000), 0, "the reliable seat's bound is the whole store");
+        assert_eq!(clamp_lo(false, 1_000), 1_000, "the evicting seat's bound is the window start");
+    }
+
+    /// An absolute case on the evicting seat: 10 sent, the window passes 0..4
+    /// while all are outstanding, the cumulative ack then takes 0..=5. The
+    /// four evicted seqs are E, the two in-window ones A, the rest O_serv.
+    #[test]
+    fn evicting_seat_splits_acked_into_a_and_e() {
+        let mut a = Account::new(false);
+        let mut b = buf_with(10, &mut a);
+        a.note_window(4, 0.0);
+        let r = a.read(&b, 4);
+        assert_eq!((r.sent, r.o_strand, r.o_serv), (10, 4, 6), "{r:?}");
+        assert!(r.closes(), "{r:?}");
+        let pre = a.prune_before(&b, 5);
+        b.prune_below(6);
+        a.prune_after(&b, pre);
+        let r = a.read(&b, 4);
+        assert_eq!((r.a, r.e, r.h, r.o_serv, r.o_strand), (2, 4, 0, 4, 0), "{r:?}");
+        assert!(r.closes(), "{r:?}");
+    }
+
+    /// The same events on the reliable seat: the one formula gives E = 0 and
+    /// O_strand = 0 at any window position.
+    #[test]
+    fn reliable_seat_has_no_e_and_no_strand() {
+        let mut a = Account::new(true);
+        let mut b = buf_with(10, &mut a);
+        a.note_window(4, 0.0);
+        assert_eq!(a.read(&b, 4).o_strand, 0);
+        let pre = a.prune_before(&b, 5);
+        b.prune_below(6);
+        a.prune_after(&b, pre);
+        let r = a.read(&b, 9);
+        assert_eq!((r.a, r.e, r.o_serv, r.o_strand), (6, 0, 4, 0), "{r:?}");
+        assert!(r.closes(), "{r:?}");
+    }
+
+    /// A shed removes the seq from the buffer and counts as H by site; H is
+    /// the sum of the two site counters.
+    #[test]
+    fn shed_counts_by_site_and_closes() {
+        let mut a = Account::new(false);
+        let mut b = buf_with(5, &mut a);
+        b.remove(&2);
+        a.on_shed(true);
+        b.remove(&3);
+        a.on_shed(false);
+        let r = a.read(&b, 0);
+        assert_eq!((a.shed_slot, a.shed_nack, r.h, r.o_serv), (1, 1, 2, 3), "{r:?}");
+        assert!(r.closes(), "{r:?}");
+    }
+
+    /// Stuck witnesses: the oldest seq unchanged across sweeps, and sweeps
+    /// that sent nothing.
+    #[test]
+    fn sweep_witnesses() {
+        let mut a = Account::new(false);
+        a.on_sweep(7);
+        a.on_sweep(7);
+        a.on_sweep(7);
+        assert_eq!((a.sweeps, a.oldest_unchanged, a.oldest_unchanged_max), (3, 2, 2));
+        a.on_sweep(8);
+        assert_eq!((a.oldest_unchanged, a.oldest_unchanged_max), (0, 2));
+        a.on_sweep_served(0);
+        a.on_sweep_served(3);
+        assert_eq!(a.inert_sweeps, 1);
+    }
+
+    /// The exit line carries every key the test-side parser reads.
+    #[test]
+    fn line_has_the_keys() {
+        let mut a = Account::new(false);
+        let b = buf_with(3, &mut a);
+        let l = a.line(&b, 0, true);
+        for k in [
+            "S_sent=3", "A=0", "H=0", "E=0", "O_serv=3", "O_strand=0", "closes=1", "inert_sweeps=0", "O_hwm=3",
+            "store_cap=", "bud=", "shed_visit_slot=", "shed_visit_nack=", "clamp_evals=", "clamp_excl=", "final=1",
+        ] {
+            assert!(l.contains(k), "{k} missing: {l}");
+        }
+    }
+}

@@ -1000,7 +1000,7 @@ pub(crate) fn report(
                 crate::readout!("[C8CONV-S]{}", s);
             }
         }
-        dg.diag_last_us = dnow;
+        dg.diag_last_us = dnow; #[cfg(any(debug_assertions, feature = "test-seams"))] { let (ws, _) = st.encoder.window_span(); crate::readout!("{}", st.acct.line(&st.retransmit_buffer, ws, false)); }
         dg.diag_last_ack = ack_now;
         dg.diag_last_src = src_now;
         dg.diag_last_cod = cod_now;

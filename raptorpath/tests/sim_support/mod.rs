@@ -72,6 +72,59 @@ impl ChildRun {
     }
 }
 
+/// The data sender's exit account (`[ACCT] ... final=1`, ADR-0081).
+pub struct Acct(pub String);
+
+impl Acct {
+    pub fn f(&self, key: &str) -> f64 {
+        let pat = format!(" {key}=");
+        let i = self.0.find(&pat).unwrap_or_else(|| panic!("no {key}= in {}", self.0));
+        self.0[i + pat.len()..].split(' ').next().and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("bad {key}= in {}", self.0))
+    }
+
+    pub fn u(&self, key: &str) -> u64 {
+        self.f(key) as u64
+    }
+
+    /// The account's end-of-transfer checks; empty = clean. Same rules as
+    /// `tests/common/loopback.rs` `AcctLine::violations`.
+    pub fn violations(&self) -> Vec<String> {
+        let (sent, a, h, e) = (self.u("S_sent"), self.u("A"), self.u("H"), self.u("E"));
+        let (o_serv, o_strand) = (self.u("O_serv"), self.u("O_strand"));
+        let mut v = Vec::new();
+        if sent != a + h + e + o_serv + o_strand {
+            v.push(format!("identity does not close: S_sent={sent} != {}", a + h + e + o_serv + o_strand));
+        }
+        if o_serv + o_strand != 0 {
+            v.push(format!("O = {}", o_serv + o_strand));
+        }
+        if o_strand != 0 {
+            v.push(format!("O_strand = {o_strand}"));
+        }
+        if self.u("inert_sweeps") != 0 {
+            v.push(format!("inert_sweeps = {}", self.u("inert_sweeps")));
+        }
+        let budget = self.f("bud") * sent as f64;
+        if (h + e) as f64 > budget + 1e-9 {
+            v.push(format!("H+E = {} > budget {budget:.3}", h + e));
+        }
+        v
+    }
+}
+
+impl ChildRun {
+    /// The exit line of the sender that sent the most source seqs (the data
+    /// sender; the peer's ack-only sender sends none and prints nothing).
+    pub fn acct(&self) -> Acct {
+        self.log
+            .lines()
+            .filter(|l| l.starts_with("[ACCT] ") && l.ends_with(" final=1"))
+            .map(|l| Acct(format!(" {}", &l["[ACCT] ".len()..])))
+            .max_by_key(|a| a.u("S_sent"))
+            .unwrap_or_else(|| panic!("no `[ACCT] ... final=1` line (build without the recovery account?):\n{}", self.log))
+    }
+}
+
 /// Run `sc` in a child process of this test binary.
 pub fn run(sc: &Scenario) -> ChildRun {
     let dir = std::env::temp_dir().join(format!("rp-sim-{}-{}", std::process::id(), sc.port));

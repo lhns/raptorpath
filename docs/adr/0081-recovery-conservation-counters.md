@@ -1,6 +1,6 @@
 # ADR-0081: The sender accounts for every source seq, and every test checks the account
 
-## Status: Proposed (2026-11-20). Plan: `docs/derivations/test-detection-plan.md` S4.
+## Status: Accepted, option B (owner, 2026-11-20). Plan: `docs/derivations/test-detection-plan.md` S4.
 
 ## Context
 
@@ -16,19 +16,20 @@ Shed counters read 0 because the code never ran, and no test could tell that fro
 1. **One identity per sender**, printed at every DIAG tick and at the `final=1` exit flush:
 
    ```
-   S_sent = A + H + O_serv + O_strand
+   S_sent = A + H + E + O_serv + O_strand
    ```
 
    - `S_sent`: source seqs sent;
-   - `A`: acked;
+   - `A`: acked while still inside the coding window;
    - `H`: shed;
+   - `E`: evicted without a verdict: left the coding window while outstanding, then released by the cumulative ack. Legal; `H + E` is bounded by the 1 − ρ budget. 0 at ρ = 1 by construction;
    - `O_serv`: outstanding seqs the gap server would serve;
    - `O_strand`: outstanding seqs below the gap server's own clamp bound.
 
-   The counter reads the bound `serve_gaps` computes, so on the reliable seat `O_strand` is 0 by construction. It adds no seat branch (NO-MODE-SWITCH).
+   The counters read the bound `serve_gaps` computes (`account::clamp_lo`, pinned against `gap_clamp` by a unit test), so on the reliable seat `E` and `O_strand` are 0 by construction. It adds no seat branch (NO-MODE-SWITCH). Each term is measured at its own site (insert, cumulative prune, shed, buffer count), so the identity is a check and not a definition.
 2. **Stuck witnesses:** `inert_sweeps` (sweep fires whose gap sent nothing), `oldest_unchanged` (sweeps with the same oldest un-acked seq), and `O_hwm` against the effective store cap.
 3. **Every counter carries an execution count:** shed-check visits, clamp evaluations.
-4. **`tests/common/loopback.rs` asserts the account at the end of every completed transfer:** the identity closes, `O_strand` = 0, `O` = 0, `inert_sweeps` = 0. The helpers every loopback test calls run it.
+4. **`tests/common/loopback.rs` asserts the account at the end of every completed transfer:** the identity closes, `O_strand` = 0, `O` = 0, `inert_sweeps` = 0, `H + E` within the budget. `assert_no_dnf` (so `transfer` and `lossy_run`) runs it on the client log, which must carry an exit line.
 5. **Shipping, in two steps.**
    - First under `#[cfg(any(debug_assertions, feature = "test-seams"))]`, so the debug suite and the seams tests (which run in release and are the ones that reach the lost tail) both carry it. The release bytes are expected unchanged, which the `.text`/`.rodata` hash check proves; then no merge guard is needed.
    - The exit line prints whatever `RWM_DIAG` says, so every loopback test can assert it. Only the per-tick fields stay behind the DIAG gate.
@@ -39,4 +40,4 @@ Shed counters read 0 because the code never ran, and no test could tell that fro
 - The four stuck states become assertion failures in any test that runs the evicting seat with tail loss. The S06 tests on `wedge-diag` are the first such tests. A seat no test runs stays unseen.
 - A zero counter reading now comes with its visit count (MEASUREMENT DISCIPLINE 1).
 - The counters touch `net/mod.rs`, `sender_phases.rs`, `emit_source.rs` and `diag.rs`, so they land in the same chunk as the wedge fix, red first.
-- Open for the owner: is a seq evicted from the window without a verdict a legal outcome at ρ < 1? If yes, the identity gains an `E` term bounded by 1 − ρ. This draft assumes no: ADR-0064's shed is the only sanctioned loss.
+- Answered by the owner (2026-11-20): a seq evicted from the window without a verdict is legal at ρ < 1 and counts in `E`; `E` above the budget, or `O_strand` > 0 at the end of a completed transfer, is a defect.

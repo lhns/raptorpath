@@ -454,12 +454,108 @@ pub const CLEAN_RATE: [(&str, &str); 2] = [
     ("RWM_L0_SEED", "42"),
 ];
 
+/// Does the engine binary under test carry the recovery account
+/// (`net/account.rs`)? Same condition as the engine's `cfg`, evaluated on the
+/// test crate: it shares the profile and the feature set with the binary.
+pub const ACCOUNT_CARRIED: bool = cfg!(any(debug_assertions, feature = "test-seams"));
+
+/// One `[ACCT]` line of the engine's recovery account, as `key=value` tokens.
+#[derive(Debug, Clone)]
+pub struct AcctLine {
+    pub raw: String,
+    pub final_line: bool,
+}
+
+impl AcctLine {
+    /// The value of `key=` (panics when absent: the line shape is the
+    /// engine's contract, pinned by a unit test there).
+    pub fn f(&self, key: &str) -> f64 {
+        let pat = format!(" {key}=");
+        let i = self.raw.find(&pat).unwrap_or_else(|| panic!("no {key}= in {}", self.raw));
+        self.raw[i + pat.len()..]
+            .split(' ')
+            .next()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("unparsable {key}= in {}", self.raw))
+    }
+
+    pub fn u(&self, key: &str) -> u64 {
+        self.f(key) as u64
+    }
+
+    /// The checks for the end of a completed transfer; returns the failures
+    /// (empty = clean). `H + E` is bounded by the highest 1 - rho budget
+    /// fraction the run saw, times the source seqs sent.
+    pub fn violations(&self) -> Vec<String> {
+        let (sent, a, h, e) = (self.u("S_sent"), self.u("A"), self.u("H"), self.u("E"));
+        let (o_serv, o_strand) = (self.u("O_serv"), self.u("O_strand"));
+        let mut v = Vec::new();
+        if sent != a + h + e + o_serv + o_strand {
+            v.push(format!(
+                "the identity does not close: S_sent={sent} != A+H+E+O_serv+O_strand={}",
+                a + h + e + o_serv + o_strand
+            ));
+        }
+        if o_serv + o_strand != 0 {
+            v.push(format!("O = {} at the end of a completed transfer", o_serv + o_strand));
+        }
+        if o_strand != 0 {
+            v.push(format!("O_strand = {o_strand}: outstanding seqs below the gap server's clamp bound"));
+        }
+        if self.u("inert_sweeps") != 0 {
+            v.push(format!("inert_sweeps = {}: tail sweeps whose gap sent nothing", self.u("inert_sweeps")));
+        }
+        let budget = self.f("bud") * sent as f64;
+        if (h + e) as f64 > budget + 1e-9 {
+            v.push(format!("H+E = {} exceeds the 1-rho budget {budget:.3} (bud={} x S_sent={sent})", h + e, self.f("bud")));
+        }
+        v
+    }
+}
+
+/// Every `[ACCT]` line in a log.
+pub fn account_lines(log: &str) -> Vec<AcctLine> {
+    log.lines()
+        .filter(|l| l.starts_with("[ACCT] "))
+        .map(|l| AcctLine { raw: format!(" {}", &l["[ACCT]".len() + 1..]), final_line: l.ends_with(" final=1") })
+        .collect()
+}
+
+/// The end-of-transfer account check (ADR-0081). Every exit (`final=1`) line
+/// in `log` must be clean. With `require`, at least one exit line must exist
+/// when the binary carries the account: a missing line is a failure, not a
+/// pass, so the check cannot silently not execute.
+pub fn assert_account(log: &str, who: &str, require: bool) {
+    if !ACCOUNT_CARRIED {
+        return;
+    }
+    let fin: Vec<AcctLine> = account_lines(log).into_iter().filter(|l| l.final_line).collect();
+    assert!(
+        !require || !fin.is_empty(),
+        "{who}: no `[ACCT] ... final=1` exit line from a build that carries the recovery account - \
+         the sender's exit line did not print, so the account check did not execute"
+    );
+    for l in &fin {
+        let v = l.violations();
+        assert!(v.is_empty(), "{who}: recovery account failed: {}\n{}", v.join("; "), l.raw.trim());
+    }
+}
+
 /// Fail a stalled transfer AS a stall. A perf run that did not finish within
 /// the perf client's run timeout is printed as a `"dnf":true` run line and the
 /// client still exits 0, so without this check the stall surfaces downstream
 /// as a misleading gauge failure. The closing summary line (no `"run"` key)
 /// carries `"dnf":<count>` and is skipped. The panic carries the log tails.
 pub fn assert_no_dnf(cli_log: &str, srv_log: Option<&str>) {
+    assert_no_dnf_inner(cli_log, srv_log);
+    // ADR-0081: the sender's account closes at the end of a completed transfer.
+    assert_account(cli_log, "client", true);
+    if let Some(s) = srv_log {
+        assert_account(s, "server", false);
+    }
+}
+
+fn assert_no_dnf_inner(cli_log: &str, srv_log: Option<&str>) {
     let tail = |log: &str| {
         let lines: Vec<&str> = log.lines().collect();
         lines[lines.len().saturating_sub(80)..].join("\n")

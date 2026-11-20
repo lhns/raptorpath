@@ -663,7 +663,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         }
         if cached_max_repairs == 0 || cached_nack_budget == 0 {
             // Fully suppressed or budget exhausted — drain NACK queue
-            dg.diag_gaps_dropped += 1;
+            dg.diag_gaps_dropped += 1; #[cfg(any(debug_assertions, feature = "test-seams"))] { if matches!(gap_cause, FireCause::Timer) { st.acct.on_sweep_served(0); } }
             continue;
         }
         // Was this batch's snapshot older than the newest dequeued one?
@@ -796,8 +796,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 reliable, gap_start, gap_end,
                 win_start,
                 win_end,
-            );
-            if clamped_start > clamped_end { #[cfg(feature = "test-seams")] crate::test_seams::on_gap_clamped(gap_start, gap_end, win_start, win_end);
+            ); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.clamp_evals += 1; }
+            if clamped_start > clamped_end { #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.clamp_excl += 1; } #[cfg(feature = "test-seams")] crate::test_seams::on_gap_clamped(gap_start, gap_end, win_start, win_end);
                 continue;
             }
             nacked_count += clamped_end - clamped_start + 1;
@@ -849,7 +849,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         continue;
                     }
                     if let Some(&(send_time_us, _, _)) = st.retransmit_buffer.get(&seq) {
-                        let age = now_repair_us.saturating_sub(send_time_us);
+                        let age = now_repair_us.saturating_sub(send_time_us); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.shed_visit_nack += 1; }
                         if shed_allowed(
                             age,
                             st.shed_deadline_us_live,
@@ -858,7 +858,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             st.shed_budget_frac,
                         ) {
                             st.retransmit_buffer.remove(&seq);
-                            st.nack_retx_at.remove(&seq);
+                            st.nack_retx_at.remove(&seq); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.on_shed(false); }
                             st.shed_seqs.insert(seq);
                             st.shed_total += 1; #[cfg(feature = "test-seams")] crate::test_seams::on_shed(seq, age, st.shed_deadline_us_live);
                             continue;
@@ -1168,7 +1168,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             st.encoder.window_size(),
             now_us(),
         );
-        let debt_reduction = nacked_count as f64 * repair_rate;
+        let debt_reduction = nacked_count as f64 * repair_rate; #[cfg(any(debug_assertions, feature = "test-seams"))] { if matches!(gap_cause, FireCause::Timer) { st.acct.on_sweep_served(retransmitted); } }
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
     }
     *cached_nack_budget_cell = cached_nack_budget;
@@ -1252,7 +1252,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
     let mut prev_ack = *prev_ack_cell;
     let mut c8c_last_ack_adv_us = *c8c_last_ack_adv_us_cell;
     let mut nack_repairs_this_period = *nack_repairs_this_period_cell;
-    if let Some((first_acked, ack)) = cumulative_advance(prev_ack, next_expected) {
+    if let Some((first_acked, ack)) = cumulative_advance(prev_ack, next_expected) { #[cfg(any(debug_assertions, feature = "test-seams"))] { let (ws, _) = st.encoder.window_span(); st.acct.note_window(ws, st.shed_budget_frac); }
         // `ack` is the highest newly delivered seq (inclusive) -- the v8
         // meaning every prune below is written against: `split_off(&(ack +
         // 1))` = `split_off(&next_expected)`.
@@ -1398,9 +1398,9 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // still in the store (aged holes retransmit cross-path too).
         let (win_start, _) = st.encoder.window_span();
         let path_map_floor = if reliable { ack + 1 } else { win_start };
-        st.source_path_map.prune_below(path_map_floor);
+        st.source_path_map.prune_below(path_map_floor); #[cfg(any(debug_assertions, feature = "test-seams"))] let acct_before = st.acct.prune_before(&st.retransmit_buffer, ack);
         // Remove ACKed symbols from retransmit buffer (all seqs <= ack)
-        st.retransmit_buffer.prune_below(ack + 1);
+        st.retransmit_buffer.prune_below(ack + 1); #[cfg(any(debug_assertions, feature = "test-seams"))] st.acct.prune_after(&st.retransmit_buffer, acct_before);
         // δ-honest shed set: pruned on the same cumulative twin (the
         // receiver's frontier passing a shed seq closes its story).
         if !st.shed_seqs.is_empty() {
