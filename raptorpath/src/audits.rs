@@ -148,7 +148,6 @@ const PENDING_TRIAGE: &[&str] = &[];
 const PARAM_ALLOWLIST: &[(&str, &str)] = &[
     ("control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_fed", "D: the window PI no-op ADR-0050 kept for compatibility; its one caller (net/tx_inputs.rs:183, SenderCmd::FecFeedback) is a dead call"),
     ("control/fec_rate.rs::FecRateController::feedback_update_window::_repairs_useful", "D: as _repairs_fed"),
-    ("net/mod.rs::create_window_encoder::_backend", "I: RLC is the only window codec since ADR-0069; the doc keeps the parameter as the selection point for another one"),
     ("runtime_obs.rs::read_threads::_with_delay", "I: non-Linux stub returning None; the Linux body reads it"),
     ("transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_app_limited", "I: upstream quinn-proto 0.11 bw_estimation::end_acks ignores it too; the port keeps the signature (module doc)"),
     ("transport/bbr_rs.rs::RsBandwidthEstimation::end_acks::_current_round", "I: as _app_limited"),
@@ -426,6 +425,12 @@ fn strip_test_items(clean: &mut String, orig: &str) -> Vec<String> {
                     }
                 }
                 let header_start = j;
+                // An attribute that follows code on its line gates a field or a statement
+                // (`x: u64, #[cfg(..)] pub acct: A,`), not an item: it ends at `,` or `;`,
+                // or at the close of a `{..}` block. Otherwise the scan would run on into
+                // the next `{` and blank the enclosing impl.
+                let inline = bytes[..i].iter().rev().take_while(|&&c| c != b'
+').any(|c| !c.is_ascii_whitespace());
                 let mut d = 0i32;
                 let mut end = bytes.len();
                 let mut k = j;
@@ -438,6 +443,10 @@ fn strip_test_items(clean: &mut String, orig: &str) -> Vec<String> {
                             break;
                         }
                         b';' if d == 0 => {
+                            end = k + 1;
+                            break;
+                        }
+                        b',' if d == 0 && inline => {
                             end = k + 1;
                             break;
                         }
@@ -1294,6 +1303,26 @@ fn scanner_treats_a_field_read_as_no_call_and_a_cfg_test_mod_file_as_test_code()
         "a field read `r.name` and a call in a `#[cfg(test)] mod` file are not production calls: {:?}",
         s.uncalled
     );
+}
+
+/// Control for the inline-attribute rule: a `#[cfg(..test-seams..)]` that follows code on its
+/// line (a struct field, a statement) gates that field or statement only. Before the rule it ran
+/// on to the next `{` and blanked the impl, so a production call inside it went unseen.
+#[test]
+fn scanner_keeps_the_impl_after_an_inline_cfg_gated_field_and_statement() {
+    let s = fixture(&[
+        (
+            "lib.rs",
+            "pub struct S { n: u64, #[cfg(feature = \"test-seams\")] pub acct: u8, }
+impl S { pub fn live(&self) -> u64 { self.n } pub fn dead(&self) {} }
+pub fn go(s: &S) { #[cfg(feature = \"test-seams\")] { s.dead(); } s.live(); }
+",
+        ),
+        ("main.rs", "fn main() { lib::go(); }
+"),
+    ]);
+    assert!(!s.uncalled.contains("lib.rs::S::live"), "the impl after the gated field must stay visible: {:?}", s.uncalled);
+    assert!(s.uncalled.contains("lib.rs::S::dead"), "a call inside the gated block is test code: {:?}", s.uncalled);
 }
 
 #[test]
