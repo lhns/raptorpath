@@ -34,7 +34,6 @@ gantt
     RLC decoder recovered-symbol index :cod_rlc_index, 2026-07-04, 2026-07-04
     Systematic plus deficit repair :cod_systematic_deficit, 2026-07-07, 2026-07-07
     Stage-3 baseline - block versus window :cod_s5_stage3_baseline, 2026-09-30, 2026-09-30
-    AVX for the sender ruled out :crit, cod_simd_sender, 2026-10-02, 2026-10-02
     section rec - recovery
     Early ACK, NACK and repair :rec_early_arq, 2026-03-12, 2026-03-20
     Rearchitecture phases - P_lost and SACK :rec_plost_sack, 2026-03-21, 2026-04-07
@@ -83,9 +82,6 @@ gantt
     Single-path loss collapse diagnosis :rec_c2_collapse_diag, 2026-07-07, 2026-07-07
     Recovery-plane component bench :rec_recovery_bench, 2026-08-08, 2026-08-08
     Recovery fire cause table :rec_fire_cause, 2026-08-21, 2026-08-21
-    Burst-state loss in retransmit choice :crit, rec_burst_state_loss, 2026-03-21, 2026-03-21
-    Concurrent-loss divisor for P_retx :crit, rec_loss_divisor, 2026-03-21, 2026-03-21
-    Hard retransmit-timeout cutover :crit, rec_hard_rto_cutover, 2026-03-21, 2026-03-21
     Lost BlockStart orphans idle objects :rec_blockstart_orphan, 2026-07-04, 2026-07-04
     Window-mode reactive repair (P10b) :rec_p10b_reactive_repair, 2026-07-04, 2026-07-04
     Out-of-order object delivery (Phase C) :rec_rwm_phase_c, 2026-07-06, 2026-07-06
@@ -118,6 +114,8 @@ gantt
     Repair rate over-provision verdict :active, rate_overprovision_verdict, 2026-11-19, 2026-11-20
     Deadline-constrained r* for N paths :rate_deadline_rstar, 2026-07-07, 2026-07-07
     ρ not an engine input :rate_rho_not_input, 2026-08-20, 2026-08-21
+    Exact P_fec by transfer matrix :rate_pfec_exact, 2026-07-02, 2026-07-02
+    Real-trace check of the loss model :rate_ge_real_trace, 2026-07-07, 2026-07-07
     section store - store law
     Path-scaled pool ×N :crit, store_xn_pool, 2026-07-14, 2026-08-19
     Per-path store accounts :crit, store_percap_family, 2026-07-18, 2026-07-19
@@ -203,7 +201,7 @@ gantt
     Loss-ranked multipath window scheduling :crit, place_early_window_sched, 2026-03-14, 2026-07-04
     Proactive repair on the spare path :crit, place_spare_repair, 2026-07-08, 2026-07-08
     Four-path lock-in defect retracted :place_quad_lockin, 2026-08-17, 2026-08-18
-    Slow-path anchor consolidation (§16.14) :place_anchor_consolidate, 2026-07-13, 2026-07-13
+    Slow-path anchor diagnosis :place_anchor_consolidate, 2026-07-13, 2026-07-13
     section cc - congestion control
     Delay-based CC replaces AIMD :cc_early_delay_cc, 2026-03-13, 2026-03-22
     Production Copa-lite port :cc_copa_lite, 2026-07-02, 2026-07-04
@@ -223,7 +221,7 @@ gantt
     Vendored quinn-proto pacing hook :active, cc_pacing_seam, 2026-11-12, 2026-11-20
     Copa min_rtt reads own queue :active, cc_defect_copa_minrtt, 2026-11-13, 2026-11-20
     AIMD congestion control (first CC) :crit, cc_aimd_v1, 2026-03-12, 2026-03-13
-    BtlBw-anchored window recovery :crit, cc_btlbw_recovery, 2026-07-04, 2026-07-04
+    BtlBw-anchored window recovery :cc_btlbw_recovery, 2026-07-04, 2026-07-04
     section perf - performance
     Engine or receiver parallelisation :crit, perf_parallelisation, 2026-07-08, 2026-07-21
     Emission batching, first attempt :crit, perf_emit_batch_v1, 2026-07-27, 2026-07-27
@@ -336,10 +334,10 @@ gantt
     ρ inert at Auto, Realtime :active, model_defect_rho_inert, 2026-11-14, 2026-11-20
     Owner call - three dials :model_user_three_dials, 2026-03-21, 2026-03-21
     Owner rule - no mode switches :model_user_no_mode_switch, 2026-07-02, 2026-08-06
-    Fountain aggregation claim (paper §16) :model_s16_fountain, 2026-07-04, 2026-07-04
+    Fountain aggregation claim (paper §16) :crit, model_s16_fountain, 2026-07-04, 2026-07-06
     Tier-1 literature re-scores :model_tier1_rescores, 2026-08-19, 2026-08-19
     Tier-0 paper claim corrections :model_tier0_corrections, 2026-08-19, 2026-08-19
-    Poisson derivation of repair rate :crit, model_poisson_rate, 2026-03-21, 2026-03-21
+    Concise rewrite of the model paper :model_paper_rewrite, 2026-09-27, 2026-09-27
     section obs - observability
     Runtime status endpoint :obs_status_endpoint, 2026-03-12, 2026-03-12
     Gate-setting liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09

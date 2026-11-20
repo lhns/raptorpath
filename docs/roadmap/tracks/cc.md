@@ -13,7 +13,7 @@ flowchart TB
     cc_aimd_v1["↷ AIMD congestion<br/>control (first CC)"]
     cc_early_delay_cc["✔ Delay-based CC<br/>replaces AIMD"]
     cc_copa_lite["✔ Production Copa-lite<br/>port"]
-    cc_btlbw_recovery["✖ BtlBw-anchored<br/>window recovery"]
+    cc_btlbw_recovery["✔ BtlBw-anchored<br/>window recovery"]
     cc_copa_sole_substrate["↷ Copa per path as<br/>substrate"]
     cc_copa_wire_signal["✔ Copa wire signal,<br/>compete mode"]
     cc_bbr_default["✔ BBR as substrate<br/>default"]
@@ -90,9 +90,10 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class cc_cubic_substrate,cc_aimd_v1,cc_btlbw_recovery,cc_copa_sole_substrate dead
+    class cc_cubic_substrate,cc_aimd_v1,cc_copa_sole_substrate dead
     class cc_early_delay_cc,cc_bbrrs_v1,cc_s48_host_gate unrated
     class cc_copa_lite,cc_copa_wire_signal,cc_bbr_default succ
+    class cc_btlbw_recovery mixed
     class cc_adr68_fusion,cc_hybrid parked
     class cc_quinn_bbr_collapse,cc_defect_copa_minrtt defect
     class cc_bbrrs_r1 bad
@@ -131,7 +132,7 @@ flowchart TB
 | `cc-bbrrs-promote` | bbr_rs promotion | blocked | unrated |  | plan W1.5 | cc-user-bbrrs-promotion |
 | `cc-hybrid` | BBR/Copa hybrid build | parked | unrated |  | plan W2.4 | cc-adr68-fusion, cc-bbrrs-promote, meas-adversarial-cells-run, cc-user-adr68-direction |
 | `cc-aimd-v1` | AIMD congestion control (first CC) | abandoned | superseded |  | ADR-0009 |  |
-| `cc-btlbw-recovery` | BtlBw-anchored window recovery | abandoned | dead-end |  | commit fa433ac7; paper §12.6 |  |
+| `cc-btlbw-recovery` | BtlBw-anchored window recovery | done | mixed |  | commit fa433ac7; paper §12.6; commit 2fd9ab6f |  |
 
 ### Details per node
 
@@ -144,14 +145,14 @@ flowchart TB
 | `cc-copa-wire-signal` | Copa wire signal, compete mode | ADR date is the 2026-07-21 migration; built 2026-07-13, compete mode 2026-07-19. RWM_COPA_COMPETE is a §3.3 debt. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0062 |
 | `cc-bbr-default` | BBR as substrate default | Start 2026-07-13 (the substrate ceiling was named in 0d9f26e7); ADR date is the migration. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0054 |
 | `cc-bbrrs-v1` | bbr_rs first version | fix/shal8-anchor merge (2026-08-07). git log 2eb88de3 (not a raw record): "bbr_rs falsified x2 at 21-22 Mbit (gate >=70, NO FLIP, default unchanged)". The raw record has no verdict. Folded Ship The Wins 2 (shal8 anchor): pre-registration c319ef91, RESULTS 2eb88de3 (STRUCTURAL BOUND, NO FLIP). | branch fix/shal8-anchor |
-| `cc-adr68-fusion` | Copa-BBR fusion | Owner asked for a fusion ADR 2026-07-21 ("a better copa would be best"); prerequisite battery (adversarial cells) complete; plan W2 future track. Folds paper §11.1 open question 12. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. Folded the Adversarial cells B1 commits (2026-08 audit; mapped outcome there: unrated). | ADR-0068 |
+| `cc-adr68-fusion` | Copa-BBR fusion | Owner asked for a fusion ADR 2026-07-21 (an improved Copa would be best); prerequisite battery (adversarial cells) complete; plan W2 future track. Folds paper §11.1 open question 12. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. Folded the Adversarial cells B1 commits (2026-08 audit; mapped outcome there: unrated). | ADR-0068 |
 | `cc-quinn-bbr-collapse` | Quinn BBR window collapse | Still live: quinn BBR is main's default controller (status §1), and bbr_rs, the fix, is not promoted. Dates: status-section end dates are the section file's last edit, not the verdict date. | status §47 |
 | `cc-s48-host-gate` | bbr_rs host gate | Split 2026-11-16 from 'Fixed bbr_rs versus quinn BBR': cc_sim red/green tests of quinn's BBR against the fixed bbr_rs, no VM. | status §48; commit d7142623; branch bbrfix48-impl |
 | `cc-bbrrs-r1` | Fixed bbr_rs versus quinn BBR | §48b VERDICT48 REGRESSION: collapse controlled, cost c8 CPU and 1.5-2.6 % goodput. Code at archive/bbr-rs. The §48 host gate is its own node (cc-s48-host-gate). Builds on the in-tree bbr_rs first written for the shal8 cell on 2026-08-07 (git 51bc04bd). | status §48b; branch bbr48cand; branch bbrfix48b; branch harness48 |
 | `cc-user-continue-bbrrs` | Owner call: continue bbr_rs | No raw record. nm.txt 1425acbd: "status §48b: user decision - continue bbr_rs (delta-free fixes first, then delta on the store law; same ladder)". | status commit 1425acbd (nm.txt); plan W1 §48b RESULT |
 | `cc-bbrrs-r2` | bbr_rs round 2 fixes | Start set to the owner call (2026-11-12); the branches carry 2026-11-10 commits from the bbr48 ancestry. bbrrs-r2 folded into its rebased successor bbrrs-r3 (2026-11-13): one-round δ-free ProbeRtt, cc_sim quinn-dump. Ratchet prediction failed (nm.txt c34d4431). | branch bbrrs-r2; branch bbrrs-r3 |
 | `cc-pacing-audit` | Pacing-seam audit | Input to ADR-0068 Addendum 3 (branch adr68-amend, unmerged). Was titled 'Pacing-seam audit (W2)'. | derivation w2-pacing-seam.md (branch adr68-amend); branch adr68-amend |
-| `cc-user-pacing-s3` | Owner call: vendored pacing seam | No raw record. User 2026-11-12: "so the fork is the proper way? do it. should we vendor it?"; plan W2.5 "USER DECISION 2026-11-12, do it (S3, vendored)". | plan W2.5; ADR-0075 |
+| `cc-user-pacing-s3` | Owner call: vendored pacing seam | No raw record. Owner 2026-11-12: agreed the fork is the proper way and asked whether to vendor it; plan W2.5 "USER DECISION 2026-11-12, do it (S3, vendored)". | plan W2.5; ADR-0075 |
 | `cc-pacing-seam` | Vendored quinn-proto pacing hook | Start set to the owner call (2026-11-12); the branch carries 2026-11-10 commits from its bbrrs-r2 base. pacing-seam folded into its rebased successor pacing-seam-2; ADR-0075 Accepted on the owner's word; stacked on bbrrs-r2. | branch pacing-seam; branch pacing-seam-2 |
 | `cc-s48d-session` | bbr_rs controller, round 2 | Done when: the §48d Result is in status with in-order delay registered as a readout and the §48b +46 % c8 in-order-delay cost carried as a known cost; the label goes to the owner. | plan W1 §48b RESULT (round 2 = §48d); status §41d §48b addendum |
 | `cc-pacing-seam-reading` | Pacing seam first reading | Done when: a reported-only c2/c8 diagnostic of RWM_BBR_PACE is in status with quinn's send-buffer backlog registered as a readout. | plan W2.5 (first reading after §48d) |
@@ -161,7 +162,7 @@ flowchart TB
 | `cc-bbrrs-promote` | bbr_rs promotion | Law ledger: K09 (rank 9, P1): replace quinn BBR as the default substrate. Done when: a new ADR supersedes ADR-0054's default and the bbr_rs code, [QCC] gauges and cc_sim merge to main after a guard v2 PASS. | plan W1.5 |
 | `cc-hybrid` | BBR/Copa hybrid build | The forward build of the cc-adr68-fusion design. Done when: a registration with falsifiable per-cell targets (ADR-0068 bars: shal8 >= 75 Mbit, jit0-jit25 >= 0.9x without the standing queue) is committed before any build. | plan W2.4 |
 | `cc-aimd-v1` | AIMD congestion control (first CC) | ADR-0009 closed the missing-CC gap with AIMD on 2026-03-12; replaced by BBR-style delay-based CC (ADR-0019) on 2026-03-13. End date is the replacement's start. | ADR-0009 |
-| `cc-btlbw-recovery` | BtlBw-anchored window recovery | Split 2026-11-20 from cc-copa-lite, where it was folded as branch P-CC (own refuted verdict). | commit fa433ac7; paper §12.6 |
+| `cc-btlbw-recovery` | BtlBw-anchored window recovery | Split 2026-11-20 from cc-copa-lite, where it was folded as branch P-CC (own refuted verdict). Mixed (review 2026-11-20): the window reaches the bandwidth-delay product and was kept for sustained throughput, but completion did not move. | commit fa433ac7; paper §12.6; commit 2fd9ab6f |
 
 ### Folded items per node
 
@@ -169,7 +170,7 @@ flowchart TB
   - commit 78aa7d4a
   - commit 628fdb1c
   - BBR-style delay-based congestion control (2026-03-13, commit cbbbfdbda9)
-  - Copa recommended over BBR for the paper; ECN and L4S set aside (2026-03-21, session record)
+  - Copa recommended over BBR for the paper; ECN and L4S set aside (2026-03-21, commit 78aa7d4a)
 - `cc-copa-lite`: Production Copa-lite port
   - branch feat/p1-hint-delay-target
   - branch feat/p2-estimated-floor

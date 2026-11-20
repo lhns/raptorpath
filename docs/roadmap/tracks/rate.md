@@ -12,7 +12,9 @@ flowchart TB
     rate_ge_hmm[/"✔ Gilbert-Elliott loss<br/>model"/]
     rate_fec_rate_v1[/"✔ BOCD FEC rate<br/>control"/]
     rate_saturation_rstar[/"✔ Saturation-aware r*<br/>and window"/]
+    rate_pfec_exact[/"✔ Exact P_fec by<br/>transfer matrix"/]
     rate_deadline_rstar[/"✔ Deadline-constrained<br/>r* for N paths"/]
+    rate_ge_real_trace["✔ Real-trace check of<br/>the loss model"]
     rate_rstar_window_mass[/"✔ r* window-mass<br/>provisioning"/]
     rate_taper_r[/"✔ Taper emission<br/>budget law"/]
     rate_leading_taper["↷ Leading-window taper<br/>emission"]
@@ -44,16 +46,18 @@ flowchart TB
     rate_fix_estimators[/"⛔ Loss estimator<br/>approximations"/]
     rate_fix_term_gauge["⛔ Rate-law term-win<br/>gauge"]
     rate_fix_rho_realtime[/"⛔ Low-latency and<br/>partial-reliability<br/>laws"/]
-    rate_ge_hmm ~~~ rate_deadline_rstar
-    rate_fec_rate_v1 ~~~ rate_rstar_window_mass
-    rate_saturation_rstar ~~~ rate_taper_r
-    rate_deadline_rstar ~~~ rate_leading_taper
+    rate_ge_hmm ~~~ rate_pfec_exact
+    rate_fec_rate_v1 ~~~ rate_deadline_rstar
+    rate_saturation_rstar ~~~ rate_ge_real_trace
+    rate_pfec_exact ~~~ rate_rstar_window_mass
+    rate_deadline_rstar ~~~ rate_taper_r
+    rate_ge_real_trace ~~~ rate_leading_taper
     rate_rstar_window_mass ~~~ rate_unified_shed
     rate_taper_r ~~~ rate_est_cadence
     rate_leading_taper ~~~ rate_sender_truth_loss
     rate_unified_shed ~~~ rate_rho_not_input
     rate_est_cadence ~~~ rate_dials_made_real
-    rate_sender_truth_loss ~~~ rate_r_battery
+    rate_sender_truth_loss ~~~ rate_dials_made_real
     rate_rho_not_input ~~~ rate_r_battery
     rate_dials_made_real ~~~ rate_r_battery
     rate_r_battery ~~~ rate_dof_ledger
@@ -82,6 +86,7 @@ flowchart TB
     rate_law_reconcile ~~~ rate_fix_estimators
     rate_fix_estimators ~~~ rate_fix_term_gauge
     rate_fix_estimators ~~~ rate_fix_rho_realtime
+    rate_ge_hmm -.-> rate_ge_real_trace
     rate_saturation_rstar -.-> rate_defect_pfec
     rate_ge_hmm --> rate_rstar_window_mass
     rate_fec_rate_v1 --> rate_rstar_window_mass
@@ -101,7 +106,7 @@ flowchart TB
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
-    linkStyle 38,41 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 40,41,44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -115,12 +120,12 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_deadline_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_rho_not_input,rate_dials_made_real,rate_c8_frontier_recopy,rate_k4_input_checks succ
+    class rate_ge_hmm,rate_fec_rate_v1,rate_saturation_rstar,rate_pfec_exact,rate_deadline_rstar,rate_rstar_window_mass,rate_taper_r,rate_unified_shed,rate_rho_not_input,rate_dials_made_real,rate_c8_frontier_recopy,rate_k4_input_checks succ
+    class rate_ge_real_trace,rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
     class rate_defect_pfec,rate_defect_taper_inert,rate_overprovision_verdict,rate_shed_budget_rho,rate_adr50_split_unwired defect
-    class rate_pfec_continuous,rate_evict_registration,rate_spare_cwnd,rate_evict_epre,rate_evict_session unrated
     class rate_pfec_oracle waiting
     class rate_spare_clamp_verdict,rate_delta_jitter_fix,rate_fix_rate_readout,rate_s06_plost_derivation next
     class rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
@@ -134,7 +139,7 @@ flowchart TB
 |---|---|---|---|---|---|---|
 | `rate-ge-hmm` | Gilbert-Elliott loss model | done | successful |  | ADR-0023 |  |
 | `rate-fec-rate-v1` | BOCD FEC rate control | done | successful | DC (ε≈0.1%): 4.3% actual vs 0.1% optimal → 43x | ADR-0050; ADR-0043 |  |
-| `rate-saturation-rstar` | Saturation-aware r* and window | done | successful |  | branch unified deadline-constrained r* (§8.9) |  |
+| `rate-saturation-rstar` | Saturation-aware r* and window | done | successful |  | commit 55013af4; branch feat/p5-saturation-cap |  |
 | `rate-rstar-window-mass` | r* window-mass provisioning | done | successful |  | ADR-0063 | rate-ge-hmm, rate-fec-rate-v1 |
 | `rate-taper-r` | Taper emission budget law | done | successful |  | commit 33b29f81 |  |
 | `rate-leading-taper` | Leading-window taper emission | abandoned | superseded | −22 pp | paper §10 row Leading-window taper emission |  |
@@ -167,8 +172,10 @@ flowchart TB
 | `rate-fix-term-gauge` | Rate-law term-win gauge | blocked | unrated |  | law ledger rows R02 | rate-fix-estimators |
 | `rate-fix-estimators` | Loss estimator approximations | blocked | unrated |  | law ledger rows E07, E08, E09 | place-per-leg-impl |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | blocked | unrated |  | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 | store-engine-form-impl, rate-law-reconcile, rec-fix-refresh-clock, rate-fix-estimators, store-fix-maxbw-minrtt |
-| `rate-deadline-rstar` | Deadline-constrained r* for N paths | done | successful |  | commit fcae9c05; commit addf9eff; paper §8.9 |  |
+| `rate-deadline-rstar` | Deadline-constrained r* for N paths | done | successful |  | commit fcae9c05; commit addf9eff; paper §4.11 |  |
 | `rate-rho-not-input` | ρ not an engine input | done | unrated |  | commit b181fa54; commit 5d14dd53 |  |
+| `rate-pfec-exact` | Exact P_fec by transfer matrix | done | successful |  | commit c4daf2bb; commit b6170b77; paper §8.7 |  |
+| `rate-ge-real-trace` | Real-trace check of the loss model | done | unrated |  | commit 1ee87fa1; commit 229917fb |  |
 
 ### Details per node
 
@@ -176,7 +183,7 @@ flowchart TB
 |---|---|---|---|
 | `rate-ge-hmm` | Gilbert-Elliott loss model | Real-trace validation (2026-07-07) found GE inadequate for real loss (G217); the burst multiplier was superseded by ADR-0050. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0023 |
 | `rate-fec-rate-v1` | BOCD FEC rate control | Headline is the motivating inefficiency, not a gain. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0050; ADR-0043 |
-| `rate-saturation-rstar` | Saturation-aware r* and window | P5 saturation-aware r*, soft saturation, derive_window (paper 8.8), unified deadline-constrained r* (paper §8.9). | branch unified deadline-constrained r* (§8.9) |
+| `rate-saturation-rstar` | Saturation-aware r* and window | P5 saturation-aware r*, soft saturation, derive_window (paper 8.8), unified deadline-constrained r* (paper §8.9). | commit 55013af4; branch feat/p5-saturation-cap |
 | `rate-rstar-window-mass` | r* window-mass provisioning | Feat/rstar-bursty merged 2026-07-13; RWM_RSTAR_TAIL on by default since (status §1). End 2026-07-21 was a placeholder (ADR-0063: last edit or migration date); date from merge aba1a523. Dates: ADR end dates in the raw set equal their start (placeholder); ADR-0052..0067 carry the 2026-07-21 migration date. | ADR-0063 |
 | `rate-taper-r` | Taper emission budget law | RWM_TAPER_R is on by default (status §1). | commit 33b29f81 |
 | `rate-leading-taper` | Leading-window taper emission | Paper §10 row is undated; dates from git (not raw records): 8ef5ff18 (2026-07-18) rescoped the -22 pp to the streaming family and 4b8e5384 (2026-07-19) kept the RWM_TAPER_R flip closed on it. Replaced by trailing-span emission, the unified span machine's emission policy. Dates: paper §10 rows carry an end (removal) date only. | paper §10 row Leading-window taper emission |
@@ -209,25 +216,22 @@ flowchart TB
 | `rate-fix-term-gauge` | Rate-law term-win gauge | Law ledger: R02. Done when: an engine gauge reports which term or clamp of controller_rate wins, per tick, so the off-Bulk session can read it. | law ledger rows R02 |
 | `rate-fix-estimators` | Loss estimator approximations | Law ledger: E07, E08, E09. The measured RTTVAR per leg (E09) lives in the per-leg state, hence that prerequisite (the wire-clock node it used to wait on is dissolved). Done when: the BOCD quantile floor is explained in the paper or bounded, the Gilbert-Elliott batch lumping gets the bounding test paper-recon specified, and one measured RTTVAR per leg replaces the two stand-ins. | law ledger rows E07, E08, E09 |
 | `rate-fix-rho-realtime` | Low-latency and partial-reliability laws | Law ledger: F02, S01, S02, S04, S05, S06. S01 and S02 read RTprop, which waits on the honest-input fix (E03), not on a recovery clock. The two hint equalities (S08, S09) moved to model-fix-hint-keyed-paths. Done when: the store gate carries the ρ term derived in the paper, the span deadline and shed budget read a wire clock, the receiver hold is b(δ)·SRTT, the taper-copy decision is diagnosed, each with continuity tests through every preset. | law ledger rows F02, S01, S02, S04, S05, S06, S08, S09 |
+| `rate-deadline-rstar` | Deadline-constrained r* for N paths | Paper §4.11 in the rewritten paper (§8.9 before the 2026-09-27 rewrite). | commit fcae9c05; commit addf9eff; paper §4.11 |
 | `rate-rho-not-input` | ρ not an engine input | Split 2026-11-20 from rec-goal100 (item 1). Goal #101 recorded the same impasse on 2026-08-21. Later finding on the same dial: model-defect-rho-inert (2026-11-14). | commit b181fa54; commit 5d14dd53 |
+| `rate-pfec-exact` | Exact P_fec by transfer matrix | The session-record finding that the normal approximation under-provisions on bursty channels (2026-07-06) is folded here. | commit c4daf2bb; commit b6170b77; paper §8.7 |
 
 ### Folded items per node
 
-- `rate-ge-hmm`: Gilbert-Elliott loss model
-  - branch real-trace validation
-  - Real-trace check of the Gilbert-Elliott loss model (2026-07-06, session record)
 - `rate-fec-rate-v1`: BOCD FEC rate control
   - commit 05b576a7
   - commit e508adf4
   - commit f2cba2b7
   - Principled FEC rate control: BOCD estimator, budget allocator, taper model (2026-03-21, commit 1e07bf79)
 - `rate-saturation-rstar`: Saturation-aware r* and window
-  - branch feat/p5-saturation-cap
   - branch soft saturation + end-of-stream taper completion
   - branch window derivation
   - Soft saturation cap and continuous end-of-stream taper (2026-07-04, commit 0e27a4af, commit 3a823943)
   - Encoder window derived from the channel instead of hand-set (2026-07-04, commit 38c3428e, commit 0a67497c)
-  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, session record)
 - `rate-rstar-window-mass`: r* window-mass provisioning
   - branch feat/rstar-bursty
 - `rate-retention-is-rho`: Retention is the ρ dial
@@ -240,6 +244,7 @@ flowchart TB
   - commit 224b9159
   - branch flip/est-cadence
   - Sender CPU profile with call graphs (2026-10-02, session record)
+  - AVX and SIMD for the sender judged not worth it (2026-10-02, session record)
   - Batched estimator updates on by default (2026-10-04, commit 116753b5)
 - `rate-sender-truth-loss`: Sender-truth loss estimator
   - branch sweep item 3 FIXED
@@ -269,6 +274,12 @@ flowchart TB
 - `rate-evict-registration`: Evicting-seat m̄ registration
   - commit 4d200885
   - commit b1af3fa4
+- `rate-deadline-rstar`: Deadline-constrained r* for N paths
+  - branch unified deadline-constrained r* (§8.9)
 - `rate-rho-not-input`: ρ not an engine input
   - branch item 1 CLOSED UNREADABLE
+- `rate-pfec-exact`: Exact P_fec by transfer matrix
+  - Normal-approximation r* under-provisions on bursty channels (2026-07-06, session record)
+- `rate-ge-real-trace`: Real-trace check of the loss model
+  - branch real-trace validation
 <!-- END GENERATED: table-rate -->

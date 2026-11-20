@@ -41,9 +41,9 @@ OUTCOMES = ["very-successful", "successful", "mixed", "bad", "dead-end", "supers
 LANES = ["vm", "host-cargo", "no-cargo", "user", "none"]
 
 WRAP = 22           # label line width in characters
-OVERVIEW_WIDTH = 2  # max nodes per row in the overview
+OVERVIEW_WIDTH = 3  # max nodes per row in the overview
 TRACK_WIDTH = 3     # max nodes per row in a per-track tree
-BAND_MIN = 4        # past months are merged into one overview band until it holds this many nodes
+BAND_MIN = 1        # past months are merged into one overview band until it holds this many nodes (1: one band per month)
 GANTT_TITLE = 40    # gantt task names are truncated to this many characters
 
 REGION_ORDER = ["legend", "overview", "plain-words", "ready-now", "running", "built-waiting", "waiting-on-owner",
@@ -639,7 +639,8 @@ def labelled(item):
 
 def r_done_by_month(nodes, today):
     """Every finished node (done or abandoned), grouped by the month it ended (else started), newest month
-    first, undated last; each node's labelled folded records follow as sub-bullets."""
+    first, undated last; each line carries the node's plain sentence (else its headline), and the node's
+    labelled folded records follow as sub-bullets."""
     sel = [n for n in nodes if n["state"] in ("done", "abandoned")]
     if not sel:
         return "_Nothing done yet._"
@@ -654,7 +655,8 @@ def r_done_by_month(nodes, today):
         count = f"{done} done" + (f", {len(group) - done} abandoned" if len(group) > done else "")
         lines = []
         for n in group:
-            lines.append(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})")
+            say = n["plain"] or n["headline"]
+            lines.append(f"- `{n['id']}`: {cell(n['title'])} ({cell(tag(n))})" + (f". {cell(say)}" if say else ""))
             lines += [f"  - {cell(t)} ({d})" for t, d in filter(None, map(labelled, n["folded"]))]
         body = "\n".join(lines)
         parts.append(f"<details><summary><b>{head}</b>: {count}</summary>\n\n{body}\n\n</details>")

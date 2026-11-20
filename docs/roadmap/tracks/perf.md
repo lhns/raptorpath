@@ -107,11 +107,11 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class perf_liveness_split,perf_realtime_path_death,perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_d9_attribution,perf_sched_split,perf_s20_r1_collapse,perf_receiver_r2,perf_s26_long_polls,perf_receiver_followups succ
+    class perf_liveness_split,perf_realtime_path_death,perf_rtt_rescan,perf_rcvbuf,perf_threading_p0,perf_threading_p1,perf_d9_attribution,perf_sched_split,perf_s20_r1_collapse,perf_receiver_r2,perf_s26_long_polls,perf_receiver_followups succ
     class perf_native_geometry,perf_parallelisation,perf_emit_batch_v1,perf_quic_feeder,perf_threading_p2a,perf_q3_investigation,perf_receiver_r1,perf_threading_r3 dead
-    class perf_rtt_rescan,perf_c8_lag,perf_s33_timer,perf_bbrrs_ns_cost unrated
     class perf_recv_msg_wall mixed
     class perf_ack_merge,perf_emit_batch_law0,perf_io_owner,perf_incremental_sack,perf_decoder_prune vsucc
+    class perf_c8_lag,perf_s33_timer,perf_bbrrs_ns_cost unrated
     class perf_bbrrs_ring_fix waiting
     class perf_fix_burst_bound next
     class perf_config_dropped defect
@@ -152,7 +152,7 @@ flowchart TB
 | `perf-fix-burst-bound` | Emission burst bound derivation | next | unrated |  | law ledger rows F03 | model-law-ledger |
 | `perf-config-dropped` | Perf ignores the config file | next | unrated |  | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |  |
 | `perf-liveness-split` | Path liveness split from capacity | done | successful |  | commit becc6121; commit b57a202b |  |
-| `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | done | unrated | clean single-path 3–5.6× faster | commit 6302798c; commit 99926477 |  |
+| `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | done | successful | clean single-path 3–5.6× faster | commit 6302798c; commit 99926477 |  |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | done | dead-end |  | commit 020d34d5 |  |
 | `perf-realtime-path-death` | Realtime path deaths in window mode | done | unrated |  | commit dff2d7a3; commit bc2d118e; commit 33d5a79c |  |
 
@@ -169,7 +169,7 @@ flowchart TB
 | `perf-quic-feeder` | Per-path datagram feeder | §10 is headed "superseded by the threading redesign"; the per-path I/O owner (Q1) is that redesign's delivered piece. Dates: status-section end dates are the section file's last edit, not the verdict date; archive/quic-feeder archived 2026-10-05 (tag date not used for end); archive/quic-feeder-v2 archived 2026-10-05 (tag date not used for end). | status §10; tag archive/quic-feeder; tag archive/quic-feeder-v2 |
 | `perf-threading-p0` | Named runtime and thread budget | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §9 |
 | `perf-threading-p1` | Threading lock and wake fixes | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §11 |
-| `perf-threading-p2a` | Single logic-actor threading | Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: "i rather think your impl is shit... rethink". Dates: status-section end dates are the section file's last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end). Was titled 'Threading P2a logic actor'. | status §12; tag archive/thread-p2a |
+| `perf-threading-p2a` | Single logic-actor threading | Deleted, not patched (coop-budget starvation); code at archive/thread-p2a. Owner 2026-10-05: judged the implementation poor and asked for a rethink. Dates: status-section end dates are the section file's last edit, not the verdict date; archive/thread-p2a archived 2026-10-05 (tag date not used for end). Was titled 'Threading P2a logic actor'. | status §12; tag archive/thread-p2a |
 | `perf-io-owner` | Per-path I/O owner | §13 DELIVERED (SHIP-SHARED); the D9 attribution (§15) is its own node (perf-d9-attribution). | status §13 |
 | `perf-d9-attribution` | Attribution of one sender change | Split 2026-11-16 from 'Per-path I/O owner (Q1)': §13 re-scoped §12's c1s collapse to D9, and §15 tested D9 alone. | status §15; commit 62deacba |
 | `perf-sched-split` | Scheduler split by direction | Dates: status-section end dates are the section file's last edit, not the verdict date. | status §14 |
@@ -189,7 +189,7 @@ flowchart TB
 | `perf-fix-burst-bound` | Emission burst bound derivation | Law ledger: F03. Done when: the 64-symbol burst bound is derived as a CPU/latency quantum in the paper, or swept and recorded as a declared constant with its bind fraction. | law ledger rows F03 |
 | `perf-config-dropped` | Perf ignores the config file | main.rs:263 cmd_perf gets no config though --config is global (main.rs:12) and the README documents it. Blocks the tail-target flag sweep (VM queue 4) and rho < 1 at Bulk/Auto in perf. Also: ge_burst_factor and realtime_burst_extra have no consumer anywhere (config.rs:64-67). Done when: the S2c round-trip cells for perf move, red first. | branch static-audits 86b5208f (raptorpath/src/audits.rs, config_round_trip.rs) |
 | `perf-liveness-split` | Path liveness split from capacity | L1 phase 3 (2026-07-03); the ack-path debug logging added while diagnosing it is folded in. | commit becc6121; commit b57a202b |
-| `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | Found in the session record (2026-07-07); the fix is commit 6302798c and its merge 99926477, whose subject carries the headline. Unrated: the extracted verdict quote did not validate. | commit 6302798c; commit 99926477 |
+| `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | The fix is commit 6302798c and its merge 99926477; rated like cod-rlc-index (merged, measured gain, no registered readout). First found in the session record. | commit 6302798c; commit 99926477 |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | L2 workstream 3 (2026-07-04); measured with the native object mode folded in meas-l1-harness. | commit 020d34d5 |
 | `perf-realtime-path-death` | Realtime path deaths in window mode | Split 2026-11-20 from meas-l2-multipath (own defect verdict and fix branch). | commit dff2d7a3; commit bc2d118e; commit 33d5a79c |
 
@@ -206,7 +206,7 @@ flowchart TB
   - commit 52b4fff6
   - Sender-side emission burst (2026-07-27, commit aa2fcbfa, commit 2367a519, commit c639d56f)
   - Receiver-side emission batching arms (2026-07-27, commit 8a71ed89, commit bc500aff, commit 47b04ed6, commit 97bc6eaf)
-  - Dual-path emission bursting (2026-07-27, session record)
+  - Dual-path emission bursting (2026-07-27, commit c639d56f)
 - `perf-ack-merge`: One control datagram per message
   - commit 37c594a4
   - commit bb8ab286
@@ -273,7 +273,8 @@ flowchart TB
 - `perf-receiver-followups`: Receiver follow-ups
   - branch §35 receiver follow-ups
 - `perf-rtt-rescan`: Per-ACK RTT minimum rescan removed
-  - Per-ACK RTT minimum rescan removed from the sender (2026-07-07, session record)
+  - Per-ACK RTT minimum rescan removed from the sender (2026-07-07, commit 6302798c, commit 99926477)
+  - branch per-symbol perf fix
 - `perf-realtime-path-death`: Realtime path deaths in window mode
   - branch window-liveness fix
 <!-- END GENERATED: table-perf -->

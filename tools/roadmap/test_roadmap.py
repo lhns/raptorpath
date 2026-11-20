@@ -305,6 +305,12 @@ class ValidateTests(unittest.TestCase):
     def test_overview_size_warning(self):
         self.assertTrue(any("overview has 3" in w for w in check.validate_nodes(GOOD)[1]))
 
+    def test_overview_size_range_is_50_to_60(self):
+        def warned(k):
+            nodes = [node(f"rec-n{i}", plain="p", overview=i < k) for i in range(70)]
+            return any(w.startswith("overview has") for w in check.validate_nodes(nodes)[1])
+        self.assertEqual([warned(k) for k in (49, 50, 60, 61)], [True, False, False, True])
+
 
 class BuildTests(unittest.TestCase):
     def test_label_escaping(self):
@@ -518,6 +524,22 @@ class BuildTests(unittest.TestCase):
         for i in ("rec-a", "rec-b", "rec-c"):
             self.assertIn(f"`{i}`", out)
         self.assertNotIn("rec-d", out)
+
+    def test_done_by_month_prints_plain_else_headline(self):
+        out = self.region(built([
+            node("rec-a", state="done", overview=False, start="2026-07-02", plain="Said | plainly.", headline="9 ms"),
+            node("rec-b", state="done", overview=False, start="2026-07-03", headline="3.49s -> 1.57s median"),
+            node("rec-c", state="done", overview=False, start="2026-07-04"),
+        ]), "done-by-month")
+        self.assertIn("- `rec-a`: T rec-a (✔ done · unrated). Said \\| plainly.\n", out)
+        self.assertIn("- `rec-b`: T rec-b (✔ done · unrated). 3.49s -> 1.57s median\n", out)
+        self.assertIn("- `rec-c`: T rec-c (✔ done · unrated)\n", out)
+
+    def test_overview_has_one_band_per_past_month(self):
+        nodes = [node(f"rec-{k}", state="done", outcome="successful", evidence=["e"], start=f"2026-0{m}-01")
+                 for k, m in (("a", 3), ("b", 4), ("c", 7), ("d", 7))]
+        labels = [lab for lab, _ in build.overview_bands(build.normalize(nodes), [n["id"] for n in nodes])]
+        self.assertEqual(labels, ["Mar 2026", "Apr 2026", "Jul 2026"])
 
     def test_done_by_month_includes_abandoned_with_its_tag(self):
         out = self.region(built([

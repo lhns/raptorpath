@@ -30,7 +30,6 @@ flowchart TB
     cod_one_pipeline["✔ One window pipeline"]
     cod_s4_block_retest["✔ Block default re-<br/>test"]
     cod_s5_stage3_baseline["✔ Stage-3 baseline:<br/>block versus window"]
-    cod_simd_sender["✖ AVX for the sender<br/>ruled out"]
     cod_debug_stall["✔ Decoder re-delivery<br/>stall fix"]
     cod_block_pipeline ~~~ cod_legacy_rlc
     cod_mettle ~~~ cod_backend_switch
@@ -52,7 +51,7 @@ flowchart TB
     cod_unified_span ~~~ cod_one_pipeline
     cod_wire_compact ~~~ cod_s4_block_retest
     cod_wire_compact ~~~ cod_s5_stage3_baseline
-    cod_one_pipeline ~~~ cod_simd_sender
+    cod_one_pipeline ~~~ cod_debug_stall
     cod_s4_block_retest ~~~ cod_debug_stall
     cod_s5_stage3_baseline ~~~ cod_debug_stall
     cod_block_pipeline -.-> cod_one_pipeline
@@ -75,10 +74,11 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class cod_block_pipeline,cod_mettle,cod_streaming_code,cod_legacy_rlc,cod_backend_switch,cod_rlc_all_profiles,cod_coded_only_wire,cod_fungible_window,cod_systematic_deficit,cod_fmtcp,cod_simd_sender dead
+    class cod_block_pipeline,cod_mettle,cod_streaming_code,cod_legacy_rlc,cod_backend_switch,cod_rlc_all_profiles,cod_coded_only_wire,cod_fungible_window,cod_fmtcp dead
     class cod_gf256_simd,cod_rlc_index,cod_gen_decoder_fix,cod_systematic_wire,cod_unified_span,cod_one_pipeline,cod_debug_stall succ
     class cod_overhead_reduction,cod_s4_block_retest,cod_s5_stage3_baseline unrated
     class cod_generation_coding parked
+    class cod_systematic_deficit mixed
     class cod_wire_compact vsucc
 ```
 <!-- END GENERATED: track-cod -->
@@ -109,9 +109,8 @@ flowchart TB
 | `cod-overhead-reduction` | Overhead reduction (packing, repair alignment) | done | unrated |  | ADR-0039; ADR-0040; ADR-0047; ADR-0048 | meas-transport-comparison |
 | `cod-gen-decoder-fix` | Generation decoder late-source fix | done | successful | repairs_useful 0.15%→66% | commit 3701e10d; commit 88852b4f |  |
 | `cod-rlc-index` | RLC decoder recovered-symbol index | done | successful | 4.6-5.7x faster decode | commit 7f6d1057; commit 28cd99a4 |  |
-| `cod-systematic-deficit` | Systematic plus deficit repair | done | dead-end |  | commit 704ae730; commit 4f12d4b0; commit e4bdfa63; commit 715ed4d9; commit 35cb17aa |  |
+| `cod-systematic-deficit` | Systematic plus deficit repair | done | mixed |  | commit 704ae730; commit 4f12d4b0; commit e4bdfa63; commit 715ed4d9; commit 35cb17aa |  |
 | `cod-s5-stage3-baseline` | Stage-3 baseline: block versus window | done | unrated |  | commit b3c6923b; commit 32578b43; status §5 |  |
-| `cod-simd-sender` | AVX for the sender ruled out | abandoned | dead-end |  |  |  |
 
 ### Details per node
 
@@ -138,7 +137,6 @@ flowchart TB
 | `cod-gen-decoder-fix` | Generation decoder late-source fix | The five earlier aggregation refutations were measured on the broken decoder (2026-07-08). | commit 3701e10d; commit 88852b4f |
 | `cod-systematic-deficit` | Systematic plus deficit repair | Split 2026-11-20 from cod-generation-coding: the oracle BUILD verdict and the build with its measured result are one pre-registered piece. | commit 704ae730; commit 4f12d4b0; commit e4bdfa63; commit 715ed4d9; commit 35cb17aa |
 | `cod-s5-stage3-baseline` | Stage-3 baseline: block versus window | Split 2026-11-20 from cod-one-pipeline, as cod-s4-block-retest was for §4. | commit b3c6923b; commit 32578b43; status §5 |
-| `cod-simd-sender` | AVX for the sender ruled out | From the session record; no committed artifact. 2026-10-02. |  |
 
 ### Folded items per node
 
@@ -167,9 +165,9 @@ flowchart TB
   - SIMD GF(2^8) multiply-accumulate kernels (2026-03-18, commit 544f4d82)
 - `cod-rlc-all-profiles`: Windowed RLC for every profile
   - commit c8fcc910
-  - Reliable windowed RLC for bulk breaks: 10 of 10 to 0 of 10 (2026-07-05, session record)
+  - Reliable windowed RLC for bulk breaks: 10 of 10 to 0 of 10 (2026-07-05, commit 341857ec)
   - Windowed RLC for all hints: bulk single-path fails (2026-07-05, commit 59fc7c03)
-  - RLC encode and decode throughput against bulk needs (2026-07-06, session record)
+  - RLC encode and decode throughput against bulk needs (2026-07-06, commit 4663c38c)
   - Measured RLC decode throughput at three window sizes (2026-07-06, commit 4663c38c)
 - `cod-generation-coding`: Generation cross-path fungible coding
   - branch generation-coding foundation (codec verified; multi-gen pending deficit feedback)
@@ -187,10 +185,10 @@ flowchart TB
   - Coded-only fungible window refuted (2026-07-07, commit a0bcd4ae, commit bb18de13)
 - `cod-fmtcp`: FMTCP-class decode-on-total
   - branch FMTCP-class aggregation
-  - Literature map for the recovery-latency findings (2026-07-08, session record)
+  - Literature map for the recovery-latency findings (2026-07-08, commit 56353d25)
   - FMTCP-class decode-on-total aggregation (2026-07-08, commit 3145c15c, commit 2e01e534, commit 0ce6cd34, commit 4220aa06)
   - Literature map of FEC transport findings (2026-07-08, commit 56353d25)
-  - FMTCP re-test and deletion (2026-07-27, session record)
+  - FMTCP re-test and deletion (2026-07-27, commit 4fb5b156, commit f8417579)
 - `cod-unified-span`: Unified span machine
   - commit 206b90ca
   - commit 1eec34d5
@@ -215,11 +213,11 @@ flowchart TB
   - commit 544f4d82
   - Overhead taxonomy and symbol packing for small packets (2026-03-18, commit e508adf4)
   - FEC overhead reduction: budget cap, NACK age gate, fractional repair (2026-03-20, commit 05b576a7, commit b255271c)
+- `cod-gen-decoder-fix`: Generation decoder late-source fix
+  - branch FEC recovery bug fix
 - `cod-systematic-deficit`: Systematic plus deficit repair
   - branch oracle validation
   - branch systematic+repair build
 - `cod-s5-stage3-baseline`: Stage-3 baseline: block versus window
   - branch meas/stage3-baseline
-- `cod-simd-sender`: AVX for the sender ruled out
-  - AVX and SIMD for the sender ruled out (2026-10-02, session record)
 <!-- END GENERATED: table-cod -->

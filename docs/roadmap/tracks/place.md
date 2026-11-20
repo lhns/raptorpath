@@ -16,7 +16,7 @@ flowchart TB
     place_daps["↷ DAPS queue-<br/>management chain"]
     place_rate_sample["↷ Per-path rate-sample<br/>estimator"]
     place_submax_anchor["✖ Sub-max quantile<br/>rate anchor"]
-    place_anchor_consolidate["✔ Slow-path anchor<br/>consolidation (#167;16.14)"]
+    place_anchor_consolidate["✔ Slow-path anchor<br/>diagnosis"]
     place_slack["✖ Place-slack"]
     place_quad_lockin>"✔ Four-path lock-in<br/>defect retracted"]
     place_wdiv["⏳ Derived diversity<br/>weight, leg choice"]
@@ -77,12 +77,12 @@ flowchart TB
     classDef userdec fill:#d9c2f0,stroke:#7b3fb5,color:#111
     classDef defect fill:#ffe0b2,stroke:#d84315,stroke-width:2px,color:#111
     classDef waiting fill:#e3f2fd,stroke:#1f6fc5,stroke-dasharray:5 5,color:#111
-    class place_early_window_sched,place_frozen_echo,place_spare_repair,place_daps,place_rate_sample,place_submax_anchor,place_anchor_consolidate,place_slack,place_hol,place_t_derived dead
+    class place_early_window_sched,place_frozen_echo,place_spare_repair,place_daps,place_rate_sample,place_submax_anchor,place_slack,place_hol,place_t_derived dead
     class place_marginal_cost,place_quad_lockin,place_stage2_battery,place_wire_price succ
+    class place_anchor_consolidate,place_path_event unrated
     class place_wdiv,place_per_leg_state,place_per_leg_relocate waiting
     class place_s38_wire bad
     class place_s41_iteration mixed
-    class place_path_event unrated
     class place_per_leg_impl blocked
 ```
 <!-- END GENERATED: track-place -->
@@ -113,7 +113,7 @@ flowchart TB
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | abandoned | superseded |  | ADR-0026 |  |
 | `place-spare-repair` | Proactive repair on the spare path | abandoned | dead-end |  | commit ea20927f; commit 6c938427 |  |
 | `place-quad-lockin` | Four-path lock-in defect retracted | done | unrated |  | commit 0128bb5c |  |
-| `place-anchor-consolidate` | Slow-path anchor consolidation (§16.14) | done | dead-end |  | commit d63ffce7 |  |
+| `place-anchor-consolidate` | Slow-path anchor diagnosis | done | unrated |  | commit d63ffce7 |  |
 
 ### Details per node
 
@@ -140,13 +140,13 @@ flowchart TB
 | `place-early-window-sched` | Loss-ranked multipath window scheduling | ADR-0026 (status Resolved) replaced loss-only path selection by per-symbol RTT/goodput-aware selection. End date is the start of place-marginal-cost, which replaced it. | ADR-0026 |
 | `place-spare-repair` | Proactive repair on the spare path | Its merge ea20927f carries the aggregation arc's 2026-07-08 "final verdict" (meas-c8-aggregation-arc). | commit ea20927f; commit 6c938427 |
 | `place-quad-lockin` | Four-path lock-in defect retracted | Split 2026-11-20 from store-cap-law-cluster (sweep item 6, a placement verdict). | commit 0128bb5c |
-| `place-anchor-consolidate` | Slow-path anchor consolidation (§16.14) | Was folded in place-submax-anchor (2026-07-13). | commit d63ffce7 |
+| `place-anchor-consolidate` | Slow-path anchor diagnosis | Was folded in place-submax-anchor (2026-07-13). | commit d63ffce7 |
 
 ### Folded items per node
 
 - `place-marginal-cost`: Marginal-cost placement law
   - branch L2-ws1
-  - Owner rule: no equal-weight striping (2026-07-06, session record)
+  - Owner rule: no equal-weight striping (2026-07-06, commit 8c6c7e2d)
   - RWM Phase B: multipath striping with the placement law (2026-07-06, commit 4cf6b9b1, commit dfba099e)
   - Placement as one marginal-cost law, not regimes (2026-07-06, commit 8c6c7e2d, commit ee1ae3e0)
 - `place-daps`: DAPS queue-management chain
@@ -182,8 +182,10 @@ flowchart TB
   - commit 86e1f0f3
   - commit 628fdb1c
   - Multipath simulation test suite with dynamic paths (2026-03-13, commit 5e6074ee)
-  - Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths (2026-03-21, session record)
+  - Multipath: per-path correction mix tilted by the scheduler, not symbols moved between paths (2026-03-21, commit 749112b9)
+- `place-spare-repair`: Proactive repair on the spare path
+  - branch C8 cross-path repair
 - `place-quad-lockin`: Four-path lock-in defect retracted
   - branch sweep item 6 REFUTED
-  - Placement cold-start defect does not exist (retracted) (2026-08-17, session record)
+  - Placement cold-start defect does not exist (retracted) (2026-08-17, commit 0128bb5c)
 <!-- END GENERATED: table-place -->

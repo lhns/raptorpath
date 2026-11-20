@@ -478,7 +478,7 @@ flowchart TB
   - branch store-cap unification battery
   - branch the c8 SF mechanism
   - branch fix/live-path-membership
-  - Store-cap triplication: unify the honest cap law (2026-08-09, session record)
+  - Store-cap triplication: unify the honest cap law (2026-08-09, commit 7608a8b9)
 - `store-deadwall-modehunt`: Deadwall and mode-hunt batteries
   - branch mode-hunt battery UNSCORED by its own stop rule
   - branch dead-wall battery
