@@ -1,0 +1,7 @@
+# The quarantine list (ADR-0080): tests allowed to flake without failing CI.
+# <test name> | <owner> | <reason: the diagnosed cause, or the ledger/roadmap entry>
+# A quarantined test is also #[ignore]d with the same reason. An entry leaves after N
+# consecutive passes in the nightly repeat job (ADR-0080 decision 3). Read by
+# tools/ci/flake_rule.py, tools/ci/repeat_tier_a.sh and tools/l1/suites_run.sh.
+# Empty on 2026-11-20: the nightly repeat job (run 44677402957, 30 iterations of
+# tier A plus the tools/l1 tests) saw no failing test.

@@ -926,7 +926,7 @@ impl QuicTransport {
     fn generate_self_signed_config(
         cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
     ) -> anyhow::Result<(ServerConfig, Vec<CertificateDer<'static>>)> {
-        let cert = rcgen::generate_simple_self_signed(vec!["raptorpath".into()])?;
+        let cert = crate::clock::self_signed(vec!["raptorpath".into()])?;
         let cert_der = CertificateDer::from(cert.cert);
         let key_der = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
 
@@ -992,7 +992,7 @@ impl QuicTransport {
             transport.congestion_controller_factory(cc);
         }
         config.transport_config(Arc::new(transport));
-        config
+        crate::clock::client_config(config)
     }
 }
 
