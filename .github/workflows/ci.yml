@@ -66,3 +66,15 @@ jobs:
         with: { tool: wasm-pack }
       - name: build visualizer and run both .mjs gates
         run: bash raptorpath-visualizer/build_visualizer.sh
+  sim:
+    # Deterministic simulation tests (ADR-0082, S8). tokio_unstable only here
+    # (seeded select! order), never in .cargo/config.toml or the release build.
+    runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: "--cfg tokio_unstable"
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { shared-key: sim }
+      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail -- --nocapture

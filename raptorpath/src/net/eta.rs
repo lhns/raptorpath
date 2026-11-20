@@ -294,7 +294,7 @@ impl SenderEta {
     /// `e = rtt − rtprop/2` — a reading about the wire, not a prediction — so
     /// the `eta == 0` test excludes them.
     pub fn on_ack(&mut self, path_id: u32, echo_send_ts_us: u64, rtt_us: u64, rtprop_us: u64) {
-        self.on_ack_at(path_id, echo_send_ts_us, rtt_us, rtprop_us, Instant::now());
+        self.on_ack_at(path_id, echo_send_ts_us, rtt_us, rtprop_us, crate::clock::now());
     }
 
     /// [`SenderEta::on_ack`] with the arrival instant supplied by the caller.
@@ -562,7 +562,7 @@ impl RecvEta {
         };
         let l = (d - base).max(0) as u64;
         p.lat.add(l);
-        p.lat_sig.push(Instant::now(), l, Duration::from_micros(tau_us));
+        p.lat_sig.push(crate::clock::now(), l, Duration::from_micros(tau_us));
     }
 
     /// Has this gauge seen any arrival — i.e. does it sit at a receiver?

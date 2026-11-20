@@ -18,7 +18,7 @@ pub struct WallClock;
 
 impl Clock for WallClock {
     fn now(&self) -> Instant {
-        Instant::now()
+        crate::clock::now()
     }
 }
 
@@ -31,7 +31,7 @@ pub struct MockClock {
 impl MockClock {
     pub fn new() -> Self {
         Self {
-            current: Mutex::new(Instant::now()),
+            current: Mutex::new(crate::clock::now()),
         }
     }
 

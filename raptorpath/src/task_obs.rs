@@ -111,13 +111,13 @@ pub struct Span {
 
 impl Span {
     pub fn begin() -> Self {
-        Self { wall: Instant::now(), cpu: thread_cpu_ns(), csw: thread_csw() }
+        Self { wall: crate::clock::now(), cpu: thread_cpu_ns(), csw: thread_csw() }
     }
 
     /// Close the stretch into `c` and return what it measured (CPU and switch
     /// counts are 0 where a clock is unavailable).
     pub fn end(self, c: &SpanCtr) -> PollTiming {
-        let wall = self.wall.elapsed().as_nanos() as u64;
+        let wall = self.wall.clock_elapsed().as_nanos() as u64;
         let mut out = PollTiming { wall_ns: wall, ..Default::default() };
         c.n.fetch_add(1, Relaxed);
         c.wall_ns.fetch_add(wall, Relaxed);
@@ -632,10 +632,10 @@ impl quinn::AsyncUdpSocket for TimedSocket {
     }
 
     fn try_send(&self, transmit: &Transmit) -> io::Result<()> {
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         let r = self.inner.try_send(transmit);
         let c = &self.e.ctr;
-        c.send_ns.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+        c.send_ns.fetch_add(t0.clock_elapsed().as_nanos() as u64, Relaxed);
         c.send_calls.fetch_add(1, Relaxed);
         match &r {
             Ok(()) => {
@@ -654,11 +654,11 @@ impl quinn::AsyncUdpSocket for TimedSocket {
     }
 
     fn poll_recv(&self, cx: &mut Context, bufs: &mut [IoSliceMut<'_>], meta: &mut [RecvMeta]) -> Poll<io::Result<usize>> {
-        let t0 = Instant::now();
+        let t0 = crate::clock::now();
         let r = self.inner.poll_recv(cx, bufs, meta);
         if let Poll::Ready(Ok(n)) = &r {
             let c = &self.e.ctr;
-            c.recv_ns.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+            c.recv_ns.fetch_add(t0.clock_elapsed().as_nanos() as u64, Relaxed);
             c.recv_calls.fetch_add(1, Relaxed);
             let dg: usize = meta[..*n]
                 .iter()
@@ -702,7 +702,7 @@ impl quinn::AsyncUdpSocket for TimedSocket {
 #[inline]
 fn mono_ns() -> u64 {
     static ANCHOR: OnceLock<Instant> = OnceLock::new();
-    ANCHOR.get_or_init(Instant::now).elapsed().as_nanos() as u64
+    ANCHOR.get_or_init(Instant::now).clock_elapsed().as_nanos() as u64
 }
 
 const DEPTH_BUCKETS: usize = 96;
@@ -1607,3 +1607,6 @@ mod tests {
         assert_eq!((s.msgs, s.data, s.backlog.n), (1, 1, 1));
     }
 }
+
+// Appended last so no existing line moves (release panic locations, sim-engine).
+use crate::clock::ClockElapsed as _;

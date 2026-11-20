@@ -45,7 +45,7 @@ use std::time::{Duration, Instant};
 use quinn_proto::RttEstimator;
 use quinn_proto::congestion::{Controller, ControllerFactory, ControllerMetrics};
 
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 
 /// quinn-proto's `BASE_DATAGRAM_SIZE` (private upstream; copied).
 const BASE_DATAGRAM_SIZE: u64 = 1200;
@@ -403,7 +403,7 @@ impl BbrRs {
             round_wo_bw_gain: 0,
             ack_aggregation: AckAggregationState::default(),
             // rand 0.8 API (upstream uses 0.9's from_os_rng): OS-seeded.
-            random_number_generator: rand::rngs::StdRng::from_entropy(),
+            random_number_generator: crate::clock::std_rng(),
         }
     }
 
