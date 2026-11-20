@@ -17,7 +17,7 @@
 //! A path's RX state is created on its first arrival: the receiver never
 //! needs the TX half's path set to observe one.
 
-use PathMap;
+use crate::clock::PathMap;
 
 use super::PathId;
 use crate::control::RxEstimator;

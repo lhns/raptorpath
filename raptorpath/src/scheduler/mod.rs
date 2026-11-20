@@ -44,7 +44,7 @@ use crate::control::fec_rate::ProtocolHint;
 use crate::control::LossEstimator;
 use crate::fec::{FecBackend, WireSymbol};
 use std::collections::BTreeMap;
-use PathMap;
+use crate::clock::PathMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
