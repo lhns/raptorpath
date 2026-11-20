@@ -1039,10 +1039,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // unsafe (in-order duals wedge) and the safe realization is ADR-0060's
     // release.
     //
-    // The two backstops the seam leaves standing are untouched and out of
-    // domain by construction: the `p_lost` taper and the end-of-stream tail
-    // sweep, whose producer is the sender's own `tail_deadline` arm and not
-    // this channel.
+    // The backstop the seam leaves standing is untouched and out of domain
+    // by construction: the end-of-stream tail sweep, whose producer is the
+    // sender's own `tail_deadline` arm and not this channel.
     //
     // With the arm absent this is the shipped predicate.
     let recv_request_law = request_law_armed(
@@ -2786,7 +2785,7 @@ async fn run_window_sender(
         // 2×SRTT; on expiry synthesize a gap report for the cumulative
         // blocker (per-seq cooldown + budgets all apply downstream).
         let tail_deadline: Option<(u64, tokio::time::Instant)> =
-            st.retransmit_buffer.first().map(|(seq, &(send_us, _, _))| {
+            st.retransmit_buffer.first().map(|(seq, &(send_us, _))| {
                 let last_activity_us = st.nack_retx_at
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))

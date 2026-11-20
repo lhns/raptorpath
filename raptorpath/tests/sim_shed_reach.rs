@@ -28,9 +28,9 @@
 //!
 //! The paced scenario (`paced`) feeds the same object at 20 Mbit/s, half
 //! the link (`SIM_PACE_MBIT`, `sim_support::paced_client`). Emission then
-//! interleaves with acks, and the slot site sheds (seed 42, budget forced to
-//! 0.05: 90 on Windows, 98 on Linux CI; 0 to 4 per seed with the derived
-//! budget, which binds). `witness_slot_site_sheds_paced` gates that, and
+//! interleaves with acks, and the slot site shed (seed 42, budget forced to
+//! 0.05: 90 on Windows, 98 on Linux CI, before the ADR-0079 deletion). The
+//! site is gone now: `witness_slot_site_absent_paced` gates that, and
 //! `frontier_passes_every_shed_paced` that the receiver passed every hole.
 
 mod sim_support;
@@ -276,14 +276,17 @@ fn control_account_is_clean_at_rho_1_after_blackout() {
     assert!(a.u("clamp_evals") > 0, "the clamp site never ran:{}", a.0);
 }
 
-/// Witness (green): the slot site sheds at rho < 1 once emission is paced.
-/// Red with the slot-site shed stubbed out (and on a tree without it).
+/// Witness (green, inverted by the ADR-0079 deletion): the slot site is gone,
+/// so even paced emission, which made it shed on the pre-deletion tree (98 at
+/// seed 42), emits no `shed_slot` and no `denied_slot`; the NACK site sheds.
+/// Red on a tree that still has the slot-site shed.
 #[test]
-fn witness_slot_site_sheds_paced() {
+fn witness_slot_site_absent_paced() {
     let r = paced();
     let c = counts(&r);
     println!("paced rho<1: {c}");
-    assert!(r.tseam("shed_slot").len() >= 10, "slot-site shed (nearly) never ran: {c}");
+    assert_eq!(r.tseam("shed_slot").len(), 0, "the slot-site shed ran on the deleted site: {c}");
+    assert_eq!(r.tseam("denied_slot").len(), 0, "the slot-site refusal ran on the deleted site: {c}");
     assert!(r.tseam("shed").len() > 0, "NACK-site shed never ran: {c}");
 }
 

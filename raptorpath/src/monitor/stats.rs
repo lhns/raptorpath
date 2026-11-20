@@ -344,16 +344,14 @@ pub struct FecStats {
     pub target_tail_loss_bits: AtomicU64,
     pub total_source_symbols: AtomicU64,
     pub total_repair_symbols: AtomicU64,
-    /// **The taper copy.** The proactive emission's `P_lost` branch
-    /// (`net/emit_source.rs`) spends a correction slot on a copy of the oldest
-    /// un-acked seq instead of on a fresh coded symbol. Those copies land at
-    /// the receiver as `[RFA] dup_src` exactly as a gap-driven retransmit
-    /// does, but they are not gap fires — so without this counter
-    /// `dup_src / [FCAUSE] n` over-attributes realized waste to the reactive
-    /// loop. Counted at the emission decision, on every arm (unlike the
-    /// DIAG-gated `mpd_plost_retx` beside it), so the waste split
-    /// {gap-fire copy, taper copy, margin} is readable from a shipped run.
+    /// The taper copy count: always 0 since ADR-0079 (the proactive slots
+    /// carry coded symbols only). Kept so `[DIAG] taper=` parses.
     pub taper_copy: AtomicU64,
+    /// Proactive correction slots taken (one per iteration of the
+    /// `repair_debt >= 1` loop in `net/emit_source.rs`), ungated. `cod=`
+    /// also counts the reactive leading-window repairs, so "every slot is
+    /// coded" is read as `taper == 0 && pslot > 0`, not from `cod`.
+    pub proactive_slots: AtomicU64,
     /// Source copies put on the wire in a correction slot: SACK-gap
     /// retransmits, request-law copies and taper copies. Disjoint from
     /// `total_repair_symbols`, which counts genuinely coded repair only.

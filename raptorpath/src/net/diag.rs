@@ -165,8 +165,8 @@ pub(crate) struct DiagState {
     // Gap-report volume, per-cause suppression, fired-retransmit age
     // attribution (young = the law's spurious class), per-flight-path and
     // per-retx-path emission. Cumulative; printed as `mpr[..]`. The
-    // P_lost-branch retransmit count (`mpd_plost_retx`) lives in
-    // `SenderState` — the emission step writes it.
+    // taper-copy count (`mpd_plost_retx`, always 0 since ADR-0079) lives in
+    // `SenderState`.
     pub mpd_gap_reports: u64,
     pub mpd_gap_seqs: u64,
     pub mpd_supp_cool: u64,
@@ -878,7 +878,7 @@ pub(crate) fn report(
             }
         );
         let mpr = format!(
-            " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} taper={} age={:.0}ms{} fp/on{}]",
+            " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} taper={} pslot={} age={:.0}ms{} fp/on{}]",
             dg.mpd_gap_reports,
             dg.mpd_gap_seqs,
             mpd_fired,
@@ -894,6 +894,7 @@ pub(crate) fn report(
             // The ungated taper-copy count, so the waste split is
             // readable on an arm that never set RWM_DIAG's own counters.
             stats.fec.taper_copy.load(Ordering::Relaxed),
+            stats.fec.proactive_slots.load(Ordering::Relaxed),
             if mpd_fired > 0 {
                 dg.mpd_age_ms_sum / mpd_fired as f64
             } else {

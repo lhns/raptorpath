@@ -393,7 +393,7 @@ mod tests {
         );
     }
 
-    /// Paper §11.3 row 14 (divergence): `predictive_quantile` is the
+    /// Paper §11.3, "BOCD quantile" row (divergence): `predictive_quantile` is the
     /// run-length-weighted AVERAGE of the per-run-length quantiles, not the
     /// quantile of the run-length MIXTURE the paper's §3 text names. This pins
     /// (a) the exact identity Σwᵢqᵢ/Σwᵢ, and (b) the gap to the true mixture
@@ -431,7 +431,7 @@ mod tests {
         assert_eq!(
             bocd.predictive_quantile(conf),
             avg,
-            "predictive_quantile must be exactly the run-length-weighted average of quantiles              (paper §3 names the mixture quantile; this pins the divergence, §11.3 row 14)"
+            "predictive_quantile must be exactly the run-length-weighted average of quantiles              (paper §3 names the mixture quantile; this pins the divergence, §11.3, BOCD quantile row)"
         );
 
         // Φ via Abramowitz-Stegun 7.1.26 erf (|err| < 1.5e-7).

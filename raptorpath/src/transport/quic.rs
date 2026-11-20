@@ -774,7 +774,11 @@ impl QuicTransport {
         //          the producer's batch for the path's I/O owner, not quinn's
         //          `send_datagram` (which the owner calls; see
         //          `net::cpuprof` module docs).
-        #[cfg(feature = "test-seams")] if crate::test_seams::on_send(&batch.symbols, "batch") { return Ok(()); } use crate::net::cpuprof::{timed, Seam};
+        #[cfg(feature = "test-seams")]
+        if crate::test_seams::on_send(&batch.symbols, "batch") {
+            return Ok(());
+        }
+        use crate::net::cpuprof::{timed, Seam};
         if crate::transport::protocol::wire_compact_active() {
             let compact = timed(Seam::Ser, || {
                 crate::transport::protocol::serialize_data_compact(&batch)
@@ -807,7 +811,11 @@ impl QuicTransport {
         seqs: (u64, u64),
         eta_rel_us: u64,
         arena: &mut bytes::BytesMut,
-    ) -> anyhow::Result<()> { #[cfg(feature = "test-seams")] if crate::test_seams::on_send(std::slice::from_ref(sym), "single") { return Ok(()); }
+    ) -> anyhow::Result<()> {
+        #[cfg(feature = "test-seams")]
+        if crate::test_seams::on_send(std::slice::from_ref(sym), "single") {
+            return Ok(());
+        }
         if !crate::transport::protocol::wire_compact_active() {
             let batch = SymbolBatch::new(vec![sym.clone()], send_timestamp_us, seqs, path_id)
                 .with_eta(eta_rel_us);

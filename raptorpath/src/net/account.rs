@@ -36,7 +36,7 @@ pub(crate) fn clamp_lo(reliable: bool, win_start: u64) -> u64 {
 }
 
 /// The retransmit buffer the account reads.
-pub(crate) type Buf = SeqRing<(u64, f64, u32)>;
+pub(crate) type Buf = SeqRing<(u64, u32)>;
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Account {

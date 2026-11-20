@@ -3484,12 +3484,12 @@ fn test_sack_release_keeps_arq_state_and_flight_clocks() {
     let mut released: BTreeSet<u64> = BTreeSet::new();
     let mut nack_retx_at: std::collections::HashMap<u64, (u64, u32)> =
         std::collections::HashMap::new();
-    let mut retransmit_buffer: BTreeMap<u64, (u64, f64, u32)> = BTreeMap::new();
+    let mut retransmit_buffer: BTreeMap<u64, (u64, u32)> = BTreeMap::new();
     let mut source_path_map: BTreeMap<u64, u32> = BTreeMap::new();
     for i in 0..20u64 {
         sent_store.insert(i, 0);
         nack_retx_at.insert(i, (1_000 + i, (i % 2) as u32));
-        retransmit_buffer.insert(i, (2_000 + i, 0.01, (i % 2) as u32));
+        retransmit_buffer.insert(i, (2_000 + i, (i % 2) as u32));
         source_path_map.insert(i, (i % 2) as u32);
     }
     let newly = sack_release_mark(&sent_store, &mut released, 5, 19);
@@ -4874,16 +4874,6 @@ fn saturated_channel_keeps_the_worst_eps_pick() {
 }
 
 #[test]
-fn saturated_channel_keeps_the_p_lost_inputs() {
-    let (un, sat) = read_both(p_lost_inputs);
-    assert_ne!(un, (0.05, 0.005, 0.0), "unsaturated: measured, not the fallback");
-    assert_eq!(
-        sat, un,
-        "saturated: P_lost inputs must be the measured worst path, not (0.05, 0.005, 0.0)"
-    );
-}
-
-#[test]
 fn saturated_channel_keeps_the_nack_budget_inputs() {
     let (un, sat) = read_both(nack_congestion_inputs);
     assert!(un.0 > 0.0 && un.1.is_some(), "unsaturated: measured ({un:?})");
@@ -6073,46 +6063,22 @@ mod paper_bounds {
         );
     }
 
-    /// Paper §3.2 vs engine, §11.3 row 11: the P_lost reader's RTTVAR is the
-    /// constant 0.1·SRTT (no measured RTTVAR), on a measured path and in the
-    /// cold fallback.
+    /// Reconciliation N2: χ (completion exposure) reads RTTVAR as the
+    /// 0.125·SRTT stand-in (an eighth: σ_ARQ = 0.5·SRTT, Q(1.0)). The 0.1
+    /// stand-in of the deleted P_lost reader (ADR-0079) is gone; this pins
+    /// the one that is left.
     #[test]
-    fn p_lost_rttvar_is_a_tenth_of_srtt() {
-        let sched = channel_fixture();
-        let (srtt, rttvar, eps) = p_lost_inputs(&sched);
-        let (_, worst) = worst_eps_channel_path(&sched).unwrap();
-        assert_eq!(srtt, worst.estimator.rtt().as_secs_f64(), "SRTT is the worst-ε path's EWMA");
-        assert!(srtt > 0.0 && eps > 0.0, "measured path, not the fallback");
-        assert_eq!(rttvar, srtt * 0.1, "P_lost RTTVAR = 0.1·SRTT exactly (paper §3.2 has a measured RTTVAR)");
-        // Cold fallback (no path): (SRTT, RTTVAR, ε) = (0.05, 0.005, 0.0), same 0.1 ratio.
-        let empty = Scheduler::new(Arc::new(crate::scheduler::MockClock::new()));
-        let (s0, v0, e0) = p_lost_inputs(&empty);
-        assert_eq!((s0, v0, e0), (0.05, 0.005, 0.0));
-        assert!((v0 - s0 * 0.1).abs() < 1e-15, "fallback keeps the 0.1 ratio");
-    }
-
-    /// Reconciliation N2: one RTTVAR, two stand-ins. The P_lost reader uses
-    /// 0.1·SRTT; χ (completion exposure) uses 0.125·SRTT. They give different
-    /// σ_ARQ, hence different χ at the same T_rem; unifying them changes χ.
-    #[test]
-    fn chi_and_p_lost_rttvar_stand_ins_differ_by_the_declared_ratio() {
+    fn chi_rttvar_stand_in_is_an_eighth_of_srtt() {
         let srtt = 0.05;
         let t_rem = 1.5 * srtt + 0.5 * srtt; // 2·SRTT
-        // σ_ARQ = max(4·RTTVAR, SRTT/4): 0.5·SRTT at 0.125, 0.4·SRTT at 0.1.
+        // σ_ARQ = max(4·RTTVAR, SRTT/4): 0.5·SRTT at 0.125.
         let chi_engine = raptorpath_math::completion_exposure(t_rem, srtt, 0.125 * srtt);
-        let chi_p_lost_style = raptorpath_math::completion_exposure(t_rem, srtt, 0.1 * srtt);
-        // Q(1.0) = 0.158655, Q(1.25) = 0.105650 (standard normal upper tail).
+        // Q(1.0) = 0.158655 (standard normal upper tail).
         assert!((chi_engine - 0.158_655_3).abs() < 1e-6, "χ at 0.125·SRTT = Q(1.0): {chi_engine}");
-        assert!((chi_p_lost_style - 0.105_649_8).abs() < 1e-6, "χ at 0.1·SRTT = Q(1.25): {chi_p_lost_style}");
-        // The two constants in the engine: χ's literal and the P_lost reader's.
         assert!(
             flat(include_str!("sender_phases.rs"))
                 .contains("completion_exposure(t_rem,srtt,0.125*srtt)"),
             "χ's RTTVAR stand-in is no longer 0.125·SRTT"
-        );
-        assert!(
-            flat(include_str!("channel_set.rs")).contains("(srtt,srtt*0.1,p.estimator.loss_rate())"),
-            "P_lost's RTTVAR stand-in is no longer 0.1·SRTT"
         );
     }
 

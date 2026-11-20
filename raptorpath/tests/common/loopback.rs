@@ -705,6 +705,9 @@ pub struct Transfer<'a> {
     /// condition the old fixed 1.5 s sleep stood in for. `None`: snapshot the
     /// server log immediately (for tests that only read the client).
     pub srv_tag: Option<&'a str>,
+    /// `true` (default): pass `--window-reliable` (ρ = 1). `false`: the
+    /// evicting seat, the hint's own ρ.
+    pub reliable: bool,
 }
 
 impl Default for Transfer<'_> {
@@ -719,6 +722,7 @@ impl Default for Transfer<'_> {
             runs: "2",
             extra_args: &[],
             srv_tag: None,
+            reliable: true,
         }
     }
 }
@@ -727,7 +731,10 @@ impl Default for Transfer<'_> {
 /// return `(client log, server log)`.
 pub fn transfer(t: Transfer<'_>) -> (String, String) {
     let binds = free_addrs(t.paths);
-    let mut sargs = vec!["--protocol-hint", t.hint, "--window-reliable"];
+    let mut sargs = vec!["--protocol-hint", t.hint];
+    if t.reliable {
+        sargs.push("--window-reliable");
+    }
     sargs.extend_from_slice(t.extra_args);
     let mut senv: Vec<(&str, &str)> = t.env.to_vec();
     senv.extend_from_slice(t.server_env);
@@ -735,6 +742,9 @@ pub fn transfer(t: Transfer<'_>) -> (String, String) {
     let mut cenv: Vec<(&str, &str)> = t.env.to_vec();
     cenv.extend_from_slice(t.client_env);
     let mut cargs = perf_args(t.hint, t.bytes, t.runs).to_vec();
+    if !t.reliable {
+        cargs.retain(|a| *a != "--window-reliable");
+    }
     cargs.extend_from_slice(t.extra_args);
     let cli = run_perf_client(&binds, &cenv, &cargs);
     // An outstanding seq at the client's exit is only an ack in flight if the
