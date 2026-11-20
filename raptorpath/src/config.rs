@@ -710,7 +710,7 @@ mod tests {
 // starting the engine. Appended last: no existing line of this file moves.
 
 /// `raptorpath run`: profile defaults, then the TOML file, then the CLI
-/// overlay; the tunnel's object modes are pinned off ([`tunnel_config`]).
+/// overlay; the tunnel's object modes are pinned off (main has no guard here).
 pub fn resolve_tunnel(
     profile: Option<&str>,
     config_path: Option<&Path>,
@@ -724,7 +724,7 @@ pub fn resolve_tunnel(
     if let Some(path) = config_path {
         base_config = merge(base_config, load_config(path)?);
     }
-    resolve(&tunnel_config(base_config, cli_overlay)?)
+    resolve(&merge(base_config, cli_overlay))
 }
 
 /// `raptorpath perf`: the CLI overlay alone (`perf` takes no `--config`), plus
