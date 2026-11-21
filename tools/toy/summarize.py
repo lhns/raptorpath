@@ -97,6 +97,6 @@ def main():
             p("- %s: %.1f" % (c, np.mean(w)))
 
 
-CONFIG_ORDER = "I1,I2,G,B10,B60,I1H5,I2H5,GH5,B10H5,I1H5f,I2H5f,GH5f,B10n2s,B10n2f,B10n2a".split(",")
+CONFIG_ORDER = "I1,I2,G,B10,B60,I1H5,I2H5,GH5,B10H5,I1H5f,I2H5f,GH5f,I1f,I2f,Gf,B10n2s,B10n2f,B10n2a".split(",")
 if __name__ == "__main__":
     main()

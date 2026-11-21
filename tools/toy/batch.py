@@ -29,11 +29,14 @@ CONFIGS = {
     "I1H5f": ("I1", "n1", {"H": 0.005, "floor_with_copy": False}),
     "I2H5f": ("I2", "n1", {"H": 0.005, "floor_with_copy": False}),
     "GH5f": ("G", "n1", {"H": 0.005, "floor_with_copy": False}),
+    "I1f": ("I1", "n1", {"floor_with_copy": False}),
+    "I2f": ("I2", "n1", {"floor_with_copy": False}),
+    "Gf": ("G", "n1", {"floor_with_copy": False}),
     "B10n2s": ("B10", "n2", {"phi_slow": 0.5, "blackout_path": 1}),   # outage on the slow path, fast path live
     "B10n2f": ("B10", "n2", {"phi_slow": 0.5, "blackout_path": 0}),   # outage on the fast path
     "B10n2a": ("B10", "n2", {"phi_slow": 0.5}),                       # both paths
 }
-LP_SEEDS = {"I1H5f": 0, "I2H5f": 0, "GH5f": 0, "I2": 6, "G": 6, "I2H5": 3, "GH5": 3, "B10n2s": 6, "B10n2f": 6, "B10n2a": 6, "B10H5": 6}  # LP is 30-60 s where the count binds
+LP_SEEDS = {"I1f": 0, "I2f": 0, "Gf": 0, "I1H5f": 0, "I2H5f": 0, "GH5f": 0, "I2": 6, "G": 6, "I2H5": 3, "GH5": 3, "B10n2s": 6, "B10n2f": 6, "B10n2a": 6, "B10H5": 6}  # LP is 30-60 s where the count binds
 DEFAULT = "I1,I2,G,B10,B60,I1H5,I2H5,GH5,B10H5,B10n2s,B10n2f,B10n2a"
 
 
@@ -57,8 +60,11 @@ def clean(r):
     return {k: v for k, v in r.items() if not k.startswith("_")}
 
 
+ACTIVE = list(CANDS)
+
+
 def do_group(cfgname, seed, milp_seeds, log):
-    need = [c for c in CANDS if not os.path.exists(fname(cfgname, c, seed))]
+    need = [c for c in ACTIVE if not os.path.exists(fname(cfgname, c, seed))]
     lpf = fname(cfgname, "LP", seed)
     need_lp = (not os.path.exists(lpf)) and seed < LP_SEEDS.get(cfgname, 10 ** 9)
     if not need and not need_lp:
@@ -102,8 +108,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", type=int, default=20)
     ap.add_argument("--configs", default=DEFAULT)
+    ap.add_argument("--cands", default=",".join(CANDS))
     ap.add_argument("--milp-seeds", type=int, default=3)
     a = ap.parse_args()
+    ACTIVE[:] = a.cands.split(",")
     os.makedirs(OUT, exist_ok=True)
     t0 = time.time()
 
