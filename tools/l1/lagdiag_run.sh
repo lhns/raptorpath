@@ -4,11 +4,11 @@
 # each with a 10 Hz per-CPU /proc/stat sampler; then lagdiag_digest.py scores
 # the rows (are late [LAG] ticks inside long task polls, or VM/guest CPU?).
 #
-#   LGD_ROOT=/home/vibe/lagdiag LGD_HARD_DEADLINE=<epoch> \
+#   LGD_ROOT=$HOME/lagdiag LGD_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash lagdiag_run.sh > $LGD_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree $LGD_ROOT/src/tools/l1 (git archive of
-# the DIAG commit; $LGD_ROOT/src/COMMIT names it). Started as `vibe`;
+# the DIAG commit; $LGD_ROOT/src/COMMIT names it). Started as the VM user;
 # `sudo -n` only to run.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"

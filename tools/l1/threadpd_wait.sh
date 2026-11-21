@@ -4,7 +4,7 @@
 # with a hard deadline of launch + 4 h; a refusal before anything ran
 # (rc 3 precondition, rc 4 lock) is retried until TPW_GIVE_UP (epoch).
 #
-#   TPD_ROOT=/home/vibe/pdrun TPW_GIVE_UP=<epoch> \
+#   TPD_ROOT=$HOME/pdrun TPW_GIVE_UP=<epoch> \
 #     setsid nohup bash threadpd_wait.sh > $TPD_ROOT/waiter.out 2>&1 < /dev/null &
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -12,7 +12,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${TPW_GIVE_UP:?TPW_GIVE_UP}"
 say() { echo "TPW $* $(date -u +%FT%TZ)" | tee -a "$TPD_ROOT/waiter.txt"; }
 free() {
-  ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock \
+  ! test -e /tmp/rwm-vm.lock && ! test -e $HOME/rp.lock \
     && [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -eq 0 ]
 }
 say "start"

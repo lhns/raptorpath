@@ -3,12 +3,12 @@
 # applied per drain"; docs/measurement-discipline.md "The five-hour cap").
 # Derived from threadsk_run_all.sh (the V-SK envelope).
 #
-#   TPD_ROOT=/home/vibe/pdrun TPD_HARD_DEADLINE=<epoch> \
+#   TPD_ROOT=$HOME/pdrun TPD_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadpd_run_all.sh > $TPD_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced NEW tree ($TPD_ROOT/src/tools/l1); the MAIN
 # tree (archive of github/main) is at $TPD_ROOT/main-src, with a COMMIT file.
-# STARTED AS `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
+# STARTED AS the VM user, NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
 #   1. NEW tree: `cargo build --release`; tests (release: `cargo test -p
@@ -106,7 +106,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "TPD-ALL start $LAUNCH_ISO procs_running=[$PR_SAMPLES] io_full_avg10=$(io_full avg10) hard=$TPD_HARD_DEADLINE soft=$SOFT" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export TPD_LOCK_OWNER="threadpd_run_all:$$"

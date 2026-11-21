@@ -2,10 +2,10 @@
 # THE ONE-STORE-LAW ENVELOPE (docs/status.md §18). Derived from
 # threadd9_run_all.sh, simplified (one binary, ~15 min of measurement).
 #
-#   SL_ROOT=/home/vibe/n1/sl setsid nohup bash storelaw_run_all.sh > $SL_ROOT/launch.out 2>&1 < /dev/null &
+#   SL_ROOT=$HOME/n1/sl setsid nohup bash storelaw_run_all.sh > $SL_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree ($SL_ROOT/src/tools/l1), started as
-# `vibe`; `sudo -n` only for the measurement stages. WAITS for both operator
+# the VM user; `sudo -n` only for the measurement stages. WAITS for both operator
 # locks (never breaks them), then holds them for the whole session:
 #   1. fresh release build (fresh target dir) -> bin, sha256;
 #   2. smoke (c1s LAW + CTL, c2 LAW) -> SMOKE-PASS or ABORT-SMOKE;
@@ -48,7 +48,7 @@ acq() { # path
   _lb_say "LOCK-TAKEN $p"
 }
 acq /tmp/rwm-vm.lock
-acq /home/vibe/rp.lock
+acq $HOME/rp.lock
 era "SL-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg)"
 
 # 1. BUILD (fresh target)

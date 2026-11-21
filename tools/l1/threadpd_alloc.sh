@@ -4,7 +4,7 @@
 # waits for both operator locks free and no cargo/rustc (`test -e` only,
 # every 10 min), never breaks a lock.
 #
-#   TPA_ROOT=/home/vibe/pdalloc TPA_WAIT_UNTIL=<epoch> \
+#   TPA_ROOT=$HOME/pdalloc TPA_WAIT_UNTIL=<epoch> \
 #     setsid nohup bash threadpd_alloc.sh > $TPA_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Trees (git archive, LF, each with a COMMIT file): $TPA_ROOT/{base,pd,fix};
@@ -16,7 +16,7 @@ source ./lib_battery.sh
 ROOT="${TPA_ROOT:?TPA_ROOT}"
 : "${TPA_WAIT_UNTIL:?TPA_WAIT_UNTIL (epoch seconds) is required}"
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$ROOT/era.txt"; }
 free() {

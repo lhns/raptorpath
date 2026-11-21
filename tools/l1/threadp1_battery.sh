@@ -48,7 +48,7 @@ LB_TAG=threadp1_battery
 LB_LOG="$OUT"
 
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 for l in "$VM_LOCK" "$RP_LOCK"; do
   if [ -z "${TP1_LOCK_OWNER:-}" ] || ! grep -qF -- "$TP1_LOCK_OWNER" "$l" 2>/dev/null; then
     _lb_say "ABORT-LOCK $l is not held by the envelope (${TP1_LOCK_OWNER:-unset}): $(cat "$l" 2>/dev/null)"

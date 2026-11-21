@@ -3,9 +3,9 @@
 # storelaw19_run_all.sh. ONE binary, built fresh from $LD_ROOT/src (a git
 # archive with a COMMIT file at $LD_ROOT/COMMIT) into a fresh $LD_ROOT/target.
 #
-#   LD_ROOT=/home/vibe/n1/ld LD_SHM=/dev/shm/ld setsid nohup bash loopdiag_run_all.sh > $LD_ROOT/launch.out 2>&1 < /dev/null &
+#   LD_ROOT=$HOME/n1/ld LD_SHM=/dev/shm/ld setsid nohup bash loopdiag_run_all.sh > $LD_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from $LD_ROOT/src/tools/l1 as `vibe`; `sudo -n` only for the
+# Run from $LD_ROOT/src/tools/l1 as the VM user; `sudo -n` only for the
 # measurement stages. WAITS for both operator locks (never breaks them), then
 # holds them for the whole session: build -> smoke -> battery -> score.
 #
@@ -173,7 +173,7 @@ case "$PLAN" in
   *) echo "ABORT-PLAN LD_PLAN=$PLAN (67|67g|67x|24|27|29|34|36|38|40|41|41b|41c|41d|43|43b|46|47|48|51|51e|52|53|54|54b|56|57a|57b|59|60a|60b|61a|61b|62r0|62a|63|64|65)"; exit 3 ;;
 esac
 # Test seams (test_stubrun.py runs this script end to end against stubs); on the VM none is set and the defaults are the real paths.
-DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOCK_VM:-/tmp/rwm-vm.lock}"; LOCK_RP="${LD_LOCK_RP:-/home/vibe/rp.lock}"
+DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOCK_VM:-/tmp/rwm-vm.lock}"; LOCK_RP="${LD_LOCK_RP:-$HOME/rp.lock}"
 # LD_REHEARSE=1 (plans 41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59; status 48b amendment 1): the launch path up to and including each smoke and its check (gates, locks, builds,
 # binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites (unless LD_PRIOR_TESTS names a run to verify) and no battery.
 REHEARSE="${LD_REHEARSE:-0}"

@@ -1,6 +1,6 @@
 """`[CTLD]` frame loss per cell off the holeaudit ledgers.
 
-    holeaudit_ctld.py [DIR]    # DIR holds the ledgers; default /home/vibe/holeaudit
+    holeaudit_ctld.py [DIR]    # DIR holds the ledgers; default ~/holeaudit
 """
 import collections
 import glob
@@ -8,7 +8,7 @@ import os
 import re
 import sys
 
-base = sys.argv[1] if len(sys.argv) > 1 else '/home/vibe/holeaudit'
+base = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/holeaudit')
 pat = re.compile(r'CTLDLINE (\S+) rep=(\d+) site=(cli|srv) \[CTLD\](.*)')
 pair = re.compile(r'p(\d+) tx=(\d+) rx=(\d+)')
 

@@ -3,10 +3,10 @@
 # Derivation: paper §4.9 (the corner r* = 0 and δ_exit); results: paper §9.8
 # and docs/status.md §2 (Track B).
 #
-#   nohup bash r_battery.sh          >/home/vibe/rbattery/all.out 2>&1 &   # the battery
-#   nohup bash r_battery.sh --calib  >/home/vibe/rbattery/all.out 2>&1 &   # the smoke
+#   nohup bash r_battery.sh          >$HOME/rbattery/all.out 2>&1 &   # the battery
+#   nohup bash r_battery.sh --calib  >$HOME/rbattery/all.out 2>&1 &   # the smoke
 #
-# Started as `vibe`, not root: `sudo` is used for the transfer invocations
+# Started as the VM user, not root: `sudo` is used for the transfer invocations
 # alone (they need root for the rp-* namespaces), and every sentinel operation
 # runs as the unprivileged user, so the writability proven at launch is the
 # writability the exit path has (docs/measurement-discipline.md,
@@ -90,9 +90,9 @@ set +e            # per-arm abort tolerance (discipline 7)
 CALIB=0
 [ "${1:-}" = "--calib" ] && CALIB=1
 
-OUTDIR="${RWM_R_OUTDIR:-/home/vibe/rbattery}"
+OUTDIR="${RWM_R_OUTDIR:-$HOME/rbattery}"
 DDIR="$OUTDIR/diag"
-BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
+BIN="${RWM_BIN:-$HOME/raptorpath/target/release/raptorpath}"
 REPS="${RWM_R_REPS:-8}"
 SEEDS="${RWM_R_SEEDS:-42 7}"
 R_CELLS="${RWM_R_CELLS:-c3hg c8 sc2}"
@@ -136,12 +136,12 @@ LB_PROOF_EXTRA="calib=$CALIB" prove_sentinels "$OUTDIR" $SENTINELS
 
 # ── Both locks ──────────────────────────────────────────────────────────
 # The VM protocol's two locks (docs/measurement-discipline.md, "The VM
-# protocol"): `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the
+# protocol"): `/tmp/rwm-vm.lock` is the box lock and `$HOME/rp.lock` the
 # tree lock. This script refuses to run without them and releases exactly what
 # it took. `noclobber` makes the create-or-fail atomic against a second
 # launcher.
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 LB_TAG=r_battery
 # On INT/TERM the handler must exit after releasing: a `trap 'f' INT TERM`
 # body that does not `exit` resumes the script, which then runs on with both
@@ -474,7 +474,7 @@ run_seed() {
     echo "PURGE $R_CONTAM_GATES  (unset at entry, asserted two-sided every rep; RWM_THREE_TERM is the named confound and ships DEFAULT OFF)"
     echo "WINDOW  --window-reliable, RWM_GEN=0 (plain reliable window), --protocol-hint bulk"
     echo "=== binary sha256 $(sha256sum "$BIN" 2>/dev/null | cut -d' ' -f1)"
-    echo "=== source $(cat /home/vibe/raptorpath/COMMIT 2>/dev/null)"
+    echo "=== source $(cat $HOME/raptorpath/COMMIT 2>/dev/null)"
     lscpu 2>/dev/null | grep -E 'Model name|Flags' | head -2
     local C S
     for C in $R_CELLS; do

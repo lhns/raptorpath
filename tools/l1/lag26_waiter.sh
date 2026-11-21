@@ -6,7 +6,7 @@
 # (a lock is held); the scripts themselves check the precondition and take
 # the locks (take_lock only -- this waiter never touches a lock path).
 #
-#   W_ROOT=/home/vibe/lagdiag2 setsid nohup bash lag26_waiter.sh > $W_ROOT/waiter.out 2>&1 < /dev/null &
+#   W_ROOT=$HOME/lagdiag2 setsid nohup bash lag26_waiter.sh > $W_ROOT/waiter.out 2>&1 < /dev/null &
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || exit 3

@@ -5,7 +5,7 @@
 # before anything ran (rc 3 precondition, rc 4 lock) is retried until
 # LDW_GIVE_UP (epoch).
 #
-#   LD_ROOT=/home/vibe/ld34 LD_SHM=/dev/shm/ld34 LDW_GIVE_UP=<epoch> \
+#   LD_ROOT=$HOME/ld34 LD_SHM=/dev/shm/ld34 LDW_GIVE_UP=<epoch> \
 #     setsid nohup bash loopdiag_wait34.sh > $LD_ROOT/waiter.out 2>&1 < /dev/null &
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -14,7 +14,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${LDW_GIVE_UP:?LDW_GIVE_UP}"
 say() { echo "LDW $* $(date -u +%FT%TZ)" | tee -a "$LD_ROOT/waiter.txt"; }
 free() {
-  ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock \
+  ! test -e /tmp/rwm-vm.lock && ! test -e $HOME/rp.lock \
     && [ "$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))" -eq 0 ]
 }
 say "start"

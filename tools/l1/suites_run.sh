@@ -3,10 +3,10 @@
 # precondition (agent rules; status §26 amendment 1): release, doc, wasm,
 # debug, as threadr2_run_all.sh step 1, plus the python parser tests.
 #
-#   SU_ROOT=/home/vibe/suites SU_SRC=<tree root> bash suites_run.sh
+#   SU_ROOT=$HOME/suites SU_SRC=<tree root> bash suites_run.sh
 #
 # Exit: 0 all green (TESTS-OK), 1 any failure outside the quarantine list, FLAKE or REAL (TESTS-FAIL), 3 precondition
-# not met, 4 a lock is held (nothing run; retry later). Started as `vibe`.
+# not met, 4 a lock is held (nothing run; retry later). Started as the VM user.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || exit 3

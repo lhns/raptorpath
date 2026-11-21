@@ -3,13 +3,13 @@
 # re-check -- pre-registration"; docs/measurement-discipline.md "The five-hour
 # cap"). Derived from the V-Q2 envelope (threadq2_run_all.sh).
 #
-#   TD9_ROOT=/home/vibe/d9run TD9_HARD_DEADLINE=<epoch> \
+#   TD9_ROOT=$HOME/d9run TD9_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadd9_run_all.sh > $TD9_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced harness tree ($TD9_ROOT/src/tools/l1). The
 # two engine trees are $TD9_ROOT/main-src (git archive of 88476a4) and
 # $TD9_ROOT/nod9-src (git archive of measure/nod9), each with a COMMIT file.
-# STARTED AS `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
+# STARTED AS the VM user, NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
 #   1. parser tests (python only);
@@ -72,7 +72,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "TD9-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg) hard=$TD9_HARD_DEADLINE soft=$SOFT" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export TD9_LOCK_OWNER="threadd9_run_all:$$"
