@@ -127,5 +127,9 @@ name = "sim_mixed_rho"
 required-features = ["sim", "test-seams"]
 
 [[test]]
+name = "sim_s06_nack"
+required-features = ["sim", "test-seams"]
+
+[[test]]
 name = "sim_cross_os"
 required-features = ["sim", "test-seams"]
