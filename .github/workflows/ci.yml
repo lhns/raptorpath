@@ -61,6 +61,11 @@ jobs:
         run: python tools/ci/run_py_tests.py
       - name: CI checkers (flake rule, shed-site rule, expected-failure scanner), red and green on fixtures
         run: python tools/ci/test_ci_tools.py
+      # Blocks the VM login name and address from tracked files (patterns built from parts).
+      - name: no VM login name or address in tracked files
+        run: |
+          u=$(printf '%s%s' vi be); h=$(printf '%s.%s.%s.%s' 10 1 5 16)
+          if git grep -I -i -w -e "$u" || git grep -I -F -e "$h"; then echo 'VM login name or address found'; exit 1; fi
       - name: roadmap
         run: |
           python tools/roadmap/build.py
