@@ -1,8 +1,10 @@
 #!/bin/bash
-# Plan 67 (status 67, VM batch 1: docs/derivations/vm-batch-1-registration.md; plan67.py, s67_score.py, tun67_battery.sh): the SESSION ENVELOPE of LD_PLAN = 67 | 67g | 67x.
+# Plan 67 (status 67, VM batch 1: docs/derivations/vm-batch-1-registration.md; plan67.py, s67_score.py, tun67_battery.sh): the SESSION ENVELOPE of LD_PLAN = 67pre | 67 | 67g | 67x.
 # SOURCED by loopdiag_run_all.sh (P67=1) after the locks, the launch precondition, the budget guard, the tools gates and the definitions of run_suites / reuse_prior_tools / tools_manifest; it never returns (every path exits).
 # It is a separate file because plan 67 is the first plan with SEVEN binaries: the two-seat BIN / BIN_BASE machinery of run_all is not stretched, the per-seat variables LD_BIN_<SEAT> / LD_SHA_<SEAT> / LD_TOOLS_<SEAT> are.
 #
+#   LD_PLAN=67pre               session 0, the pre-flight (registration 2.2, 6.0; no battery, no build): after the seat pins below it branches into loopdiag_p67pre.sh, which never returns. Seats B0, S1, S2 (LD_DROP_S2=1: no S2 step).
+#                               It refuses LD_REHEARSE=1 (run_all: not in its REHEARSE list). `67p` is plan 67's R2 battery plan (plan67.STAGE_PLAN), so session 0 has its own token, as status 60's 60-pre.
 #   LD_PLAN=67  LD_REHEARSE=1   session 1, the rehearsal: build the seats (shas RECORDED, or checked when LD_BIN_SHA_<SEAT> is given), the seat identity checks, the tools tests, the suite-reuse HIT check against session 0, and one smoke per stage;
 #                               no scored row, no battery. Ends LD-ALL-REHEARSAL-DONE with $RUN/AMENDMENT2.txt (the shas, the twin decision, the dump-twin need) for the second amendment.
 #   LD_PLAN=67g                 session 2: G1 (S1 against B0) then G2 (S2 against S1), plan 41d twice (LD_WITNESS67 = g1 | g2).
@@ -25,19 +27,27 @@ export LD_DROP_S2="${LD_DROP_S2:-0}"
 case ",$LD_CUT67," in ,,|,dump,) ;; *) fail_all "ABORT-CUT plan 67: LD_CUT67=$LD_CUT67 (the registered cap cut is the dump twins only: R2, its twins and the pool block are never cut); NOTHING WAS RUN" ;; esac
 
 # ── the seats this session uses ──
-case "$PLAN" in 67) P67NEED=(B0 S1 S2 P1 P2 P1T P2T) ;; 67g) P67NEED=(B0 S1 S2) ;; 67x) P67NEED=(B0 S1 S2 P1 P2 P1T P2T) ;; esac
+case "$PLAN" in 67pre) P67NEED=(B0 S1 S2) ;; 67) P67NEED=(B0 S1 S2 P1 P2 P1T P2T) ;; 67g) P67NEED=(B0 S1 S2) ;; 67x) P67NEED=(B0 S1 S2 P1 P2 P1T P2T) ;; esac
 [ "$LD_DROP_S2" != 1 ] || { P67TMP=(); for _s in "${P67NEED[@]}"; do case "$_s" in S2|P2|P2T) ;; *) P67TMP+=("$_s") ;; esac; done; P67NEED=("${P67TMP[@]}"); }
 [ "$PLAN" != "67x" ] || [ "$LD_G2_FAIL67" != 1 ] || { P67TMP=(); for _s in "${P67NEED[@]}"; do case "$_s" in P1|P2|P1T|P2T) ;; *) P67TMP+=("$_s") ;; esac; done; P67NEED=("${P67TMP[@]}"); }
 s2fam() { case "$1" in S2|P2|P2T) return 0 ;; *) return 1 ;; esac; }
+P67END="; NOTHING WAS RUN"      # loopdiag_p67pre.sh clears it: by the time a session-0 step fails, earlier steps have run
 seat_fail() { # seat message...   (the S2 family: guard 2 stops, guard 1 can still run alone)
   local s="$1"; shift
-  if s2fam "$s"; then fail_all "$* (seat $s is in the S2 family: guard 2 stops; relaunch with LD_DROP_S2=1 to run guard 1 alone); NOTHING WAS RUN"; fi
-  fail_all "$*; NOTHING WAS RUN"
+  if s2fam "$s"; then fail_all "$* (seat $s is in the S2 family: guard 2 stops; relaunch with LD_DROP_S2=1 to run guard 1 alone)$P67END"; fi
+  fail_all "$*$P67END"
 }
 era "LD-ALL plan $PLAN seats: ${P67NEED[*]} (LD_DROP_S2=$LD_DROP_S2 LD_G2_FAIL67=$LD_G2_FAIL67 LD_DUMP67=$LD_DUMP67 LD_CUT67=${LD_CUT67:-none})"
 P67STAGES=($(python3 ./plan67.py stages "$PLAN"))
 era "LD-ALL plan $PLAN stages: ${P67STAGES[*]}"
 
+# src_manifest67: the reference manifest of a seat tree, one definition for session 0 (loopdiag_p67pre.sh writes it) and for section 5 below (compares against it). It covers tools/ci/flake_rule.py (ADR-0080's rule: run_all and suites_run.sh
+#       read it), through THIS function only, so no other plan's committed reference manifest changes.
+src_manifest67() { # tree root
+  ( cd "$1" || exit 1
+    { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
+      find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-core/src raptorpath-wasm/src gf256/src vendor tools/ci/flake_rule.py -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /' )
+}
 # ── 1. the commit pins and the source trees (ABORT-SEAT) ──
 declare -A P67TREE P67PIN
 for _s in "${P67NEED[@]}"; do
@@ -50,6 +60,7 @@ for _s in "${P67NEED[@]}"; do
   case "$(cat "$_cf" 2>/dev/null)" in "$_pv"*) ;; *) seat_fail "$_s" "ABORT-SEAT plan 67 seat $_s: $_cf is '$(cat "$_cf" 2>/dev/null)', not the pin $_pv ($_penv)" ;; esac
 done
 era "LD-ALL seat commits: $(for _s in "${P67NEED[@]}"; do echo -n "$_s=${P67PIN[$_s]} "; done)"
+[ "$PLAN" != "67pre" ] || source "$HERE/loopdiag_p67pre.sh"      # session 0: every path exits
 
 # ── 2. the binaries: built (the rehearsal) or prebuilt (a launch), installed onto the root-owned tmpfs tree, sha-checked against the pins ──
 sudo -n mkdir -p "$SHM" "$RUN" && sudo -n chmod 1777 "$SHM" "$RUN" || fail_all "ABORT-SHM cannot create the root-owned tmpfs tree"
@@ -125,13 +136,7 @@ for _s in "${P67NEED[@]}"; do
 done
 era "LD-ALL tools-diff witness: the seats' tools trees equal the harness's (the pacer trees by the one lib.sh line)"
 
-# ── 5. suite reuse: S1's and S2's suites ran in session 0 (reference manifests); a MISS is ABORT-SUITES. The manifest covers tools/ci/flake_rule.py (ADR-0080's rule: run_all and suites_run.sh read it), through THIS function only,
-#       so no other plan's committed reference manifest changes ──
-src_manifest67() { # tree root
-  ( cd "$1" || exit 1
-    { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
-      find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-core/src raptorpath-wasm/src gf256/src vendor tools/ci/flake_rule.py -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum | sed -E 's/^([0-9a-f]{64}) [ *]/\1  /' )
-}
+# ── 5. suite reuse (the function src_manifest67 is defined above section 1: session 0 writes the reference manifests with it) ──
 SD="$RUN/suites"; mkdir -p "$SD"
 for _s in S1 S2; do
   [[ " ${P67NEED[*]} " == *" $_s "* ]] || continue

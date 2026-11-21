@@ -132,9 +132,26 @@ then CAND (LD_BIN_SHA_CAND, REQUIRED on a launch; the rehearsal records it) per 
   cand-ctld-send-only    (STUB_BAD63=ctldsend) only the sending end (the client) prints [CTLD]: the receiving server's witness is missing, labelled FAIL
   cand-prebuilt          LD_BIN_PREBUILT set: ABORT-BUILD, rc 3, nothing run (the CAND is a plain release build from the launch archive, never a prebuilt one)
 Plan 53 (stale gap reports under lever B) has no guard: suites, then ONE reported stage rep53 (smoke = one row of each arm per block with the rehearsal criteria, then 60 rows).
-Plan 67 (status 67, VM batch 1: docs/derivations/vm-batch-1-registration.md) has SEVEN seats and three session tokens, each a plan of this table: 67 is the REHEARSAL (LD_REHEARSE=1: seat builds, identity checks, tools tests, one smoke per stage,
+Plan 67 (status 67, VM batch 1: docs/derivations/vm-batch-1-registration.md) has SEVEN seats and four session tokens, each a plan of this table: 67pre is SESSION 0 (the pre-flight, no battery, no build), 67 is the REHEARSAL (LD_REHEARSE=1: seat builds, identity checks, tools tests, one smoke per stage,
 no battery), 67g the Bulk guards (G1: S1 against B0, G2: S2 against S1; plan 41d twice), 67x the stages off Bulk and the tunnel (A, R1, T, R2 with the test-seams twins, the dump twins, the pool block). The launches run on the rehearsal's
-binaries (LD_BIN_PREBUILT_<SEAT> + LD_BIN_SHA_<SEAT>) and tools result (LD_PRIOR_TOOLS). Plan 67 paths (rehearsal; every one a session, fast mode):
+binaries (LD_BIN_PREBUILT_<SEAT> + LD_BIN_SHA_<SEAT>) and tools result (LD_PRIOR_TOOLS). Plan 67 paths (rehearsal; every one a session, fast mode). Plan 67pre (session 0, loopdiag_p67pre.sh; R67_N = 3 on the stub; its paths first):
+  full                   rc 0, LD-ALL-SESSION0-DONE: cargo check on S1 and S2, the gates reference on B0, the suites on S1 then S2 (each its own tree and fresh target, no tools tests), the repeats (REPEAT67 lines, locks inherited), the visualizer and
+                         the golden test on S2 only, binid on B0 / S1 / S2 (BINID67 PASS), REF-MANIFEST-S1 / S2 + SESSION0.txt; no release build, no driver call, no ledger; the manifests fed into a plan-67 rehearsal give suite-reuse HIT on S1 and S2
+  check-fail-s1          cargo check fails on S1: ABORT-PREFLIGHT seat S1, rc 5, nothing after it ran
+  check-fail-s2          cargo check fails on S2: ABORT-PREFLIGHT seat S2 naming guard 2's stop and LD_DROP_S2=1
+  gates-no-result        the gates reference on B0 has no `test result` line: ABORT-PREFLIGHT seat B0 (the reference did not run), nothing after it
+  gates-mismatch         a gates failure on S1's suites that B0 does not have: ABORT-PREFLIGHT seat S1 (gates failure not equal on B0), S2's suites never run
+  gates-equal-b0         the same gates failure on B0 and S1: GATES-B0-FINDING and GATES-FINDING-ON-MAIN seat=S1, the session completes
+  gates-and-flake        both a gates failure absent on B0 and a non-quarantined FLAKE on S1: both lines printed, the abort is ABORT-PREFLIGHT
+  flake-not-quarantined  a non-gates test fails once on S1's suite and passes its solo re-run, not on quarantine.txt: ABORT-TESTS seat S1
+  repeat-one-failure     one failing run of S2's gating tests: ABORT-REPEAT seat S2 (guard 2's stop), S1 read zero failures
+  visualizer-fail        build_visualizer.sh fails on S2: ABORT-PREFLIGHT seat S2 (visualizer), no golden, no binid
+  golden-fail            the native golden test fails on S2: ABORT-PREFLIGHT seat S2 (golden), no binid
+  s2-dropped             LD_DROP_S2=1: no S2 step, binid on B0 and S1, REF-MANIFEST-S1 only, LD-ALL-SESSION0-DONE
+  budget                 less than the registered worst case (17 040 s) before LD_HARD: ABORT-BUDGET, rc 3, nothing run
+  budget-step            under 600 s left when a step would start: ABORT-BUDGET plan 67pre step check-S1, nothing ran
+  rehearse-refused       LD_REHEARSE=1 with LD_PLAN=67pre: ABORT-REHEARSE (not in run_all's REHEARSE list), nothing run
+Plan 67 (the rehearsal, session 1):
   rehearse               the 7 seat builds (the twins --features test-seams), ABORT-SEAT identity strings (S1 and S2 hold pfec=), the tools-diff witness, the suite-reuse HIT of S1 and S2 (manifest incl. tools/ci/flake_rule.py), the tools tests,
                          one smoke per stage (g1, g2, a, r1, t, r2), the twins' [ACCT] / [ACCT-RX] lines in the kept ledger, AMENDMENT2.txt; LD-ALL-REHEARSAL-DONE
   not-rehearsal          LD_PLAN=67 without LD_REHEARSE=1: ABORT-REHEARSE, nothing run
@@ -215,6 +232,7 @@ HARNESS_PATHS = {
     "51e": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"),
     "51": ("rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"),
     "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt"),
+    "67pre": ("full", "check-fail-s1", "check-fail-s2", "gates-no-result", "gates-mismatch", "gates-equal-b0", "gates-and-flake", "flake-not-quarantined", "repeat-one-failure", "visualizer-fail", "golden-fail", "s2-dropped", "budget", "budget-step", "rehearse-refused"),
     "67": ("rehearse", "not-rehearsal", "seat-s1-no-pfec", "seat-b0-has-gauge", "seat-commit-mismatch", "pin-missing-b0", "pin-missing-s1", "s2-seat-abort", "s2-dropped", "tools-diff", "manifest-miss", "flake-rule-edit", "ref-missing",
            "twin-no-kept-acct", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
     "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "g-block1-fail", "seam-without-marker", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),

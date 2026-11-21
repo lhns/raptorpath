@@ -144,8 +144,8 @@ check("the fast-mode shrink table (test_stubrun.py FAST_PATCHES) names the const
 
 # ═══ 3. the shell side ═══
 runall, p67, bat, tun = rd("loopdiag_run_all.sh"), rd("loopdiag_p67.sh"), rd("loopdiag_battery.sh"), rd("tun67_battery.sh")
-check("run_all: plans 67 / 67g / 67x are selectable (P67), rehearsable only as 67, and the envelope is sourced after the helpers are defined and never falls through",
-      'P67=0; case "$PLAN" in 67|67g|67x) P67=1 ;; esac' in runall and re.search(r"^  67\|67g\|67x\) P_SMOKE=", runall, re.M) is not None and '|59|60a|60b|65|67) ;; *) echo "ABORT-REHEARSE' in runall and "ABORT-PLAN LD_PLAN=$PLAN (67|67g|67x|" in runall
+check("run_all: plans 67pre / 67 / 67g / 67x are selectable (P67), rehearsable only as 67 (67pre is not in the REHEARSE list), and the envelope is sourced after the helpers are defined and never falls through",
+      'P67=0; case "$PLAN" in 67|67g|67x|67pre) P67=1 ;; esac' in runall and re.search(r"^  67\|67g\|67x\|67pre\) P_SMOKE=", runall, re.M) is not None and '|59|60a|60b|65|67) ;; *) echo "ABORT-REHEARSE' in runall and "ABORT-PLAN LD_PLAN=$PLAN (67pre|67|67g|67x|" in runall
       and '[ "$P67" != 1 ] || source "$HERE/loopdiag_p67.sh"' in runall and runall.index("framing_bench() {") < runall.index('source "$HERE/loopdiag_p67.sh"') and p67.rstrip().endswith('fail_all "plan $PLAN: stages not run to the end: ${P67BAD[*]}"'))
 check("run_all: the budget guard (plan67.py budget), no CAND commit / LD_BASE_SHA requirement for plan 67 (its seats have their own pins), the tools gates incl. test_s67 / test_harness67, and the python and bash tools tests of run_suites",
       'P67_NEED="$(python3 ./plan67.py budget "$PLAN")"' in runall and 'ABORT-BUDGET plan $PLAN: ${P67_LEFT}s before LD_HARD' in runall and '[ "$P65" != 1 ] && [ "$P67" != 1 ]; then\n  CAND_SHA=' in runall
@@ -216,8 +216,31 @@ rep, bid = rd("repeat67_run.sh"), rd("binid67_run.sh")
 check("repeat67_run.sh: N = 30 default, S1 repeats `--lib -- config::`, S2 the three gating targets (every non-ignored test), the sim tests run twice with an equal-digest check, any failure is ABORT-REPEAT for THAT seat, a budget cut is written (REPEAT-CUT), no quarantine",
       'N="${R67_N:-30}"' in rep and "-- config::" in rep and "--test s06_no_copy --test s06_reactive --test holeclass_reachability" in rep and "SIM-DIGEST-DIFFERS" in rep and "ABORT-REPEAT seat=$seat" in rep and "REPEAT-CUT seat=" in rep and "flake_rule" not in rep)
 check("binid67_run.sh: B0, S1 and S2 are packed with their COMMIT and built by binid_run.sh at one path; the shas must be pairwise different (BINID67 FAIL otherwise)",
-      "for seat in B0 S1 S2; do" in bid and 'bash ./binid_run.sh "${args[@]}"' in bid and "two seats built to the same binary" in bid and "BINID67 PASS" in bid)
+      'for seat in "${SEATS[@]}"; do' in bid and 'set -- B0 S1 S2' in bid and 'bash ./binid_run.sh "${args[@]}"' in bid and "two seats built to the same binary" in bid and "BINID67 PASS" in bid)
 check("the crlf guards name the two new scripts", all(f in runall and f in bat for f in ("repeat67_run.sh", "binid67_run.sh")))
+
+# ═══ 4. session 0 (LD_PLAN=67pre; loopdiag_p67pre.sh; the launch paths run in test_stubrun.case67pre) ═══
+pre = rd("loopdiag_p67pre.sh")
+code = "\n".join(ln for ln in pre.splitlines() if not ln.lstrip().startswith("#"))      # the steps in code order, not the header's
+lib = rd("lib_battery.sh")
+check("plan67: 67pre has the registered budget (17 040 s = LD_HARD launch + 4.9 h less the 600 s slack) and no stage, and `67p` stays plan 67's R2 battery plan (so session 0 needs its own token)",
+      plan67.BUDGET_S["67pre"] == 17040 == int(4.9 * 3600) - 600 and plan67.SESSION["67pre"] == () and plan67.stages("67pre") == [] and plan67.STAGE_PLAN["r2"] == "67p")
+check("p67: 67pre needs the seats B0 S1 S2, sources the session-0 file right after the seat pins (before any build), and src_manifest67 is defined above that point (one definition for the record and for section 5)",
+      "67pre) P67NEED=(B0 S1 S2)" in p67 and p67.index("src_manifest67() {") < p67.index('source "$HERE/loopdiag_p67pre.sh"') < p67.index("# ── 2. the binaries") and p67.count("src_manifest67() {") == 1 and "loopdiag_p67pre.sh" in runall.split("crlf_guard plan67.py")[1].split("\n")[0])
+check("p67pre: the steps in the registered order (check, gates reference, suites, repeat, visualizer, golden, binid, record), every path exits, no build and no battery",
+      [code.index(x) for x in ("check --all-targets", "--lib gates", "run_suites", "repeat67_run.sh", "build_visualizer.sh", "raptorpath-wasm golden", "binid67_run.sh", "src_manifest67")] == sorted(code.index(x) for x in ("check --all-targets", "--lib gates", "run_suites", "repeat67_run.sh", "build_visualizer.sh", "raptorpath-wasm golden", "binid67_run.sh", "src_manifest67"))
+      and pre.rstrip().endswith("exit 0") and " build --release" not in pre and "sudo" not in pre and "loopdiag_battery" not in pre)
+check("p67pre: the abort strings of registration 5.4 (ABORT-PREFLIGHT / ABORT-TESTS / ABORT-REPEAT / ABORT-BUDGET per step, GATES-FINDING-ON-MAIN, GATES-B0-FINDING), every step is bounded by timeout at LD_HARD and starts only with 600 s left",
+      all(s in pre for s in ("ABORT-PREFLIGHT plan 67pre seat $_s: cargo check --all-targets failed", "ABORT-PREFLIGHT plan 67pre seat B0: the gates reference did not run", "gates failure not equal on B0", "ABORT-TESTS plan 67pre seat $_s:",
+                             "(ADR-0080: REAL or non-quarantined FLAKE)", "ABORT-REPEAT plan 67pre seat $_s", "ABORT-PREFLIGHT plan 67pre binid:", "ABORT-BUDGET plan 67pre step $1", "GATES-FINDING-ON-MAIN seat=$_s", "GATES-B0-FINDING", "LD-ALL-SESSION0-DONE"))
+      and "-ge 600" in pre and pre.count('timeout "$(p0_left)"') >= 6 and "SUITES_HARD" in pre and "SUITES_HARD" in runall)
+check("p67pre: the children get run_all's locks (LB_LOCK_PARENT, the envelope's lock paths) and the repeat / binid test seams only under LD_TEST_SEAMS=1; the repeat's targets go to disk, not the tmpfs run dir",
+      'LB_LOCK_PARENT="$$"' in pre and 'RWM_VM_LOCK="$LOCK_VM"' in pre and 'RWM_RP_LOCK="$LOCK_RP"' in pre and '[ "${LD_TEST_SEAMS:-}" = 1 ] || P0CHILD+=(-u R67_T1_S -u R67_N -u R67_BUDGET_S -u R67_SIM)' in pre
+      and 'R67_TGT="$_tgt"' in pre and 'TGT="${R67_TGT:-$ROOT}"' in rd("repeat67_run.sh"))
+check("run_suites is parameterised (SUITES_REPO / SUITES_TT, SD; SUITES_NO_TOOLS skips the tools tests) with the old defaults; src_manifest follows SUITES_REPO",
+      'REPO="${SUITES_REPO:-$(cd "$HERE/../.." && pwd)}"' in runall and 'TT="${SUITES_TT:-$ROOT/target-tests}"' in runall and "SUITES_NO_TOOLS:-0" in runall and 'cd "${SUITES_REPO:-$(cd "$HERE/../.." && pwd)}"' in runall)
+check("lib_battery.sh: take_lock inherits a lock held by the live LB_LOCK_PARENT (LOCK-INHERITED, returns before taking, so release_locks never releases it); every other lock is taken or refused as before",
+      'LB_LOCK_PARENT' in lib and 'LOCK-INHERITED $p from $LB_LOCK_PARENT' in lib and 'kill -0 "$LB_LOCK_PARENT"' in lib and lib.index("LOCK-INHERITED") < lib.index("command -v flock >/dev/null") and "LOCKS_TAKEN=\"$LOCKS_TAKEN $p\"" in lib)
 
 if __name__ == "__main__":
     print("test_harness67: %d checks, %d failed" % (CHECKS, fails))

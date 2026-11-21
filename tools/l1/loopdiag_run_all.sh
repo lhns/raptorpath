@@ -101,6 +101,9 @@
 # 60 rows + an 8-row smoke; snap53_score.py, never a verdict). BASE is pinned by LD_BASE_SHA (required), CAND by LD_CAND_SHA; CANDS / BASES carry RWM_RECOV_SNAPVER=1, CW0 RWM_PLACE_WDIV=0. The smoke
 # prints the registration's rehearsal criteria as PASS / FAIL lines (smoke-check.txt); any FAIL is ABORT-SMOKE. Rehearsal: the smoke only, no battery.
 #
+# LD_PLAN=67pre (status 67, VM batch 1, session 0): the pre-flight with no battery and no build (registration 2.2, 6.0): cargo check, the gates reference on B0, the full suites and the repeat runs on S1 and S2, the visualizer on S2, binid on B0 / S1 / S2,
+# then the reference manifests of session 1. loopdiag_p67pre.sh (sourced through loopdiag_p67.sh); it refuses LD_REHEARSE=1 (not in the REHEARSE list below).
+#
 # LD_PLAN=41b (status section 41b): the same two-tree build as plan 41 and NO suites (raptorpath/src is unchanged from section 41's
 # tested tree); the battery is 48 rows (BASE 12, MAIN 6, WIRE 6 per cell, c1s and c1d default) scored by place41b_score.py.
 #
@@ -124,7 +127,7 @@ source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh loopdiag_run_all.sh loopdiag_battery.sh loopdiag_wait34.sh loopdiag_parse.py anchordiag_parse.py disp36.py test_disp36.py disp40.py test_disp40.py place38_parse.py test_place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py test_harness60.py plan61.py s61_score.py test_s61.py test_harness61.py plan62.py s62_score.py test_s62.py test_harness62.py ref_manifest.sh ref56-manifest.sha256 place43_parse.py test_place43_parse.py place46_parse.py event_inject.py test_harness46.py test_harness47.py test_guard_v2.py test_topo_netem.sh \ plan51e.py s51e_score.py plan51.py s51_score.py test_s51e.py test_s51.py test_harness51.py plan63.py test_harness63.py \
     test_loopdiag_parse.py test_anchordiag_parse.py stage3_parse.py storelaw_parse.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py plan64.py rt64_score.py framing64.py s65_score.py test_s65_score.py
-crlf_guard plan67.py s67_score.py s67_fixtures.py test_s67.py test_harness67.py tun67_battery.sh tun_bulk.sh loopdiag_p67.sh repeat67_run.sh binid67_run.sh
+crlf_guard plan67.py s67_score.py s67_fixtures.py test_s67.py test_harness67.py tun67_battery.sh tun_bulk.sh loopdiag_p67.sh loopdiag_p67pre.sh repeat67_run.sh binid67_run.sh
 ROOT="${LD_ROOT:?LD_ROOT}"
 PLAN="${LD_PLAN:-24}"
 # Plan 54 (status 54, the snapshot-order law's guard) IS plan 41d, unchanged, plus three row-level liveness witnesses (pool54_score.guard_witness): from here on PLAN is 41d and
@@ -133,10 +136,10 @@ W54=0; [ "$PLAN" = "54" ] && { W54=1; PLAN=41d; }
 # Plan 64 (status 64, F2's merge guard) is plan 41d too, with LD_WITNESS64=1 (the F2 row witnesses on every CAND row, score64) and a second stage rt64 (stage R) after it: W64=1 rides in SENV.
 W64=0; [ "$PLAN" = "64" ] && { W64=1; PLAN=41d; }
 P65=0; [ "$PLAN" = "65" ] && P65=1      # status 65: a stage-R-only launch (no alias: the battery sees LD_PLAN=65)
-# Plan 67 (status 67, VM batch 1; loopdiag_p67.sh is the session envelope, sourced below): 67 = the rehearsal (LD_REHEARSE=1), 67g = guards 1 and 2 (Bulk), 67x = the stages off Bulk and the tunnel. P46 here only for the shared machinery
+# Plan 67 (status 67, VM batch 1; loopdiag_p67.sh is the session envelope, sourced below): 67pre = session 0, the pre-flight with no battery (loopdiag_p67pre.sh), 67 = the rehearsal (LD_REHEARSE=1), 67g = guards 1 and 2 (Bulk), 67x = the stages off Bulk and the tunnel. P46 here only for the shared machinery
 # (the root-owned tmpfs tree, LD_HARD, the launch precondition); the seats have their own trees and pins (no LD_CAND_SHA / COMMIT, no LD_BASE_SHA).
-P67=0; case "$PLAN" in 67|67g|67x) P67=1 ;; esac
-# A plan-67 session (67, 67g, 67x and any later 67* token) refuses an active test seam unless the stub marker LD_TEST_SEAMS=1 is set: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S and the fast-mode constants of
+P67=0; case "$PLAN" in 67|67g|67x|67pre) P67=1 ;; esac
+# A plan-67 session (67pre, 67, 67g, 67x and any later 67* token) refuses an active test seam unless the stub marker LD_TEST_SEAMS=1 is set: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S and the fast-mode constants of
 # plan67.py / G_ROWS67 (plan67.py seams). Before the locks and everything else: nothing ran.
 if [ "$P67" = 1 ] && [ "${LD_TEST_SEAMS:-}" != 1 ]; then
   P67_SEAMS="$(python3 ./plan67.py seams "$(sed -n 's/^G_ROWS67=\([0-9][0-9]*\).*/\1/p' "$HERE/loopdiag_p67.sh" | head -n 1)")"
@@ -169,14 +172,14 @@ case "$PLAN" in
   60a) P_SMOKE=smoke60; P_SCORE=score60; P_CHECK=check60 ;;        # unused: the stage below calls s60_score.py / plan60.py directly
   60b) P_SMOKE=smoke60; P_SCORE=score60; P_CHECK=check60 ;;        # unused: as 60a
   65) P_SMOKE=smoke65r; P_SCORE=score65r; P_CHECK=check65r ;;      # unused: the stage below picks them
-  67|67g|67x) P_SMOKE=smoke67; P_SCORE=score67; P_CHECK=check67 ;;      # unused: loopdiag_p67.sh runs its own stages (s67_score.py / plan67.py)
+  67|67g|67x|67pre) P_SMOKE=smoke67; P_SCORE=score67; P_CHECK=check67 ;;      # unused: loopdiag_p67.sh runs its own stages (s67_score.py / plan67.py)
   61a) P_SMOKE=smoke61; P_SCORE=score61; P_CHECK=check61 ;;        # unused: the stage below calls s61_score.py / plan61.py directly
   61b) P_SMOKE=smoke61; P_SCORE=score61; P_CHECK=check61 ;;        # unused: as 61a
   62r0|62a) P_SMOKE=smoke62; P_SCORE=score62; P_CHECK=check62 ;;    # unused: the stage below calls s62_score.py / plan62.py directly
   51) P_SMOKE=smoke51; P_SCORE=score51; P_CHECK=check51 ;;         # unused: the stage below calls s51_score.py / plan51.py directly
   63) P_SMOKE=smoke63; P_SCORE=score63; P_CHECK=check63 ;;        # unused: the stage below calls plan63.py directly
   51e) P_SMOKE=smoke51e; P_SCORE=score51e; P_CHECK=check51e ;;     # unused: the stage below calls s51e_score.py / plan51e.py directly
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (67|67g|67x|24|27|29|34|36|38|40|41|41b|41c|41d|43|43b|46|47|48|51|51e|52|53|54|54b|56|57a|57b|59|60a|60b|61a|61b|62r0|62a|63|64|65)"; exit 3 ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (67pre|67|67g|67x|24|27|29|34|36|38|40|41|41b|41c|41d|43|43b|46|47|48|51|51e|52|53|54|54b|56|57a|57b|59|60a|60b|61a|61b|62r0|62a|63|64|65)"; exit 3 ;;
 esac
 # Test seams (test_stubrun.py runs this script end to end against stubs); on the VM none is set and the defaults are the real paths.
 DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOCK_VM:-/tmp/rwm-vm.lock}"; LOCK_RP="${LD_LOCK_RP:-$HOME/rp.lock}"
@@ -386,7 +389,7 @@ if [ "$P57" = 1 ]; then
   [ "$P57_LEFT" -ge "${LD_HARD_MIN_S:-$P57_NEED}" ] || { era "ABORT-BUDGET plan $P57_TAG: ${P57_LEFT}s before LD_HARD, need at least ${LD_HARD_MIN_S:-$P57_NEED}s; NOTHING WAS RUN"; exit 3; }
 fi
 if [ "$P67" = 1 ]; then
-  # Plan 67 (registration 6): refuse with less than the registered worst case before LD_HARD (plan67.BUDGET_S: 67 = 7 500 s, LD_HARD = launch + 2.25 h; 67g = 10 000 s, + 3 h; 67x = 15 600 s, + 4.5 h; LD_HARD_MIN_S is a test seam).
+  # Plan 67 (registration 6): refuse with less than the registered worst case before LD_HARD (plan67.BUDGET_S: 67pre = 17 040 s, LD_HARD = launch + 4.9 h; 67 = 7 500 s, LD_HARD = launch + 2.25 h; 67g = 10 000 s, + 3 h; 67x = 15 600 s, + 4.5 h; LD_HARD_MIN_S is a test seam).
   P67_NEED="$(python3 ./plan67.py budget "$PLAN")"
   P67_LEFT=$(( LD_HARD - $(date +%s) ))
   era "LD-ALL plan $PLAN budget: ${P67_LEFT}s to LD_HARD (at least ${LD_HARD_MIN_S:-$P67_NEED}s required: the worst case of the registration)"
@@ -739,10 +742,12 @@ fi      # plan 65 skips the build block above
 # (TESTS-FAIL), never a battery void. The locks stay held.
 SD="$RUN"      # where the suite logs and TESTS.txt go (plan 47: $RUN/suites)
 ENGINE_SUITES=1; ENGINE_WHY=""      # plan 56 sets ENGINE_SUITES=0 on a reference-manifest hit (suites_stage56); every other plan always runs them
+# SUITES_REPO / SUITES_TT (default: this tree, $ROOT/target-tests) and SD name the tree, the fresh target dir and the output dir of one run (plan 67pre runs it on S1 and on S2); SUITES_NO_TOOLS=1 skips the tools tests
+# (python and bash: session 1 runs them); SUITES_HARD (epoch) caps every suite command at the time left to it, so a kill at LD_HARD reads rc=124 in TESTS.txt.
 run_suites() {
   local REPO TT TFAIL=0
-  REPO="$(cd "$HERE/../.." && pwd)"
-  TT="$ROOT/target-tests"
+  REPO="${SUITES_REPO:-$(cd "$HERE/../.." && pwd)}"
+  TT="${SUITES_TT:-$ROOT/target-tests}"
   : > "$SD/TESTS.txt"
   if [ -e "$TT" ]; then
     echo "REAL-FAILURE suites: $TT is not fresh -- suites not run" >> "$SD/TESTS.txt"
@@ -751,7 +756,8 @@ run_suites() {
   tst() { # name cmd...   (cmd may carry a `--` before the test-binary args)
     local name="$1"; shift
     local t0; t0=$(date +%s)
-    ( cd "$REPO" && CARGO_TARGET_DIR="$TT" "$@" ) > "$SD/test-$name.log" 2>&1
+    local cap=(); [ -z "${SUITES_HARD:-}" ] || cap=(timeout "$(( SUITES_HARD - t0 > 1 ? SUITES_HARD - t0 : 1 ))")
+    ( cd "$REPO" && CARGO_TARGET_DIR="$TT" "${cap[@]}" "$@" ) > "$SD/test-$name.log" 2>&1
     local rc=$?
     local sum
     sum=$(grep -a '^test result:' "$SD/test-$name.log" | awk '{p+=$4; f+=$6; i+=$8} END{printf "passed=%d failed=%d ignored=%d binaries=%d", p, f, i, NR}')
@@ -801,7 +807,9 @@ run_suites() {
   else
     echo "ENGINE-SUITES-REUSED $ENGINE_WHY" >> "$SD/TESTS.txt"
   fi
-  if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || [ "$PLAN" = "52" ] || [ "$PLAN" = "53" ] || [ "$PLAN" = "54b" ] || [ "$P65" = 1 ] || [ "$P67" = 1 ] || { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then
+  if [ "${SUITES_NO_TOOLS:-0}" = 1 ]; then
+    echo "TOOLS-TESTS-SKIPPED (SUITES_NO_TOOLS=1: plan 67pre runs the tools tests in session 1)" >> "$SD/TESTS.txt"
+  elif [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "41" ] || [ "$PLAN" = "47" ] || [ "$PLAN" = "48" ] || [ "$PLAN" = "52" ] || [ "$PLAN" = "53" ] || [ "$PLAN" = "54b" ] || [ "$P65" = 1 ] || [ "$P67" = 1 ] || { [ "$P46" = 1 ] && [ "${LD_P46_SUITES:-0}" = "1" ]; }; then
     # Status 41 / 47 / 48 / 49: "the tools/l1 python tests" are all of them, except test_stubrun.py: it re-runs this very script against stubs
     # (minutes, even in its fast mode) and belongs to harness changes only, never to a measurement session.
     if [ "$P62" = 1 ] && [ "$TOOLS_REUSE" = 1 ]; then
@@ -827,7 +835,7 @@ run_suites() {
 # The identity of what the suites ran on: sha256 of every file under raptorpath/src, raptorpath/tests, raptorpath-math/src, raptorpath-core/src, raptorpath-wasm/src, gf256/src and vendor/
 # (a patched dependency), plus the workspace Cargo.toml / Cargo.lock and every crate's Cargo.toml, in C-locale path order. A dependency patch invalidates a reuse.
 src_manifest() {
-  ( cd "$(cd "$HERE/../.." && pwd)" || exit 1
+  ( cd "${SUITES_REPO:-$(cd "$HERE/../.." && pwd)}" || exit 1
     { ls Cargo.toml Cargo.lock ./*/Cargo.toml 2>/dev/null | sed 's#^\./##'
       find raptorpath/src raptorpath/tests raptorpath-math/src raptorpath-core/src raptorpath-wasm/src gf256/src vendor -type f 2>/dev/null; } | LC_ALL=C sort -u | xargs -r sha256sum )
 }

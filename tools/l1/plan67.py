@@ -2,7 +2,8 @@
 """Plan 67: VM batch 1 (docs/derivations/vm-batch-1-registration.md, section 9). The seat table, the stage tables, the row specs, the pins and the budgets; the row parser, witnesses,
 clauses and readouts are s67_score.py; the shell side (loopdiag_run_all.sh -> loopdiag_p67.sh, loopdiag_battery.sh, tun67_battery.sh) reads this file through the CLI below.
 
-Sessions (LD_PLAN):   67  the rehearsal (needs LD_REHEARSE=1: builds, tools tests, one smoke per stage; no scored row)
+Sessions (LD_PLAN):   67pre session 0: the pre-flight with no battery (cargo check, the gates reference, the suites and the repeat runs on S1 and S2, the visualizer, binid; loopdiag_p67pre.sh; refuses LD_REHEARSE=1)
+                      67  the rehearsal (needs LD_REHEARSE=1: builds, tools tests, one smoke per stage; no scored row)
                       67g session 2: G1 then G2 (plan 41d twice, the BIN / BASE seats rebound)
                       67x session 3: A (with A1), R1 (with A1-R), T, R2 (with the twins), the dump twins (LD_DUMP67=1 only), the pool block
 Battery plans:        41d (stage G, LD_WITNESS67=g1|g2)  67a (stage A)  67r (stage R1)  67p (stage R2)  67o (the pool block)  67d (the dump twins); stage T is tun67_battery.sh
@@ -15,10 +16,10 @@ Battery plans:        41d (stage G, LD_WITNESS67=g1|g2)  67a (stage A)  67r (sta
     plan67.py pin <seat>                     the commit pin env name (LD_PIN_<SEAT>); every seat's pin is REQUIRED environment, none has a default (the second amendment names them: ABORT-SEAT when unset)
     plan67.py seams [<G_ROWS67>]             the test seams that differ from the registered design, space separated (env: LD_HARD_MIN_S R67_T1_S LD_ROW_BYTES LD_BLOCK_ROW_S; source: the constants of REGISTERED and G_ROWS67 as the
                                              shell passes it); prints nothing when none is active. A plan-67 session aborts ABORT-SEAM on any of them unless LD_TEST_SEAMS=1 (the explicit stub marker)
-    plan67.py budget <67|67g|67x>            the registered worst-case seconds the session needs before LD_HARD
+    plan67.py budget <67pre|67|67g|67x>      the registered worst-case seconds the session needs before LD_HARD
     plan67.py check <plan> <ledger>          rc 0 iff the battery finished and the ledger holds a row for every slot (and no other)
     plan67.py replace <plan> <ledger> <cell> <arm> <seed> <rep>   battery helper: prints the reason, rc 0 iff the slot's one row is a VOID-WITNESS (or another replaceable void) and the stage's cap is not used up
-    plan67.py stages <67|67g|67x>            the session's stage names in run order (LD_DROP_S2=1: the S2 stages and arms dropped; LD_DUMP67=1: the dump twins)
+    plan67.py stages <67pre|67|67g|67x>      the session's stage names in run order (LD_DROP_S2=1: the S2 stages and arms dropped; LD_DUMP67=1: the dump twins)
 
 Arms. A, R1, G: the seat names (B0, S1, S2). R2: the pacer seats and their test-seams twins (P1, P2, P1T, P2T). The pool block: S1P<pool> / S2P<pool>. The dump twins: S1D / S2D.
 Replacement (registration 4.2): a row failing a PRECONDITION witness is VOID-WITNESS and is re-run once, at most MAX_REPLACED_A slots per stage; an OUTCOME witness failure on an S2 row (taper > 0 or
@@ -69,12 +70,12 @@ SMOKE_ARMS_A = ("S1", "S2", "B0")
 # the registered design: the constants above as the registration states them. test_stubrun's fast mode shrinks them (source edits) and so does any hand edit: `plan67.py seams` reports a constant that differs.
 REGISTERED = {"N_BLOCKS": 6, "N_TWIN_REPS": 3, "N_POOL_REPS": 3, "MIN_LIVE_A": 10, "MIN_LIVE_B0": 4, "MIN_TWIN": 5, "G_ROWS67": 96}
 SEAM_ENV = ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S")
-BUDGET_S = {"67": 7500, "67g": 10000, "67x": 15600}               # section 6 worst cases under LD_HARD = launch + 2.25 h / 3 h / 4.5 h (the registration's 15.5 h worst total is the sum of re-runs); LD_HARD_MIN_S is a test seam
+BUDGET_S = {"67pre": 17040, "67": 7500, "67g": 10000, "67x": 15600}               # section 6 worst cases under LD_HARD = launch + 4.9 h (17 640 s, less the 600 s slack the others keep) / 2.25 h / 3 h / 4.5 h (the registration's 15.5 h worst total is the sum of re-runs); LD_HARD_MIN_S is a test seam
 
 PLANS = ("41d", "67a", "67r", "67p", "67o", "67d")
 STAGE_PLAN = {"g1": "41d", "g2": "41d", "a": "67a", "r1": "67r", "r2": "67p", "pool": "67o", "dump": "67d"}
 STAGE_DIR = {"g1": "g1", "g2": "g2", "a": "sa", "r1": "r1", "r2": "r2", "pool": "pool", "dump": "dump", "t": "tun"}
-SESSION = {"67": ("g1", "g2", "a", "r1", "t", "r2"), "67g": ("g1", "g2"), "67x": ("a", "r1", "t", "r2", "dump", "pool")}
+SESSION = {"67pre": (), "67": ("g1", "g2", "a", "r1", "t", "r2"), "67g": ("g1", "g2"), "67x": ("a", "r1", "t", "r2", "dump", "pool")}
 G_SEATS = {"g1": ("S1", "B0"), "g2": ("S2", "S1")}                  # stage -> (CAND, BASE)
 
 

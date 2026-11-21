@@ -118,6 +118,26 @@ else
   ( take_lock "$L" >/dev/null 2>&1 ); ckeq "take_lock refuses without flock(1) (exit 4)" "4" "$?"
 fi
 
+# ── lock inheritance: LB_LOCK_PARENT=<pid> (plan 67pre's children; the inherit path needs no flock(1), the refusals fall through to the cases above) ──
+L3="$TD/lock-inherit"
+printf '%s parent-session %s
+' "$$" "$(date -u +%FT%TZ)" > "$L3"
+OUT3="$( ( LB_LOCK_PARENT=$$ take_lock "$L3"; echo "rc=$?"; release_locks ) 2>&1 )"
+case "$OUT3" in *"LOCK-INHERITED $L3 from $$"*"rc=0"*) ok "a lock held by the live LB_LOCK_PARENT is inherited (LOCK-INHERITED, rc 0)" ;; *) bad "inherit: '$OUT3'" ;; esac
+case "$OUT3" in *LOCK-RELEASED*) bad "the child released the inherited lock" ;; *) ok "release_locks does not release an inherited lock" ;; esac
+case "$(cat "$L3")" in "$$ parent-session "*) ok "the parent's lock file is untouched" ;; *) bad "inherit: lock file is '$(cat "$L3")'" ;; esac
+printf '999999 other-session x
+' > "$L3"
+( LB_LOCK_PARENT=$$ take_lock "$L3" >/dev/null 2>&1 ); ckeq "a lock held by another pid than LB_LOCK_PARENT is refused (exit 4)" "4" "$?"
+( sleep 0 ) & DEADPID=$!; wait "$DEADPID" 2>/dev/null
+printf '%s parent-session x
+' "$DEADPID" > "$L3"
+( LB_LOCK_PARENT=$DEADPID take_lock "$L3" >/dev/null 2>&1 ); ckeq "a lock whose LB_LOCK_PARENT is dead is refused (exit 4)" "4" "$?"
+printf '%s parent-session x
+' "$$" > "$L3"
+( take_lock "$L3" >/dev/null 2>&1 ); ckeq "without LB_LOCK_PARENT the same lock is refused (exit 4)" "4" "$?"
+rm -f "$L3"
+
 # ── preflight_binary ──
 printf '#!/bin/sh\n# RWM_PLACE_WDIV_DERIVED\nexit 0\n' > "$TD/bin"; chmod +x "$TD/bin"
 ( preflight_binary "$TD/bin" RWM_PLACE_WDIV_DERIVED >/dev/null 2>&1 ) && ok "preflight passes a binary carrying the gate" || bad "preflight refused a good binary"
