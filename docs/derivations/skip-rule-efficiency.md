@@ -8,11 +8,11 @@
 - simulation ranks the candidates and bounds their gap to an offline optimum. It picks no constant.
 
 Three findings change the design, whatever the simulation says:
-- **(F1)** A sender-side skip as ADR-0084 writes it (shed = send nothing but the floor) is *slower* than simply resending, for every isolated hole (§3.1).
+- **(F1)** A sender-side skip as ADR-0084 writes it (shed = send nothing but the floor) is *slower* than simply resending, by H, for every isolated hole (§3.1). This holds per H value: at N ≥ 2, H ≈ the path skew and the penalty stands. At N = 1, `ordering-hold.md` §8 proposes H ≈ 0 (copy and floor on one path at one instant). There the latency penalty vanishes, and the last copy rests on saved allowance alone (≈ ε·ĥ spent instead of ≈ ĥ).
 - **(F2)** Skipping part of a run of adjacent holes buys nothing and spends allowance (§3.3).
 - **(F3)** Releasing order and losing a packet are two separate acts. Only stopping retries loses a packet. If a late packet delivered out of order counts as delivered (owner question **O3**, the deciding one), the receiver can release order on its own hold, uncounted and with no new wire field, while the sender's counted verdict stays the only loss (§4.1). If it does not count, the receiver has to spend counted allowance, and that needs one wire field (§4.3).
 
-**H carries the headline numbers and is UNDERIVED** (rho-step-sites C11). F1's penalty is H, the receiver's saving is RTT − H, and the oracle passes at detect + H. Every time below is stated "if H = 5 ms" (SRTT/2 at a 10 ms RTT), and the simulation sweeps H (§6).
+**H carries the headline numbers and is UNDERIVED** (rho-step-sites C11). F1's penalty is H, the receiver's saving is RTT − H, and the oracle passes at detect + H. Every time below is stated "if H = 5 ms" (SRTT/2 at a 10 ms RTT), and the simulation sweeps H (§6). `ordering-hold.md` §8 proposes H as a path quantity: ≈ 0 at N = 1 and ≈ the path skew at N ≥ 2. Rows below that depend on H are given at both values where they differ.
 
 **Inputs read** (`github/main` `79d264aa`):
 - ADR-0084 and its Amendment 1;
@@ -92,7 +92,7 @@ Take an isolated hole at N = 1. When the sender acts on the first gap report it 
 - (b) shed as ADR-0084 decision 1 writes it: send the floor and no copy. The receiver passes the hole one owd later plus H;
 - (c) shed with a last copy: send one copy and the floor together.
 
-The copy and the floor travel the same path, and the floor then waits H at the receiver. So (b) resolves the hole H later than (a), for every isolated hole whose resend arrives. (b) also spends one unit of allowance per hole, and saves one resend.
+The copy and the floor travel the same path, and the floor then waits H at the receiver. So (b) resolves the hole H later than (a), for every isolated hole whose resend arrives. (b) also spends one unit of allowance per hole, and saves one resend. At H ≈ 0 (N = 1, `ordering-hold.md` §8) (b) is as fast as (a), and the case for (c) is the allowance alone: (b) spends ≈ ĥ, (c) ≈ ε·ĥ.
 
 (c) resolves at `min(fill, owd + H)`. It never resolves later than (a), and it spends allowance only when the copy is lost: a filled verdict seq is delivered in order and leaves Ab's pending term without entering G_rx (ADR-0084 §4, "Ab converges").
 
@@ -236,7 +236,7 @@ Whether release alone needs the count depends on O3: **does a packet delivered a
 - **The promise holds by construction.** The ack never covers a released hole, so the sender keeps it in U and serves it until it fills or gets a counted verdict. G_rx keeps ADR-0084's meaning: holes below A_rx never received, minus late fills.
 - **No new wire field, and no new ack meaning.** `A_rx` is exactly R1's `next_expected`, because under R1 the receiver passes only below floors. v11 as approved carries U unchanged.
 - **Memory.** Released holes are a seq set, the existing `abandoned_seqs` (`receiver.rs:1581`). Received data above a stuck ack is bounded as at ρ = 1: the source pauses at `O ≥ B`, and SACK release (C2) keeps received-above seqs out of O.
-- **Latency.** The consumer's stall ends at `detect + H_o`, which is today's Realtime timer if H_o = SRTT/2. Every hole keeps being served until its fill or its verdict.
+- **Latency.** The consumer's stall ends at `detect + H_o`, with `H_o = ω·d/δ` (`ordering-hold.md`), whatever the disorder price ω gives: 0.2–22 ms at Realtime over ω = 1–100 in its example. It is not today's timer by construction. Every hole keeps being served until its fill or its verdict.
 - **Allowance used:** only holes whose last copy also fails, about ε·ĥ (§3.4).
 - **Bandwidth:** as serving, one copy per round until fill or verdict.
 - **What U still needs: an ordering law H_o(δ), derived in `ordering-hold.md`** (rent-or-buy against a new disorder price ω, the owner's call; the "never" below is restated there as "release-before-fill ≈ 0 at Bulk and Auto in the operating range, shown by a gauge", since an H_o infinite on a stretch of δ is a mode switch). Original text: Release is ordering, a δ question that does not involve ρ. Today's arms are SRTT/2 below ρ = 1 and never at ρ = 1. One δ-continuous H_o must reproduce "never" (or a hold long enough that Bulk TCP-in-tunnel sees no reorder) at Bulk and Auto, and a short hold at Realtime, with no threshold on δ. `min(b(δ), 2)·SRTT` (C11) is **not** enough: it gives 2·SRTT at Bulk, which changes the ρ = 1 Bulk default.
@@ -276,12 +276,13 @@ The sender judges (with the last copy), and the receiver releases and passes onl
 
 | design | consumer stall, isolated hole (if H = H_o = 5 ms) | loss | allowance used | wire beyond v11 | owed before it can ship |
 |---|---|---|---|---|---|
-| U (O3 = yes) | detect + H_o ≈ 10 ms | only failed last copies | ≈ ε·ĥ | none | H_o(δ) derivation |
-| RX (O3 = no) | detect + H ≈ 10 ms | every pass | ≈ ĥ | Â | sim (P5), ADR on the wire |
+| U (O3 = yes) | detect + H_o(ω): 5.2–27 ms at Realtime over ω = 1–100 (`ordering-hold.md` §4) | only failed last copies | ≈ ε·ĥ | none | H_o(δ) derivation |
+| RX (O3 = no) | detect + H: 10 ms at H = 5; ≈ 5 ms at H ≈ 0 (N = 1) | every pass | ≈ ĥ | Â | sim (P5), ADR on the wire |
 | R1 + last copy | fill ≈ 16 ms; + H if the copy fails | only failed last copies | ≈ ε·ĥ | none | nothing (staging) |
 | ADR-0084 as written | ≈ 21 ms | every verdict | ≈ ĥ | none | (dominated: F1) |
 
-- **Under O3 = yes, U dominates RX.** It has the same release latency, loses fewer packets (retries continue until the sender's verdict) and needs no wire field.
+- **At H ≈ 0 (N = 1, `ordering-hold.md` §8)** "ADR-0084 as written" falls to ≈ 16 ms, equal to R1 + last copy. F1 then separates them by allowance only (≈ ĥ against ≈ ε·ĥ), not by latency.
+- **Under O3 = yes, U dominates RX** in loss and wire; its latency is set by ω, not by H. It has the same release latency, loses fewer packets (retries continue until the sender's verdict) and needs no wire field.
 - **Under O3 = no, U is not available.** A release is a loss, so RX is the fast design, and R1 is the slow, field-free one.
 - **Wire recommendation: keep v11 exactly as approved.** Decide Â only after O3 and the simulation. U never needs it.
 
@@ -310,7 +311,9 @@ Every formula above is one expression, with every term always computed:
 **Status.** A Python discrete-event **toy model**, built later by a separate worker. It ranks candidates and bounds their gap to an LP lower bound. It fixes no constant, and no number in it is provenance for the engine.
 
 **Model.**
-- Paths with fixed one-way delay and a bottleneck rate above the source rate, so copy arrival times do not depend on the policy up to a pass. Cells that saturate the link are labelled "bound approximate".
+- Paths with a base one-way delay plus **per-packet delay jitter**, and a bottleneck rate above the source rate, so copy arrival times do not depend on the policy up to a pass. Cells that saturate the link are labelled "bound approximate".
+  - Without jitter, fills bunch at exact round times. Then rbf and every hold-dependent readout are staircases in δ, and the P3 nudge check reads the staircase, not the law (`ordering-hold.md` §9).
+  - **Jitter provenance.** Measured where a VM battery supplies it: the per-path owd distribution from `[LAT]`/`rttdump` at the cell's link. Otherwise swept as i.i.d. per packet over {0, 1, 4 ms}; 4 ms is `sim_lost_tail`'s jitter (rho-step-sites §3). Each cell is run both with in-path FIFO kept and with in-path reorder allowed, and both are reported.
 - A paced source at 10 000 packets/s (512 B).
 - A per-copy loss process per path.
 - A sender with a store, a 2 ms gap-report sampler, the RFC 9002 hole law at N = 2, and a tail sweep at `clamp(2·SRTT)`.
@@ -318,7 +321,7 @@ Every formula above is one expression, with every term always computed:
 - No FEC: the residual loss is set directly.
 - Common random numbers across candidates in each seed.
 
-**H is swept, because it is UNDERIVED:** H (and H_o for U) ∈ {0, 2.5, 5, 10 ms, 0.5·SRTT, 1·SRTT}. Every headline result is reported per H value, never at a chosen one.
+**H is swept, because it is UNDERIVED:** H ∈ {0, 2.5, 5, 10 ms, 0.5·SRTT, 1·SRTT}. Every headline result is reported per H value, never at a chosen one. U's H_o is no longer swept as a time: it is `ω·d/δ`, and ω is swept (§6 candidates).
 
 **Candidates:**
 - **R0 (reference, not a bar):** today's receiver timer. It passes at detect + SRTT/2 and its ack advances, so it is uncounted.
@@ -327,7 +330,7 @@ Every formula above is one expression, with every term always computed:
 - **S1c:** S1 + last copy.
 - **S2:** S1c + run-atomic.
 - **S3:** S2 + the online T_ρ, with Ŝ estimated by Kaplan–Meier under S3's own verdicts (§3.4), applied to a run's oldest seq.
-- **U:** R1 sender (S1c, or S2 if run-atomic survives P5), plus the receiver release at detect + H_o with the ack held.
+- **U:** R1 sender (S1c, or S2 if run-atomic survives P5), plus the receiver release at detect + H_o with the ack held, `H_o = ω·d/δ` (`ordering-hold.md`), with ω swept over {0, 0.3, 1, 3, 10, 100}.
 - **RX:** §4.3, with T_rx and run-atomic.
 
 **Oracle: an exact LP lower bound, not a greedy.**
@@ -375,7 +378,8 @@ Dial points: ρ ∈ {1, 1 − ε (ε·S_src < 1), 0.999, 0.99, 0.9898, 0.9902}; 
 - consumer HOL delay p50 and p99, frontier-stall p50 and p99, and late-delivered and lost counts;
 - repair sends and control datagrams per delivered packet;
 - the bind fractions (D, t_max, `n_R ≤ A`) and the largest single-episode spend;
-- for S3: Ŝ against S0's true survival.
+- for S3: Ŝ against S0's true survival;
+- for U: rbf per preset, and at N = 2 the out-of-order deliveries per delivered packet, split into *skew* (released, then filled by its own original with no copy sent) and *loss* (filled by a copy), with φ_slow and the per-packet skew distribution (`ordering-hold.md` §5).
 
 **Pass criteria, fixed now (decision bars, not law constants):**
 - **P1, the promise (hard).** For every counted candidate (S1, S1c, S2, S3, U, RX), in every cell, seed and instant, `G_rx(t) ≤ ⌊(1 − ρ)S_src(t)⌋`. For U, also: no released hole is ever pruned at the sender without a verdict.
@@ -437,10 +441,10 @@ Ledger C13 points here for the time-domain T_ρ.
 |---|---|---|---|---|
 | today's Realtime timer | ≈ 10 ms | ≈ 10 ms (packet lost) | none recorded | **no** |
 | never skip (ρ = 1) | ≈ 16 ms | ≈ 40 ms | 0 | yes |
-| ADR-0084 as written | ≈ 21 ms (= 16 + H) | ≈ 21 ms | ≈ 0.5 % | yes |
+| ADR-0084 as written | ≈ 21 ms (= 16 + H); ≈ 16 ms at H ≈ 0 (N = 1) | ≈ 21 ms | ≈ 0.5 % | yes |
 | + last copy (R1, now) | ≈ 16 ms | ≈ 21 ms | ≈ 0.01 % | yes |
-| U, if O3 = yes | ≈ 10 ms (= 5 + H_o) | ≈ 10 ms, then sender give-up | ≈ 0.01 % | yes |
-| RX, if O3 = no | ≈ 10 ms (= 5 + H) | ≈ 10 ms | ≈ 0.5 % | yes |
+| U, if O3 = yes | 5 + H_o(ω): 5.2–27 ms over ω = 1–100 | ≈ 10 ms, then sender give-up | ≈ 0.01 % | yes |
+| RX, if O3 = no | ≈ 10 ms (= 5 + H); ≈ 5 ms at H ≈ 0 | ≈ 10 ms | ≈ 0.5 % | yes |
 
 Bandwidth is about one resend per lost packet in every row except "ADR-0084 as written". The control messages add 50–100 small datagrams per second.
 
@@ -451,7 +455,7 @@ Bandwidth is about one resend per lost packet in every row except "ADR-0084 as w
 - **The ADR-0084 amendments.** The last copy, the pair-merge rule, and later the decision-2 store change (RX only) and any wire field are proposals against an accepted ADR.
 
 **Open, not owner calls:**
-- H, and under U H_o(δ), are UNDERIVED. Every headline number depends on them;
+- H is UNDERIVED (`ordering-hold.md` §8 proposes a path quantity: ≈ 0 at N = 1). Under U, H_o is derived as `ω·d/δ`, and ω, the disorder price, is to be measured. Every headline number depends on them;
 - the sender cannot see a run's end during a one-path outage (§3.3);
 - D is predicted degenerate at Realtime N = 1 and is owed a ledger verdict (§3.1);
 - C7's feed correction (§3.1).

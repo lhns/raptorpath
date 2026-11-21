@@ -71,6 +71,7 @@ flowchart TB
     meas_competitor_battery["⛔ Outside protocols on<br/>the same tests"]
     meas_progress_baseline["○ Cumulative progress<br/>benchmark"]
     meas_fix_gauges_p3["⛔ Readouts for the<br/>last hand-set numbers"]
+    meas_disorder_price["⛔ Measure the price of<br/>disorder ω on a TCP-<br/>in-tunnel test"]
     meas_l0_sim_bench ~~~ meas_transport_comparison
     meas_l0_sim_bench ~~~ meas_matrix_bench
     meas_l0_sim_bench ~~~ meas_adr51_scenarios
@@ -137,7 +138,7 @@ flowchart TB
     meas_guard_resolution ~~~ meas_competitor_battery
     meas_test_hygiene ~~~ meas_progress_baseline
     meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
-    meas_competitor_battery ~~~ meas_fix_gauges_p3
+    meas_competitor_battery ~~~ meas_disorder_price
     meas_l0_sim_bench --> meas_transport_comparison
     meas_l0_sim_bench --> meas_matrix_bench
     meas_adr51_scenarios --> meas_l1_harness
@@ -177,7 +178,7 @@ flowchart TB
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool finding
     class meas_w1_bracket_fix inprog
-    class meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3 blocked
+    class meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3,meas_disorder_price blocked
     class meas_guard_bulk_blind,meas_s51_c8_gauges,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
 ```
 <!-- END GENERATED: track-meas -->
@@ -253,6 +254,7 @@ flowchart TB
 | `meas-crown-spot-v8` | Crown no-regression spot (wire v8) | research | vm | done | unrated | 2026-09-08 | 2026-09-08 |  |  |  |  | commit b5e94b32; commit f671f61d |
 | `meas-rerun-0708` | Full benchmark re-run (8 July) | research | vm | done | unrated | 2026-07-08 | 2026-07-08 |  |  |  |  | commit bfc71e8e |
 | `meas-gate-audit` | Gate-forwarding audit | research | vm | done | unrated | 2026-08-09 | 2026-08-09 |  |  |  |  | commit 2aeea9d7; commit 689f9e89; commit 7014ba19; commit 451ecfa6 |
+| `meas-disorder-price` | Measure the price of disorder ω on a TCP-in-tunnel test | research | vm | blocked | unrated |  |  | model-ordering-hold |  |  |  | docs/derivations/ordering-hold.md |
 
 ### Details per node
 
@@ -324,6 +326,7 @@ flowchart TB
 | `meas-crown-spot-v8` | Crown no-regression spot (wire v8) | crown spot v8: THE SCORED RESULT — the repairs are INERT on the crown |  | A pre-registered check confirmed that the newly merged repair changes left the best historic single-path results unchanged. | Split 2026-11-20 from meas-wire-v8 (pre-registration b5e94b32 and scored result f671f61d). |  |  |  |  |
 | `meas-rerun-0708` | Full benchmark re-run (8 July) | C4 regresses to DNF. |  | A full re-run showed the CPU fix held for clean throughput and tail latency, but lossy completion did not improve and the high-delay lossy cell now stalled. | Read from the session record; the re-run itself is commit bfc71e8e (also folded in meas-c8-aggregation-arc). |  |  |  |  |
 | `meas-gate-audit` | Gate-forwarding audit | It voids nothing, |  | An audit of which engine gates reached the test binary only by accident found twelve missing from the harness list, but no recorded result was voided; the list became one shared source. | Was folded in obs-gates-echo, which is the echo it added. |  |  |  |  |
+| `meas-disorder-price` | Measure the price of disorder ω on a TCP-in-tunnel test |  |  | Force late, out-of-order deliveries in the tunnel and measure what each one costs an inner TCP flow, so the receiver's ordering hold has a measured price instead of a guess. Runs after VM batch 1. | ordering-hold.md par. 1: per released-then-filled hole, inner goodput deficit and retransmits against a matched no-release run, per inner stack (Linux Cubic with RACK and DSACK undo; RACK off). Warning carried to the owner: modern TCP tolerates reordering, so omega may be small and Auto/Bulk would then reorder in normal operation. |  |  |  |  |
 
 ### Folded items per node
 

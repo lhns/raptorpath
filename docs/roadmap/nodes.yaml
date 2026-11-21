@@ -9874,5 +9874,26 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: 'How long the receiver should wait for a missing packet before delivering the ones behind it out of order, as one smooth function of the latency price. Whether Bulk and Auto keep strict order depends on a new number, the price of one out-of-order delivery, which is the owner''s call.'
-  notes: 'Derivation on branch ordering-hold-derivation (paper-first, no code). Rule: release hole s when (delta/d) * sum over held packets of their wait since detect reaches omega (rent-or-buy, 2x the offline optimum plus omega per never-filled hole); steady state H_o = (sqrt(n0^2 + 2 g omega d/delta) - n0)/g, continuous and strictly decreasing in delta, no rho, no hint. The exact hazard rule is refuted (zero fill hazard before one RTT makes it release at detect or jump at one delta). Awaiting owner: omega (unit 1, Reno halving W^2/8, or measured on a TCP-in-tunnel battery); with omega = 1 Auto reorders every repaired packet under per-packet pricing; W^2/8 shrinks as rate^2, so slow flows reorder (Auto at about 100 packets/s, Bulk at about 10). Law continuous in delta; behaviour continuity (rbf = S(H_o)) owed to the toy. 2x bound is for isolated holes only (sketch). H (C11) is a path support bound, not a delta law; deadline min(B_s >= omega, t_F + H). Blocked also on O3 = yes.'
+  plain: 'How long the receiver should wait for a missing packet before delivering the ones behind it out of order, as one smooth function of the latency price. Whether Bulk and Auto keep strict order depends on a new number, the price of one out-of-order delivery, to be measured.'
+  notes: 'Derivation on branch ordering-hold-derivation (paper-first, no code), revised after Fable review. Rule on the paper''s own frontier pricing (par. 7.3): release hole s when (delta/d)*(t - t_detect) reaches omega, so H_o = omega*d/delta, continuous, exactly 1/delta, no rho, no hint; rent-or-buy (Karlin et al. 1988), 2x offline optimum for isolated holes. Per-held-packet pricing carried only as an alternative (a paper extension). Hazard rule refuted. N = 1: Bulk keeps order for omega > 0.03, Auto needs omega about 3. N = 2 with skew: every slow-path packet starts a hole and is released and reordered unless omega >= delta*skew/d (Realtime always; Auto when d is small), coupled to the C1 owner decision. H proposed as a path support bound (about 0 at N = 1), reconciled in skip-rule-efficiency (F1 per H). window_out_of_order delivery half = omega 0. Awaiting omega measurement (meas-disorder-price) and owner.'
+- id: meas-disorder-price
+  title: Measure the price of disorder ω on a TCP-in-tunnel test
+  track: meas
+  kind: research
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/ordering-hold.md
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - model-ordering-hold
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Force late, out-of-order deliveries in the tunnel and measure what each one costs an inner TCP flow, so the receiver''s ordering hold has a measured price instead of a guess. Runs after VM batch 1.'
+  notes: 'ordering-hold.md par. 1: per released-then-filled hole, inner goodput deficit and retransmits against a matched no-release run, per inner stack (Linux Cubic with RACK and DSACK undo; RACK off). Warning carried to the owner: modern TCP tolerates reordering, so omega may be small and Auto/Bulk would then reorder in normal operation.'
