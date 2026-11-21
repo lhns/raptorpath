@@ -9954,6 +9954,7 @@ nodes:
   outcome: unrated
   evidence:
   - ADR-0084 Amendment 3
+  - docs/derivations/floor-hold.md
   verdict_quote: ''
   headline: ''
   depends_on: []
@@ -9965,4 +9966,4 @@ nodes:
   folded: []
   overview: false
   plain: 'How long a receiver waits after the sender''s skip message before passing the holes below it.'
-  notes: 'Reads the last-copy rule (model-adr84-amend2: the copy travels with the floor, which is what H waits for); no depends_on edge, because the sender build (rec-evict-blocker-unresolved, upstream of every ADR-0084 model node) depends on this node. Owner 2026-11-21 (ADR-0084 Amendment 3, Q-b (iii), node model-adr84-sender-first): derive the floor pass hold H properly before the floor-pass step (brief step 8) is built; options (i) shed_recv_hold as is (bit-selected) and (ii) SRTT/2 are not adopted. Today shed_recv_hold is UNDERIVED (paper par. 11.3, rho-step-sites C11); ordering-hold par. 8 path-support H not adopted (the receiver has no per-seq path map; an observed maximum never comes down). Derivation on branch floor-hold-derivation (docs/derivations/floor-hold.md), reviewed by Fable before merge. Done when: H is one expression from receiver-observable quantities with provenance per symbol and its bind gauges, accepted, and the step-1 test bounds H_max are restated from it.'
+  notes: 'Reads the last-copy rule (model-adr84-amend2: the copy travels with the floor, which is what H waits for); no depends_on edge, because the sender build (rec-evict-blocker-unresolved, upstream of every ADR-0084 model node) depends on this node. Owner 2026-11-21 (ADR-0084 Amendment 3, Q-b (iii), node model-adr84-sender-first): derive the floor pass hold H properly before the floor-pass step (brief step 8) is built; options (i) shed_recv_hold as is (bit-selected) and (ii) SRTT/2 are not adopted. Today shed_recv_hold is UNDERIVED (paper par. 11.3, rho-step-sites C11); ordering-hold par. 8 path-support H not adopted (the receiver has no per-seq path map; an observed maximum never comes down). Derivation on branch floor-hold-derivation (docs/derivations/floor-hold.md), reviewed by Fable before merge. Done when: H is one expression from receiver-observable quantities with provenance per symbol and its bind gauges, accepted, and the step-1 test bounds H_max are restated from it. 2026-11-21 derivation on branch floor-hold-derivation: H = windowed max over W = 10 s of the RFC 4737 reordering late time offset, any path, with send order taken from send_timestamp_us; no wire field, no rho/delta/hint; H = 0 at N = 1 FIFO (so H_max = 0 in T1, T2, T1prime), about the skew at N = 2. Awaiting Fable review, then the owner (W, max not quantile).'
