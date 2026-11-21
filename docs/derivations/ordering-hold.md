@@ -69,7 +69,7 @@ The simplest form is one constant per hole, charged when the late fill arrives. 
 | (b) cited Reno halving | ω = W²/8, with W = g·SRTT in packets | RFC 5681 eq. 4 (halving) plus additive increase of 1 SMSS per RTT: the send deficit of one halving at window W is W/2 packets over W/2 RTTs, W²/8 in total | assumes one inner Reno flow fills the tunnel and no DSACK undo. With k flows the halving hits one flow of window W/k: W²/(8k²). W uses the tunnel SRTT, a lower bound on the inner RTT, so this is not a clean upper end either way |
 | (c) measured | ω = inner goodput deficit per released-then-filled hole, in packets | a TCP-in-tunnel battery with releases forced by a test seam, counting inner retransmissions and goodput deficit (`iperf3` retr) per released-then-filled hole | needs the battery; depends on the inner stack (Linux RACK with DSACK undo, Cubic) |
 
-**Recommendation.** Use (c), with (b) as its stated upper bound. (a) is listed only to show what a unit price does. Do not back-solve ω from today's Realtime SRTT/2. That would be calibration, not provenance.
+**Recommendation.** Use (c), with (b) as a reference scale. (a) is listed only to show what a unit price does. Do not back-solve ω from today's Realtime SRTT/2. That would be calibration, not provenance.
 
 ## 2. skip-rule §1's objective under U
 
@@ -217,7 +217,7 @@ In the example (Bulk needs 1/100 of this):
 
 - **A one-path outage at N ≥ 2.** The live path keeps delivering and the dead path's seqs are holes. Bulk releases them after H_o (742 ms at 10 000 packets/s with ω = W²/8). Today it holds until the path returns or the sender re-places the seqs. Any inner TCP then sees those seqs late and out of order, instead of seeing a stall.
 - **Persistent repair loss on one hole** (k rounds lost, ε^k): the same, after H_o.
-- **A slow flow under option (b).** ω = W²/8 → 0 as the rate falls, so Bulk releases every repaired hole below about 100 packets/s (2.7 ms hold at 10 packets/s). A tiny inner window cannot collect three duplicate ACKs anyway, so the disorder there is mostly cheap, but it is a change from today's strict order.
+- **A slow flow under option (b).** ω = W²/8 → 0 as the rate falls, so Auto releases every repaired hole at about 100 packets/s and Bulk at about 10 packets/s (a 2.7 ms hold). A tiny inner window cannot collect three duplicate ACKs anyway, so the disorder there is mostly cheap, but it is a change from today's strict order.
 - **A fast link with a rate-independent ω** (options (a) or (c) measured at low rate): `H_o ∝ g^(−1/2)` shrinks to operating-range fill times. That is the 100 000 packets/s, ω = 1 row.
 - **Nothing is lost by any of these.** The ack keeps reporting the hole and the sender keeps serving it (U).
 
@@ -296,7 +296,7 @@ Each gauge is printed per preset and per stage (FORMULA-FIRST: every term that c
 **The cost.** No new protocol field. One timer per stalled hole. A released-packet gauge that must read about zero at Bulk and Auto.
 
 **Your decisions.**
-1. **ω, the price of disorder.** One out-of-order delivery costs as much as how many resent packets? The options: (a) 1; (b) one TCP window halving, W²/8, computed from the measured rate and RTT; (c) measured on a TCP-in-tunnel test. The recommendation is (c), with (b) as the ceiling.
-2. **Should ω follow the rate?** (b) grows with the link rate and keeps Bulk's hold long on fast links, but it shrinks on slow ones (Bulk reorders below about 100 packets/s). A fixed ω shortens the hold as the rate grows.
+1. **ω, the price of disorder.** One out-of-order delivery costs as much as how many resent packets? The options: (a) 1; (b) one TCP window halving, W²/8, computed from the measured rate and RTT; (c) measured on a TCP-in-tunnel test. The recommendation is (c), with (b) as a reference scale.
+2. **Should ω follow the rate?** (b) grows with the link rate and keeps Bulk's hold long on fast links, but it shrinks on slow ones (Auto reorders every repaired packet at about 100 packets/s, Bulk at about 10). A fixed ω shortens the hold as the rate grows.
 3. **Is reordering after a long outage at Bulk acceptable** (§4.3), in exchange for no stall? If not, ω must be very large there, which is the same as R1, U's no-release staging point.
 4. **How to price delay:** per delayed packet (this document's extension, the stricter for Auto) or per stalled second (skip-rule §1, which lets ω = 1 keep Auto in order through one repair).
