@@ -6,12 +6,14 @@ The tables and constants are plan67.py's; the synthetic log shapes are s67_fixtu
     s67_score.py score <plan> <ledger> [<repl ledger>]        the stage's score text (plan: 67a 67r 67p 67o 67d), ending in its VERDICT lines
     s67_score.py smoke <plan> <smoke.log>                     PASS / FAIL criteria, then SMOKE-PASS | SMOKE-FAIL (rc 0 / 1)
     s67_score.py block1 <plan> <ledger>                       rc 0 iff every arm's FIRST row is LIVE with its precondition witnesses
+    s67_score.py block1g <g1|g2> <ld.log>                     the same for stage G (plan 41d): the first row of each of the 8 (cell, arm) pairs of block 1
     s67_score.py tun <ledger> | smokeT <ledger>               stage T
     s67_score.py scoreg <g1|g2> <ld.log> [<repl.log>] | smokeg <g1|g2> <smoke.log>      stage G (plan 41d's P38ROW ledgers; score41d's output byte for byte, then the G witness table and GATE-67G<n>)
     hooks for place38_parse (stage G): g_row(row, arm, cli, srv, drv, sha, sha_cand, sha_base, which), g_status(row), score67g(paths, out, which), smoke67g(path, which)
     rows_of(paths) -> (rows, tokens): the P67ROW lines in order and the ABORT tokens.
-Status precedence on a row: infrastructure voids (VOID-COTENANT, VOID-ONDISK, CONTAMINATED, VOID-SEAT = a seat / sha problem, VOID-RC / NO_DATA crashes), S06-FAIL (outcome witnesses on S2 rows, never replaced),
-WITNESS-FAIL / VOID-WITNESS (a precondition witness: replaced once), VOID-SHORT, VOID-RHO (R1), LIVE. A DNF is LIVE with dnf true (it keeps its worst rank; precondition witnesses never void it)."""
+Status precedence on a row: VOID-SEAT (a seat / sha problem: a wrong binary is not an S2 row), S06-FAIL (outcome witnesses on S2 rows whose slot preconditions hold: taper > 0 or plost > 0, never VOID and never replaced,
+whatever the infra / crash label under it), infrastructure voids (VOID-COTENANT, VOID-ONDISK, CONTAMINATED, VOID-RC / NO_DATA crashes), WITNESS-FAIL / VOID-WITNESS (a precondition witness: replaced once), VOID-SHORT,
+VOID-RHO (R1), LIVE. A DNF is LIVE with dnf true (it keeps its worst rank; precondition witnesses never void it)."""
 import itertools
 import json
 import math
@@ -76,6 +78,24 @@ def _stride(v, cap=400):
 
 def _r(v, nd=5):
     return None if v is None else round(v, nd)
+
+
+def truncated(paths):
+    """True iff a ledger holds the `LD-BATTERY-TRUNCATED at LD_HARD <epoch>` line (loopdiag_p67.sh writes it when `timeout` killed the battery: rc 124)."""
+    return any(ln.startswith("LD-BATTERY-TRUNCATED") for p in paths for ln in lc.read(p))
+
+
+def trunc_v(verdict, name, tr):
+    """A truncated stage reads TRUNCATED in place of a PASS / CLEAR verdict line (a finding or a void keeps its label)."""
+    if tr and verdict.split(" (")[0].endswith((" PASS", " CLEAR")):
+        return f"{name} TRUNCATED (the battery was cut at LD_HARD: the ledger holds the LD-BATTERY-TRUNCATED line; this is not the registered design)"
+    return verdict
+
+
+def nodata_line(rows_all, out):
+    """Measurement-discipline rule 8: aborted invocations are recorded and retried per protocol, never discarded: the original NO_DATA rows stay in the ledger and are counted here."""
+    nd = [r for r in rows_all if r["status"] == "NO_DATA"]
+    out(f"NO_DATA ROWS: {len(nd)}" + (" (aborted invocations, each retried once; the original stays in the ledger): " + "; ".join(f"{r['cell']} {r['arm']} s{r['seed']} r{r['rep']}" for r in nd) if nd else ""))
 
 
 # ── the per-row readings ──
@@ -187,7 +207,7 @@ def readings(cli, srv, samples=True):
         lab, d = _acct_of(cli, "[ACCT]", ACCT_KEYS)
         w["acct_label"], w["acct"] = lab, d
         if d:
-            u = (d["O_serv"] or 0) + (d["O_strand"] or 0)
+            u = None if (d["O_serv"] is None or d["O_strand"] is None) else d["O_serv"] + d["O_strand"]      # a missing field is unread (None), never 0: R2-HOLD reads it UNSCOREABLE
             w["acct_U"] = u
             ok = all(d[k] is not None for k in ("S_sent", "A", "H", "E", "O_serv", "O_strand"))
             w["acct_identity"] = ok and d["S_sent"] == d["A"] + d["H"] + d["E"] + u
@@ -232,7 +252,7 @@ def preconditions(plan_id, seat, w):
     """-> the failed PRECONDITION witnesses (VOID-WITNESS, replaced once)."""
     p = []
     gauge_seat = seat != "B0"
-    if seat == "B0" and w.get("g_any"):
+    if seat == "B0" and w.get("g_any") and plan_id != "67r":      # R1: a B0 row with a gauge print stays LIVE and fails clause A1-R ("no B0 row does"), it is not replaced
         p.append("b0-carries-gauge-prints")
     if seat in ("S2", "P2", "P2T"):
         if w.get("pslot") is None:
@@ -322,11 +342,11 @@ def row_of(plan_id, cell, arm, seed, rep, rc, wall, drv, cli, srv, cot=0, sha=No
         row["status"] = cur if cur in INFRA + CRASH else "VOID-SEAT"
         if cur in INFRA:
             pass
-    elif cur in INFRA + CRASH:
-        pass
-    elif s06:
+    elif s06:      # above the infra / crash labels: taper > 0 or plost > 0 on an S2 row whose slot preconditions hold is a finding, never a void (registration 4.2)
         row["status_41d"], row["status"] = cur, "S06-FAIL"
         row["problems"].append("s06:" + ",".join(s06))
+    elif cur in INFRA + CRASH:
+        pass
     elif (pre and not dnf) or pool_p:
         row["problems"].extend(pre if not dnf else []); row["problems"].extend(pool_p)
         row["status"] = "VOID-WITNESS"
@@ -398,7 +418,7 @@ def view(rows):
     for r in rows:
         if r["status"] == "S06-FAIL":
             st = r.get("status_41d") or "VOID-RC"
-            r = dict(r, status="VOID-RC" if st in plan67.REPLACEABLE else st)
+            r = dict(r, status="VOID-RC" if (st in plan67.REPLACEABLE or st in INFRA) else st)
         out.append(r)
     return out
 
@@ -418,8 +438,9 @@ def live(rows, cell, arm):
 
 
 def slotfill(rows, cell, arm):
-    """The rows that fill slots in the rank statistic: LIVE (a DNF included) and the crashes."""
-    return [r for r in rows if r["cell"] == cell and r["arm"] == arm and r["status"] in ("LIVE",) + CRASH]
+    """The rows the UNSCOREABLE minimum counts: LIVE rows only (a LIVE DNF counts; an S06-FAIL row counts through its underlying label, view() has made it LIVE; a crash or any void does not).
+    The rank statistic still gives a crash its worst rank (with_crash)."""
+    return live(rows, cell, arm)
 
 
 def m(rows, key):
@@ -600,6 +621,8 @@ def score_a(paths, out, plan_id="67a", repl=None):
     out(f"REPLACED SLOTS: {len(info['replaced'])} of at most {info['cap']} (slots voided by a witness: {len(info['void_slots'])})" + ("" if info["replaced"] else " - none"))
     for k, o, n in info["replaced"]:
         out(f"  {k[0]} {k[1]} s{k[2]} r{k[3]} {o} -> {n}")
+    nodata_line(rows_all, out)
+    tr = truncated(paths)
     s06 = [r for r in rows0 if r["status"] == "S06-FAIL" and r["arm"] == "S2"]
     s06d = s06_dnf_rows(rows0)
     for r in s06:
@@ -646,7 +669,7 @@ def score_a(paths, out, plan_id="67a", repl=None):
         except Exception as e:
             out(f"  realised d80: not computed ({type(e).__name__}: {e})")
         return f"AS {'PASS' if res['p'] > 0.05 else 'FAIL'} (p={res['p']:.4f}; PASS iff p > 0.05)"
-    vas = verdict_of("AS", short_as, run_as)
+    vas = trunc_v(verdict_of("AS", short_as, run_as), "AS", tr)
     out(vas)
     out("")
 
@@ -667,7 +690,7 @@ def score_a(paths, out, plan_id="67a", repl=None):
             p = mc["p"]
         out(f"  worst-ranked rows: {', '.join(f'{c} {a} s{sd} r{rp} {w}' for c, a, sd, rp, w in mc['bad_rows']) or 'none'}")
         return f"A1 {'PASS' if p > 0.05 else 'FAIL'} (p={p:.5f}; PASS iff p > 0.05)"
-    va1 = verdict_of("A1", short_a1, run_a1)
+    va1 = trunc_v(verdict_of("A1", short_a1, run_a1), "A1", tr)
     out(va1)
     out("")
     reported_a(rows, out)
@@ -687,11 +710,14 @@ def score_r1(paths, out, plan_id="67r"):
     rows_all, tokens = rows_of(paths)
     rows0, info = apply_repl(rows_all, plan_id)
     aborted = sorted({t for t in tokens if t in pp.ABORT_TOKENS})
+    tr = truncated(paths)
     out(f"PLAN 67 STAGE R1 (registration 4.3): c2-100 Realtime rho = 1, 100 MB, S1 12 / S2 12 / B0 6; slots {info['n_slots']}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     for r in rows_all:
         if r["status"] != "LIVE":
             out(f"  NONLIVE {r['cell']} {r['arm']} s{r['seed']} rep{r['rep']} {r['status']} rc={r.get('rc')} {' '.join(r.get('problems') or [])}")
     out(f"REPLACED SLOTS: {len(info['replaced'])} of at most {info['cap']} (voided {len(info['void_slots'])})")
+    nodata_line(rows_all, out)
+    missing = sorted(plan67.expect_slots(plan_id) - {_slot(r) for r in rows_all})
     arm = lambda a: [r for r in rows0 if r["arm"] == a]      # noqa: E731
     s1, s2, b0 = arm("S1"), arm("S2"), arm("B0")
     done = lambda r: r["status"] in ("LIVE", "S06-FAIL") and not r.get("dnf")      # noqa: E731
@@ -702,8 +728,6 @@ def score_r1(paths, out, plan_id="67r"):
     a1r_ok = not gauge_bad and not s1_miss
     out("CLAUSE A1-R: every S1 row carries the four gauge prints and no B0 row does; every S1 row completes wherever every B0 row completes")
     out(f"  gauge-print failures: {', '.join(gauge_bad) or 'none'}; every B0 row completes: {b0_all}; S1 rows that did not complete: {', '.join(s1_miss) or 'none'}")
-    out(f"  reported only: goodput S1 {fm(lc.med(m([r for r in s1 if done(r)], 'mbps')), 1)} vs B0 {fm(lc.med(m([r for r in b0 if done(r)], 'mbps')), 1)}; "
-        f"cpu_cli/GB S1 {fm(lc.med([r['cpu_cli'] / (r['bytes'] / 1e9) for r in s1 if r.get('cpu_cli') and r.get('bytes')]), 2)} vs B0 {fm(lc.med([r['cpu_cli'] / (r['bytes'] / 1e9) for r in b0 if r.get('cpu_cli') and r.get('bytes')]), 2)}")
     # R1
     zero = [r for r in s1 if (r["w67"].get("taper") or 0) == 0]
     blind = bool(s1) and 2 * len(zero) > len(s1)
@@ -716,15 +740,31 @@ def score_r1(paths, out, plan_id="67r"):
     out(f"  S1 taper = 0 on {len(zero)} of {len(s1)} rows (R1-BLIND iff more than half: {blind}); every S1 row completes: {s1_all}; S2 rows that did not complete: {', '.join(s2_dead) or 'none'}; S06-FAIL rows: {len(s06)}")
     for r in s06:
         out(f"    S06-FAIL S2 s{r['seed']} r{r['rep']}: {'; '.join(x for x in r['problems'] if x.startswith('s06:'))}")
-    out(f"  reported: goodput med S1 {fm(lc.med(m(s1, 'mbps')), 1)} S2 {fm(lc.med(m(s2, 'mbps')), 1)} B0 {fm(lc.med(m(b0, 'mbps')), 1)}; in-order delay is under the 30 s tick floor (marked, not read)")
+    out("REPORTED ONLY (no clause reads these): per arm goodput, CPU per GB, lag, in-order delay; the in-order delay is under the 30 s tick floor (marked, not read)")
+    for a in ("S1", "S2", "B0"):
+        rs = [r for r in arm(a) if r["status"] in ("LIVE", "S06-FAIL")]
+        if not arm(a):
+            continue
+        gb = lambda key: lc.med([r[key] / (r["bytes"] / 1e9) for r in rs if r.get(key) is not None and r.get("bytes")])      # noqa: E731
+        out(f"  READOUT {a} n={len(rs)} goodput med {fm(lc.med(m(rs, 'mbps')), 1)}  cpu_cli/GB med {fm(gb('cpu_cli'), 2)}  cpu_srv/GB med {fm(gb('cpu_srv'), 2)}  lag_E_cli med {fm(lc.med(m(rs, 'cli_lag_E')), 0)}  "
+            f"lag_E_srv med {fm(lc.med(m(rs, 'srv_lag_E')), 0)}  in-order delay mean {fm(lc.med(m(rs, 'inorder_mean')), 1)} ms, p95 {fm(lc.med(m(rs, 'inorder_p95')), 1)} ms (under the 30 s tick floor)")
+
     def _none(arms):
         return [f"{a} {len([r for r in rows0 if r['arm'] == a and r['status'] in ('LIVE', 'S06-FAIL') + CRASH])}" for a in arms if len([r for r in rows0 if r["arm"] == a]) < 1]
     short, short1 = _none(("S1", "S2")), _none(("S1",))      # LD_DROP_S2 (a G2 FAIL): A1-R reads S1 against B0 alone, R1 has no S2 arm to score
+
     def _pre(sh):
-        return ("UNSCOREABLE (abort " + ",".join(aborted) + ")") if aborted else ("UNSCOREABLE (no S1 or S2 row)" if sh else ("NO VERDICT (more than %d replaced slots)" % info["cap"] if info["too_many"] else None))
+        if aborted:
+            return "UNSCOREABLE (abort " + ",".join(aborted) + ")"
+        if sh:
+            return "UNSCOREABLE (no S1 or S2 row)"
+        if missing:
+            return f"UNSCOREABLE (INCOMPLETE: {len(missing)} of {len(plan67.expect_slots(plan_id))} registered slots hold no row: {'; '.join('%s %s s%s r%s' % x for x in missing[:6])}{' ...' if len(missing) > 6 else ''})"
+        return "NO VERDICT (more than %d replaced slots)" % info["cap"] if info["too_many"] else None
     pre, pre1 = _pre(short), _pre(short1)
     a1 = pre1 and "A1-R " + pre1 or f"A1-R {'PASS' if a1r_ok else 'FAIL'}"
     r1 = pre and "R1 " + pre or ("R1 FAIL" if not r1_ok else ("R1-BLIND" if blind else "R1 PASS"))
+    a1, r1 = trunc_v(a1, "A1-R", tr), trunc_v(r1, "R1", tr)
     out(a1)
     out(r1)
     out(f"VERDICT-67R {a1}; {r1}")
@@ -736,11 +776,21 @@ def score_r2(paths, out, plan_id="67p"):
     rows_all, tokens = rows_of(paths)
     rows0, info = apply_repl(rows_all, plan_id)
     aborted = sorted({t for t in tokens if t in pp.ABORT_TOKENS})
+    tr = truncated(paths)
     out(f"PLAN 67 STAGE R2 (registration 4.4): c2 paced evicting rows P1 / P2 and the test-seams twins P1T / P2T; slots {info['n_slots']}; ABORT-TOKENS {' '.join(aborted) or 'none'}")
     for r in rows_all:
         if r["status"] != "LIVE":
             out(f"  NONLIVE {r['arm']} s{r['seed']} rep{r['rep']} {r['status']} {' '.join(r.get('problems') or [])}")
     out(f"REPLACED SLOTS: {len(info['replaced'])} of at most {info['cap']}")
+    nodata_line(rows_all, out)
+    # R2-BLIND (registration 4.4): the mechanism-ran witness on the SCORED rows, as R1-BLIND: P1 taper > 0, P2 pslot > 0 with the [SPAN] median rr > 0; more than half of a seat's rows failing it -> R2 VOID
+    blind = []
+    for seat, ok_ in (("P1", lambda w: (w.get("taper") or 0) > 0), ("P2", lambda w: (w.get("pslot") or 0) > 0 and (w.get("rr_med") or 0) > 0)):
+        rs_ = [r for r in rows0 if r["arm"] == seat]
+        bad_ = [r for r in rs_ if not ok_(r["w67"])]
+        if rs_ and 2 * len(bad_) > len(rs_):
+            blind.append(seat)
+            out(f"R2-BLIND {seat}: the mechanism did not run on {len(bad_)} of {len(rs_)} scored rows ({'taper > 0' if seat == 'P1' else 'pslot > 0 with the [SPAN] median rr > 0'} fails)")
     out("TWIN ROWS (the [ACCT] reading: final=1 else ACCT-LAST, never mixed without the label): arm s rep label U O_strand O_max oldest_unchanged_max inert_sweeps holes_given_up identity")
     tw = {"P1T": [], "P2T": []}
     for r in rows0:
@@ -757,17 +807,19 @@ def score_r2(paths, out, plan_id="67p"):
     n1, n2 = len(tw["P1T"]), len(tw["P2T"])
     out(f"LIVE TWIN ROWS: P1T {n1}, P2T {n2} (minimum {plan67.MIN_TWIN} per seat)")
     hold = None
+    miss = [nm for nm, get in (("U (O_serv, O_strand)", lambda r: r["w67"].get("acct_U")), ("oldest_unchanged_max", lambda r: (r["w67"].get("acct") or {}).get("oldest_unchanged_max"))) if any(get(r) is None for r in tw["P1T"] + tw["P2T"])]
     if aborted:
         verdict = f"R2-HOLD UNSCOREABLE (abort {','.join(aborted)}); guard 2 NOT ELIGIBLE"
+    elif blind:
+        verdict = f"R2-HOLD UNSCOREABLE (R2 VOID: the mechanism did not run; guard 2 waits for an R2 re-run; blind seat {','.join(blind)}); guard 2 NOT ELIGIBLE"
     elif n1 < plan67.MIN_TWIN or n2 < plan67.MIN_TWIN or info["too_many"]:
         verdict = "R2-HOLD UNSCOREABLE; guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')"
+    elif miss:
+        verdict = f"R2-HOLD UNSCOREABLE (a counted twin row lacks {', '.join(miss)}); guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')"
     else:
         res = {}
         for nm, get in (("U", lambda r: r["w67"]["acct_U"]), ("oldest_unchanged_max", lambda r: r["w67"]["acct"]["oldest_unchanged_max"])):
             ref, test = [get(r) for r in tw["P1T"]], [get(r) for r in tw["P2T"]]
-            if any(x is None for x in ref + test):
-                res[nm] = None
-                continue
             p, n, pmin = exact_mw_p(ref, test)
             res[nm] = p
             out(f"  R2-HOLD ({'i' if nm == 'U' else 'ii'}) {nm}: exact one-sided Mann-Whitney rank sum, P2T worse, ALL {n} relabellings, midranks for ties: p = {p:.5f} (smallest attainable p {pmin:.5f}; "
@@ -790,6 +842,7 @@ def score_r2(paths, out, plan_id="67p"):
                 per.setdefault(str(r["seed"]), []).append(r["w67"]["shed_total"] - lc.med([x["w67"]["shed_total"] for x in o]))
         allv = [x for v in per.values() for x in v]
         out(f"  shed_total({b}) - shed_total({a}): med {fm(lc.med(allv), 1)}; per-seed range " + (", ".join(f"s{s}: [{min(v):.0f}, {max(v):.0f}]" for s, v in sorted(per.items())) or "n/a"))
+    verdict = trunc_v(verdict, "R2-HOLD", tr)
     out(verdict)
     out(f"VERDICT-67P {verdict}")
     return {"verdict": verdict, "hold": hold}
@@ -800,6 +853,7 @@ def score_pool(paths, out, plan_id="67o"):
     rows_all, tokens = rows_of(paths)
     rows0, info = apply_repl(rows_all, plan_id)
     out(f"PLAN 67 POOL BLOCK (registration 4.2; reported only): c8-100 Auto, RWM_STORE_PATH_POOL 170 / 256 / 640, S1 and S2, n = 3, seed 42; slots {info['n_slots']}")
+    nodata_line(rows_all, out)
     for r in rows_all:
         if r["status"] != "LIVE":
             out(f"  NONLIVE {r['arm']} s{r['seed']} rep{r['rep']} {r['status']} {' '.join(r.get('problems') or [])}")
@@ -814,16 +868,17 @@ def score_pool(paths, out, plan_id="67o"):
             out(f"  {seat} pool {pool}: n={len(rs)} in-order {fm(lc.med(m(rs, 'inorder_mean')), 1)}  rep p50/p90 {fm(lc.med(m(rs, 'rep_p50_ms')), 2)}/{fm(lc.med(m(rs, 'rep_p90_ms')), 2)}  orig p50/p90 {fm(lc.med(m(rs, 'orig_p50_ms')), 2)}/{fm(lc.med(m(rs, 'orig_p90_ms')), 2)}  "
                 f"completion {[round(x, 1) for x in comp]} max {fm(max(comp) if comp else None, 1)} p90 {fm(lc.q(comp, 0.9), 1)} dnf {sum(1 for r in rs if r.get('dnf'))}  "
                 f"dup {fm(lc.med(m(rs, 'c8conv_dup')), 0)} / dup_src {fm(lc.med(m(rs, 'dup_src')), 0)}")
-    out("VERDICT-67O REPORTED-ONLY (decides nothing here; lever B's revisit trigger)")
+    out("VERDICT-67O TRUNCATED (reported only; the battery was cut at LD_HARD)" if truncated(paths) else "VERDICT-67O REPORTED-ONLY (decides nothing here; lever B's revisit trigger)")
 
 
 def score_dump(paths, out, plan_id="67d"):
     rows_all, _ = rows_of(paths)
     rows0, info = apply_repl(rows_all, plan_id)
     out(f"PLAN 67 DUMP TWINS (registration 4.2; RWM_SUCC_DUMP=1): rows {info['n_slots']}; [SUCCDUMP] record counts per row")
+    nodata_line(rows_all, out)
     for r in rows0:
         out(f"  {r['cell']} {r['arm']} s{r['seed']} r{r['rep']} {r['status']} records={r['w67'].get('succdump_records')} rep p50/p90 {fm(r['w67'].get('rep_p50_ms'), 2)}/{fm(r['w67'].get('rep_p90_ms'), 2)} orig p50/p90 {fm(r['w67'].get('orig_p50_ms'), 2)}/{fm(r['w67'].get('orig_p90_ms'), 2)}")
-    out("VERDICT-67D REPORTED-ONLY")
+    out("VERDICT-67D TRUNCATED (reported only; the battery was cut at LD_HARD)" if truncated(paths) else "VERDICT-67D REPORTED-ONLY")
 
 
 def score(plan_id, paths, out=print):
@@ -890,6 +945,28 @@ def block1(plan_id, path, out=print):
     return 0 if not bad else 1
 
 
+G_BLOCK1_N = 8      # plan 41c's row order is, per group, the pair (BASE, CAND) at each of the four cells (c1s, c1d, c2, c8): the first group, 8 rows, is the smallest prefix that holds every (cell, arm) once
+
+
+def block1_g(which, path, out=print):
+    """Registration 5.2 for G1 / G2 (plan 41d): after block 1 (G_BLOCK1_N rows) every (cell, arm)'s FIRST row must be LIVE with its G witnesses (not WITNESS-FAIL, not a void, not S06-FAIL). rc 0 iff so."""
+    rows, _ = pp.rows_of([path])
+    first = {}
+    for r in rows:
+        first.setdefault((r["cell"], r["arm"]), r)
+    bad = []
+    for cell, _, arm, _, _ in pp.plan41c()[:G_BLOCK1_N]:
+        r = first.get((cell, arm))
+        if r is None:
+            bad.append(f"{cell} {arm}: no row")
+        elif r["status"] != "LIVE" or (r.get("w67g") or {}).get("fail"):
+            bad.append(f"{cell} {arm}: first row {r['status']} witness failures {(r.get('w67g') or {}).get('fail')} {r.get('problems')}")
+    for b in bad:
+        out("BLOCK1-FAIL " + b)
+    out(f"BLOCK1 {which} " + ("OK" if not bad else "FAILED"))
+    return 0 if not bad else 1
+
+
 # ── stage T ──
 _REF = re.compile(r"^T67REF seat=(\S+) cmd=(\S+) key=(\S+) rc=(-?\d+) cfg=(\S+) err=(.*)$")
 _SEATL = re.compile(r"^T67SEAT seat=(\S+) hint=(\S+)")
@@ -907,8 +984,10 @@ def tun_parse(path):
         m_ = _SEATL.match(ln)
         if m_:
             cur = (m_.group(1), m_.group(2))
-            inv[cur] = {"pipe": None, "cfg": None, "reps": {}}
+            inv[cur] = {"pipe": None, "cfg": None, "reps": {}, "bringup_fail": False}
             continue
+        if ln.startswith("TUN-BRINGUP-FAIL") and cur:      # tun_bulk.sh: the bring-up (3 attempts) failed for this invocation: no transfer ran (verify4_parse.tun_arms reads the same line)
+            inv[cur]["bringup_fail"] = True
         m_ = _TPIPE.match(ln)
         if m_ and cur:
             inv[cur]["pipe"] = (m_.group(1), m_.group(2))
@@ -943,6 +1022,8 @@ def score_t(path, out=print):
     inv, refs, done = tun_parse(path)
     ref = {(r["seat"], r["cmd"], r["key"]): r for r in refs}
     out("STAGE T (registration 3.3): the tunnel itself, c2, hints auto and realtime, B0 and S1")
+    tr = truncated([path])
+    bring = [f"ABORT-BRINGUP-T seat={s} hint={h}" for h in ("auto", "realtime") for s in ("B0", "S1") if (inv.get((s, h)) or {}).get("bringup_fail")]
     # seat check
     seat_abort = [f"B0 run {r['key']}: stderr carries the guard text" for r in refs if r["seat"] == "B0" and r["cmd"] == "run" and "is a perf/native-object mode" in r["err"]]
     out("B0 CHECK COMMANDS (printed, never scored): " + (", ".join(f"{k}: rc={ref[('B0', 'check', k)]['rc']} cfg={ref[('B0', 'check', k)]['cfg']}" for k in TUN_KEYS if ('B0', 'check', k) in ref) or "none"))
@@ -1003,16 +1084,23 @@ def score_t(path, out=print):
             if i:
                 rs = [x for x in i["reps"].values() if x["ok"]]
                 out(f"  {seat} {hint}: n={len(rs)} goodput med {fm(lc.med([x['mbps'] for x in rs if x['mbps'] is not None]), 2)} completion med {fm(lc.med([x['seconds'] for x in rs if x['seconds'] is not None]), 2)} s")
+    for b in bring:
+        out(f"  {b} (tun_bulk.sh: bring-up exhausted; no transfer of that invocation ran)")
+    # precedence: a finding before a void: ABORT-SEAT, clause 1 (independent of the bring-up), ABORT-BRINGUP-T, no T67DONE, clauses 3 and 4, clause 2 (VOID), PASS
     if seat_abort:
         res = "T ABORT-SEAT (B0 is not main's: " + "; ".join(seat_abort) + ")"
+    elif c1:
+        res = "T FAIL"
+    elif bring:
+        res = "; ".join(bring)
     elif not done:
-        res = "T FAIL (no T67DONE)"
+        res = "T TRUNCATED (the battery was cut at LD_HARD: no T67DONE)" if tr else "T FAIL (no T67DONE)"
+    elif c3 or c4:
+        res = "T FAIL"
     elif c2:
         res = "T VOID (the file never reached the tunnel on B0)"
-    elif c1 or c3 or c4:
-        res = "T FAIL"
     else:
-        res = "T PASS"
+        res = trunc_v("T PASS", "T", tr)
     out(res)
     out("VERDICT-67T " + res)
     return res
@@ -1082,7 +1170,7 @@ def g_status(row):
     if w.get("seat") != "S2" or w.get("which") != "g2" or row.get("arm") != "CAND":
         return
     st = row["status"]
-    if st in INFRA or any(x.startswith("bin-sha") for x in row.get("problems") or []) or st == "WITNESS-FAIL" or w.get("pslot") is None:
+    if any(x.startswith("bin-sha") for x in row.get("problems") or []) or w.get("pslot") is None:      # a wrong binary is not an S2 row; any other label (infra, crash, WITNESS-FAIL) is below the finding
         return
     why = [f"{k}={w[k]}" for k in ("taper", "plost") if (w.get(k) or 0) > 0]
     if why:
@@ -1147,7 +1235,10 @@ def score67g(paths, out=print, which="g1"):
     if nw:
         why.append(f"{nw} unreplaced witness failure(s)")
     name = "GATE-67G" + which[1:]
-    out(f"{name} PASS" if not why else f"{name} FAIL (" + "; ".join(why) + ")")
+    if not why and truncated(paths):
+        out(f"{name} TRUNCATED (the battery was cut at LD_HARD: the ledger holds the LD-BATTERY-TRUNCATED line; this is not the registered design)")
+    else:
+        out(f"{name} PASS" if not why else f"{name} FAIL (" + "; ".join(why) + ")")
     return res, len(s06) + len(dnf06), nw
 
 
@@ -1210,6 +1301,8 @@ def main(argv):
         return smoke(a[0], a[1])
     if cmd == "block1":
         return block1(a[0], a[1])
+    if cmd == "block1g":
+        return block1_g(a[0], a[1])
     if cmd == "tun":
         score_t(a[0])
         return 0

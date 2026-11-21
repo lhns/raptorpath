@@ -50,8 +50,9 @@ def tables(**env):
 # ═══ 1. the seats ═══
 S = plan67.SEATS
 check("seven seats: B0, S1, S2, the pacer seats P1 / P2 and their test-seams twins P1T / P2T", list(S) == list(plan67.SEAT_ORDER) == ["B0", "S1", "S2", "P1", "P2", "P1T", "P2T"])
-check("the commit pins: S1 = vmb-s1 2d590cdc and S2 = vmb-s2 1953abd1 are registered; B0, P1 and P2 have NO default (the pin amendment names them: required environment, plan 51e's pattern)",
-      S["S1"]["pin"] == "2d590cdc" and S["S2"]["pin"] == "1953abd1" and all(S[x]["pin"] is None for x in ("B0", "P1", "P2", "P1T", "P2T")) and S["P1T"]["pin_env"] == "LD_PIN_P1" and S["P2T"]["pin_env"] == "LD_PIN_P2")
+check("the commit pins: NO seat has a default (a main merge moves the seat heads: every LD_PIN_<SEAT> is required environment, plan 51e's pattern); P1T / P2T read P1's and P2's pins",
+      all(S[x]["pin"] is None for x in plan67.SEAT_ORDER) and all(S[x]["pin_env"] == "LD_PIN_" + x for x in ("B0", "S1", "S2", "P1", "P2")) and S["P1T"]["pin_env"] == "LD_PIN_P1" and S["P2T"]["pin_env"] == "LD_PIN_P2"
+      and not hasattr(plan67, "REGISTERED_SHAS"))
 check("S1 and S2 must carry `pfec=` (the ABORT-SEAT string check of registration 4.2 includes it) and `rlaw=`; B0 carries neither; every gauge seat carries the tunnel guard's refusal text and B0 does not",
       all("pfec=" in S[x]["need"] and "rlaw=" in S[x]["need"] and plan67.GUARD_MSG in S[x]["need"] for x in ("S1", "S2", "P1", "P2", "P1T", "P2T")) and "pfec=" in S["B0"]["forbid"] and "rlaw=" in S["B0"]["forbid"] and plan67.GUARD_MSG in S["B0"]["forbid"])
 check("`pslot=` is S2's seat witness (4.1): S2, P2, P2T need it, S1 / B0 / P1 / P1T forbid it", all("pslot=" in S[x]["need"] for x in ("S2", "P2", "P2T")) and all("pslot=" in S[x]["forbid"] for x in ("B0", "S1", "P1", "P1T")))
@@ -105,6 +106,9 @@ check("registered constants: MIN_LIVE_A 10, MIN_TWIN 5, 6 blocks, 3 twin reps, p
       plan67.MIN_LIVE_A == 10 and plan67.MIN_TWIN == 5 and plan67.N_BLOCKS == 6 and plan67.N_TWIN_REPS == 3 and plan67.POOLS == (170, 256, 640) and plan67.N_POOL_REPS == 3
       and all(rd("plan67.py").count(x) == 1 for x in ("N_BLOCKS = 6  ", "N_TWIN_REPS = 3  ", "N_POOL_REPS = 3  ", "MIN_LIVE_A = 10  ", "MIN_LIVE_B0 = 4  ", "MIN_TWIN = 5  ")))
 
+check("the replaceable statuses: VOID-RC (a crash) is not replaceable, NO_DATA keeps its one retry", "VOID-RC" not in plan67.REPLACEABLE and "NO_DATA" in plan67.REPLACEABLE)
+
+
 # the CLI the shell reads
 def cli(*a, env=None):
     e = dict(os.environ)
@@ -117,9 +121,26 @@ rc, o = cli("armspec", "67p", "c2-100", "P2T")
 check("plan67.py armspec prints `BYTES TIMEOUT HINT ENV...` and rc 1 with UNKNOWN-ARM on an unknown slot", rc == 0 and o == "262500000 75 realtime RWM_SLAW=1 RWM_C_RELIABLE=0 RWM_PERF_RATE_MBIT=35" and cli("armspec", "67a", "c2-100", "P1")[0] == 1)
 rc, o = cli("strings", "S2")
 check("plan67.py strings prints `need` / `forbid` lines (pfec= among S2's needs)", rc == 0 and "need pfec=" in o.splitlines() and "need pslot=" in o.splitlines() and "forbid [ACCT-RX]" in o.splitlines())
-check("plan67.py pin: S1 and S2 print their registered default, B0 prints the env name alone", cli("pin", "S1")[1] == "LD_PIN_S1 2d590cdc" and cli("pin", "B0")[1] == "LD_PIN_B0")
+check("plan67.py pin prints the env name alone for every seat (no default)", all(cli("pin", s)[1] == "LD_PIN_" + s[:2] for s in ("B0", "S1", "S2", "P1", "P2")) and cli("pin", "P1T")[1] == "LD_PIN_P1")
 check("plan67.py count / plan / block1n / budget / stages agree with the module", cli("count", "67a")[1] == "60" and cli("count", "67a", "smoke")[1] == "3" and cli("block1n", "67o")[1] == "6" and cli("budget", "67x")[1] == str(plan67.BUDGET_S["67x"])
       and cli("stages", "67x", env={"LD_DUMP67": "1"})[1] == "a r1 t r2 dump pool")
+
+# ═══ 2b. the test seams (#128 / #134): plan67.REGISTERED, `plan67.py seams` ═══
+check("REGISTERED holds the registered design (6 blocks, 3 twin reps, 3 pool reps, minima 10 / 4 / 5, 96 G rows) and the module's constants equal it", plan67.REGISTERED == {"N_BLOCKS": 6, "N_TWIN_REPS": 3, "N_POOL_REPS": 3, "MIN_LIVE_A": 10, "MIN_LIVE_B0": 4, "MIN_TWIN": 5, "G_ROWS67": 96}
+      and plan67.seams(96) == [] and plan67.seams() == [])
+_old = plan67.N_BLOCKS, plan67.MIN_TWIN
+plan67.N_BLOCKS, plan67.MIN_TWIN = 2, 2
+check("seams names a shrunk constant (the fast-mode edit) with its registered value", plan67.seams(96) == ["N_BLOCKS=2(registered 6)", "MIN_TWIN=2(registered 5)"], plan67.seams(96))
+plan67.N_BLOCKS, plan67.MIN_TWIN = _old
+check("seams names a shrunk G_ROWS67 (the shell passes it in)", plan67.seams(16) == ["G_ROWS67=16(registered 96)"])
+for _k in plan67.SEAM_ENV:
+    os.environ[_k] = "1"
+check("seams names the environment seams: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S", plan67.seams(96) == list(plan67.SEAM_ENV) and plan67.SEAM_ENV == ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S"))
+for _k in plan67.SEAM_ENV:
+    os.environ.pop(_k)
+check("the fast-mode shrink table (test_stubrun.py FAST_PATCHES) names the constants this file registers, each anchor once in plan67.py / loopdiag_p67.sh",
+      all(rd("plan67.py").count(x) == 1 for x in ("N_BLOCKS = 6  ", "N_TWIN_REPS = 3  ", "N_POOL_REPS = 3  ", "MIN_LIVE_A = 10  ", "MIN_LIVE_B0 = 4  ", "MIN_TWIN = 5  ")) and rd("loopdiag_p67.sh").count("G_ROWS67=96     #") == 1
+      and all(x in rd("test_stubrun.py") for x in ('("plan67.py", "N_BLOCKS = 6  "', '("plan67.py", "MIN_LIVE_A = 10  "', '("loopdiag_p67.sh", "G_ROWS67=96     #"')))
 
 # ═══ 3. the shell side ═══
 runall, p67, bat, tun = rd("loopdiag_run_all.sh"), rd("loopdiag_p67.sh"), rd("loopdiag_battery.sh"), rd("tun67_battery.sh")
@@ -136,7 +157,7 @@ for f in ("plan67.py", "s67_score.py", "s67_fixtures.py", "test_s67.py", "tun67_
 check("p67: every launch refuses to build (ABORT-BUILD, LD_BIN_PREBUILT_<SEAT> + LD_BIN_SHA_<SEAT> required), the rehearsal builds each seat in its own fresh target dir, the twins with --features test-seams (plan67.SEATS features)",
       "launches never build" in p67 and 'needs $_pin' in p67 and '${_feat:+--features $_feat}' in p67 and 'target-$_s' in p67 and "is not fresh" in p67)
 check("p67: ABORT-SEAT on a commit pin (COMMIT against LD_PIN_<SEAT>; B0 / P1 / P2 have none registered), on the identity strings (need / forbid), on the tools-diff witness; ABORT-BUILD on a binary sha against LD_BIN_SHA_<SEAT> and on two identical seats",
-      p67.count("ABORT-SEAT") >= 6 and "is unset (the seat has no registered commit" in p67 and 'plan67.py strings "$_s"' in p67 and "tools-diff witness" in p67 and "ABORT-BUILD plan 67 seat $_s: built / installed" in p67 and "are the same binary" in p67)
+      p67.count("ABORT-SEAT") >= 6 and "is unset (every seat's commit pin is required, none has a default" in p67 and 'plan67.py strings "$_s"' in p67 and "tools-diff witness" in p67 and "ABORT-BUILD plan 67 seat $_s: built / installed" in p67 and "are the same binary" in p67)
 check("p67: the pacer seats' tools trees may differ from the harness's by the one lib.sh forward line (cmp after removing it) and by nothing else; every other seat's tools tree is byte-identical",
       "sed 's/ RWM_PERF_RATE_MBIT//' \"$_td/lib.sh\" | cmp -s - \"$HERE/lib.sh\"" in p67 and '[ "$_dl" = "./lib.sh " ]' in p67 and '[ "$_tt" = "$P67HT" ]' in p67)
 check("p67: the suite-reuse manifest covers tools/ci/flake_rule.py (src_manifest67), through this function only: run_all's src_manifest() is unchanged",
@@ -160,6 +181,27 @@ check("battery: every seat's file, sha and identity strings are checked before a
 check("battery: LD_WITNESS67 is defined for plan 41d with g1 | g2 only (ABORT-PLAN otherwise)", 'W67="${LD_WITNESS67:-}"' in bat and "ABORT-PLAN LD_WITNESS67=$W67" in bat)
 pp = rd("place38_parse.py")
 check("place38_parse: stage G's hook (LD_PLAN=41d with LD_WITNESS67) calls s67_score.g_row and, at the end of make_row, s67_score.g_status", 'os.environ.get("LD_WITNESS67") in ("g1", "g2")' in pp and "s67_score.g_row(row, arm, cli, srv, drv, sha," in pp and "s67_score.g_status(row)" in pp)
+check("run_all: a plan-67 session aborts ABORT-SEAM (rc 3, before the locks) on any active test seam unless LD_TEST_SEAMS=1; the check is plan67.py seams with G_ROWS67 read from loopdiag_p67.sh",
+      'if [ "$P67" = 1 ] && [ "${LD_TEST_SEAMS:-}" != 1 ]; then' in runall and 'python3 ./plan67.py seams "$(sed -n' in runall and "ABORT-SEAM plan $PLAN: test seam(s) active without LD_TEST_SEAMS=1: $P67_SEAMS" in runall
+      and runall.index("ABORT-SEAM plan $PLAN") < runall.index("take_lock"))
+check("p67: LD_BLOCK_ROW_S and LD_ROW_BYTES reach a battery only under LD_TEST_SEAMS=1; the commit pin of every seat is required (no default): ABORT-SEAT `<LD_PIN_SEAT> is unset`",
+      '[ "${LD_TEST_SEAMS:-}" != 1 ] || SENV+=(LD_BLOCK_ROW_S="${LD_BLOCK_ROW_S:-}" LD_ROW_BYTES="${LD_ROW_BYTES:-}")' in p67 and 'LD_WITNESS64=0 LD_BLOCK_ROW_S=' not in p67
+      and '_pv="${!_penv:-}"' in p67 and "is unset (every seat's commit pin is required, none has a default" in p67 and "_pdef" not in p67 and "(S1, S2: the registered default" not in p67)
+check("p67: the rehearsal smoke runs under timeout min(1800 s, the time left to LD_HARD); a timeout (rc 124) is ABORT-SMOKE with the reason",
+      'smkto=$(( LD_HARD - $(date +%s) )); [ "$smkto" -le 1800 ] || smkto=1800' in p67 and 'timeout "$smkto" sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./$runner' in p67
+      and 'if [ "$sbrc" = "124" ]; then touch "$dir/ABORT-SMOKE"; era "ABORT-SMOKE stage $name: the smoke timed out after ${smkto}s' in p67)
+check("p67: a battery (or a G replacement run) that exits rc 124 gets `LD-BATTERY-TRUNCATED at LD_HARD <epoch>` appended to its ledger (ld.log / repl.log) and a TRUNCATED marker, for every stage (one code path)",
+      p67.count("LD-BATTERY-TRUNCATED at LD_HARD") == 2 and 'if [ "$brc" = "124" ]; then' in p67 and '>> "$dir/ld.log"; touch "$dir/TRUNCATED"' in p67 and '>> "$dir/repl.log"; touch "$dir/TRUNCATED"' in p67
+      and p67.index('if [ "$brc" = "124" ]; then') < p67.index('if [ "$brc" = "6" ]'))
+check("p67: stage T is ok only without a TUN-BRINGUP-FAIL line in its ledger (ABORT-BRINGUP-T)", "! grep -aq '^TUN-BRINGUP-FAIL' \"$dir/ld.log\" && ok=1" in p67)
+check("battery: plan 41d with LD_WITNESS67 applies the block-1 rule after G_BLOCK1_N rows (s67_score.py block1g, exit 6), not on the smoke and not on the replacement run",
+      'b1g="$(python3 -c \'import s67_score; print(s67_score.G_BLOCK1_N)\')"' in bat and 'python3 ./s67_score.py block1g "$W67" "$OUT"' in bat and '[ -n "${LD_REPL_FILE:-}" ] || b1g=' in bat and '[ "$1" = "1" ] || [ -n "${LD_REPL_FILE:-}" ] || b1g' in bat)
+import s67_score  # noqa: E402
+check("block 1 of G = plan 41c's first 8 rows: the smallest prefix that holds every (cell, arm) once", s67_score.G_BLOCK1_N == 8 and len({(c, a) for c, _, a, _, _ in __import__("place38_parse").plan41c()[:8]}) == 8
+      and len({(c, a) for c, _, a, _, _ in __import__("place38_parse").plan41c()[:7]}) == 7)
+check("tun67_battery: tun_bulk.sh's stdout (TUN-BRINGUP-FAIL included) goes to the ledger; the comment no longer says the scorer ignores it, and names ABORT-BRINGUP-T",
+      'bash ./tun_bulk.sh c2 "$hint" 100000000 "$REPS" "$seat-$hint" >> "$OUT" 2>&1' in tun and "ABORT-BRINGUP-T" in tun and "it is\n# not an abort here" not in tun and "read by the scorer; it is" not in tun)
+
 keys = ["window_out_of_order", "window_coded_only", "window_generation_coding", "window_systematic_repair"]
 check("tun67_battery: 4 keys x (check, run) x (S1, B0) = 16 refusal commands, S1 first; each key's TOML sets only that key to true; the exact refusal text is in the scorer, B0's refusal is ABORT-SEAT",
       all(k in tun for k in keys) and 'for seat in S1 B0; do' in tun and 'for cmd in check run; do' in tun and "printf '%s = true\\n' \"$key\"" in tun and "T67REF seat=$seat cmd=$cmd key=$key rc=$rc cfg=${cfg:--} err=$err" in tun

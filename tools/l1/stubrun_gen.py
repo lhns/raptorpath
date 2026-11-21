@@ -894,10 +894,11 @@ def qcap(before, durings, after):
 
 # ── plan 67 (status 67, VM batch 1): the seat is read from RWM_BIN (.../bin-<SEAT>/raptorpath); the real fixture logs are stripped and re-dressed by s67_fixtures (the ONE source of the plan's log shapes, shared with test_s67.py). ──
 # STUB_BAD67 (comma list of `defect[@k[-m]][:cell]`): the defect (s67_fixtures.DEFECTS) is applied to the k-th .. m-th invocation (0-based, k = m when only k is given, every invocation when no @) of the seat that
-# owns it in this battery pass (LD_TAG), counted per (seat, cell) when a :cell filter is given.
+# owns it in this battery pass (LD_TAG), counted per (seat, cell) when a :cell filter is given. `defect@@k[-m]` counts over the whole session (every pass, the replacement run included: a defect that holds on the re-run too).
 BAD67_SEAT = {"s2-taper-nonzero": ("S2",), "s2-no-pslot": ("S2", "P2", "P2T"), "s2-belowfloor-high": ("S2",), "s1-no-gauge": ("S1", "CAND"), "s1-no-pfec": ("S1",), "r1-blind": ("S1",), "twin-no-final": ("P1T", "P2T"),
               "twin-under-min": ("P2T",), "twin-worse": ("P2T",), "twin-no-acct": ("P1T", "P2T"), "no-succ-times": ("S1", "S2", "B0"), "rho-one-end": ("S1", "S2", "B0"), "pool-echo-wrong": ("S1", "S2"),
-              "s2-goodput-low": ("S2", "CAND"), "s1-goodput-low": ("S1", "CAND"), "dnf": ("S2",), "bulk-rr": ("S2", "S1", "B0", "CAND"), "no-pace-echo": ("P1", "P2", "P1T", "P2T")}
+              "s2-goodput-low": ("S2", "CAND"), "s1-goodput-low": ("S1", "CAND"), "dnf": ("S2",), "bulk-rr": ("S2", "S1", "B0", "CAND"), "no-pace-echo": ("P1", "P2", "P1T", "P2T"),
+              "r2-blind": ("P1", "P2"), "b0-gauge": ("B0",), "twin-missing-field": ("P2T",), "s2-taper-cotenant": ("S2",), "s1-crash": ("S1",)}
 CELL67 = {"c1s": "c1s-400", "c1d": "c1d-400", "c2": "c2-100", "c8": "c8-100"}
 
 
@@ -918,14 +919,17 @@ def defect67(seat, cell, g_arm):
     tag = os.environ.get("LD_TAG", "ld")
     n_seat = count67(f"{tag}-{seat}")
     n_cell = count67(f"{tag}-{seat}-{cell}")
+    n_glob = count67(f"glob-{seat}")
     for spec in [x for x in os.environ.get("STUB_BAD67", "").split(",") if x]:
         body, _, cellf = spec.partition(":")
         name, _, rng = body.partition("@")
+        glob = rng.startswith("@")
+        rng = rng.lstrip("@")
         if name not in BAD67_SEAT or not ({seat, g_arm} & set(BAD67_SEAT[name])):
             continue
         if cellf and cellf != cell:
             continue
-        n = n_cell if cellf else n_seat
+        n = n_cell if cellf else (n_glob if glob else n_seat)
         if rng:
             lo, _, hi = rng.partition("-")
             if not (int(lo) <= n <= int(hi or lo)):
@@ -948,6 +952,8 @@ def gen67(cli, srv, drv, fam, nbytes, hint):
         fplan = plan
         arm = seat if plan not in ("67o", "67d") else seat + ("P%s" % os.environ.get("RWM_STORE_PATH_POOL") if plan == "67o" else "D")
     defect = defect67(seat, cell, arm if arm in ("CAND", "BASE") else None)
+    if defect in ("s2-taper-cotenant", "s1-crash"):      # the row is also a crash void: the driver exits 1 (the stub shell reads this marker, as plan 64's dead BASE warm-up)
+        open(os.path.join(TMP, "stub-rc1"), "w").close()
     rep = 1 + count67(f"rep-{os.environ.get('LD_TAG', 'ld')}-{fplan}-{arm}-{cell}-{seed}")
     cli, srv, drv = fx.strip_base(fplan, arm, cli, srv, drv, defect)
     c, s_, d = fx.extra_lines(fplan, cell, arm, seed, rep, defect)

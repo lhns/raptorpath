@@ -136,6 +136,12 @@ P65=0; [ "$PLAN" = "65" ] && P65=1      # status 65: a stage-R-only launch (no a
 # Plan 67 (status 67, VM batch 1; loopdiag_p67.sh is the session envelope, sourced below): 67 = the rehearsal (LD_REHEARSE=1), 67g = guards 1 and 2 (Bulk), 67x = the stages off Bulk and the tunnel. P46 here only for the shared machinery
 # (the root-owned tmpfs tree, LD_HARD, the launch precondition); the seats have their own trees and pins (no LD_CAND_SHA / COMMIT, no LD_BASE_SHA).
 P67=0; case "$PLAN" in 67|67g|67x) P67=1 ;; esac
+# A plan-67 session (67, 67g, 67x and any later 67* token) refuses an active test seam unless the stub marker LD_TEST_SEAMS=1 is set: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S and the fast-mode constants of
+# plan67.py / G_ROWS67 (plan67.py seams). Before the locks and everything else: nothing ran.
+if [ "$P67" = 1 ] && [ "${LD_TEST_SEAMS:-}" != 1 ]; then
+  P67_SEAMS="$(python3 ./plan67.py seams "$(sed -n 's/^G_ROWS67=\([0-9][0-9]*\).*/\1/p' "$HERE/loopdiag_p67.sh" | head -n 1)")"
+  [ -z "$P67_SEAMS" ] || { echo "ABORT-SEAM plan $PLAN: test seam(s) active without LD_TEST_SEAMS=1: $P67_SEAMS; NOTHING WAS RUN"; exit 3; }
+fi
 case "$PLAN" in
   24) P_SMOKE=smoke; P_SCORE=score; P_CHECK=check ;;
   27) P_SMOKE=smoke27; P_SCORE=score27; P_CHECK=check27 ;;

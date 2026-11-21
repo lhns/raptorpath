@@ -141,7 +141,8 @@ binaries (LD_BIN_PREBUILT_<SEAT> + LD_BIN_SHA_<SEAT>) and tools result (LD_PRIOR
   seat-s1-no-pfec        S1's binary has no `pfec=`: ABORT-SEAT (the c8-gauges-pfec string is part of the identity)
   seat-b0-has-gauge      B0's binary carries `rlaw=`: ABORT-SEAT (B0 is main's)
   seat-commit-mismatch   S1's tree COMMIT is not the pin: ABORT-SEAT before any build
-  pin-missing-b0         LD_PIN_B0 unset (B0, P1 and P2 have no registered commit): ABORT-SEAT
+  pin-missing-b0         LD_PIN_B0 unset (every seat's pin is required, none has a default): ABORT-SEAT
+  pin-missing-s1         LD_PIN_S1 unset: ABORT-SEAT (the S1 / S2 pins have no registered default either)
   s2-seat-abort          S2's binary has no `pslot=`: ABORT-SEAT naming guard 2's stop and LD_DROP_S2=1
   s2-dropped             the same binary under LD_DROP_S2=1: S2, P2 and P2T never built or looked at, guard 1 and the other stages rehearse
   tools-diff             a seat's tools tree differs from the harness's: ABORT-SEAT (tools-diff witness)
@@ -155,8 +156,10 @@ binaries (LD_BIN_PREBUILT_<SEAT> + LD_BIN_SHA_<SEAT>) and tools result (LD_PRIOR
 Plan 67g (the Bulk guards; a launch on the rehearsal's artifacts):
   full                   G1 then G2 to LD-ALL-DONE; no build, no cargo test, TOOLS-TESTS-REUSED, GATE-67G1 / GATE-67G2 PASS
   g1-fail                S1 is slower than B0: GATE-67G1 FAIL and G2 still runs (guard 2's base is S1)
-  s1-no-gauge            an S1 row of G1 lacks the gauge prints: WITNESS-FAIL, replaced once
-  s2-taper-nonzero       an S2 row of G2 prints taper > 0: S06-FAIL, never replaced, GATE-67G2 FAIL, G1 unaffected
+  s1-no-gauge            an S1 row of G1 (past block 1) lacks the gauge prints: WITNESS-FAIL, replaced once
+  s2-taper-nonzero       an S2 row of G2 (past block 1) prints taper > 0: S06-FAIL, never replaced, GATE-67G2 FAIL, G1 unaffected
+  g-block1-fail          S1's first G1 row lacks the gauge prints: the block-1 rule (plan 41c's first 8 rows) stops G1 (exit 6, FAILED-g1), G2 still runs
+  seam-without-marker    LD_HARD_MIN_S set without LD_TEST_SEAMS=1: ABORT-SEAM before the locks, nothing run
   prebuilt-sha-mismatch  LD_BIN_SHA_S1 differs from the prebuilt S1 binary: ABORT-BUILD
   prebuilt-missing       no prebuilt for S2: ABORT-BUILD (a launch never builds)
   budget                 less than the registered worst case before LD_HARD: ABORT-BUDGET
@@ -164,15 +167,22 @@ Plan 67x (the stages off Bulk, the tunnel and the pool block):
   full                   A, R1, T, R2, the pool block to LD-ALL-DONE; AS, A1, A1-R, R1, T PASS, R2-HOLD not fired
   dump-twins             LD_DUMP67=1: the dump twins run before the pool block
   s2-taper-nonzero       an S2 row of stage A prints taper > 0: S06-FAIL, not replaced, AS cannot pass
+  s2-taper-cotenant      the same row is also a crash void (rc 1): still S06-FAIL, not replaced (a finding is never a void)
   s2-no-pslot            an S2 row of stage A has no pslot: VOID-WITNESS, replaced once
   s2-belowfloor-high     S2's below-floor count is far above S1's and fill_coded: a hold flag, rows LIVE, no FAIL
-  a-under-min            S1 rows of a cell void and fall under the minimum: UNSCOREABLE for AS and A1
+  a-under-min            S1 rows of a cell crash (VOID-RC: never replaced, not counted) and fall under the minimum of LIVE rows: UNSCOREABLE for AS and A1 (the old count of LIVE + crash rows would have scored)
   block1-fail            S1's first A row is void: FAILED-sa, the NEXT stage still runs
   r1-blind               S1 prints taper = 0 on most R1 rows: R1-BLIND, reported
   twin-no-final          the twins' sender line has no final=1: the last periodic [ACCT] line is read and labelled ACCT-LAST
   twin-under-min         P2T has fewer live rows than the minimum: R2-HOLD UNSCOREABLE, guard 2 not eligible
   twin-worse             P2T's unresolved blockers sit above P1T's: R2-HOLD fires
+  r1-b0-gauge            R1's B0 rows carry gauge prints: LIVE, not replaced, A1-R FAIL
+  r2-blind               P1 taper = 0 and P2 pslot = 0 on every scored R2 row: R2-BLIND, R2-HOLD UNSCOREABLE (R2 VOID)
+  twin-missing-field     P2T's [ACCT] line lacks oldest_unchanged_max: R2-HOLD UNSCOREABLE, never CLEAR
   t-refusal-missing      an S1 command does not refuse: T FAIL
+  t-refusal-and-void     an S1 refusal failure together with B0's key reading false: T FAIL (a finding before a void)
+  t-bringup-fail         tun_bulk.sh's TUN-BRINGUP-FAIL for B0 at realtime: ABORT-BRINGUP-T seat=B0 hint=realtime, no T verdict, stage not ok
+  truncated              the R1 battery returns timeout's rc 124 (a stub timeout): LD-BATTERY-TRUNCATED, TRUNCATED marker, A1-R / R1 TRUNCATED, stage not ok
   b0-run-key-false       B0's resolved configuration reads the key false: T VOID, not a pass
   g2-fail                LD_G2_FAIL67=1: the S2 arms, R2, the pool block and the dump twins are dropped; A1, A1-R and T still run
   cut-pool               LD_CUT67=pool: ABORT-CUT (only the dump twins may be cut)
@@ -205,9 +215,9 @@ HARNESS_PATHS = {
     "51e": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"),
     "51": ("rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"),
     "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt"),
-    "67": ("rehearse", "not-rehearsal", "seat-s1-no-pfec", "seat-b0-has-gauge", "seat-commit-mismatch", "pin-missing-b0", "s2-seat-abort", "s2-dropped", "tools-diff", "manifest-miss", "flake-rule-edit", "ref-missing",
+    "67": ("rehearse", "not-rehearsal", "seat-s1-no-pfec", "seat-b0-has-gauge", "seat-commit-mismatch", "pin-missing-b0", "pin-missing-s1", "s2-seat-abort", "s2-dropped", "tools-diff", "manifest-miss", "flake-rule-edit", "ref-missing",
            "twin-no-kept-acct", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
-    "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
-    "67x": ("full", "dump-twins", "s2-taper-nonzero", "s2-no-pslot", "s2-belowfloor-high", "a-under-min", "block1-fail", "r1-blind", "twin-no-final", "twin-under-min", "twin-worse", "t-refusal-missing", "b0-run-key-false", "g2-fail", "cut-pool",
-            "budget"),
+    "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "g-block1-fail", "seam-without-marker", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
+    "67x": ("full", "dump-twins", "s2-taper-nonzero", "s2-taper-cotenant", "s2-no-pslot", "s2-belowfloor-high", "a-under-min", "block1-fail", "r1-blind", "r1-b0-gauge", "r2-blind", "twin-no-final", "twin-under-min", "twin-worse", "twin-missing-field",
+            "t-refusal-missing", "t-refusal-and-void", "t-bringup-fail", "b0-run-key-false", "g2-fail", "cut-pool", "truncated", "budget"),
 }

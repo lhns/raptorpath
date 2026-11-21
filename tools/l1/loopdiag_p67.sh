@@ -7,8 +7,9 @@
 #                               no scored row, no battery. Ends LD-ALL-REHEARSAL-DONE with $RUN/AMENDMENT2.txt (the shas, the twin decision, the dump-twin need) for the second amendment.
 #   LD_PLAN=67g                 session 2: G1 (S1 against B0) then G2 (S2 against S1), plan 41d twice (LD_WITNESS67 = g1 | g2).
 #   LD_PLAN=67x                 session 3: A (with A1), R1 (with A1-R), T, R2 (with the test-seams twins), the dump twins (LD_DUMP67=1 only), the pool block.
-# Seats (plan67.SEATS): B0 = vmb-base, S1 = vmb-s1 2d590cdc, S2 = vmb-s2 1953abd1, P1 / P2 = S1 / S2 + the pacer (their own tools tree carries the lib.sh forward line), P1T / P2T = P1 / P2 built --release --features test-seams.
-# Source trees: $LD_ROOT/seats/<B0|S1|S2|P1|P2>/src (a git archive of the repo root; COMMIT beside it, $LD_ROOT/seats/<tree>/COMMIT). The commit pin of a seat is LD_PIN_<SEAT> (S1, S2: the registered default; B0, P1, P2: REQUIRED, no default).
+# Seats (plan67.SEATS): B0 = vmb-base, S1 = vmb-s1, S2 = vmb-s2, P1 / P2 = S1 / S2 + the pacer (their own tools tree carries the lib.sh forward line), P1T / P2T = P1 / P2 built --release --features test-seams.
+# Source trees: $LD_ROOT/seats/<B0|S1|S2|P1|P2>/src (a git archive of the repo root; COMMIT beside it, $LD_ROOT/seats/<tree>/COMMIT). The commit pin of a seat is LD_PIN_<SEAT>: REQUIRED for every seat, no default (ABORT-SEAT when unset).
+# Test seams (LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S and the fast-mode constants of plan67.py / G_ROWS67): loopdiag_run_all.sh aborts ABORT-SEAM before the locks unless LD_TEST_SEAMS=1 (the stub marker).
 # Binaries: a launch (67g / 67x) NEVER builds: LD_BIN_PREBUILT_<SEAT> (the rehearsal's $RUN/bins67/<seat>-raptorpath) and LD_BIN_SHA_<SEAT> (the second amendment's pin) are required for every seat the session uses (ABORT-BUILD).
 # Abort classes (registration 5.4): ABORT-SEAT (a commit pin or an identity string / tools-diff witness fails), ABORT-BUILD (a binary sha against its pin, a missing prebuilt), ABORT-SUITES (the suite-reuse manifest MISSes), ABORT-TESTS (the tools
 # tests), ABORT-SMOKE, ABORT-BUDGET. A seat of the S2 family (S2, P2, P2T) failing aborts the session with the line "relaunch with LD_DROP_S2=1": guard 1 then runs alone (registration 5.2).
@@ -41,9 +42,9 @@ era "LD-ALL plan $PLAN stages: ${P67STAGES[*]}"
 declare -A P67TREE P67PIN
 for _s in "${P67NEED[@]}"; do
   P67TREE[$_s]="$(python3 -c "import plan67; print(plan67.SEATS['$_s']['tree'])")"
-  read -r _penv _pdef <<< "$(python3 ./plan67.py pin "$_s")"
-  _pv="${!_penv:-$_pdef}"
-  [ -n "$_pv" ] || seat_fail "$_s" "ABORT-SEAT plan 67 seat $_s: $_penv is unset (the seat has no registered commit: the pin amendment names it)"
+  read -r _penv _ <<< "$(python3 ./plan67.py pin "$_s")"
+  _pv="${!_penv:-}"
+  [ -n "$_pv" ] || seat_fail "$_s" "ABORT-SEAT plan 67 seat $_s: $_penv is unset (every seat's commit pin is required, none has a default: the pin amendment names it)"
   P67PIN[$_s]="$_pv"
   _cf="$ROOT/seats/${P67TREE[$_s]}/COMMIT"
   case "$(cat "$_cf" 2>/dev/null)" in "$_pv"*) ;; *) seat_fail "$_s" "ABORT-SEAT plan 67 seat $_s: $_cf is '$(cat "$_cf" 2>/dev/null)', not the pin $_pv ($_penv)" ;; esac
@@ -171,7 +172,8 @@ stage67() { # name
   esac
   [ "$LD_DROP_S2" != 1 ] || seats="${seats//S2/}"
   [ "$LD_DROP_S2" != 1 ] || seats="${seats//P2T/}"; [ "$LD_DROP_S2" != 1 ] || seats="${seats//P2/}"
-  local SENV=(LD_OUTDIR="$dir" LD_HARD="${LD_HARD:-}" LD_REHEARSE="$REHEARSE" LD_DROP_S2="$LD_DROP_S2" LD_DUMP67="$LD_DUMP67" LD_WITNESS54=0 LD_WITNESS64=0 LD_BLOCK_ROW_S="${LD_BLOCK_ROW_S:-}")
+  local SENV=(LD_OUTDIR="$dir" LD_HARD="${LD_HARD:-}" LD_REHEARSE="$REHEARSE" LD_DROP_S2="$LD_DROP_S2" LD_DUMP67="$LD_DUMP67" LD_WITNESS54=0 LD_WITNESS64=0)
+  [ "${LD_TEST_SEAMS:-}" != 1 ] || SENV+=(LD_BLOCK_ROW_S="${LD_BLOCK_ROW_S:-}" LD_ROW_BYTES="${LD_ROW_BYTES:-}")      # the test seams reach a battery only under the explicit stub marker
   if [ -n "${w:-}" ]; then
     SENV+=(LD_BIN="${P67BIN[$cand]}" LD_SHA="${P67SHA[$cand]}" LD_BIN_BASE="${P67BIN[$base]}" LD_SHA_BASE="${P67SHA[$base]}" LD_BASE_SHA="${P67PIN[$base]}" LD_PLAN=41d LD_WITNESS67="$w")
     SENV+=(LD_SHA_G_CAND="${P67SHA[$cand]}" LD_SHA_G_BASE="${P67SHA[$base]}")
@@ -189,8 +191,12 @@ stage67() { # name
   [ "$name" != "t" ] || { runner=tun67_battery.sh; SENV=(LD_OUTDIR="$dir" LD_BIN_B0="${P67BIN[B0]}" LD_SHA_B0="${P67SHA[B0]}" LD_BIN_S1="${P67BIN[S1]}" LD_SHA_S1="${P67SHA[S1]}" LD_HARD="${LD_HARD:-}"); }
   if [ "$REHEARSE" = 1 ]; then
     era "LD-ALL stage $name smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
-    sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./$runner
+    # the smoke is bounded: min(1800 s, the time left to LD_HARD); a timeout is ABORT-SMOKE with the reason (a hung smoke must not eat the session's budget)
+    smkto=$(( LD_HARD - $(date +%s) )); [ "$smkto" -le 1800 ] || smkto=1800
+    if [ "$smkto" -lt 1 ]; then touch "$dir/ABORT-SMOKE"; era "ABORT-SMOKE stage $name: no time left before LD_HARD (the smoke runs for min(1800 s, the time left))"; return 1; fi
+    timeout "$smkto" sudo -n env "${SENV[@]}" LD_TAG=smoke LD_SMOKE=1 bash ./$runner
     sbrc=$?
+    if [ "$sbrc" = "124" ]; then touch "$dir/ABORT-SMOKE"; era "ABORT-SMOKE stage $name: the smoke timed out after ${smkto}s (the timeout is min(1800 s, the time left to LD_HARD))"; return 1; fi
     if [ "$name" = "t" ]; then python3 ./s67_score.py "${smk[@]}" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1
     elif [ -n "${w:-}" ]; then python3 ./s67_score.py "${smk[@]}" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1
     else python3 ./s67_score.py "${smk[@]}" "$dir/smoke.log" > "$dir/smoke-check.txt" 2>&1; fi
@@ -209,6 +215,9 @@ stage67() { # name
   timeout "$bto" sudo -n env "${SENV[@]}" LD_TAG=ld bash ./$runner
   brc=$?
   era "LD-ALL stage $name battery rc=$brc wall=$(( $(date +%s) - T1 ))s"
+  if [ "$brc" = "124" ]; then      # timeout's rc: the battery was killed at LD_HARD: every scorer reads the line and prints TRUNCATED in place of a PASS / CLEAR
+    { echo; echo "LD-BATTERY-TRUNCATED at LD_HARD $(date +%s)"; } >> "$dir/ld.log"; touch "$dir/TRUNCATED"; era "TRUNCATED stage $name: the battery hit LD_HARD (LD-BATTERY-TRUNCATED in $dir/ld.log)"
+  fi
   if [ "$brc" = "6" ]; then touch "$dir/FAILED-$name"; era "FAILED-$name stage $name stopped by the block-1 rule (the next stage still runs)"; return 6; fi
   if [ "$brc" = "0" ] && [ -n "${w:-}" ]; then
     # plan 41d's replacement rule (status 47): a slot voided by a witness (not DNF, not crash, never an S06-FAIL) is re-run once, at most 4
@@ -220,7 +229,9 @@ stage67() { # name
       if [ "$bto" -ge 900 ]; then
         era "LD-ALL stage $name: re-running $(wc -l < "$dir/repl-slots.txt") voided slot(s) once: $(tr '\n' ';' < "$dir/repl-slots.txt")"
         timeout "$bto" sudo -n env "${SENV[@]}" LD_REPL_FILE="$dir/repl-slots.txt" LD_TAG=repl bash ./$runner
-        era "LD-ALL stage $name: replacement run rc=$?"
+        rrc=$?
+        era "LD-ALL stage $name: replacement run rc=$rrc"
+        if [ "$rrc" = "124" ]; then { echo; echo "LD-BATTERY-TRUNCATED at LD_HARD $(date +%s)"; } >> "$dir/repl.log"; touch "$dir/TRUNCATED"; era "TRUNCATED stage $name: the replacement run hit LD_HARD (LD-BATTERY-TRUNCATED in $dir/repl.log)"; fi
       else era "ABORT-BUDGET stage $name replacement: ${bto}s left before LD_HARD (need 900)"; fi
     fi
   fi
@@ -231,7 +242,7 @@ stage67() { # name
     [ "$brc" = "0" ] && [ "$nrows" = "$G_ROWS67" ] && ok=1
     [ "$nrows" = "$G_ROWS67" ] || era "ABORT-ROWS stage $name: $nrows P38ROW lines, the guard's design is $G_ROWS67"
   elif [ "$name" = "t" ]; then
-    [ "$brc" = "0" ] && grep -aq '^T67DONE' "$dir/ld.log" && ok=1
+    [ "$brc" = "0" ] && grep -aq '^T67DONE' "$dir/ld.log" && ! grep -aq '^TUN-BRINGUP-FAIL' "$dir/ld.log" && ok=1      # a bring-up failure is ABORT-BRINGUP-T (registration 5.4): the stage is not ok
   else
     [ "$brc" = "0" ] && python3 ./plan67.py check "$bplan" "$dir/ld.log" && ok=1
   fi

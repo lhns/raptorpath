@@ -11,8 +11,9 @@
 #   T67SEAT seat=<B0|S1> hint=<h>              before each invocation's tun_bulk.sh output (TUNARM / TUNSHA / TUNMTU / TUNPIPE / TUNCAD / TUNCFG / TUNREP / TUNARM-DONE verbatim)
 #   T67REF seat=.. cmd=<check|run> key=<key> rc=<n> cfg=<true|false|-> err=<first non-empty stderr line>
 #   T67DONE, then LD-BATTERY-DONE
-# A B0 `run` whose stderr carries the guard's refusal text means B0 is not main's binary: ABORT-SEAT (exit 5), nothing more runs. A bring-up failure is recorded by tun_bulk.sh (TUN-BRINGUP-FAIL) and read by the scorer; it is
-# not an abort here (the stage reports it; the registration's "bring-up exhausted" class).
+# A B0 `run` whose stderr carries the guard's refusal text means B0 is not main's binary: ABORT-SEAT (exit 5), nothing more runs. A bring-up failure is recorded by tun_bulk.sh (its TUN-BRINGUP-FAIL line goes to stdout, so it is
+# in this ledger) and read by s67_score.py `tun`: ABORT-BRINGUP-T seat=<S> hint=<h> (registration 5.4 "bring-up exhausted (Stage T)"), no T verdict from the transfer clauses; loopdiag_p67.sh then does not count the stage ok.
+# It is not an abort HERE: the other invocations and the refusal rows still run, so the stage reports everything it saw.
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
 HERE="$(cd "$(dirname "$0")" && pwd)"

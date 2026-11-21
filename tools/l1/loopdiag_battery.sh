@@ -862,7 +862,7 @@ plan41b() { # smoke -> the whole plan (0), or the two smoke rows (1)
 # ── plan 41c ──────────────────────────────────────────────────────────────
 plan41c() { # smoke -> the whole plan (0), or the two smoke rows (1)
   local -a tbl
-  local line cell store arm seed rep
+  local line cell store arm seed rep n=0 b1g=0
   if [ -n "${LD_REPL_FILE:-}" ]; then
     # The replacement run (status 47): the slots voided by a witness are re-run ONCE, each with its own (cell, arm, seed, rep); at most 4.
     mapfile -t tbl < "$LD_REPL_FILE"
@@ -874,9 +874,20 @@ plan41c() { # smoke -> the whole plan (0), or the two smoke rows (1)
     mapfile -t tbl < <(if [ "$PLAN" = "41d" ]; then python3 ./place38_parse.py plan41d; else python3 ./place38_parse.py plan41c; fi)
     [ "${#tbl[@]}" -eq 96 ] || { echo "ABORT-PLAN41C table has ${#tbl[@]} rows (96)" >> "$OUT"; exit 3; }
   fi
+  # Plan 67 stage G (LD_WITNESS67 = g1 | g2, registration 5.2): after block 1 (s67_score.G_BLOCK1_N = 8 rows: plan 41c's first group, the smallest prefix that holds every (cell, arm) once) each (cell, arm)'s first row must be LIVE
+  # with its G witnesses, else the stage stops (exit 6: FAILED-<stage>, the envelope goes on to the next stage). Not on the smoke, not on the replacement run.
+  [ -z "$W67" ] || [ "$1" = "1" ] || [ -n "${LD_REPL_FILE:-}" ] || b1g="$(python3 -c 'import s67_score; print(s67_score.G_BLOCK1_N)')"
   for line in "${tbl[@]}"; do
     read -r cell store arm seed rep <<< "$line"
     run_one "$cell" "$arm" "$seed" "$rep" "$store"
+    n=$(( n + 1 ))
+    if [ "$b1g" -gt 0 ] && [ "$n" -eq "$b1g" ]; then
+      if ! python3 ./s67_score.py block1g "$W67" "$OUT" >> "$OUT" 2>&1; then
+        echo "FAILED-STAGE67 plan 41d ($W67) after block 1 ($n rows): a (cell, arm)'s first real row is not LIVE with its G witnesses; the stage stops $(date -u +%FT%TZ)" >> "$OUT"
+        _lb_say "FAILED-STAGE67 plan 41d ($W67) -- stage stopped (block-1 rule)"; exit 6
+      fi
+      echo "BLOCK1-OK67 plan 41d ($W67) ($n rows)" >> "$OUT"
+    fi
   done
   if [ "$1" != "1" ]; then
     echo "BLOCK-COMPLETE 12 groups $(date -u +%FT%TZ)" >> "$OUT"

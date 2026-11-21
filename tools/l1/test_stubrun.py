@@ -147,6 +147,17 @@ case "$1" in
 esac
 exit 0
 ''',
+    "timeout": r'''#!/bin/bash
+# stub timeout: STUB_TRUNC=<plan token> (plan 67 `truncated`): the envelope's battery call of that plan (LD_PLAN=<token> LD_TAG=ld) runs to its end and then returns rc 124, what the real timeout returns when LD_HARD cut the
+# battery. Every other call is the real timeout (the first `timeout` on PATH that is not this script).
+d="$1"; shift
+if [ -n "${STUB_TRUNC:-}" ] && [[ " $* " == *" LD_PLAN=$STUB_TRUNC "* ]] && [[ " $* " == *" LD_TAG=ld "* ]]; then "$@"; exit 124; fi
+real=""
+IFS=: read -ra _dirs <<< "$PATH"
+for _x in "${_dirs[@]}"; do [ -x "$_x/timeout" ] && ! [ "$_x/timeout" -ef "$0" ] && { real="$_x/timeout"; break; }; done
+[ -n "$real" ] || { "$@"; exit $?; }
+exec "$real" "$d" "$@"
+''',
     "taskset": '#!/bin/bash\n[ "$1" = "-c" ] && { echo "taskset $*" >> "${STUB_TASKSET_LOG:-/dev/null}"; shift 2; }\nexec "$@"\n',
     "python3": r'''#!/bin/bash
 # python3 passthrough that records the environment each ROW parser invocation sees (loopdiag_battery.sh: python3 <parser> row <cell> <arm> ...)
@@ -2691,6 +2702,12 @@ TUN_STUB67 = r'''#!/bin/bash
 cell="$1"; hint="$2"; bytes="$3"; reps="$4"; label="${5:-$hint}"
 echo "TUNARM label=$label cell=$cell hint=$hint bytes=$bytes reps=$reps seed=${SEED:-42} bin=$RWM_BIN start=$(date -u +%FT%TZ)"
 echo "TUNSHA $(sha256sum "$RWM_BIN" | cut -d' ' -f1)"
+if [ "${STUB_TUN_BRINGUP_FAIL:-}" = "$label" ]; then      # STUB_TUN_BRINGUP_FAIL=<seat>-<hint>: the three bring-up attempts fail, exactly the lines tun_bulk.sh writes
+  for a in 1 2 3; do echo "TUN-BRINGUP-RETRY label=$label attempt=$a"; done
+  echo "TUN-BRINGUP-FAIL label=$label"
+  echo "TUNARM-DONE label=$label reps=0 $(date -u +%FT%TZ)"
+  exit 0
+fi
 echo "TUNMTU cli=1196 srv=1196"
 echo "TUNPIPE cli=window/Rlc/$hint srv=window/Rlc/$hint"
 echo "TUNCAD cli=ACTIVE srv=ACTIVE"
@@ -2806,14 +2823,17 @@ def case67(plan, path):
     try:
         sb = make67(root, plan, path)
         reh_run = REH67.get("run")
-        extra = {"STUB_SEATDIR": px(sb["seatdir"]), "LD_PIN_B0": COMMIT67["B0"], "LD_PIN_P1": COMMIT67["P1"], "LD_PIN_P2": COMMIT67["P2"], "STUB_DRVLOG7": px(sb["logs"]) + "/drv7.log"}
+        extra = {"STUB_SEATDIR": px(sb["seatdir"]), "LD_PIN_B0": COMMIT67["B0"], "LD_PIN_S1": COMMIT67["S1"], "LD_PIN_S2": COMMIT67["S2"], "LD_PIN_P1": COMMIT67["P1"], "LD_PIN_P2": COMMIT67["P2"],
+                 "STUB_DRVLOG7": px(sb["logs"]) + "/drv7.log", "LD_TEST_SEAMS": "1"}      # LD_TEST_SEAMS=1: the stub marker (fast mode shrinks the design, LD_HARD_MIN_S / LD_BLOCK_ROW_S are seams); seam-without-marker drops it
         open(os.path.join(sb["logs"], "drv7.log"), "w").close()
         extra.update(ref67_files(root, sb))
         rehearse = plan == "67" and path != "not-rehearsal"
         bad = {"s2-taper-nonzero": "s2-taper-nonzero", "s2-no-pslot": "s2-no-pslot@2:c2-100", "s2-belowfloor-high": "s2-belowfloor-high", "r1-blind": "r1-blind", "twin-no-final": "twin-no-final", "twin-worse": "twin-worse",
-               "twin-under-min": "twin-under-min@1-99", "twin-no-kept-acct": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-no-gauge@1-7:c2-100", "block1-fail": "s1-no-gauge@0:c2-100"}
+               "twin-under-min": "twin-under-min@1-99", "twin-no-kept-acct": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-crash@1-3:c2-100", "block1-fail": "s1-no-gauge@0:c2-100",
+               "s2-taper-cotenant": "s2-taper-cotenant@2:c2-100", "r1-b0-gauge": "b0-gauge@2-99:c2-100", "r2-blind": "r2-blind", "twin-missing-field": "twin-missing-field"}
         if plan == "67g":
-            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@0", "s1-no-gauge": "s1-no-gauge@1", "g1-fail": "s1-no-gauge@0-99"})
+            # the defects sit PAST block 1 (the first 8 rows of each guard: the block-1 rule would stop the stage there): the 5th invocation of the seat on (@4); g1-fail counts over the whole session (@@), the replacement run included
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@4", "s1-no-gauge": "s1-no-gauge@4", "g1-fail": "s1-no-gauge@@4-99", "g-block1-fail": "s1-no-gauge@0"})
         if plan == "67x":
             bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100"})
         if path in bad:
@@ -2824,6 +2844,18 @@ def case67(plan, path):
                 fh.write("deadbeef" + "0" * 32 + "\n")
         if path == "pin-missing-b0":
             del extra["LD_PIN_B0"]
+        if path == "pin-missing-s1":
+            del extra["LD_PIN_S1"]
+        if path == "seam-without-marker":
+            del extra["LD_TEST_SEAMS"]
+            extra["LD_HARD_MIN_S"] = "1"
+        if path == "t-bringup-fail":
+            extra["STUB_TUN_BRINGUP_FAIL"] = "B0-realtime"
+        if path == "t-refusal-and-void":
+            extra["STUB_NOREFUSE_KEY"] = "window_coded_only"
+            extra["STUB_B0_KEYFALSE"] = "1"
+        if path == "truncated":
+            extra["STUB_TRUNC"] = "67r"
         if path == "tools-diff":
             append67(root, "S2", "tools/l1/l1common.py", "# one more byte: this seat's tools tree is not the harness's\n")
         if path == "manifest-miss":
@@ -2871,6 +2903,8 @@ def case67(plan, path):
             "seat-b0-has-gauge": (5, "ABORT-SEAT plan 67 seat B0: the binary carries 'rlaw='", 7),
             "seat-commit-mismatch": (5, "ABORT-SEAT plan 67 seat S1:", 0),
             "pin-missing-b0": (5, "ABORT-SEAT plan 67 seat B0: LD_PIN_B0 is unset", 0),
+            "pin-missing-s1": (5, "ABORT-SEAT plan 67 seat S1: LD_PIN_S1 is unset", 0),
+            "seam-without-marker": (3, "ABORT-SEAM plan 67g: test seam(s) active without LD_TEST_SEAMS=1: LD_HARD_MIN_S", 0),
             "s2-seat-abort": (5, "relaunch with LD_DROP_S2=1", 7),
             "tools-diff": (5, "ABORT-SEAT plan 67 tools-diff witness", 7),
             "manifest-miss": (5, "ABORT-SUITES plan 67 suite-reuse MISS: seat S1's tree", 7),
@@ -2965,6 +2999,13 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         g1, g2 = led56(stage_dirs["g1"]), led56(stage_dirs["g2"])
         gate1 = re.search(r"^GATE-67G1 (PASS|FAIL)", sc["g1"], re.M)
         gate2 = re.search(r"^GATE-67G2 (PASS|FAIL)", sc["g2"], re.M)
+        if path == "g-block1-fail":
+            check(f"{tag}: S1's first G1 row lacks the gauge prints: the block-1 rule stops G1 after 8 rows (FAILED-STAGE67 in its ledger, FAILED-g1 marker, BLOCK1-FAIL naming the row, exit 6, no score), G2 still ran to the end and printed its gate; the session is not DONE-ALL",
+                  os.path.exists(os.path.join(stage_dirs["g1"], "FAILED-g1")) and "FAILED-STAGE67" in txt67(stage_dirs["g1"], "ld.log") and "BLOCK1-FAIL c1s-400 CAND" in txt67(stage_dirs["g1"], "ld.log") and len(g1) == 8
+                  and not os.path.exists(os.path.join(stage_dirs["g1"], "DONE")) and not os.path.exists(os.path.join(stage_dirs["g1"], "score.txt")) and gate2 is not None and os.path.exists(os.path.join(stage_dirs["g2"], "DONE"))
+                  and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, len(g1), tail(e, 8)))
+            EXECUTED.add((plan, path))
+            return
         n = 16 if not FULL else 96
         check(f"{tag}: both guards ran to the end on the right seats (G1 rows on bin-S1 / bin-B0, G2 rows on bin-S2 / bin-S1: the stage's own plan-41d ledger holds {n} slots each) and printed their gate",
               len(g1) >= n and len(g2) >= n and gate1 is not None and gate2 is not None and {c.split("bin=")[1].split()[0] for c in calls} == {"bin-B0", "bin-S1", "bin-S2"}
@@ -3003,12 +3044,36 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
     if path == "s2-taper-nonzero":
         check(f"{tag}: an S2 row of stage A printing taper > 0 is S06-FAIL, never replaced (no REPLACE67 for it), and the stage score counts it (S06-FAIL-ROWS 1: the merge condition of 4.5 reads it, AS is its own clause)", any(r["status"] == "S06-FAIL" and r["arm"] == "S2" for r in a_rows) and "S06-FAIL-ROWS 1" in sc["a"]
               and not re.search(r"REPLACE67 \S+ S2 .*s06", txt67(stage_dirs["a"], "ld.log")), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"], tail(sc["a"], 5)))
+    elif path == "s2-taper-cotenant":
+        check(f"{tag}: an S2 row of stage A with taper > 0 that is also a crash void (driver rc 1) reads S06-FAIL (underlying label VOID-RC), is never replaced (no REPLACE67 for that slot) and is counted (S06-FAIL-ROWS 1)",
+              any(r["status"] == "S06-FAIL" and r["arm"] == "S2" and r.get("status_41d") == "VOID-RC" for r in a_rows) and "S06-FAIL-ROWS 1" in sc["a"] and "REPLACE67 c2-100 S2" not in txt67(stage_dirs["a"], "ld.log"),
+              ([(r["arm"], r["status"], r.get("status_41d")) for r in a_rows if r["arm"] == "S2"], tail(sc["a"], 5)))
+    elif path == "r1-b0-gauge":
+        check(f"{tag}: R1's B0 rows carry gauge prints: they stay LIVE (no VOID-WITNESS, no REPLACE67 for B0) and A1-R reads FAIL",
+              any(r["arm"] == "B0" and r["status"] == "LIVE" and r["w67"]["g_any"] for r in r1_rows) and "REPLACE67 c2-100 B0" not in txt67(stage_dirs["r1"], "ld.log") and re.search(r"^A1-R FAIL", sc["r1"], re.M) is not None,
+              ([(r["arm"], r["status"]) for r in r1_rows if r["arm"] == "B0"], tail(sc["r1"], 5)))
+    elif path == "r2-blind":
+        check(f"{tag}: P1 prints taper = 0 and P2 pslot = 0 on every scored R2 row: R2-BLIND P1 and P2 on record, R2-HOLD UNSCOREABLE (R2 VOID, guard 2 waits for an R2 re-run), never CLEAR",
+              "R2-BLIND P1" in sc["r2"] and "R2-BLIND P2" in sc["r2"] and re.search(r"^R2-HOLD UNSCOREABLE", sc["r2"], re.M) is not None and "R2 VOID" in sc["r2"] and "R2-HOLD CLEAR" not in sc["r2"], tail(sc["r2"], 6))
+    elif path == "twin-missing-field":
+        check(f"{tag}: P2T's [ACCT] line lacks oldest_unchanged_max: R2-HOLD UNSCOREABLE naming the field, never CLEAR", re.search(r"^R2-HOLD UNSCOREABLE .*oldest_unchanged_max", sc["r2"], re.M) is not None and "R2-HOLD CLEAR" not in sc["r2"], tail(sc["r2"], 6))
+    elif path == "t-refusal-and-void":
+        check(f"{tag}: an S1 refusal failure together with B0's key reading false: T FAIL (a finding before a void), not T VOID", re.search(r"^T FAIL", sc["t"], re.M) is not None and re.search(r"^T VOID", sc["t"], re.M) is None, tail(sc["t"], 6))
+    elif path == "t-bringup-fail":
+        check(f"{tag}: tun_bulk.sh's TUN-BRINGUP-FAIL (B0, realtime) is kept in the T ledger and read: ABORT-BRINGUP-T seat=B0 hint=realtime, no T PASS / FAIL / VOID line, the T stage is not ok (no DONE), the session is not DONE-ALL",
+              "TUN-BRINGUP-FAIL label=B0-realtime" in txt67(stage_dirs["t"], "ld.log") and "ABORT-BRINGUP-T seat=B0 hint=realtime" in sc["t"] and re.search(r"^T (PASS|FAIL|VOID)", sc["t"], re.M) is None
+              and not os.path.exists(os.path.join(stage_dirs["t"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(sc["t"], 6)))
+    elif path == "truncated":
+        check(f"{tag}: the R1 battery returned timeout's rc 124: LD-BATTERY-TRUNCATED in its ledger, the TRUNCATED marker, A1-R and R1 read TRUNCATED (never PASS), the stage is not ok, the session is not DONE-ALL, the other stages ran",
+              "LD-BATTERY-TRUNCATED at LD_HARD" in txt67(stage_dirs["r1"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "TRUNCATED")) and re.search(r"^A1-R TRUNCATED", sc["r1"], re.M) is not None
+              and re.search(r"^R1 TRUNCATED", sc["r1"], re.M) is not None and "PASS" not in sc["r1"].split("VERDICT-67R")[-1] and not os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and os.path.exists(os.path.join(stage_dirs["a"], "DONE"))
+              and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(sc["r1"], 5), tail(e, 6)))
     elif path == "s2-no-pslot":
         check(f"{tag}: an S2 row of stage A without pslot is VOID-WITNESS and re-run once (REPLACE67 on record, a second row of that slot); the stage still scores", any(r["status"] == "VOID-WITNESS" and r["arm"] == "S2" for r in a_rows) and "REPLACE67 c2-100 S2" in txt67(stage_dirs["a"], "ld.log"), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"],))
     elif path == "s2-belowfloor-high":
         check(f"{tag}: S2's below-floor count far above S1's and fill_coded: BELOW-FLOOR-HOLD YES in the score, every S2 row LIVE, no S06-FAIL, no FAIL label from it", "BELOW-FLOOR-HOLD YES" in sc["a"] and all(r["status"] == "LIVE" for r in a_rows if r["arm"] == "S2") and not any(r["status"] == "S06-FAIL" for r in a_rows), tail(sc["a"], 8))
     elif path == "a-under-min":
-        check(f"{tag}: S1 rows of a cell voided (and replaced void again) and fewer live than the minimum: AS and A1 read UNSCOREABLE, never PASS", re.search(r"^AS UNSCOREABLE", sc["a"], re.M) is not None and re.search(r"^A1 UNSCOREABLE", sc["a"], re.M) is not None, tail(sc["a"], 8))
+        check(f"{tag}: S1 rows of a cell crashed (VOID-RC: never replaced, not counted) and fewer LIVE than the minimum (the old LIVE + crash count would have scored): AS and A1 read UNSCOREABLE, never PASS", re.search(r"^AS UNSCOREABLE", sc["a"], re.M) is not None and re.search(r"^A1 UNSCOREABLE", sc["a"], re.M) is not None, tail(sc["a"], 8))
     elif path == "block1-fail":
         check(f"{tag}: S1's first A row is void: the block-1 rule stops the stage (FAILED-STAGE67 in its ledger, FAILED-a marker, exit 6) and the NEXT stage (R1) still ran to the end; the session is not DONE-ALL",
               os.path.exists(os.path.join(stage_dirs["a"], "FAILED-a")) and "FAILED-STAGE67" in txt67(stage_dirs["a"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(e, 8)))
