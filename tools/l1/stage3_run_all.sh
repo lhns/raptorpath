@@ -2,11 +2,11 @@
 # THE STAGE-3 BASELINE'S 5 h ENVELOPE (docs/status.md §5 pre-registration;
 # docs/measurement-discipline.md "The five-hour cap").
 #
-#   S3_ROOT=/home/vibe/stage3 S3_HARD_DEADLINE=<epoch> \
+#   S3_ROOT=$HOME/stage3 S3_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash stage3_run_all.sh > $S3_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree ($S3_ROOT/src/tools/l1). STARTED AS
-# `vibe`, NOT ROOT: sentinels are proven writable and written by vibe; `sudo
+# the VM user, NOT ROOT: sentinels are proven writable and written by the VM user; `sudo
 # -n` is used for the measurement stages only.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
@@ -82,7 +82,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "S3-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg) hard=$S3_HARD_DEADLINE soft=$SOFT" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export S3_LOCK_OWNER="stage3_run_all:$$"

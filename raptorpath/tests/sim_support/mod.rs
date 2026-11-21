@@ -194,6 +194,8 @@ pub fn child() {
     let port: u16 = env("SIM_PORT");
     let out: String = env("SIM_OUT");
     let pace_mbit: Option<f64> = std::env::var("SIM_PACE_MBIT").ok().and_then(|v| v.parse().ok());
+    let srv_hint: Option<String> = std::env::var("SIM_SRV_HINT").ok();
+    let srv_reliable: Option<bool> = std::env::var("SIM_SRV_RELIABLE").ok().and_then(|v| v.parse().ok());
 
     let _ = rustls::crypto::ring::default_provider().install_default();
     let wall0 = std::time::Instant::now();
@@ -220,8 +222,11 @@ pub fn child() {
                 vec!["127.0.0.1:0".to_string(); npaths as usize]
             }),
             peer: (!server).then(|| srv_addrs.iter().map(|a| a.to_string()).collect()),
-            protocol_hint: Some(hint.clone()),
-            window_reliable: reliable,
+            // `SIM_SRV_HINT` / `SIM_SRV_RELIABLE` override the server (the
+            // data receiver) only: a mixed-config pair (`tests/sim_mixed_rho.rs`).
+            // Unset, both ends take the scenario's values.
+            protocol_hint: Some(if server { srv_hint.clone().unwrap_or_else(|| hint.clone()) } else { hint.clone() }),
+            window_reliable: if server { srv_reliable.or(reliable) } else { reliable },
             ..Default::default()
         };
         let srv = config::resolve(&peer(true)).unwrap().0;

@@ -156,7 +156,7 @@
    Compiling serde_path_to_error v0.1.20
    Compiling tracing-log v0.2.0
    Compiling thread_local v1.1.9
-   Compiling gf256 v0.1.0 (/home/vibe/n1/s19/src/gf256)
+   Compiling gf256 v0.1.0 (~/n1/s19/src/gf256)
    Compiling hashbrown v0.14.5
    Compiling nu-ansi-term v0.50.3
    Compiling cpufeatures v0.2.17
@@ -166,7 +166,7 @@
    Compiling rcgen v0.13.2
    Compiling axum v0.8.8
    Compiling tracing-subscriber v0.3.23
-   Compiling raptorpath-math v0.1.0 (/home/vibe/n1/s19/src/raptorpath-math)
+   Compiling raptorpath-math v0.1.0 (~/n1/s19/src/raptorpath-math)
    Compiling statrs v0.17.1
    Compiling toml v0.8.23
    Compiling clap v4.6.0
@@ -176,7 +176,7 @@
    Compiling rustls-webpki v0.103.9
    Compiling rustls-platform-verifier v0.6.2
    Compiling quinn-proto v0.11.14
-   Compiling raptorpath v0.1.0 (/home/vibe/n1/s19/src/raptorpath)
+   Compiling raptorpath v0.1.0 (~/n1/s19/src/raptorpath)
 warning: unnecessary parentheses around function argument
   --> raptorpath/src/net/store_cap.rs:92:9
    |

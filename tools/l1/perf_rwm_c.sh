@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run under sudo: resolve $HOME to the invoking user's home, not root's, so paths and the tree lock match.
+HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"
 # `raptorpath perf` (rp-native objects) over the reliable sliding-window
 # pipeline, single, dual or quad path, with an optional out-of-order object
 # delivery toggle (the H->inf corner, paper §4.11).
@@ -35,7 +37,7 @@ source ./abort_witness.sh
 # The binary is overridable so a battery can run a second binary as a baseline
 # arm; `$BIN` is echoed into the witness to prove which binary an invocation
 # ran.
-BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
+BIN="${RWM_BIN:-$HOME/raptorpath/target/release/raptorpath}"
 SCENA="${1:?scenA}"; SCENB="${2:?scenB}"; HINT="${3:-bulk}"
 BYTES="${4:-1800000}"; RUNS="${5:-10}"; MODE="${6:-dual}"; PLACE_T="${7:-}"
 

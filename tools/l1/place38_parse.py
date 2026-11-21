@@ -968,6 +968,10 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
     if os.environ.get("LD_PLAN") == "41d" and os.environ.get("LD_WITNESS64") == "1":
         # Status 64, stage G: the F2 row witnesses (CAND: the reading and its failures; BASE: f2_void, expected None) and the seat's binary; the F2-FAIL status precedence is applied at the end (plan64.g_status).
         p.extend(plan64.g_row(row, arm, cli, srv, drv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
+    if os.environ.get("LD_PLAN") == "41d" and os.environ.get("LD_WITNESS67") in ("g1", "g2"):
+        # Status 67, stage G1 / G2: plan 41d plus the seat's row witnesses (g1: the c8 gauge prints on S1 and on no B0 row; g2: pslot on S2, taper = 0, rr = 0 on every row); S06-FAIL (taper > 0 on an S2 row) is never replaced (s67_score.g_status).
+        import s67_score
+        p.extend(s67_score.g_row(row, arm, cli, srv, drv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE"), os.environ["LD_WITNESS67"]))
     if os.environ.get("LD_PLAN") in ("64", "65"):      # plan 65 is plan 64's stage R (status 65)
         # Status 64, stage R (Realtime at rho = 1): the pipe-echo witness, rho on both ends, the seat's binary and the F2 reading; the labels are applied at the end (plan64.rt_status).
         p.extend(plan64.rt_row(row, arm, cli, srv, drv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
@@ -1126,6 +1130,9 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
         plan64.rt_status(row)
     if os.environ.get("LD_PLAN") == "41d" and os.environ.get("LD_WITNESS64") == "1":
         plan64.g_status(row)
+    if os.environ.get("LD_PLAN") == "41d" and os.environ.get("LD_WITNESS67") in ("g1", "g2"):
+        import s67_score
+        s67_score.g_status(row)
     io = os.environ.get("LD_IO_FULL10")
     try:
         row["io_full10"] = float(io) if io not in (None, "") else None

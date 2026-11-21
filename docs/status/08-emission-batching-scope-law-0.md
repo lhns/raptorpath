@@ -350,7 +350,7 @@ harness's 15d lists) is a separate, reviewed commit, not made here.
 *Binary and session.* Tree `06ee1fb` (the re-run amendment on `927bb00`;
 engine identical to `main`), archived with `git -c core.autocrlf=false -c
 core.eol=lf archive`, built fresh on the benchmark VM in a fresh run root
-and target directory (`/home/vibe/es2`), `sha256
+and target directory (`~/es2`), `sha256
 57980f4b43cfc628d74366df560e7000c103d4513c7e87ed70fdc9e120bbae3d`
 (`BINSHA.txt`; re-checked before every invocation). First ssh 03:40:30Z.
 Another agent (the QUIC feeder battery) held both locks; a detached waiter
@@ -439,7 +439,7 @@ cause was the receiver kernel's receive-buffer drops counted as path loss.
 With the 4 MB `SO_RCVBUF` on `main`, the receiver drops nothing under
 batching either (0 in 64/64 EB0 rows), and the fed loss matches the wire's
 under both arms (`plc`/truth 0.98–1.03). The fix's mechanism executed on
-every row: the per-invocation endpoint logs (`/home/vibe/es2/run/diag-es/`,
+every row: the per-invocation endpoint logs (`~/es2/run/diag-es/`,
 read after the session, not by the scorer) carry 384 `[RCVBUF] req=4000000
 granted=8000000 via=SO_RCVBUF clamped=0` echoes, exactly one per socket per
 end (128 rows, 192 legs, both ends), and no other value. The batching gains of the first run

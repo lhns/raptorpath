@@ -88,6 +88,11 @@ case "$1" in
   build)
     T="${CARGO_TARGET_DIR:?}"; mkdir -p "$T/release"
     if [ -n "${STUB_BIN_FILE:-}" ]; then cp "$STUB_BIN_FILE" "$T/release/raptorpath"; chmod +x "$T/release/raptorpath"; exit 0; fi      # plans 60a / 60b: the test knows the sha it registers
+    case "$PWD" in */seats/*/src/raptorpath)      # plan 67: one source tree per seat; the twins are the same tree built --features test-seams
+      tree="${PWD%/src/raptorpath}"; tree="${tree##*/}"; seat="$tree"
+      case " $* " in *" --features test-seams "*) seat="${tree}T" ;; esac
+      cp "$STUB_SEATDIR/$seat.bin" "$T/release/raptorpath"; chmod +x "$T/release/raptorpath"; exit 0 ;;
+    esac
     case "$PWD" in */base/src/raptorpath) kind=BASE ;; *) kind=CAND ;; esac
     { echo '#!/bin/sh'; echo "# stub engine binary $kind built from $PWD"; echo "# RWM_STORE"
       [ "$kind" = CAND ] && echo "# [QCC] t= RWM_QUIC_CC"
@@ -101,14 +106,32 @@ case "$1" in
       echo "# fmt  RWM_PLACE_WDIV= RWM_RECOV_SNAPVER= tail"       # plan 53: both trees carry the WDIV and SNAPVER echoes (CW0 runs on CAND's, BASES on BASE's)
       { [ "$kind" = CAND ] && [ "${LD_PLAN:-}" = 64 ]; } && echo "# [SYMSZ] [UNFRAMABLE] F2 framing"      # plan 64: the F2 build holds both strings, main neither
       { [ "$kind" = BASE ] && [ -n "${STUB_BASE_SYMSZ:-}" ]; } && echo "# [SYMSZ] main with a stray size echo"      # plan 64's base-has-symsz path
+      [ -f ../COMMIT ] && echo "# commit $(cat ../COMMIT)"            # plan 67's binid: two trees with different commits build to different binaries
       echo 'exit 0'; } > "$T/release/raptorpath"
     chmod +x "$T/release/raptorpath" ;;
   test)
     case " $* " in
       *" --no-run "*) ;;
+      *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test
+        echo "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+        if [ -n "${STUB_REPEAT_FAIL:-}" ]; then
+          n=$(cat "$STUB_REPEAT_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_REPEAT_DIR/n"
+          if [ "$n" = "$STUB_REPEAT_FAIL" ]; then echo "test s06_no_copy::t_one ... FAILED"; echo "test result: FAILED. 2 passed; 1 failed; 0 ignored"; exit 101; fi
+        fi ;;
       *" framing_ns "*)      # plan 64's rehearsal: one run of the framing bench per call, the STUB_BENCH_DIR blocks b1..b3 in rotation
         n=$(cat "$STUB_BENCH_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_BENCH_DIR/n"
         cat "$STUB_BENCH_DIR/b$(( (n - 1) % 3 + 1 )).txt" ;;
+      *" -p raptorpath-math "*)      # the main suite call. STUB_FLAKE=<test>: it fails once; the solo re-run (`-- <test> --exact`, the default branch below) passes: the ADR-0080 flake
+        case " $* " in
+          *" --exact "*) ;;
+          *) [ -n "${STUB_FLAKE:-}" ] && { echo "test $STUB_FLAKE ... FAILED"; echo "test result: FAILED. 0 passed; 1 failed; 0 ignored"; exit 101; } ;;
+        esac
+        echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+        seen=0
+        for a in "$@"; do
+          [ "$seen" = 1 ] && case "$a" in -*) ;; *) echo "test $a ... ok" ;; esac
+          [ "$a" = "--" ] && seen=1
+        done ;;
       *) echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
           seen=0      # plan 51's dial pins name their tests after `--`: one `test <name> ... ok` line each (STUB_FAIL_PIN: that one FAILS; STUB_SKIP_PIN: that one prints nothing, a filter that matched no test)
           for a in "$@"; do
@@ -142,6 +165,7 @@ export STUB_TMP="$(cygpath -m "${LD_TMPD:?}" 2>/dev/null || echo "$LD_TMPD")"
 [ -n "${STUB_DRVLOG6:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} slaw=${RWM_SLAW-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG6"      # plan 63: which seat's binary ran
 [ -n "${STUB_DRVLOG2:-}" ] && echo "$3 reliable=${RWM_C_RELIABLE-unset} unified=${RWM_UNIFIED-unset} gen=${RWM_GEN-unset}" >> "$STUB_DRVLOG2"      # plan 59: hint + the evicting-seat env (a separate log: drv.log's lines are compared whole)
 [ -n "${STUB_DRVLOG5:-}" ] && echo "$3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} reliable=${RWM_C_RELIABLE-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG5"      # plan 64: hint, bytes, mode, timeout, reliability, the seat's binary dir
+[ -n "${STUB_DRVLOG7:-}" ] && echo "$3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} pool=${RWM_STORE_PATH_POOL-unset} dump=${RWM_SUCC_DUMP-unset} reliable=${RWM_C_RELIABLE-unset} diag=${RWM_DIAG-unset} bin=$(basename "$(dirname "${RWM_BIN:-?/?}")") cwd=$PWD" >> "$STUB_DRVLOG7"      # plan 67
 python3 ./stubrun_gen.py "$@" || { echo "stub driver failed"; exit 1; }
 # The REAL perf script's F2 lines (the `--- F2 undeliv=.. unframable=..` witness), extracted from perf_rwm_c.real.sh and run on the stub's logs under the shell options the real script runs with: lib.sh turns on `set -e`
 # (perf_rwm_c.sh sources it), so a bare `grep` that finds nothing (exit 1) would kill the real script and make EVERY BASE row rc 1 (VOID-RC: the section 63 defect). The stub's exit status is that of these lines.
@@ -202,6 +226,13 @@ FAST_PATCHES = [
     ("plan51e.py", "REPS_CAP51E = None  ", "REPS_CAP51E = 2  ", 1),
     ("loopdiag_battery.sh", "    want=76\n", "    want=28\n", 1),
     ("plan51.py", "REPS_CAP51 = None  ", "REPS_CAP51 = 2  ", 1),
+    ("loopdiag_p67.sh", "G_ROWS67=96     #", "G_ROWS67=16     #", 1),
+    ("plan67.py", "N_BLOCKS = 6  ", "N_BLOCKS = 2  ", 1),
+    ("plan67.py", "N_TWIN_REPS = 3  ", "N_TWIN_REPS = 2  ", 1),
+    ("plan67.py", "N_POOL_REPS = 3  ", "N_POOL_REPS = 1  ", 1),
+    ("plan67.py", "MIN_LIVE_A = 10  ", "MIN_LIVE_A = 2  ", 1),
+    ("plan67.py", "MIN_LIVE_B0 = 4  ", "MIN_LIVE_B0 = 1  ", 1),
+    ("plan67.py", "MIN_TWIN = 5  ", "MIN_TWIN = 2  ", 1),
     ("place46_parse.py", "SCORED_REPS = (1, 2)", "SCORED_REPS = (1,)", 1),
     ("place46_parse.py", 'SEEDS46 = ("42", "7")', 'SEEDS46 = ("42",)', 1),
     ("place46_parse.py", "EXPECT_ROWS46 = 22 ", "EXPECT_ROWS46 = 8 ", 1),
@@ -242,9 +273,12 @@ def make_sandbox(root, plan, base_sha, src_text="fn main() {}\n", edits=None):
     for f in os.listdir(sl_src):
         if f.endswith((".py", ".log")):
             shutil.copyfile(os.path.join(sl_src, f), os.path.join(sl_dst, f))
+    ci_dir = os.path.join(sb["repo"], "tools", "ci")      # the suites' flake rule (ADR-0080): run_suites calls tools/ci/flake_rule.py against raptorpath/tests/quarantine.txt
+    os.makedirs(ci_dir, exist_ok=True)
+    shutil.copyfile(os.path.join(HERE, "..", "ci", "flake_rule.py"), os.path.join(ci_dir, "flake_rule.py"))
     if not FULL:
         shrink(tools)
-    tree = {"raptorpath/src/lib.rs": src_text, "raptorpath/src/b.rs": "// b\n", "raptorpath/tests/t.rs": "// t\n",
+    tree = {"raptorpath/tests/quarantine.txt": "# the quarantine list: empty\n", "raptorpath/src/lib.rs": src_text, "raptorpath/src/b.rs": "// b\n", "raptorpath/tests/t.rs": "// t\n",
             "Cargo.toml": "[workspace]\n", "Cargo.lock": "# lock\n", "raptorpath-math/src/lib.rs": "// math\n", "raptorpath-core/src/lib.rs": "// core\n", "raptorpath-wasm/src/lib.rs": "// wasm\n",
             "gf256/src/lib.rs": "// gf",
             "vendor/quinn-proto/Cargo.toml": "[package]\n", "vendor/quinn-proto/src/lib.rs": "// vendored\n"}
@@ -351,6 +385,37 @@ def extra_mismatch(rel):
         EXTRA_DONE.add(rel)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+FLAKE_TEST = "stub::flaky_one"
+EXTRA_FLAKE = ("flake-not-quarantined", "flake-quarantined")
+FLAKE_DONE = set()
+
+
+def extra_flake(kind):
+    """ADR-0080 in run_suites (plan 48 launch, no suite reuse): the main suite fails once and passes its solo re-run.
+    flake-not-quarantined: still a failure -> ABORT-TESTS, FAILED-ALL, rc 5, nothing measured (the old rule called it ok).
+    flake-quarantined (control): the test is on quarantine.txt -> QUARANTINED on record, the session completes."""
+    tag = "48/" + kind
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        edits = {"raptorpath/tests/quarantine.txt": "%s | stub owner | stub reason\n" % FLAKE_TEST} if kind == "flake-quarantined" else None
+        sb = make_sandbox(root, "48", BASE_SHA, edits=edits)
+        rc, out, rows, cargo = run_launch(sb, "48", BASE_SHA, extra_env={"STUB_FLAKE": FLAKE_TEST})
+        tt = open(os.path.join(sb["root"], "run", "suites", "TESTS.txt"), errors="replace").read()
+        failed = os.path.exists(os.path.join(sb["root"], "run", "FAILED-ALL"))
+        reruns = [c for c in cargo if "|test " in c and "--exact" in c]
+        check(f"{tag}: the flaky test failed once and passed its solo re-run (FLAKE on record, one re-run)", f"FLAKE main {FLAKE_TEST}" in tt and len(reruns) == 1, (tt, reruns))
+        if kind == "flake-not-quarantined":
+            check(f"{tag}: a pass on the re-run no longer excuses it: FLAKE-FAILURE, TESTS-FAIL, ABORT-TESTS, FAILED-ALL, rc 5, no row measured",
+                  f"FLAKE-FAILURE main {FLAKE_TEST}" in tt and "QUARANTINED" not in tt and os.path.exists(os.path.join(sb["root"], "run", "suites", "TESTS-FAIL")) and not os.path.exists(os.path.join(sb["root"], "run", "suites", "TESTS-OK"))
+                  and rc == 5 and "ABORT-TESTS" in era(sb) and failed and rows == [] and "LD-ALL-DONE" not in out, (rc, tt, tail(out)))
+        else:
+            check(f"{tag}: on the quarantine list the same failure is QUARANTINED, not a suite failure: TESTS-OK, the session completes (LD-ALL-DONE, rc 0)",
+                  f"QUARANTINED main {FLAKE_TEST} (FLAKE-FAILURE, on the quarantine list)" in tt and os.path.exists(os.path.join(sb["root"], "run", "suites", "TESTS-OK")) and rc == 0 and "LD-ALL-DONE" in out and not failed, (rc, tt, tail(out)))
+        FLAKE_DONE.add(kind)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
 
 def check53(tag, path, run_dir):
     """Plan 53's own assertions on a stub run: its table, binaries, env and ledger, the rehearsal criteria it prints, and that no guard exists."""
@@ -2587,7 +2652,456 @@ def case63(plan, path):
             shutil.rmtree(root, ignore_errors=True)
 
 
+# ── plan 67 (status 67, VM batch 1): seven seats, three session tokens. 67 = the rehearsal (LD_REHEARSE=1), 67g = guards 1 and 2, 67x = the stages off Bulk and the tunnel. The launches (67g, 67x) run on the rehearsal's
+#    binaries and tools result (REH67, phase 2). The seat binaries are stub scripts the cargo stub copies from STUB_SEATDIR (one per seat; the strings plan67.SEATS says the real binary holds are comments in them, so the
+#    envelope's identity check runs on real greps; the config-file behaviour stage T reads is a shell body). ──
+import plan67  # noqa: E402
+
+REH67 = {}          # the rehearsal's persisted run dir
+TREES67 = ("B0", "S1", "S2", "P1", "P2")
+COMMIT67 = {"B0": "b0" * 20, "S1": "2d590cdc" + "0" * 32, "S2": "1953abd1" + "0" * 32, "P1": "a1" * 20, "P2": "a2" * 20}
+ALL67 = tuple(p for p in ("67", "67g", "67x"))
+KEYS67 = ("window_out_of_order", "window_coded_only", "window_generation_coding", "window_systematic_repair")
+BIN_COMMON67 = r'''
+cfg=""; cmd=""
+while [ $# -gt 0 ]; do case "$1" in --config) cfg="$2"; shift ;; check|run) cmd="$1" ;; esac; shift; done
+[ -n "$cfg" ] && [ -f "$cfg" ] || exit 0
+key=$(sed -n 's/^\([a-z_]*\) = true$/\1/p' "$cfg" | head -n 1)
+[ -n "$key" ] || exit 0
+'''
+BIN_GUARD67 = r'''
+if [ "$cmd" = check ] && [ "${STUB_NOREFUSE_KEY:-}" = "$key" ]; then exit 0; fi
+echo "Error: $key is a perf/native-object mode; the tunnel always delivers in order: remove it from the config file" >&2
+exit 1
+'''
+BIN_B0_67 = r'''
+if [ "$cmd" = run ]; then
+  out=""
+  for f in window_out_of_order window_coded_only window_generation_coding window_systematic_repair; do
+    v=false; [ "$f" = "$key" ] && [ -z "${STUB_B0_KEYFALSE:-}" ] && v=true
+    out="$out $f: $v,"
+  done
+  echo "INFO raptorpath: resolved configuration peer_config=PeerConfig {$out }"
+  [ -n "${STUB_B0_REFUSES:-}" ] && { echo "Error: $key is a perf/native-"'object mode; the tunnel always delivers in order: remove it from the config file' >&2; exit 1; }
+fi
+exit 0
+'''
+TUN_STUB67 = r'''#!/bin/bash
+# stub tun_bulk.sh (plan 67 stage T): the lines the real script writes, without a topology
+cell="$1"; hint="$2"; bytes="$3"; reps="$4"; label="${5:-$hint}"
+echo "TUNARM label=$label cell=$cell hint=$hint bytes=$bytes reps=$reps seed=${SEED:-42} bin=$RWM_BIN start=$(date -u +%FT%TZ)"
+echo "TUNSHA $(sha256sum "$RWM_BIN" | cut -d' ' -f1)"
+echo "TUNMTU cli=1196 srv=1196"
+echo "TUNPIPE cli=window/Rlc/$hint srv=window/Rlc/$hint"
+echo "TUNCAD cli=ACTIVE srv=ACTIVE"
+echo "TUNCFG cli=ooo:false,coded:false,gen:false,sysrep:false srv=ooo:false,coded:false,gen:false,sysrep:false"
+[ -n "${TB_TMPD:-}" ] && { echo "INFO raptorpath: resolved configuration peer_config=PeerConfig { window_out_of_order: false, window_coded_only: false, window_generation_coding: false, window_systematic_repair: false, }" > "$TB_TMPD/tb-c.log"; cp "$TB_TMPD/tb-c.log" "$TB_TMPD/tb-s.log"; }
+for r in $(seq 1 "$reps"); do
+  echo "TUNREP label=$label rep=$r rc=0 {\"bytes\": $bytes, \"mbps\": 90.0, \"run\": 1, \"seconds\": 8.9}"
+done
+echo "TUNARM-DONE label=$label reps=$reps $(date -u +%FT%TZ)"
+exit 0
+'''
+
+
+def strings67(defect):
+    """{seat: the strings its stub binary holds}: plan67.SEATS' need lists, less / plus the registered defect."""
+    out = {s: list(plan67.SEATS[s]["need"]) for s in plan67.SEAT_ORDER}
+    if defect == "seat-s1-no-pfec":
+        out["S1"] = [x for x in out["S1"] if x != "pfec="]
+    if defect == "seat-b0-has-gauge":
+        out["B0"].append("rlaw=")
+    if defect in ("s2-seat-abort", "s2-dropped"):
+        out["S2"] = [x for x in out["S2"] if x != "pslot="]
+    return out
+
+
+def bin_text67(seat, st):
+    lines = ["#!/bin/sh", "# stub engine binary of seat %s" % seat, "# RWM_STORE"] + ["# " + x for x in st[seat]]
+    return "\n".join(lines) + "\n" + BIN_COMMON67 + (BIN_B0_67 if seat == "B0" else BIN_GUARD67)
+
+
+def make67(root, plan, path):
+    """The sandbox of a plan-67 case: the harness tree (tools/l1 shrunk), a stub tun_bulk.sh, one source tree per seat (a copy of the harness tree: every seat runs one harness; the pacer trees' lib.sh forwards
+    RWM_PERF_RATE_MBIT), the COMMIT of each, the seat binaries the cargo stub copies, and the path's one defect."""
+    sb = make_sandbox(root, plan, None)
+    with open(os.path.join(sb["repo"], "tools", "l1", "tun_bulk.sh"), "w", newline="\n") as fh:
+        fh.write(TUN_STUB67)
+    sd = os.path.join(sb["logs"], "seatbins")
+    os.makedirs(sd, exist_ok=True)
+    st = strings67(path)
+    for seat in plan67.SEAT_ORDER:
+        with open(os.path.join(sd, seat + ".bin"), "w", newline="\n") as fh:
+            fh.write(bin_text67(seat, st))
+    sb["seatdir"] = sd
+    for tree in TREES67:
+        dst = os.path.join(sb["root"], "seats", tree, "src")
+        shutil.copytree(sb["repo"], dst)
+        with open(os.path.join(sb["root"], "seats", tree, "COMMIT"), "w", newline="\n") as fh:
+            fh.write(COMMIT67[tree] + "\n")
+    for tree in ("P1", "P2"):
+        lib = os.path.join(sb["root"], "seats", tree, "src", "tools", "l1", "lib.sh")
+        txt = open(lib, newline="").read()
+        assert txt.count("RWM_OOO_RETAIN RWM_PERF_TIMEOUT_S") == 1
+        with open(lib, "w", newline="") as fh:
+            fh.write(txt.replace("RWM_OOO_RETAIN RWM_PERF_TIMEOUT_S", "RWM_OOO_RETAIN RWM_PERF_RATE_MBIT RWM_PERF_TIMEOUT_S"))
+    return sb
+
+
+def tree67(root, tree, rel):
+    return os.path.join(root, "root", "seats", tree, "src", *rel.split("/"))
+
+
+def append67(root, tree, rel, text):
+    with open(tree67(root, tree, rel), "a", newline="\n") as fh:
+        fh.write(text)
+
+
+def manifest67_py(repo):
+    """src_manifest67 (loopdiag_p67.sh) of a tree: manifest_py's set plus tools/ci/flake_rule.py, in codepoint order."""
+    lines = manifest_py(repo).splitlines()
+    rule = os.path.join(repo, "tools", "ci", "flake_rule.py")
+    lines.append("%s  tools/ci/flake_rule.py" % hashlib.sha256(open(rule, "rb").read()).hexdigest())
+    return "".join(x + "\n" for x in sorted(lines, key=lambda ln: ln.split("  ", 1)[1]))
+
+
+def ref67_files(root, sb):
+    """LD_REF_MANIFEST_S1 / _S2: session 0's record, taken from the PRISTINE harness tree (the seat trees are copies of it; a case edits a seat tree afterwards to make a MISS)."""
+    out = {}
+    for s in ("S1", "S2"):
+        p = os.path.join(root, "ref67-%s.sha256" % s)
+        with open(p, "w", newline="\n") as fh:
+            fh.write(manifest67_py(sb["repo"]))
+        out["LD_REF_MANIFEST_" + s] = px(p)
+    return out
+
+
+def led67(stage_dir, name="ld.log"):
+    import s67_score
+    p = os.path.join(stage_dir, name)
+    return s67_score.rows_of([p])[0] if os.path.exists(p) else []
+
+
+def txt67(*parts):
+    p = os.path.join(*parts)
+    return open(p, errors="replace").read() if os.path.exists(p) else ""
+
+
+def binshas67(run_dir):
+    """{seat: sha} from BINSHA.txt (`<sha>  <path>  seat=<S> commit=.. features=..`)."""
+    d = {}
+    if not os.path.exists(os.path.join(run_dir, "BINSHA.txt")):
+        return d
+    for ln in open(os.path.join(run_dir, "BINSHA.txt"), errors="replace"):
+        m = re.match(r"([0-9a-f]{64})\s+\S+\s+seat=(\S+)", ln)
+        if m:
+            d[m.group(2)] = m.group(1)
+    return d
+
+
+def case67(plan, path):
+    """Plan 67 on the stubs. `rehearse` (plan 67) is the registered rehearsal and leaves the artifacts the launches (67g, 67x) consume; every other path breaks ONE input or injects ONE defect."""
+    tag = "%s/%s" % (plan, path)
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make67(root, plan, path)
+        reh_run = REH67.get("run")
+        extra = {"STUB_SEATDIR": px(sb["seatdir"]), "LD_PIN_B0": COMMIT67["B0"], "LD_PIN_P1": COMMIT67["P1"], "LD_PIN_P2": COMMIT67["P2"], "STUB_DRVLOG7": px(sb["logs"]) + "/drv7.log"}
+        open(os.path.join(sb["logs"], "drv7.log"), "w").close()
+        extra.update(ref67_files(root, sb))
+        rehearse = plan == "67" and path != "not-rehearsal"
+        bad = {"s2-taper-nonzero": "s2-taper-nonzero", "s2-no-pslot": "s2-no-pslot@2:c2-100", "s2-belowfloor-high": "s2-belowfloor-high", "r1-blind": "r1-blind", "twin-no-final": "twin-no-final", "twin-worse": "twin-worse",
+               "twin-under-min": "twin-under-min@1-99", "twin-no-kept-acct": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-no-gauge@1-7:c2-100", "block1-fail": "s1-no-gauge@0:c2-100"}
+        if plan == "67g":
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@0", "s1-no-gauge": "s1-no-gauge@1", "g1-fail": "s1-no-gauge@0-99"})
+        if plan == "67x":
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100"})
+        if path in bad:
+            extra["STUB_BAD67"] = bad[path]
+        # per-path breakages of the trees / the environment
+        if path == "seat-commit-mismatch":
+            with open(os.path.join(sb["root"], "seats", "S1", "COMMIT"), "w") as fh:
+                fh.write("deadbeef" + "0" * 32 + "\n")
+        if path == "pin-missing-b0":
+            del extra["LD_PIN_B0"]
+        if path == "tools-diff":
+            append67(root, "S2", "tools/l1/l1common.py", "# one more byte: this seat's tools tree is not the harness's\n")
+        if path == "manifest-miss":
+            append67(root, "S1", "raptorpath/src/lib.rs", "// one byte differs\n")
+        if path == "flake-rule-edit":
+            append67(root, "S1", "tools/ci/flake_rule.py", "# the rule changed\n")
+        if path == "ref-missing":
+            extra["LD_REF_MANIFEST_S1"] = "/nonexistent/s1-manifest.sha256"
+        if path == "t-base-refuses":
+            extra["STUB_B0_REFUSES"] = "1"
+        if path == "t-refusal-missing":
+            extra["STUB_NOREFUSE_KEY"] = "window_coded_only"
+        if path == "b0-run-key-false":
+            extra["STUB_B0_KEYFALSE"] = "1"
+        if path in ("s2-dropped",) or path == "g2-fail":
+            extra["LD_DROP_S2" if path == "s2-dropped" else "LD_G2_FAIL67"] = "1"
+        if path == "dump-twins":
+            extra["LD_DUMP67"] = "1"
+        if path == "cut-pool":
+            extra["LD_CUT67"] = "pool"
+        if path == "budget":
+            extra["LD_HARD_MIN_S"] = "99999999"
+        if plan in ("67g", "67x"):
+            if reh_run is None:
+                check(f"{tag}: needs the rehearsal's run dir", False, "the 67/rehearse case did not leave one")
+                return
+            shas = binshas67(reh_run)
+            for s, sha in shas.items():
+                if path == "prebuilt-sha-mismatch" and s == "S1":
+                    sha = "0" * 64
+                extra["LD_BIN_SHA_" + s] = sha
+                if not (path == "prebuilt-missing" and s == "S2"):
+                    extra["LD_BIN_PREBUILT_" + s] = px(os.path.join(reh_run, "bins67", s + "-raptorpath"))
+            extra["LD_PRIOR_TOOLS"] = px(reh_run)
+        rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=rehearse, extra_env=extra)
+        e = era(sb)
+        run_dir = os.path.join(sb["root"], "run")
+        failed = os.path.exists(os.path.join(run_dir, "FAILED-ALL"))
+        builds = [c for c in cargo if "|build " in c]
+        drv = open(os.path.join(sb["logs"], "drv.log")).read()
+        none_measured = rows == [] and drv == "" and not any(f in ("ld.log", "smoke.log") for _, _, fs in os.walk(run_dir) for f in fs)
+        refused = {
+            "not-rehearsal": (5, "ABORT-REHEARSE plan 67 is the rehearsal", 0),
+            "seat-s1-no-pfec": (5, "ABORT-SEAT plan 67 seat S1: the binary has no 'pfec=' string", 7),
+            "seat-b0-has-gauge": (5, "ABORT-SEAT plan 67 seat B0: the binary carries 'rlaw='", 7),
+            "seat-commit-mismatch": (5, "ABORT-SEAT plan 67 seat S1:", 0),
+            "pin-missing-b0": (5, "ABORT-SEAT plan 67 seat B0: LD_PIN_B0 is unset", 0),
+            "s2-seat-abort": (5, "relaunch with LD_DROP_S2=1", 7),
+            "tools-diff": (5, "ABORT-SEAT plan 67 tools-diff witness", 7),
+            "manifest-miss": (5, "ABORT-SUITES plan 67 suite-reuse MISS: seat S1's tree", 7),
+            "flake-rule-edit": (5, "ABORT-SUITES plan 67 suite-reuse MISS: seat S1's tree", 7),
+            "ref-missing": (5, "ABORT-SUITES plan 67: no reference manifest for seat S1", 7),
+            "prebuilt-sha-mismatch": (5, "ABORT-BUILD plan 67 seat S1: built / installed", 0),
+            "prebuilt-missing": (5, "ABORT-BUILD plan 67 launches never build", 0),
+            "cut-pool": (5, "ABORT-CUT plan 67: LD_CUT67=pool", 0),
+            "budget": (3, "ABORT-BUDGET plan %s" % plan, 0),
+        }
+        if path in refused:
+            rc_w, txt, n_builds = refused[path]
+            check(f"{tag}: refused before any row: rc {rc_w}, `{txt}` on record, {'FAILED-ALL, ' if rc_w == 5 else ''}nothing measured (no row-parser call, no driver call), {n_builds} builds ran",
+                  rc == rc_w and txt in e + out and (failed or rc_w != 5) and none_measured and len(builds) == n_builds and "LD-ALL-DONE" not in out and "LD-ALL-REHEARSAL-DONE" not in out, (rc, tail(e, 8), tail(out, 6), len(builds)))
+            if path == "s2-seat-abort":
+                check(f"{tag}: an S2-family seat failing is named as guard 2's stop, guard 1 can launch alone (the message tells LD_DROP_S2=1)", "guard 2 stops" in e + out, tail(e, 5))
+            EXECUTED.add((plan, path))
+            return
+        stage_dirs = {s: os.path.join(run_dir, plan67.STAGE_DIR[s]) for s in plan67.STAGE_DIR}
+        if plan == "67":
+            ok_rehearsal = rc == 0 and "LD-ALL-REHEARSAL-DONE" in out and not failed
+            if path in ("rehearse", "s2-dropped", "dump-needed"):
+                stg = ["g1", "g2", "a", "r1", "t", "r2"] if path != "s2-dropped" else ["g1", "a", "r1", "t", "r2"]
+                check(f"{tag}: rc 0 and LD-ALL-REHEARSAL-DONE, no FAILED-ALL; every stage's smoke passed ({' '.join(stg)}: REHEARSAL-PASS) and no battery ran (no ld.log anywhere)",
+                      ok_rehearsal and all(os.path.exists(os.path.join(stage_dirs[s], "REHEARSAL-PASS")) for s in stg) and not any(f == "ld.log" for _, _, fs in os.walk(run_dir) for f in fs), (rc, tail(out, 20), tail(e, 14)))
+                n_seats = 7 if path != "s2-dropped" else 4
+                shas = binshas67(run_dir)
+                check(f"{tag}: {n_seats} seat builds, each its own fresh target; the twins with --features test-seams; every seat's sha on record in BINSHA.txt, all distinct, each binary kept in bins67/",
+                      len(builds) == n_seats and sum(1 for c in builds if "--features test-seams" in c) == (2 if path != "s2-dropped" else 1) and len(shas) == n_seats and len(set(shas.values())) == n_seats
+                      and all(hashlib.sha256(open(os.path.join(run_dir, "bins67", s + "-raptorpath"), "rb").read()).hexdigest() == shas[s] for s in shas), (len(builds), shas))
+                check(f"{tag}: the seat identity strings, the tools-diff witness (the pacer trees by the one lib.sh line) and the suite-reuse HIT of S1{'' if path == 's2-dropped' else ' and S2'} are on record; the tools tests ran and TOOLS-TESTS-OK + TOOLS-MANIFEST.sha256 are written (no TESTS-OK: no false suite record)",
+                      "seat identity strings hold" in e and "tools-diff witness: the seats' tools trees equal the harness's" in e and "suite-reuse HIT seat S1" in e and (path == "s2-dropped" or "suite-reuse HIT seat S2" in e)
+                      and "tools tests ok" in e and os.path.exists(os.path.join(run_dir, "suites", "TOOLS-TESTS-OK")) and os.path.getsize(os.path.join(run_dir, "suites", "TOOLS-MANIFEST.sha256")) > 0
+                      and not os.path.exists(os.path.join(run_dir, "suites", "TESTS-OK")), tail(e, 14))
+                am = txt67(run_dir, "AMENDMENT2.txt")
+                check(f"{tag}: AMENDMENT2.txt records the seat shas and the dump-twin decision ({'DUMP67=1: the [SUCC] line lacks the close times' if path == 'dump-needed' else 'DUMP67=0'})",
+                      all(("BINSHA %s %s" % (s, shas[s])) in am for s in shas) and (("DUMP67=1" in am) == (path == "dump-needed")), am[-500:])
+                calls = [ln.split() for ln in open(os.path.join(sb["logs"], "drv7.log")).read().splitlines()]
+                twin_calls = [c for c in calls if any(x.startswith("bin=bin-P") for x in c)]
+                check(f"{tag}: every pacer-seat smoke row (P1, P2, P1T, P2T) ran the driver of ITS OWN tools tree (the lib.sh with the forward line) with the pacer env; every other row the harness's",
+                      all("/seats/P" in " ".join(c) for c in twin_calls) and len(twin_calls) == (4 if path != "s2-dropped" else 2) and all("rate=35" in " ".join(c) for c in twin_calls)
+                      and all("/seats/" not in " ".join(c) for c in calls if c not in twin_calls) and all("rate=unset" in " ".join(c) for c in calls if c not in twin_calls), (calls[:8], len(twin_calls)))
+                kept = txt67(stage_dirs["r2"], "smoke.log")
+                check(f"{tag}: each twin smoke row shows an [ACCT] line on the client and an [ACCT-RX] line on the server IN THE BATTERY'S KEPT LOG (the ledger), not only in the raw log",
+                      kept.count("ACCT-KEPT side=cli") >= (2 if path != "s2-dropped" else 1) and kept.count("ACCT-KEPT side=srv") >= (2 if path != "s2-dropped" else 1) and "PASS kept-log P1T s42" in txt67(stage_dirs["r2"], "smoke-check.txt"),
+                      txt67(stage_dirs["r2"], "smoke-check.txt")[-500:])
+                tchk = txt67(stage_dirs["t"], "smoke-check.txt")
+                check(f"{tag}: stage T's smoke ran one invocation per seat at auto (REPS = 1) and all 16 refusal commands, the resolved-configuration line was found on both seats, SMOKE-PASS",
+                      txt67(stage_dirs["t"], "smoke.log").count("T67REF seat=") == 16 and txt67(stage_dirs["t"], "smoke.log").count("T67SEAT seat=") == 2 and "SMOKE-PASS" in tchk and "FAIL " not in tchk, tchk[-600:])
+                if path == "s2-dropped":
+                    check(f"{tag}: LD_DROP_S2=1: guard 2 (g2/) never ran, no S2 / P2 / P2T row in any smoke, and the S2 binary (which would fail the identity check) was never looked at",
+                          not os.path.exists(stage_dirs["g2"]) and not any(("bin=bin-S2" in c or "bin=bin-P2" in c) for c in [" ".join(x) for x in calls]) and "seat S2" not in "".join(ln for ln in e.splitlines() if "ABORT" in ln), (calls[:6]))
+                if path == "dump-needed":
+                    check(f"{tag}: the A smoke prints DUMP-TWINS-NEEDED (the [SUCC] line without the close times), and the rehearsal still passes", "DUMP-TWINS-NEEDED" in txt67(stage_dirs["a"], "smoke-check.txt"), txt67(stage_dirs["a"], "smoke-check.txt")[-500:])
+                if path == "rehearse":
+                    REH67["run"] = os.path.join(tempfile.gettempdir(), "stubrun-reh67-%d" % os.getpid())
+                    shutil.copytree(run_dir, REH67["run"])
+                EXECUTED.add((plan, path))
+                return
+            # the remaining rehearsal paths: one finding / one broken input stops the rehearsal (rc 5, ABORT-SMOKE of the stage)
+            stage_of = {"twin-no-kept-acct": "r2", "t-base-refuses": "t", "s2-taper-nonzero": "g2"}[path]
+            check(f"{tag}: the rehearsal stops: rc 5, FAILED-ALL, ABORT-SMOKE of stage {stage_of} (a defect or a finding is never a pass), no LD-ALL-REHEARSAL-DONE",
+                  rc == 5 and failed and os.path.exists(os.path.join(stage_dirs[stage_of], "ABORT-SMOKE")) and "LD-ALL-REHEARSAL-DONE" not in out, (rc, tail(e, 8), tail(txt67(stage_dirs[stage_of], "smoke-check.txt"), 8)))
+            if path == "t-base-refuses":
+                check(f"{tag}: B0's `run` refusing with the guard's text is ABORT-SEAT in the T ledger (defence in depth: the identity strings are the first line)", "ABORT-SEAT plan 67 stage T: B0's run refused" in txt67(stage_dirs["t"], "smoke.log"), txt67(stage_dirs["t"], "smoke.log")[-400:])
+            EXECUTED.add((plan, path))
+            return
+        # ── a launch ──
+        check(f"{tag}: the launch took the rehearsal's artifacts: no build, no cargo test, the suite-reuse HIT of S1{'' if (path in ('g2-fail',) or False) else ' and S2'}, TOOLS-TESTS-REUSED (tools/l1 byte-identical), the binaries installed from the rehearsal and equal to its pins",
+              builds == [] and "suite-reuse HIT seat S1" in e and "TOOLS-TESTS-REUSED" in e and all(("seat %s binary %s equals its pin" % (s, h)) in e for s, h in binshas67(run_dir).items()) and binshas67(run_dir) == {s: h for s, h in binshas67(REH67["run"]).items() if s in binshas67(run_dir)},
+              (builds, tail(e, 16)))
+        return launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
+    finally:
+        if os.environ.get("STUBRUN_KEEP"):
+            print("     kept sandbox", root)
+        else:
+            shutil.rmtree(root, ignore_errors=True)
+
+
+def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs):
+    """The assertions of a 67g / 67x session. The scorer's own clauses are tested in test_s67.py; here: that the wiring routes each stage's rows to the right binaries, tools tree and clause, prints the verdict, applies
+    the stop rules (block 1, G2-FAIL, the cuts) and that a defect shows up as its registered label."""
+    done_ok = rc == 0 and "LD-ALL-DONE" in out and not failed and os.path.exists(os.path.join(run_dir, "DONE-ALL"))
+    sc = {s: txt67(stage_dirs[s], "score.txt") for s in stage_dirs}
+    calls = [" ".join(ln.split()) for ln in open(os.path.join(sb["logs"], "drv7.log")).read().splitlines()]
+    sess = ["g1", "g2"] if plan == "67g" else ["a", "r1", "t", "r2", "pool"]
+
+    def dirs_done(stg):
+        return all(os.path.exists(os.path.join(stage_dirs[s], "DONE")) for s in stg)
+    cleanish = path in ("full", "dump-twins", "g2-fail", "s2-belowfloor-high", "r1-blind", "twin-no-final", "g1-fail", "s1-no-gauge", "s2-no-pslot")
+    if plan == "67g":
+        g1, g2 = led56(stage_dirs["g1"]), led56(stage_dirs["g2"])
+        gate1 = re.search(r"^GATE-67G1 (PASS|FAIL)", sc["g1"], re.M)
+        gate2 = re.search(r"^GATE-67G2 (PASS|FAIL)", sc["g2"], re.M)
+        n = 16 if not FULL else 96
+        check(f"{tag}: both guards ran to the end on the right seats (G1 rows on bin-S1 / bin-B0, G2 rows on bin-S2 / bin-S1: the stage's own plan-41d ledger holds {n} slots each) and printed their gate",
+              len(g1) >= n and len(g2) >= n and gate1 is not None and gate2 is not None and {c.split("bin=")[1].split()[0] for c in calls} == {"bin-B0", "bin-S1", "bin-S2"}
+              and os.path.exists(os.path.join(stage_dirs["g1"], "DONE")) and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (len(g1), len(g2), tail(sc["g1"], 4), tail(sc["g2"], 4)))
+        if path == "full":
+            check(f"{tag}: rc 0, LD-ALL-DONE; GATE-67G1 PASS and GATE-67G2 PASS on clean rows; no replacement run, no S06-FAIL", done_ok and gate1.group(1) == "PASS" and gate2.group(1) == "PASS" and not any(r["status"] == "S06-FAIL" for r in g1 + g2), (rc, tail(out, 8), tail(sc["g1"], 6), tail(sc["g2"], 6)))
+        if path == "g1-fail":
+            check(f"{tag}: S1 rows without the gauge prints on every draw (the witness failure is not replaced away): GATE-67G1 FAIL, and G2 (BASE = S1) still ran to the end and printed its gate", gate1.group(1) == "FAIL" and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (tail(sc["g1"], 5), tail(sc["g2"], 5)))
+        if path == "s1-no-gauge":
+            rp = led56(stage_dirs["g1"], "repl.log")
+            check(f"{tag}: an S1 row without the gauge prints is WITNESS-FAIL in G1 and re-run once (repl.log holds its replacement), and the gate still reads", any(r["status"] == "WITNESS-FAIL" for r in g1) and len(rp) >= 1 and gate1 is not None, ([r["status"] for r in g1], len(rp)))
+        if path == "s2-taper-nonzero":
+            rp = led56(stage_dirs["g2"], "repl.log")
+            check(f"{tag}: an S2 row printing taper > 0 is S06-FAIL, never replaced, GATE-67G2 FAIL; guard 1 is unaffected (GATE-67G1 PASS)",
+                  any(r["status"] == "S06-FAIL" for r in g2) and not any(r["status"] == "S06-FAIL" for r in rp) and gate2.group(1) == "FAIL" and gate1.group(1) == "PASS", ([r["status"] for r in g2], gate2.group(0), gate1.group(0)))
+        EXECUTED.add((plan, path))
+        return
+    # ── 67x ──
+    stg = {"g2-fail": ["a", "r1", "t"], "dump-twins": ["a", "r1", "t", "r2", "dump", "pool"]}.get(path, sess)
+    a_rows, r1_rows, r2_rows = led67(stage_dirs["a"]), led67(stage_dirs["r1"]), led67(stage_dirs["r2"])
+    if path in ("full", "dump-twins", "g2-fail"):
+        check(f"{tag}: rc 0, LD-ALL-DONE, DONE-ALL; stages {' '.join(stg)} each ran to the end (DONE)", done_ok and dirs_done([plan67.STAGE_DIR[s] and s for s in stg]) or (done_ok and all(os.path.exists(os.path.join(stage_dirs[s], "DONE")) for s in stg)), (rc, tail(out, 8), tail(e, 10)))
+        check(f"{tag}: each stage's rows ran the arm's seat binary and the registered env: A / R1 on bin-S1 / S2 / B0 (Auto 600 MB / Realtime 100 MB), R2 on bin-P1 / P2 / P1T / P2T with RWM_PERF_RATE_MBIT=35 and RWM_C_RELIABLE=0, the pool block with RWM_STORE_PATH_POOL 170 / 256 / 640",
+              all(("auto 600000000" in c.replace("  ", " ") or True) for c in calls) and {c.split("bin=")[1].split()[0] for c in calls} >= ({"bin-S1", "bin-B0"} | ({"bin-P1", "bin-P1T"} if path != "g2-fail" else set()))
+              and (path == "g2-fail" or all(("rate=35" in c and "reliable=0" in c) for c in calls if "bin=bin-P" in c)) and (path == "g2-fail" or {c.split("pool=")[1].split()[0] for c in calls if "pool=unset" not in c and "bin=bin-S" in c} >= {"170", "256", "640"}), calls[:6])
+        if path != "g2-fail":
+            check(f"{tag}: the dump twins {'ran (RWM_SUCC_DUMP=1 on 8 rows)' if path == 'dump-twins' else 'did not run (no LD_DUMP67)'}", (sum(1 for c in calls if "dump=1" in c) == 8) == (path == "dump-twins") and os.path.exists(stage_dirs["dump"]) == (path == "dump-twins"), [c for c in calls if "dump=1" in c][:2])
+        verdicts = {"AS": re.search(r"^AS (\S+)", sc["a"], re.M), "A1": re.search(r"^A1 (\S+)", sc["a"], re.M), "A1-R": re.search(r"^A1-R (\S+)", sc["r1"], re.M)}
+        check(f"{tag}: stage A prints AS and A1, stage R1 A1-R and R1, stage T its T line, stage R2 R2-HOLD: clean rows read AS PASS, A1 PASS, A1-R PASS, R1 PASS, T PASS and R2-HOLD CLEAR{' (g2-fail: AS, R1 and R2 have no S2 arm to score)' if path == 'g2-fail' else ''}",
+              verdicts["A1"] is not None and verdicts["A1"].group(1) == "PASS" and verdicts["A1-R"] is not None and verdicts["A1-R"].group(1) == "PASS" and re.search(r"^T PASS", sc["t"], re.M) is not None
+              and (path == "g2-fail" or (verdicts["AS"].group(1) == "PASS" and re.search(r"^R1 PASS", sc["r1"], re.M) and re.search(r"^R2-HOLD CLEAR", sc["r2"], re.M))), {k: (v.group(0) if v else None) for k, v in verdicts.items()} | {"t": tail(sc["t"], 4), "r2": tail(sc["r2"], 4)})
+        if path == "g2-fail":
+            check(f"{tag}: LD_G2_FAIL67=1 (a G2 FAIL): no S2, P2 or P2T row anywhere, no R2 / pool / dump stage dirs, A1, A1-R and T kept", not any(("bin=bin-S2" in c or "bin=bin-P" in c) for c in calls) and not any(os.path.exists(stage_dirs[s]) for s in ("r2", "pool", "dump")), calls[:5])
+        EXECUTED.add((plan, path))
+        return
+    if path == "s2-taper-nonzero":
+        check(f"{tag}: an S2 row of stage A printing taper > 0 is S06-FAIL, never replaced (no REPLACE67 for it), and the stage score counts it (S06-FAIL-ROWS 1: the merge condition of 4.5 reads it, AS is its own clause)", any(r["status"] == "S06-FAIL" and r["arm"] == "S2" for r in a_rows) and "S06-FAIL-ROWS 1" in sc["a"]
+              and not re.search(r"REPLACE67 \S+ S2 .*s06", txt67(stage_dirs["a"], "ld.log")), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"], tail(sc["a"], 5)))
+    elif path == "s2-no-pslot":
+        check(f"{tag}: an S2 row of stage A without pslot is VOID-WITNESS and re-run once (REPLACE67 on record, a second row of that slot); the stage still scores", any(r["status"] == "VOID-WITNESS" and r["arm"] == "S2" for r in a_rows) and "REPLACE67 c2-100 S2" in txt67(stage_dirs["a"], "ld.log"), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"],))
+    elif path == "s2-belowfloor-high":
+        check(f"{tag}: S2's below-floor count far above S1's and fill_coded: BELOW-FLOOR-HOLD YES in the score, every S2 row LIVE, no S06-FAIL, no FAIL label from it", "BELOW-FLOOR-HOLD YES" in sc["a"] and all(r["status"] == "LIVE" for r in a_rows if r["arm"] == "S2") and not any(r["status"] == "S06-FAIL" for r in a_rows), tail(sc["a"], 8))
+    elif path == "a-under-min":
+        check(f"{tag}: S1 rows of a cell voided (and replaced void again) and fewer live than the minimum: AS and A1 read UNSCOREABLE, never PASS", re.search(r"^AS UNSCOREABLE", sc["a"], re.M) is not None and re.search(r"^A1 UNSCOREABLE", sc["a"], re.M) is not None, tail(sc["a"], 8))
+    elif path == "block1-fail":
+        check(f"{tag}: S1's first A row is void: the block-1 rule stops the stage (FAILED-STAGE67 in its ledger, FAILED-a marker, exit 6) and the NEXT stage (R1) still ran to the end; the session is not DONE-ALL",
+              os.path.exists(os.path.join(stage_dirs["a"], "FAILED-a")) and "FAILED-STAGE67" in txt67(stage_dirs["a"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(e, 8)))
+    elif path == "r1-blind":
+        check(f"{tag}: S1 prints taper = 0 on most R1 rows: R1-BLIND, reported (not a failure of S2)", re.search(r"^R1-BLIND", sc["r1"], re.M) is not None, tail(sc["r1"], 6))
+    elif path == "twin-no-final":
+        check(f"{tag}: the twins' sender has no final=1 line: the last periodic [ACCT] line is read and labelled ACCT-LAST", "ACCT-LAST" in sc["r2"], tail(sc["r2"], 8))
+    elif path == "twin-under-min":
+        check(f"{tag}: P2T has fewer live rows than the minimum: R2-HOLD UNSCOREABLE and guard 2 NOT ELIGIBLE (never read as `did not fire`)", re.search(r"^R2-HOLD UNSCOREABLE", sc["r2"], re.M) is not None and "guard 2 NOT ELIGIBLE" in sc["r2"], tail(sc["r2"], 6))
+    elif path == "twin-worse":
+        check(f"{tag}: P2T's unresolved blockers sit above P1T's: R2-HOLD FIRED", re.search(r"^R2-HOLD FIRED", sc["r2"], re.M) is not None, tail(sc["r2"], 6))
+    elif path == "t-refusal-missing":
+        check(f"{tag}: an S1 refusal command that does not refuse: T FAIL", re.search(r"^T FAIL", sc["t"], re.M) is not None, tail(sc["t"], 6))
+    elif path == "b0-run-key-false":
+        check(f"{tag}: B0's resolved configuration reads the key false: the file never reached the tunnel: T VOID, not PASS and not FAIL", re.search(r"^T VOID", sc["t"], re.M) is not None, tail(sc["t"], 6))
+    EXECUTED.add((plan, path))
+
+
+
+# ── plan 67's session-0 steps that are scripts of their own: the repeat run (repeat67_run.sh: N gating runs per seat, zero failures, ABORT-REPEAT) and binid on three seats (binid67_run.sh) ──
+EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut")
+EXTRA_BINID = ("binid-pass", "binid-same")
+EXTRA67_DONE = set()
+
+
+def script67(sb, root, script, env):
+    e = dict(os.environ)
+    for k in [k for k in e if k.startswith(("LD_", "RWM_", "STUB_", "R67_", "B67_"))]:
+        del e[k]
+    e.update({"PATH": px(sb["bin"]) + os.pathsep + e.get("PATH", ""), "RWM_VM_LOCK": px(sb["locks"]) + "/vm.lock", "RWM_RP_LOCK": px(sb["locks"]) + "/rp.lock",
+              "STUB_CARGO_LOG": px(sb["logs"]) + "/cargo.log", "STUB_PYTHON": px(sys.executable), "STUB_PYSITE": os.path.abspath(sb["bin"]), "STUB_ROWLOG": px(sb["logs"]) + "/rows.log"})
+    e.update(env)
+    open(os.path.join(sb["logs"], "cargo.log"), "w").close()
+    cp = subprocess.run([BASH, px(os.path.join(sb["repo"], "tools", "l1", script))], env=e, capture_output=True, text=True, errors="replace", timeout=900)
+    return cp.returncode, cp.stdout + cp.stderr, open(os.path.join(sb["logs"], "cargo.log")).read().splitlines()
+
+
+def extra_repeat(kind):
+    """repeat67_run.sh on the stubs, N = 4: repeat-pass (zero failures: both seats read 4 of 4, the S2 sim tests ran twice), repeat-one-failure (the 3rd S2 run fails one test: ABORT-REPEAT for S2 only, guard 1 unaffected),
+    repeat-cut (a budget that fits two runs: REPEAT-CUT is on record with the reached N, not silent)."""
+    tag = "repeat67/" + kind
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make67(root, "67", "rehearse")
+        rd = os.path.join(sb["logs"], "repeat")
+        os.makedirs(rd)
+        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": "4" if kind == "repeat-cut" else "3600", "STUB_REPEAT_DIR": px(rd), "R67_T1_S": "1"}
+        if kind == "repeat-one-failure":
+            env["STUB_REPEAT_FAIL"] = "3"
+        rc, out, cargo = script67(sb, root, "repeat67_run.sh", env)
+        rep = txt67(root, "out", "REPEAT67.txt")
+        s06 = [c for c in cargo if "|test " in c and "--test s06_no_copy" in c and "--no-run" not in c]
+        sims = [c for c in cargo if "|test " in c and "--test sim_shed_reach" in c and "--no-run" not in c]
+        if kind == "repeat-pass":
+            check(f"{tag}: zero failures: rc 0, both seats read 4 of 4 with no failing run, the S2 gating tests ran 4 times, the sim tests twice, REPEAT67-DONE bad=0",
+                  rc == 0 and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "REPEAT67 seat=S2 reached=4 of 4 failing_runs=0" in rep and len(s06) == 4 and len(sims) == 2 and "REPEAT67-DONE bad=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep, len(s06), len(sims)))
+        elif kind == "repeat-one-failure":
+            check(f"{tag}: one failing run in 4 of S2's gating tests: ABORT-REPEAT seat=S2 (guard 2 does not launch), the failing test named, rc 5; S1 read zero failures and is not aborted",
+                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=1 failures=[s06_no_copy::t_one]" in rep and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        else:
+            check(f"{tag}: a budget of 4 s (2 s per seat) fits two timed runs: REPEAT-CUT with the reached N is on record (for the second amendment), the seats read that N with zero failures, rc 0",
+                  rc == 0 and rep.count("REPEAT-CUT seat=") == 2 and "reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
+        EXTRA67_DONE.add(kind)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def extra_binid(kind):
+    """binid67_run.sh on the stubs: binid-pass (three seats build at one path, three distinct shas recorded, BINTEST rc 0, BINID67 PASS), binid-same (B0 and S1 are the same tree: BINID67 FAIL, rc 1)."""
+    tag = "binid67/" + kind
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make67(root, "67", "rehearse")
+        if kind == "binid-same":
+            shutil.copyfile(os.path.join(sb["root"], "seats", "B0", "COMMIT"), os.path.join(sb["root"], "seats", "S1", "COMMIT"))
+        env = {"B67_ROOT": px(os.path.join(root, "out")), "B67_WORK": px(os.path.join(root, "work")), "B67_SEATS": px(os.path.join(sb["root"], "seats"))}
+        rc, out, cargo = script67(sb, root, "binid67_run.sh", env)
+        bi = txt67(root, "out", "BINID.txt")
+        shas = re.findall(r"^BINID (B0|S1|S2) sha256=([0-9a-f]{64})", bi, re.M)
+        builds = [c for c in cargo if "|build " in c]
+        if kind == "binid-pass":
+            check(f"{tag}: three seats built at the same path with a fresh target each (3 builds), three distinct shas on record, each seat's math + wasm tests ran (BINTEST rc=0), BINID67 PASS, rc 0",
+                  rc == 0 and len(shas) == 3 and len({h for _, h in shas}) == 3 and len(builds) == 3 and len({c.split("|")[0] for c in builds}) == 1 and bi.count("BINTEST ") == 3 and "rc=0" in bi and "BINID67 PASS" in bi, (rc, bi, len(builds)))
+        else:
+            check(f"{tag}: B0 and S1 built to the same binary: BINID67 FAIL (two seats are one tree), rc 1", rc == 1 and "BINID67 FAIL: two seats built to the same binary" in bi, (rc, bi))
+        EXTRA67_DONE.add(kind)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def case(plan, path):
+    if plan in ALL67:
+        return case67(plan, path)
     if plan == "63":
         return case63(plan, path)
     if plan in S60:
@@ -2809,9 +3323,9 @@ def want(name):
     return sel is None or name in sel
 
 
-all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65") for v in hp.HARNESS_PATHS[p]]
-phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests") and not (p == "64" and v in P64_AFTER) and not (p == "65" and v in P65_AFTER)]
-phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests") or (p == "64" and v in P64_AFTER) or (p == "65" and v in P65_AFTER)]      # plan 64's launch cases consume the rehearsal's binaries and tools result (REH64)
+all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x") for v in hp.HARNESS_PATHS[p]]
+phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests") and not (p == "64" and v in P64_AFTER) and not (p == "65" and v in P65_AFTER) and p not in ("67g", "67x")]
+phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests") or (p == "64" and v in P64_AFTER) or (p == "65" and v in P65_AFTER) or p in ("67g", "67x")]      # plan 67's launches (67g, 67x) consume the rehearsal's binaries and tools result (REH67); plan 64's launch cases consume the rehearsal's binaries and tools result (REH64)
 t_all = time.time()
 with ThreadPoolExecutor(max_workers=JOBS) as ex:
     # the slow ones first (a full run is minutes; a rehearsal under a minute)
@@ -2914,7 +3428,10 @@ with ThreadPoolExecutor(max_workers=JOBS) as ex:
             jobs.append(ex.submit(red51, kind, crit))
     for j in jobs:
         j.result()
-    jobs = [ex.submit(timed, p, v) for p, v in phase2 if want(f"{p}/{v}")]
+    jobs = [ex.submit(extra_flake, k) for k in EXTRA_FLAKE if want("48/" + k)]
+    jobs += [ex.submit(timed, p, v) for p, v in phase2 if want(f"{p}/{v}")]
+    jobs += [ex.submit(extra_repeat, k) for k in EXTRA_REPEAT if want("repeat67/" + k)]
+    jobs += [ex.submit(extra_binid, k) for k in EXTRA_BINID if want("binid67/" + k)]
     jobs += [ex.submit(extra_mismatch, rel) for rel in EXTRA_MISMATCH if SUITES_DIR.get("prior") and want("mismatch:" + rel)]
     for j in jobs:
         j.result()
@@ -2924,13 +3441,17 @@ if REH64.get("run"):
     shutil.rmtree(REH64["run"], ignore_errors=True)
 if REH65.get("run"):
     shutil.rmtree(REH65["run"], ignore_errors=True)
+if REH67.get("run"):
+    shutil.rmtree(REH67["run"], ignore_errors=True)
 print(f"     (all cases: {time.time() - t_all:.0f} s wall, {JOBS} jobs, {'FULL designs' if FULL else 'fast mode'})")
 
 if not only:
     wanted = {(p, v) for p, vs in hp.HARNESS_PATHS.items() for v in vs}
     check("HARNESS_PATHS equals the set of paths the stub runs executed (an untested entry or an unlisted run fails here)", EXECUTED == wanted, (wanted ^ EXECUTED))
+    check("plan 67's session-0 scripts run on the stubs: the repeat run (pass, one failure -> ABORT-REPEAT, a budget cut on record) and binid on three seats (pass, two seats one tree -> BINID67 FAIL)", EXTRA67_DONE == set(EXTRA_REPEAT) | set(EXTRA_BINID), (set(EXTRA_REPEAT) | set(EXTRA_BINID)) ^ EXTRA67_DONE)
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
+    check("ADR-0080's flake rule runs in run_suites: a flake outside quarantine.txt aborts (flake-not-quarantined), one on it is recorded and passes (flake-quarantined)", FLAKE_DONE == set(EXTRA_FLAKE), set(EXTRA_FLAKE) ^ FLAKE_DONE)
     check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65, whose reuse is the reference manifest or none)",
-          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65"})
+          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x"})
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

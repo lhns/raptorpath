@@ -316,7 +316,7 @@ rows, all LIVE (reported only). Ledgers: `docs/l1-raw/thread-p2a/`
 value, the per-thread lists and both seeds' medians, `ackd.log` 30c56186…,
 `TESTS.txt`, `smoke.log`, `smoke-check.txt`, `PLAN.txt`, `BINSHA.txt`,
 `all-era.txt`); the per-invocation endpoint logs stay on the VM under
-`/home/vibe/p2arun/run/diag-tp2`.
+`~/p2arun/run/diag-tp2`.
 
 *Per cell* (P2A vs MAIN, n = 6 each; median [min–max]; relative tolerance
 in brackets; the min–max rule as pre-registered):

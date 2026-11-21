@@ -35,6 +35,9 @@ CELL="${1:?cell}"; HINT="${2:?hint}"; BYTES="${3:?bytes}"; REPS="${4:?reps}"
 LABEL="${5:-$HINT}"
 SEED="${SEED:-42}"
 TB_TMO="${RWM_TB_TIMEOUT_S:-90}"
+# Plan 67 stage T (tun67_battery.sh) seams, all off by default: TB_CONFIG = a TOML file both endpoints load (`--config`), TB_RUST_LOG = RUST_LOG for both endpoints (the `resolved configuration` line is info level),
+# TB_TMPD = where the endpoint logs go (default /tmp).
+TB_TMP="${TB_TMPD:-/tmp}"
 
 TBS_PID=""
 hard_cleanup() {
@@ -69,15 +72,15 @@ for attempt in 1 2 3; do
     bash ./topo.sh up "$CELL" --seed "$SEED" >/dev/null 2>&1 || true
     # shellcheck disable=SC2046
     ip netns exec "$NS_SRV" env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
-        $(rwm_forward_env) "$BIN" run --server --bind 10.77.0.2:7000 \
+        $(rwm_forward_env) ${TB_RUST_LOG:+RUST_LOG=$TB_RUST_LOG} "$BIN" ${TB_CONFIG:+--config $TB_CONFIG} run --server --bind 10.77.0.2:7000 \
         --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$HINT" \
-        >/tmp/tb-s.log 2>&1 &
+        >$TB_TMP/tb-s.log 2>&1 &
     sleep 2
     # shellcheck disable=SC2046
     ip netns exec "$NS_CLI" env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
-        $(rwm_forward_env) "$BIN" run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
+        $(rwm_forward_env) ${TB_RUST_LOG:+RUST_LOG=$TB_RUST_LOG} "$BIN" ${TB_CONFIG:+--config $TB_CONFIG} run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
         --tun-name rpcli0 --tun-addr 10.99.0.1/24 --protocol-hint "$HINT" \
-        >/tmp/tb-c.log 2>&1 &
+        >$TB_TMP/tb-c.log 2>&1 &
     for i in $(seq 1 20); do
         ip netns exec "$NS_CLI" ping -c1 -W1 10.99.0.2 >/dev/null 2>&1 && { up=1; break; }
         sleep 1
@@ -93,10 +96,22 @@ fi
 mtu_c=$(ip netns exec "$NS_CLI" cat /sys/class/net/rpcli0/mtu 2>/dev/null || echo "-")
 mtu_s=$(ip netns exec "$NS_SRV" cat /sys/class/net/rpsrv0/mtu 2>/dev/null || echo "-")
 echo "TUNMTU cli=${mtu_c:--} srv=${mtu_s:--}"
-echo "TUNPIPE cli=$(pipe_of /tmp/tb-c.log) srv=$(pipe_of /tmp/tb-s.log)"
-echo "TUNCAD cli=$(cad_state /tmp/tb-c.log) srv=$(cad_state /tmp/tb-s.log)"
+echo "TUNPIPE cli=$(pipe_of $TB_TMP/tb-c.log) srv=$(pipe_of $TB_TMP/tb-s.log)"
+echo "TUNCAD cli=$(cad_state $TB_TMP/tb-c.log) srv=$(cad_state $TB_TMP/tb-s.log)"
+# TUNCFG: the four object-mode fields of each endpoint's `resolved configuration` line (true|false, `-` where the line or the field is absent): the tunnel guard's witness (plan 67 stage T clause 4).
+cfg_of() { # log -> ooo:<v>,coded:<v>,gen:<v>,sysrep:<v>
+    local l pair k f v out=""
+    l=$(sed 's/\x1b\[[0-9;]*m//g' "$1" 2>/dev/null | grep -a 'resolved configuration' | tail -1)
+    for pair in ooo:window_out_of_order coded:window_coded_only gen:window_generation_coding sysrep:window_systematic_repair; do
+        k=${pair%%:*}; f=${pair#*:}
+        v=$(echo "$l" | grep -ao "$f: \(true\|false\)" | head -1 | sed 's/.*: //')
+        out="$out${out:+,}$k:${v:--}"
+    done
+    echo "$out"
+}
+echo "TUNCFG cli=$(cfg_of $TB_TMP/tb-c.log) srv=$(cfg_of $TB_TMP/tb-s.log)"
 ip netns exec "$NS_SRV" python3 ./transfer_bench.py server --bind 10.99.0.2 --port 9900 \
-    >/tmp/tb-srv.log 2>&1 &
+    >$TB_TMP/tb-srv.log 2>&1 &
 TBS_PID=$!
 sleep 0.5
 done_n=0

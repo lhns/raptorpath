@@ -1,7 +1,7 @@
 TQ1-ALL start 2026-10-06T03:09:34Z load=0.09 1.27 3.96 2/333 1853422 hard=1791266973 soft=1791266373
 LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
-LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
-TQ1-ALL build start commit=99f3132c762e1e92225358336d8845f34bf10739 cargo=/home/vibe/.cargo/bin/cargo cotenants: cargo=0 rustc=0 load=0.09 1.27 3.96 2026-10-06T03:09:34Z
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+TQ1-ALL build start commit=99f3132c762e1e92225358336d8845f34bf10739 cargo=~/.cargo/bin/cargo cotenants: cargo=0 rustc=0 load=0.09 1.27 3.96 2026-10-06T03:09:34Z
 TQ1-ALL cargo build --release rc=0 wall=259s 2026-10-06T03:13:53Z
 TQ1-ALL test main rc=101 passed=1077 failed=1 ignored=51 binaries=93 2026-10-06T03:35:16Z
 TQ1-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-10-06T03:35:21Z

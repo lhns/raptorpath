@@ -1,7 +1,7 @@
 === TUNBIN new aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 === TUNBIN old f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 === TUN round=1 seed=42 cell=c2 arm=new-bulk 16:39:42
-TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:39:42Z
+TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:39:42Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -13,7 +13,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:40:09Z
 EXIT rc=0 (18:40:09)
 === TUN round=1 seed=42 cell=c2 arm=old-bulk 16:40:09
-TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:40:09Z
+TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:40:09Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -25,7 +25,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:40:35Z
 EXIT rc=0 (18:40:36)
 === TUN round=1 seed=42 cell=c2 arm=new-auto 16:40:36
-TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:40:36Z
+TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:40:36Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto
@@ -37,7 +37,7 @@ TUNREP label=new-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-auto reps=4 2026-10-04T16:41:03Z
 EXIT rc=0 (18:41:03)
 === TUN round=1 seed=42 cell=c2 arm=old-auto 16:41:03
-TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:41:03Z
+TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:41:03Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -49,7 +49,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:41:40Z
 EXIT rc=0 (18:41:40)
 === TUN round=1 seed=42 cell=c3 arm=old-bulk 16:41:40
-TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:41:40Z
+TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:41:40Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -61,7 +61,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:42:17Z
 EXIT rc=0 (18:42:18)
 === TUN round=1 seed=42 cell=c3 arm=new-auto 16:42:18
-TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:42:18Z
+TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:42:18Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto
@@ -73,7 +73,7 @@ TUNREP label=new-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=new-auto reps=4 2026-10-04T16:42:52Z
 EXIT rc=0 (18:42:52)
 === TUN round=1 seed=42 cell=c3 arm=old-auto 16:42:52
-TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:42:52Z
+TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:42:52Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -85,7 +85,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:43:36Z
 EXIT rc=0 (18:43:36)
 === TUN round=1 seed=42 cell=c3 arm=new-bulk 16:43:36
-TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:43:36Z
+TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:43:36Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -97,7 +97,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:44:09Z
 EXIT rc=0 (18:44:09)
 === TUN round=1 seed=7 cell=c2 arm=new-auto 16:44:09
-TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:44:09Z
+TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:44:09Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto
@@ -109,7 +109,7 @@ TUNREP label=new-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-auto reps=4 2026-10-04T16:44:37Z
 EXIT rc=0 (18:44:37)
 === TUN round=1 seed=7 cell=c2 arm=old-auto 16:44:37
-TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:44:37Z
+TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:44:37Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -121,7 +121,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:45:27Z
 EXIT rc=0 (18:45:27)
 === TUN round=1 seed=7 cell=c2 arm=new-bulk 16:45:27
-TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:45:27Z
+TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:45:27Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -133,7 +133,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:45:53Z
 EXIT rc=0 (18:45:53)
 === TUN round=1 seed=7 cell=c2 arm=old-bulk 16:45:53
-TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:45:53Z
+TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:45:53Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -145,7 +145,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:46:19Z
 EXIT rc=0 (18:46:20)
 === TUN round=1 seed=7 cell=c3 arm=old-auto 16:46:20
-TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:46:20Z
+TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:46:20Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -157,7 +157,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:47:05Z
 EXIT rc=0 (18:47:05)
 === TUN round=1 seed=7 cell=c3 arm=new-bulk 16:47:05
-TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:47:05Z
+TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:47:05Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -169,7 +169,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:47:38Z
 EXIT rc=0 (18:47:39)
 === TUN round=1 seed=7 cell=c3 arm=old-bulk 16:47:39
-TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:47:39Z
+TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:47:39Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -181,7 +181,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:48:13Z
 EXIT rc=0 (18:48:13)
 === TUN round=1 seed=7 cell=c3 arm=new-auto 16:48:13
-TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:48:13Z
+TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:48:13Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto
@@ -193,7 +193,7 @@ TUNREP label=new-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=new-auto reps=4 2026-10-04T16:48:47Z
 EXIT rc=0 (18:48:47)
 === TUN round=2 seed=42 cell=c2 arm=new-bulk 16:48:47
-TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:48:47Z
+TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:48:47Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -205,7 +205,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:49:12Z
 EXIT rc=0 (18:49:13)
 === TUN round=2 seed=42 cell=c2 arm=old-bulk 16:49:13
-TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:49:13Z
+TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:49:13Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -217,7 +217,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:49:41Z
 EXIT rc=0 (18:49:41)
 === TUN round=2 seed=42 cell=c2 arm=new-auto 16:49:41
-TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:49:41Z
+TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:49:41Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto
@@ -229,7 +229,7 @@ TUNREP label=new-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-auto reps=4 2026-10-04T16:50:09Z
 EXIT rc=0 (18:50:09)
 === TUN round=2 seed=42 cell=c2 arm=old-auto 16:50:09
-TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:50:09Z
+TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:50:09Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -241,7 +241,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:50:50Z
 EXIT rc=0 (18:50:50)
 === TUN round=2 seed=42 cell=c3 arm=old-bulk 16:50:50
-TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:50:50Z
+TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:50:50Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -253,7 +253,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:51:24Z
 EXIT rc=0 (18:51:24)
 === TUN round=2 seed=42 cell=c3 arm=new-auto 16:51:24
-TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:51:24Z
+TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:51:24Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto
@@ -265,7 +265,7 @@ TUNREP label=new-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=new-auto reps=4 2026-10-04T16:51:58Z
 EXIT rc=0 (18:51:58)
 === TUN round=2 seed=42 cell=c3 arm=old-auto 16:51:58
-TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:51:58Z
+TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=42 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:51:58Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -277,7 +277,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:52:41Z
 EXIT rc=0 (18:52:41)
 === TUN round=2 seed=42 cell=c3 arm=new-bulk 16:52:41
-TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:52:41Z
+TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=42 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:52:41Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -289,7 +289,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:53:16Z
 EXIT rc=0 (18:53:16)
 === TUN round=2 seed=7 cell=c2 arm=new-auto 16:53:16
-TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:53:16Z
+TUNARM label=new-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:53:16Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto
@@ -301,7 +301,7 @@ TUNREP label=new-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-auto reps=4 2026-10-04T16:53:43Z
 EXIT rc=0 (18:53:44)
 === TUN round=2 seed=7 cell=c2 arm=old-auto 16:53:44
-TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:53:44Z
+TUNARM label=old-auto cell=c2 hint=auto bytes=50000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:53:44Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -313,7 +313,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:54:24Z
 EXIT rc=0 (18:54:24)
 === TUN round=2 seed=7 cell=c2 arm=new-bulk 16:54:24
-TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:54:24Z
+TUNARM label=new-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:54:24Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -325,7 +325,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:54:50Z
 EXIT rc=0 (18:54:50)
 === TUN round=2 seed=7 cell=c2 arm=old-bulk 16:54:50
-TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:54:50Z
+TUNARM label=old-bulk cell=c2 hint=bulk bytes=50000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:54:50Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -337,7 +337,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 50000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:55:18Z
 EXIT rc=0 (18:55:18)
 === TUN round=2 seed=7 cell=c3 arm=old-auto 16:55:18
-TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:55:18Z
+TUNARM label=old-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:55:18Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/auto srv=block/RaptorQ/auto
@@ -349,7 +349,7 @@ TUNREP label=old-auto rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-auto reps=4 2026-10-04T16:56:07Z
 EXIT rc=0 (18:56:07)
 === TUN round=2 seed=7 cell=c3 arm=new-bulk 16:56:07
-TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:56:07Z
+TUNARM label=new-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:56:07Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
@@ -361,7 +361,7 @@ TUNREP label=new-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=new-bulk reps=4 2026-10-04T16:56:40Z
 EXIT rc=0 (18:56:40)
 === TUN round=2 seed=7 cell=c3 arm=old-bulk 16:56:40
-TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T16:56:40Z
+TUNARM label=old-bulk cell=c3 hint=bulk bytes=12000000 reps=4 seed=7 bin=~/v4/bin/old/raptorpath start=2026-10-04T16:56:40Z
 TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 TUNMTU cli=1500 srv=1500
 TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
@@ -373,7 +373,7 @@ TUNREP label=old-bulk rep=4 rc=0 {"proto": "tcp", "cc": null, "bytes": 12000000,
 TUNARM-DONE label=old-bulk reps=4 2026-10-04T16:57:16Z
 EXIT rc=0 (18:57:16)
 === TUN round=2 seed=7 cell=c3 arm=new-auto 16:57:16
-TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T16:57:16Z
+TUNARM label=new-auto cell=c3 hint=auto bytes=12000000 reps=4 seed=7 bin=~/v4/bin/new/raptorpath start=2026-10-04T16:57:16Z
 TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
 TUNMTU cli=1196 srv=1196
 TUNPIPE cli=window/Rlc/auto srv=window/Rlc/auto

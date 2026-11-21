@@ -2,11 +2,11 @@
 # THE THREADING-REDESIGN P0 BATTERY'S ENVELOPE (docs/status.md §9
 # pre-registration; docs/measurement-discipline.md "The five-hour cap").
 #
-#   P0_ROOT=/home/vibe/p0 setsid nohup bash p0_launch.sh > $P0_ROOT/waiter.out 2>&1 < /dev/null &
+#   P0_ROOT=$HOME/p0 setsid nohup bash p0_launch.sh > $P0_ROOT/waiter.out 2>&1 < /dev/null &
 #
 # (p0_launch.sh waits for both locks to be free, then runs this). Run from
 # the synced tree ($P0_ROOT/src/tools/l1); main's tree is
-# $P0_ROOT/main-src (`git archive 8d7d8c1`). STARTED AS `vibe`, NOT ROOT;
+# $P0_ROOT/main-src (`git archive 8d7d8c1`). STARTED AS the VM user, NOT ROOT;
 # `sudo -n` only for the measurement stages. Hard deadline = lock
 # acquisition + 4 h 50 min.
 #
@@ -69,7 +69,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "P0-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg)" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export P0_LOCK_OWNER="p0_run_all:$$"

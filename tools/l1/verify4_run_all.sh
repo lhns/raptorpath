@@ -2,11 +2,11 @@
 # THE V4 VERIFICATION'S 5 h ENVELOPE (docs/status.md §6 pre-registration;
 # docs/measurement-discipline.md "The five-hour cap").
 #
-#   V4_ROOT=/home/vibe/v4 V4_HARD_DEADLINE=<epoch> V4_OLD_SHA=<sha> \
+#   V4_ROOT=$HOME/v4 V4_HARD_DEADLINE=<epoch> V4_OLD_SHA=<sha> \
 #     setsid nohup bash verify4_run_all.sh > $V4_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree ($V4_ROOT/src/tools/l1). STARTED AS
-# `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
+# the VM user, NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
 #   1. build + tests on the NEW tree: `cargo build --release`; `cargo test -p
@@ -40,7 +40,7 @@ crlf_guard lib.sh lib_battery.sh verify4_run_all.sh verify4_battery.sh verify4_p
 ROOT="${V4_ROOT:?V4_ROOT}"
 : "${V4_HARD_DEADLINE:?V4_HARD_DEADLINE (epoch seconds) is required}"
 : "${V4_OLD_SHA:?V4_OLD_SHA (the Stage-3 binary sha256) is required}"
-OLD_REUSE="${V4_OLD_REUSE:-/home/vibe/v3/new/raptorpath}"
+OLD_REUSE="${V4_OLD_REUSE:-$HOME/v3/new/raptorpath}"
 RUN="$ROOT/run"
 SRC="$(cd "$HERE/../.." && pwd)"
 BNEW="$ROOT/bin/new/raptorpath"
@@ -77,7 +77,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "V4-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg) hard=$V4_HARD_DEADLINE soft=$SOFT" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export V4_LOCK_OWNER="verify4_run_all:$$"

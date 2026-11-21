@@ -1,19 +1,19 @@
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/DONE-ALL (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/FAILED-ALL (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/all-era.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/SMOKE-PASS (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/ABORT-SMOKE (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/BINSHA.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/build.log (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/smoke.log (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/smoke-check.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/sl.log (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/score.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/sl/run/q2test.log (probed as vibe, create+unlink)
-SENTINEL-PROOF-COMPLETE 2026-10-26T03:22:27Z user=vibe dir=/home/vibe/n1/sl/run launch=2026-10-26T03:22:27Z
+SENTINEL-WRITABLE ~/n1/sl/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/build.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/sl.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/sl/run/q2test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-10-26T03:22:27Z user=VMUSER dir=~/n1/sl/run launch=2026-10-26T03:22:27Z
 SL-ALL start load=10.51 8.48 7.89 1/355 175183 2026-10-26T03:22:52Z
 LOCK-TAKEN /tmp/rwm-vm.lock
-LOCK-TAKEN /home/vibe/rp.lock
+LOCK-TAKEN ~/rp.lock
 SL-ALL locks held; cotenants cargo=0 rustc=0 load=3.55 4.17 4.61 2026-10-26T06:06:55Z
 SL-ALL built sha=17418fd840bac3ab809fdadfa1d646aa7da33ad5e6a1187891daf5a435a69ff4 wall=570s 2026-10-26T06:16:25Z
 SMOKE ('c1s-400', 'LAW'): mbps=686.275 eng=792/792 pin=0.7159 win_distinct=3 status=LIVE
@@ -28,4 +28,4 @@ SL-ALL q2 test rc=0 2026-10-26T06:29:58Z
 SL-ALL end bat_ok=1 raptorpath=0 netns=0 load=2.30 2.89 3.82 2026-10-26T06:29:58Z
 SL-ALL-DONE
 LOCK-RELEASED /tmp/rwm-vm.lock
-LOCK-RELEASED /home/vibe/rp.lock
+LOCK-RELEASED ~/rp.lock

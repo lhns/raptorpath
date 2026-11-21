@@ -2,11 +2,11 @@
 # THE EMISSION-BATCHING SCOPE BATTERY'S 5 h ENVELOPE (docs/status.md §8
 # pre-registration; docs/measurement-discipline.md "The five-hour cap").
 #
-#   ES_ROOT=/home/vibe/es ES_HARD_DEADLINE=<epoch> \
+#   ES_ROOT=$HOME/es ES_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash emitscope_run_all.sh > $ES_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree ($ES_ROOT/src/tools/l1). STARTED AS
-# `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
+# the VM user, NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
 #   1. build + tests on the tree: `cargo build --release`; `cargo test -p
@@ -73,7 +73,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "ES-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg) hard=$ES_HARD_DEADLINE soft=$SOFT" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export ES_LOCK_OWNER="emitscope_run_all:$$"

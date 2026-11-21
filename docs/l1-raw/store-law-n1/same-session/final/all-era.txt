@@ -1,6 +1,6 @@
 SL19-ALL start load=6.69 4.74 4.55 1/335 330005 2026-10-26T07:31:38Z
 LOCK-TAKEN /tmp/rwm-vm.lock
-LOCK-TAKEN /home/vibe/rp.lock
+LOCK-TAKEN ~/rp.lock
 SL19-ALL locks held; cotenants cargo=0 rustc=0 load=6.69 4.74 4.55 2026-10-26T07:31:38Z
 SL19-ALL parser test ok 2026-10-26T07:31:38Z
 SL19-ALL law built wall=709s 2026-10-26T07:43:27Z
@@ -11,4 +11,4 @@ SL19-ALL battery start load=2.58 3.37 4.26 2026-10-26T07:52:15Z
 SL19-ALL battery rc=0 wall=757s 2026-10-26T08:04:52Z
 SL19-ALL end bat_ok=1 raptorpath=0 netns=0 load=1.24 3.35 3.90 2026-10-26T08:04:52Z
 LOCK-RELEASED /tmp/rwm-vm.lock
-LOCK-RELEASED /home/vibe/rp.lock
+LOCK-RELEASED ~/rp.lock

@@ -144,7 +144,7 @@ held for the whole session. It was launched three times: the first two
 attempts ended `ABORT-LOCK` while another battery held the locks, and
 nothing ran in them. CPU: Xeon E5-2650 v3. FIX is commit 10b9d78, `sha256
 85ae2568…`, the same hash as session 1's build. MAIN is `aa88d648…`. Raw
-data is in `/home/vibe/fa/run3/` on the benchmark VM (`fa.log`, `diag/`,
+data is in `~/fa/run3/` on the benchmark VM (`fa.log`, `diag/`,
 `TESTS.txt`, `BINSHA.txt`).
 
 **Abort table:** no abort cause fired. 81 rows: 1 smoke row and 80 battery

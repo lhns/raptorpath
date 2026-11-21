@@ -892,6 +892,68 @@ def qcap(before, durings, after):
     return s + "### after wall=9.0\n" + after
 
 
+# ── plan 67 (status 67, VM batch 1): the seat is read from RWM_BIN (.../bin-<SEAT>/raptorpath); the real fixture logs are stripped and re-dressed by s67_fixtures (the ONE source of the plan's log shapes, shared with test_s67.py). ──
+# STUB_BAD67 (comma list of `defect[@k[-m]][:cell]`): the defect (s67_fixtures.DEFECTS) is applied to the k-th .. m-th invocation (0-based, k = m when only k is given, every invocation when no @) of the seat that
+# owns it in this battery pass (LD_TAG), counted per (seat, cell) when a :cell filter is given.
+BAD67_SEAT = {"s2-taper-nonzero": ("S2",), "s2-no-pslot": ("S2", "P2", "P2T"), "s2-belowfloor-high": ("S2",), "s1-no-gauge": ("S1", "CAND"), "s1-no-pfec": ("S1",), "r1-blind": ("S1",), "twin-no-final": ("P1T", "P2T"),
+              "twin-under-min": ("P2T",), "twin-worse": ("P2T",), "twin-no-acct": ("P1T", "P2T"), "no-succ-times": ("S1", "S2", "B0"), "rho-one-end": ("S1", "S2", "B0"), "pool-echo-wrong": ("S1", "S2"),
+              "s2-goodput-low": ("S2", "CAND"), "s1-goodput-low": ("S1", "CAND"), "dnf": ("S2",), "bulk-rr": ("S2", "S1", "B0", "CAND"), "no-pace-echo": ("P1", "P2", "P1T", "P2T")}
+CELL67 = {"c1s": "c1s-400", "c1d": "c1d-400", "c2": "c2-100", "c8": "c8-100"}
+
+
+def seat67():
+    m = re.search(r"bin-(P1T|P2T|B0|S1|S2|P1|P2)/", os.environ.get("RWM_BIN", ""))
+    return m.group(1) if m else None
+
+
+def count67(key):
+    marker = os.path.join(TMP, "cnt67-" + re.sub(r"[^A-Za-z0-9_.-]", "_", key))
+    n = len(open(marker).read()) if os.path.exists(marker) else 0
+    open(marker, "a").write("x")
+    return n
+
+
+def defect67(seat, cell, g_arm):
+    """The defect (or None) for THIS invocation, from STUB_BAD67; always advances the per-(seat, cell) counter of the pass."""
+    tag = os.environ.get("LD_TAG", "ld")
+    n_seat = count67(f"{tag}-{seat}")
+    n_cell = count67(f"{tag}-{seat}-{cell}")
+    for spec in [x for x in os.environ.get("STUB_BAD67", "").split(",") if x]:
+        body, _, cellf = spec.partition(":")
+        name, _, rng = body.partition("@")
+        if name not in BAD67_SEAT or not ({seat, g_arm} & set(BAD67_SEAT[name])):
+            continue
+        if cellf and cellf != cell:
+            continue
+        n = n_cell if cellf else n_seat
+        if rng:
+            lo, _, hi = rng.partition("-")
+            if not (int(lo) <= n <= int(hi or lo)):
+                continue
+        return name
+    return None
+
+
+def gen67(cli, srv, drv, fam, nbytes, hint):
+    import s67_fixtures as fx
+    plan = os.environ.get("LD_PLAN", "")
+    seat = seat67()
+    cell = CELL67[fam]
+    seed = os.environ.get("SEED", "42")
+    if plan == "41d":      # stage G of plan 67: the battery runs plan 41d, the witness names the guard (g1: S1 against B0, g2: S2 against S1)
+        which = os.environ["LD_WITNESS67"]
+        cand_seat = {"g1": "S1", "g2": "S2"}[which]
+        arm, fplan = ("CAND" if seat == cand_seat else "BASE"), which
+    else:
+        fplan = plan
+        arm = seat if plan not in ("67o", "67d") else seat + ("P%s" % os.environ.get("RWM_STORE_PATH_POOL") if plan == "67o" else "D")
+    defect = defect67(seat, cell, arm if arm in ("CAND", "BASE") else None)
+    rep = 1 + count67(f"rep-{os.environ.get('LD_TAG', 'ld')}-{fplan}-{arm}-{cell}-{seed}")
+    cli, srv, drv = fx.strip_base(fplan, arm, cli, srv, drv, defect)
+    c, s_, d = fx.extra_lines(fplan, cell, arm, seed, rep, defect)
+    return cli + c, srv + s_, drv + d
+
+
 def main(argv):
     ca, cb, _hint, nbytes, _n, mode = argv[:6]
     fam = {"c1": "c1d" if mode == "dual" else "c1s", "c2": "c8" if cb == "c3" else "c2", "c3": "c3", "c3j0": "c3"}[ca]
@@ -907,7 +969,10 @@ def main(argv):
     drv = drv + [f"    [TRUTH] leg={i} dev=cli{i} egress_dgrams={e} egress_skbs=10 gso=1.00 netem_sent_dgrams={e} netem_dropped_skbs=0 backlog=0 lost=5 loss=0.005000 rcvbuf_drops=0 rcvbuf_scope=netns"
                  for i, e in enumerate(egress)]
     evt = evtq = None
-    if plan in ("46",):
+    is67 = plan in ("67a", "67r", "67p", "67o", "67d") or (plan == "41d" and os.environ.get("LD_WITNESS67") in ("g1", "g2"))
+    if is67:
+        cli, srv, drv = gen67(cli, srv, drv, fam, nbytes, _hint)
+    elif plan in ("46",):
         hit, delta = (int(x) for x in os.environ["RWM_EVENT"].split(":"))
         if base:      # BASE at SLOW-HIT: the frozen-rtt mechanism witness; the leg never comes back inside the horizon
             S = gen(back_at=None, rtt_frozen=True, hit=hit, sigma=0.18 if hit == 1 else 0.82, delta_w=delta)

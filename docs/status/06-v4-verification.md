@@ -311,7 +311,7 @@ sha256 a40ac80d…, `tun.log` bac95773…, `crown/crown-s42.log` c14cbddb…,
 `crown/crown-s7.log` 0ae92989…, `score.txt` with every per-rep value, the
 smoke, `TESTS.txt`, the gate outputs, `PLAN.txt`, `BINSHA.txt`, `GO`,
 `all-era.txt`); per-invocation endpoint logs (38 MB) and the full test logs
-stay on the VM under `/home/vibe/v4/run`.
+stay on the VM under `~/v4/run`.
 
 *(A) NEW vs OLD, window bulk* (n = 16 per arm; goodput median [min–max]
 Mbit/s; CPUCLI median s; CPU per datagram = CPUCLI / egress datagrams; §5

@@ -1,0 +1,14 @@
+[package]
+name = "raptorpath-model"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Hand-written stateright model of the hole lifecycle (test-detection plan S7, ADR-0083)"
+
+# Its own workspace root: outside the engine workspace, with its own
+# Cargo.lock, so the model checker's dependencies never enter the engine's
+# lock file (the root Cargo.toml is not touched).
+[workspace]
+
+[dependencies]
+stateright = "0.31"

@@ -20,7 +20,7 @@ LB_TAG="q3diag_run2:$$"
 LB_LOG="$RUN/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 era "start sha256=$(sha256sum "$BIN" | cut -d' ' -f1)"
 
 drv() { # cell bytes extra-env...

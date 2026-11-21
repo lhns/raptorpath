@@ -4,12 +4,12 @@
 # under RWM_RTOBS=2 RWM_DIAG=1 RWM_RDIAG=1, then server `perf record`s of a
 # 1 GB c1s transfer (R1, MAIN, then R1-d). Both locks for the whole session.
 #
-#   R1D_ROOT=/home/vibe/r1diag R1D_HARD_DEADLINE=<epoch> \
+#   R1D_ROOT=$HOME/r1diag R1D_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash r1diag_run.sh > $R1D_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Layout: $ROOT/src-main, $ROOT/src-r1 (git archives), this script's tools
 # tree, $ROOT/fix-lat.rs (a5ef8b2's lat.rs with fix-lat-floor.patch applied
-# on the host; the VM has no patch(1)). Started as `vibe`; `sudo -n` only to run.
+# on the host; the VM has no patch(1)). Started as the VM user; `sudo -n` only to run.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || exit 3
@@ -26,7 +26,7 @@ LB_TAG="r1diag_run:$$"
 LB_LOG="$RUN/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 cotenants() { echo "cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg)"; }
 era "R1D start hard=$R1D_HARD_DEADLINE soft=$SOFT $(cotenants)"
 CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"

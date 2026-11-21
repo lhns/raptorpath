@@ -204,7 +204,7 @@ invocations, all `LIVE` (witnesses held on every row; 0 contaminated).
 Ledgers: `docs/l1-raw/blockretest/` (`br-s42.log` sha256 b93679f3…,
 `br-s7.log` af011eb3…, `crown-s42.log` f3cd299f…, `crown-s7.log`
 819165ad…, plus the smoke and attempt-1 envelope logs); per-invocation
-endpoint logs (26 MB) stay on the VM under `/home/vibe/blockretest/run/diag`.
+endpoint logs (26 MB) stay on the VM under `~/blockretest/run/diag`.
 
 *Per cell, pooled over seeds* (n = 4 per arm-cell-hint; goodput Mbit/s median
 [min–max] over completed reps; completion p50 s; DNF = past 150 s):

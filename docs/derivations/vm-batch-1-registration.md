@@ -22,7 +22,7 @@ Draft for the coordinator to register as its own status section. No row has run.
 | item | branch @ sha | state against main `7123c754` |
 |---|---|---|
 | main (BASE) | `github/main` `7123c754` | — |
-| c8 gauges | `c8-gauges` `697eeb73` | 77 behind, 12 ahead; trial merge with main clean |
+| c8 gauges | `c8-gauges` `697eeb73`, plus `c8-gauges-pfec` (one commit: `[SPAN] pfec=`) | 77 behind, 12 ahead; trial merge with main clean |
 | tunnel guard | `tunnel-inorder-guard` `df5ffa08` | 77 behind, 3 ahead; trial merge with main clean; diff in `config.rs` and `main.rs` (`cmd_run`, `cmd_check`) only |
 | S06 deletion | `s06-delete` `a930a72b` (holds `s06-delete-paper-present` `f29a0db2` and `c8-gauges` up to `a68ba449`) | 77 behind, 26 ahead; **conflicts with main** in `docs/fec-arq-model.md`, `net/emit_source.rs`, `net/sender_phases.rs`; **conflicts with `c8-gauges`** in `net/emit_source.rs` |
 | the pacer (Stage R2 only) | `4ee1df9b` (`RWM_PERF_RATE_MBIT`) | neither its engine code nor its `lib.sh` forward line is in main's tree (forward line removed by `e304921b`) |
@@ -201,11 +201,11 @@ This is a deliberate behaviour change (plan §6). Its guard is a no-regression g
     - **which term wins:** `[SPAN] rlaw=a:<core|burst|mass>/<sat|cap|free>,l:<…>/<…>,b=<β>`. The anchor term's winner and its binding bound are read as shares of ticks; the late-is-fine term and β are printed beside them (β = 0 at Auto);
     - **the live r_sat:** `[SPAN] rsat=` (1.0 means no cap), beside the granted `rr=` and the consumed r (`(cod + taper) / src`, `s51_score.py`'s r_consumed). The share of ticks with `rlaw` bound `sat` is r_sat's bind fraction;
     - **t_tail:** not printed. It is evaluated from the declared formula t_tail = 10⁻⁵·0.5/δ (Addendum 3) at the preset δ = 0.5 of the named Auto hint (these rows set no `RWM_DELTA`, so there is no δ echo to read): 1.0·10⁻⁵. It is labelled DERIVED, not measured;
-    - **P_fec:** not printed by `c8-gauges` (its prints are `rsat=`, `rlaw=`, `plx=`, `scw=`, `shed_slot=` / `shed_nack=`), so it is `NOT-AVAILABLE` in this batch. Reading it needs either a `pfec=` print added to `c8-gauges` before the pin, which is gauge-only and goes through G1 and A1 like the rest, or the `rate-fix-rate-readout` node's `[RATE]` line. That is the coordinator's call at the pin; the default is not to add it, so the pin is not delayed;
+    - **P_fec:** `[SPAN] pfec=`, printed beside `rsat=` and `rlaw=` (diag only, no decision) by `c8-gauges-pfec` (on top of `c8-gauges` `697eeb73`, carried by `vmb-s1` and `vmb-s2`). It is the normal P_fec of paper §4.2 at r = the rate law's own output for the worst-ε path, with the ε̂ (`p_upper`), window and σ² the law and `r_saturation` use (`RateSnapshot::p_fec`). Read per tick, pooled as p10 / p50 / p90 like `rsat=`. A row of a seat whose binary lacks the string `pfec=` is `NOT-AVAILABLE` for P_fec, and the ABORT-SEAT string check on S1 and S2 includes `pfec=`;
     - **the cost split**, printed per cell: S2's consumed r against S1's, with S2's coded share; S1's taper share (copies per slot, expected ≈ 0.64 at c2 and 0.98 at c8); goodput and CPU/GB per arm.
 
       This says how much of item 1's cost is the copies (cause i) and how much is r itself (causes ii–iv). It is reported and decides no clause.
-- **Pool block (reported only; the first cut under the cap, §6):** c8-100 Auto, `RWM_STORE_PATH_POOL` = 170, 256 and 640, S1 and S2, n = 3 each, seed 42. That gives 18 rows, with in-order delay and hole-close time read per arm. It answers the store-law confound the status names. It decides nothing here.
+- **Pool block (reported only; not cut, amendment 2026-11-20):** c8-100 Auto, `RWM_STORE_PATH_POOL` = 170, 256 and 640, S1 and S2, n = 3 each, seed 42. That gives 18 rows, with in-order delay, hole-close time, completion tail and receiver duplicates read per arm: the same readouts lever B was measured on. It decides nothing here, but it is lever B's revisit trigger (roadmap `rec-leverb-guard`): if a smaller pool closes the c8 tail without lever B's 2.1× duplicates, lever B is dropped.
 
 ### 4.3 Stage R1 (Realtime, ρ = 1, unpaced): completion scored
 
@@ -289,7 +289,7 @@ This is a deliberate behaviour change (plan §6). Its guard is a no-regression g
   - G2 still runs; its BASE is S1, so it is still ADR-0079's comparison.
   - The next session bisects: one Stage G on B0 + `c8-gauges` alone and one on B0 + `tunnel-inorder-guard` alone. These seats, `vmb-c8` and `vmb-tun`, are pre-pinned at the second amendment. About 55 min each.
 - **G2 FAIL, or an `S06-FAIL` in G2:** session 3 drops Stage A's S2 arm, R1's S2 arm and R2, and keeps A1, A1-R and T. Any S06 rows run from then on are for diagnosis, under their own registration.
-- **Cap cuts, in this order:** the pool block, then the dump twins. R2 and its test-seams twins are not cut: R2-HOLD is a merge condition. Each cut is written into an amendment before the session.
+- **Cap cuts:** the dump twins only. The pool block is lever B's revisit trigger and is not cut; if session 3 runs long, it moves to its own session. R2 and its test-seams twins are not cut: R2-HOLD is a merge condition. Each cut is written into an amendment before the session.
 
 ### 5.3 Binary identity after each merge (the coordinator's rule)
 
@@ -375,7 +375,7 @@ The plan tokens are `67` (rehearsal), `67g` and `67x`. It goes into all seats, n
    - the pool block (`RWM_STORE_PATH_POOL` per row, as plan 54b).
 3. **R1:** plan 64's stage R row mechanism, with three arms (S1, S2, B0) and §4.3's witnesses and clauses (R1, A1-R).
 4. **R2:** plan 51e's paced PM rows on P1 and P2, plus the test-seams twins P1T and P2T: built `--release --features test-seams` with their own shas, `[ACCT]` and `[ACCT-RX]` added to the battery's kept-line filter (the §64 `[SYMSZ]` lesson), an `[ACCT]` parser (final, else last periodic, labelled), and the R2-HOLD rule with its exact rank test and its minimum. Stub paths: `twin-no-final` (reads `ACCT-LAST`), `twin-under-min` (UNSCOREABLE, not eligible), `twin-worse` (R2-HOLD fires). `RWM_PERF_RATE_MBIT` is forwarded only through the pacer seats' own `lib.sh` line (§1.2). It carries §4.4's readouts.
-   - **The rate readouts:** an `rlaw=` / `rsat=` parser, shares and quantiles per arm, t_tail as DERIVED, P_fec as `NOT-AVAILABLE` unless a `pfec=` print lands, and the cost-split table (§4.2).
+   - **The rate readouts:** an `rlaw=` / `rsat=` parser, shares and quantiles per arm, t_tail as DERIVED, `pfec=` read with them, and the cost-split table (§4.2).
 5. **T:** `tun_bulk.sh` invocations, the refusal commands and `scoreT` (§3.3), parsed with `verify4_parse.py tun`.
 6. **Suites (session 0's envelope):** `run_suites` with ADR-0080's rule (§2.1 item 2) and `test_harness47.py` updated; the repeat stage of §2.2; `binid_run.sh` on three seats.
 7. **Reuse:** prebuilt binaries and the suite/tools manifests, as plan 64.
@@ -412,9 +412,9 @@ Fable reviewed twice.
   
   This revision takes all of them.
 
-## 11. Roadmap: proposed `vm_order` (proposal only; not edited here)
+## 11. Roadmap: proposed `queue_order` (proposal only; not edited here)
 
-| vm_order | node | lane change needed | proposed `order_reason` (with the estimated gain) |
+| queue_order | node | lane change needed | proposed `order_reason` (with the estimated gain) |
 |---|---|---|---|
 | 1 | `meas-s51-c8-gauges` | `host-cargo` → `vm` | VM batch 1, guard 1, at the bottom of the stack. No product gain of its own (print sites only). It makes the repair rate readable: which term wins, and the live r_sat. That readout splits the audit's top cost (c2 Auto −15 % goodput, +39 % client CPU/GB) between the copies and r itself. |
 | 2 | `infra-tunnel-inorder-guard` | `host-cargo` → `vm` | VM batch 1, guard 1 (with the gauges). A correctness fix on the product path: a config file can no longer switch the tunnel to out-of-order or object delivery. Gain: every byte stays in order for anyone who sets one of the four keys; nothing changes for the default file. |
@@ -422,7 +422,7 @@ Fable reviewed twice.
 
 - `rec-leverb-guard` gets no order (parked, §8).
 - `meas-guard-bulk-blind` stays `no-cargo`. This batch is its first per-change use. Its "reusable plan" done criterion is met only if `harness67`'s off-Bulk stages are kept as a plan.
-- `check.py` warns on a vm_order outside the vm lane, hence the lane changes. M1's place relative to these is the owner's call (§7 item 4).
+- `check.py` warns on a queue_order outside the vm lane, hence the lane changes. M1's place relative to these is the owner's call (§7 item 4).
 
 ## Amendment 1 (2026-11-20, before the pin; owner decision and Fable's review)
 
@@ -437,7 +437,7 @@ Fable reviewed twice.
    - `rlaw=` (the winning term and binding bound, plus β);
    - `rsat=` (the live r_sat);
    - t_tail, as DERIVED from its declared formula;
-   - P_fec, `NOT-AVAILABLE` unless a `pfec=` print joins `c8-gauges` before the pin;
+   - P_fec (`pfec=`, added to `c8-gauges` before the pin);
    - the copy-against-r cost split.
 4. **Order reasons** in §11.
 5. **Time:** two more builds and 12 more paced rows, so ≈ +0.6 h (typical ≈ 10.9 h). `LD_HARD`: session 1 at launch + 2.25 h, session 3 at launch + 4.5 h.

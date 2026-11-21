@@ -1,6 +1,6 @@
 # ADR-0079: Delete the taper copy branch: every proactive slot carries a coded symbol
 
-## Status: Accepted (owner decision 2026-11-19, status "§51 block 51 Result, Addendum 3"). Engine change pending: `docs/derivations/s06-delete-plan.md`. Derivation: `docs/derivations/s06-plost-resend.md` on branch `s06-derivation` @ `5ebf41a5` (§4.1, §4.1.1, §4.1.2, Q1). Amendment 1 superseded in part by ADR-0084 (the unjudged below-window blocker, the untold shed, the ρ-blind budget); its merge hold stands.
+## Status: Accepted (owner decision 2026-11-19, status "§51 block 51 Result, Addendum 3"). Engine change pending: `docs/derivations/s06-delete-plan.md`. Derivation: `docs/derivations/s06-plost-resend.md` on branch `s06-derivation` @ `5ebf41a5` (§4.1, §4.1.1, §4.1.2, Q1). Amendment 1 superseded in part by ADR-0084 (the unjudged below-window blocker, the untold shed, the ρ-blind budget); its merge hold is lifted by the owner's decision of 2026-11-20, recorded in ADR-0084 Amendment 1 item 3. `s06-delete` merges on its own guard-2 PASS in VM batch 1 (`docs/derivations/vm-batch-1-registration.md`; BASE S1 = main + `c8-gauges` + `tunnel-inorder-guard`), and the ADR-0084 engine change follows it on main.
 
 ## Context
 

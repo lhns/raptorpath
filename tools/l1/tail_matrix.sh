@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run under sudo: resolve $HOME to the invoking user's home, not root's, so paths and the tree lock match.
+HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"
 # Realtime-vs-bulk tail comparison: bring the tunnel up once per arm, run N
 # stream measurements through the same warm tunnel, and report the p99
 # distribution (a single-run p99 is variance-dominated). Matrix:
@@ -18,7 +20,7 @@ source ./lib.sh
 # per-arm abort tolerance (a failed arm is a BRINGUP_FAIL/NO_DATA line, never
 # a matrix kill), so errexit is turned back off here.
 set +e
-BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
+BIN="${RWM_BIN:-$HOME/raptorpath/target/release/raptorpath}"
 CELL="${1:-c2}"; REPS="${2:-5}"
 SEED="${SEED:-42}"
 # Message rate, stream duration and size list are overridable (e.g. the

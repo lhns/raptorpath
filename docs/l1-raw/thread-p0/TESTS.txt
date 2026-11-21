@@ -1,6 +1,6 @@
-TEST main rc=0 wall=1209s passed=1058 failed=0 ignored=50 binaries=90 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
-TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
-TEST wasm rc=0 wall=113s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST main rc=0 wall=1209s passed=1058 failed=0 ignored=50 binaries=90 cmd=[~/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[~/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=113s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE ~/.cargo/bin/cargo test -p raptorpath-wasm]
 P0-TEST test config::env_flag_tests::a_number_is_not_a_boolean - should panic ... ok
 P0-TEST test config::env_flag_tests::an_unrecognised_boolean_is_an_error_naming_the_variable - should panic ... ok
 P0-TEST test config::env_flag_tests::off_and_no_are_off_on_and_yes_are_on_case_insensitive ... ok
