@@ -445,7 +445,7 @@ The text below is the plan as derived (R1); read it through the re-cut above. In
 | C8 | The object corners are defined at every ρ; generation is ρ-inert; the floor moves the out-of-order frontier. | §5.8, §5.1 | G08: OK |
 | C9 | The receiver passes a hole only below the newest floor, after H; it has no give-up law of its own. | §5.1, §5.6 | G09: OK |
 | C10 | A full consumer channel holds at every ρ. | §5.1 | G10: OK |
-| C11 | The floor marker's hold is `H = min(b(δ_rx), 2)·SRTT_rx`. | §5.6 | G11: OK for the arm; UNDERIVED for H's kind (reorder cover against δ) |
+| C11 | The floor marker's hold is H_hold, the windowed max of the late time offset (`floor-hold.md`, paper §5.1); the expiry keeps its own hold until the release-rule build. | §5.1, §5.6 | G11: OK for the arm. H's kind is a reorder cover, a path quantity with no δ: derived, except the memory W (borrowed, owner-accepted). The expiry's hold stays UNDERIVED |
 | C12 | The hole timer re-advertises at every ρ; the floor marker is its second term. | §5.1 | G12: OK |
 
 While the stack is open, every row reads `MODE-SWITCH(scaffold)` with its commit pending. None merges in that state.

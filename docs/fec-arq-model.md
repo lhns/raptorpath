@@ -1593,8 +1593,20 @@ seq F_rx, under the same hold and the same expiry as a data arrival":
 ```
 
 - next_deliver: receiver state, its in-order frontier.
-- H_hold: the receiver's existing hold, `shed_recv_hold` (Section 5.6); no
-  new constant.
+- H_hold: the support of the late time offset (`docs/derivations/floor-hold.md`):
+
+```text
+   H_hold(t)  =  max { ℓ_i : t − W ≤ a_i ≤ t }        (0 over an empty window)
+   ℓ_i        =  ( a_i − min{ a_j : j arrived before i, j ≻ i } )⁺
+   j ≻ i      ⇔  τ_j > τ_i  ∨  ( τ_j = τ_i ∧ path_j ≠ path_i )
+```
+
+  - a_i: measured, a data batch's arrival instant at the receiver loop, on any path.
+  - τ_i: measured, its `send_timestamp_us`, stamped fresh at every send.
+  - ℓ_i: measured, RFC 4737 §4.3's reordering late time offset, with send order taken from τ.
+  - W = 10 s: declared, the engine's path-property window, borrowed (Section 11.2).
+
+  Any fill of a hole below F was sent no later than the floor, so it arrives no later than `t_F + sup ℓ`. H_hold reads no δ, no ρ and no hint. It is 0 on a FIFO single path, where the copy is staged before the floor, and about the path skew at N ≥ 2. A later floor's marker may pass a covered hole earlier, never later. The expiry's own hold stays `shed_recv_hold` (Section 5.6).
 
 The newest floor, not the minimum over paths, because a live but frozen leg
 would hold a minimum at 0 until it leaves the live set. A floor on path p
@@ -4640,7 +4652,8 @@ decide it.
 | generation repair floor `RWM_GEN_R` 0.15 systematic / 0.20 coded | `sender_policy.rs`, `GenerationEncoder` | a constant prior where r(β) is the derived one; the seat's deficit loop is already the ledger's a-posteriori term (Sections 5.8, 4.13) | none yet: the seat is not in the default machine |
 | knee = 2048 per path | pooled cap ceiling, `N·knee` at every N | a resource bound outside the law (retained payload per live path), value measured but stale; inert at c7/c8 under the δ-cap; predicted to bind at c1s at N = 1 (7/15 windows at the r1 anchor trajectory) because the c1 anchor over-reads ×7–9 | `[SUMCAP] pin=` at c1s; the anchor over-read (`btlbw`/delivered) beside it |
 | `queue_target_mult` 1.08 / 1.125 / 1.25 | Copa legacy branch | a declared corner: not affine in log δ | a CoDel-derived per-δ setpoint |
-| receiver hold `(4·SRTT).clamp(60, 300) ms` | `shed_recv_hold` fallback | three constants | a bind gauge (60 ms predicted to bind at c2, 300 ms at c3) |
+| receiver hold `(4·SRTT).clamp(60, 300) ms` | `shed_recv_hold` fallback (the expiry only; the floor pass uses H_hold, Section 5.1) | three constants | a bind gauge (60 ms predicted to bind at c2, 300 ms at c3) |
+| floor-hold memory W = 10 s | H_hold's windowed max (Section 5.1) | borrowed from the path-property window (`copa.rs` `window_duration`), not derived for a max-lateness filter; record horizon W at 1 ms resolution, a resource bound | `fh_age_us` (age of the sample setting H) and `fl_trunc`; toy sweep W ∈ {1, 10, 60 s} |
 | anchor floor 0.85, pull 0.25, gain 1.0 | Copa legacy branch | 0.85 set by one measurement; the others untested | — |
 | `RWM_EMIT_BURST = 64` (the burst bound b, Law 0) | `emit_burst_bound` (`net/emit_burst.rs`) | "≈ 64 KB", no derivation; shipped default since `bf3a636` (the measured form; the value was not swept). Bind fraction at the §8 re-run: the cap ends 0.838 (`c1s-400`) and 0.831 (`c1d-400`) of bursts, the store ends the rest; 0.005 at `c2-100`, 0.118 at `c8-100` (store-bound there). Law 0 replaced the `live_paths == 1` scope (a path-count step whose v8 striping-gap reason v9's per-path `path_seq` removed); bind fraction is the `eb_end cap:` gauge on `[DIAG]` | the status §8 battery (`eb_end` bind fraction, `eb_maxrun` per path) |
 | taper-cache staleness 50 ms (`TAPER_CACHE_MAX_AGE_US`) | `net/emit_source.rs`, read by `emit_burst::taper_recompute_due` | under emission batching the derived taper/span math refreshes per burst or after 50 ms, whichever first; no derivation, no bind gauge (which refresh cause fires is not counted); shipped with the gate in `bf3a636`, inside the measured EB0 arm | a refresh-cause tally (bound vs age) on `[DIAG]` |
@@ -4663,7 +4676,7 @@ decide it.
 | item | model | engine |
 |---|---|---|
 | span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop. ADR-0084 keeps the EWMA for D, refreshed at the verdict sites, until a battery reads the RTprop form; both are computed and `D_rtprop / D_ewma` is logged |
-| receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
+| receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime. The expiry only: the floor pass's hold is H_hold (Section 5.1), derived and reading no δ |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
 | store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | the same expression: `pooled_store_cap` has no path-count branch (ADR-0072; `net/store_cap.rs`). No divergence on the default path. `RWM_STORE_PATHS = 0` re-runs `clamp(2.0·BDP, 10, 1024)` as a control arm at every N; the wasm model scales its pool per path with no guard |
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |

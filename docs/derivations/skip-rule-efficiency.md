@@ -426,7 +426,7 @@ B60 runs 70 s.
 | loss cell | I2, G, B10, B60, T (as v1: i.i.d. 3 %/10 %; Gilbert–Elliott, burst 8; 200 ms blackout after 10 s and 60 s; last 346 seqs dead) | 5 |
 | topology | N = 1 RTT 50; N = 2 (owd 5 and 25 ms) × φ_slow ∈ {0, 0.25, 0.5} | 4 |
 | jitter × reorder | {0, 1, 4 ms} × {FIFO, reorder allowed} | 5 |
-| H | the 7 arms | 6 |
+| H | the 7 arms, plus `floor-hold.md`'s H_ℓ(W) at W ∈ {1, 10, 60 s} (readouts: `fh_miss` rate and the floor-pass stall) | 9 |
 | δ | Bulk, Auto, Realtime, each × {0.98, 1, 1.02} | 8 |
 | ρ | 1, 1 − ε (ε·S_src < 1), 0.999, 0.9898, 0.9902 | 5 |
 
@@ -438,18 +438,18 @@ B60 runs 70 s.
 
 | block | configurations | × seeds | runs |
 |---|---|---|---|
-| R0, S0, S1, S1c, S2, S3: (1 + 33) each | 204 | 20 | 4 080 |
-| U: 34 one-factor + 218 crossed | 252 | 20 | 5 040 |
+| R0, S0, S1, S1c, S2, S3: (1 + 36) each | 222 | 20 | 4 440 |
+| U: 37 one-factor + 218 crossed | 255 | 20 | 5 100 |
 | HZ | 6 | 20 | 120 |
-| **total simulation runs** | | | **9 240** |
-| LP solves (S0 traces of the 34 one-factor configurations) | 34 | 20 | 680, plus 3 × 34 MILP |
-| U\* solves (TU LP or DP, per U run) | | | 5 040, each ≪ 1 s |
+| **total simulation runs** | | | **9 660** |
+| LP solves (S0 traces of the 37 one-factor configurations) | 37 | 20 | 740, plus 3 × 37 MILP |
+| U\* solves (TU LP or DP, per U run) | | | 5 100, each ≪ 1 s |
 
 **Estimated wall time, sequential.** A 20 s cell is about 2·10⁵ packets and on the order of 10⁶ events, about 5–10 s in pure-Python `heapq`.
-- Simulation: 9 240 × ~8 s ≈ 21 h.
-- LP: 680 × ~5 s ≈ 1 h, MILP ≈ 1 h.
+- Simulation: 9 660 × ~8 s ≈ 21.5 h.
+- LP: 740 × ~5 s ≈ 1 h, MILP ≈ 1 h.
 - U\*: under 1 h.
-- **Total ≈ 24 h.**
+- **Total ≈ 25 h** (the three H_ℓ(W) arms add about 1 h).
 
 **Pre-registered fallback.** First time the base cell. If one run takes more than 15 s, the one-factor sweeps drop to 10 seeds; the crossed U block, the presets and P3 keep 20.
 
