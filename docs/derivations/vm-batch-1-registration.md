@@ -718,4 +718,4 @@ Each item replaces or extends the registration text named. The code fixes for #4
 ### B0 and the binid runs (2026-11-21)
 
 - **B0** is `9bc656bf`, the merge base of the new `vmb-s1` and github/main (the main commit inside S1), not a moving main.
-- **What the push binid runs compared.** On the pushes of `vmb-s1` `6628e93b` and `vmb-s2` `3d06984e`, `binid.yml` compared main `9bc656bf` (base, base2: identical) against each seat head. Both passed only through the `binid: expected-change` line of `2d590cdc`. They did not compare old seat head against new. Dispatched old-against-new runs: 44938909897 (S1, base `2d590cdc`) and 44938912735 (S2, base `1953abd1`).
+- **What the push binid runs compared.** On the pushes of `vmb-s1` `6628e93b` and `vmb-s2` `3d06984e`, `binid.yml` compared main `9bc656bf` (base, base2: identical) against each seat head. Both passed only through the `binid: expected-change` line of `2d590cdc`. They did not compare old seat head against new. Old against new, dispatched with no opt-out: identical release binaries (archive and binary sha) for S1 `2d590cdc` → `6628e93b` (run 44938909897) and S2 `1953abd1` → `3d06984e` (run 44938912735).
