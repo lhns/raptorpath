@@ -35,7 +35,7 @@ source ./abort_witness.sh
 # The binary is overridable so a battery can run a second binary as a baseline
 # arm; `$BIN` is echoed into the witness to prove which binary an invocation
 # ran.
-BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
+BIN="${RWM_BIN:-$HOME/raptorpath/target/release/raptorpath}"
 SCENA="${1:?scenA}"; SCENB="${2:?scenB}"; HINT="${3:-bulk}"
 BYTES="${4:-1800000}"; RUNS="${5:-10}"; MODE="${6:-dual}"; PLACE_T="${7:-}"
 

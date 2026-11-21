@@ -3,12 +3,12 @@
 # docs/measurement-discipline.md "The five-hour cap"). Derived from the V-Q1
 # envelope (threadq1_run_all.sh).
 #
-#   TQ2_ROOT=/home/vibe/q2run TQ2_HARD_DEADLINE=<epoch> \
+#   TQ2_ROOT=$HOME/q2run TQ2_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadq2_run_all.sh > $TQ2_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced Q2 tree ($TQ2_ROOT/src/tools/l1); the MAIN
 # tree (archive of 0ef0e0d) is at $TQ2_ROOT/main-src, with a COMMIT file.
-# STARTED AS `vibe`, NOT ROOT; `sudo -n` only for the measurement stages.
+# STARTED AS the VM user, NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
 #   1. Q2 tree: `cargo build --release`; tests (release: `cargo test -p
@@ -76,7 +76,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "TQ2-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg) hard=$TQ2_HARD_DEADLINE soft=$SOFT" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export TQ2_LOCK_OWNER="threadq2_run_all:$$"

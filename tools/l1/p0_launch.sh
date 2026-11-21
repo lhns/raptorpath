@@ -6,7 +6,7 @@
 # the race (exit 4 with an ABORT-LOCK line and no SMOKE-PASS), it waits
 # again. Never touches a lock it does not own.
 #
-#   P0_ROOT=/home/vibe/p0 setsid nohup bash p0_launch.sh > $P0_ROOT/waiter.out 2>&1 < /dev/null &
+#   P0_ROOT=$HOME/p0 setsid nohup bash p0_launch.sh > $P0_ROOT/waiter.out 2>&1 < /dev/null &
 #
 # Sentinels in $P0_ROOT: WAITER-STARTED, WAITER-LAUNCHED (each launch),
 # WAITER-GAVE-UP (bound reached), WAITER-EXIT rc=<envelope rc>.
@@ -16,7 +16,7 @@ cd "$HERE" || exit 3
 ROOT="${P0_ROOT:?P0_ROOT}"
 MAX="${P0_WAIT_MAX:-10800}"
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 T0=$(date +%s)
 echo "WAITER-STARTED $(date -u +%FT%TZ) max=${MAX}s" > "$ROOT/WAITER-STARTED"
 while :; do

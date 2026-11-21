@@ -40,7 +40,7 @@
 #
 # ── The 5 h cap (docs/measurement-discipline.md, "The five-hour cap") ────
 # n = 4 per cell (the default `reps` below). The envelope is enforced by
-# `place_run_all.sh` (launch as `vibe`, not this script directly): seed 42,
+# `place_run_all.sh` (launch as the VM user, not this script directly): seed 42,
 # then seed 7 only if seed 42 finished under 2.5 h, hard backstop at
 # 4 h 50 min.
 #
@@ -64,7 +64,7 @@
 # drop first if the estimate is exceeded is `c9h` (witness only: 54 min).
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
-cd /home/vibe/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+cd $HOME/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard place_battery.sh lib_battery.sh
@@ -76,7 +76,7 @@ TAG="${RWM_PLACE_TAG:-place}"
 # The run directory is `place_run_all.sh`'s (`RWM_PLACE_OUTDIR`, passed
 # through its `sudo env`), so the log the envelope reads for DONE-S<seed>
 # and the sentinels it writes are in one directory.
-OUTDIR="${RWM_PLACE_OUTDIR:-/home/vibe/placement}"
+OUTDIR="${RWM_PLACE_OUTDIR:-$HOME/placement}"
 OUT="$OUTDIR/${TAG}-s${SEED_ARG}.log"
 DDIR="$OUTDIR/diag"
 mkdir -p "$(dirname "$OUT")" "$DDIR"
@@ -85,7 +85,7 @@ mkdir -p "$(dirname "$OUT")" "$DDIR"
 # A battery that cannot write its own log, or whose binary lacks the arms,
 # must fail at the top and not three hours in with a half-filled table.
 : > "$OUT" 2>/dev/null || { echo "REFUSED: cannot write $OUT" >&2; exit 4; }
-BIN=/home/vibe/raptorpath/target/release/raptorpath
+BIN=$HOME/raptorpath/target/release/raptorpath
 LB_TAG=place_battery
 LB_LOG="$OUT"
 # The arms must exist in this binary. A run whose gate names are not in the
@@ -94,12 +94,12 @@ LB_LOG="$OUT"
 preflight_binary "$BIN" RWM_PLACE_WDIV_DERIVED
 # ── Both locks (docs/measurement-discipline.md, "The VM protocol"; the
 #    lib_battery.sh helpers, with INT/TERM handlers that exit) ─────────────
-# `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the tree lock.
+# `/tmp/rwm-vm.lock` is the box lock and `$HOME/rp.lock` the tree lock.
 # This script refuses to run without them and releases exactly what it took.
 # `noclobber` makes the create-or-fail atomic against a second launcher, which
 # is also what keeps a second place_battery from starting.
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 # On INT/TERM the handler must exit after releasing: a `trap 'f' INT TERM`
 # body that does not `exit` resumes the script, which then runs on with both
 # locks already cleared. Bash runs the handler only once the in-flight
@@ -207,7 +207,7 @@ run_one() { # cell arm
 
 echo "=== PLACE BATTERY seed=$SEED_ARG reps=$REPS cells='$PLACE_CELLS' arms='$PLACE_ARMS' $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary sha256 $(sha256sum "$BIN" | cut -d' ' -f1)" >> "$OUT"
-echo "=== source $(cat /home/vibe/raptorpath/COMMIT 2>/dev/null)" >> "$OUT"
+echo "=== source $(cat $HOME/raptorpath/COMMIT 2>/dev/null)" >> "$OUT"
 lscpu | grep -E 'Model name|Flags' | head -2 >> "$OUT" || true
 
 for REP in $(seq 1 "$REPS"); do

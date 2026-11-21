@@ -1,6 +1,6 @@
 LOCKS-HELD-BY-ENVELOPE blockretest_run_all:72761
 === BLOCKRETEST BATTERY seed=42 reps=2 cells='c1 c2 c3 c7 c8' hints='bulk auto' arms='BLK WIN' 2026-09-27T18:42:42Z
-=== binary /home/vibe/blockretest/src/target/release/raptorpath sha256 780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003
+=== binary ~/blockretest/src/target/release/raptorpath sha256 780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003
 === source fa1f497 cleanup/a4-block-retest (binary built from c2ab337; later commits change tools/l1 + docs only)
 === env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 RWM_C_PIPELINE=block|window runs=1 soft_deadline=1790540479 rep_est=1800
 Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz

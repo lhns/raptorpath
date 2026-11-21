@@ -4,9 +4,9 @@
 #   MAIN = ce60079 ($SL_ROOT/main-src, a git archive with a COMMIT file)
 #   LAW  = the branch HEAD ($SL_ROOT/src, with a COMMIT file)
 #
-#   SL_ROOT=/home/vibe/n1/sl19 setsid nohup bash storelaw19_run_all.sh > $SL_ROOT/launch.out 2>&1 < /dev/null &
+#   SL_ROOT=$HOME/n1/sl19 setsid nohup bash storelaw19_run_all.sh > $SL_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from $SL_ROOT/src/tools/l1 as `vibe`; `sudo -n` only for the
+# Run from $SL_ROOT/src/tools/l1 as the VM user; `sudo -n` only for the
 # measurement stages. WAITS for both operator locks (never breaks them), then
 # holds them for the whole session: build both -> smoke -> battery -> score19.
 set -u
@@ -46,7 +46,7 @@ acq() { # path: wait until free (never probe-and-remove), then hold it
   _lb_say "LOCK-TAKEN $p"
 }
 acq /tmp/rwm-vm.lock
-acq /home/vibe/rp.lock
+acq $HOME/rp.lock
 era "SL19-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg)"
 
 python3 ./test_storelaw_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"

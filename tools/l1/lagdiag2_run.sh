@@ -8,11 +8,11 @@
 # task's long polls go ([TXSEC] / [LPOLL] iters= secs=). The round-1
 # lagdiag_digest.py output is kept as digest.txt.
 #
-#   LG2_ROOT=/home/vibe/lagdiag2 LG2_HARD_DEADLINE=<epoch> \
+#   LG2_ROOT=$HOME/lagdiag2 LG2_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash lagdiag2_run.sh > $LG2_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree $LG2_ROOT/src/tools/l1 (git archive of
-# the DIAG commit; $LG2_ROOT/src/COMMIT names it). Started as `vibe`;
+# the DIAG commit; $LG2_ROOT/src/COMMIT names it). Started as the VM user;
 # `sudo -n` only to run.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"

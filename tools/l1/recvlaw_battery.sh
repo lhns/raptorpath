@@ -97,7 +97,7 @@
 # (docs/measurement-discipline.md rule 13).
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
-cd /home/vibe/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+cd $HOME/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard recvlaw_battery.sh lib.sh lib_battery.sh
@@ -108,9 +108,9 @@ SEED_ARG="${1:?seed}"; REPS="${2:-3}"
 RL_CELLS="${RWM_RECVLAW_CELLS:-c1 sc2 c7 c8}"
 RL_ARMS="${RWM_RECVLAW_ARMS:-CTL A B AB}"
 TAG="${RWM_RECVLAW_TAG:-recvlaw}"
-BIN=/home/vibe/raptorpath/target/release/raptorpath
-OUT="/home/vibe/recvlaw/${TAG}-s${SEED_ARG}.log"
-DDIR="/home/vibe/recvlaw/diag"
+BIN=$HOME/raptorpath/target/release/raptorpath
+OUT="$HOME/recvlaw/${TAG}-s${SEED_ARG}.log"
+DDIR="$HOME/recvlaw/diag"
 mkdir -p "$(dirname "$OUT")" "$DDIR"
 
 # Inheritance defeats an allowlist (measurement-discipline rule 15): a var
@@ -121,11 +121,11 @@ unset RWM_RANK_FEEDBACK
 
 # ── Both locks (docs/measurement-discipline.md, "The VM protocol"; the
 #    lib_battery.sh helpers, with INT/TERM handlers that exit) ─────────────
-# `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the tree lock.
+# `/tmp/rwm-vm.lock` is the box lock and `$HOME/rp.lock` the tree lock.
 # This script refuses to run without them and releases exactly what it took.
 # `noclobber` makes the create-or-fail atomic against a second launcher.
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 LB_TAG=recvlaw_battery
 LB_LOG="$OUT"
 # On INT/TERM the handler must exit after releasing: a `trap 'f' INT TERM`
@@ -342,7 +342,7 @@ check_and_parse() { # name cell arm cpus cpuc pingp qp
   local applies=0; [ "$arm" = "CTL" ] && applies=1
 
   echo "RECVLAWWITNESS {\"cell\":\"$cell\",\"arm\":\"$arm\",\"seed\":$SEED_ARG,\"rep\":$REP,\"rc\":$RC,\"mbps\":$mb,\"band\":[$lo,$hi],\"band_applies\":$applies,\"in_band\":$inband,\"lossy\":$lossy,\"control_cell\":$(is_control_cell "$cell"),\"WL2_req_sent\":$rq_sent,\"WL2_req_served\":$rq_served,\"seam_gap_data\":$gapd,\"W1_rfa_gen\":\"$w1\",\"W2_pfrac_lines\":$w2,\"W3_retx_max\":$w3,\"W4_rack_fa\":\"$w4\",\"W6_late_n\":$w6,\"W7_succ_det\":$w7,\"W8_fcause_n\":$w8,\"WA1_some\":$wa1s,\"WA1_none\":$wa1n,\"WA2_m_max\":$wa2m,\"WA2_coded\":$wa2c,\"WA3_stale\":$wa3s,\"WA3_budget_bound\":$wa3b,\"WL1_lstar_us\":\"$wl1\",\"WK_knee_bind\":\"$wk\",\"WK_sampler_bind\":\"$wsamp\"}" \
-    | tee -a "/home/vibe/recvlaw/${TAG}-witness-s${SEED_ARG}.jsonl" >> "$OUT"
+    | tee -a "$HOME/recvlaw/${TAG}-witness-s${SEED_ARG}.jsonl" >> "$OUT"
 }
 
 run_topo() { # cell arm
@@ -424,7 +424,7 @@ run_one() { # cell arm
   echo "BANDSCOPE the goodput abort bands apply to CTL ONLY; out-of-band on a treatment arm is a RESULT"
   echo "BIN $BIN"
   echo "SHA256 $(sha256sum "$BIN" 2>/dev/null)"
-  echo "COMMIT $(cat /home/vibe/raptorpath/COMMIT 2>/dev/null)"
+  echo "COMMIT $(cat $HOME/raptorpath/COMMIT 2>/dev/null)"
   echo "KERNEL $(uname -r)"
   echo "UPTIME $(uptime)"
   echo "COTENANT kwin=$(pgrep -c kwin_x11 2>/dev/null || echo 0) sddm=$(pgrep -c sddm 2>/dev/null || echo 0)"

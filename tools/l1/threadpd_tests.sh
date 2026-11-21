@@ -4,7 +4,7 @@
 # both operator locks to be free and no cargo/rustc (polls every 10 min,
 # `test -e` only), never breaks a lock.
 #
-#   TPT_ROOT=/home/vibe/pdtests TPT_WAIT_UNTIL=<epoch> \
+#   TPT_ROOT=$HOME/pdtests TPT_WAIT_UNTIL=<epoch> \
 #     setsid nohup bash threadpd_tests.sh > $TPT_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Trees (git archive, LF): $TPT_ROOT/wit = the witness-only commit (prune
@@ -19,7 +19,7 @@ source ./lib_battery.sh
 ROOT="${TPT_ROOT:?TPT_ROOT}"
 : "${TPT_WAIT_UNTIL:?TPT_WAIT_UNTIL (epoch seconds) is required}"
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$ROOT/era.txt"; }
 free() {
