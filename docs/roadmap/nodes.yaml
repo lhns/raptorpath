@@ -8109,6 +8109,26 @@ nodes:
   overview: false
   plain: The roadmap pages, checker and history scan now run on the shared tech-tree skill, with all 412 nodes kept and the old scripts reduced to thin wrappers.
   notes: 'Merged from roadmap-on-skill with main''s nodes carried; tools/roadmap/build.py and check.py keep their paths and CI runs the skill''s tests. Differences from the old pages are listed in docs/roadmap/migration-parity.md.'
+- id: infra-scrub-vm-user
+  title: VM login name removed from the repository
+  track: infra
+  kind: infra
+  state: done
+  outcome: unrated
+  evidence:
+  - .github/workflows/ci.yml
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-21'
+  end: '2026-11-21'
+  folded: []
+  overview: false
+  plain: The test machine's login name was replaced in 164 tracked files (logs now say VMUSER, scripts use the home directory), and CI now fails if it reappears; history was not rewritten, by owner decision.
+  notes: ''
 - id: meas-progress-baseline
   title: Cumulative progress benchmark
   track: meas

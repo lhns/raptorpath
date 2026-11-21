@@ -626,7 +626,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 ## Done, by month
 
 <!-- BEGIN GENERATED: done-by-month -->
-<details><summary><b>Nov 2026</b>: 88 done, 2 abandoned</summary>
+<details><summary><b>Nov 2026</b>: 89 done, 2 abandoned</summary>
 
 - `perf-s33-timer`: Lag tail timer hand-off (✔ done · unrated)
 - `perf-receiver-followups`: Receiver follow-ups (✔ done · successful)
@@ -719,6 +719,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 - `infra-test-seat-coverage`: Coverage per seat (✔ done · unrated). Line coverage per hint and per seat on CI, mapped to ledger rows, so code no test runs shows up.
 - `infra-test-sim-spike`: Deterministic simulation spike (✔ done · successful). Try running both ends in one process on a virtual clock and check that two runs with the same seed match exactly.
 - `infra-roadmap-on-skill`: Roadmap moved onto the tech-tree skill (✔ done · unrated). The roadmap pages, checker and history scan now run on the shared tech-tree skill, with all 412 nodes kept and the old scripts reduced to thin wrappers.
+- `infra-scrub-vm-user`: VM login name removed from the repository (✔ done · unrated). The test machine's login name was replaced in 164 tracked files (logs now say VMUSER, scripts use the home directory), and CI now fails if it reappears; history was not rewritten, by owner decision.
 
 </details>
 
@@ -1207,7 +1208,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [meas - measurement](roadmap/tracks/meas.md): 66 nodes (49 done, 5 in progress, 7 next, 4 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 36 nodes (24 done, 8 in progress, 2 next, 1 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
-- [infra - repo and simplification](roadmap/tracks/infra.md): 29 nodes (20 done, 6 in progress, 1 next, 2 blocked)
+- [infra - repo and simplification](roadmap/tracks/infra.md): 30 nodes (21 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->
 
 ## How far the ratings are confirmed

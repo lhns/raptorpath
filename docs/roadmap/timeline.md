@@ -364,6 +364,7 @@ gantt
     Derivation and harness branches to main :infra_derivation_merges, 2026-11-19, 2026-11-19
     Roadmap tool packaged for reuse :infra_tech_tree_skill, 2026-11-20, 2026-11-20
     Roadmap moved onto the tech-tree skill :infra_roadmap_on_skill, 2026-11-20, 2026-11-21
+    VM login name removed from the reposito… :infra_scrub_vm_user, 2026-11-21, 2026-11-21
     CI on every push :active, infra_test_ci_gate, 2026-11-20, 2026-11-21
     Tests for unused code and config :active, infra_test_static_audits, 2026-11-20, 2026-11-21
     Pinned-law check from logs :infra_test_pinned_law_check, 2026-11-20, 2026-11-20
