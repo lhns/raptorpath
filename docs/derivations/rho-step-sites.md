@@ -235,7 +235,7 @@ The digest cannot reach the inline sites: C1's four call sites, the hole law in 
   - **Correction (2026-11-21, ADR-0084 Amendment 2).** Every verdict now sends a last copy, so most verdict seqs end delivered. The correction term is the *passed* verdicts, `V ∩ passed` (known from the floor's ack and `G_rx`), or a seq leaves the exclusion when it is filled. Subtracting all of V would under-credit every filled verdict.
 - **Pin.** At ρ = 1, `V = ∅` (asserted), so `newly` is today's set.
 - **Default change:** none (opt-in).
-- **Red-first test.** `c07_feed_never_credits_a_verdict`: ρ = 0.99 with the feed on and the T2 forced-budget scenario. No shed seq appears in the feed's attributed set. Red today: the feed is absent below 1.
+- **Red-first test.** `c07_feed_never_credits_a_verdict`: ρ = 0.99 with the feed on and the T2 forced-budget scenario. No shed seq appears in the feed's attributed set. Red today: the feed is absent below 1. (2026-11-21, Amendment 2: read "no *passed* verdict seq"; a verdict seq filled by its last copy is credited.)
 
 ### C8: the object corners
 

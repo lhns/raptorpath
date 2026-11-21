@@ -1966,12 +1966,14 @@ Amendment 2):
   not a branch on δ or ρ.
 
 The copy and the floor travel together, and the floor then waits the
-receiver's hold H. Without the copy a verdict resolves an isolated hole H
-later than a resend whose copy arrives, and spends a unit for every such
-hole. With it the hole resolves at `min(fill, owd + H)`, never later than
-serving, and a unit is spent only when the copy is lost too: about ε·ĥ of
-the source, against ĥ for a copy-less verdict
-(`docs/derivations/skip-rule-efficiency.md` §3.1, finding F1). A filled
+receiver's hold H_hold (Section 5.1). Without the copy a verdict resolves an
+isolated hole H_hold later than a resend whose copy arrives, and spends a
+unit for every such hole. With it the hole resolves at the earlier of its
+fill and one one-way delay plus H_hold, never later than serving, and a unit
+is spent only when the copy is lost too. The allowance used falls from the
+share of source seqs left as holes after FEC to that share times the resend
+loss rate (`docs/derivations/skip-rule-efficiency.md` §3.1, finding F1, with
+the worked numbers). A filled
 verdict seq is delivered in order and leaves Ab's pending term without
 entering G_rx, so most verdict seqs end delivered, not passed.
 
