@@ -9786,6 +9786,28 @@ nodes:
   overview: false
   plain: 'A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish.'
   notes: 'Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation.'
+- id: model-skip-rule-efficiency
+  title: The most efficient give-up rule below ρ = 1
+  track: model
+  kind: law
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/skip-rule-efficiency.md
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rec-evict-blocker-unresolved
+  - model-rho-step-sites
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-21'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Which lost packets a ρ < 1 stream should give up on, when, and on which side. Every give-up should still send one last copy; whether the receiver may stop waiting on its own depends on whether a packet that arrives after its successors counts as delivered, which is the owner''s call.'
+  notes: 'Derivation on branch skip-law-derivation (paper-first, no code). Awaiting owner: O3 (does a late out-of-order fill count as delivered; yes gives design U, a receiver release on its own hold with no wire field, after an H_o(delta) ordering derivation; no gives design RX, a receiver that spends a cumulative allowance sent by the sender, one wire field after v11), O2 (one outage may skip about 2 000 consecutive packets after a long clean run), O1, O4. Proposed now for ADR-0084 step 7: the last copy with every verdict (a copy-less shed is H slower than a resend) and the (next_expected, G_rx) pair-merge rule (G_rx falls on late fills). v11 stays as approved. Run-atomic spending and the time-domain T_rho (T_cut re-derived in seconds) wait for the pre-registered toy simulation (LP lower bound, H swept). H is UNDERIVED and carries every headline number.'
 dropped:
 - src: status §1
   reason: living summary (status §1 default stack); every gate it lists is a node elsewhere

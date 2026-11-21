@@ -41,6 +41,7 @@ flowchart TB
     model_fix_paper_p2["○ Paper fixes: path<br/>choice, our BBR"]
     model_fix_paper_p3["⛔ Four unstated rules<br/>added to paper"]
     model_rho_step_sites["▶ Make all twelve ρ<br/>splits continuous"]
+    model_skip_rule_efficiency[/"⛔ The most efficient<br/>give-up rule below ρ =<br/>1"/]
     model_paper_v1 ~~~ model_open_points
     model_paper_v1 ~~~ model_visualizer_v1
     model_open_points ~~~ model_wasm_l0
@@ -75,6 +76,8 @@ flowchart TB
     model_fix_hint_keyed_paths ~~~ model_fix_paper_p3
     model_wasm_fixes ~~~ model_rho_step_sites
     model_fix_paper_p2 ~~~ model_rho_step_sites
+    model_fix_paper_p3 ~~~ model_skip_rule_efficiency
+    model_rho_step_sites ~~~ model_skip_rule_efficiency
     model_paper_v1 --> model_open_points
     model_visualizer_v1 --> model_wasm_l0
     model_wasm_l0 -.-> model_defect_tcut
@@ -94,7 +97,8 @@ flowchart TB
     model_giveup_law --> model_defect_rho_inert
     model_endspeed --> model_warm_start
     model_law_ledger --> model_fix_paper_p2
-    linkStyle 36,38,39,41,48 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    model_rho_step_sites --> model_skip_rule_efficiency
+    linkStyle 38,40,41,43,50 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -115,7 +119,7 @@ flowchart TB
     class model_paper_recon waiting
     class model_shared_core,model_wasm_fixes,model_rho_step_sites inprog
     class model_fix_hint_keyed_paths,model_fix_paper_p2 next
-    class model_fix_paper_p3 blocked
+    class model_fix_paper_p3,model_skip_rule_efficiency blocked
 ```
 <!-- END GENERATED: track-model -->
 
@@ -160,6 +164,7 @@ flowchart TB
 | `model-tier0-corrections` | Tier-0 paper claim corrections | done | successful |  | commit 46c3e6a6; commit 515e4143 |  |
 | `model-paper-rewrite` | Concise rewrite of the model paper | done | unrated |  | commit e22920d5; docs/fec-arq-model.md |  |
 | `model-rho-step-sites` | Make all twelve ρ splits continuous | in-progress | unrated |  | ADR-0084 Amendment 1; docs/derivations/rho-step-sites.md | rec-evict-blocker-unresolved |
+| `model-skip-rule-efficiency` | The most efficient give-up rule below ρ = 1 | blocked | unrated |  | docs/derivations/skip-rule-efficiency.md | rec-evict-blocker-unresolved, model-rho-step-sites |
 
 ### Details per node
 
@@ -199,6 +204,7 @@ flowchart TB
 | `model-tier1-rescores` | Tier-1 literature re-scores | Split 2026-11-20 from store-delta-cap. Unrated: one reading supported, one refuted. | commit 80376c63 |
 | `model-tier0-corrections` | Tier-0 paper claim corrections | Split 2026-11-20 from store-delta-cap. | commit 46c3e6a6; commit 515e4143 |
 | `model-rho-step-sites` | Make all twelve ρ splits continuous | Owner decision 2026-11-20: option B (rewrite all twelve), not grandfathered; framing: ask whether each split has a reason, work only on behaviour we can derive. Derivation on branch rho-step-sites (docs/derivations/rho-step-sites.md), then one commit per site stacked on the ADR-0084 fix. Done when: the reader count of the derived bit is 0, the field is deleted, and the acceptance test (one seed at rho = 1, 0.9999, 0.999, 0.99; runs below 1 differ only by give-ups within (1 - rho) S) is green. 2026-11-20 derivation merged: of the twelve splits, ten have no recorded reason (rollout scope or a copied store test) and two had reasons that ADR-0084 voids (C5 store headroom, C8 store backstop). Shapes: eight keep one arm at every rho, C7 is gated by a verdict set, C2 is made valid at every rho, C6 is an owner question. No Bulk or Auto default changes; six sites change Realtime behaviour. Receiver recommendation: floor-only (no rho at the receiver). Acceptance test sim_rho_dial::rho_dial_is_one_machine. Owner calls pending: C6, floor-only and its Realtime costs, C10 hold, floor cadence, the Realtime N >= 2 changes. | ADR-0084 Amendment 1; docs/derivations/rho-step-sites.md |
+| `model-skip-rule-efficiency` | The most efficient give-up rule below ρ = 1 | Derivation on branch skip-law-derivation (paper-first, no code). Awaiting owner: O3 (does a late out-of-order fill count as delivered; yes gives design U, a receiver release on its own hold with no wire field, after an H_o(delta) ordering derivation; no gives design RX, a receiver that spends a cumulative allowance sent by the sender, one wire field after v11), O2 (one outage may skip about 2 000 consecutive packets after a long clean run), O1, O4. Proposed now for ADR-0084 step 7: the last copy with every verdict (a copy-less shed is H slower than a resend) and the (next_expected, G_rx) pair-merge rule (G_rx falls on late fills). v11 stays as approved. Run-atomic spending and the time-domain T_rho (T_cut re-derived in seconds) wait for the pre-registered toy simulation (LP lower bound, H swept). H is UNDERIVED and carries every headline number. | docs/derivations/skip-rule-efficiency.md |
 
 ### Folded items per node
 
