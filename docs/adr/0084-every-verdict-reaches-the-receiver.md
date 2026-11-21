@@ -1,6 +1,6 @@
 # ADR-0084: Every verdict reaches the receiver
 
-## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; S06 merges first on its own guard; all twelve (C) sites are rewritten (option B). Amended 2026-11-21 (Amendment 2): every verdict sends one last copy with the floor (a forced verdict sends the floor alone); the sender takes (next_expected, G_rx) as a pair from the ack with the greatest next_expected. Amended 2026-11-21 (Amendment 3): the sender side ships first; the receiver keeps its old arm, keyed on its own ρ at named sites, until design U's release rule lands; H is named UNDERIVED debt.**
+## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; S06 merges first on its own guard; all twelve (C) sites are rewritten (option B). Amended 2026-11-21 (Amendment 2): every verdict sends one last copy with the floor (a forced verdict sends the floor alone); the sender takes (next_expected, G_rx) as a pair from the ack with the greatest next_expected. Amendment 3 (2026-11-21, Proposed): the sender side ships first (owner yes); the receiver keeps its old arm, keyed on its own ρ at named sites, until design U's release rule lands, and H is carried as UNDERIVED debt (both awaiting owner).**
 
 ## Context
 
@@ -279,7 +279,11 @@ Accepted (owner, 2026-11-21). It amends decision 1 (the verdict and its tell) an
 
 ### Status
 
-Accepted (owner, 2026-11-21). It supersedes Amendment 1 item 2's "no exception", "the bit never reaches main" and "merge condition: zero readers", for the rows of the block below only, and until the trigger below. Everything else in Amendments 1 and 2 stands.
+Proposed (awaiting owner). The owner accepted the order of work on 2026-11-21 (context below). The owner has **not** accepted:
+- **(Q-a)** the named temporary ρ-keyed receiver exception (decision 1);
+- **(Q-b)** carrying today's hold H as debt in the floor pass (decision 3).
+
+CLAUDE.md allows an engine ρ branch only where the owner accepted it in an ADR, so the sender build does not merge until both are answered. If accepted, this amendment supersedes Amendment 1 item 2's "no exception", "the bit never reaches main" and "merge condition: zero readers", for the rows of the block below only, and until the trigger below. Everything else in Amendments 1 and 2 stands.
 
 ### Context
 
@@ -292,7 +296,7 @@ So the receiver keeps today's arms, and those arms are selected by the receiver'
 
 ### Decision
 
-1. **A named, temporary exception.** The receiver's old arm stays keyed on `rho1_debt_bit(window_rho)` of its own config, at exactly the sites below. The engine deny test (`raptorpath/tests/rho_deny_list.rs`, Amendment 1 item 2 (b)) parses this block. At the sender build's merge the ratchet table must equal it exactly, function by function; a reader anywhere else fails, and a row may only leave.
+1. **A named, temporary exception (owner question Q-a).** The receiver's old arm stays keyed on `rho1_debt_bit(window_rho)` of its own config, at exactly the sites below. The engine deny test (`raptorpath/tests/rho_deny_list.rs`, Amendment 1 item 2 (b)) parses this block. Amendment 1's `rho1-debt-readers` block shrinks, during the build, to exactly these rows; at the sender build's merge the ratchet table must equal this block, function by function. A reader anywhere else fails, and a row may only leave.
 
    <!-- rho1-debt-exception (file | fn | sites | reason) -->
    ```text
@@ -312,11 +316,12 @@ So the receiver keeps today's arms, and those arms are selected by the receiver'
 
    - **Reason.** The receiver's give-up is replaced once, by design U's release arm, not twice (R1, then U).
    - **Removal trigger.** The release-rule build (roadmap `model-ordering-hold`): it rewrites C9–C12 with U's release arm keyed by H_o(δ), deletes `rho1_debt_bit`, `net/rho_debt.rs` and every row above, and un-ignores `rho1_debt_is_gone`. No row may be added; growing the list needs a new ADR.
-   - **Not in the list.** Every sender site (C1–C8), D1, and C12's timer: C12's refresh half runs at every ρ in this build (`rho-step-sites.md` §5), and the expiry it no longer selects comes from C9's buffer (`oldest_deadline`, `None` on the ρ = 1 buffer).
+   - **Not in the list.** Every sender site (C1–C7), D1, and C12's timer: C12's refresh half runs at every ρ in this build (`rho-step-sites.md` §5), and the expiry it no longer selects comes from C9's buffer (`oldest_deadline`, `None` on the ρ = 1 buffer).
+   - **C8 also waits.** Every object corner at ρ < 1 would reach the old arm (`WindowDelivery::new(bit)` drops on a full channel for every corner, and the in-order corners get the evicting buffer, `receiver.rs:161–172`), so accepting them would ship an uncounted loss. `config::check_window_rho` keeps its corner refusal (already allowlisted, Amendment 1 item 2 (a)) until the release-rule build.
 
 2. **The floor pass ships in this build, seat-free.** Brief step 8's pass runs on both buffers and reads no bit, so every receiver honours the sender's floor. The marker `(F_rx, t_F + H)` arms the drain timer with no pending entry (the lost tail, T1).
 
-3. **Named debt: H.** The floor pass waits H after the floor. H is `shed_recv_hold` as on main: `SRTT/2` while the receiver's ε̂_recv budget is open, else `(4·SRTT).clamp(60, 300) ms`. It is **UNDERIVED**: `b(Realtime) = ½` is hard-coded (paper §11.3 "receiver shed hold"), the 60/300 ms clamp has no provenance, and the ε̂_recv threshold that selects between them is a measured count, not a law. It is read at every receiver ρ. `ordering-hold.md` §8's path-support H is not adopted (the receiver cannot know which paths still carry a copy, and an observed-maximum estimator never comes down). H is replaced in the release-rule build, with its own derivation; until then its bind is gauged (`H` at each floor pass, and the arm it took).
+3. **Named debt: H (owner question Q-b).** The floor pass waits H after the floor. H is `shed_recv_hold` as on main: `SRTT/2` while the receiver's ε̂_recv budget is open, else `(4·SRTT).clamp(60, 300) ms`. It is **UNDERIVED**: `b(Realtime) = ½` is hard-coded (paper §11.3 "receiver shed hold"), the 60/300 ms clamp has no provenance, and the ε̂_recv threshold that selects between them is a measured count, not a law. It is read at every receiver ρ. `ordering-hold.md` §8's path-support H is not adopted (the receiver cannot know which paths still carry a copy, and an observed-maximum estimator never comes down). H is replaced in the release-rule build, with its own derivation; until then its bind is gauged (`H` at each floor pass, and the arm it took).
 
 4. **What the receiver does below ρ = 1 in the interim.** Exactly today's arm, plus the floor pass:
    - holes with a pending entry above are passed on the receiver's own hold (expiry), and the buffer force-drains above 500 entries;
