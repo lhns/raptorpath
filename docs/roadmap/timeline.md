@@ -340,6 +340,7 @@ gantt
     Tier-0 paper claim corrections :model_tier0_corrections, 2026-08-19, 2026-08-19
     Concise rewrite of the model paper :model_paper_rewrite, 2026-09-27, 2026-09-27
     Make all twelve ρ splits continuous :active, model_rho_step_sites, 2026-11-20, 2026-11-21
+    The most efficient give-up rule below ρ… :model_skip_rule_efficiency, 2026-11-21, 2026-11-21
     section obs - observability
     Runtime status endpoint :obs_status_endpoint, 2026-03-12, 2026-03-12
     Gate-setting liveness echo :obs_gates_echo, 2026-08-09, 2026-08-09
