@@ -22,7 +22,7 @@ House format: `docs/derivations/vm-batch-1-registration.md`. Revised after Fable
   1. **Linux defaults stand for the TCP the tunnel's users run** (RACK, DSACK undo). A classic, more fragile TCP is measured afterwards, as a bound, once the Linux result has been read.
   2. **One byte of inner goodput lost is priced as one byte on the wire**, the same price as one wasted repair copy. A different price scales ω by the same factor.
 - **Warning: this can change the rule, not only a number.** A hold stops the inner TCP's acknowledgements, so its sender stops. If the queue in front of the tunnel is shallow, holding a packet for a few milliseconds can cost the inner flow more than releasing it, at every preset. The derivation prices a stall by δ alone. That is about 0.5 symbols per stalled second at Bulk, while a stalled 10 000 packets/s flow loses up to 10 000 packets per second. If the measurement shows this, the rule as derived would release almost at once at every preset, and δ would decide nothing. That goes back to the derivation as a design question (§2), not into a constant.
-- **Cost.** About 14 h of VM time for the Linux stack, in four sessions, each under the five-hour cap. The classic stack and the sweeps follow in a later amendment, budgeted after the Linux result (§12).
+- **Cost.** About 14 h of VM time for the Linux stack, in four sessions, each under the five-hour cap. It is about 9 h if the tunnel's standing queue turns out shallow. The classic stack and the sweeps follow in a later amendment, budgeted after the Linux result (§12).
 
 **Inputs read** (`github/main` `9bc656bf`):
 - `ordering-hold.md`: ω's definition and its "matched no-release run" (§1); J_U, with the stall priced as `(δ/d)·T_stall` (§2); the rent-or-buy rule (§3.2); the preset tables (§4); skew (§5); the gauges (§6); the owner answers;
@@ -64,11 +64,11 @@ The bottleneck is saturated by construction (§4). Every slot it leaves idle, an
 
 - **Both curves are scored, and ω is derived from them.** ω alone would hide which side moved. §2 needs c_H on its own.
 - **First event and later events, kept apart.** RACK remembers reordering: after the first DSACK it widens reo_wnd, and the widening lasts 16 recoveries (RFC 8985 §6.2). So the first event of a connection can cost something and later ones nothing. A per-event average would then scale like 1/(events per connection), which is a design choice.
-  - **c_R1, c_H1 and ω₁** come from the first event of a connection, measured with **short reps**: many connections per cell, one scored event each (§7.2).
-  - **c_R∞, c_H∞ and ω_∞** come from events 2 onward, measured with **long reps** on a subset of Δt (§6.2).
+  - **c_R1, c_H1 and ω₁** come from the first event that hits each connection. **c_R∞, c_H∞ and ω_∞** come from that connection's later events.
+  - Both come from the same reps: F = 8 long-lived connections share the bottleneck, events are switched on only once the standing queue is built (§4.4), and each event is labelled by the flow it hit and its index in that flow (§7.2).
   - **ω₁ governs the N = 1 release.** A released-then-filled hole is rare there, so it usually hits a flow with no recent reordering.
   - **ω_∞ governs the N = 2 skew condition** `ω ≥ δ·Δ/d` (`ordering-hold.md` §5). There every slow-path packet is a release.
-- **The goodput guard (long reps).** `[ (Ḡ_CLEAN − Ḡ_REL)/Ē_REL − (Ḡ_CLEAN − Ḡ_HOLD)/Ē_HOLD ] / S` over the whole window. It catches costs that outlast A_e, such as a CUBIC regrowth of seconds after a cut that was never undone.
+- **The goodput guard.** `[ (Ḡ_CLEAN − Ḡ_REL)/Ē_REL − (Ḡ_CLEAN − Ḡ_HOLD)/Ē_HOLD ] / S` over the whole window. It catches costs that outlast A_e, such as a CUBIC regrowth of seconds after a cut that was never undone.
   - If its CI lies entirely above the slot estimate of ω_∞, the outcome is `WINDOW-SHORT` at that configuration. The slot estimates there are VOID, and the goodput guard is read instead, with its MDE (§7.3).
 - **Unit.** This is declared choice 2 of the owner section. If the owner prices inner goodput differently, every curve scales linearly.
 
@@ -92,18 +92,31 @@ The bottleneck is saturated by construction (§4). Every slot it leaves idle, an
 
 **Predicted c_H at the two queues of §4.3** (symbols; MSS/S ≈ 1.2; Δt from §6.1):
 
-| configuration (W, Q_s) | k = 8 | k = 32 | t = 1 | t = 4 | at Q_t |
+| configuration (W, Q_s) | k = 8 | k = 32 | t = 1 | t = 4 | at Q_t (FILLED events) |
 |---|---|---|---|---|---|
-| 1 000 /s, RTT 10 (10, 4) | 5 | 34 | 0 | 7 | 0 everywhere (Δt·g ≤ 500 < Q_t) |
-| 10 000 /s, RTT 10 (100, 25) | 0 | 9 | 0 | 90 | 0 |
-| 1 000 /s, RTT 50 (50, 13) | 0 | 23 | 0 | 44 | 0 |
-| 10 000 /s, RTT 50 (500, 125) | 0 | 0 | 0 | 450 | 0 |
+| 1 000 /s, RTT 10 (10, 4) | 5 | 34 | 0 | 7 | 0 while Δt·g ≤ B_t, then (Δt·g − B_t)⁺ |
+| 10 000 /s, RTT 10 (100, 25) | 0 | 9 | 0 | 90 | the same |
+| 1 000 /s, RTT 50 (50, 13) | 0 | 23 | 0 | 44 | the same |
+| 10 000 /s, RTT 50 (500, 125) | 0 | 0 | 0 | 450 | the same |
 
 **Against J_U's rent for the same stall**, `δ_p·Δt/d`. At Δt = 50 ms and d = 11 ms that is 0.023 symbols at Bulk, 2.3 at Auto and 227 at Realtime. A measured c_H of 450 symbols exceeds all three. And if c_H > c_R, then ω < 0: holding costs more than releasing.
 
 **The question for the derivation, written now:** is a stall's inner-goodput cost a measured rent term that J_U is missing, beside the declared δ term?
 - **If yes**, rent-or-buy compares the measured rent `c_H(t)` (plus `(δ/d)·t`) against the measured purchase price `c_R`. δ then decides only where the inner cost of the stall is small.
 - **The answer may depend on the queue in front of the tunnel**, which is why Q is a core factor here (§4.3). The tunnel's own queue is deep, and there c_H ≈ 0 for every operating Δt. A shallow bottleneck elsewhere on the inner path makes c_H dominate.
+
+**The candidate rent, on one line** (a question for `ordering-hold.md`, not a law proposed here):
+
+```text
+   rent(t)  =  (δ/d) · t   +   c_H(t)                 c_H(t) ≈ ( t · g − B )⁺ · MSS/S   when a standing backlog B sits in front of the bottleneck
+```
+
+**What the engine could read online.** A cost the engine cannot read cannot become a law. It cannot see the inner TCP (cwnd, RACK state, or a queue elsewhere on the inner path). It can see:
+- **t**, the hold age;
+- **g**, its own delivery rate at the receiver;
+- **B, but only where the tunnel is the bottleneck.** B is then the sender's own backlog: the TUN device queue plus the TUN read channel plus the store. The sender holds it, so the receiver would need it on the wire, a feedback field the protocol does not carry.
+
+So the proxy question for the derivation is: is `(t·g − B_tunnel)⁺` an admissible rent term, read from the sender's TUN backlog and carried to the receiver? And for a shallow bottleneck elsewhere (Q_s), which the engine cannot observe, is that cost a declared dial, or out of scope? This registration measures whether the term is material. It does not decide whether it can ship.
 
 **The measurement decides it (§9.1)**, per preset and per queue:
 - `RENT-UNDERPRICED-<preset>`: the measured c_H1 exceeds `δ_p·Δt/d`. The finding fires: the rule, not only ω, goes back to `ordering-hold.md`.
@@ -152,7 +165,7 @@ Three namespaces, all `rp-*` (`rp-app` is added in stage T), joined by veth pair
   - **HOLD:** `rate` at 10 × g. netem is then FIFO, with its time reference at the queue tail, so the successors wait, then leave as a 10 × g burst, as a reorder buffer releases a held run.
   - **CLEAN:** the same, with an all-zero table.
 - **Selection** is random per packet with probability p, quantised to the table size (R0, §11.1). Events are spaced ≈ 1 s per flow, and the realised count comes from the pcap, never from p.
-- **Events start after warm-up.** Every arm starts with the zero table and switches to its own (CLEAN to zero again) at t_w = 3 s + 2·Q/g, so no event falls in slow start or in the first queue fill.
+- **Events start once the queue is built, not at a fixed time** (§4.4). Every arm starts with the zero table and switches to its own (CLEAN to zero again) when the fill witness first holds.
 - **Outage check (§6.5): prio + plug on `mid1`.**
   - Band 1 takes the odd IP IDs. Linux uses a per-socket IP ID counter for DF packets, so this is exact alternation within a flow, which is N = 2 round robin; R0 verifies it.
   - OUT-REL blocks band 1 for 1 s. OUT-HOLD blocks both bands for the same second. CLEAN blocks neither.
@@ -172,15 +185,40 @@ Three namespaces, all `rp-*` (`rp-app` is added in stage T), joined by veth pair
   - A lock this session did not create is never removed. Under sudo, HOME resolves to the invoking user.
 - **Names.** Docs and logs say "the VM", with no user name, address or key path.
 
-### 4.3 The queue Q: two levels, both in the core
+### 4.3 The queue Q: measured standing queue (Q_t) and shallow (Q_s), both in the core
 
-| level | Q | provenance |
+**A queue limit is not a standing queue.** A hold costs the link nothing only while a backlog of at least Δt·g packets is already queued in front of the bottleneck when it starts. So the scored level must come from the backlog that inner TCP actually builds in front of the tunnel, and every event carries a witness of it (§4.4).
+
+**Fill time on paper.**
+- Linux CUBIC leaves slow start early (HyStart, on a small RTT rise). From there it probes upward at `C·t³` packets with C = 0.4 (RFC 9438).
+- Building a 4 596-packet backlog therefore takes `t = (4 596 / 0.4)^(1/3) ≈ 23 s`, about the same at either rate, since the growth is in time.
+- v2's 18 s reps with events from about 4 s would have held against a nearly empty queue, and `RENT-UNDERPRICED` at Q_t would have fired as an artefact.
+
+| level | standing backlog B | provenance |
 |---|---|---|
-| **Q_t, the tunnel's own queue** | 4 596 packets at 10 000 /s (0.46 s); 460 at 1 000 /s, the same 0.46 s (see below) | When the tunnel is the inner flow's bottleneck, the queue in front of it is the TUN device queue plus the engine's TUN read channel. The TUN queue is the kernel default 500, since raptorpath sets no `txqueuelen`; stage T and R0 read the qlen back. The read channel is 4 096 deep (`tun/linux/mod.rs:24`). The sender's window (`WIN_STORE_MAX` 4 096) only adds to it |
-| **Q_s, a shallow bottleneck elsewhere on the inner path** | max(⌈W/4⌉, 4) | not the tunnel's queue: the case where the inner path has a tighter, shallow queue (an access link) ahead of the tunnel. It is the end at which a hold is most expensive (§2) |
+| **Q_t, the tunnel's own** | **measured in session R** (§11.1): `B_t = g_tun · (srtt − min_rtt)` of a long-lived inner CUBIC flow through the real tunnel, with the tunnel as the bottleneck | where that queue sits is measured, not assumed: the TUN device's qdisc (whatever `net.core.default_qdisc` gives it on the VM, often fq_codel, which would hold it near 5 ms), the TUN read channel (4 096, `tun/linux/mod.rs:24`), the store (`WIN_STORE_MAX` 4 096), or the underlay's own queue. The 500 + 4 096 of v2 is an upper bound on depth, not a standing queue |
+| **Q_s, a shallow bottleneck elsewhere** | limit max(⌈W/4⌉, 4), filled within a few RTT | the end at which a hold is most expensive (§2) |
 
-- **The 1 000 /s Q_t deviation, stated.** The literal 4 596 packets are 4.6 s of queue at 1 000 /s. Inner CUBIC then needs tens of seconds to reach steady state. The prediction there is identical (c_H = 0 whenever Δt·g < Q, and Δt·g ≤ 50 at 1 000 /s), so the 1 000 /s Q_t cells use the same time depth, 0.46 s.
-- **Bottleneck drops per event** are a readout (§7.1). That answers how much of c_H is the release burst overflowing Q, as opposed to idle link time.
+- **Is the tunnel the bottleneck in stage T's `clean` scenario?** Yes. `clean` is 100 Mbit/s, 5 ms one-way, no loss, no jitter (`lib.sh` `scenario_params`), as a `netem rate` on the underlay leg, so the inner flow is limited by the tunnel's path. R checks it (the inner goodput must sit at ≥ 90 % of the tunnel's measured goodput ceiling).
+  - Whether the standing queue then forms in the tunnel's TUN queue and read channel, or in the underlay netem queue, is read from three places: `tc -s qdisc` backlog on `rpcli0`, on the underlay `cli0`, and the engine's channel and store if its gauges print them.
+- **Emulating Q_t.** The amendment picks the bottleneck's queue discipline and limit at the netem cells so that the fill witness reproduces B_t's standing delay within ± 25 %.
+  - The candidates are a netem limit (tail drop), or fq_codel as the rate netem's child, as `scenario_child_qdisc` does, if the tunnel's queue is AQM-managed.
+  - It is one Q_t per rate, pinned with its measured B_t and the qdisc that produced it.
+- **Bottleneck drops per event** are a readout (§7.1). They tell how much of c_H is the release burst overflowing the queue, as opposed to idle time.
+
+### 4.4 Warm-up and the fill witness
+
+- **Warm-up ends on a witness, not a clock.** A sampler (recorded PID, in every arm, so its cost is matched) reads `tc -s qdisc` backlog on `cli0` every 10 ms. Warm-up ends when the backlog's 1 s median first reaches B (B_t at Q_t, the limit's 80 % at Q_s). A rep that has not reached it by 60 s is `NO_FILL`: excluded, counted and reported.
+- **Per-event witness.** An event is **FILLED** iff the backlog sample just before t_e is ≥ Δt·g, so the queue could cover the hold, and otherwise **UNFILLED**.
+  - FILLED and UNFILLED events are scored separately and never pooled. §9.1's Q_t verdict reads FILLED events only.
+  - UNFILLED is reported. It is also the natural case for a hold longer than the standing queue, and it is expected for the τ_q-and-above arms of §6.1.
+  - The same split applies to REL and CLEAN pseudo-events, so the comparison stays matched.
+- **How the first events reach a built queue.** A rep is **F = 8 long-lived connections** started together (iperf3 `-P 8`). They build the standing queue during warm-up, and the reorderer is switched on only after the witness. So every flow's first event lands on a built queue, and is a ω₁ sample. Its later events are ω_∞ samples.
+- **What that does to first-event independence, stated.**
+  - The first events of one rep share one queue and seven competing flows, so they are not independent. The bootstrap resamples reps (clusters), never single events.
+  - A hold stalls all eight flows, since everything behind the held packet waits, as in the tunnel's reorder buffer. A release displaces one flow. Aggregate D_e over all flows is the consumer's cost (the TUN carries all flows), so this is the measurement the rule needs.
+  - It is not the cost to a lone flow. F = 1 moves to phase C as a sweep.
+  - With the time grid fixed, per-flow overtakers are about k/8. Realised per-flow k is reported beside the aggregate k.
 
 ## 5. Inner stacks: D first, C after D's result
 
@@ -213,22 +251,25 @@ W = g·RTT in 1 500 B packets. Δt in ms: k targets use (k + ½)/g, time targets
 | 10 000 (120) | 100 / 500 | 0.15 | 0.25 | 0.35 | 0.85 | 3.25 | same | same | same |
 
 - **Degenerate:** (1 000, RTT 10, t = 0.25) gives Δt·g < 1 and is not run.
-- **Operating range:** Δt ≤ 61 ms (three rounds at d = 11 ms, `ordering-hold.md` §4.2). Every cell here is inside it.
+- **Operating range:** Δt ≤ 61 ms (three rounds at d = 11 ms, `ordering-hold.md` §4.2).
+- **Hold lengths around the standing queue (new).** The hold cost starts where Δt·g passes the standing backlog. Each configuration adds Δt ∈ {0.5, 1, 2} × τ_q, with τ_q = B/g its measured standing delay: Q_t's from R, and Q_s's from its witness.
+  - Those above 61 ms are **measured but out of range.** They are reported with §9.1's comparison, and excluded from the ω envelope of §7.4.
+  - If τ_q·g is below 1 packet, that triple collapses and is not run.
 - **100 /s is deferred to phase C** (sweep S1). At RTT 10 it is not run at all (W = 1).
 
 ### 6.2 Core D (scored)
 
-Stack D × g {1 000, 10 000} × RTT {10, 50} × Q {Q_t, Q_s} × F = 1: eight configurations.
-- **Q_t, short reps:** CLEAN, and REL and HOLD at every Δt of §6.1. That is 15 + 17 + 17 + 17 = **66 cells**.
-- **Q_t, long reps:** CLEAN, and REL and HOLD at k ∈ {3, 8} and t ∈ {1, 4}. That is 9 arms per configuration, **36 cells**.
-- **Q_s, short reps:** CLEAN, and REL and HOLD at k ∈ {3, 8} and t ∈ {1, 4}. That is **36 cells**. These Δt span the sign change of (Δt·g − Q_s) in every configuration (§2's table).
+Stack D × g {1 000, 10 000} × RTT {10, 50} × Q {Q_t, Q_s} × F = 8: eight configurations, n = 8 reps per arm. One rep has about 6 first events and about 6 later events (§7.2).
+- **Q_t:** CLEAN, and REL and HOLD at every Δt of §6.1 plus the three τ_q arms. That is 21 + 23 + 23 + 23 = **90 cells**.
+- **Q_s:** CLEAN, and REL and HOLD at k ∈ {3, 8}, t ∈ {1, 4} and the three τ_q arms. That is 15 per configuration, **60 cells**.
+- **Event spacing.** About 1 s in aggregate. For arms whose A_e exceeds that (the τ_q arms at Q_t), spacing is 3 s where the table can represent it, and otherwise the table's minimum p, with A_e cut at the next event (§11.1).
 
 ### 6.3 Phase C (registered in outline; budgeted by an amendment after D is read)
 
-- **C on the Q_t core:** short reps on the 9-arm subset.
+- **C on the Q_t core,** on a 9-arm subset.
 - **Sweeps S1–S3:**
   - **S1:** 100 /s, RTT 50, k ∈ {1, 3, 8}.
-  - **S2:** 4 flows at 10 000 /s, RTT 50, k ∈ {3, 8} and t = 1.
+  - **S2:** F = 1, a lone flow (with its own fill witness), at 10 000 /s, RTT 50, k ∈ {3, 8} and t = 1.
   - **S3:** event spacing 1 s against 4 s for ω_∞, at 1 000 /s, RTT 50, k = 8. It runs at 1 000 /s because 4 s at 10 000 /s needs p below the table's resolution (§11.1).
 - **BBR.**
 - **Estimate:** ≈ 8 h. D's result may make parts moot, for example C if `RENT-UNDERPRICED` fires everywhere.
@@ -237,22 +278,22 @@ Stack D × g {1 000, 10 000} × RTT {10, 50} × Q {Q_t, Q_s} × F = 1: eight con
 
 ### 6.5 Outage check (one small stage, a check of the owner's acceptance)
 
-- **Cells.** D, 10 000 /s, RTT 50, Q_t: CLEAN, OUT-REL and OUT-HOLD, long reps, n = 8. That is **3 cells**.
+- **Cells.** D, 10 000 /s, RTT 50, Q_t: CLEAN, OUT-REL and OUT-HOLD, n = 8, one outage per rep after the fill witness. That is **3 cells**.
 - **Why so small.** The owner accepted late out-of-order delivery after long outages (2026-11-21). This stage only checks that the inner TCP agrees (§9.4).
 
 ### 6.6 Stage T: the tunnel in the path (reported)
 
 - **Topology.** `tun_bulk.sh`'s bring-up on the `clean` scenario (no loss, no jitter, so no holes of the tunnel's own), hint `auto`. `rp-app` sits behind `rp-srv` on a veth. The reorderer is on `rp-srv`'s egress to `rp-app`, after TUN delivery, and iperf3 runs from `rp-cli` to `rp-app`.
-- **Stack D, short reps:** CLEAN, and REL and HOLD at t ∈ {1, 4}, with Δt from the inner min_RTT measured in R. That is **5 cells**.
+- **Stack D, F = 8, after the fill witness:** CLEAN, and REL and HOLD at t ∈ {1, 4}, with Δt from the inner min_RTT measured in R. That is **5 cells**.
 - **Witnesses.** TUNPIPE, TUNMTU, TUNSHA, and the qlen of `rpcli0` (the TUN queue of §4.3). The pre-reorderer pcap shows zero reordering in CLEAN.
 
-**Phase D cells: 66 + 36 + 36 + 3 + 5 = 146.**
+**Phase D cells: 90 + 60 + 3 + 5 = 158.**
 
 ## 7. Readout and statistics
 
 ### 7.1 Per rep
 
-- **Traffic.** iperf3 `-J --get-server-output -i 1`, one fresh connection. Short reps run t_w + 3 s; long reps run t_w + 15 s.
+- **Traffic.** iperf3 `-P 8 -J --get-server-output -i 1`, fresh connections per rep, running through warm-up (until the fill witness) plus a 12 s event phase.
 - **Truth: pcaps.** tcpdump, headers only (`-s 96`), on `mid0` ingress (the bottleneck's output, before the reorderer) and on `srv0` ingress (after it), in every arm. A pure digest matches packets by (flow, TCP seq, IP ID).
   - **REL event:** a packet delayed by more than Δt/2.
   - **HOLD event:** the head of a stall, that is, a delayed packet whose predecessor at `mid0` was not delayed. The successors queued behind it are part of its stall, not events.
@@ -271,25 +312,24 @@ Stack D × g {1 000, 10 000} × RTT {10, 50} × Q {Q_t, Q_s} × F = 1: eight con
   - `TCPLossProbes`.
 
   R0 checks the names; a missing one is printed `-`.
-- **Socket and bottleneck.** `ss -tin` in `rp-cli` near the end (cwnd, `reord_seen`, `dsack_dups`, rtt, minrtt). `tc -s qdisc` on `cli0`: sent, drops, backlog and utilisation.
+- **Socket and bottleneck.**
+  - `ss -tin` in `rp-cli` at the witness instant and near the end: cwnd, `reord_seen`, `dsack_dups`, srtt, minrtt. srtt − minrtt cross-checks the backlog.
+  - `tc -s qdisc` on `cli0`, sampled every 10 ms (§4.4): sent, drops, backlog, utilisation.
+  - **Each event carries its FILLED/UNFILLED label.**
 
 ### 7.2 n, seeds, order, witnesses
 
-- **Short reps (ω₁, c_R1, c_H1): many connections, each one scored event (its first).** They are the rule for ω₁, not a fallback.
-  - **n₁ is sized from R's noise, per configuration**, before any scored data. R runs 16 short reps each of CLEAN, REL and HOLD at k = 8, which give σ̂_R and σ̂_H of D_e,1 in symbols:
+- **Reps and samples.** n = 8 reps per arm. Each rep's 12 s event phase gives, at about 1 s aggregate spacing, about 12 events. On average about 6 of them hit a flow for the first time (a coupon-collector draw over 8 flows) and about 6 are later events. That is ≈ 48 ω₁ samples and ≈ 48 ω_∞ samples per arm, in 8 clusters.
+- **n sized from R's noise.** R gives σ̂ of D_e per configuration (§11.1). Then:
 
-    ```text
-       n₁  =  ⌈ 1.96² · ( σ̂_R² + σ̂_H² ) / h² ⌉ ,   h = 0.3 · max( ω₁,pred , 1.2 ) ,   clamped to [32, 96] per arm
-    ```
+  ```text
+     n  =  ⌈ 1.96² · ( σ̂_R² + σ̂_H² ) / ( h² · m ) ⌉ ,   h = 0.3 · max( ω₁,pred , 1.2 ) ,   m ≈ 6 first events per rep ,   clamped to [8, 24] reps per arm
+  ```
 
-  - With h = 0.3·ω, the interval spans at most a factor of about 1.9, so it can cross at most one zone edge (the narrowest gaps of §8 are about ×1.9).
-  - If the rule asks for more than 96, that configuration is declared `POWER-LIMITED` in the amendment, before scoring, and runs at 96.
-  - The budget in §12 plans n₁ = 32.
-  - A short rep whose first event falls after t_w + 2 s is `NO_EVENT`: excluded, counted and reported.
-- **Long reps (ω_∞, the guard):** n = 8, about 14 later events each.
+  The design effect of clustering is taken from R's between-rep variance, not assumed. A configuration that needs more than 24 is `POWER-LIMITED` in the amendment, before scoring.
 - **Seeds.** netem seed 42 for the first half of each arm's reps, 7 for the second (rule 4), with per-half medians reported. If R0 finds `seed` unsupported, the halves are rep halves under an unseeded RNG, recorded as a deviation; no cell is skipped.
 - **Interleaving (rule 3).** Each round runs every arm of a configuration once, in a seeded shuffle. All arms of a configuration run in one session, on one bring-up.
-- **Live minimum.** A short-rep cell needs ≥ 0.75·n₁ live events per arm, a long-rep cell ≥ 6 live reps, else `UNSCOREABLE`. NO_DATA is retried once at the end of the configuration and recorded (rule 8).
+- **Live minimum.** A cell needs ≥ 6 live reps (NO_FILL excluded) and ≥ 32 FILLED first events per arm, else `UNSCOREABLE` (at Q_t, for the FILLED verdict). NO_DATA is retried once at the end of the configuration and recorded (rule 8).
 - **VOID-WITNESS (a rep).**
   - A REL or HOLD rep with fewer than 95 % of its events delayed within Δt ± max(50 µs, 5 %).
   - A HOLD rep with any overtaker.
@@ -348,13 +388,19 @@ Compare c_H1(Δt) with J_U's rent `δ_p·Δt/d`, at the measured d, at every sco
 
 | outcome | condition | meaning |
 |---|---|---|
-| `RENT-UNDERPRICED-<p>` at Q_t | c_H1's lower CI > δ_p·Δt/d at some Δt | **The finding fires for the tunnel's own queue.** The rule, not only ω, goes back to `ordering-hold.md` §2–§3, and the owner is told before any law is adopted |
+| `RENT-UNDERPRICED-<p>` at Q_t | c_H1's lower CI > δ_p·Δt/d at some Δt ≤ 61 ms, on FILLED events (Bulk: the count rule below) | **The finding fires for the tunnel's own queue.** The rule, not only ω, goes back to `ordering-hold.md` §2–§3, and the owner is told before any law is adopted |
 | `RENT-UNDERPRICED-<p>` at Q_s only | the same, at Q_s but not at Q_t | the finding holds for inner paths with a shallow bottleneck elsewhere; reported to the derivation as a scope question; the zones below still apply for the tunnel's own queue |
 | `RENT-COVERED-<p>` | c_H1's upper CI ≤ δ_p·Δt/d at every Δt, at Q_t | J_U prices the hold adequately at p; §9.2 applies at p |
 | `RENT-UNDECIDED-<p>` | neither | `NEEDS-MORE-POWER` at p |
 | `OMEGA-NEGATIVE` | ω₁'s upper CI < 0 at some Δt | holding costs more than releasing outright; implies `RENT-UNDERPRICED` at every preset at that queue |
 
-Bulk's rent is tiny (≤ 0.03 symbols for Δt ≤ 61 ms at d = 11 ms). So `RENT-COVERED-Bulk` needs c_H1 to be resolved essentially at 0. It is predicted at Q_t (no idle slot, no drop), and is `RENT-UNDECIDED-Bulk` if the CI cannot show it.
+**Bulk is scored as a count, not a mean.** Bulk's rent, `δ_B·Δt/d`, is at most 0.03 symbols for Δt ≤ 61 ms at d = 11 ms, which no mean can resolve.
+- A FILLED HOLD event is **free** iff A_e shows zero idle slots and zero bottleneck drops. CLEAN pseudo-events give the baseline non-free share.
+- Let x be the excess non-free share (HOLD − CLEAN), with its 95 % Newcombe interval over clusters, and c̄_nf the mean D_e of a non-free HOLD event, with its bootstrap CI, in symbols.
+- **`RENT-COVERED-Bulk`** iff `upper(x) · upper(c̄_nf) ≤ δ_B·Δt/d` at every scored Δt ≤ 61 ms.
+- **`RENT-UNDERPRICED-Bulk`** iff `lower(x) · lower(c̄_nf) > δ_B·Δt/d` at some Δt.
+- **`RENT-UNDECIDED-Bulk`** otherwise.
+- **Predicted at Q_t:** x = 0, so covered, provided ≥ 300 FILLED HOLD events per Δt (then a zero count puts upper(x) ≈ 1 %). The amendment checks that n reaches this, and otherwise declares Bulk `POWER-LIMITED`.
 
 ### 9.2 Then: where ω₁ sits (stack D, Q_t; read at presets with RENT-COVERED)
 
@@ -395,16 +441,17 @@ Compared with Q_t core (D, 10 000, RTT 10) at the same t:
 
 ### 9.6 Predictions (rule 11), from a re-read of `ordering-hold.md` §1–§2 and RFC 8985 §6.2
 
-- **D at Q_t.**
-  - c_H1 ≈ 0 at every Δt: the queue (0.46 s) outlasts every hold.
-  - c_R1 ≈ one spurious retransmission plus an undone reduction. The deep queue absorbs the reduction's dip, so c_R1 ≈ 1.2 symbols.
+- **D at Q_t, FILLED events.**
+  - c_H1 ≈ 0 for Δt < τ_q, growing as (Δt·g − B_t)⁺ above it (the τ_q arms show the knee).
+  - If B_t turns out shallow (for example an fq_codel TUN queue near 5 ms), Q_t behaves like Q_s, and the finding fires for the tunnel itself. That is a real result, not an artefact, because the witness holds.
+  - c_R1 ≈ one spurious retransmission plus an undone reduction. A standing backlog B_t ≥ (1 − β)·W absorbs the reduction's dip, so c_R1 ≈ 1.2 symbols; a shallower B_t adds ((1 − β)·W − B_t)⁺ slots.
   - So ω₁ ≈ 1.2: **`RENT-COVERED` at Auto and Realtime** (Bulk `COVERED` or `UNDECIDED`), and **`OMEGA-ZA`** with `STEEP-AT-Auto` at some d. Bulk keeps order, and Auto reorders holes that need a second round.
   - ω_∞ < 0.5: at N = 2 with skew, Auto reorders every slow-path packet.
 - **D at Q_s.** c_H1 grows as (Δt·g − Q_s)⁺ (§2's table).
   - **`RENT-UNDERPRICED` at every preset in the cells with Δt·g ≫ Q_s** (t = 4, and k = 32 at 1 000 /s), and `OMEGA-NEGATIVE` there.
   - That is the finding for inner paths with a shallow bottleneck elsewhere. It is not predicted to fire at Q_t.
 - **Refuters of the measurement, not the law.**
-  - If c_H1 at Q_t is materially above 0, either the queue is not what §4.3 says or the hold triggers losses. The drops-per-event readout decides which, before anything is read.
+  - If c_H1 on FILLED events below τ_q is materially above 0, the hold triggers losses or the witness misreads the queue. The drops-per-event readout and the srtt − minrtt cross-check decide which, before anything is read.
   - If ω₁'s lower bound exceeds 26, the RACK expectation is contradicted, and the sysctl and `reord_seen` witnesses are checked first.
 
 ## 10. Abort classes (filled in the Result, in this order)
@@ -433,7 +480,7 @@ Compared with Q_t core (D, 10 000, RTT 10) at the same t:
 2. REL: unselected packets undelayed (< 50 µs), and ≥ 90 % of events with exactly k overtakers (k ± 1 below 0.3 ms);
 3. HOLD: zero overtakers, and the successors released within 1.1 × their 10 × g serialisation;
 4. a selection rate inside the binomial 99 % interval of p;
-5. the t_w table switch working, with no event before it;
+5. the table switch at the fill witness working, with no event before it;
 6. CLEAN undelayed.
 
 **R0 tool checks, each with its fallback fixed now (skip, never improvise):**
@@ -445,13 +492,29 @@ Compared with Q_t core (D, 10 000, RTT 10) at the same t:
 - **Consecutive per-socket IP IDs** with a TCP flow. If not, the outage check is `SKIPPED-SELECTOR`.
 - **`plug`** holds and releases as a burst. If not, the outage check is `SKIPPED-PLUG`.
 - **Every §7.1 counter name exists.** A missing one is printed `-`.
-- **The TUN qlen** of a raptorpath TUN, in a stage-T bring-up: it pins Q_t's 500-packet term.
+- **The TUN qlen and qdisc** of a raptorpath TUN, in a stage-T bring-up (inputs to Q_t's provenance above).
 
-**Noise calibration.** For each of the 8 core configurations: 16 short reps each of CLEAN, REL and HOLD at k = 8, and 8 long CLEAN reps. These give σ̂ for n₁ (§7.2) and the MDEs. Nothing in it is scored.
+**Standing queue through the real tunnel (Q_t's provenance).**
+- Setup: `tun_bulk.sh`'s bring-up on `clean`, hint `auto`, D sysctls, one long-lived inner CUBIC flow for 90 s, then F = 8 for 90 s.
+- Record:
+  - `ss -tin` srtt − minrtt every 100 ms;
+  - inner goodput, against the tunnel's ceiling (the bottleneck check of §4.3);
+  - `tc -s qdisc` backlog on `rpcli0` and `cli0`;
+  - `net.core.default_qdisc` and the TUN qlen.
+- **Result:** B_t = g_tun·median(srtt − minrtt) over the last 60 s, and where it sits. The amendment pins it, the emulating qdisc and limit (§4.3), and τ_q.
+- If inner goodput stays below 90 % of the ceiling, the tunnel is not the bottleneck in `clean`. Q_t is then measured with an underlay rate set below the tunnel's ceiling, a new scenario named in the amendment.
+
+**Noise calibration.** For each of the 8 core configurations: 4 reps each of CLEAN, REL and HOLD at k = 8, with the fill witness. These give σ̂, the between-rep variance and the fill time, which set n (§7.2), the MDEs and the budget. Nothing in it is scored.
 
 **Smoke.** One rep of every arm type on both ends, with every §7.1 readout and echo present.
 
-**The amendment** (committed before session D1) pins: per-rep costs, the re-budget, n₁ and MDE per configuration, `POWER-LIMITED` declarations, Q_t's measured TUN qlen, stage T's min_RTT and raptorpath sha, L, `seed` support, and any cut.
+**The amendment** (committed before session D1) pins:
+- per-rep costs, measured fill times and the re-budget;
+- n and the MDEs per configuration, and any `POWER-LIMITED` declarations;
+- B_t, its location, the emulating qdisc and limit, and τ_q per configuration;
+- stage T's min_RTT and raptorpath sha;
+- L and `seed` support;
+- any cut.
 
 ### 11.2 Harness (a Sonnet worker, tools only, before session R; red tests first)
 
@@ -461,11 +524,11 @@ Plan token `omega`, in the `*_run_all.sh` / `*_battery.sh` convention of `thread
 |---|---|
 | `topo_reorder.sh` | namespaces up/down/status, `guard_ns` on every name, offloads off, per-namespace sysctls with readback and the pre-flight presence check |
 | `omega_dist.py` | the two-point and zero netem tables |
-| `omega_cells.py` | pure: the design of §6 as data (Δt, Q, p quantised to L, t_w, n₁, the seeded order) |
-| `omega_battery.sh` | one configuration, short and long reps; kill by PID |
+| `omega_cells.py` | pure: the design of §6 as data (Δt incl. τ_q arms, Q, p quantised to L, n, the seeded order) |
+| `omega_battery.sh` | one configuration: the backlog sampler, warm-up until the fill witness, the event phase; kill by PID |
 | `omega_run_all.sh` | the session envelope: locks, sentinels proven writable at launch, CR check, host-state snapshots, R0, smoke, stopper, exit check |
 | `omega_parse.py` | pure: pcap digest, events, D_e, drops versus spurious, counter diffs, iperf3 window |
-| `omega_score.py` | pure: c_R, c_H, ω, CIs, MDE, n₁, `WINDOW-SHORT`, envelope, VARIES, §8 bands, §9 outcomes |
+| `omega_score.py` | pure: c_R, c_H, ω, CIs, MDE, n, `WINDOW-SHORT`, envelope, VARIES, §8 bands, §9 outcomes |
 | `test_omega.py` | unit and static tests |
 
 - **Unit tests,** red first:
@@ -474,13 +537,17 @@ Plan token `omega`, in the `*_run_all.sh` / `*_battery.sh` convention of `thread
   - D_e counts idle slots and retransmissions exactly;
   - a retransmission whose original never reached `mid0` is a drop, and one whose original did is spurious;
   - the event index splits first from later events;
-  - the n₁ formula and its clamp;
+  - the n formula and its clamp;
+  - the fill witness ends warm-up, and NO_FILL at 60 s;
+  - FILLED and UNFILLED events are never pooled;
+  - the first-event label per flow, and the cluster bootstrap;
+  - the Bulk count rule's three outcomes;
   - `RENT-UNDERPRICED` against `RENT-COVERED` at the rent line ± 1 %;
   - `OMEGA-NEGATIVE`;
   - the §9.2 edges ± 1 % and `OMEGA-EDGE`;
   - one noisy arm does not lift the envelope;
   - `WINDOW-SHORT`;
-  - a short-rep cell under 0.75·n₁ is `UNSCOREABLE`.
+  - a cell under 6 live reps or 32 FILLED first events is `UNSCOREABLE`.
 - **Stub paths** in `harness_paths.HARNESS_PATHS`, executed by `test_stubrun.py`, with `ip`, `tc`, `tcpdump`, `iperf3`, `ss`, `ethtool` and `sysctl` stubbed:
   - `rehearse` and `full`;
   - `lock-held` → ABORT-LOCK, with no stub command issued;
@@ -497,7 +564,9 @@ Plan token `omega`, in the `*_run_all.sh` / `*_battery.sh` convention of `thread
   - `one-edge` → OMEGA-EDGE;
   - `wide-ci` → NEEDS-MORE-POWER;
   - `window-short`;
-  - `power-limited` (n₁ clamped to 96);
+  - `power-limited` (n clamped to 24);
+  - `no-fill` → NO_FILL rep excluded;
+  - `unfilled-events` → scored apart from FILLED;
   - `stopper` → TRUNCATED;
   - `bad-ns`;
   - `hoststate-changed` → ABORT-HOSTSTATE.
@@ -509,24 +578,25 @@ Plan token `omega`, in the `*_run_all.sh` / `*_battery.sh` convention of `thread
 
 ## 12. Sessions and VM time (phase D; phase C by a later amendment)
 
-Short rep ≈ 11 s (t_w ≈ 4 s, event wait ≤ 2 s, A_e, stop and snapshots, digest). Long rep ≈ 22 s. n₁ = 32 is planned; the amendment re-budgets from R.
+- **Rep length.** Warm-up to the fill witness, plus a 12 s event phase, plus ≈ 4 s for start, stop, snapshots and the digest.
+- **Warm-up.** Planned at the worst case on paper, ≈ 25 s at Q_t (a tail-drop backlog of thousands of packets, §4.3), and ≈ 3 s at Q_s. Rep ≈ 41 s at Q_t and 19 s at Q_s. If R measures a shallow B_t, Q_t's reps shrink toward Q_s's and so does every Q_t session.
 
 | session | content | ≈ time |
 |---|---|---|
-| R | R0 and tool checks, noise calibration (8 × 48 short + 8 × 8 long), smoke | 2.0 h |
-| D1 | Q_t, RTT 10: short (32 cells × 32), long (18 × 8), outage check (3 × 8) | 4.2 h |
-| D2 | Q_t, RTT 50: short (34 × 32), long (18 × 8) | 4.2 h |
-| D3 | Q_s short (36 × 32), stage T (5 × 32, bring-up included) | 3.8 h |
-| **phase D** | | **≈ 14.2 h, four sessions, each under 5 h** |
+| R | R0 and tool checks, the tunnel standing-queue measurement, noise calibration (8 × 3 × 4 reps), smoke | 2.5 h |
+| D1 | Q_t, RTT 10: 44 cells × 8 | 4.0 h |
+| D2 | Q_t, RTT 50: 46 cells × 8, plus the outage check (3 × 8) | 4.5 h |
+| D3 | Q_s: 60 cells × 8; stage T: 5 × 8 | 3.0 h |
+| **phase D** | | **≈ 14 h, four sessions, each under 5 h** (≈ 9 h if B_t is shallow) |
 | phase C | C on the Q_t subset, S1–S3, BBR: after D is read, by amendment | ≈ 8 h (estimate) |
 
-- **If n₁ rises above 32 in the amendment, sessions are added, never squeezed.**
+- **If n rises above 8 in the amendment, sessions are added, never squeezed.**
 - **Cut order for phase D, pre-registered:**
   1. Q_s at t = 1;
-  2. long reps at k = 3;
-  3. n₁'s planning floor from 32 to 24, which never lowers a configuration below its sized n₁ if that is smaller.
+  2. the k = 1 and k = 2 arms at Q_t;
+  3. stage T to n = 6.
 
-  Together they save ≈ 2 h.
+  Together they save ≈ 1.5 h.
 - **A detached stopper per session** ends at a balanced round boundary, or at launch + 4.9 h. It stops only its recorded PIDs and raptorpath by exact name, lets the driver tear down its namespaces, clears both locks and writes `TRUNCATED-<session>`.
 - **No polling (rule 13).** The watcher waits on `DONE-ALL || FAILED-ALL || TRUNCATED-*`.
 - **Exit state, verified:** no raptorpath; no recorded PID alive; no `rp-*` namespace; both locks released; root `tcp_*` sysctls equal to pre-flight.
@@ -552,3 +622,9 @@ Fable reviewed the first draft. Its findings are addressed as follows:
 - The outage stage is reduced to a check of the owner's acceptance (§6.5, §9.4).
 - Stack D runs first, and C only after D's result is read (§5, §6.3, §12).
 - The owner section now states the two declared choices and warns that the rule itself may change.
+
+Fable checked v2:
+- **A queue limit is not a standing queue.** Q_t now comes from the standing queue measured through the real tunnel (§4.3, §11.1). Warm-up ends on a fill witness, and every event is labelled FILLED or UNFILLED and never pooled (§4.4). First events come from F = 8 flows that have built the queue, with the cluster bootstrap (§4.4, §7.2).
+- **Bulk** is scored as a count (§9.1).
+- **Hold lengths** now include 0.5, 1 and 2 × τ_q. Those above 61 ms are measured but out of range (§6.1).
+- **The candidate rent** is written out, with what the engine could read online, as a question for `ordering-hold.md` (§2).
