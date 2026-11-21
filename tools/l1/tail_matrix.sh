@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run under sudo: resolve $HOME to the invoking user's home, not root's, so paths and the tree lock match.
+HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"
 # Realtime-vs-bulk tail comparison: bring the tunnel up once per arm, run N
 # stream measurements through the same warm tunnel, and report the p99
 # distribution (a single-run p99 is variance-dominated). Matrix:

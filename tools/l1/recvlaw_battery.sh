@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run under sudo: resolve $HOME to the invoking user's home, not root's, so paths and the tree lock match.
+HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"
 # The receiver-law battery: move the repair decision to the receiver's seat
 # and measure what it costs and what it buys. The request law is paper §7.6;
 # results are in paper §9.8 and docs/status.md §2 (Track C).

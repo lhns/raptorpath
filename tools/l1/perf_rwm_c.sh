@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run under sudo: resolve $HOME to the invoking user's home, not root's, so paths and the tree lock match.
+HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"
 # `raptorpath perf` (rp-native objects) over the reliable sliding-window
 # pipeline, single, dual or quad path, with an optional out-of-order object
 # delivery toggle (the H->inf corner, paper §4.11).

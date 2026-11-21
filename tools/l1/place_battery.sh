@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run under sudo: resolve $HOME to the invoking user's home, not root's, so paths and the tree lock match.
+HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"
 # The placement battery (Track A of the law search). The placement law is
 # paper §5.7; results are in paper §9.8 and docs/status.md §2.
 #

@@ -8128,7 +8128,7 @@ nodes:
   folded: []
   overview: false
   plain: The test machine's login name was replaced in 164 tracked files (logs now say VMUSER, scripts use the home directory), and CI now fails if it reappears; history was not rewritten, by owner decision.
-  notes: ''
+  notes: 'Follow-up: four scripts launched under sudo (place_battery, recvlaw_battery, tail_matrix, perf_rwm_c) now resolve HOME to the invoking user, so the scrubbed $HOME paths and the tree lock do not point at root''s home. The batch-1 runner runs unprivileged and was unaffected.'
 - id: meas-progress-baseline
   title: Cumulative progress benchmark
   track: meas
