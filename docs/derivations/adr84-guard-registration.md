@@ -1,6 +1,6 @@
 # The ADR-0084 sender-side build: merge guard, pre-registration draft
 
-Draft for the coordinator to register as its own status section. No row has run, and nothing in it can be pinned yet: BASE needs S06 merged (VM batch 1, guard 2), and CAND needs the build head. A pin amendment (§1.3) fixes both before any VM contact. Base text: github main `2d203c19`. Spec: ADR-0084 with Amendments 1 and 2, and Amendment 3 (Proposed: the sender side first); `docs/derivations/adr84-engine-brief.md` as re-cut for Amendment 3 (§4 steps, §5 done criteria); `docs/derivations/rho-step-sites.md` §2, §5 (the re-cut) and the owner answers of 2026-11-21. House format and reused machinery: `docs/derivations/vm-batch-1-registration.md` (plan 67) and `docs/derivations/f2-guard-registration.md` (plan 64). Process rules: CLAUDE.md "No engine merge on a Bulk-only guard", the binary-identity rule (ADR-0082) and `docs/measurement-discipline.md`.
+Draft for the coordinator to register as its own status section. No row has run, and nothing in it can be pinned yet: BASE needs S06 merged (VM batch 1, guard 2), and CAND needs the build head. A pin amendment (§1.3) fixes both before any VM contact. Base text: github main `4832cf3c`. Spec: ADR-0084 with Amendments 1 and 2, and Amendment 3 (Accepted 2026-11-21: Q-a yes with its fallback, Q-b answered (iii)); `docs/derivations/floor-hold.md` (the derived H, its gauges §6 and fail levels §7–§8); `docs/derivations/adr84-engine-brief.md` as re-cut for Amendment 3 (§4 steps, §5 done criteria); `docs/derivations/rho-step-sites.md` §2, §5 (the re-cut) and the owner answers of 2026-11-21. House format and reused machinery: `docs/derivations/vm-batch-1-registration.md` (plan 67) and `docs/derivations/f2-guard-registration.md` (plan 64). Process rules: CLAUDE.md "No engine merge on a Bulk-only guard", the binary-identity rule (ADR-0082) and `docs/measurement-discipline.md`.
 
 **For the owner, in plain words.**
 - **What is guarded.** The sender side of ADR-0084, as the owner scoped it on 2026-11-21 (Amendment 3; the brief's re-cut):
@@ -9,19 +9,20 @@ Draft for the coordinator to register as its own status section. No row has run,
   - the counted verdict against the `(1 − ρ)·S_src` budget;
   - Amendment 2's last copy with every verdict, and the floor alone on a forced verdict;
   - the ack pair merge;
-  - protocol v11 (`WindowFloor`, `WindowAck.passed_undelivered`), and the receiver honouring the floor (the seat-free floor pass, H = today's `shed_recv_hold`);
+  - protocol v11 (`WindowFloor`, `WindowAck.passed_undelivered`), and the receiver honouring the floor (the seat-free floor pass, with the **derived H** of `floor-hold.md`: the windowed maximum over W = 10 s of RFC 4737's reordering late time offset, H = 0 on a FIFO single path, about the skew at N ≥ 2);
   - the sender (C) sites: C2 (SACK release at every ρ), C5, C12's refresh half, C3, C4, C1 (the Realtime N ≥ 2 laws the owner accepted), C7 and C6, then the sender scaffold commit.
 
   The receiver's own give-up (C9's expiry and force-drain, C11), the C10 drop and C12's expiry stay as today, keyed on the receiver's own ρ through Amendment 3's named exception. So this build has **two abandonment deciders**: the sender's verdict and the receiver's old arm. The old arm's passes are counted in `G_rx` but neither told nor bounded, and C10's drops are not counted (Amendment 3 item 4). The predictions below follow from that.
 - **One guard for the whole head.** rho-step-sites §5's re-cut names three cut points inside this build (its guards 2, 3 and 4). This registration follows the brief's §5 instead: BASE is main with S06, and CAND is the build head. A failure is therefore attributed to the whole build, and §8.3 pre-pins the bisection seats.
 - **Bulk alone cannot see this change.** At ρ = 1 the budget is 0, so no verdict, no last copy and no floor exist. The change acts at ρ < 1, so the guard has three parts:
   - a ρ = 1 identity part (Bulk, Auto, Realtime at ρ = 1);
-  - a ρ < 1 part: Realtime at the declared 0.99, at N = 1 and N = 2, including a 20 ms skew cell, a budget-exhaust cell, a lost-tail cell after the allowance is spent (limit L-TAIL, named), and the floor-only pairing (sender 0.99, receiver 1) where floor passes and last copies are required witnesses, plus Auto at 0.99 on CAND;
+  - a ρ < 1 part: Realtime at the declared 0.99, at N = 1 and N = 2, including a 20 ms skew cell, a budget-exhaust cell, a lost-tail cell after the allowance is spent (limit L-TAIL, named), and two floor-only pairings (sender 0.99, receiver 1; one single-path, one on the 20 ms skew link) where floor passes, last copies and the derived H's miss count are required witnesses, plus Auto at 0.99 on CAND;
   - simulation gates before any VM contact (the lost tail, the stalled blocker, the mixed pairing).
 - **The binary changes on purpose.** The merge carries a `binid: expected-change` line (§6).
-- **Cost:** four VM sessions. Typical ≈ 3.3 + 1.3 + 2.4 + 3.5 ≈ 10.5 h, worst ≈ 16 h. Each session stays under the five-hour cap.
-- **Your word is needed before the merge, not before the launch (§11):**
-  - Amendment 3's Q-a (the receiver's named exception) and Q-b (H as debt). The build does not merge before both are answered;
+- **Cost:** five VM sessions. Typical ≈ 3.3 + 1.3 + 2.4 + 2.9 + 1.5 ≈ 11.4 h, worst ≈ 17 h. Each session stays under the five-hour cap.
+- **Owner answers now in (Amendment 3, Accepted):** Q-a yes, with its fallback; Q-b (iii), H derived (`floor-hold.md`); C1 stays in this build (option (a)), and the interim XK delay rise is accepted and reported.
+- **Your word is still needed (§11):**
+  - **W = 10 s**, H's one borrowed constant, which is a default awaiting your confirmation before the floor-pass step is built;
   - whether one guard on the head is acceptable, or the three cut points of rho-step-sites §5 each get a guard.
 
 ## 1. Seats and pins
@@ -89,8 +90,7 @@ Every BASE-against-CAND readout uses a line that main already prints. B84 is mai
 | `[DIAG]` recovery trace `supp c/a/l` | yes | `RWM_DIAG` | sender | C3's witness at N = 2: `l` (suppressed by the multipath law) |
 | per-path source counts | **unverified**: `mpr[…]` is per retransmit path, and no per-path source token was found on main. Fixed at the pin amendment, or owed by the build (P3) | `RWM_DIAG` | sender | C1's witness at N = 2: the slow leg's source share |
 | `[QCLK] site=receiver` | yes: printed at a 1 s cadence when `recv_gates.diag` and the clock has evaluated (`receiver.rs`, the `[QCLK]` readout) | `RWM_DIAG` | receiver | C12's refresh half at ρ < 1 |
-| H at each floor pass and the arm it took | owed (brief step 8) | `[ACCT-RX]` (twins) | receiver | H's bind (Q-b debt) |
-| H at each old-arm expiry | **an extra owed print**, beyond the brief (which owes H only at floor passes); if absent, XT reads H's bind at floor passes only | `[ACCT-RX]` (twins) | receiver | H's bind on the old arm |
+| `fh_n`, `fh_us_sum`, `fh_us_max`, `fh_zero`, `fl_n`, `fl_late`, `fl_max_us`, `fh_age_us`, `fl_trunc`, `fh_miss`, `fh_miss_us_max`, `fh_miss_refused`, `fh_fill_first` | owed (`floor-hold.md` §6) | `[ACCT-RX]`, test-seams only, so they are read on twins | receiver | the derived H, its window's age, its record clamp, and its empirical test (`fh_miss`) |
 
 **Owed by the build (pin precondition P3, print-only, behaviour-inert):** every "owed" row above must print in the release binary under `RWM_DIAG`, or the pin amendment moves its clause to the twins. The ABORT-SEAT string check (§7) tests each string on C84 and its absence on B84.
 
@@ -116,6 +116,7 @@ Each must pass on C84. Each that the brief makes red-first must also be shown fa
 | the deny test | `rho_deny_list` | red on its fixture, green on the tree |
 | the decision pin | `decision_trace_pin` | unchanged, except the `shed_allowed` digest re-captured at step 7 (named in that commit) |
 | the sender sites | `c01_placement_law_at_every_rho`, the C2 property test with a verdicted tail and T7c inverted, `c03_hole_law_at_every_rho`, `c04_recov_sp_scope_reads_no_rho`, `c05_burst_stops_at_the_pause_below_1`, `c06_request_is_judged_like_a_gap`, `c07_feed_never_credits_a_verdict` (R1 cell), `c12_refresh_runs_below_1` (ε̂_recv budget spent) | as rho-step-sites §2 |
+| the derived H (`floor-hold.md` §7–§8) | the absolute H tests (N = 1 FIFO gives 0; a 3 ms late batch gives 3 ms and is back to 0 after W; N = 2 with 20 ms skew gives [20 ms, 20 ms + J]; an idle slow path gives 0; an empty window gives 0; a later floor never delays a covered hole); the signature test (no hint, δ or ρ); `last_copy_carries_a_fresh_stamp`; `fh_us_max = 0` asserted in T1, T2 and T1′; the loopback `floor_never_overtakes_its_copy_real_io` at N = 1 (`fh_miss = 0`) and N = 2 (within §6's bar) | as `floor-hold.md` |
 | the receiver's debt | `rho1_debt_bounds.rs` for C9, C10, C11; the deny test's ratchet table equals Amendment 3's `rho1-debt-exception` block | as the brief's step 9 |
 | expected failures | `python tools/ci/expected_failure.py --list` | every still-ignored test fails. That includes `sim_rho_dial` (re-prefixed `model-ordering-hold:`), `rho1_debt_is_gone` and the reverse pairing (`mixed_bulk_sender_rho_below_1_receiver_delivers_everything`, `rec-mixed-rho-stall:`). **All three stay red in this build**, because the receiver keeps its old arm (Amendment 3) |
 
@@ -135,7 +136,7 @@ The derivation predicts:
 - **Not stranded.** The store holds k at every ρ, so a refused verdict means "served until filled" (ADR-0084 decision 1). The tail resolves by a fill, not a floor.
 - **Under `dead` it stalls for good.** No fill ever comes, the budget refuses the verdict, and the old arm cannot pass a hole with nothing above it. This is ρ = 1's behaviour, reached at ρ = 0.99 because the old arm's passes spent the allowance first.
 
-That is **limit L-TAIL of this build**. It is derived here, not yet run: at a matched ρ < 1 pair, once the old arm has spent `(1 − ρ)·S_src`, a lost tail waits for its fill with no time bound. It is named here, carried to the owner with Amendment 3's Q-a, and read at L1 in Stage XL (§5.5b). The record becomes a test in the release-rule build, where the old arm leaves.
+That is **limit L-TAIL of this build**. It is derived here, not yet run: at a matched ρ < 1 pair, once the old arm has spent `(1 − ρ)·S_src`, a lost tail waits for its fill with no time bound. It is named here, carried to the owner beside Amendment 3's fallback, and read at L1 in Stage XL (§5.5b). The record becomes a test in the release-rule build, where the old arm leaves.
 
 ### 3.2 The ρ = 1 simulation record (host; record-only)
 
@@ -167,7 +168,8 @@ The same seed on B84 and C84 at ρ = 1, in the four cells of rho-step-sites §2:
 **The warm-up at ρ < 1.** `perf` sends a one-chunk warm-up object first, under the same `run_timeout`, and bails with "warm-up object never acked" on a DNF (`perf.rs`). A passed warm-up chunk therefore ends the row after one full window with no timed transfer.
 - Such a row is `WARMUP-DEAD`: a reading per arm, k of n. It is never VOID and never replaced, and it does not count toward the 4-slot cap or the block-1 rule.
 - Its expected rate is about the chunk's loss-and-pass probability: small at c2, higher at XE and XL, and possibly high on XR's B84 arm, where the mixed stall is the predicted defect.
-- A cell with more than 4 `WARMUP-DEAD` rows on one seat is UNSCOREABLE for that seat, with k printed. For XR's B84 arm this is itself the defect reading and is reported as such.
+- **WARMUP-HOLD:** the counts are compared per cell between the seats. If C84 has more `WARMUP-DEAD` rows than B84 at any cell, the merge is held until the rows are read. The counts are small, so this is a strict count comparison, not a test, and it is stated as such.
+- A cell with more than 4 `WARMUP-DEAD` rows on one seat is UNSCOREABLE, with k printed, and **an UNSCOREABLE cell makes the guard not eligible** (§7). The one exception is XR's and XRK's B84 arm: there a dead warm-up is the predicted mixed-stall defect, B84 carries no scored clause, and the count is reported as the defect reading.
 - Each such row costs a full 40 s window, which §8.2 budgets at the worst case (no saving). A SIGKILLed process writes no `final=1`: twins read the last periodic line, labelled `ACCT-LAST` (batch 1 §4.4).
 
 **Frontier delay.** The in-order delay of §41d is undefined at ρ < 1, so this guard defines its own readout. On every `[DIAG]` tick:
@@ -227,7 +229,7 @@ Auto sends proactive repair and NACK resends, so the repair path runs, but at ρ
   - the `[SPAN]` median rr > 0 on both seats: the repair path ran;
   - the ρ echo (§5.1).
 - **Identity witnesses on C84:** as §5.1 (`ID-FAIL`).
-- **Minimum:** fewer than 10 live rows per seat at a cell makes it UNSCOREABLE.
+- **Minimum:** fewer than 10 live rows per seat at a cell makes it UNSCOREABLE, and the guard not eligible (§7).
 - **Clause AS84 (scored):** C84 against B84, one-sided (C84 worse), on goodput, `cpu_cli/GB` and `cpu_srv/GB` at c2 and c8. Rank-minp over the six, 10 000 relabellings, seed 4141. **AS84 PASS iff p > 0.05.**
   - **Resolution:** §51's in-session A/A at 6 v 6 was c2 goodput 1 % and CPU 8 %, and c8 goodput 3 % and CPU 12 %. 12 v 12 is tighter; the realised d80 is printed from the half-splits.
   - **Prediction: PASS.**
@@ -292,9 +294,25 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 - **W-C1, at N = 2 (X2, XK):** the slow leg's source share is > 0 on at least 10 of 12 C84 rows per cell (the law replaced the best-path pick). B84's share is printed, predicted ≈ 0. Its token is fixed at the pin (§2). If the pinned head lacks C1, XK takes branch L below, and the pin amendment drops this witness.
 - **W-C12, the refresh half (XE):** on C84 receiver rows whose `[SHED-R]` shows `budget_open=false`, `[QCLK] site=receiver` re-advertises at ρ < 1. Where the ε̂_recv budget stays open and SRTT < 200 ms, the old hold expires first and W-C12 reads `INERT-AT-CELL` (brief step 9, C12 timing).
 
+**Admitted verdicts in the matched cells: predicted, and what each cell can witness.** A verdict is admitted only while `Ab + 1 ≤ budget(t)`. In a matched cell, the old arm's passes enter `Ab` through `G_rx` from the start of the row. Holes pass about `SRTT/2` after the next entry, before any resend (≥ 1 RTT) can fill them. A late fill subtracts, but the sender sees a passed hole as acked and sends no resend for it, so few late fills come.
+- So `G_rx` grows at roughly the link's loss rate net of fills in flight. Wherever that exceeds 1 − ρ = 1 %, `Ab` crosses `budget(t)` almost at once, and only the first verdicts of a row are admitted.
+
+| cell | ε (truth) | predicted admitted verdicts H per row | what the cell witnesses |
+|---|---|---|---|
+| X1 | ≈ 2.6 % | 0 to tens: only before `G_rx` overtakes 1 % of S_src | **the refusal path**: W3 passes on `denied` alone. W4 and W6 are likely empty |
+| X2 | c2 leg 2.7 %, c3 leg 4.1 % | 0 to tens; the old arm also passes slow-leg packets (C1 striping) | as X1 |
+| XK | ≈ 2.6 % per leg | 0 to tens | as X1 |
+| XE | ≈ 10 % | 0 to a few | the refusal path (EX) |
+| XA (Auto) | ≈ 2.6 % | 0 to tens; Auto's longer D admits fewer | as X1 |
+
+- **Consequence, stated:** the matched cells do not witness the verdict's last copy or its floor. W4 and W6 are scored only on rows with `H ≥ 1`. A cell where every C84 row has `H = 0` reads `NO-VERDICT-ADMITTED` for W4 and W6: it witnesses nothing for them, and that is recorded, not failed.
+- **W3 is then witnessed by `denied` only**, which shows that the budget conjunct was reached and refused, not that a verdict executed.
+- The verdict, the last copy, the floor and H are witnessed in **XR and XRK** (§5.4b, §5.4c), where the receiver's old arm cannot spend the allowance.
+- If the matched cells admit more verdicts than this table predicts (H in the hundreds), that is reported as a finding: `G_rx` then grows more slowly than the derivation says.
+
 **Seat absence on B84 (ABORT-SEAT before any row):** B84's binary holds none of the owed strings, and C84's holds every one.
 
-**Minimum:** fewer than 10 live rows per seat at a cell makes that cell UNSCOREABLE. **Stage X PASS** iff every scorable cell has no `X-FAIL`, and EX-REACHED or `XE-NOT-EXHAUSTED` is recorded.
+**Minimum:** fewer than 10 live rows per seat at a cell makes that cell UNSCOREABLE, and the guard not eligible (§7). It is never a dropped cell. **Stage X PASS** iff no cell is UNSCOREABLE, no cell has an `X-FAIL`, and EX-REACHED or `XE-NOT-EXHAUSTED` is recorded.
 
 **Reported readouts (two-sided rank p, in-session resolution, owner flag at p ≤ 0.05 beyond the resolution).**
 
@@ -335,20 +353,52 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 
 12 + 12 rows, seeds 42 and 7, interleaved. The ρ echo is read per end (VOID-RHO).
 
-**Required witnesses on every C84 row** (`X-FAIL <item>`; never VOID). These are the old-arm-free execution witnesses that §5.4 cannot require:
-- **R-W3:** `H > 0` on at least 10 of 12 C84 rows. The verdicts are admitted, because the allowance is spent only by the sender's own unfilled verdicts.
+**Binaries.** The H gauges are on `[ACCT-RX]`, which is test-seams only (`floor-hold.md` §6). So the scored CAND arm is **C84T**, 12 rows. **C84**, the release binary, adds 6 rows interleaved with it. They carry the release-visible witnesses (`floor_sent`, last copies, `[BUDGET]` where printed) and R-LIVE, and show that the release binary behaves as its twin does. B84 runs 12 rows. That gives 30 rows.
+
+**Required witnesses** (`X-FAIL <item>`; never VOID). These are the old-arm-free execution witnesses that §5.4 cannot require. They are read on C84T, and on C84 where the token is release-visible:
+- **R-W3:** `H > 0` on at least 10 of 12 rows. The verdicts are admitted, because only the sender's own unfilled verdicts spend the allowance.
 - **R-W4 last copy:** last copies = `H − E` on every tick, and last copies > 0.
 - **R-W6 floor passes:** `floor_sent > 0`, `floor_rx > 0` and **`floor_passes > 0`**, with `G_floor > 0`.
   - The power is stated: with ε ≈ 2.6 % at c2, a verdict seq whose last copy is also lost is expected about ε·H times per row. So the clause requires `floor_passes > 0` on rows with `H ≥ 200`, where ε·H ≥ 5.
   - Rows with `H < 200` are printed and are not counted against the clause.
-  - **R-W6 holds** iff it holds on every counted row, and at least 8 of 12 rows are counted. With fewer than 8, XR reads `NEEDS-MORE-verdicts` and the guard is not eligible.
+  - **R-W6 holds** iff it holds on every counted row, and at least 8 of 12 rows are counted. With fewer than 8, XR reads `NEEDS-MORE-verdicts`, and the guard is not eligible.
 - **R-ONLY the floor passes:** at the row's last receiver line, `G_expiry = G_force = 0` and `G_rx = G_floor`.
-- **R-BI the 1 − ρ promise, kept in this cell:** `G_rx ≤ budget(t_end)`.
-- **R-LIVE:** the frontier stall is at most 2 s on every row: T1's bound with `H_max = 300 ms`, plus the tail-sweep and owd margins, rounded up to tick resolution.
+- **R-BI the 1 − ρ promise, kept in this cell, at every prefix:** `G_rx ≤ budget(t)` at **every** `[BUDGET]` line of the row, not only the last. The promise holds per prefix, and `G_rx` can fall on a late fill, so a final reading can hide an earlier breach.
+- **R-H the derived H at N = 1** (`floor-hold.md` §6–§8):
+  - `fh_miss = 0` on every row. **Any miss fails the stage at N = 1** (`X-FAIL R-H`);
+  - `fh_miss_refused = 0` and `fl_trunc = 0` on every row;
+  - predicted: `fh_us_max = 0`, `fh_zero = 1` and `fl_late = 0`. One owner forwards each path's datagrams in order, and the floor is processed in the loop's `Control` arm after earlier data (§8 there).
+
+    A non-zero `fl_late` with `fh_miss = 0` is a premise finding: some N = 1 reordering exists on the real I/O path. It is reported with `fl_max_us`, and is not a fail.
+  - `fh_age_us` (W's bind gauge), p50 and max, is reported.
+- **R-LIVE:** the frontier stall is at most 1 s on every row.
+  - The bound restated from the derived H: a passed hole moves the frontier at `t_F + H`, with H = 0 here. It waits at most one tail-sweep fire to be told, plus owd ≈ 5 ms, so well under 100 ms.
+  - 1 s is that, plus one to two `[DIAG]` ticks of reading resolution, plus the gap-report and D margins. The pin amendment restates it in ticks once the rehearsal measures the cadence.
 
 **On B84 (reported, the defect):** A/src at the window end. Predicted far below C84's, because the frontier stalls as in the sim (ack 49 of 12 147); the stall is printed.
 
-**Prediction:** every C84 witness holds; B84 stalls.
+**Prediction:** every C84T and C84 witness holds; B84 stalls.
+
+### 5.4c Stage XRK (scored): the floor-only pairing on two paths with 20 ms skew
+
+**Why.** At N = 2 the derived H is largest (about the skew plus the jitter spread, `floor-hold.md` §7). The ack pair rule runs there, on acks reordered across the legs, and C1 stripes onto the slow leg. A floor-only receiver makes every pass a floor pass, so H's miss bar can be scored where it matters.
+
+**Cell.** XK's link (`c2k20-100`: c2 + `c2r50` dual, 5 ms + 3 ms jitter against 25 ms), Realtime, 100 MB, a timed window of 40 s, per-end ρ as XR. C84T 12, C84 6 and B84 12, interleaved. That gives 30 rows.
+
+**Required witnesses** (`X-FAIL <item>`), as XR:
+- R-W3, R-W4, R-W6 with the same counted-row rule, R-ONLY, and R-BI at every `[BUDGET]` line;
+- W-C1 (the slow leg's source share > 0 on at least 10 of 12 rows);
+- **R-H2, the derived H at N = 2** (`floor-hold.md` §6):
+  - the stage fails if the one-sided 95 % upper bound (Clopper–Pearson, pooled over the stage's C84T rows) of `fh_miss / floor-passed holes` exceeds the cell's 1 − ρ = 0.01;
+  - `fh_miss_refused = 0` and `fl_trunc = 0` on every row;
+  - **power:** the bound can pass only if the pooled count of floor-passed holes is large enough. With zero misses the bound is ≈ 3/n, so n ≥ 300 floor-passed holes are needed. Below 300 pooled, R-H2 reads `NEEDS-MORE-floor-passes`, and the guard is not eligible;
+  - predicted: `fh_us_max` in [20 ms, 20 ms + J + q] with J ≈ 3 ms (the c2 leg's jitter) and q the standing queue difference; `fh_zero` < 1; `fl_late` > 0; `fh_miss` = 0 or a few, well inside the bar;
+  - `fh_age_us`, `fh_fill_first` and `fh_miss_us_max` are reported.
+- **R-LIVE2:** the frontier stall is at most 1 s on every row. The derived H (≈ 20–30 ms) adds to XR's margin and stays inside it.
+
+**Reported:** the frontier delay p50 / p99 against XK's matched cell, the C1 shares, and `G_floor` against `budget(t)` over time. On B84: the stall (the defect).
+
+**Prediction:** every C84T and C84 witness holds; B84 stalls.
 
 ### 5.5 Stage XA (C84 only, Auto, ρ = 0.99 against ρ = 1)
 
@@ -377,7 +427,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 **Prediction:**
 - C84 reaches A = S_src on every row by a fill. Under 10 % loss, a resend round is lost with probability ε, so the tail time is a few RTTs at p50, about 0.1–0.5 s, with a geometric tail.
 - B84 strands some tails: A stays below S_src at the window end on some rows (the `rec-evict-blocker-unresolved` defect).
-- A C84 row that does not reach S_src inside the window is **L-TAIL observed**. It is reported with its denied count and tail age, not as a fail: the limit is named (§3.1, §11), and it ends with the release-rule build. More than 2 of 12 such rows go to the owner as the limit's measured size, with Amendment 3's Q-a.
+- A C84 row that does not reach S_src inside the window is **L-TAIL observed**. It is reported with its denied count and tail age, not as a fail: the limit is named (§3.1, §11), and it ends with the release-rule build. More than 2 of 12 such rows go to the owner as the limit's measured size, with Amendment 3's fallback clause.
 
 ### 5.6 Stage XT (scored twins: the account, both seats)
 
@@ -386,18 +436,12 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 - **Clause ACCT-ID (scored, C84T):** `O_strand = 0` on every live row, and `S_sent = A + H + E + |U|` (ADR-0081 as amended) on its last line. A violation is `X-FAIL acct`.
 - **Clause XT-HOLD (registered, holds the merge, batch 1's R2-HOLD form):** an exact one-sided Mann–Whitney test, C84T worse, on `oldest_unchanged_max` at each cell. It fires iff p ≤ 0.05. At 6 v 6 the smallest p is 1/924. It is read and diagnosed before the merge; it is not a FAIL label.
 - **Reported:** B84T's `O_strand` and `O_max` (predicted > 0 on most rows: the defect), C84T's G split, and `[BUDGET]` if it is test-seams only (then BI and EX are scored here at n = 6, which the pin amendment records).
-- **H's bind fraction (Amendment 3 item 3, Q-b; rule 18).** H is today's `shed_recv_hold`, which is UNDERIVED. From the H gauge at each floor pass and at each old-arm expiry on `[ACCT-RX]`, per row and pooled per cell, the shares are:
-  - the open arm, `SRTT/2`;
-  - the spent arm, `4·SRTT` unclamped;
-  - the spent arm bound at the 60 ms floor;
-  - the spent arm bound at the 300 ms cap.
+- **The derived H on the matched cells (reported):** `floor-hold.md` §6's gauges on the twins at X1 and XE: `fh_n`, `fh_us_max`, `fh_zero`, `fl_late`, `fh_age_us`, `fh_fill_first`; `fl_trunc = 0`, `fh_miss`, `fh_miss_refused = 0`.
+  - Floor passes are rare there (§5.4), so `fh_n` may be 0, which prints `-`.
+  - A non-zero `fl_trunc` or `fh_miss_refused` is `X-FAIL R-H` on any stage: both must read 0 by the law's own statement.
+  - The old arm's expiry hold stays `shed_recv_hold` under the exception (its row in Amendment 3's block), and is not this guard's law.
 
-  The clamp's bind fraction is the last two shares together. Above 0.5, the report says "H operates as the constant 60 ms (or 300 ms) at this cell". That is a defect finding for the ledger (rule 18), carried with Q-b, and no reading of H's shape is drawn from that cell.
-  - Predicted: at X1 (SRTT ≈ 10 ms) the spent arm binds the 60 ms floor, since 4·SRTT ≈ 40 ms; at XE (SRTT ≈ 100 ms) it binds the 300 ms cap, since 4·SRTT ≈ 400 ms. So the clamp is predicted to bind at both cells wherever the spent arm is taken. The open arm's share decides the bind fraction.
-
-  XR's floor passes carry their H too, so XR's C84 rows are also run as twins: C84T, 6 rows, on XR's cell.
-
-### 5.7 Stage XP (reported only; optional; cut first under the cap)
+### 5.7 Stage XP### 5.7 Stage XP (reported only; optional; cut first under the cap)
 
 - PB and PC, c2, Realtime 0.99, paced at 35 Mbit/s (`RWM_PERF_RATE_MBIT`), 6 + 6, seeds 42 and 7, a timed window of 40 s.
 - It reads the in-capacity regime, where the pause is idle and only the verdict and the floor act: the readouts of §5.4. The sim's T6 is the gate; XP only reports.
@@ -408,7 +452,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 - **This build changes the release binary deliberately:** the binary, `.text` and `.rodata` (new strings). Each commit in the range that touches a `binid.yml` path (the build touches `net/account.rs` and `test_seams.rs`) carries:
 
   ```text
-  binid: expected-change ADR-0084 sender side: protocol v11 (WindowFloor, WindowAck.passed_undelivered); window_rho replaces window_reliable (tombstones); store and pooled rate bound at every rho; verdict rule with the (1 - rho)*S_src budget; last copy with every verdict, forced verdict floor alone; ack pair merge; receiver floor pass (H = shed_recv_hold); sender sites C2, C5, C12 refresh half, C3, C4, C1, C7, C6; receiver old arm keyed per the Amendment 3 exception; release gauges
+  binid: expected-change ADR-0084 sender side: protocol v11 (WindowFloor, WindowAck.passed_undelivered); window_rho replaces window_reliable (tombstones); store and pooled rate bound at every rho; verdict rule with the (1 - rho)*S_src budget; last copy with every verdict, forced verdict floor alone; ack pair merge; receiver floor pass with the derived H (floor-hold.md); sender sites C2, C5, C12 refresh half, C3, C4, C1, C7, C6; receiver old arm keyed per the Amendment 3 exception; release gauges
   ```
 
   The merge commit carries the same line.
@@ -434,8 +478,12 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 
 **Outcome labels**, which are never VOID and never replaced:
 - `ID-FAIL`: a ρ = 1 identity witness violated on C84;
-- `X-FAIL <item>`: a violation of W1–W6, W-C1/C2/C3, BI, the XR witnesses (R-W3, R-W4, R-W6, R-ONLY, R-BI, R-LIVE), XL's witnesses or ACCT-ID;
-- `NEEDS-MORE-verdicts`: fewer than 8 counted XR rows (not eligible);
+- `X-FAIL <item>`: a violation of W1–W6, W-C1/C2/C3, BI, the XR and XRK witnesses (R-W3, R-W4, R-W6, R-ONLY, R-BI, R-H, R-H2, R-LIVE, R-LIVE2), XL's witnesses or ACCT-ID;
+- `NEEDS-MORE-verdicts`: fewer than 8 counted XR or XRK rows (not eligible);
+- `NEEDS-MORE-floor-passes`: under 300 pooled floor-passed holes in XRK (not eligible);
+- `NO-VERDICT-ADMITTED`: a matched cell where no C84 row admitted a verdict; W4 and W6 witness nothing there (recorded, not failed);
+- `WARMUP-HOLD`: more `WARMUP-DEAD` rows on C84 than on B84 at a cell (holds the merge until read);
+- **UNSCOREABLE (any stage, any cell) blocks:** the guard is not eligible until the cell is re-run. A cell is never dropped from the verdict;
 - `L-TAIL observed`: an XL row whose frontier does not reach S_src in its window; a named limit, reported, not a fail;
 - `FORCED-NONZERO`: a finding that holds the merge;
 - `WINDOW-END`: a ρ < 1 row ended at its timeout, which is normal;
@@ -455,9 +503,10 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 | R1 | c2-100 Realtime ρ = 1 | 12 + 12 | 24 |
 | X | X1, X2, XK, XE | 12 + 12 per cell | 96 |
 | XA | c2-100 Auto, C84 only | 6 (0.99) + 6 (1) | 12 |
-| XR | c2-100, sender 0.99 / receiver 1 | 12 + 12 | 24 |
+| XR | c2-100, sender 0.99 / receiver 1 | B84 12, C84T 12, C84 6 | 30 |
+| XRK | c2k20-100, sender 0.99 / receiver 1 | B84 12, C84T 12, C84 6 | 30 |
 | XL | c2r100l10-20, matched 0.99 | 12 + 12 | 24 |
-| XT | X1, XE (both twins); XR (C84T) | 6 + 6 per cell; 6 | 30 |
+| XT | X1, XE | 6 + 6 per cell | 24 |
 | XP (optional) | c2 paced | 6 + 6 | 12 |
 
 ### 8.2 Sessions (one at a time; host cargo paused during each)
@@ -467,12 +516,13 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 | 0, pre-flight (`suites_run.sh` envelope, `LD_HARD` = launch + 4.9 h) | check ≈ 10 min; gates on B84 ≈ 10 min; suites on C84 ≈ 55 min; the §3.1 gates on both trees ≈ 30 min; repeats ≤ 60 min; visualizer ≈ 10 min; binid × 2 ≈ 35 min | **≈ 3.3 h** | batch 1 §6.4 |
 | 1, rehearsal (`LD_PLAN=84 LD_REHEARSE=1`, `LD_HARD` = launch + 2 h) | 4 builds (6 with PB/PC) ≈ 30–45 min; tools tests ≈ 8 min; the stub-run check; one smoke row per (stage, seat) ≈ 16 rows ≈ 20 min | **≈ 1.3 h** | §64, batch 1 |
 | 2, `LD_PLAN=84g` (`LD_HARD` = launch + 3 h) | G 96 ≈ 53 min; A 48 × ≈ 80 s ≈ 64 min; R1 24 ≈ 10 min; replacements and scoring ≈ 15 min | **≈ 2.4 h** | §64 Result; block 51 |
-| 3, `LD_PLAN=84x` (`LD_HARD` = launch + 4.7 h) | X 96, XR 24, XL 24, XA 12, XT 30 at ≈ 55 s per row (a 40 s window plus bring-up) ≈ 171 min; XP 12 ≈ 11 min; scoring ≈ 15 min; smoke re-check ≈ 10 min | **≈ 3.5 h** | block E rows ≈ 62 s |
-| **total** | | **≈ 10.5 h** (≈ 10.3 h without XP) | |
+| 3a, `LD_PLAN=84x` (`LD_HARD` = launch + 4 h) | X 96, XR 30, XRK 30 at ≈ 55 s per row (a 40 s window plus bring-up) ≈ 143 min; scoring ≈ 15 min; smoke re-check ≈ 10 min | **≈ 2.9 h** | block E rows ≈ 62 s |
+| 3b, `LD_PLAN=84y` (`LD_HARD` = launch + 2.5 h) | XL 24, XA 12, XT 24 ≈ 55 min; XP 12 ≈ 11 min; scoring ≈ 15 min; smoke ≈ 10 min | **≈ 1.5 h** | as 3a |
+| **total** | | **≈ 11.4 h** (≈ 11.2 h without XP) | |
 
-**Worst case, about 16 h:** a rehearsal re-run (+1.3 h), a session-0 re-run after a fix (+3.3 h, only if a seat changes), and a NO VERDICT re-run of Stage G (+1 h).
+**Worst case, about 17 h:** a rehearsal re-run (+1.3 h), a session-0 re-run after a fix (+3.3 h, only if a seat changes), and a NO VERDICT re-run of Stage G (+1 h).
 
-**Cap rule:** session 3 carries the detached stopper (a balanced rep boundary or `LD_HARD`). Cuts, in order: XP, then XA, then XL to 6 + 6. X, XR and XT are not cut, because they carry the merge. If session 3 would still overrun, XL and XA move to a session of their own (≈ 0.6 h). Each cut is written into an amendment before the session.
+**Cap rule:** sessions 3a and 3b carry the detached stopper (a balanced rep boundary or `LD_HARD`). Cuts, in order: XP, then XA, then XL to 6 + 6. X, XR, XRK and XT are not cut, because they carry the merge. Each cut is written into an amendment before the session. Each cut is written into an amendment before the session.
 
 ### 8.3 Stop rules
 
@@ -488,7 +538,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 | the spelling detection reads `reliable` on B84 and `rho` on C84, written to the provenance | ABORT-SPELL: fix `harness84` and re-rehearse |
 | every owed string on C84 and none on B84; no `[ACCT]` in either release binary; both strings on the twins | ABORT-SEAT |
 | one G row per seat (c1s), one A row per seat (c8) with rr > 0 and the ρ echo, one R1 row per seat, completed and LIVE | a harness fault: fix and re-rehearse |
-| one XR row per seat with its per-end ρ echo, and R-W4/R-W6 computed on C84; one XL row per seat with the tail time computed | as above |
+| one XR and one XRK row per seat (B84, C84T, C84) with the per-end ρ echo, R-W4/R-W6 and the fh gauges computed on C84T, and `[BUDGET]` lines parsed in sequence; one XL row per seat with the tail time computed | as above |
 | one X1 and one XE row per seat: the ρ echo, `shed=` present, 30 s of ticks, `WINDOW-END` labelled, W1–W6 on C84 computed (not None) | a missing line is a harness fault. A failed W item is a finding against the build: no launch |
 | one XA pair on C84 with both echoes | as above |
 | one XT row per twin at X1, with `[ACCT]` and `[ACCT-RX]` in the kept log, not only in the raw log | as above |
@@ -518,7 +568,8 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
    - `[BUDGET]`;
    - the slow leg's source share (W-C1), `supp … l` (W-C3), `wnd2=` and `released` (W-C2), `[QCLK] site=receiver` (W-C12);
    - XL's tail time (the src curve reaching S_src to A = S_src);
-   - the H gauge and its four arm shares (XT).
+   - `floor-hold.md` §6's gauges from `[ACCT-RX]`, and the pooled Clopper–Pearson bound for R-H2;
+   - every `[BUDGET]` line in sequence for R-BI, not only the last.
 6. **Scorers:**
    - `score41d` reused for G;
    - plan 67's `scoreAS` for AS84 (6 clauses, 12 v 12);
@@ -545,7 +596,7 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
    - `x-short` → VOID-SHORT;
    - `x-complete-short` → `COMPLETE`, not VOID-SHORT;
    - `warmup-dead` → `WARMUP-DEAD`, not replaced, outside the slot cap;
-   - `warmup-dead-5` → that seat's cell is UNSCOREABLE;
+   - `warmup-dead-5` → that seat's cell is UNSCOREABLE, and the guard is not eligible;
    - `x-quiet-row` (one row with `l = 0`, the rest > 0) → no failure;
    - `twin-no-final` → `ACCT-LAST`;
    - `twin-under-min` → UNSCOREABLE, not eligible;
@@ -559,20 +610,28 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
    - `xr-few-verdicts` → `NEEDS-MORE-verdicts`;
    - `xr-server-same-flag` (both ends got one flag) → VOID-RHO;
    - `xl-tail-stuck` → `L-TAIL observed`, not a fail;
-   - `h-clamp-bound` → the "operates as a constant" line;
+   - `fh-miss-n1` → `X-FAIL R-H`;
+   - `fh-miss-n2-over-bar` → `X-FAIL R-H2`;
+   - `fh-few-passes` → `NEEDS-MORE-floor-passes`;
+   - `fl-trunc` → `X-FAIL R-H`;
+   - `budget-midrow-breach` (one mid-row `[BUDGET]` line over budget, the last under) → `X-FAIL R-BI`;
+   - `warmup-more-on-cand` → `WARMUP-HOLD`;
+   - `matched-no-verdict` → `NO-VERDICT-ADMITTED`, not a fail;
+   - `x-cell-unscoreable` → not eligible;
    - `x-no-mp-supp` → `X-FAIL W-C3`;
    - `x-no-slow-share` → `X-FAIL W-C1`.
 
 ## 10. What this guard cannot see
 
 - **The lost tail under `dead`, and the stalled blocker, at L1.** The release binary has no `dead` seam. T1, T1′, T2 and the ablation carry them (§3.1). XL reads only a natural tail.
-- **A floor pass in the matched cells.** There the old arm passes first, so the pass is required only in XR (§5.4b).
+- **A floor pass, a last copy or H in the matched cells.** There the old arm spends the allowance first, so few or no verdicts are admitted (§5.4's table). These are required only in XR and XRK.
 - **C10's full-channel drops.** They are neither told nor counted (Amendment 3 item 4). Perf's consumer is fast, so they are expected to be 0, but no row can show it.
 - **The pair merge's effect.** No gauge counts acks the rule set aside. `ack_pair_merge_survives_reordered_acks` carries it; X2 and XK only exercise reordered acks.
 - **The forced verdict path.** It is 0 by data with a store at every ρ. W5 only shows that it stays 0; `forced_verdict_sends_floor_alone` carries the path.
 - **The reverse pairing** (ρ = 1 sender, ρ < 1 receiver). It stays a defect in this build, with its sim test red (`rec-mixed-rho-stall`), and no row runs it.
 - **The release-rule build's costs:** design U, the new H, floor-on-raise and R1-like serialization. None is in this build.
-- **H's shape.** H is UNDERIVED (Q-b). XT reads only its bind fraction.
+- **H's W.** W = 10 s is borrowed, not derived, and awaits the owner. `fh_age_us` shows whether W binds; the W sweep is the toy simulation's (`skip-rule-efficiency.md` §6.4).
+- **H at N = 1 on a link that reorders.** Every cell sets `rate`, so netem never reorders; R-H's `fh_miss = 0` holds on FIFO paths only.
 - **C4, C6 and C7.** C4's gate is off by default, C6's arms are off, and C7's feed is opt-in. They are inert at every row; their sim tests carry them.
 - **The pause's law shape.** B is pinned (F01). Where cwnd binds first, PW reads `INERT-AT-CELL`.
 - **The in-capacity regime**, unless XP runs. The scored X cells are unpaced.
@@ -586,9 +645,9 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
 
 ## 11. Open questions (for the coordinator and the owner)
 
-1. **Amendment 3's Q-a and Q-b** (owner). The build does not merge before both are answered (§12).
+1. **Answered:** Q-a accepted with its fallback; Q-b (iii), H derived in `floor-hold.md`; C1 stays in this build (option (a)), and the interim XK delay rise is accepted and reported. **Still open: W = 10 s** is a default awaiting owner confirmation before the floor-pass step is built. If the owner picks another W, the pin amendment restates R-H's and R-H2's predictions; the fail levels do not depend on W.
 2. **One guard or three** (coordinator, then owner). This registration guards the head against main, as the brief's §5 says. rho-step-sites §5 lists three cut points; a FAIL is bisected on them (§8.3).
-3. **L-TAIL** (owner, with Q-a). At a matched ρ < 1 pair, once the old arm has spent the allowance, a lost tail waits for its fill with no time bound. It is named and measured here (§3.1 record, XL), and it ends with the release-rule build.
+3. **L-TAIL** (owner). At a matched ρ < 1 pair, once the old arm has spent the allowance, a lost tail waits for its fill with no time bound. It is named and measured here (§3.1 record, XL), and it ends with the release-rule build.
 4. **T1 against L-TAIL** (for the brief's author; not resolved here). T1 gates in the matched cell. By §3.1's record, once the old arm's passes have spent the allowance, the tail's verdict is refused, and the tail resolves only by a fill. T1's scenario passes because its `dead` window ends, or because its allowance is not spent. Which one holds, and whether T1 should also run with the allowance pre-spent, is a question for the brief.
 5. **Owed release gauges (§2, P3).** If the build prints them only under test-seams, the twins grow to 12 + 12 per X cell and XR (+≈ 50 min in session 3, which then splits into two sessions).
 6. **The pacer seats (XP):** whether `4ee1df9b` applies to both trees.
@@ -601,14 +660,15 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
   - session 0's suites and repeats are green;
   - G84 PASS, AS84 PASS and R1-84 PASS, with zero `ID-FAIL`;
   - Stage X PASS: no `X-FAIL`, and EX-REACHED or `XE-NOT-EXHAUSTED` recorded;
-  - Stage XR: every C84 witness holds and at least 8 rows are counted (not `NEEDS-MORE-verdicts`);
+  - Stages XR and XRK: every witness holds, including R-H / R-H2 and R-BI at every `[BUDGET]` line, with at least 8 counted rows each and at least 300 pooled floor passes in XRK;
+  - no cell of any stage is UNSCOREABLE, and no `WARMUP-HOLD` is unread;
   - Stage XL: its witnesses hold. `L-TAIL observed` rows are reported, not counted against the merge;
   - PW at XE passes, or reads `INERT-AT-CELL` with T7a/T7b green;
   - ACCT-ID passes, XT-HOLD did not fire (or fired and was read with a verdict that clears it), and no `FORCED-NONZERO` is unread;
-  - the owner has answered Amendment 3's Q-a and Q-b, and the deny test's ratchet equals the `rho1-debt-exception` block (CI);
+  - the deny test's ratchet equals Amendment 3's `rho1-debt-exception` block (CI; Q-a accepted), and the floor pass uses the derived H (Q-b (iii)) with W as the owner confirmed;
   - §6's binid check holds after the merge.
 - **Then** the build merges `--no-ff` with the `binid: expected-change` line. ADR-0084's Status names the merge commit. The roadmap node `rec-adr84-guard` and `rec-evict-blocker-unresolved` move in the same push.
 - **Any `ID-FAIL`:** no merge. It is a finding that ρ = 1 is not identical, diagnosed first.
 - **Any `X-FAIL`:** no merge. It is a finding against the build.
 - **G84 or AS84 FAIL:** no merge. The failing clause is diagnosed.
-- **The XE stall finding, the XK delay readout, XL's tail times, H's bind fraction and every reported readout decide nothing.** They go to the owner with the merge.
+- **The XE stall finding, the XK delay readout, XL's tail times, the matched cells' H gauges and every reported readout decide nothing.** They go to the owner with the merge.
