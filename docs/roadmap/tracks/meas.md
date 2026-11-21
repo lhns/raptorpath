@@ -254,7 +254,7 @@ flowchart TB
 | `meas-crown-spot-v8` | Crown no-regression spot (wire v8) | research | vm | done | unrated | 2026-09-08 | 2026-09-08 |  |  |  |  | commit b5e94b32; commit f671f61d |
 | `meas-rerun-0708` | Full benchmark re-run (8 July) | research | vm | done | unrated | 2026-07-08 | 2026-07-08 |  |  |  |  | commit bfc71e8e |
 | `meas-gate-audit` | Gate-forwarding audit | research | vm | done | unrated | 2026-08-09 | 2026-08-09 |  |  |  |  | commit 2aeea9d7; commit 689f9e89; commit 7014ba19; commit 451ecfa6 |
-| `meas-disorder-price` | Measure the price of disorder ω on a TCP-in-tunnel test | research | vm | blocked | unrated |  |  | model-ordering-hold |  |  |  | docs/derivations/ordering-hold.md |
+| `meas-disorder-price` | Measure the price of disorder ω on a TCP-in-tunnel test | research | vm | blocked | unrated |  |  | model-ordering-hold |  |  |  | docs/derivations/ordering-hold.md; docs/derivations/disorder-price-registration.md |
 
 ### Details per node
 

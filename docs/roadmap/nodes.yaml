@@ -9907,6 +9907,7 @@ nodes:
   outcome: unrated
   evidence:
   - docs/derivations/ordering-hold.md
+  - docs/derivations/disorder-price-registration.md
   verdict_quote: ''
   headline: ''
   depends_on:
