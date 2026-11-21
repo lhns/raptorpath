@@ -949,18 +949,19 @@ G_BLOCK1_N = 8      # plan 41c's row order is, per group, the pair (BASE, CAND) 
 
 
 def block1_g(which, path, out=print):
-    """Registration 5.2 for G1 / G2 (plan 41d): after block 1 (G_BLOCK1_N rows) every (cell, arm)'s FIRST row must be LIVE with its G witnesses (not WITNESS-FAIL, not a void, not S06-FAIL). rc 0 iff so."""
+    """Registration 5.2 for G1 / G2 (plan 41d): after block 1 (G_BLOCK1_N rows) each ARM's (CAND, BASE) first row must be LIVE with its G witnesses (not WITNESS-FAIL, not a void, not S06-FAIL), as stage A reads it
+    ("every arm's first real row"); the other cells' first rows of the block are not checked. rc 0 iff so."""
     rows, _ = pp.rows_of([path])
     first = {}
     for r in rows:
-        first.setdefault((r["cell"], r["arm"]), r)
+        first.setdefault(r["arm"], r)
     bad = []
-    for cell, _, arm, _, _ in pp.plan41c()[:G_BLOCK1_N]:
-        r = first.get((cell, arm))
+    for arm in ("CAND", "BASE"):
+        r = first.get(arm)
         if r is None:
-            bad.append(f"{cell} {arm}: no row")
+            bad.append(f"{arm}: no row")
         elif r["status"] != "LIVE" or (r.get("w67g") or {}).get("fail"):
-            bad.append(f"{cell} {arm}: first row {r['status']} witness failures {(r.get('w67g') or {}).get('fail')} {r.get('problems')}")
+            bad.append(f"{arm}: first row ({r['cell']}) {r['status']} witness failures {(r.get('w67g') or {}).get('fail')} {r.get('problems')}")
     for b in bad:
         out("BLOCK1-FAIL " + b)
     out(f"BLOCK1 {which} " + ("OK" if not bad else "FAILED"))
@@ -1094,7 +1095,7 @@ def score_t(path, out=print):
     elif bring:
         res = "; ".join(bring)
     elif not done:
-        res = "T TRUNCATED (the battery was cut at LD_HARD: no T67DONE)" if tr else "T FAIL (no T67DONE)"
+        res = "T FAIL (no T67DONE)"
     elif c3 or c4:
         res = "T FAIL"
     elif c2:
@@ -1191,7 +1192,13 @@ def rows_41d_view_g(paths):
 
 def score67g(paths, out=print, which="g1"):
     """score41d's output byte for byte on the 41d view, then the G witness table, then `GATE-67G1|2 PASS|FAIL`. PASS iff GATE-41d PASS and no S06-FAIL row and no unreplaced witness failure."""
-    res = pp._score_guard(paths, out, "v2", rows_fn=rows_41d_view_g)
+    tr = truncated(paths)
+
+    def out41(ln):      # score41d's own verdict lines read PASS on whatever rows the cut battery holds: a truncated stage prints TRUNCATED there too (every other line byte for byte)
+        if tr and re.match(r"^(VERDICT )?GATE-41d(\[[^\]]*\])? PASS", ln):
+            ln = re.sub(r" PASS.*", " TRUNCATED (the battery was cut at LD_HARD)", ln)
+        out(ln)
+    res = pp._score_guard(paths, out41, "v2", rows_fn=rows_41d_view_g)
     rows_all, tokens = pp.rows_of(paths)
     rows, _ = pp.apply_replacements(rows_all)
     out("")
@@ -1235,7 +1242,7 @@ def score67g(paths, out=print, which="g1"):
     if nw:
         why.append(f"{nw} unreplaced witness failure(s)")
     name = "GATE-67G" + which[1:]
-    if not why and truncated(paths):
+    if not why and tr:
         out(f"{name} TRUNCATED (the battery was cut at LD_HARD: the ledger holds the LD-BATTERY-TRUNCATED line; this is not the registered design)")
     else:
         out(f"{name} PASS" if not why else f"{name} FAIL (" + "; ".join(why) + ")")

@@ -4,6 +4,7 @@ test_<clause>_green (the control). The rows are the REAL row parser's rows: the 
 Run: python3 test_s67.py   (about half a minute)"""
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -713,7 +714,7 @@ def test_truncated():
     p = os.path.join(TMP, "tun-trunc2.log")
     open(p, "w").write("\n".join(ln for ln in F.tun_lines() if not ln.startswith("T67DONE")) + "\n" + TRUNC + "\n")
     res = S.score_t(p, lambda *_: None)
-    check("truncated_red: stage T cut before T67DONE reads TRUNCATED, not the FAIL of a missing T67DONE", res.startswith("T TRUNCATED"), res)
+    check("truncated_green: stage T cut before T67DONE stays T FAIL (a missing T67DONE is a FAIL; TRUNCATED replaces only PASS)", res.startswith("T FAIL"), res)
     for which in ("g1", "g2"):
         rows = _g_ledger(which)
         p = os.path.join(TMP, f"g{which}-trunc.log")
@@ -724,7 +725,8 @@ def test_truncated():
         lines = []
         S.score67g([p], lines.append, which)
         tt = "\n".join(lines)
-        check(f"truncated_red: stage G {which}: GATE-67G{which[1]} TRUNCATED, never PASS", f"\nGATE-67G{which[1]} TRUNCATED" in tt and f"GATE-67G{which[1]} PASS" not in tt, tt[-300:])
+        check(f"truncated_red: stage G {which}: GATE-67G{which[1]} TRUNCATED, never PASS (score41d's own GATE-41d verdict lines read TRUNCATED too)", f"\nGATE-67G{which[1]} TRUNCATED" in tt and f"GATE-67G{which[1]} PASS" not in tt
+              and not [x for x in tt.splitlines() if re.match(r"^(VERDICT )?GATE-41d(\[[^\]]*\])? PASS", x)] and "VERDICT GATE-41d TRUNCATED" in tt, [x for x in tt.splitlines() if "GATE" in x])
     t = scored("67a", ledger_rows("67a", _a_as_defect), extra=(TRUNC,))
     check("truncated_green: a FAIL on a truncated ledger stays FAIL (a finding is not hidden)", "\nAS FAIL" in t, t[-400:])
 
@@ -836,6 +838,7 @@ def test_g_block1():
         with redirect_stdout(buf):
             rc = S.block1_g(which, _g_with(which, rows_in))
         return rc, buf.getvalue()
+    check("g_block1_arm: only each ARM's first row is read (c1s's, as stage A reads its arms): a failing first row at another cell does not stop the stage", S.block1_g("g1", _g_with("g1", [r if not (r["cell"] == "c8-100" and r["arm"] == "CAND") else g_make("g1", "c8-100", "CAND", "42", 1, "s1-no-gauge") for r in _g_ledger("g1")[:8]])) == 0)
     check("g_block1_size: 8 rows, the smallest prefix of plan 41c's order that holds every (cell, arm) once", S.G_BLOCK1_N == 8 and len({(c, a) for c, _, a, _, _ in pp.plan41c()[:8]}) == 8 and len({(c, a) for c, _, a, _, _ in pp.plan41c()[:7]}) < 8)
     for which in ("g1", "g2"):
         rows_ = _g_ledger(which)

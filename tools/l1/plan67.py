@@ -47,7 +47,7 @@ TREES = ("B0", "S1", "S2", "P1", "P2")                          # the five sourc
 S2_SEATS = ("S2", "P2", "P2T")                                  # dropped by LD_DROP_S2=1 (a seat abort on S2 stops guard 2 only)
 ACCT_MARKERS = ("[ACCT]", "[ACCT-RX]")                          # the twins' kept-line filter (the section 64 [SYMSZ] lesson): both must reach the battery's kept log
 PACER_LINE = "RWM_PERF_RATE_MBIT"                               # the one lib.sh forward line the pacer seats' own tools tree carries and the harness's does not (registration 1.2)
-# (informational, not read: vmb-s1 was 2d590cdc, vmb-s2 1953abd1, the pacer commit 4ee1df9b when the registration was written; the pins come from LD_PIN_<SEAT> only)
+# (informational, not read: the pacer commit is 4ee1df9b; every pin comes from LD_PIN_<SEAT> only)
 
 # ── stage tables ──
 C2, C8 = "c2-100", "c8-100"

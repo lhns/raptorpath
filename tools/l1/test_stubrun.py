@@ -3001,7 +3001,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         gate2 = re.search(r"^GATE-67G2 (PASS|FAIL)", sc["g2"], re.M)
         if path == "g-block1-fail":
             check(f"{tag}: S1's first G1 row lacks the gauge prints: the block-1 rule stops G1 after 8 rows (FAILED-STAGE67 in its ledger, FAILED-g1 marker, BLOCK1-FAIL naming the row, exit 6, no score), G2 still ran to the end and printed its gate; the session is not DONE-ALL",
-                  os.path.exists(os.path.join(stage_dirs["g1"], "FAILED-g1")) and "FAILED-STAGE67" in txt67(stage_dirs["g1"], "ld.log") and "BLOCK1-FAIL c1s-400 CAND" in txt67(stage_dirs["g1"], "ld.log") and len(g1) == 8
+                  os.path.exists(os.path.join(stage_dirs["g1"], "FAILED-g1")) and "FAILED-STAGE67" in txt67(stage_dirs["g1"], "ld.log") and "BLOCK1-FAIL CAND" in txt67(stage_dirs["g1"], "ld.log") and len(g1) == 8
                   and not os.path.exists(os.path.join(stage_dirs["g1"], "DONE")) and not os.path.exists(os.path.join(stage_dirs["g1"], "score.txt")) and gate2 is not None and os.path.exists(os.path.join(stage_dirs["g2"], "DONE"))
                   and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, len(g1), tail(e, 8)))
             EXECUTED.add((plan, path))
