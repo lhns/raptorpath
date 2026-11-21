@@ -72,7 +72,7 @@ Every BASE-against-CAND readout uses a line that main already prints. B84 is mai
 | `[DIAG] paused=`, `cum=src/…/ack`, `retx=`, `sweeps=`, `cwnd=`, `infl=` | yes | `RWM_DIAG` | sender | pause share (any disjunct), the frontier series (§4), resends |
 | `[DIAG] shed=H/denied bud= D=` | yes, only where `pol.shed_on` (Realtime ρ < 1 on main) | `RWM_DIAG` | sender | verdict visits and budget. **On C84 it prints at every ρ** (B1 arms the check; budget 0 at ρ = 1) |
 | `[SPAN] rr=` | yes | `RWM_DIAG` | sender | route witness: the repair path ran |
-| `[SUMCAP] on= eng= pin=` | yes | `RWM_DIAG` | sender | the pooled cap's scope (at every ρ on C84, A6) and its bind fraction (rule 18) |
+| `[SUMCAP] on= eng= pin=` | yes; emitted only where `sum_cap && plain_dyn_cap`, and `plain_dyn_cap` needs `reliable` on main (`sender_policy.rs:579`), so absent at ρ < 1 on B84 | `RWM_DIAG` | sender | the pooled cap's scope (at every ρ on C84, A6) and its bind fraction (rule 18) |
 | `[SHED-R] holes= frontier= budget_open=` | yes | `RWM_DIAG` (receiver gates) | receiver | the receiver's own give-ups on both seats |
 | `[SUCC]` summary | yes | on | receiver | hole-close times (batch 1 §4.2) |
 | `[TRUTH] loss= rcvbuf_drops=` | harness | — | per leg | loss truth (rule 19) |
@@ -87,9 +87,10 @@ Every BASE-against-CAND readout uses a line that main already prints. B84 is mai
 | `[DIAG] wnd2= relgap=` | yes, gated on `store_sack_release_on` (brief D4) | `RWM_DIAG` | sender | C2's witness: present at ρ < 1 on C84 once SACK release runs at every ρ, absent at ρ < 1 on B84 |
 | `released` (the step-5 bound's `\|released\|`) | owed (T7c) | release `RWM_DIAG`, or `[ACCT]` | sender | W-C2 |
 | `[DIAG]` recovery trace `supp c/a/l` | yes | `RWM_DIAG` | sender | C3's witness at N = 2: `l` (suppressed by the multipath law) |
-| per-path source counts | yes on `c8-gauges`' per-path readouts; the token is fixed at the pin | `RWM_DIAG` | sender | C1's witness at N = 2: the slow leg's source share |
-| `[QCLK] site=receiver` | yes | `RWM_DIAG` (receiver) | receiver | C12's refresh half at ρ < 1 |
+| per-path source counts | **unverified**: `mpr[…]` is per retransmit path, and no per-path source token was found on main. Fixed at the pin amendment, or owed by the build (P3) | `RWM_DIAG` | sender | C1's witness at N = 2: the slow leg's source share |
+| `[QCLK] site=receiver` | yes: printed at a 1 s cadence when `recv_gates.diag` and the clock has evaluated (`receiver.rs`, the `[QCLK]` readout) | `RWM_DIAG` | receiver | C12's refresh half at ρ < 1 |
 | H at each floor pass and the arm it took | owed (brief step 8) | `[ACCT-RX]` (twins) | receiver | H's bind (Q-b debt) |
+| H at each old-arm expiry | **an extra owed print**, beyond the brief (which owes H only at floor passes); if absent, XT reads H's bind at floor passes only | `[ACCT-RX]` (twins) | receiver | H's bind on the old arm |
 
 **Owed by the build (pin precondition P3, print-only, behaviour-inert):** every "owed" row above must print in the release binary under `RWM_DIAG`, or the pin amendment moves its clause to the twins. The ABORT-SEAT string check (§7) tests each string on C84 and its absence on B84.
 
@@ -134,7 +135,7 @@ The derivation predicts:
 - **Not stranded.** The store holds k at every ρ, so a refused verdict means "served until filled" (ADR-0084 decision 1). The tail resolves by a fill, not a floor.
 - **Under `dead` it stalls for good.** No fill ever comes, the budget refuses the verdict, and the old arm cannot pass a hole with nothing above it. This is ρ = 1's behaviour, reached at ρ = 0.99 because the old arm's passes spent the allowance first.
 
-That is **limit L-TAIL of this build**: at a matched ρ < 1 pair, once the old arm has spent `(1 − ρ)·S_src`, a lost tail waits for its fill with no time bound. It is named here, carried to the owner with Amendment 3's Q-a, and read at L1 in Stage XL (§5.5b). The record becomes a test in the release-rule build, where the old arm leaves.
+That is **limit L-TAIL of this build**. It is derived here, not yet run: at a matched ρ < 1 pair, once the old arm has spent `(1 − ρ)·S_src`, a lost tail waits for its fill with no time bound. It is named here, carried to the owner with Amendment 3's Q-a, and read at L1 in Stage XL (§5.5b). The record becomes a test in the release-rule build, where the old arm leaves.
 
 ### 3.2 The ρ = 1 simulation record (host; record-only)
 
@@ -161,7 +162,13 @@ The same seed on B84 and C84 at ρ = 1, in the four cells of rho-step-sites §2:
 
 ## 4. Definitions used at ρ < 1
 
-**Completion and goodput are not clauses at ρ < 1.** A perf object needs every chunk, so a row whose receiver passes a single hole is DNF by design (§63, batch 1 §4.4). Rows run a **timed window**: 100 MB at `RWM_PERF_TIMEOUT_S=40`. A row that ends at the timeout is labelled `WINDOW-END`, which is not a failure. A row with under 30 s of `[DIAG]` ticks is VOID-SHORT. A SIGKILLed process writes no `final=1`: twins read the last periodic line, labelled `ACCT-LAST` (batch 1 §4.4).
+**Completion and goodput are not clauses at ρ < 1.** A perf object needs every chunk, so a row whose receiver passes a single hole is DNF by design (§63, batch 1 §4.4). Rows run a **timed window**: 100 MB at `RWM_PERF_TIMEOUT_S=40`. A row that ends at the timeout is labelled `WINDOW-END`, which is not a failure. A row that completes inside the window is `COMPLETE`. Its readouts are computed over its own ticks and marked short; this is expected for XA's ρ = 1 arm (about 12 s) and possibly for XL's 20 MB object. **VOID-SHORT applies only to a `WINDOW-END` row with under 30 s of ticks**, a process that died early. A `COMPLETE` row is never VOID-SHORT.
+
+**The warm-up at ρ < 1.** `perf` sends a one-chunk warm-up object first, under the same `run_timeout`, and bails with "warm-up object never acked" on a DNF (`perf.rs`). A passed warm-up chunk therefore ends the row after one full window with no timed transfer.
+- Such a row is `WARMUP-DEAD`: a reading per arm, k of n. It is never VOID and never replaced, and it does not count toward the 4-slot cap or the block-1 rule.
+- Its expected rate is about the chunk's loss-and-pass probability: small at c2, higher at XE and XL, and possibly high on XR's B84 arm, where the mixed stall is the predicted defect.
+- A cell with more than 4 `WARMUP-DEAD` rows on one seat is UNSCOREABLE for that seat, with k printed. For XR's B84 arm this is itself the defect reading and is reported as such.
+- Each such row costs a full 40 s window, which §8.2 budgets at the worst case (no saving). A SIGKILLed process writes no `final=1`: twins read the last periodic line, labelled `ACCT-LAST` (batch 1 §4.4).
 
 **Frontier delay.** The in-order delay of §41d is undefined at ρ < 1, so this guard defines its own readout. On every `[DIAG]` tick:
 
@@ -237,7 +244,7 @@ Auto sends proactive repair and NACK resends, so the repair path runs, but at ρ
 - **Clause R1-84:** every C84 row completes inside its timeout wherever every B84 row completes (plan 64 item 5's rule), with zero `ID-FAIL`. **R1-84 PASS** iff both hold.
 - **Reported:** goodput, CPU/GB, lag, in-order delay (marked: under the 30 s tick floor).
   - No Realtime A/A exists. **Owner flag:** C84 worse than c2's Bulk guard-size d80 (goodput 2.4 %, CPU 8 %) with rank p ≤ 0.05.
-- **Prediction: PASS.** At ρ = 1 Realtime keeps every (C) site's ρ = 1 arm through the scaffolding bit, and the budget is 0.
+- **Prediction: PASS.** At ρ = 1 each sender (C) site's one law reduces to today's ρ = 1 arm (rho-step-sites §2's pins), the receiver keeps its ρ = 1 arm, and the budget is 0.
 
 ### 5.4 Stage X (Realtime ρ = 0.99): witnesses and invariants scored, readouts reported
 
@@ -264,11 +271,11 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 **Precondition witnesses (both seats; a failure is VOID-WITNESS, re-run once, at most 4 replaced slots per stage):**
 - the ρ echo: B84 `window_reliable: false` and C84 `window_rho: 0.99`, on both ends (VOID-RHO);
 - `[DIAG]` carries `shed=` (the arm is on at ρ < 1 on both seats);
-- 30 s of ticks (VOID-SHORT).
+- 30 s of ticks on a `WINDOW-END` row (VOID-SHORT, §4).
 
 **Execution witnesses on every C84 row (scored; `X-FAIL <item>` on first sight; never VOID, never replaced):**
-- **W1 store at every ρ:** `[SUMCAP] on=1` with `eng > 0`. The pooled cap is now scoped at ρ < 1 (A6). On B84 it is off at ρ < 1, and that is printed.
-- **W3 verdicts visited:** `H + denied > 0` on the last tick. Realtime's `D = RTprop/2` makes past-D holes common at every cell.
+- **W1 the pooled cap at every ρ:** `[SUMCAP]` is present with `eng > 0` (A6 scopes it at ρ < 1). B84 prints no `[SUMCAP]` at ρ < 1. The store fill itself is read on the twins (`[ACCT]` `O_serv`, §5.6).
+- **W3 verdicts visited:** `H + denied > 0` on the last tick, required on at least 10 of 12 C84 rows per cell (a quiet row is not a failure). Realtime's `D = RTprop/2` makes past-D holes common at every cell.
 - **W4 last copy:** last copies = `H − E` on every tick that prints both (Amendment 2 decision 1: one copy per verdict, none on a forced one).
 - **W5 forced verdicts:** `E = 0`. A non-zero reading is `FORCED-NONZERO`. It is a finding (F1's full penalty), not a void, and it holds the merge until it is read.
 - **W6 the floor told, on both ends** (rule 6):
@@ -280,9 +287,9 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
   - Scored at XE: PW > 0 on at least 6 of 12 C84 rows. XE's BDP is about 2 400 symbols of 512 B, above B = 2 048, so O can reach B before cwnd binds.
   - Elsewhere it is reported. Where cwnd binds first, PW = 0 reads `INERT-AT-CELL`; T7a/T7b carry the executes proof.
   - B is PINNED at N·2048 (ledger F01, ADR-0084 Consequences). Under rule 18 the bound "operates as a constant" here, and no law verdict on B is drawn from this stage.
-- **W-C2, SACK release at every ρ:** `wnd2=` is present at ρ < 1, and `released > 0` on at least one tick. B84 prints no `wnd2=` at ρ < 1 (seat check).
-- **W-C3, at N = 2 (X2, XK):** the recovery trace's `supp … l` (suppressed by the multipath law) is > 0 on the last tick. B84's `l` at ρ < 1 is printed; it is predicted 0, because main runs the age gate there.
-- **W-C1, at N = 2 (X2, XK):** the slow leg's source share is > 0 on every C84 row (the law replaced the best-path pick). B84's share is printed, predicted ≈ 0. If the pinned head lacks C1, XK takes branch L below and this witness is dropped by the pin amendment.
+- **W-C2, SACK release at every ρ:** `wnd2=` is present at ρ < 1 on every C84 row (the routing, which is deterministic). `released > 0` on at least one tick is required on at least 8 of 12 rows per cell (a stochastic counter, pooled). B84 prints no `wnd2=` at ρ < 1 (seat check).
+- **W-C3, at N = 2 (X2, XK):** the recovery trace's `supp … l` (suppressed by the multipath law) is > 0 on the last tick of at least 8 of 12 C84 rows per cell (pooled). B84's `l` at ρ < 1 is printed; it is predicted 0, because main runs the age gate there.
+- **W-C1, at N = 2 (X2, XK):** the slow leg's source share is > 0 on at least 10 of 12 C84 rows per cell (the law replaced the best-path pick). B84's share is printed, predicted ≈ 0. Its token is fixed at the pin (§2). If the pinned head lacks C1, XK takes branch L below, and the pin amendment drops this witness.
 - **W-C12, the refresh half (XE):** on C84 receiver rows whose `[SHED-R]` shows `budget_open=false`, `[QCLK] site=receiver` re-advertises at ρ < 1. Where the ε̂_recv budget stays open and SRTT < 200 ms, the old hold expires first and W-C12 reads `INERT-AT-CELL` (brief step 9, C12 timing).
 
 **Seat absence on B84 (ABORT-SEAT before any row):** B84's binary holds none of the owed strings, and C84's holds every one.
@@ -293,8 +300,8 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 
 | readout | X1 | X2 | XK | XE |
 |---|---|---|---|---|
-| frontier delay p50 / p99 (§4) | C84 ≤ B84 or within resolution | as X1 | **the skew readout**, below | within resolution: no serialization in this build |
-| frontier stall (longest frozen run) | C84 ≤ B84: unclamped gaps are served, not stranded | as X1 | as X1 | **within resolution** (below) |
+| frontier delay p50 / p99 (§4) | C84 ≤ B84 or within resolution (N = 1: C1 is the one path) | **C84 > B84**: striping onto the 20 ms leg (C1), as XK's branch C1, with up to the c2–c3 skew of 15 ms plus the hold | **the skew readout**, below | within resolution: no mid-stream serialization in this build |
+| frontier stall (longest frozen run) | C84 ≤ B84: unclamped gaps are served, not stranded | unknown: serving lowers it, striping raises it | as X2 | **within resolution** (below) |
 | A/src at the window end | C84 ≥ B84 | as X1 | as X1 | unknown direction |
 | `[TRUTH]` loss per leg | C84 < B84: the pause stops overflow loss that B84's unbounded ρ < 1 source causes | as X1 | as X1 | C84 ≤ B84 |
 | `retx=` / source | C84 > B84: the whole gap is served (A3) | as X1 | as X1 | C84 > B84 |
@@ -329,7 +336,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 12 + 12 rows, seeds 42 and 7, interleaved. The ρ echo is read per end (VOID-RHO).
 
 **Required witnesses on every C84 row** (`X-FAIL <item>`; never VOID). These are the old-arm-free execution witnesses that §5.4 cannot require:
-- **R-W3:** `H > 0`. The verdicts are admitted, because the allowance is spent only by the sender's own unfilled verdicts.
+- **R-W3:** `H > 0` on at least 10 of 12 C84 rows. The verdicts are admitted, because the allowance is spent only by the sender's own unfilled verdicts.
 - **R-W4 last copy:** last copies = `H − E` on every tick, and last copies > 0.
 - **R-W6 floor passes:** `floor_sent > 0`, `floor_rx > 0` and **`floor_passes > 0`**, with `G_floor > 0`.
   - The power is stated: with ε ≈ 2.6 % at c2, a verdict seq whose last copy is also lost is expected about ε·H times per row. So the clause requires `floor_passes > 0` on rows with `H ≥ 200`, where ε·H ≥ 5.
@@ -347,7 +354,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 
 - c2-100, Auto, 100 MB, a timed window of 40 s. C84 at `--window-rho 0.99` 6 rows and C84 at `--window-rho 1` 6 rows, one binary, interleaved (rule 3), seeds 42 and 7.
 - **Witnesses:**
-  - at 0.99: `bud=0.0100` and `H + denied > 0`, W4 and W5 as §5.4;
+  - at 0.99: `bud=0.0100` on every row; `H + denied > 0` on at least 4 of 6 rows (Auto's longer D makes past-D holes rarer); W4 and W5 as §5.4;
   - at 1: `bud=0.0000`, H = 0 and `floor_sent = 0` (`ID-FAIL`).
 - **Reported:** everything of §5.4, 0.99 against 1. Auto's D(δ = 0.5) is longer than Realtime's, so fewer holes age past D: δ and ρ compose through D and the budget.
 - **What its difference also contains.** The sender sites carry no bit in this build. The receiver's exception sites still step at ρ = 1: C9's expiry and force-drain, C10's drop and C11's arm. The stage reads "the step at ρ = 1 is the budget plus the receiver's old arm" and prints `G_expiry` and `G_force` at 0.99, both 0 at 1. It decides nothing. `sim_rho_dial` carries it, in the release-rule build.
@@ -431,7 +438,9 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 - `NEEDS-MORE-verdicts`: fewer than 8 counted XR rows (not eligible);
 - `L-TAIL observed`: an XL row whose frontier does not reach S_src in its window; a named limit, reported, not a fail;
 - `FORCED-NONZERO`: a finding that holds the merge;
-- `WINDOW-END`: a ρ < 1 row ended at its timeout, which is normal.
+- `WINDOW-END`: a ρ < 1 row ended at its timeout, which is normal;
+- `COMPLETE`: a ρ < 1 row whose object completed inside the window;
+- `WARMUP-DEAD`: the warm-up chunk was passed, so the row has no timed transfer. A reading (§4), not a void.
 
 **Precedence on a row:** an infrastructure void, then an outcome label, then a missing witness line on an otherwise live row, then §41d's own labels (the plan 64 order).
 
@@ -500,7 +509,7 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
    Every `tools/l1` script that passes `--window-reliable` and is reached by these plans goes through the one mapping (Amendment 1 item 8: about 30 scripts; the others stay as they are and are listed).
 2. **The ρ echo parser:** `window_reliable: <bool>` (B84) and `window_rho: <f>` (C84) from `perf configuration` on both ends, giving VOID-RHO.
 3. **Cell rows:** `c2k20-100 → "c2 c2r50 dual 100000000"`, `c2r100l10-100 → "c2r100l10 c2r100l10 single 100000000"` and `c2r100l10-20 → "c2r100l10 c2r100l10 single 20000000"` in `loopdiag_battery.sh`'s `cell_spec`, with a test that each resolves to its scenarios' `netem_args`.
-4. **Timed-window rows:** `RWM_PERF_TIMEOUT_S=40` for the ρ < 1 stages; `WINDOW-END` instead of DNF; VOID-SHORT under 30 s of ticks.
+4. **Timed-window rows:** `RWM_PERF_TIMEOUT_S=40` for the ρ < 1 stages; `WINDOW-END`, `COMPLETE` and `WARMUP-DEAD` labels instead of DNF; VOID-SHORT only on a `WINDOW-END` row under 30 s of ticks.
 5. **Parsers:**
    - the owed tokens (§2), with names from the pin amendment;
    - the frontier series, p50 / p99, stall and half-split resolution (§4);
@@ -534,6 +543,10 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
    - `pw-zero-at-xe` → PW fails;
    - `window-end` → WINDOW-END, not DNF;
    - `x-short` → VOID-SHORT;
+   - `x-complete-short` → `COMPLETE`, not VOID-SHORT;
+   - `warmup-dead` → `WARMUP-DEAD`, not replaced, outside the slot cap;
+   - `warmup-dead-5` → that seat's cell is UNSCOREABLE;
+   - `x-quiet-row` (one row with `l = 0`, the rest > 0) → no failure;
    - `twin-no-final` → `ACCT-LAST`;
    - `twin-under-min` → UNSCOREABLE, not eligible;
    - `twin-strand` → `X-FAIL acct`;
@@ -576,9 +589,10 @@ It derives from plan 67 (`plan67.py`, `s67_score.py`). Plan tokens: `84`, `84g`,
 1. **Amendment 3's Q-a and Q-b** (owner). The build does not merge before both are answered (§12).
 2. **One guard or three** (coordinator, then owner). This registration guards the head against main, as the brief's §5 says. rho-step-sites §5 lists three cut points; a FAIL is bisected on them (§8.3).
 3. **L-TAIL** (owner, with Q-a). At a matched ρ < 1 pair, once the old arm has spent the allowance, a lost tail waits for its fill with no time bound. It is named and measured here (§3.1 record, XL), and it ends with the release-rule build.
-4. **Owed release gauges (§2, P3).** If the build prints them only under test-seams, the twins grow to 12 + 12 per X cell and XR (+≈ 50 min in session 3, which then splits into two sessions).
-5. **The pacer seats (XP):** whether `4ee1df9b` applies to both trees.
-6. **Fable's review of this draft**, before the pin.
+4. **T1 against L-TAIL** (for the brief's author; not resolved here). T1 gates in the matched cell. By §3.1's record, once the old arm's passes have spent the allowance, the tail's verdict is refused, and the tail resolves only by a fill. T1's scenario passes because its `dead` window ends, or because its allowance is not spent. Which one holds, and whether T1 should also run with the allowance pre-spent, is a question for the brief.
+5. **Owed release gauges (§2, P3).** If the build prints them only under test-seams, the twins grow to 12 + 12 per X cell and XR (+≈ 50 min in session 3, which then splits into two sessions).
+6. **The pacer seats (XP):** whether `4ee1df9b` applies to both trees.
+7. **Fable's review of this draft**, before the pin.
 
 ## 12. The decision rule
 
