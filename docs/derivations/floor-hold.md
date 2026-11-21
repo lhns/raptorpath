@@ -7,7 +7,7 @@
 ```text
    H(t)  =  max { ℓ_i  :  arrival i  with  t − W  ≤  a_i  ≤  t }          (0 when no arrival in the window was late)
 
-   ℓ_i   =  ( a_i  −  min{ a_j : j arrived before i,  τ_j ≥ τ_i } )⁺      (any path; 0 when nothing sent at or after τ_i arrived first)
+   ℓ_i   =  ( a_i  −  min{ a_j : j arrived before i,  τ_j > τ_i } )⁺      (any path; 0 when nothing sent after τ_i arrived first)
 ```
 
 - It needs **no wire field**. The floor is itself a packet sent after every fill it waits for, so its arrival time is the reference. The sender's stamp is not needed, and neither is the path of the last copy.
@@ -38,7 +38,7 @@
 - earlier copies, before it;
 - the original, before those.
 
-**The bound.** Take a fill i of s, sent at τ_i ≤ τ_F and arriving at a_i. Let a*(τ_i) be the earliest arrival, on any path, of a packet sent at or after τ_i. The floor is such a packet, so `a*(τ_i) ≤ t_F`, and therefore:
+**The bound.** Take a fill i of s, sent at τ_i ≤ τ_F and arriving at a_i. Let a*(τ_i) be the earliest arrival, on any path, of a packet sent after τ_i. The floor is such a packet (or is sent at the same instant: see ties below), so `a*(τ_i) ≤ t_F`, and therefore:
 
 ```text
    a_i  −  t_F   ≤   a_i  −  a*(τ_i)   =   ℓ_i
@@ -48,13 +48,21 @@ So no fill arrives later than t_F + sup ℓ. One premise: the sampler's referenc
 - The bound needs nothing about *which* path carried the fill, and nothing about the floor's own transit. That removes objection 1.
 - It needs the floor to behave like a data packet on its path: queued behind every datagram staged before it. That holds today. `TxBatch::flush` hands each path's data lane to its owner before its control lane, on one channel, into one quinn datagram queue (`io_owner.rs:1499–1530`). Two requirements follow for brief step 8 (§8): the copy is staged before the floor, and the receiver processes the floor in arrival order with data.
 
+**Ties and stamp order.** `send_timestamp_us` is `now_us()` at staging (`emit_source.rs`, `quic.rs:801`), so the batches of one burst can share a stamp, and under the sim's virtual clock they usually do. With `τ_j ≥ τ_i`, two equal-stamped batches on a FIFO link would give ℓ > 0, one serialization gap apart. So the order is strict, `τ_j > τ_i`, as RFC 4737's `s[j] > s[i]`. Two cases are then covered by something other than ℓ:
+- *The copy and the floor at the same instant, on one path:* FIFO staging (§8), with the copy staged first.
+- *The same, across paths:* the lateness is `g_p − g_q` at one send instant. Data pairs sent on p and q in neighbouring bursts sample it, with an error of at most one inter-burst gap.
+
+The premise that makes H = 0 on a FIFO path: on each path, stamps are non-decreasing in staging order. That holds while one task stamps and stages each path's data in order. It is witnessed by `fl_late = 0` in the N = 1 sim tests (§7).
+
+**A later marker is safe.** A hole s first covered by floor F₁ (arriving at t₁) can pass early, at a later floor F₂'s expiry `t₂ + H(t₂) < t₁ + H(t₁)`. That is still covered: every fill of s was sent before F₂ too, so §1's bound applies with t₂ as the reference and H(t₂) as the current support. A hole therefore passes at the earliest expiry among the markers covering it. Paper §5.1 and brief step 8 describe a single marker; they take this rule (§10).
+
 **The reference is a send-order statistic.** ℓ_i compares two arrival times on the receiver clock, chosen by an order on the sender clock. So it needs no clock offset and is immune to drift. `lat.rs`'s `A_x` floor is different: an all-time minimum of `arrival − send_ts`, which drifts with the clock pair and never comes back up.
 
 ## 2. The estimator
 
 ```text
    H(t)  =  max { ℓ_i  :  t − W ≤ a_i ≤ t }                 H = 0 over an empty window
-   ℓ_i   =  ( a_i − a*(τ_i) )⁺,     a*(τ)  =  min { a_j : j arrived before i, τ_j ≥ τ }
+   ℓ_i   =  ( a_i − a*(τ_i) )⁺,     a*(τ)  =  min { a_j : j arrived before i, τ_j > τ }
 ```
 
 | symbol | meaning | provenance |
@@ -62,12 +70,12 @@ So no fill arrives later than t_F + sup ℓ. One premise: the sampler's referenc
 | a_i | arrival instant of data batch i, any path, read at the receiver loop's `now_us()` (`receiver.rs:1228`) | measured |
 | τ_i | the batch's `send_timestamp_us`, stamped at placement (`lat.rs` header) | measured (sender stamp on the wire since before v10) |
 | ℓ_i | RFC 4737 §4.3 reordering late time offset, `DstTime(i) − DstTime(j)` for the earliest-arriving j with a later send, with send order read as τ instead of sequence number. Source and repair batches both count: a fill can be either | cited (RFC 4737 §4.3), measured |
-| W | window of the maximum: 10 s | cited: the engine's declared path-property window (`copa.rs:641` `window_duration`), Copa's RTT-floor window (Arun and Balakrishnan, NSDI 2018) and BBR's `MinRTTFilterLen` = 10 s (draft-cardwell-iccrg-bbr). Path properties change on route and queue regime changes; Copa and BBR both forget them after 10 s |
+| W | window of the maximum: 10 s | **borrowed by analogy, not derived:** the engine's declared path-property window (`copa.rs:641` `window_duration`, a min-RTT window), reused for a max-lateness filter. Its external sources, Copa's RTT-floor window (Arun and Balakrishnan, NSDI 2018) and BBR's 10 s min-RTT filter (draft-cardwell-iccrg-bbr), are **not confirmed here**. Open question (§11) |
 | max | the support end, not a quantile (§4: the miss is priced ω, which is unmeasured, and the rent is paid only by holes that are never filled) | declared choice, stated here |
 
 **Computation.**
 - Keep the *records*: the arrivals whose τ exceeds every earlier τ. They increase in both τ and a.
-- For a batch with τ_i below the newest record, binary-search the first record with τ ≥ τ_i. Its arrival is a*(τ_i).
+- For a batch with τ_i below the newest record, binary-search the first record with τ > τ_i. Its arrival is a*(τ_i).
 - The windowed maximum is a monotone deque, or the windowed max filter of Linux `lib/win_minmax.c` (Kathleen Nichols' algorithm, used by BBR).
 
 **Resource bound, outside the law.** Records are kept for W, coalesced to the receiver timer's 1 ms resolution, so at most 10⁴ entries. A reordered arrival whose τ_i is older than the oldest record gets a lower bound only, `a_i − a(oldest)`. That is a clamp, and it is gauged (§6).
@@ -110,7 +118,7 @@ Per hole passed by a floor, the two costs are:
    miss(H)  =  ω   +   one allowance unit until the fill arrives, after which G_rx falls      per fill arriving after t_F + H
 ```
 
-- **Rent.** δ/d converts stall seconds into repair symbols (`skip-rule-efficiency.md` §1, paper §7.3). A passed hole that *is* filled stops stalling at its fill, whatever H is. So H's rent falls on the never-filled share π∞ ≈ ε (the copy's loss), which is measured as `G_floor` over verdicts.
+- **Rent.** δ/d converts stall seconds into repair symbols (`skip-rule-efficiency.md` §1, paper §7.3). A passed hole that *is* filled stops stalling at its fill, whatever H is. So H's rent falls on the never-filled share π∞, measured as `G_floor` over verdicts. **Caveat:** π∞ ≈ ε assumes independent losses. At N ≥ 2 a path stall both sets a large ℓ, held for W, and produces the verdicts whose copies are lost. So the rent is understated exactly when H is largest. The table below is the independent-loss case. `fh_us_max` beside `G_floor` per episode is the reading that decides.
 - **Miss.** A fill below the frontier is delivered at once, out of order (`reorder.rs:75–82`). Brief step 4 subtracts it from G_rx, so nothing is lost. What lasts is one out-of-order delivery, whose price is ω (`ordering-hold.md` §1, unmeasured), plus the sender's `Ab` being one too high until the fill. That extra unit can deny another verdict meanwhile, which is second order.
 
 **Why the support bound, with no δ and no ω.** Only an expected-cost optimum would read δ: release before the support ends when `(δ/d)·E[remaining wait] > ω·P(fill still coming)`. That trade is exactly design U's H_o = ω·d/δ (`ordering-hold.md` §3.2). It is measured from t_detect, and it composes with H as `min(t_detect + H_o, t_F + H)` in the release-rule build (`ordering-hold.md` §8). Pricing it a second time inside H would double-count δ, and would need ω, which is not measured. So H is left as the honest support end: "A_rx may pass the hole once no fill can still arrive" (`ordering-hold.md` §8). The window W and the choice of the maximum are coverage choices, not prices. Their errors are measured (§6), not optimised.
@@ -138,7 +146,7 @@ The derived H is not a large saving. It is right by construction at every N, it 
 - **N = 1, no in-path reordering** (real paths, and the sim exactly): ℓ ≡ 0, so H = 0. The floor passes at its arrival, and the copy has already arrived or been lost. Paper §5.1's "per-path FIFO makes every earlier seq arrive or be lost first" becomes the law's value, not an assumption beside it.
 - **N = 1 with in-path reordering** (for example netem jitter without rate, or Wi-Fi): H = the largest late time offset seen in the last 10 s.
 - **N = 2, skew Δ, both paths used:** slow-path batches arrive about Δ behind fast-path batches sent at the same instant, so H ≈ Δ + the jitter spread. That is `ordering-hold.md` §8's value, obtained without its path map.
-- **N = 2, slow path unused** (Realtime best-path today, φ_slow ≈ 0): no slow-path batch arrives late, so H ≈ 0, and nothing is in flight there to wait for. H follows placement by itself. C1's striping (owner: kept in the sender build) raises Realtime H to about Δ.
+- **N = 2, slow path unused:** no slow-path batch arrives, so H ≈ 0, and nothing is in flight there to wait for. H follows placement by itself. Realtime best-path today is *not* this case: its hint-keyed duplicate send puts batches on the alt path (`emit_source.rs:517`, `ordering-hold.md` §5). Those duplicates are real fills and sample ℓ ≈ Δ, so Realtime H ≈ Δ at N = 2 already. C1's striping (kept in the sender build) keeps it there.
 - **A frozen idle leg (T5), a dead path, or a path that leaves:** H does not read any live set. Its samples age out within W. A copy placed on a leg that has been idle for longer than W, and that arrives late, is a miss: gauged, delivered, subtracted from G_rx.
 - **ρ = 1:** no verdict, so no floor and no marker. The sampler runs at every ρ (always computed, never read at ρ = 1), so nothing branches.
 - **Presets:** H reads no δ, no ρ and no hint. It is constant along both dials, so the ±2 % nudges give identical values, and behaviour continuity is the floor's own, which is the sender's continuous verdict law.
@@ -195,8 +203,9 @@ On `[ACCT-RX]`, with every value printed beside its count (`-` when the count is
 ## 10. Owed with acceptance (same push as the merge)
 
 - **Paper, FORMULA-FIRST.** §5.1's line "H_hold: the receiver's existing hold, `shed_recv_hold` (Section 5.6); no new constant" is replaced by §2's formula with its provenance table and §1's bound. §5.6's "waits the receiver's hold H_hold" is left as it is.
-- **§11.3.** The "receiver shed hold" row stays for the expiry (C11) only. Add a register row for W = 10 s (cited), and the record horizon as a resource bound with `fl_trunc`.
+- **§11.3.** The "receiver shed hold" row stays for the expiry (C11) only. Add a register row for W = 10 s (borrowed, sources to confirm), and the record horizon as a resource bound with `fl_trunc`.
 - **`rho-step-sites.md` §6 C11 row:** "UNDERIVED for H's kind" becomes "the floor pass's H: a reorder cover, the support of the late time offset (`floor-hold.md`)". The expiry's hold stays UNDERIVED until the release-rule build.
+- **The marker rule (paper §5.1, brief step 8):** several markers, one per floor rise; a hole passes at the earliest expiry among those covering it (§1).
 - **`adr84-engine-brief.md` step 8:** H, the §6 gauges, the §7 tests, H_max = 0 in T1, T2 and T1′, and the §8 requirements. ADR-0084 Amendment 3 item 3 records the derived H.
 
 ## 11. For the owner
@@ -204,7 +213,7 @@ On `[ACCT-RX]`, with every value printed beside its count (`-` when the count is
 In plain words: after the sender says "skip everything below F", the receiver waits only as long as packets on this connection have actually been seen arriving late. It measures that as how far behind a later-sent packet an earlier one has come in, over the last 10 s. On one path with no reordering that is zero, so the skip takes effect at once. On two paths it is about the difference in their delays. Nothing is added to the wire, and the wait does not depend on the protocol setting.
 
 Genuine choices:
-1. **The 10 s memory (W).** Taken from the engine's existing path-memory window (Copa and BBR use the same). Longer remembers a rare late spike for longer: more stall, but only on packets that are lost for good. Shorter forgets a quiet slow path sooner: more late-but-delivered packets. Neither can be priced until ω is measured; the gauges show which way it errs. **Recommended: 10 s.**
+1. **The 10 s memory (W).** Borrowed from the engine's existing path-memory window, a minimum-delay window. It is not derived for this use, and its outside sources are not yet confirmed. Longer remembers a rare late spike for longer: more stall, but only on packets that are lost for good. Shorter forgets a quiet slow path sooner: more late-but-delivered packets. Neither can be priced until ω is measured; the gauges show which way it errs. **Recommended: 10 s.**
 2. **Maximum, not a percentile.** A late-but-delivered packet costs ω (unmeasured), and holding costs only for packets that never come. So cover everything seen. **Recommended.**
 3. **Interim cost at a ρ = 1 receiver on two skewed paths at the Realtime δ:** a skipped packet whose copy rides the slow path waits up to the skew instead of being released. This goes away with design U's release rule.
 4. **Not proposed:** sending the last copy on every path. That is a placement-law question.
