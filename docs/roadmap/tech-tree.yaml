@@ -1,0 +1,48 @@
+# Config of the tech-tree scripts (tools/roadmap/skill/, a vendored copy of the design-skills tech-tree
+# skill; see tools/roadmap/skill/VERSION). Paths are relative to this file. Fields: tools/roadmap/skill/schema.md.
+nodes: nodes.yaml
+page: ../roadmap.md
+
+# Tracks, in display order; the code prefixes every node id.
+tracks:
+  cod:   {name: "coding core", scope: "RaptorQ/FEC encoder and decoder, gf256, symbol framing, the generation seat"}
+  rec:   {name: "recovery", scope: "ARQ, SACK, the hole law, recovery clocks, gap horizon, snapshot order, tail sweep"}
+  rate:  {name: "rate law", scope: "the rate law and the (δ, ρ, r) triangle: FEC rate, P_fec, W*, hints as named points"}
+  store: {name: "store law", scope: "flow control and the store law: store cap, SACK-clocked release, the time term, δ's seat"}
+  place: {name: "placement", scope: "multipath placement: placement price, idle-leg lock-out, diversity weight, per-leg state"}
+  cc:    {name: "congestion control", scope: "substrate congestion control: quinn BBR, bbr_rs, Copa, the BBR/Copa hybrid (ADR-0068), the pacing seam"}
+  perf:  {name: "performance", scope: "threading and per-packet cost: threading redesign, I/O owner, receiver cost, allocation bounds"}
+  meas:  {name: "measurement", scope: "measurement and harness: the L1 harness, guards, stub run, instruments, measurement discipline"}
+  model: {name: "model and paper", scope: "the model, paper and visualizer: paper, wasm L0 model, NO-MODE-SWITCH audits, model-vs-engine bounds"}
+  obs:   {name: "observability", scope: "the metrics registry, OTel, the flight recorder"}
+  infra: {name: "repo and simplification", scope: "restructure, simplify batches, archived arms, early platform work (handshake, TLS, MTU, migration)"}
+
+kinds:
+  law: {shape: slant}                   # a law of the ledger
+  mechanism: {}
+  instrument: {}
+  infra: {}
+  research: {}
+  simplification: {}
+  defect-verdict:                       # a status §3.10 finding that qualifies earlier results
+    shape: flag
+    rated: false                        # shown as open or fixed, never rated
+    blocks: false                       # an open defect does not block work on its diagnosis
+  user-decision:
+    shape: hexagon
+    owner_gate: true                    # outcome n/a; listed under "Waiting on the owner"
+
+# What a forward node needs to run. `vm` is the one shared, serial lane (a guard run on the VM).
+lanes: [vm, host-cargo, no-cargo, user, none]
+queue_lane: vm                          # its forward nodes carry a unique queue_order
+
+overview: {min: 50, max: 60}
+layout: {overview_width: 3, track_width: 3, band_min: 1}
+
+history:
+  main: github/main
+  # main merges are named "merge: NAME - ...", "merge NAME sha: ..." and "Merge feat/x: ..." besides git's "Merge branch 'x'"
+  merge_subject: "^(?i:merge):?\\s+['\"]?((?<=: ).+?(?=\\s+-\\s+|\\s+into main\\b|$)|[^\\s'\"]+)"
+  weak_refs:
+    status: '(?<!paper )(?<!paper)§\s?(\d+)'   # status § numbers (not "paper §N"); weak, shared by many commits
+    adr: 'ADR[- ]?0*(\d{1,4})'          # decision-record numbers, likewise

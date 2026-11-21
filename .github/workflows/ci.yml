@@ -66,6 +66,10 @@ jobs:
           python tools/roadmap/build.py
           python tools/roadmap/check.py | tee check.out
           grep -q '^check: OK' check.out
+      - name: roadmap tool tests (vendored tech-tree skill and the wrappers)
+        run: |
+          python -m unittest discover -s tools/roadmap/skill/scripts/tests
+          python tools/roadmap/test_wrappers.py
   visualizer:
     runs-on: ubuntu-24.04
     steps:

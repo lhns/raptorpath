@@ -1,0 +1,112 @@
+- id: core-tokenizer
+  title: "Rewrite the tokenizer"
+  track: core
+  kind: change
+  state: done
+  outcome: very-successful
+  evidence: ["PR #12"]
+  verdict_quote: "Merged; parsing the benchmark file takes 1.2 s instead of 3.4 s."
+  headline: "3.4 s -> 1.2 s"
+  depends_on: []
+  replaced_by: []
+  lane: none
+  start: 2026-02-01
+  end: 2026-02-14
+  folded: ["Unicode escapes (2026-02-10, commit a1b2c3d4)"]
+  overview: true
+  plain: "The first stage of the parser is now almost three times faster."
+  confirmed: 2026-02-20
+
+- id: core-streaming
+  title: "Streaming parse spike"
+  track: core
+  kind: spike
+  state: abandoned
+  outcome: dead-end
+  evidence: ["notes/streaming.md"]
+  verdict_quote: "Dropped: the grammar needs unbounded lookahead."
+  headline: ""
+  depends_on: [core-tokenizer]
+  replaced_by: []
+  lane: none
+  start: 2026-02-20
+  end: 2026-03-02
+  folded: []
+  overview: true
+  plain: "Parsing a file piece by piece did not work with our grammar."
+  confirmed: 2026-03-05
+
+- id: core-error-recovery
+  title: "Keep parsing after an error"
+  track: core
+  kind: change
+  state: in-progress
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [core-tokenizer]
+  replaced_by: []
+  lane: local
+  start: 2026-03-10
+  end: ""
+  folded: []
+  overview: true
+  plain: "Report every error in a file, not just the first."
+  notes: "Done when: the error test corpus reports all planted errors."
+
+- id: core-api-freeze
+  title: "Freeze the public API"
+  track: core
+  kind: decision
+  state: next
+  outcome: n/a
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [core-error-recovery]
+  replaced_by: []
+  lane: owner
+  start: ""
+  end: ""
+  folded: []
+  overview: true
+  plain: "The maintainer decides when the public API stops changing."
+
+- id: docs-tutorial
+  title: "Write the tutorial"
+  track: docs
+  kind: change
+  state: next
+  outcome: unrated
+  evidence: []
+  verdict_quote: ""
+  headline: ""
+  depends_on: [core-tokenizer]
+  replaced_by: []
+  lane: local
+  start: ""
+  end: ""
+  folded: []
+  overview: true
+  plain: "A first walk-through for new users."
+  notes: "Done when: someone new runs every example."
+
+- id: docs-site
+  title: "Publish the docs site"
+  track: docs
+  kind: change
+  state: done
+  outcome: successful
+  evidence: ["PR #20"]
+  verdict_quote: "Merged; the site builds on every release."
+  headline: ""
+  depends_on: []
+  replaced_by: []
+  lane: none
+  start: 2026-03-01
+  end: 2026-03-08
+  folded: []
+  overview: true
+  plain: "The reference pages are online."
+  confirmed: 2026-03-12

@@ -412,9 +412,9 @@ Fable reviewed twice.
   
   This revision takes all of them.
 
-## 11. Roadmap: proposed `vm_order` (proposal only; not edited here)
+## 11. Roadmap: proposed `queue_order` (proposal only; not edited here)
 
-| vm_order | node | lane change needed | proposed `order_reason` (with the estimated gain) |
+| queue_order | node | lane change needed | proposed `order_reason` (with the estimated gain) |
 |---|---|---|---|
 | 1 | `meas-s51-c8-gauges` | `host-cargo` → `vm` | VM batch 1, guard 1, at the bottom of the stack. No product gain of its own (print sites only). It makes the repair rate readable: which term wins, and the live r_sat. That readout splits the audit's top cost (c2 Auto −15 % goodput, +39 % client CPU/GB) between the copies and r itself. |
 | 2 | `infra-tunnel-inorder-guard` | `host-cargo` → `vm` | VM batch 1, guard 1 (with the gauges). A correctness fix on the product path: a config file can no longer switch the tunnel to out-of-order or object delivery. Gain: every byte stays in order for anyone who sets one of the four keys; nothing changes for the default file. |
@@ -422,7 +422,7 @@ Fable reviewed twice.
 
 - `rec-leverb-guard` gets no order (parked, §8).
 - `meas-guard-bulk-blind` stays `no-cargo`. This batch is its first per-change use. Its "reusable plan" done criterion is met only if `harness67`'s off-Bulk stages are kept as a plan.
-- `check.py` warns on a vm_order outside the vm lane, hence the lane changes. M1's place relative to these is the owner's call (§7 item 4).
+- `check.py` warns on a queue_order outside the vm lane, hence the lane changes. M1's place relative to these is the owner's call (§7 item 4).
 
 ## Amendment 1 (2026-11-20, before the pin; owner decision and Fable's review)
 
