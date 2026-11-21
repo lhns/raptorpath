@@ -342,6 +342,7 @@ gantt
     Make all twelve ρ splits continuous :active, model_rho_step_sites, 2026-11-20, 2026-11-21
     The most efficient give-up rule below ρ… :model_skip_rule_efficiency, 2026-11-21, 2026-11-21
     Owner call - last copy, ack pairs :model_adr84_amend2, 2026-11-21, 2026-11-21
+    Owner call - sender side first :model_adr84_sender_first, 2026-11-21, 2026-11-21
     The ordering hold H_o(δ) for design U :model_ordering_hold, 2026-11-21, 2026-11-21
     section obs - observability
     Runtime status endpoint :obs_status_endpoint, 2026-03-12, 2026-03-12

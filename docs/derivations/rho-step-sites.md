@@ -378,6 +378,17 @@ The digest cannot reach the inline sites: C1's four call sites, the hole law in 
 
 ## 5. The implementation plan
 
+**Re-cut (owner, 2026-11-21; ADR-0084 Amendment 3).** The sender side is built now, right after S06 merges through VM batch 1; the receiver side lands once, with design U's release rule, after ω is measured (roadmap `model-ordering-hold`). Sender-only R1 is not shipped as an interim Realtime receiver. What this changes below:
+- **Stays in this build:** steps 1–8, including the floor and its seat-free pass on both buffers with the marker `(F_rx, t_F + H)` arming the timer (T1 and T2 need it); C2, C5, C12's refresh half, C3, C4, C1, C7, C6 and C8 (C8's "after C9" means after step 8's floor pass).
+- **Moves to the release-rule build:** removing the receiver's own give-up (C9's expiry and force-drain, C11's local arm), the C10 slow-consumer hold, C12's expiry rewrite, the floor-on-raise cadence (§1.2) and the two reorder tombstones. Under U, C9 and C11 keep a release arm keyed by H_o(δ) instead of losing their give-up (`skip-rule-efficiency.md` §4.1).
+- **The interim receiver below ρ = 1** is today's arm (expiry at `shed_recv_hold`, force-drain at 500, drop on a full channel) plus the floor pass. It stays keyed on `rho1_debt_bit` of the receiver's own configured `window_rho`, at the sites in Amendment 3's `rho1-debt-exception` block, the named temporary exception the deny test pins. Its passes are counted in `G_rx = G_expiry + G_force + G_floor` and so in the sender's Ab, but not told and not bounded by `(1 − ρ)·S_src`; C10's drops are not counted.
+- **H** in the floor pass is `shed_recv_hold` as on main, UNDERIVED named debt (Amendment 3 item 3).
+- **C2 with the old arm.** Premise 1 reads "received or passed by the old arm or a floor"; the old arm's passes are below F, so the cumulative ack prunes them from S, and the bound against `|S ∩ received|` holds. Under R1 it was tight (`passed ⊆ V`); with the old arm it is only `≤`. Premise 2 holds: the old arm moves the frontier, it never evicts above it. Premise 3's fix (`H_sent`) is unchanged.
+- **Tests.** Budget and pass-count assertions run in an R1 cell (sender ρ < 1, receiver ρ = 1, same hint), floor-only by construction; matched cells assert liveness and record the breach (brief step 1). §3's acceptance test and `rho1_debt_is_gone` stay ignored with a `model-ordering-hold:` reason past this build's merge, and §4's reverse test with its `rec-mixed-rho-stall:` reason: with the old arm the ρ < 1 receiver still passes holes a ρ = 1 sender promised.
+- **Merge condition of this build:** the ratchet table equals the exception block exactly, and C9–C11 carry their bounding tests (`rho1_debt_bounds.rs`, brief step 9).
+
+The text below is the plan as derived (R1); read it through the re-cut above.
+
 **Base.**
 1. CAND1: `s06-delete` merged up to main (brief §2).
 2. ADR-0084, brief steps 1–8, with these changes:
@@ -394,27 +405,25 @@ The digest cannot reach the inline sites: C1's four call sites, the hole law in 
 | 1 | C2 SACK release | step 6 (store at every ρ) | the step-5 bound reads `\|released\|`. Release needs a store to release from, and its lower bound needs no R1 (§2 C2). T7c inverts here |
 | 2 | C5 batching | step 5 (pause in the burst loop) | inert at every preset; cheap |
 | — | steps 7, 8 | | verdict, budget, floor |
-| 3 | C9 buffer | step 8 | R1. Also the floor-on-raise cadence (§1.2) and the two tombstones |
-| 4 | C12 timer | C9 | refresh at every ρ; the marker term |
-| 5 | C11 hold arm | C9 | dead after C9; H formula |
-| 6 | C10 delivery | C9 | hold at every ρ |
-| 7 | C3 `recov_mp` | C12 | its safety net is the refresh |
-| 8 | C4 `recov_sp` | C12 | as C3 |
-| 9 | C1 placement | step 6 (path map to `ack + 1`) | biggest Realtime change, so last of the behaviour commits |
-| 10 | C7 Copa feed | step 7 (V exists) | opt-in |
-| 11 | C6 request arms | step 7, owner answer | gates off |
-| 12 | C8 corners | C9 (floor pass) | config, plus the out-of-order floor pass |
-| 13 | delete the scaffold | all | D1's echo prints `rho=` at every ρ (with `tools/stage3_parse.py` WIN_LINE updated). Delete `rho_debt.rs`. Un-ignore `rho1_debt_is_gone`, §3 and §4 |
+| 3 | C12 refresh half | step 8 | **this build (Amendment 3).** `deadline = min(t_nack + refresh, t_req, oldest_deadline, t_F + H)`: the refresh at every ρ, the expiry from C9's buffer. Red-first with the ε̂_recv budget spent (brief step 9) |
+| 4 | C3 `recov_mp` | C12 refresh | its safety net is the refresh. At Realtime the old expiry still passes first (owner statement, §8) |
+| 5 | C4 `recov_sp` | C12 refresh | as C3 |
+| 6 | C1 placement | step 6 (path map to `ack + 1`) | biggest Realtime change, so last of the behaviour commits |
+| 7 | C7 Copa feed | step 7 (V exists) | opt-in |
+| 8 | C6 request arms | step 7, owner answer | gates off |
+| 9 | C8 corners | step 8 (floor pass) | config, plus the out-of-order floor pass |
+| 10 | sender scaffold | all above | delete the sender's `rho1_debt_bit` call and readers; D1's echo prints `rho=` at every ρ (with `tools/stage3_parse.py` WIN_LINE updated). The ratchet table equals Amendment 3's exception block. Merge |
+| — | **release-rule build** (`model-ordering-hold`) | ω measured, H_o adopted | C9 (release arm by H_o(δ); floor-on-raise cadence; tombstones), C11, C10, C12's expiry; the new H; delete `rho_debt.rs`; un-ignore `rho1_debt_is_gone`, §3 and §4 |
 
 **Guard cut points.** Each guard runs against the previous candidate. Each has a Bulk stage, which must read identical at ρ = 1, and a ρ < 1 stage per Amendment 1 item 8, with execution witnesses before outcomes:
 
 | guard | BASE → CAND | what it attributes | ρ < 1 stage |
 |---|---|---|---|
 | 1 | main → CAND1 | ADR-0079 (`s06-delete`) | as registered |
-| 2 | CAND1 → CAND2 = steps 1–8 + C2 + C5 | ADR-0084 core | Realtime 0.99, N = 1, 2: store fill, pause share, verdict visits, `floor_sent`/`floor_passes`, `G_rx` against budget, and `released > 0` |
-| 3 | CAND2 → CAND3 = C9–C12 | R1 | Realtime 0.99, N = 1, 2: frontier-stall p99 (the latency change), no local pass, refresh echo; both mixed pairings |
-| 4 | CAND3 → CAND4 = C3, C4, C1 | the Realtime N ≥ 2 sender laws | Realtime 0.99, N = 2: split shares, `mpd_supp_law`, retx/repair against CAND3 |
-| 5 | CAND4 → CAND5 = C7, C6, C8, scaffold, model law | none at presets (opt-in, config) | short smoke only. The digest and §3 carry it |
+| 2 | CAND1 → CAND2 = steps 1–8 + C2 + C5 | ADR-0084 core | Realtime 0.99, N = 1, 2: store fill, pause share, verdict visits, `floor_sent > 0` where a verdict happened, `released > 0`; `floor_passes`, `G_expiry`/`G_force`/`G_floor` and `G_rx` against budget recorded (the old arm may breach) |
+| 3 | CAND2 → CAND3 = C12 refresh + C3, C4, C1 | the Realtime N ≥ 2 sender laws | Realtime 0.99, N = 2: split shares, `mpd_supp_law`, retx/repair against CAND2, `G_expiry` against CAND2 |
+| 4 | CAND3 → CAND4 = C7, C6, C8, sender scaffold, model law | none at presets (opt-in, config) | short smoke only. The digest carries it |
+| later | release-rule build | design U (C9–C12 receiver) | Realtime 0.99, N = 1, 2: frontier-stall p99, no local pass, release-before-fill; both mixed pairings; Bulk long-outage cell |
 
 ## 6. Paper text and ledger verdicts
 
@@ -441,6 +450,8 @@ The digest cannot reach the inline sites: C1's four call sites, the hole law in 
 While the stack is open, every row reads `MODE-SWITCH(scaffold)` with its commit pending. None merges in that state.
 
 ## 7. Amendment 1 rewrite
+
+*2026-11-21: superseded in part by ADR-0084 Amendment 3. "The bit never reaches main" and "no exception" hold for the sender only; the receiver's rows ship as a named temporary exception until the release-rule build.*
 
 Proposed replacement for item 2's exception and enforcement (b), and for item 5 (below).
 
@@ -499,5 +510,7 @@ These other parts go stale and are rewritten in the same amendment commit:
 - the floor-cadence reversal;
 - the C10 hold at Realtime;
 - the serialize cost of R1 (§1.2), and O1.
+
+**Build order: sender side first (owner, 2026-11-21: yes; ADR-0084 Amendment 3).** The sender side of the ADR-0084 fix is built right after S06 merges through VM batch 1, without waiting for ω. The receiver side lands once, with design U's release rule, after ω is measured. Sender-only R1 is not shipped as an interim Realtime receiver. §5's re-cut gives the split. Stated for the owner: **Realtime latency is unchanged in the interim only because the receiver's old arm stays, so the 1 % promise is still not kept at Realtime until the release rule lands.** The old arm's passes are counted (in `G_rx`, and so in Ab and the `[BUDGET]` breach line) but not told and not bounded, and they spend the sender's allowance first; C10's full-channel drops are not counted at all. A ρ = 1 sender to a ρ < 1 receiver still loses packets (§4). Two small Realtime changes do land in the interim: C12's refresh re-advertises a stalled hole once the receiver's ε̂_recv budget is spent, and C3's suppression can delay a resend past the old expiry at N ≥ 2. The floor pass's H is today's `shed_recv_hold`, UNDERIVED (an owner call: keep it until the release-rule build, or derive one first).
 
 **What waits.** The receiver sites C9, C11 and C12 get their release arm once, together with the release rule H_o(δ), after ω is measured. Run-atomic spending, the time threshold T_ρ, the release arm, the new H and retiring `window_out_of_order` wait on the toy simulation or the measurement, and none is decided.

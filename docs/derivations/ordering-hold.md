@@ -291,7 +291,7 @@ Each gauge is printed per preset and per stage (FORMULA-FIRST: every term that c
 - **Paper first.** Before any U code, paper §5.1 (two frontiers) and a new §7 subsection owe this law: `B_s ≥ ω` on §7.3's frontier pricing, its derivation, ω's provenance, the 2× bound, and §3.1's refutation of the hazard rule.
 - **The ω measurement** (roadmap node `meas-disorder-price`) comes after VM batch 1.
 - **C9, C11 and C12's release arm** waits on the measured ω and on the toy's rbf and skew readouts at Bulk and Auto.
-- **R1 (sender-only, no release)** is unaffected. It is the ω = ∞ point of this law, and it stays the staging point.
+- **R1 (sender-only, no release)** is unaffected. It is the ω = ∞ point of this law, and it stays the staging point. *(2026-11-21, owner: R1 is not shipped as an interim receiver. ADR-0084 Amendment 3 ships the sender side with the receiver's old arm; the receiver sites land once, with this rule.)*
 
 ## 11. For the owner
 

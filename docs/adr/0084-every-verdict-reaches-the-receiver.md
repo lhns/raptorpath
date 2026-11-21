@@ -1,6 +1,6 @@
 # ADR-0084: Every verdict reaches the receiver
 
-## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; S06 merges first on its own guard; all twelve (C) sites are rewritten (option B). Amended 2026-11-21 (Amendment 2): every verdict sends one last copy with the floor (a forced verdict sends the floor alone); the sender takes (next_expected, G_rx) as a pair from the ack with the greatest next_expected.**
+## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; S06 merges first on its own guard; all twelve (C) sites are rewritten (option B). Amended 2026-11-21 (Amendment 2): every verdict sends one last copy with the floor (a forced verdict sends the floor alone); the sender takes (next_expected, G_rx) as a pair from the ack with the greatest next_expected. Amended 2026-11-21 (Amendment 3): the sender side ships first; the receiver keeps its old arm, keyed on its own ρ at named sites, until design U's release rule lands; H is named UNDERIVED debt.**
 
 ## Context
 
@@ -274,3 +274,61 @@ Accepted (owner, 2026-11-21). It amends decision 1 (the verdict and its tell) an
 - **Tests assert on G_rx, not on `ev=shed`.** "Verdict ⇒ passed" no longer holds. Tests whose `dead` seam kills every copy of the seq (T1′, T2, the rho-step-sites §3 acceptance test) still see a pass; any other test that counts passes asserts on G_rx.
 - **Owed tests**, red first, in `docs/derivations/adr84-engine-brief.md`: the last copy is sent with each verdict; a forced verdict sends the floor alone; G_rx-based assertions; the pair merge at N = 2 with reordered acks.
 - **Not part of this amendment** (they wait on the toy simulation or the ω measurement): run-atomic spending, the time threshold T_ρ, the receiver's release arm (design U), the new H, and retiring `window_out_of_order`. The receiver law R1 (floor-only) is the staging point only, not accepted as final; Amendment 1 item 7's "a bare Bulk or Auto run keeps its behaviour" is unchanged by this amendment (for the later release rule see `rho-step-sites.md` §8).
+
+## Amendment 3 (2026-11-21): the sender side ships first; the receiver keeps its old arm until the release rule
+
+### Status
+
+Accepted (owner, 2026-11-21). It supersedes Amendment 1 item 2's "no exception", "the bit never reaches main" and "merge condition: zero readers", for the rows of the block below only, and until the trigger below. Everything else in Amendments 1 and 2 stands.
+
+### Context
+
+The owner chose design U (`skip-rule-efficiency.md` §4.1). Its release rule H_o(δ) waits on the disorder price ω (roadmap `meas-disorder-price`, after VM batch 1). Rewriting the receiver sites C9–C12 twice, once as R1 (floor-only) and again as U, would ship a Realtime receiver whose latency changes twice. The owner decided:
+- build the **sender side** of this change (brief steps 1–8, and the sender (C) sites) right after S06 merges through VM batch 1, without waiting for ω;
+- land the **receiver side** once, together with design U's release rule, after ω is measured (roadmap `model-ordering-hold`);
+- sender-only R1 is **not** shipped as an interim Realtime receiver.
+
+So the receiver keeps today's arms, and those arms are selected by the receiver's own retention. With the flag gone (Amendment 1 item 1), the only source for that selection is `rho1_debt_bit` on the receiver's own configured `window_rho`. That is a ρ-keyed branch, and it would reach main.
+
+### Decision
+
+1. **A named, temporary exception.** The receiver's old arm stays keyed on `rho1_debt_bit(window_rho)` of its own config, at exactly the sites below. The engine deny test (`raptorpath/tests/rho_deny_list.rs`, Amendment 1 item 2 (b)) parses this block. At the sender build's merge the ratchet table must equal it exactly, function by function; a reader anywhere else fails, and a row may only leave.
+
+   <!-- rho1-debt-exception (file | fn | sites | reason) -->
+   ```text
+   net/rho_debt.rs   | rho1_debt_bit   | the one comparison            | derives the receiver's old-arm bit; called once
+   net/mod.rs        | run_impl        | the receiver's one call       | rho1_debt_bit(window_rho) for the receiver setup only, passed to run_receiver
+   net/receiver.rs   | run_receiver    | C9, C10, C11                  | selects the reorder-buffer constructor, the full-channel arm and recv_shed_on
+   net/reorder.rs    | ReorderBuffer   | C9 (struct field)             | the old evicting buffer: expiry at the hold, force-drain at 500
+   net/reorder.rs    | new_rho1_debt   | C9 (constructor)              | as above
+   net/reorder.rs    | push_with_time  | C9                            | as above
+   net/reorder.rs    | drain_expired   | C9                            | as above
+   net/reorder.rs    | oldest_deadline | C9                            | as above
+   net/delivery.rs   | WindowDelivery  | C10 (struct field)            | drop on a full consumer channel below ρ = 1
+   net/delivery.rs   | new             | C10 (constructor)             | as above
+   net/delivery.rs   | offer           | C10                           | as above
+   ```
+   <!-- /rho1-debt-exception -->
+
+   - **Reason.** The receiver's give-up is replaced once, by design U's release arm, not twice (R1, then U).
+   - **Removal trigger.** The release-rule build (roadmap `model-ordering-hold`): it rewrites C9–C12 with U's release arm keyed by H_o(δ), deletes `rho1_debt_bit`, `net/rho_debt.rs` and every row above, and un-ignores `rho1_debt_is_gone`. No row may be added; growing the list needs a new ADR.
+   - **Not in the list.** Every sender site (C1–C8), D1, and C12's timer: C12's refresh half runs at every ρ in this build (`rho-step-sites.md` §5), and the expiry it no longer selects comes from C9's buffer (`oldest_deadline`, `None` on the ρ = 1 buffer).
+
+2. **The floor pass ships in this build, seat-free.** Brief step 8's pass runs on both buffers and reads no bit, so every receiver honours the sender's floor. The marker `(F_rx, t_F + H)` arms the drain timer with no pending entry (the lost tail, T1).
+
+3. **Named debt: H.** The floor pass waits H after the floor. H is `shed_recv_hold` as on main: `SRTT/2` while the receiver's ε̂_recv budget is open, else `(4·SRTT).clamp(60, 300) ms`. It is **UNDERIVED**: `b(Realtime) = ½` is hard-coded (paper §11.3 "receiver shed hold"), the 60/300 ms clamp has no provenance, and the ε̂_recv threshold that selects between them is a measured count, not a law. It is read at every receiver ρ. `ordering-hold.md` §8's path-support H is not adopted (the receiver cannot know which paths still carry a copy, and an observed-maximum estimator never comes down). H is replaced in the release-rule build, with its own derivation; until then its bind is gauged (`H` at each floor pass, and the arm it took).
+
+4. **What the receiver does below ρ = 1 in the interim.** Exactly today's arm, plus the floor pass:
+   - holes with a pending entry above are passed on the receiver's own hold (expiry), and the buffer force-drains above 500 entries;
+   - a full consumer channel drops;
+   - holes below a floor are passed at `t_F + H`.
+
+   **How its skips reach the sender.** The receiver's `G_rx` counts every frontier writer separately and ungated, `G_rx = G_expiry + G_force + G_floor`, net of late fills (brief step 4), on every `WindowAck`. So the old arm's passes are **counted** in the sender's `Ab` and printed on `[ACCT-RX]` and `[BUDGET]`, but they are **not told** (no verdict decided them) and **not bounded** by `(1 − ρ)·S_src`: nothing stops them when the budget is spent, and they spend the sender's allowance first. The sender's account books them as acked (`A`), since the cumulative ack passes them. A drop on a full channel (C10) is neither told nor counted.
+
+### Consequences
+
+- **The 1 − ρ promise is not kept at Realtime in the interim.** Realtime latency is unchanged only because the old arm stays. `G_rx` may exceed `(1 − ρ)·S_src` at a matched ρ < 1 receiver; `[BUDGET] breach=` reports it. C10 drops are uncounted.
+- **The reverse pairing stays a defect.** A ρ = 1 sender to a ρ < 1 receiver still loses packets the sender promised (`rho-step-sites.md` §4; roadmap `rec-mixed-rho-stall` stays open). The forward pairing is fixed by the floor pass in this build.
+- **Budget assertions run against a floor-only receiver.** Every test that asserts `G_rx ≤ (1 − ρ)·S_src`, `G_floor = G_rx` or a pass count uses a sender at ρ < 1 and a receiver at ρ = 1, same hint: the old ρ = 1 buffer passes only below a floor, so that cell is R1 by construction. Matched ρ < 1 cells assert liveness and the account, and record `G_expiry`, `G_force`, `G_floor` and the breach line.
+- **The debt merges with bounding tests.** C9, C10 and C11 keep their bounding tests (`rho1_debt_bounds.rs`, brief step 9 shape) at merge; ledger G09–G11 and paper §11.3 rows C9–C11 stay open with the test names.
+- **Bulk and Auto: no default change** in this build (ρ = 1 receivers keep today's arm).

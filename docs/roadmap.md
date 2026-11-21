@@ -629,7 +629,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 ## Done, by month
 
 <!-- BEGIN GENERATED: done-by-month -->
-<details><summary><b>Nov 2026</b>: 90 done, 2 abandoned</summary>
+<details><summary><b>Nov 2026</b>: 91 done, 2 abandoned</summary>
 
 - `perf-s33-timer`: Lag tail timer hand-off (✔ done · unrated)
 - `perf-receiver-followups`: Receiver follow-ups (✔ done · successful)
@@ -724,6 +724,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 - `infra-roadmap-on-skill`: Roadmap moved onto the tech-tree skill (✔ done · unrated). The roadmap pages, checker and history scan now run on the shared tech-tree skill, with all 412 nodes kept and the old scripts reduced to thin wrappers.
 - `infra-scrub-vm-user`: VM login name removed from the repository (✔ done · unrated). The test machine's login name was replaced in 164 tracked files (logs now say VMUSER, scripts use the home directory), and CI now fails if it reappears; history was not rewritten, by owner decision.
 - `model-adr84-amend2`: Owner call: last copy, ack pairs (✔ done · n/a). The owner accepted two changes to the verdict rule: every give-up sends one last copy of the packet with the floor (a give-up forced by eviction has no copy and sends the floor alone), and the sender pairs the receiver's frontier and loss count from the ack that reached furthest, because acks arrive reordered on two paths.
+- `model-adr84-sender-first`: Owner call: sender side first (✔ done · n/a). The owner chose to build the sender half of the lost-packet fix right after VM batch 1, and the receiver half once, together with the out-of-order release rule, after the disorder price is measured. Until then a Realtime receiver keeps its old local give-up, so its 1 % promise is still not kept.
 
 </details>
 
@@ -1210,7 +1211,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 67 nodes (49 done, 5 in progress, 7 next, 5 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 39 nodes (25 done, 8 in progress, 2 next, 3 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 40 nodes (26 done, 8 in progress, 2 next, 3 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 30 nodes (21 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->

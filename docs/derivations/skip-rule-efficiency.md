@@ -511,7 +511,7 @@ From the commit-order table of `rho-step-sites.md` §5:
 Run-atomic and T_ρ wait for P5.
 
 **Receiver side:**
-- C9, C11 and C12's marker term **can proceed as R1**, the staging point of both branches.
+- C9, C11 and C12's marker term **can proceed as R1**, the staging point of both branches. *(2026-11-21, owner: not shipped as R1. ADR-0084 Amendment 3 builds the sender side first and keeps the old receiver arm until U's release rule; the floor pass and its marker are in the sender build, C9–C11 and C12's expiry wait.)*
 - After O3:
   - **yes:** C9 and C11 gain U's release arm, keyed by H_o(δ). That waits on the H_o derivation, not on a wire change;
   - **no:** RX's local pass and Â wait on P5 and a wire ADR (v12 or later).
