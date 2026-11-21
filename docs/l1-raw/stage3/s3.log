@@ -1,6 +1,6 @@
 LOCKS-HELD-BY-ENVELOPE stage3_run_all:415462
 === STAGE3 BATTERY tag=s3 reps_per_seed=5 seeds='42 7' cells='c1s-400 c1d-400 c2-100 c3-25 c7-100 c8-100' no_cad=0 2026-09-30T12:36:09Z
-=== binary /home/vibe/stage3/bin/raptorpath sha256 f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
+=== binary ~/stage3/bin/raptorpath sha256 f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
 === source b3c6923 2026-09-30T12:28:15Z meas/stage3-baseline (engine = main e74891d)
 === env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; CAD: RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0; soft_deadline=1790785982 block_est=1200
 Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz

@@ -53,7 +53,7 @@
    Compiling toml v0.8.23
    Compiling tun v0.7.22
    Compiling bincode v1.3.3
-   Compiling raptorpath v0.1.0 (/home/vibe/n1/sl/src/raptorpath)
+   Compiling raptorpath v0.1.0 (~/n1/sl/src/raptorpath)
 warning: unnecessary parentheses around function argument
   --> raptorpath/src/net/store_cap.rs:92:9
    |
@@ -228,7 +228,7 @@ warning: method `contains_key` is never used
 
 warning: `raptorpath` (lib test) generated 16 warnings (run `cargo fix --lib -p raptorpath --tests` to apply 4 suggestions)
     Finished `release` profile [optimized] target(s) in 4m 51s
-     Running unittests src/lib.rs (/home/vibe/n1/sl/target/release/deps/raptorpath-e0211bae913969ea)
+     Running unittests src/lib.rs (~/n1/sl/target/release/deps/raptorpath-e0211bae913969ea)
 
 running 1 test
 test net::tests::q2_one_task_per_loop_no_multiplexer ... ok

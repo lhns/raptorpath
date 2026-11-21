@@ -1,7 +1,7 @@
 ##### red1.log
 LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
-LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
-=== 73b009266163e1b90fa6331ce22367309eccbeff start 2026-10-05T15:31:20Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast -- p1_ wait_attribution_tests connections_are_reached sched_lock 2>&1 | tail -80; cargo test -p raptorpath --test lock_order_loopback -- --nocapture 2>&1 | tail -60
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+=== 73b009266163e1b90fa6331ce22367309eccbeff start 2026-10-05T15:31:20Z cmd: export CARGO_TARGET_DIR=~/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast -- p1_ wait_attribution_tests connections_are_reached sched_lock 2>&1 | tail -80; cargo test -p raptorpath --test lock_order_loopback -- --nocapture 2>&1 | tail -60
 test net::diag::wait_attribution_tests::a_busy_iteration_lands_in_busy_not_in_the_next_arm ... FAILED
 test net::diag::wait_attribution_tests::the_sender_loop_charges_body_before_the_select ... ok
 test net::diag::wait_attribution_tests::the_histogram_is_wide_enough_for_every_bucket ... ok
@@ -94,4 +94,4 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 error: test failed, to rerun pass `-p raptorpath --test lock_order_loopback`
 === DONE rc=0 2026-10-05T15:36:31Z
 LOCK-RELEASED /tmp/rwm-vm.lock
-LOCK-RELEASED /home/vibe/rp.lock
+LOCK-RELEASED ~/rp.lock
