@@ -68,7 +68,7 @@ Three findings change the design, whatever the simulation says:
 
 **What that means in numbers (Realtime, ρ = 0.99, 10 000 packets/s):**
 - **Start.** A = 0 until `S_src ≥ 1/(1 − ρ)` = 100 source symbols, about 10 ms. Every hole in that span is served until filled.
-- **After clean runs, the bank grows without bound.** It grows by 100 units per second: after 10 s the allowance is 1 000 packets, and after an hour it is 360 000 packets, or 36 s of stream.
+- **After clean runs, the bank grows without bound.** It grows by 100 units per second: after 10 s the allowance is 1 000 packets, and after an hour it is 360 000 packets, or 36 s of stream. One episode, though, is capped near B by the source pause (§3.3).
 
 **Is banking acceptable? Derived, not picked.**
 1. **The promise as declared allows it.** ρ is a per-packet delivery fraction, and the cumulative count is its estimator. A window of W symbols would promise something stronger, "at most (1 − ρ)·W in any W". That bounds the length of a loss run, which is a different contract and needs W as a new declared dial.
@@ -99,7 +99,13 @@ The copy and the floor travel the same path, and the floor then waits H at the r
 
 There is no branch on δ or ρ here: the copy goes with every verdict. Bandwidth is the same as serving once.
 
-**Corollary: D never binds at a Realtime N = 1 report.** The first report for a hole arrives at age ≈ RTprop + reorder + sampler interval, which is more than `D = RTprop/2`. So at N = 1 Realtime the age test is true at every report. D is a predicted degenerate term there and needs a bind-fraction gauge. D does bind at N ≥ 2, where a fast path reports a slow-path seq early, and that is its real job: a reorder guard.
+**Finding (predicted, owed a ledger verdict): D is degenerate at Realtime N = 1.** The first report for a hole arrives at age ≈ RTprop + reorder + sampler interval, which is more than `D = RTprop/2`. So at N = 1 Realtime the age test is predicted true at every report, and D decides nothing.
+- Under MEASUREMENT DISCIPLINE 17/18 a term pinned over its operating range is a defect finding, not a footnote. Its D-bind gauge (§3.4) must be read in the guard's ρ < 1 stage, and the ledger row for the shed law gets the verdict.
+- D does bind at N ≥ 2, where a fast path reports a slow-path seq early. That is its real job, a reorder guard, so the expected verdict is "degenerate at N = 1, live at N ≥ 2". It needs a reading.
+
+**Side effects of the last copy.** Most verdict seqs now end delivered, not passed.
+- **C7's feed** (`newly = … \ V`, rho-step-sites C7) would then under-credit every filled verdict. The correction term must be the passed set, not V: subtract `V ∩ passed`, known from the floor's ack and `G_rx`, or drop a seq from the feed's exclusion when it is filled.
+- **Witnesses.** The rho-step-sites §3 acceptance test (`shed ≥ 1`, `G_floor ≥ 1` at 0.99) still holds where its `dead` seam kills every copy of k. Any test that assumes "verdict ⇒ passed" without such a seam must assert on `G_rx`, not on `ev=shed`.
 
 ### 3.2 Isolated holes: rank by expected remaining resolution time
 
@@ -113,7 +119,7 @@ For an isolated hole at verdict age a, with last copy:
 
 m(t) is the mean residual resolution time at age t.
 
-**Theorem (isolated holes).** Take independent holes with separable savings and the prefix count. The policy that minimises J subject to the count gives a verdict iff m(a + L) ≥ θ, where θ ≥ 0 is the count's shadow price in stall seconds. Two parts:
+**Theorem sketch (isolated holes; assumptions at the end of §3.3).** Take independent holes with separable savings and the prefix count. The policy that minimises J subject to the count gives a verdict iff m(a + L) ≥ θ, where θ ≥ 0 is the count's shadow price in stall seconds. Two parts:
 1. **Offline.** With the X_s known, the feasible skip sets under a prefix count (a nested chain of capacities) form a laminar matroid. Greedy by saving is therefore exact: skip the holes with the largest `(X_s − a_s − L)⁺` that the prefix capacity admits.
 2. **Online.** It is the Lagrangian stopping rule.
 
@@ -133,7 +139,18 @@ Stall is not additive. The frontier waits for the **latest** resolution in a run
 - **Run-atomic spending is certain, not a tuning:** "spend n_R units only if all n_R are affordable".
 - For a 2 000-packet blackout run with 1 000 units banked, first-come per seq spends the whole bank and the frontier still waits on the upper half. Run-atomic spends nothing.
 
-**A limit of the sender.** During a blackout at N = 1 the sender sees no report, so it cannot see where a run ends. The tail sweep judges a run that keeps growing. The receiver sees the run exactly once data resumes. This is one reason for §4.
+**A limit of the sender: n_R is defined there only for a closed run.** A closed run is one bounded above by a received seq, as a gap report shows it.
+
+An *open* run has nothing received above it. It is a lost tail, or a blackout at N = 1, and the sender cannot tell the two apart until feedback returns. The tail sweep can only judge the open run as it stands, `[A_rx, hi]`. It does that at every fire while the run grows, and each fire's run fits the allowance that is left. So in a blackout the sender drains the bank in pieces, exactly as first-come does, and no definition of n_R for an open run both keeps the bank in a blackout and passes a lost tail. Run-atomic spending therefore helps at the sender only for closed runs: every run at N ≥ 2 while a live path reports, and every burst that ends before the blackout does. The receiver sees a blackout run closed, with its exact extent, as soon as data resumes. This is one reason for §4.
+
+**The source pause caps one episode.** The source-rate bound (ADR-0084 decision 3) pauses at `O ≥ B`, and B is pinned at N·2048 (ledger F01). A run is part of O, so one episode can spend at most about B units: 2 048 at N = 1, about 0.2 s of stream in the example. The bank can still be drained by consecutive episodes, but no single run is longer than B.
+
+**The theorem is a sketch.** It assumes:
+- stationary losses with independent resolution ages;
+- the Lagrangian form, which treats the count as a long-run rate. The hard prefix count is that rate plus the bank as slack;
+- for runs, greedy by ratio under nested capacities. Its "within one item" bound is not proven, which is why the oracle reports the LP bound.
+
+The exact statements are the offline unit-weight case (the laminar matroid) and run-atomic certainty.
 
 ### 3.4 T_cut re-derived, in seconds and from measurements
 
@@ -198,7 +215,7 @@ The sender judges, sends copy + floor, and the receiver passes below the floor a
   - Ŝ_rx is the resolution time from detection to fill, which the receiver sees directly (the paper §7.6 argument: it holds the frontier and the lateness distribution; `LateGauge` already measures heal lateness);
   - ĝ/ĥ_rx is the same rate balance as §3.4, in seconds at the receiver.
 - **The lost tail still needs the sender.** The receiver has no data above a lost tail (rho-step-sites §1.1). The sender's copy + floor is the proposal, and the receiver passes it within Â.
-- **Store change.** A proposal can be refused when Â is exhausted, so the sender must keep a verdict seq until A_rx passes it, and resume serving if the floor is not acknowledged after H. That amends ADR-0084 decision 2 ("an entry leaves on ack or on verdict").
+- **Store change.** A proposal can be refused when Â is exhausted, so the sender must keep a verdict seq until A_rx passes it, and resume serving if the floor is not acknowledged within one RTT + H of sending it. That amends ADR-0084 decision 2 ("an entry leaves on ack or on verdict").
 - **Latency of a skip:** detection + H ≈ owd + H after the loss. That is about today's uncounted Realtime timer, now counted. It saves ≈ RTT − H (RTT/2 at Realtime) per skipped hole against §4.1.
 - **Late fills.** The receiver's gap report has already triggered a resend, which arrives after the pass as a late fill. That fill is delivered (out of order, `reorder.rs:75–82`) and is subtracted from G_rx, so allowance is consumed only by holes that are never filled. Whether a packet delivered after its successors counts as delivered is owner question O3. If not, every pass consumes a unit (0.5 % at the example's loss, still inside 1 %).
 - **Floor cadence.** Holes with data above pass on the receiver's own hold again, so evict-verdict-law question 6's premise returns. The floor-on-raise cadence that R1 added becomes unnecessary, and the sweep clock suffices.
@@ -252,8 +269,8 @@ Every formula above is one expression, with every term always computed:
 - **S0:** serve until filled (the ρ = 1 machine). Upper reference for stall, lower for loss.
 - **S1:** sender-only, ADR-0084 as written: `age > D`, per-seq first-come, no last copy.
 - **S2:** S1 + last copy + run-atomic.
-- **S3:** S2 + the measured threshold T_ρ (§3.4).
-- **C1:** §4.2 receiver spends, with T_rx and run-atomic; sender proposals for tails.
+- **S3:** S2 + the measured age threshold T_ρ (§3.4), applied to a run's oldest seq, with the run-atomic count. The ratio `m_R/n_R` of §3.3 is used by the oracle only: an online ratio needs a per-run survival, which no candidate estimates.
+- **RX:** §4.2, the receiver spends, with T_rx and run-atomic (exact at the receiver, which sees runs closed); sender proposals for tails.
 - **O (oracle), offline:**
   - it sees every copy's arrival time under S0 with last copies;
   - it passes runs at the receiver's earliest possible instant (detect + H);
@@ -285,17 +302,17 @@ Dial points: ρ ∈ {1, 1 − ε (ε·S_src < 1), 0.999, 0.99, 0.9898, 0.9902}; 
 - the largest single-episode spend.
 
 **Pass criteria, fixed now.** These are decision bars, not law constants.
-- **P1, the promise (hard).** For S1, S2, S3 and C1, in every cell, seed and instant: `G_rx(t) ≤ ⌊(1 − ρ)S_src(t)⌋`. One violation fails the candidate.
+- **P1, the promise (hard).** For S1, S2, S3 and RX, in every cell, seed and instant: `G_rx(t) ≤ ⌊(1 − ρ)S_src(t)⌋`. One violation fails the candidate.
 - **P2, the ρ = 1 identity.** At ρ = 1 and at 1 − ε, every candidate's event trace equals S0's.
 - **P3, continuity.** At each nudge pair, every readout's preset value lies within the 95 % bootstrap CI of the mean of its two nudges.
 - **P4, the derivation's predictions.** The derivation is refuted where these miss.
   - **a.** I1: S1's isolated-hole stall exceeds S0's by H ± 1 ms (F1).
   - **b.** I1: S2's p50 equals S0's within 1 ms, and S2 consumes ≤ 1.5·ε·ĥ of source.
-  - **c.** I1 at 10 ms: C1's p50 is at least 0.4·RTT below S2's (predicted ≈ RTT − H = 0.5·RTT).
-  - **d.** B10: S1 spends > 0, and its stall gain over S0 is within the CI of 0 (waste); S2 spends 0.
+  - **c.** I1 at 10 ms: RX's p50 is at least 0.4·RTT below S2's (predicted ≈ RTT − H = 0.5·RTT).
+  - **d.** B10 at N = 2 (the live path reports, so runs are closed): S1 spends > 0 and its stall gain over S0 is within the CI of 0 (waste), while S2 spends 0. B10 at N = 1 (open run): S2 drains the bank like S1 (§3.3, predicted), and RX spends 0.
 - **P5, gap to the oracle.** `gap = (J_cand − J_O)/(J_S0 − J_O)`, per cell.
   - S3 is adopted over S2 only if, in G and B60, p99 stall falls by more than the CI and no cell worsens p50 or p99 by more than the CI. Otherwise T_ρ is dropped (simpler wins).
-  - C1 is recommended for the v-next wire if its gap is ≤ 0.25 in I1, G and B60 and it passes P1.
+  - RX is recommended for the v-next wire if its gap is ≤ 0.25 in I1, G and B60 and it passes P1.
 
 ## 7. What this blocks
 
@@ -352,7 +369,7 @@ Ledger C13 gets a pointer: the time-domain T_ρ is its replacement, and the mode
 
 Notes on the table:
 - **Bandwidth:** every row except "ADR-0084 as written" sends about one resend per lost packet (≈ 0.5 % extra). The skip messages add about 50–100 small control datagrams per second. Priced by δ, 5 ms of stall per hole costs about 25 resends' worth, so latency dominates at Realtime.
-- **Bursts.** For a 200 ms outage (2 000 packets lost in a row) after 10 s of clean stream (1 000 units banked), today's first-come rule spends the whole bank and the stream still waits. The run rule spends nothing and keeps the bank. After 60 s (6 000 banked) it skips the whole outage, which saves roughly the resend time of 2 000 packets.
+- **Bursts.** For a 200 ms outage (2 000 packets lost in a row) after 10 s of clean stream (1 000 units banked), today's first-come rule spends the whole bank and the stream still waits. The run rule spends nothing and keeps the bank, but only where the run is closed: a burst that ends, or an outage on one of two paths. On a single path the sender cannot see the end of an outage and still drains the bank piecemeal. Only the receiver design (step 3) sees the run whole. After 60 s (6 000 banked) the receiver skips the whole outage, which saves roughly the resend time of 2 000 packets.
 
 **Choices that are yours:**
 - **O1.** Is a skipped packet free inside the allowance? Default **yes**: the triangle has no loss price, and a price would be a new dial.
@@ -360,9 +377,11 @@ Notes on the table:
 - **O3.** Does a packet that arrives after its successors were delivered count as delivered for ρ? Default **yes**, as the engine already delivers it (`reorder.rs`).
 - **O4.** With the receiver holding the allowance (step 3), should a full consumer drop within it instead of backpressuring? Default **no**: keep the hold.
 - **The wire.** Put Â into v11 before v11 ships (a new ADR superseding ADR-0084 decision 4) or into v12 (coordinator's numbering).
-- **The amendments.** Accept the last-copy and run-atomic amendments to ADR-0084 decision 1 before the verdict step ships.
+- **The amendments.** Accept the last-copy and run-atomic amendments to ADR-0084 decision 1 before the verdict step ships. These, the store-until-ack change to decision 2 and the Â field against decision 4 are proposals; each needs a superseding note, because the ADR is accepted.
 
 **Open, not owner calls:**
 - the sender cannot see a run's end during a blackout at N = 1 (§3.3). Only the receiver design fixes it;
+- D is predicted degenerate at Realtime N = 1 (§3.1) and is owed a ledger verdict after its gauge is read;
+- C7's feed must subtract passed verdicts, not V, once verdicts carry a copy (§3.1);
 - the H kind stays UNDERIVED (rho-step-sites C11);
 - T_ρ's flat-survival step is argued harmless at N = 1 and must be checked at N = 2 (P3).
