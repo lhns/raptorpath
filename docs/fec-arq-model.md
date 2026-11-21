@@ -1561,7 +1561,9 @@ at every ρ removes on the sender.
 ```
 
 - F: measured by the receiver, its newest advertised `next_expected`
-  (Section 6.3's F).
+  (Section 6.3's F); "newest" is the greatest `next_expected` heard, taken
+  as a pair with its G_rx (the pair rule of Section 5.6, ADR-0084
+  Amendment 2).
 - V: sender state, as above.
 
 "While the floor is above the receiver's acknowledged frontier, the sender
@@ -1918,6 +1920,23 @@ leaves the pending term in the update that adds it to G_rx, and a lost ack
 delays the move without duplicating it. At ρ = 1 the budget is 0 at every δ,
 so nothing is shed.
 
+"The sender takes the frontier and the receiver's count as one pair, from the
+ack that reached furthest" (ADR-0084 Amendment 2):
+
+```text
+   (F, G_rx)  =  (next_expected, passed_undelivered) of the ack with the greatest next_expected;
+                 on a tie, the larger passed_undelivered
+```
+
+- next_expected, passed_undelivered: measured, the two fields of one
+  `WindowAck` (wire v11).
+
+G_rx is a level, not a counter: it falls when a passed hole is filled late.
+At N ≥ 2 acks arrive reordered, so taking G_rx from the latest-arriving ack
+could pair a stale, lower G_rx with a newer F, under-count Ab and overshoot
+the budget. The pair rule never does that, and it converges as the frontier
+moves.
+
 "Every unresolved seq in a reported gap is judged on the unclamped gap; the
 clamp only bounds what is served":
 
@@ -1933,6 +1952,28 @@ clamp only bounds what is served":
 - [f, c]: sender state, the servable span over the window and the store.
   With a store at every ρ every member of U is in it, so the FORCED arm is
   empty and carries a gauge that must read 0.
+
+"A verdict stops retrying; it does not withhold the last copy" (ADR-0084
+Amendment 2):
+
+```text
+   verdict(s)  ⇒  send one copy of s  and the floor F_v,   at the same instant
+```
+
+- The copy: the stored payload of s (sender state); a FORCED verdict has
+  none, because the last servable copy has left the sender, so it sends the
+  floor alone and always consumes one unit. That is the absence of data,
+  not a branch on δ or ρ.
+
+The copy and the floor travel together, and the floor then waits the
+receiver's hold H. Without the copy a verdict resolves an isolated hole H
+later than a resend whose copy arrives, and spends a unit for every such
+hole. With it the hole resolves at `min(fill, owd + H)`, never later than
+serving, and a unit is spent only when the copy is lost too: about ε·ĥ of
+the source, against ĥ for a copy-less verdict
+(`docs/derivations/skip-rule-efficiency.md` §3.1, finding F1). A filled
+verdict seq is delivered in order and leaves Ab's pending term without
+entering G_rx, so most verdict seqs end delivered, not passed.
 
 Beyond the budget the machine serves: ρ wins over δ. R > 1 − ρ marks an
 operating point where the contract can be held only by serving holes past
@@ -5053,6 +5094,8 @@ engine.
 
    shed  ⇔  age > D(δ)  ∧  G_rx + |{v ∈ V : v ≥ F}| + 1 ≤ (1 − ρ)·src_total   shed_allowed (ADR-0084; main: shed_total against ε̂·(1 − P_fec(r, A*)))
    F_v   =  min{ s ≥ F : s ∉ V } ,   F_rx = max over paths of the floors received   WindowFloor, wire v11 (ADR-0084, pending)
+   verdict(s) ⇒ one copy of s + F_v (FORCED: F_v alone)                           ADR-0084 Amendment 2, pending
+   (F, G_rx) from the ack with the greatest next_expected (tie: larger G_rx)      ADR-0084 Amendment 2, pending
 
    W_mp  ≳  Σᵢ gᵢ·(RTT_max + t_slack)                                      —
    deficit = Σ_{unacked s} ε_path(s) ;  cross-path r = ε_A/(1 − ε_B)        (analytic only)

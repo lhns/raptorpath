@@ -1,10 +1,16 @@
 # ADR-0084 engine change: implementation brief
 
-This brief is for the worker who builds the engine change. **The spec is ADR-0084 plus its Amendment 1, plus the paper sections they cite** (`docs/fec-arq-model.md` §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5). Where the ADR is silent, `evict-verdict-law.md` §1–§7 fills in, subject to its erratum. If this brief disagrees with any of them, they win: report the disagreement, don't resolve it.
+This brief is for the worker who builds the engine change. **The spec is ADR-0084 plus its Amendments 1 and 2, plus the paper sections they cite** (`docs/fec-arq-model.md` §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5). Where the ADR is silent, `evict-verdict-law.md` §1–§7 fills in, subject to its erratum. If this brief disagrees with any of them, they win: report the disagreement, don't resolve it.
 
 Owner decisions of 2026-11-20 are recorded in Amendment 1:
 - S06 merges first, on its own guard; this work branches from main after it;
 - **option B**: all twelve (C) sites are rewritten, and none is grandfathered.
+
+Owner decisions of 2026-11-21 are recorded in Amendment 2 and in `rho-step-sites.md` §8:
+- every verdict sends one last copy of the seq with the floor; a forced verdict sends the floor alone (steps 6–8);
+- the sender takes `(next_expected, G_rx)` as a pair from the ack with the greatest `next_expected`, the larger `G_rx` on a tie (step 4);
+- C6 is option (a); the Realtime N ≥ 2 changes (C1, C3, gap-report coalescing at every N) are accepted.
+- Still open: the receiver law R1 as final, the floor-cadence reversal, the C10 hold at Realtime. R1 is the staging point only. The receiver's release arm (C9, C11, C12, design U) lands once, with the release rule, after the disorder price ω is measured.
 
 **What is still open.** The form of each (C) site, and whether the receiver reads ρ at all, come from `docs/derivations/rho-step-sites.md` (branch `rho-step-sites`). That derivation is still running.
 - Steps 0–8 below do not depend on it.
@@ -188,6 +194,8 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
   - `WindowAck.passed_undelivered: u64`.
 - **The receiver's ρ:** none on the wire. The handshake is unchanged except for the version.
 - **`G_rx` at the receiver:** it counts at all three frontier writers (`drain_expired` sites, `force_drain_oldest`, the future floor pass) and subtracts fills of passed holes. The passed-hole set is pruned at the decode-inert floor (`receiver.rs:2236`). A fill after the prune is gauged, not subtracted. It is ungated (paper §5.6) and carried on every `WindowAck`.
+- **The pair merge at the sender** (Amendment 2 decision 3, paper §5.6). `G_rx` is a level that falls on a late fill, and at N ≥ 2 acks arrive reordered. Keep `(A_rx, G_rx)` from the ack with the greatest `next_expected`, and on a tie the larger `passed_undelivered`. Never take `G_rx` from the latest-arriving ack alone.
+- **Test (owed, red first):** `ack_pair_merge_survives_reordered_acks`, N = 2: deliver two acks out of order, the older with the lower `next_expected` and the higher `G_rx`; assert the merged pair is the newer ack's, and that a tie keeps the larger `G_rx`.
 - **Tests:** codec round-trips and v10-to-v11 refusal.
 
 **Step 5: the rate bound (A4, A5, A6).** This comes before the store. `SeqRing` is unbounded (`net/seq_ring.rs`), so a store at ρ < 1 with no pause would grow to the object size: the lost-tail run reads `O_hwm = 12 146` against a cap of 1 024.
@@ -204,7 +212,7 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
 
 **Step 6: a store at every ρ (A1, A2, A3, A7, A8).**
 - **The clamp:** removing it (A3) makes the gap unclamped at every ρ. So `nacked_count` covers the whole gap here, a deliberate behaviour change at ρ < 1 that the guard battery reads.
-- **The forced verdict:** at both window advances (`mod.rs:3594–3597` and `sender_phases.rs:1374`), `evict(s) ∧ s ∈ U ∧ s ∉ store ⇒ E += 1`, pruned like a shed, with a visits-and-forced gauge that must read 0.
+- **The forced verdict:** at both window advances (`mod.rs:3594–3597` and `sender_phases.rs:1374`), `evict(s) ∧ s ∈ U ∧ s ∉ store ⇒ E += 1`, pruned like a shed, with a visits-and-forced gauge that must read 0. It has no data to copy, so it sends the floor alone and always consumes one unit (Amendment 2 decision 2). Test (owed, red first, through a test seam that evicts a seq from the store): `forced_verdict_sends_floor_alone`, asserting no data send for that seq, `floor_sent ≥ 1` and one unit in `Ab`.
 - **The account identity:** `S_sent = A + H + E + |U|` (ADR-0081 as amended).
 - **Flips:** these defect assertions stop holding here; invert them in this commit:
   - in `known_defect_lost_tail_strands_k_at_rho_below_1`, `O_strand > 0`, `inert_sweeps > 0`, `clamp_excl > 0` and "k never resent". Assert instead `O_strand = 0`, `clamp_excl = 0`, and that k is resent or shed;
@@ -232,6 +240,9 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
   - sheds stop when `Ab + 1 > (1 − ρ)·S_src`, and the refusal counter rises.
 
   It prints R and `G_rx / S_src` side by side.
+- **The last copy** (Amendment 2 decision 1, paper §5.6): `verdict(s) ⇒` one copy of s sent with the floor, at the same instant, on every verdict, with no δ, ρ or hint condition. The copy is the stored payload; it is sent in this step and travels with the floor once step 8 lands. Test (owed, red first): `last_copy_sent_with_each_verdict`, ρ = 0.99, a past-D hole with no `dead` seam: for each verdict seq exactly one data send after the verdict, at the floor's instant, and the seq ends delivered, with `G_rx` not counting it.
+- **Assert on `G_rx`, not on `ev=shed`.** With the last copy a verdict no longer implies a pass. T6, T1′, T2 and any other test that counts passes assert on `G_rx` (and `floor_passes`). T1′ and T2 still see a pass only because their `dead` seam kills every copy of k; say so in the test.
+- **C7's feed** (after this step) subtracts the passed verdicts, `V ∩ passed`, not V (Amendment 2 consequences).
 - **Flips:** the `H+E` budget-breach assertions of the two defect-asserting tests flip here or in step 8. Invert them where they flip.
 
 **Step 8: the floor.**

@@ -303,3 +303,10 @@ Under U, waiting less never loses a packet. The packet still comes, just after t
    - If it does, Auto and Bulk would deliver out of order in normal operation: at one path when a repair takes a second round, at Auto at two paths for every slow-path packet. That is contrary to rho-step-sites' "no Bulk or Auto default changes".
    - You would then choose between that change and a larger declared ω, which keeps today's order.
 2. **At Bulk, after a long outage** (for example one of two paths dead for longer than the hold, about 2 s if ω = 1), **is late-and-out-of-order delivery acceptable instead of a stall?** Nothing is lost either way.
+
+### Owner answers (2026-11-21)
+
+- **Design U is chosen** over RX (O3 = yes in `skip-rule-efficiency.md`).
+- **Question 1: yes.** ω is set by measurement on a TCP-in-tunnel test, and its result is followed (roadmap `meas-disorder-price`).
+- **Question 2: yes.** At Bulk after a long outage, late, out-of-order delivery instead of a stall is acceptable once the release rule ships. It is the first Bulk default change.
+- **Not decided:** H_o's adoption (the release arm), the new H, and retiring `window_out_of_order`. They wait on the toy and on ω. C9, C11 and C12's release arm lands once, with the release rule, after ω is measured. C1's coupling to U (§5) is read with that measurement.

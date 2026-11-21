@@ -246,12 +246,16 @@ Whether release alone needs the count depends on O3: **does a packet delivered a
 
 ### 4.2 Sender-only, no release (R1, the staging point under both branches)
 
+(2026-11-21: U chosen. R1 stays the staging point only; it is not accepted as the final receiver law.)
+
 The sender judges (with the last copy), and the receiver releases and passes only below the floor after H.
 - Latency: fill time ≈ RTT + owd for an isolated hole, and + H when the last copy is lost.
 - The promise is exact, with one spender. Wire: v11 as approved.
 - R1 is U with H_o = ∞, so it is the staging point when O3 = yes.
 
 ### 4.3 Branch O3 = no: the receiver spends counted allowance (design RX)
+
+**Not pursued (owner, 2026-11-21: O3 = yes, design U).** Kept as the record of the alternative.
 
 "The receiver is the one spender; the sender tells it the cumulative allowance it may spend."
 
@@ -405,7 +409,7 @@ From the commit-order table of `rho-step-sites.md` §5:
 
 **C3 and C4** need only C12's refresh term. Split C12 into "refresh at every ρ" (now) and the marker term (R1); C3 and C4 follow the refresh half.
 
-**Proposed for step 7 before it ships** (each needs a superseding note, because ADR-0084 decision 1 is accepted):
+**Accepted for step 7 (owner, 2026-11-21, ADR-0084 Amendment 2):**
 - the last copy with every verdict (F1);
 - the `(next_expected, G_rx)` pair-merge rule (§3.1).
 
@@ -459,3 +463,14 @@ Bandwidth is about one resend per lost packet in every row except "ADR-0084 as w
 - the sender cannot see a run's end during a one-path outage (§3.3);
 - D is predicted degenerate at Realtime N = 1 and is owed a ledger verdict (§3.1);
 - C7's feed correction (§3.1).
+
+### Owner answers (2026-11-21)
+
+**Decided:**
+- **O3 = yes: design U.** A late out-of-order fill counts as delivered. RX (§4.3) is not pursued; O4 is moot.
+- **O2: the cumulative count is accepted,** with no run-length window. The largest allowance spent in one episode is gauged.
+- **ADR-0084 Amendment 2 (accepted):** every verdict sends one last copy with the floor, and a forced verdict sends the floor alone; the sender takes `(next_expected, G_rx)` from the ack with the greatest `next_expected`, the larger `G_rx` on a tie. Consequences: C7's feed subtracts passed verdicts, not V; tests assert on `G_rx`, not `ev=shed`.
+- **Bulk after a long outage:** late and out of order instead of a stall is acceptable once the release rule ships. This is the first Bulk default change (`rho-step-sites.md` §8).
+- **ω** is measured on a TCP-in-tunnel test, and its result is followed (roadmap `meas-disorder-price`).
+
+**Not decided:** O1; run-atomic spending; the time threshold T_ρ; the release arm; the new H; retiring `window_out_of_order`. These wait on the toy simulation (§6) or the ω measurement. R1 is the staging point only. The receiver sites C9, C11 and C12 get the release arm once, with H_o(δ), after ω is measured.

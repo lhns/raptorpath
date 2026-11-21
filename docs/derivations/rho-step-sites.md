@@ -41,7 +41,7 @@ Every site has a formula with no ρ comparison. Each formula reproduces today's 
 
 For two sites the split had a written reason about retention: C5 and C8. Both said "ρ < 1 has no store or no pause", and ADR-0084 removes it. C9 and C12's expiry has a reason that is not about ρ: head-of-line avoidance, from a tunnel that had no ARQ. ADR-0084's verdict now carries it. C10's hold has a reason that holds at every ρ. In every other site the bool was at hand, or the store's scope test was copied. The original Phase A commit claimed the continuous form and shipped a bool: "Retention policy (rho-parameterized, T_cut(rho); rho=1 = ack-only)" (`4c901536`), while the code holds no ρ.
 
-**Bulk and Auto defaults:** none move. At ρ = 1 every formula is today's ρ = 1 arm, or has its (1 − ρ) term at 0.
+**Bulk and Auto defaults:** none move. At ρ = 1 every formula is today's ρ = 1 arm, or has its (1 − ρ) term at 0. (Owner, 2026-11-21: the later release rule of design U may change Bulk after a long outage; see §8.)
 
 Shape (i) here means "keep one arm at every ρ". That is wider than "redundant by data": six of the (i) sites (C1, C3, C9, C10, C11, C12) change Realtime behaviour.
 
@@ -232,6 +232,7 @@ The digest cannot reach the inline sites: C1's four call sites, the hole law in 
   - **Symbols.** c is the feed cursor and A_rx the ack's `next_expected`, both measured. V is the sender's verdict set, exact per seq (`G_rx` would only give a count).
   - **Mechanism.** `newly_delivered` runs in `copa_feed_attribute`, on the ack path, where `shed_seqs` is not in reach. So the verdict site calls `feed.on_verdict(s)`, which drops the seq's commitment and marks it attributed. `newly` then skips it.
   - **A late fill of a shed seq is not credited.** That is a conservative under-count, gauged.
+  - **Correction (2026-11-21, ADR-0084 Amendment 2).** Every verdict now sends a last copy, so most verdict seqs end delivered. The correction term is the *passed* verdicts, `V ∩ passed` (known from the floor's ack and `G_rx`), or a seq leaves the exclusion when it is filled. Subtracting all of V would under-credit every filled verdict.
 - **Pin.** At ρ = 1, `V = ∅` (asserted), so `newly` is today's set.
 - **Default change:** none (opt-in).
 - **Red-first test.** `c07_feed_never_credits_a_verdict`: ρ = 0.99 with the feed on and the T2 forced-budget scenario. No shed seq appears in the feed's attributed set. Red today: the feed is absent below 1.
@@ -476,9 +477,27 @@ These other parts go stale and are rewritten in the same amendment commit:
 - **Confirm the floor-cadence reversal.** This reverses the owner-accepted default of `evict-verdict-law.md` question 6, "sweep clock only". The floor is also sent at the end of every gap pass that raised it, because R1 removes that default's premise (holes with data above pass on the receiver's own hold).
 - **Confirm the serialize cost of R1** (§1.2). With the budget spent, a Realtime hole waits for its fill instead of passing at 60–300 ms.
 - **Realtime N ≥ 2 changes (C1, C3).** These are by the paper's own law, but they change the Realtime default. Guard 4 measures them.
-- **Bulk and Auto:** no default changes.
+- **Bulk and Auto:** no default changes from the twelve sites. The owner has accepted one later Bulk change, which ships only with design U's release rule (see the owner answers below).
 
 **Open, not owner calls:**
 - the receiver's reorder memory under SACK release has no derived bound at ρ = 1. R1 gives ρ < 1 the same bound, and a derivation is owed at both;
 - H's kind, a reorder cover or δ (C11, UNDERIVED);
 - the Realtime duplicate send and `use_packing` stay hint debts (status §3.3); C1 changes the duplicate send's alt path.
+
+### Owner answers (2026-11-21)
+
+**Decided:**
+- **C6: option (a).** The request server judges each requested seq by the same per-seq verdict rule as a gap; the scope loses `reliable`.
+- **Realtime N ≥ 2 changes: accepted.** C1 (the §5.7 placement law replaces the best-path pick), C3 (the per-flight hole law replaces the age gate) and the gap-report coalescing at every N. `ordering-hold.md` §5 couples C1 to design U: with U, every slow-path packet is released past and reordered unless ω is large. That coupling stands and is read with the ω measurement.
+- **Design U, not RX** (`skip-rule-efficiency.md` §4.1, `ordering-hold.md`). A late out-of-order fill counts as delivered (O3 = yes). RX (§4.3 there) is not pursued, so O4 is moot.
+- **The cumulative count (O2): accepted,** with no run-length window. The largest single-episode spend is gauged.
+- **Bulk after a long outage.** Late, out-of-order delivery instead of a stall is acceptable once the release rule ships. That is the first Bulk default change, and it waits on the rule. No Bulk or Auto default changes now. Reordering at Bulk or Auto in normal operation (a small measured ω) is not decided: ω is measured on a TCP-in-tunnel test and its result is followed (roadmap `meas-disorder-price`).
+- **ADR-0084 Amendment 2:** every verdict sends a last copy with the floor; the sender merges acks by pair. C7's correction above follows from it.
+
+**Not decided (open):**
+- the receiver law R1 (floor-only) as final. Sender-only R1 is the staging point only;
+- the floor-cadence reversal;
+- the C10 hold at Realtime;
+- the serialize cost of R1 (§1.2), and O1.
+
+**What waits.** The receiver sites C9, C11 and C12 get their release arm once, together with the release rule H_o(δ), after ω is measured. Run-atomic spending, the time threshold T_ρ, the release arm, the new H and retiring `window_out_of_order` wait on the toy simulation or the measurement, and none is decided.

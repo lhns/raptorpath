@@ -1,6 +1,6 @@
 # ADR-0084: Every verdict reaches the receiver
 
-## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; S06 merges first on its own guard; all twelve (C) sites are rewritten (option B).**
+## Status: Accepted (owner decision 2026-11-20: every default of `docs/derivations/evict-verdict-law.md` §9). Engine change pending. Paper: §5.1, §5.6, §6.1, §6.3, §11.1, §11.3, A.4, A.5. Supersedes in part ADR-0064, ADR-0079 Amendment 1 and ADR-0081, and the owner's 2026-11-14 `budget = min(1 − ρ, R)` decision (`giveup-law-model.md`); extends ADR-0010. **Amended 2026-11-20 (Amendment 1): the `window_reliable` flag leaves; ρ is the only retention dial; S06 merges first on its own guard; all twelve (C) sites are rewritten (option B). Amended 2026-11-21 (Amendment 2): every verdict sends one last copy with the floor (a forced verdict sends the floor alone); the sender takes (next_expected, G_rx) as a pair from the ack with the greatest next_expected.**
 
 ## Context
 
@@ -235,3 +235,42 @@ Removing the flag leaves the (C) sites only one source for their bit: ρ itself.
 - ADR-0079's merge hold is lifted: S06 merges on its own guard-2 PASS, and this change follows it on main.
 - The receiver's ρ is pending the derivation. The mixed-config stall on main is fixed by the store and the floor, not by a wire field.
 - The tests that assert the defect invert with the fix: `sim_lost_tail::known_defect_lost_tail_strands_k_at_rho_below_1` and the defect assertions in `sim_shed_reach::witness_nack_site_sheds_at_rho_below_1`. So do the red-first T1, T1′ and T2 (brief §4).
+
+## Amendment 2 (2026-11-21): every verdict sends a last copy; the sender merges acks by pair
+
+### Status
+
+Accepted (owner, 2026-11-21). It amends decision 1 (the verdict and its tell) and the ack handling behind decision 5 (the count). Source: `docs/derivations/skip-rule-efficiency.md` §3.1 (finding F1 and the merge rule). Paper: §5.6, §5.1. The decisions above keep their text; this amendment adds to them where it says so. Wire v11 is unchanged.
+
+### Context
+
+- **F1.** Decision 1 sends the floor and no copy on a shed. The copy and the floor travel together, and the floor then waits H at the receiver. So a copy-less shed resolves an isolated hole H later than a plain resend whenever the resend would have arrived, and it spends one unit of the 1 − ρ allowance per hole. With one last copy sent beside the floor, the hole resolves at `min(fill, owd + H)`: never later than serving, and a unit is spent only when the copy is lost too (about ε·ĥ instead of ĥ).
+- **G_rx is a level, not a counter.** It falls when a passed hole is filled late. At N ≥ 2 acks arrive reordered. Taking G_rx from the latest-arriving ack can pair a stale, lower G_rx with a newer frontier; that under-counts Ab and overshoots the budget.
+
+### Decision
+
+1. **Every verdict sends one last copy of the seq together with the floor**, at the same instant (amends decision 1):
+
+   ```text
+      verdict(s)  ⇒  send one copy of s  and the floor F,   at the same instant
+   ```
+
+   The verdict still stops retrying; it no longer withholds the last copy. There is no condition on δ, ρ or the hint: the copy goes with every verdict, and bandwidth is that of serving once.
+
+2. **A forced verdict sends the floor alone.** A verdict forced by eviction (the last servable copy left the sender) has no data to copy, so it sends the floor only and always consumes one unit. This is the absence of data, not a branch: the rule above sends a copy of whatever the store still holds. With a store at every ρ (decision 2) forced verdicts are 0 by data, and their gauge must read 0; a nonzero reading costs F1's full penalty and is a finding.
+
+3. **The ack pair-merge rule** (amends the ack handling behind decision 5). The sender keeps `(next_expected, G_rx)` as a pair, taken from one ack:
+
+   ```text
+      keep (A_rx, G_rx) from the ack with the greatest next_expected;   on a tie, the larger G_rx
+   ```
+
+   This is conservative (it never pairs a lower G_rx with a newer frontier) and converges as the frontier moves. `Ab = G_rx + |{v ∈ V : v ≥ A_rx}|` reads the merged pair.
+
+### Consequences
+
+- **Most verdict seqs now end delivered, not passed.** A filled verdict seq is delivered in order and leaves Ab's pending term without entering G_rx.
+- **C7's feed** (`rho-step-sites.md` C7) subtracts the *passed* verdicts, not V: `V ∩ passed`, known from the floor's ack and G_rx, or a seq leaves the exclusion when it is filled. Subtracting all of V would under-credit every filled verdict.
+- **Tests assert on G_rx, not on `ev=shed`.** "Verdict ⇒ passed" no longer holds. Tests whose `dead` seam kills every copy of the seq (T1′, T2, the rho-step-sites §3 acceptance test) still see a pass; any other test that counts passes asserts on G_rx.
+- **Owed tests**, red first, in `docs/derivations/adr84-engine-brief.md`: the last copy is sent with each verdict; a forced verdict sends the floor alone; G_rx-based assertions; the pair merge at N = 2 with reordered acks.
+- **Not part of this amendment** (they wait on the toy simulation or the ω measurement): run-atomic spending, the time threshold T_ρ, the receiver's release arm (design U), the new H, and retiring `window_out_of_order`. The receiver law R1 (floor-only) is the staging point only, not accepted as final; Amendment 1 item 7's "a bare Bulk or Auto run keeps its behaviour" is unchanged by this amendment (for the later release rule see `rho-step-sites.md` §8).
