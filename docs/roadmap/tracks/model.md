@@ -42,6 +42,7 @@ flowchart TB
     model_fix_paper_p3["⛔ Four unstated rules<br/>added to paper"]
     model_rho_step_sites["▶ Make all twelve ρ<br/>splits continuous"]
     model_skip_rule_efficiency[/"⛔ The most efficient<br/>give-up rule below ρ =<br/>1"/]
+    model_ordering_hold[/"⛔ The ordering hold<br/>H_o(δ) for design U"/]
     model_paper_v1 ~~~ model_open_points
     model_paper_v1 ~~~ model_visualizer_v1
     model_open_points ~~~ model_wasm_l0
@@ -78,6 +79,7 @@ flowchart TB
     model_fix_paper_p2 ~~~ model_rho_step_sites
     model_fix_paper_p3 ~~~ model_skip_rule_efficiency
     model_rho_step_sites ~~~ model_skip_rule_efficiency
+    model_skip_rule_efficiency ~~~ model_ordering_hold
     model_paper_v1 --> model_open_points
     model_visualizer_v1 --> model_wasm_l0
     model_wasm_l0 -.-> model_defect_tcut
@@ -98,7 +100,8 @@ flowchart TB
     model_endspeed --> model_warm_start
     model_law_ledger --> model_fix_paper_p2
     model_rho_step_sites --> model_skip_rule_efficiency
-    linkStyle 38,40,41,43,50 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    model_skip_rule_efficiency --> model_ordering_hold
+    linkStyle 39,41,42,44,51 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -120,7 +123,7 @@ flowchart TB
     class model_paper_recon waiting
     class model_shared_core,model_wasm_fixes,model_rho_step_sites inprog
     class model_fix_hint_keyed_paths,model_fix_paper_p2 next
-    class model_fix_paper_p3,model_skip_rule_efficiency blocked
+    class model_fix_paper_p3,model_skip_rule_efficiency,model_ordering_hold blocked
 ```
 <!-- END GENERATED: track-model -->
 
@@ -166,6 +169,7 @@ flowchart TB
 | `model-paper-rewrite` | Concise rewrite of the model paper | simplification | no-cargo | done | unrated | 2026-09-27 | 2026-09-27 |  |  |  |  | commit e22920d5; docs/fec-arq-model.md |
 | `model-rho-step-sites` | Make all twelve ρ splits continuous | mechanism | no-cargo | in-progress | unrated | 2026-11-20 |  | rec-evict-blocker-unresolved |  |  |  | ADR-0084 Amendment 1; docs/derivations/rho-step-sites.md |
 | `model-skip-rule-efficiency` | The most efficient give-up rule below ρ = 1 | law | no-cargo | blocked | unrated | 2026-11-21 |  | rec-evict-blocker-unresolved, model-rho-step-sites |  |  |  | docs/derivations/skip-rule-efficiency.md |
+| `model-ordering-hold` | The ordering hold H_o(δ) for design U | law | no-cargo | blocked | unrated | 2026-11-21 |  | model-skip-rule-efficiency |  |  |  | docs/derivations/ordering-hold.md |
 
 ### Details per node
 
@@ -208,6 +212,7 @@ flowchart TB
 | `model-paper-rewrite` | Concise rewrite of the model paper | paper: concise rewrite of fec-arq-model.md (22 656 -> ~3 000 lines) |  | The paper was rewritten from about 22,600 lines of dated narrative to about 3,000 lines that state each law once; the earlier text stays in git. |  |  |  |  |  |
 | `model-rho-step-sites` | Make all twelve ρ splits continuous |  |  | Twelve places in the engine behave one way when no data may be dropped (ρ = 1) and another way below it. Each is checked for a reason; each split is replaced by one formula continuous in ρ that keeps today's ρ = 1 behaviour, and the reliable flag is deleted. | Owner decision 2026-11-20: option B (rewrite all twelve), not grandfathered; framing: ask whether each split has a reason, work only on behaviour we can derive. Derivation on branch rho-step-sites (docs/derivations/rho-step-sites.md), then one commit per site stacked on the ADR-0084 fix. Done when: the reader count of the derived bit is 0, the field is deleted, and the acceptance test (one seed at rho = 1, 0.9999, 0.999, 0.99; runs below 1 differ only by give-ups within (1 - rho) S) is green. 2026-11-20 derivation merged: of the twelve splits, ten have no recorded reason (rollout scope or a copied store test) and two had reasons that ADR-0084 voids (C5 store headroom, C8 store backstop). Shapes: eight keep one arm at every rho, C7 is gated by a verdict set, C2 is made valid at every rho, C6 is an owner question. No Bulk or Auto default changes; six sites change Realtime behaviour. Receiver recommendation: floor-only (no rho at the receiver). Acceptance test sim_rho_dial::rho_dial_is_one_machine. Owner calls pending: C6, floor-only and its Realtime costs, C10 hold, floor cadence, the Realtime N >= 2 changes. |  |  |  |  |
 | `model-skip-rule-efficiency` | The most efficient give-up rule below ρ = 1 |  |  | Which lost packets a ρ < 1 stream should give up on, when, and on which side. Every give-up should still send one last copy; whether the receiver may stop waiting on its own depends on whether a packet that arrives after its successors counts as delivered, which is the owner's call. | Derivation on branch skip-law-derivation (paper-first, no code). Awaiting owner: O3 (does a late out-of-order fill count as delivered; yes gives design U, a receiver release on its own hold with no wire field, after an H_o(delta) ordering derivation; no gives design RX, a receiver that spends a cumulative allowance sent by the sender, one wire field after v11), O2 (one outage may skip about 2 000 consecutive packets after a long clean run), O1, O4. Proposed now for ADR-0084 step 7: the last copy with every verdict (a copy-less shed is H slower than a resend) and the (next_expected, G_rx) pair-merge rule (G_rx falls on late fills). v11 stays as approved. Run-atomic spending and the time-domain T_rho (T_cut re-derived in seconds) wait for the pre-registered toy simulation (LP lower bound, H swept). H is UNDERIVED and carries every headline number. |  |  |  |  |
+| `model-ordering-hold` | The ordering hold H_o(δ) for design U |  |  | How long the receiver should wait for a missing packet before delivering the ones behind it out of order, as one smooth function of the latency price. Whether Bulk and Auto keep strict order depends on a new number, the price of one out-of-order delivery, which is the owner's call. | Derivation on branch ordering-hold-derivation (paper-first, no code). Rule: release hole s when (delta/d) * sum over held packets of their wait since detect reaches omega (rent-or-buy, 2x the offline optimum plus omega per never-filled hole); steady state H_o = (sqrt(n0^2 + 2 g omega d/delta) - n0)/g, continuous and strictly decreasing in delta, no rho, no hint. The exact hazard rule is refuted (zero fill hazard before one RTT makes it release at detect or jump at one delta). Awaiting owner: omega (unit 1, Reno halving W^2/8, or measured on a TCP-in-tunnel battery); with omega = 1 Auto reorders every repaired packet. H (C11) is a path support bound, not a delta law; deadline min(B_s >= omega, t_F + H). Blocked also on O3 = yes. |  |  |  |  |
 
 ### Folded items per node
 
