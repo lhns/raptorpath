@@ -9901,7 +9901,7 @@ nodes:
   folded: []
   overview: false
   plain: 'The owner chose to build the sender half of the lost-packet fix right after VM batch 1, and the receiver half once, together with the out-of-order release rule, after the disorder price is measured. Until then a Realtime receiver keeps its old local give-up, so its 1 % promise is still not kept.'
-  notes: 'Owner 2026-11-21. The yes covers the order of work only. Recorded in ADR-0084 Amendment 3 (Proposed), which asks two further owner questions: Q-a, a named temporary exception rho1-debt-exception for the receiver sites C9, C10, C11; Q-b, H = shed_recv_hold carried as UNDERIVED debt. Also the engine brief and rho-step-sites par. 5 and 8. Sender-only R1 is not shipped as an interim Realtime receiver. Removal trigger: the release-rule build (model-ordering-hold).'
+  notes: 'Owner 2026-11-21. The yes covers the order of work only. Recorded in ADR-0084 Amendment 3 (Proposed), which asks two further owner questions: Q-a, a named temporary exception rho1-debt-exception for the receiver sites C9, C10, C11; Q-b, the floor pass H: (i) shed_recv_hold as is (bit-selected: 60 ms at a rho = 1 receiver, 5 ms matched Realtime), (ii) SRTT/2 at every receiver (recommended; step-1 bounds hold), (iii) derive first. Q-a carries a fallback: floor-only R1 lands if the release-rule build is not in within 8 weeks of the omega Result or that Result is OMEGA-VARIES or RENT-UNDERPRICED. Also the engine brief and rho-step-sites par. 5 and 8. Sender-only R1 is not shipped as an interim Realtime receiver. Removal trigger: the release-rule build (model-ordering-hold).'
 - id: model-ordering-hold
   title: The ordering hold H_o(δ) for design U
   track: model
