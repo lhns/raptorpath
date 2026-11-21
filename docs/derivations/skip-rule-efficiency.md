@@ -310,94 +310,189 @@ Every formula above is one expression, with every term always computed:
 - At ρ = 1 the nudge is one-sided. ρ = 1 − ε with ε·S_src < 1 must be byte-identical (rho-step-sites §3 clause 5), and the readouts must converge monotonically as ε → 0.
 - δ is nudged ±2 % around Realtime.
 
-## 6. Pre-registered simulation plan (toy model)
+## 6. Pre-registered simulation plan (toy model, v2)
 
-**Status.** A Python discrete-event **toy model**, built later by a separate worker. It ranks candidates and bounds their gap to an LP lower bound. It fixes no constant, and no number in it is provenance for the engine.
+**Status.** A Python discrete-event **toy model**, built later by a separate worker. It ranks candidates and bounds their gap to two offline optima:
+- an LP lower bound for the rules that pass holes against the count;
+- an exact optimum of U's own cost for the release rule.
 
-**Model.**
-- Paths with a base one-way delay plus **per-packet delay jitter**, and a bottleneck rate above the source rate, so copy arrival times do not depend on the policy up to a pass. Cells that saturate the link are labelled "bound approximate".
-  - Without jitter, fills bunch at exact round times. Then rbf and every hold-dependent readout are staircases in δ, and the P3 nudge check reads the staircase, not the law (`ordering-hold.md` §9).
-  - **Jitter provenance.** Measured where a VM battery supplies it: the per-path owd distribution from `[LAT]`/`rttdump` at the cell's link. Otherwise swept as i.i.d. per packet over {0, 1, 4 ms}; 4 ms is `sim_lost_tail`'s jitter (rho-step-sites §3). Each cell is run both with in-path FIFO kept and with in-path reorder allowed, and both are reported.
-- A paced source at 10 000 packets/s (512 B).
-- A per-copy loss process per path.
-- A sender with a store, a 2 ms gap-report sampler, the RFC 9002 hole law at N = 2, and a tail sweep at `clamp(2·SRTT)`.
-- A receiver with a reorder buffer, the floor pass and, for U, two frontiers.
-- No FEC: the residual loss is set directly.
-- Common random numbers across candidates in each seed.
+It fixes no constant, and no number in it is provenance for the engine. **RX (§4.3) is not simulated**: the owner chose U (§8, owner answers).
 
-**H is swept, because it is UNDERIVED:** H ∈ {0, 2.5, 5, 10 ms, 0.5·SRTT, 1·SRTT}. Every headline result is reported per H value, never at a chosen one. U's H_o is no longer swept as a time: it is `ω·d/δ`, and ω is swept (§6 candidates).
+### 6.1 Model
 
-**Candidates:**
-- **R0 (reference, not a bar):** today's receiver timer. It passes at detect + SRTT/2 and its ack advances, so it is uncounted.
+- **Paths.** Each path has a base one-way delay plus per-packet jitter, and a bottleneck rate above the source rate, so copy arrival times do not depend on the policy up to a pass. Cells that saturate the link are labelled "bound approximate".
+  - Without jitter, fills bunch at exact round times, and every hold-dependent readout is a staircase in δ (`ordering-hold.md` §9).
+  - **Jitter.** Measured where a VM battery supplies it, as the per-path owd distribution from `[LAT]`/`rttdump`. Otherwise swept i.i.d. per packet over {0, 1, 4 ms}; 4 ms is `sim_lost_tail`'s value.
+  - Each jitter value runs with in-path FIFO kept and with in-path reorder allowed.
+- **Source:** paced at 10 000 packets/s (512 B).
+- **Loss:** a per-copy loss process per path. No FEC: the residual loss is set directly.
+- **Sender:** a store, a 2 ms gap-report sampler, the RFC 9002 hole law at N = 2, and a tail sweep at `clamp(2·SRTT)`.
+- **Placement (no placement rule in the toy):** at N = 2 each source seq goes to the slow path with probability φ_slow, swept over {0, 0.25, 0.5}. Copies go on the fast path.
+- **Receiver:** a reorder buffer, the floor pass and, for U, two frontiers.
+- **Common random numbers.** Every candidate in a seed sees the same loss, jitter and placement draws, keyed by (seed, seq, copy index, path).
+
+**How the toy computes d.** The paper calls d the ARQ resolution delay (§7.3). The engine's sample is `note_source_resolution` (`receiver.rs:1446–1457`): the detect-to-close time of every hole closed by its own source symbol, **original or retransmit** (`HoleOutcome::Original | Retransmit`), averaged (`net/late.rs:290`). The toy computes both, as running means over the run:
+- **d_all**, the engine's definition (self-heals included);
+- **d_rep**, holes closed by a copy only.
+
+U is run with each.
+
+**Finding for `ordering-hold.md`: d shrinks where reordering is highest.** At N = 2, d_all counts skew self-heals. Paper §7.3's c7 row (d = 0.78 ms against π₀ = 0.96, so 96 % of holes heal by their own original) is that case. `H_o = ω·d/δ` then shortens exactly where skew reordering is most frequent, and releases more slow-path packets out of order. Paper §7.3 does not say which class d contains. The ordering-hold law must state whether its d is d_rep (the repair round, the quantity rent-or-buy waits for) or d_all. The toy reads both: rbf and the skew out-of-order rate under each, per φ_slow.
+
+**Out-of-order classes.** Every late delivery is classed by what filled it:
+- **loss:** filled by a copy;
+- **skew:** N ≥ 2, filled by its own original via a slower path;
+- **jitter:** filled by its own original on the same path after a later seq overtook it. In-path reorder only; this is the N = 1 class.
+
+### 6.2 Candidates
+
+**Sender rules, scored against the LP:**
+- **R0 (reference, not a bar):** today's receiver timer: pass at detect + SRTT/2, the ack advances, uncounted.
 - **S0:** serve until filled.
 - **S1:** ADR-0084 as written: `age > D`, per-seq first-come, no copy.
-- **S1c:** S1 + last copy.
+- **S1c:** S1 + last copy (ADR-0084 Amendment 2).
 - **S2:** S1c + run-atomic.
-- **S3:** S2 + the online T_ρ, with Ŝ estimated by Kaplan–Meier under S3's own verdicts (§3.4), applied to a run's oldest seq.
-- **U:** R1 sender (S1c, or S2 if run-atomic survives P5), plus the receiver release at detect + H_o with the ack held, `H_o = ω·d/δ` (`ordering-hold.md`), with ω swept over {0, 0.3, 1, 3, 10, 100}.
-- **RX:** §4.3, with T_rx and run-atomic.
+- **S3:** S2 + the online T_ρ (Kaplan–Meier under its own verdicts, §3.4), applied to a run's oldest seq.
 
-**Oracle: an exact LP lower bound, not a greedy.**
+**The release rule, scored against U\*:**
+- **U:** the R1 sender (S1c, or S2 if run-atomic survives P5), plus the receiver release at `min(t_detect + H_o, t_F + H)` with the ack held (`ordering-hold.md` §8).
+  - `H_o = ω·d/δ`, with ω ∈ {0, 0.3, 1, 3, 10, 100} and d ∈ {d_all, d_rep}.
+  - **The rent is a pluggable function** `rent(t)`, with release at the first t where `rent(t − t_detect) ≥ ω`. Two arms are registered now:
+    - `rent(t) = (δ/d)·t`, ordering-hold §3.2;
+    - `rent(t) = (δ/d)·t + c_H(t)`, `c_H(t) = (t·g − B)⁺·MSS/S`, the candidate of disorder-price-registration §2. B is the sender backlog and g the delivery rate, both toy state, with MSS/S = 1.2 as registered there.
 
-Greedy is exact only when stalls do not overlap, and they overlap even in I1. Holes arrive at `λ = 10 000 × 0.5 % = 50 /s`, and a stall lasts `s ≈ 11 ms` (detect at 5 ms, fill at 16 ms). For Poisson holes:
-- the fraction whose stall starts inside the previous one's is `1 − e^(−λs) = 1 − e^(−0.55) ≈ 42 %`;
-- the fraction that overlap some other stall is `1 − e^(−2λs) ≈ 67 %`.
+    A rent measured later by `meas-disorder-price` plugs in without a plan change.
+- **P3's positive control, HZ:** ordering-hold §3.1's global-argmin hazard rule, with the true fill-time survival of the cell (no estimation). ω is chosen so that its jump `δ* = ω·d·(1 − ε)/τ₁` sits at the Auto preset. It exists only to show that P3 can fail.
 
-The LP. On each sample path, take every packet j's arrival `a_j` and every hole s's fill time `X_s` under S0 with last copies, and its earliest pass instant `p_s = t_detect(s) + H`:
+**H is swept, because it is UNDERIVED:** H ∈ {0, 2.5, 5, 10 ms, 0.5·SRTT, 1·SRTT, **H§8**}. H§8 is ordering-hold §8's proposal, `max over paths still carrying a copy or the original (owd_p − owd_floor path)⁺ + in-path reorder spread`: ≈ 0 at N = 1 and ≈ the skew at N = 2, with the spread read as the observed maximum. Every headline is reported per H.
+
+### 6.3 Offline optima
+
+**(a) The LP lower bound for passing rules (S-candidates).** This is unchanged from v1. On each sample path, take arrivals a_j and the fill times X_s under S0 with last copies, and pass instants `p_s = t_detect(s) + H`:
 
 ```text
-   minimise    Σ_{j ∈ P} ( y_j − a_j )                                   per-packet head-of-line delay, packet·seconds
-   subject to  y_j ≥ a_j                         for every received j ∈ P
-               y_j ≥ y_{j−1}                     for consecutive j ∈ P   (in-order delivery)
-               y_s ≥ X_s − (X_s − p_s)⁺ · x_s    for every hole s        (a pass cuts s's resolution to p_s)
-               Σ_{s : p_s ≤ t_k}  c_s · x_s  ≤  ⌊(1 − ρ)·S_src(t_k)⌋     at every pass instant t_k  (the prefix count)
-               0 ≤ x_s ≤ 1
-   c_s  =  1{X_s > p_s}   (O3 = yes: a pass that a copy beats costs nothing)        c_s = 1   (O3 = no)
+   minimise    Σ_{j ∈ P} ( y_j − a_j )
+   subject to  y_j ≥ a_j  (received j),   y_j ≥ y_{j−1},   y_s ≥ X_s − (X_s − p_s)⁺ · x_s  (holes),
+               Σ_{s : p_s ≤ t_k} c_s · x_s ≤ ⌊(1 − ρ)·S_src(t_k)⌋  (prefix count),   0 ≤ x_s ≤ 1,   c_s = 1{X_s > p_s}
 ```
 
-- P is the set of packets whose arrival falls before the latest fill of an unresolved hole below them. Every other packet has `y_j = a_j` under any policy, so restricting to P is exact.
-- Lost and late packets are excluded from the sum and reported separately.
-- x is per seq, a superset of run-atomic and every candidate's choices, so the LP value is at or below the optimum of every passing policy on that path.
-- Solve with HiGHS (`scipy.optimize.linprog`). On 3 seeds per cell, also solve the MILP (`scipy.optimize.milp`, x binary) and report the integrality gap.
-- For the LP the cell duration is 10 s: about 500 holes and on the order of 10⁵ variables.
-- **Scoring:** `gap = (HOL_cand − HOL_LP) / (HOL_S0 − HOL_LP)`, scored against the LP bound, never against a greedy. N_rep is reported beside it, unpriced.
+- Solve with HiGHS; on 3 seeds per cell also solve the MILP for the integrality gap.
+- `gap = (HOL_cand − HOL_LP)/(HOL_S0 − HOL_LP)`.
+- **It bounds only rules that pass a hole in order against the count.** U spends no count and delivers out of order, so U can score below this "bound". U is never scored against it.
 
-**Cells:**
-- RTT 10 ms and 50 ms; N = 1, and N = 2 with owd 5 and 25 ms;
-- 20 seeds; 60 s (10 s for the LP).
+**(b) U\*, the exact offline optimum of U's own cost.** The cost is the release-dependent part of J_U (ordering-hold §2). The late packet's own delay and N_rep do not depend on the release, so they are excluded. On each sample path, every hole s has a detect time t_s and a fill time R_s (∞ if never filled before its floor pass), all known.
+- Offline, a partial hold is dominated: holding and then releasing before the fill pays rent *and* ω. So each hole is either released at detect (z_s = 0) or held to its fill or floor pass (z_s = 1).
+- The frontier is blocked exactly on the union of the held intervals `[t_s, R_s ∧ (t_F + H))`.
 
-| cell | loss | allowance |
+Linear rent:
+
+```text
+   minimise    (δ/d) · Σ_k ℓ_k · u_k   +   ω · Σ_s (1 − z_s) · 1{R_s < ∞}
+   subject to  u_k ≥ z_s     for every elementary segment k ⊂ [t_s, R_s)      (segments between all interval endpoints, lengths ℓ_k)
+               0 ≤ z_s, u_k ≤ 1
+```
+
+- Every constraint is a difference `u_k − z_s ≥ 0`, so the constraint matrix is totally unimodular and the LP optimum is integral: **U\* is exact, not a bound.**
+- With a pluggable non-linear rent (`c_H` charged per stall episode, an episode being a connected component of the held union), solve instead by exact dynamic programming:
+  - first split into independent clusters, the connected components of the union of *all* hole intervals;
+  - within a cluster, scan holes by t_s, with state (episode start, episode end) over interval endpoints;
+  - that is O(n³) per cluster, and clusters in I1 hold a few holes.
+- **Score:** `ratio_U = cost_U / cost_U*` per seed and cell.
+  - **The 2× claim is tested where it is proven:** on isolated holes (clusters of size 1), `ratio_U ≤ 2 + ω·N_{R=∞}/cost_U*`.
+  - On overlapping clusters (42–67 % of I1's holes) the ratio is reported, and the 2× claim is marked "sketch, measured".
+
+### 6.4 Cells, dial points and the run budget
+
+**Base cell.**
+
+| factor | base |
+|---|---|
+| loss | I1 |
+| topology | N = 1, RTT 10 ms |
+| jitter | 1 ms, FIFO kept |
+| H | H§8 |
+| δ | Realtime |
+| ρ | 0.99 |
+| U | ω = 1, d_all, linear rent |
+| seeds | 20 |
+| duration | 20 s (allowance after 20 s = 2 000; 10 s windows for the optima) |
+
+B60 runs 70 s.
+
+**One-factor sweeps from the base.** Each row varies one factor; the extra configurations exclude the base.
+
+| factor | values | extra |
 |---|---|---|
-| I1 | i.i.d., ĥ = 0.5 %, ε = 2.5 % | slack |
-| I2 | i.i.d., ĥ = 3 %, ε = 10 % | binds without the last copy |
-| G | Gilbert–Elliott, mean burst 8, bad-state loss 0.5, mean 2.5 % | binds in bursts |
-| B10, B60 | one 200 ms blackout after 10 s and after 60 s clean (N = 1; at N = 2 on one path) | bank < run, bank > run |
-| T | lost tail: the last 346 seqs dead | tail only |
+| loss cell | I2, G, B10, B60, T (as v1: i.i.d. 3 %/10 %; Gilbert–Elliott, burst 8; 200 ms blackout after 10 s and 60 s; last 346 seqs dead) | 5 |
+| topology | N = 1 RTT 50; N = 2 (owd 5 and 25 ms) × φ_slow ∈ {0, 0.25, 0.5} | 4 |
+| jitter × reorder | {0, 1, 4 ms} × {FIFO, reorder allowed} | 5 |
+| H | the 7 arms | 6 |
+| δ | Bulk, Auto, Realtime, each × {0.98, 1, 1.02} | 8 |
+| ρ | 1, 1 − ε (ε·S_src < 1), 0.999, 0.9898, 0.9902 | 5 |
 
-Dial points: ρ ∈ {1, 1 − ε (ε·S_src < 1), 0.999, 0.99, 0.9898, 0.9902}; δ at Realtime ±2 %; a Bulk ρ = 1 control.
+**Crossed for U only**, because its questions sit at Auto and Bulk: ω (6) × δ points (9) × {N = 1; N = 2 at φ_slow = 0.25} (2) × d ∈ {d_all, d_rep} (2) = 216 configurations. Two more, the c_H rent arm at Bulk and Auto, bring it to 218. Each U configuration also runs the U\* oracle.
 
-**Readouts, witnesses first:**
+**HZ:** Auto × {0.98, 1, 1.02}, N = 1 and N = 2 at φ_slow = 0.25: 6 configurations.
+
+**Run count.** One run is one candidate × configuration × seed. Seeds run one at a time, because memory is low.
+
+| block | configurations | × seeds | runs |
+|---|---|---|---|
+| R0, S0, S1, S1c, S2, S3: (1 + 33) each | 204 | 20 | 4 080 |
+| U: 34 one-factor + 218 crossed | 252 | 20 | 5 040 |
+| HZ | 6 | 20 | 120 |
+| **total simulation runs** | | | **9 240** |
+| LP solves (S0 traces of the 34 one-factor configurations) | 34 | 20 | 680, plus 3 × 34 MILP |
+| U\* solves (TU LP or DP, per U run) | | | 5 040, each ≪ 1 s |
+
+**Estimated wall time, sequential.** A 20 s cell is about 2·10⁵ packets and on the order of 10⁶ events, about 5–10 s in pure-Python `heapq`.
+- Simulation: 9 240 × ~8 s ≈ 21 h.
+- LP: 680 × ~5 s ≈ 1 h, MILP ≈ 1 h.
+- U\*: under 1 h.
+- **Total ≈ 24 h.**
+
+**Pre-registered fallback.** First time the base cell. If one run takes more than 15 s, the one-factor sweeps drop to 10 seeds; the crossed U block, the presets and P3 keep 20.
+
+### 6.5 Readouts, witnesses first
+
 - verdicts, passes, releases and refusals by decider;
 - G_rx / S_src against 1 − ρ at every instant;
-- consumer HOL delay p50 and p99, frontier-stall p50 and p99, and late-delivered and lost counts;
+- consumer HOL delay p50 and p99, frontier-stall p50 and p99, and late and lost counts;
+- the out-of-order count per class (loss, skew, jitter) per delivered packet;
 - repair sends and control datagrams per delivered packet;
-- the bind fractions (D, t_max, `n_R ≤ A`) and the largest single-episode spend;
+- the bind fractions (D, t_max, `n_R ≤ A`, and which of H_o and t_F + H resolved each release);
+- the largest single-episode spend;
 - for S3: Ŝ against S0's true survival;
-- for U: rbf per preset, and at N = 2 the out-of-order deliveries per delivered packet, split into *skew* (released, then filled by its own original with no copy sent) and *loss* (filled by a copy), with φ_slow and the per-packet skew distribution (`ordering-hold.md` §5).
+- for U: rbf per preset; d_all, d_rep and their ratio; φ_slow and the skew distribution; `gap` (S-rules) or `ratio_U` (U), per cell.
 
-**Pass criteria, fixed now (decision bars, not law constants):**
-- **P1, the promise (hard).** For every counted candidate (S1, S1c, S2, S3, U, RX), in every cell, seed and instant, `G_rx(t) ≤ ⌊(1 − ρ)S_src(t)⌋`. For U, also: no released hole is ever pruned at the sender without a verdict.
-- **P2, the ρ = 1 identity.** At ρ = 1 and 1 − ε every candidate's sender trace equals S0's. U's receiver may release at the Realtime δ (§5), with zero loss.
-- **P3, continuity.** At each nudge pair, every readout's preset value lies within the 95 % bootstrap CI of the mean of its two nudges.
-- **P4, implementation checks of the toy.** These verify that the toy implements the mechanisms as specified. They are **not** evidence for the derivation. If one misses, the toy is debugged before any ranking is read.
-  - **a.** I1: S1's isolated-hole stall exceeds S0's by H ± 1 ms.
+### 6.6 Pass criteria, fixed now (decision bars, not law constants)
+
+- **P1, the promise (hard).** For S1, S1c, S2, S3 and U, in every cell, seed and instant, `G_rx(t) ≤ ⌊(1 − ρ)S_src(t)⌋`. For U, also: no released hole is ever pruned at the sender without a verdict.
+- **P2, the ρ = 1 identity.** At ρ = 1 and 1 − ε every candidate's sender trace equals S0's. U's receiver may release, with zero loss.
+- **P3, continuity, on paired differences.** For each preset p, readout m and seed k (common random numbers), take the midpoint deviation:
+
+  ```text
+     Δ_k  =  m_k(p)  −  ½·( m_k(0.98·p) + m_k(1.02·p) )        slope_k  =  m_k(1.02·p) − m_k(0.98·p)
+     pass  ⇔  the 95 % paired-bootstrap CI of mean(Δ) contains 0   ∨   |mean(Δ)| ≤ ¼·|mean(slope)|
+  ```
+
+  - A smooth readout has a midpoint deviation that is second order in the nudge. A step located at the preset has `|Δ| = ½·|slope|`. The ¼ separates them.
+  - For ρ the nudge is taken on 1 − ρ.
+  - **Positive control:** HZ must **fail** P3 at Auto on rbf and on frontier-stall p50. If HZ passes, P3 has no power, and no P3 pass of any candidate is reported as evidence.
+- **P4, implementation checks of the toy.** These are not evidence for the derivation; the toy is debugged before any ranking is read.
+  - **a.** I1, N = 1, H = 5 ms: S1's isolated-hole stall exceeds S0's by H ± 1 ms.
   - **b.** I1: S1c's p50 equals S0's within 1 ms; S1c consumes ≤ 1.5·ε·ĥ.
-  - **c.** I1: U's and RX's p50 sit ≈ RTT − H below S1c's.
-  - **d.** B10 at N = 2: S1 spends > 0 for a gain within the CI of 0; S2 spends 0. B10 at N = 1: S2 drains like S1; RX spends 0.
+  - **c.** I1: U's consumer-stall per isolated hole equals `min(H_o, R − t_detect)` within 0.5 ms.
+  - **d.** B10 at N = 2: S1 spends > 0 for a gain within the CI of 0, and S2 spends 0. B10 at N = 1: S2 drains like S1.
+  - **e.** U\*'s LP returns an integral z on every solve (the TU check).
 - **P5, decisions:**
-  - **Run-atomic** (S2 against S1c) is kept only if it improves HOL p99, or the largest-episode waste, by more than the CI in some cell, and worsens none by more than the CI. With a copy, only unfilled packets spend, so this may well fail. Then run-atomic is dropped.
-  - **T_ρ** (S3 against S2, or against S1c if run-atomic is dropped) is kept only if p99 falls by more than the CI in G or B60 and no cell worsens by more than the CI.
-  - **U and RX** are each reported per O3 branch. RX is recommended for a wire field only if O3 = no, its LP gap is ≤ 0.25 in I1, G and B60, and it passes P1.
+  - **Run-atomic** (S2 against S1c) is kept only if it improves HOL p99, or the largest-episode waste, by more than the CI in some cell and worsens none by more than the CI. Otherwise it is dropped.
+  - **T_ρ** (S3 against S2, or against S1c) is kept only if p99 falls by more than the CI in G or B60 and no cell worsens by more than the CI.
+  - **U** is reported, not adopted, here. Adoption waits on ω (`meas-disorder-price`) per ordering-hold §10. The toy reports:
+    - `ratio_U` against the 2× claim (proven on isolated holes, measured on clusters);
+    - rbf at Bulk and Auto, which must lie within the CI of 0 in I1, I2 and G at N = 1 (ordering-hold §6), per ω and per d definition;
+    - the skew out-of-order rate at N = 2 per φ_slow and d definition;
+    - whether d_all against d_rep changes Auto's rbf by more than the CI (the d finding above).
 
 ## 7. What this blocks
 
