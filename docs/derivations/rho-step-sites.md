@@ -414,7 +414,7 @@ The text below is the plan as derived (R1); read it through the re-cut above. In
 | 7 | C7 Copa feed | step 7 (V exists) | opt-in |
 | 8 | C6 request arms | step 7, owner answer | gates off |
 | 9 | sender scaffold | all above | delete the sender's `rho1_debt_bit` call and readers; D1's echo prints `rho=` at every ρ (with `tools/stage3_parse.py` WIN_LINE updated). The ratchet table equals Amendment 3's exception block. Merge |
-| — | **release-rule build** (`model-ordering-hold`) | ω measured, H_o adopted | C9 (release arm by H_o(δ); floor-on-raise cadence; tombstones), C11, C10, C12's expiry, C8; the new H; delete `rho_debt.rs`; un-ignore `rho1_debt_is_gone`, §3 and §4 |
+| — | **release-rule build** (`model-ordering-hold`) | ω measured, H_o adopted | C9 (release arm by H_o(δ); floor-on-raise cadence; tombstones), C11, C10, C12's expiry, C8; delete `rho_debt.rs`; un-ignore `rho1_debt_is_gone`, §3 and §4 |
 
 **Guard cut points.** Each guard runs against the previous candidate. Each has a Bulk stage, which must read identical at ρ = 1, and a ρ < 1 stage per Amendment 1 item 8, with execution witnesses before outcomes:
 
@@ -516,4 +516,4 @@ These other parts go stale and are rewritten in the same amendment commit:
 
 **C1 stays in the sender build (owner, 2026-11-21: option (a)).** Asked after the guard registration predicted it: with C1 in the first build and the receiver's old arm still in place, Realtime at N ≥ 2 frontier delay rises by up to the path skew (about 20 ms in the guard's skew cell) until the release rule lands. The owner keeps C1 here and accepts that interim rise, rather than moving C1 to the release-rule build, which would add three ρ-keyed sender rows (`emit_source.rs emit_source`, `sender_phases.rs serve_gaps`, the sender's `rho1_debt_bit` call in `run_impl`) to the closed exception list. The guard measures the rise and reports it in ms (`adr84-guard-registration.md` §5.4, XK). C3 stays in this build too.
 
-**What waits.** The receiver sites C9, C11 and C12 get their release arm once, together with the release rule H_o(δ), after ω is measured. Run-atomic spending, the time threshold T_ρ, the release arm, the new H and retiring `window_out_of_order` wait on the toy simulation or the measurement, and none is decided.
+**What waits.** The receiver sites C9, C11 and C12 get their release arm once, together with the release rule H_o(δ), after ω is measured. Run-atomic spending, the time threshold T_ρ, the release arm and retiring `window_out_of_order` wait on the toy simulation or the measurement, and none is decided. The floor pass's H does not wait: the owner chose to derive it first (Q-b (iii); `floor-hold.md`, roadmap `model-floor-hold`), and the floor-pass step of the sender build waits on that derivation.
