@@ -18,6 +18,7 @@ section it feeds.
 | `store-law.md` (+ `store-law/`) | what size the sender store should be: a time law (no rate input), its anchor and b₀ sources, the C02 horizon coupling, per-cell predictions and a reported-only diagnostic (derivation, for review) | status §54b, §55 F01/E03/E04/C02 |
 | `wasm-modeswitch-audit.md` | which hint-, δ- or ρ-keyed sites in the L0 model are mode switches, and what replaces each (open: owner calls on give-up options (i) vs (ii), gate :181, W22 code-vs-paper divergence and its paper-vs-pin conflict, fixed r) | ADR-0076 phase 6 |
 | `f2-guard-registration.md` | the §41c merge guard for engine defect F2's fix: F2 alone, guard v2 on the Bulk cells, a Realtime stage scored on the absolute F2 reading, the `framing_ns` bound, the harness brief (registration draft) | status "Engine defect F2", §63, ADR-0078 |
+| `adr84-guard-registration.md` | the merge guard for ADR-0084's sender-side build: Bulk guard v2, Auto and Realtime at rho = 1 for identity, Realtime 0.99 at N = 1 and 2 (20 ms skew, budget exhaust, the lost tail after the allowance is spent), the floor-only pairing with required floor passes, test-seams twins and the bind fraction of H, sim gates first (registration draft) | ADR-0084, roadmap `rec-adr84-guard` |
 
 No derivation file is on `main` yet; the branches that add them (`derive-w1`,
 `adr68-amend`, `paper-recon`, `perleg-design`, `w1r2`, `otel-design`) each add

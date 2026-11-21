@@ -70,6 +70,7 @@ flowchart TB
     rec_fix_nack_throttle[/"○ Hidden re-send<br/>limit: measure, then<br/>justify"/]
     rec_retx_behind_source["○ Do re-sends wait<br/>behind new data"]
     rec_evict_blocker_unresolved>"⚠ Lost packet neither<br/>resent nor dropped"]
+    rec_adr84_guard["⛔ Merge guard for the<br/>ADR-0084 sender side"]
     rec_early_arq ~~~ rec_bulk_arq
     rec_nack_congestion ~~~ rec_p10a_repair_floor
     rec_plost_sack ~~~ rec_reliable_window
@@ -134,6 +135,8 @@ flowchart TB
     rec_recovery_timeouts ~~~ rec_retx_behind_source
     rec_fix_refresh_clock ~~~ rec_evict_blocker_unresolved
     rec_fix_nack_throttle ~~~ rec_evict_blocker_unresolved
+    rec_retx_behind_source ~~~ rec_adr84_guard
+    rec_evict_blocker_unresolved ~~~ rec_adr84_guard
     rec_nack_congestion -.-> rec_fix_nack_throttle
     rec_per_path_clocks -.-> rec_defect_qclk_clamp
     rec_per_path_clocks -.-> rec_defect_hole_law
@@ -165,7 +168,7 @@ flowchart TB
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 64,65,66,76 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 66,67,68,78 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -189,7 +192,7 @@ flowchart TB
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_mixed_rho_stall,rec_evict_blocker_unresolved finding
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
     class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
-    class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
+    class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock,rec_adr84_guard blocked
 ```
 <!-- END GENERATED: track-rec -->
 
@@ -261,6 +264,7 @@ flowchart TB
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | mechanism | vm | done | successful | 2026-07-08 | 2026-07-08 |  |  |  |  | commit 663d3ec9; commit 6f2b084f |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | law | no-cargo | done | unrated | 2026-09-06 | 2026-09-07 |  |  |  |  | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |
 | `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | defect-verdict | host-cargo | in-progress | unrated | 2026-11-20 |  |  |  |  |  | raptorpath/tests/sim_mixed_rho.rs |
+| `rec-adr84-guard` | Merge guard for the ADR-0084 sender side | research | vm | blocked | unrated |  |  | rate-s06-plost-derivation, rec-evict-blocker-unresolved, model-adr84-amend2, model-adr84-sender-first |  |  |  | docs/derivations/adr84-guard-registration.md; ADR-0084 Amendments 1 and 2; docs/derivations/adr84-engine-brief.md |
 
 ### Details per node
 
@@ -329,6 +333,7 @@ flowchart TB
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | RESULT: FEC no longer loses — parity, with 1.04× at RTT200/10% (G=128). |  | A broken probe was fixed and the reactive resend bounded to once per round trip, which removed an over-request flood and brought coded repair to parity with plain retransmission on one path. | Was folded in rec-present-at-stall, whose dead-end verdict is about the pacer, not this fix. |  |  |  |  |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | R4's c1 firing RESOLVED by a pre-stated prediction |  | The repair decision was written as one sequential test whose corner is a theorem with a bounded value; its two levers were specified as predictions and never built. | Split 2026-11-20 from meas-attribution-audit. Three parallel plans (session record 2026-09-06) led to it. |  |  |  |  |
 | `rec-mixed-rho-stall` | Mixed retention settings stall a transfer |  |  | A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish. | Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation. 2026-11-21 (ADR-0084 Amendment 3): the forward pairing goes green at the ADR-0084 floor step; the reverse pairing (rho = 1 sender, rho < 1 receiver) stays red until the release-rule build, because the receiver keeps its old arm. |  |  |  |  |
+| `rec-adr84-guard` | Merge guard for the ADR-0084 sender side |  |  | The regression test the sender-side give-up change must pass before it merges: the usual settings must behave exactly as before, and at the low-latency setting, where data may be dropped, the test must show that each new part actually ran (the give-up count, the last copy, the floor message, the source pause), including on two paths with unequal delay and on a link lossy enough to spend the whole give-up allowance. | Pre-registration draft (paper only, no VM), aligned with ADR-0084 Amendment 3 (Proposed) and the re-cut brief on main 2d203c19. BASE = main after the S06 merge (VM batch 1 guard 2), CAND = the sender-side build head (steps 1-8 plus the sender sites C2, C5, C12 refresh half, C3, C4, C1, C7, C6 and the sender scaffold; the receiver keeps its old arm under the Amendment 3 exception); --window-reliable on BASE, --window-rho on CAND, detected from perf --help. Stages: Bulk guard v2 (96 rows), Auto rho = 1 no-regression (48), Realtime rho = 1 completion (24); Realtime rho = 0.99 witnesses and invariants at c2, c8, a 20 ms skew dual (c2 + c2r50, C1 delay readout) and a budget-exhaust cell (c2r100l10), 96 rows; the floor-only pairing sender 0.99 / receiver 1, where floor passes and last copies are required (24); the lost tail after the old arm has spent the allowance, named limit L-TAIL (24); Auto 0.99 against 1 within CAND (12); test-seams twins for the account and the bind fraction of H (shed_recv_hold, 60-300 ms clamp) (30); optional paced pair (12). Sim gates first: T1, T1prime, T2, the floor ablation, the forward mixed pairing; the reverse pairing, sim_rho_dial and rho1_debt_is_gone stay red. Typical 10.5 h in four sessions. Merge also needs the owner answers to Amendment 3 Q-a and Q-b. Open: one guard on the head or three at the rho-step-sites cut points; owed release gauges. Proposed queue_order: after VM batch 1 guard 2. Done when: the guard Result is scored against this registration. |  |  |  |  |
 
 ### Folded items per node
 

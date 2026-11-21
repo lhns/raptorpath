@@ -9945,3 +9945,29 @@ nodes:
   overview: false
   plain: 'Force late, out-of-order deliveries in the tunnel and measure what each one costs an inner TCP flow, so the receiver''s ordering hold has a measured price instead of a guess. Runs after VM batch 1.'
   notes: 'ordering-hold.md par. 1: per released-then-filled hole, inner goodput deficit and retransmits against a matched no-release run, per inner stack (Linux Cubic with RACK and DSACK undo; RACK off). Warning carried to the owner: modern TCP tolerates reordering, so omega may be small and Auto/Bulk would then reorder in normal operation. Owner 2026-11-21: measure omega on this test and follow its result. Pre-registered in disorder-price-registration.md (round 4): netem reorderer in rp-* namespaces, no engine code; REL - CLEAN and HOLD - CLEAN scored, omega derived; Linux stack first, 8 flows, standing queue measured through the tunnel, holds split within/beyond the standing delay; about 20 h of VM at n = 8, up to about 27 h after cuts at the n = 24 clamp, more than 20 h goes back to the owner.'
+- id: rec-adr84-guard
+  title: Merge guard for the ADR-0084 sender side
+  track: rec
+  kind: research
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/adr84-guard-registration.md
+  - ADR-0084 Amendments 1 and 2
+  - docs/derivations/adr84-engine-brief.md
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - rate-s06-plost-derivation
+  - rec-evict-blocker-unresolved
+  - model-adr84-amend2
+  - model-adr84-sender-first
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: ''
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The regression test the sender-side give-up change must pass before it merges: the usual settings must behave exactly as before, and at the low-latency setting, where data may be dropped, the test must show that each new part actually ran (the give-up count, the last copy, the floor message, the source pause), including on two paths with unequal delay and on a link lossy enough to spend the whole give-up allowance.'
+  notes: 'Pre-registration draft (paper only, no VM), aligned with ADR-0084 Amendment 3 (Proposed) and the re-cut brief on main 2d203c19. BASE = main after the S06 merge (VM batch 1 guard 2), CAND = the sender-side build head (steps 1-8 plus the sender sites C2, C5, C12 refresh half, C3, C4, C1, C7, C6 and the sender scaffold; the receiver keeps its old arm under the Amendment 3 exception); --window-reliable on BASE, --window-rho on CAND, detected from perf --help. Stages: Bulk guard v2 (96 rows), Auto rho = 1 no-regression (48), Realtime rho = 1 completion (24); Realtime rho = 0.99 witnesses and invariants at c2, c8, a 20 ms skew dual (c2 + c2r50, C1 delay readout) and a budget-exhaust cell (c2r100l10), 96 rows; the floor-only pairing sender 0.99 / receiver 1, where floor passes and last copies are required (24); the lost tail after the old arm has spent the allowance, named limit L-TAIL (24); Auto 0.99 against 1 within CAND (12); test-seams twins for the account and the bind fraction of H (shed_recv_hold, 60-300 ms clamp) (30); optional paced pair (12). Sim gates first: T1, T1prime, T2, the floor ablation, the forward mixed pairing; the reverse pairing, sim_rho_dial and rho1_debt_is_gone stay red. Typical 10.5 h in four sessions. Merge also needs the owner answers to Amendment 3 Q-a and Q-b. Open: one guard on the head or three at the rho-step-sites cut points; owed release gauges. Proposed queue_order: after VM batch 1 guard 2. Done when: the guard Result is scored against this registration.'

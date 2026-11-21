@@ -345,6 +345,7 @@ flowchart TB
 | Do re-sends wait behind new data | ○ next | Checking whether re-sent packets have to wait behind new data in each path's send queue, which would slow the recovery of lost packets. |
 | Lost packet neither resent nor dropped | ⚠ open | When late data may be dropped (ρ below 1), a lost packet can be neither re-sent nor dropped, and the transfer then waits for the receiver to skip it; a lost final packet with nothing after it is never resolved. |
 | Mixed retention settings stall a transfer | ⚠ open | A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish. |
+| Merge guard for the ADR-0084 sender side | ⛔ blocked | The regression test the sender-side give-up change must pass before it merges: the usual settings must behave exactly as before, and at the low-latency setting, where data may be dropped, the test must show that each new part actually ran (the give-up count, the last copy, the floor message, the source pause), including on two paths with unequal delay and on a link lossy enough to spend the whole give-up allowance. |
 | First automatic repair-rate control | ✔ done · successful | The first automatic way to decide how much error-correcting (FEC) data to send, driven by an estimator that detects changes in the loss rate (BOCD). |
 | Owner call: retention is ρ | ✔ done · n/a | The owner decided that how long data is kept for resending is the reliability dial ρ, one of the three main dials, not a separate setting. |
 | Loss estimator updates in batches | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
@@ -1204,7 +1205,7 @@ History before November 2026 is reconstructed from commits, status sections and 
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 23 nodes (12 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 63 nodes (30 done, 8 in progress, 4 next, 3 blocked, 4 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 64 nodes (30 done, 8 in progress, 4 next, 4 blocked, 4 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 39 nodes (19 done, 5 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 71 nodes (37 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 22 nodes (8 done, 3 in progress, 1 next, 1 blocked, 9 abandoned)
