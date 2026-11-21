@@ -21,7 +21,7 @@
 ```
 
 - H_o is continuous and strictly decreasing in δ, finite for every δ > 0 and every ω < ∞, and H_o → 0 as ω → 0 (the out-of-order arm). It reads no ρ and no hint. The hypothesis "H_o ∝ 1/δ" holds only at low rate. At high rate H_o ∝ δ^(−1/2) (§3.3).
-- Whether Bulk and Auto keep strict order depends only on ω. With ω = 1 (one wasted packet, the `W_COST_RATIO` analogy), Bulk at 10 000 packets/s releases 2.5 % of holes before their fill, and Auto releases every hole. With the Reno cwnd-halving price ω = W²/8, Bulk and Auto hold through every operating-range fill (§4).
+- Whether Bulk and Auto keep strict order depends only on ω. With ω = 1 (one wasted packet, the `W_COST_RATIO` analogy), Bulk at 10 000 packets/s releases 2.5 % of holes before their fill, and Auto releases every hole. With the Reno cwnd-halving price ω = W²/8, Bulk and Auto hold through every operating-range fill from 10 000 packets/s up. Because that price shrinks as the square of the rate, slow flows release early: at 1 000 packets/s Auto releases the 2.5 % of holes whose first repair fails, at 100 packets/s Auto releases every hole, and at 10 packets/s Bulk releases at about 3 ms (§4).
 
 **Inputs read** (`github/main` `ca555715`):
 - `skip-rule-efficiency.md` §1, §3.4, §4.1 and §6;
@@ -66,7 +66,7 @@ The simplest form is one constant per hole, charged when the late fill arrives. 
 | option | value | provenance | weakness |
 |---|---|---|---|
 | (a) unit | ω = 1 | analogy to `W_COST_RATIO`: one spurious inner retransmission is one wasted packet | ignores the cwnd halving; §4 shows it changes Bulk at ≥ 10 000 packets/s and Auto everywhere |
-| (b) cited Reno halving | ω = W²/8, with W = g·SRTT in packets | RFC 5681 eq. 4 (halving) plus additive increase of 1 SMSS per RTT: the send deficit of one halving at window W is W/2 packets over W/2 RTTs, W²/8 in total | assumes one inner Reno flow fills the tunnel and no DSACK undo. With k flows the halving hits one flow of window W/k: W²/(8k²). An upper end |
+| (b) cited Reno halving | ω = W²/8, with W = g·SRTT in packets | RFC 5681 eq. 4 (halving) plus additive increase of 1 SMSS per RTT: the send deficit of one halving at window W is W/2 packets over W/2 RTTs, W²/8 in total | assumes one inner Reno flow fills the tunnel and no DSACK undo. With k flows the halving hits one flow of window W/k: W²/(8k²). W uses the tunnel SRTT, a lower bound on the inner RTT, so this is not a clean upper end either way |
 | (c) measured | ω = inner goodput deficit per released-then-filled hole, in packets | a TCP-in-tunnel battery with releases forced by a test seam, counting inner retransmissions and goodput deficit (`iperf3` retr) per released-then-filled hole | needs the battery; depends on the inner stack (Linux RACK with DSACK undo, Cubic) |
 
 **Recommendation.** Use (c), with (b) as its stated upper bound. (a) is listed only to show what a unit price does. Do not back-solve ω from today's Realtime SRTT/2. That would be calibration, not provenance.
@@ -91,7 +91,7 @@ skip-rule §1 prices `T_stall`, the frontier-blocked seconds. Under U the fronti
 | symbol | provenance |
 |---|---|
 | D_j | measured. For a late fill it contains its whole resolution, so it is never free |
-| δ/d | paper §7.3: one ARQ resolution delay d of a genuine loss costs δ repair symbols. That is the price of *one packet's* delay, so a per-packet sum is the faithful use of it, more faithful than frontier seconds |
+| δ/d | paper §7.3: one ARQ resolution delay d of a genuine loss costs δ repair symbols, the price of the *lost packet's own* delay. §7.3 prices the frontier separately (Φ). Charging δ/d per packet-second to the successors too is **this document's extension**, not the paper's. The frontier-priced alternative (n ≡ 1) is carried beside it in §4.1 |
 | ω | declared, new (§1) |
 | N_rep, S_del, d | measured, as in skip-rule §1 |
 
@@ -127,7 +127,7 @@ For one hole with hold h, the release-dependent part of J_U is
 
 ### 3.2 The rule proposed: rent or buy
 
-Holding is renting: it costs `(δ/d)·n(t)` per second. Releasing is buying: it costs ω if the fill later comes. The deterministic rent-or-buy rule is "buy when the rent paid equals the purchase price" (ski rental; Karlin, Manasse, Rudolph and Sleator, *Competitive snoopy caching*, Algorithmica 3, 1988).
+Holding is renting: it costs `(δ/d)·n(t)` per second. Releasing is buying: it costs ω if the fill later comes. The deterministic rent-or-buy rule is "buy when the rent paid equals the purchase price" (ski rental; Karlin, Manasse, Rudolph and Sleator, *Competitive snoopy caching*, Algorithmica 3, 1988; cited from memory, not re-fetched here, so the reference is to be confirmed).
 
 "Release a hole when the δ-priced delay it has already imposed on the packets held behind it reaches the disorder price."
 
@@ -146,12 +146,14 @@ Holding is renting: it costs `(δ/d)·n(t)` per second. Releasing is buying: it 
 
 - **Sharing the hold.** Between arrivals, B_s is linear in t, so the deadline is closed-form. With k held packets and Σ the sum of their `max(a_j, t_detect)`, the deadline is `t* = (ω·d/δ + Σ)/k`. It is recomputed at each arrival, one timer, like C12's deadline.
 - **Order is automatic, with no rule.** Any arrival above s is also above every hole s' < s. So `t_detect(s') ≤ t_detect(s)` and `P_{s'} ⊇ P_s`, hence `B_{s'} ≥ B_s`. A lower hole always reaches ω first, and the holes of a run detected together release together. Run-atomicity at the receiver falls out of the formula.
-- **Guarantee, for any fill distribution.** Per hole, `cost(rent-or-buy) ≤ 2·OPT + ω·1{R = ∞}`, with OPT the offline cost knowing R:
+- **Guarantee, for any fill distribution, for an isolated hole (a sketch).** Per hole, `cost(rent-or-buy) ≤ 2·OPT + ω·1{R = ∞}`, with OPT the offline cost knowing R:
   - if R ≤ H_o, the cost is the rent to R, which is ≤ ω, and that is OPT;
   - if H_o < R < ∞, the cost is 2ω, and OPT = min(rent to R, ω) = ω;
   - if R = ∞, the cost is ω and OPT = 0.
 
   The additive term is bounded by the verdict rate, ≈ ε·ĥ (skip-rule §3.4). The rule needs no hazard estimate, so it has no self-censoring problem.
+
+  The bound is proven only for an isolated hole. B_s counts every packet above s, including packets that a higher hole still holds after s is released. Under overlapping stalls (42–67 % of holes in I1, skip-rule §6) rent is charged twice and the bound is unproven. The toy scores the rule against skip-rule §6's LP bound.
 - **What it gives up.** It does not exploit a known reorder spike. At N ≥ 2, a slow-path original arriving shortly after detect (high self-heal, π₀ up to 0.96 at c7) is released if H_o is shorter than the path skew. The 2× bound still holds. A distribution-aware refinement must itself be continuous in δ (§3.1 shows the naive one is not), and it is open.
 
 ### 3.3 Closed form and shape
@@ -185,7 +187,10 @@ The release-before-fill fraction is `P(H_o < R < ∞) ≈ ε^k`, where k is the 
 | 100 000 | W²/8 = 125 000 | 2.35 s, rbf ≈ 0 | 235 ms, rbf ≈ 0 | 23.4 ms, rbf 0.025 |
 
 Reading:
-- **Continuity.** Each ±2 % nudge moves H_o by about ∓1 % (the δ^(−1/2) regime) to ∓2 % (the 1/δ regime). There is no step at any preset or between presets, because H_o is a smooth, strictly monotone function of δ.
+- **Continuity of the law.** Each ±2 % nudge moves H_o by about ∓1 % (the δ^(−1/2) regime) to ∓2 % (the 1/δ regime). H_o has no step at any preset or between presets: it is a smooth, strictly monotone function of δ.
+- **Continuity of the behaviour is owed, not shown.** The realised behaviour is rbf = S(H_o(δ)). It steps wherever fill times are bunched, and the ε^k column above is exactly that staircase in this idealised example (fills at exact round times). With real jitter S is smooth. Behaviour continuity at each preset is the toy's ±2 % nudge check (skip-rule §6 P3), and it is reported, not assumed.
+- **Frontier pricing, for comparison** (n ≡ 1, `H_o = ω·d/δ`, rate-free): at ω = 1, 2.2 s at Bulk, 22 ms at Auto and 0.22 ms at Realtime. The "ω = 1 breaks Auto" conclusion holds under per-packet pricing only. Under frontier pricing Auto at ω = 1 holds through one round (rbf ≈ ε).
+- **Slow flows under option (b)** (ω = W²/8 shrinks as g²): at g = 100, H_o = 65 ms at Bulk, 2.5 ms at Auto (rbf 1) and 0.03 ms at Realtime. At g = 10, H_o = 2.7 ms at Bulk (rbf 1).
 - **Realtime** (rbf = 1 means "released before the first repair, by design"). At ω = 1, Realtime releases at detect. At ω = W²/8 and 10 000 packets/s, it releases at 7.3 ms, close to today's SRTT/2 = 5 ms. At 100 000 packets/s it holds through the first repair (23 ms), slower than today, because one Reno halving of a 1 000-packet window is priced above 23 ms of delay to the held packets. That is the price speaking, not a defect, but the owner must know it.
 
 ### 4.2 The requirement as a condition on ω
@@ -212,6 +217,7 @@ In the example (Bulk needs 1/100 of this):
 
 - **A one-path outage at N ≥ 2.** The live path keeps delivering and the dead path's seqs are holes. Bulk releases them after H_o (742 ms at 10 000 packets/s with ω = W²/8). Today it holds until the path returns or the sender re-places the seqs. Any inner TCP then sees those seqs late and out of order, instead of seeing a stall.
 - **Persistent repair loss on one hole** (k rounds lost, ε^k): the same, after H_o.
+- **A slow flow under option (b).** ω = W²/8 → 0 as the rate falls, so Bulk releases every repaired hole below about 100 packets/s (2.7 ms hold at 10 packets/s). A tiny inner window cannot collect three duplicate ACKs anyway, so the disorder there is mostly cheap, but it is a change from today's strict order.
 - **A fast link with a rate-independent ω** (options (a) or (c) measured at low rate): `H_o ∝ g^(−1/2)` shrinks to operating-range fill times. That is the 100 000 packets/s, ω = 1 row.
 - **Nothing is lost by any of these.** The ack keeps reporting the hole and the sender keeps serving it (U).
 
@@ -229,12 +235,13 @@ Each gauge is printed per preset and per stage (FORMULA-FIRST: every term that c
 
 - **Two frontiers, and every floor keyed on the ack.** Today the expiry moves `next_expected` with delivery (`receiver.rs:1024`). Under U, `next_expected`, which is A_rx in skip-rule §4.1, must not move on a release. It also feeds `decode_inert_floor` (`receiver.rs:666`), the `received_seqs` prune and `window_decoder.advance`, and every one of these must stay keyed on A_rx, never on the delivery frontier `reorder.next_deliver_seq()`. If any followed delivery, the sender would prune the hole (an uncounted loss, today's defect), and a late fill more than 2·W below delivery would be refused by the decoder.
 - **Dedup of late copies.** `ReorderBuffer::push_with_time` hands out *any* seq below `next_deliver_seq` at once, with no membership test (`reorder.rs:75–82`). After a release, a duplicate copy of an already-delivered seq would be delivered twice if it reached the buffer. The dedup that prevents this is the decoder's: `src_seen` refuses a repeated source seq (`unified.rs:390`, `rlc_window.rs:468`), and the trait's contract returns each seq at most once (`window_traits.rs:155`).
-  - That holds on `[floor, floor + 2²⁴)` (`seq_bits.rs` `MAX_SPAN`). Under U the floor stays at or below `A_rx − 1 − 2W`, and the received span above it is bounded by the sender's outstanding cap B = N·2048 (ledger F01), which is far below 2²⁴.
+  - That holds on `[floor, floor + 2²⁴)` (`seq_bits.rs` `MAX_SPAN`). Under U the floor stays at or below `A_rx − 1 − 2W`, and the received span above it is rate × (time to the hole's fill or verdict). B does not bound it, because SACKed seqs leave O (the open item below). At 10 000 packets/s, 2²⁴ seqs is about 28 minutes.
+  - Past `MAX_SPAN`, `SeqBits::insert` refuses and the decoder treats the seq as fresh (`|| !contains`). Under U the reorder buffer would then hand a duplicate out again. So `SeqBits::refused` becomes a **correctness gauge that must read 0**, not only a SACK under-claim.
   - Owed test: a duplicate of a seq delivered past a release is not delivered twice, at N = 2.
 - **The released set.** It is `abandoned_seqs` (`receiver.rs:271`). Entries leave it on fill (`:1583`). Under U they must also leave it when A_rx passes them on a floor (the counted verdict: lost, in G_rx).
   - **Bound.** A released, unfilled hole is neither acked nor SACKed, so it stays in the sender's O, and O ≤ B = N·2048. So |released| ≤ B, which is below `ABANDONED_TRACK_MAX` = 65 536 for N ≤ 31.
   - The oldest-first eviction at the cap is not a correctness mechanism: delivery of a late fill does not read the set. An eviction only undercounts the gauges. It gets an eviction counter, which must read 0.
-- **SACK release (C2).** Seqs received above a released hole are SACKed and leave O. The hole stays in O and in the store, and is served. The sender keeps the SACKed payloads until the cumulative frontier passes them (ADR-0060, paper §6.3), so U frees no sender memory. It frees receiver memory: released payloads go to the consumer instead of waiting in `pending`. rho-step-sites' open item (nothing derived bounds the receiver's pending set above a stuck hole under SACK release) is therefore bounded by H_o at Realtime. It remains open where H_o is long (Bulk).
+- **SACK release (C2).** Seqs received above a released hole are SACKed and leave O. The hole stays in O and in the store, and is served. The sender keeps the SACKed payloads until the cumulative frontier passes them (ADR-0060, paper §6.3), so U frees no sender memory. It frees little receiver memory: released payloads leave the reorder buffer's `pending`, but the decoder keeps received payloads above `decode_inert_floor` (`unified.rs:183` `recovered`, `receiver.rs:655–672`) until A_rx moves, that is until fill or verdict. rho-step-sites' open item (nothing derived bounds the receiver's state above a stuck hole under SACK release) is therefore **not** closed by U, at any δ.
 - **A full consumer (C10).** The release must deliver through the holding path (`WindowDelivery::offer`). Today's expiry path calls `try_send` and drops on Full (`receiver.rs:1023`). Under U a dropped released packet would be an uncounted loss.
 
 ## 7. Interaction with H, the floor-pass hold (C11, UNDERIVED)
@@ -246,12 +253,13 @@ Each gauge is printed per preset and per stage (FORMULA-FIRST: every term that c
 **What this gives H.** H falls out of the same objective, but not out of the δ law. It is the end of the support of the last copy's arrival relative to the floor's, a path quantity:
 
 ```text
-   H  =  ( owd(copy's path)  −  owd(first floor path) )⁺  +  the in-path reorder spread
+   H  =  max over paths p still carrying a copy or the original of s ( owd_p − owd(first floor path) )⁺  +  the in-path reorder spread
 ```
 
 - At N = 1, with the copy and the floor sent on one path at one instant (skip-rule §3.1), H ≈ the in-path reorder ≈ 0. Today's SRTT/2 overstates it.
 - Which measured quantile bounds the spread is open. The candidate is the observed maximum, like §3.4's t_max, with a bind gauge.
-- This settles C11's open question of H's kind: H is a reorder cover, a path quantity, not a δ quantity. `min(b(δ), 2)·SRTT` has no derivation here.
+- Earlier copies, or the original on a slower path, can also fill after the floor, hence the max over paths.
+- **Proposed** answer to C11's open question of H's kind: H is a reorder cover, a path quantity, not a δ quantity. `min(b(δ), 2)·SRTT` has no derivation here.
 
 **One hold cannot serve both.** H_o is a price ratio (δ against ω); H is a support bound (paths). They compose in one deadline, both terms always computed, absent = ∞, as C12's deadline does:
 
@@ -267,8 +275,9 @@ Each gauge is printed per preset and per stage (FORMULA-FIRST: every term that c
 | H | not read | through t_F only (no floor at ρ = 1) | not read | — |
 | min(·, ·) | both terms always computed | | | |
 
+- The law is continuous. The realised behaviour rbf = S(H_o(δ)) is continuous only where the fill-time survival S is, so its continuity is owed to the toy's nudge check (§4.1), not claimed here.
 - The protocol hints are named δ points on one curve (§4.1). Explicit ρ = 1 with the Realtime δ releases, with no loss (skip-rule §5).
-- **Owed tests**, in the style of `test_continuum_one_law_across_the_dial`: H_o at each preset against its ±2 % nudges, monotone and with no step; an absolute H_o at the anchors for a fixed (g, n₀, d, ω); and rbf continuity across the Bulk preset in the toy.
+- **Owed tests**, in the style of `test_continuum_one_law_across_the_dial`: H_o at each preset against its ±2 % nudges, monotone and with no step; an absolute H_o at the anchors for a fixed (g, n₀, d, ω); and rbf continuity across every preset in the toy (the behaviour check of §4.1).
 - **The toy simulation** (skip-rule §6) replaces its H_o sweep with an ω sweep: ω ∈ {0, 1, W²/8, 10·W²/8}. It adds the gauges of §5, and a cell with inner TCP displacement scored by DupThresh.
 
 ## 9. What this blocks
@@ -288,5 +297,6 @@ Each gauge is printed per preset and per stage (FORMULA-FIRST: every term that c
 
 **Your decisions.**
 1. **ω, the price of disorder.** One out-of-order delivery costs as much as how many resent packets? The options: (a) 1; (b) one TCP window halving, W²/8, computed from the measured rate and RTT; (c) measured on a TCP-in-tunnel test. The recommendation is (c), with (b) as the ceiling.
-2. **Should ω follow the rate?** (b) grows with the link rate and keeps Bulk's hold long on fast links. A fixed ω shortens the hold as the rate grows.
+2. **Should ω follow the rate?** (b) grows with the link rate and keeps Bulk's hold long on fast links, but it shrinks on slow ones (Bulk reorders below about 100 packets/s). A fixed ω shortens the hold as the rate grows.
 3. **Is reordering after a long outage at Bulk acceptable** (§4.3), in exchange for no stall? If not, ω must be very large there, which is the same as R1, U's no-release staging point.
+4. **How to price delay:** per delayed packet (this document's extension, the stricter for Auto) or per stalled second (skip-rule §1, which lets ω = 1 keep Auto in order through one repair).
