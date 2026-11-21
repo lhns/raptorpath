@@ -160,7 +160,7 @@ check("battery: the table-size asserts (96 / 40, 10 rehearsal, 2 smoke), the rep
 check("battery: the binary must carry RWM_SLAW, the pool knob and the shed gate, and (grep -F: a bracket expression otherwise) the [SLAW] window line",
       'preflight_binary "$BIN" "RWM_SLAW" "RWM_STORE_PATH_POOL" "RWM_UNIFIED_SHED"' in battery and 'grep -aqF -- "[SLAW] t=" "$BIN"' in battery)
 check("run_all: plans 60a / 60b are selectable and rehearsable; both ride the single-seat gates (P57) and carry the registered bin_sha / manifest (ABORT-SUITES before anything runs without a manifest)",
-      "  60a) P_SMOKE=" in runall and "  60b) P_SMOKE=" in runall and "|59|60a|60b|65) ;; *) echo \"ABORT-REHEARSE" in runall and 'P60=0; { [ "$PLAN" = "60a" ] || [ "$PLAN" = "60b" ]; } && { P60=1; P46=1; P57=1; }' in runall
+      "  60a) P_SMOKE=" in runall and "  60b) P_SMOKE=" in runall and "|59|60a|60b|65|67) ;; *) echo \"ABORT-REHEARSE" in runall and 'P60=0; { [ "$PLAN" = "60a" ] || [ "$PLAN" = "60b" ]; } && { P60=1; P46=1; P57=1; }' in runall
       and "ABORT-SUITES no reference manifest at $LD_REF_MANIFEST" in runall)
 check("run_all: the registered values are the defaults: bin_sha e410d640... (60-pre) and tools/l1/ref60-manifest.sha256 (187 files), overridable",
       "LD_BIN_SHA_EXPECT:-e410d64053ab0a143e813aded2e4023176b41edf09d287e795252736b0e5f25d" in runall and 'LD_REF_MANIFEST:-$HERE/ref60-manifest.sha256' in runall

@@ -290,7 +290,7 @@ per seed; 0 DNF anywhere. Crown: 64 reps. Ledgers: `docs/l1-raw/stage3/`
 `crown/crown-s7.log` e68fd0ce…, the smoke, `PLAN.txt`, `BINSHA.txt`,
 `all-era.txt`, and the scorer's full output `score.txt` with every per-rep
 value); per-invocation endpoint logs (32 MB) stay on the VM under
-`/home/vibe/stage3/run/diag-s3`.
+`~/stage3/run/diag-s3`.
 
 *(a) The committed MDE table* (window pipeline, bulk, A1 vs A2, n = 10 each;
 MDE = max(2·|Δmed|, half-range of A1 ∪ A2); every later comparison on these

@@ -3,18 +3,18 @@
 # One arm: shipped defaults, RWM_GEN=0, RWM_DIAG=1 RWM_FDIAG=1, seed 42.
 #   usage: holeaudit_battery.sh <reps>
 set -u
-cd /home/vibe/raptorpath/tools/l1
+cd $HOME/raptorpath/tools/l1
 REPS="${1:-3}"
 SEED=42
-BIN=/home/vibe/raptorpath/target/release/raptorpath
-RUN=/home/vibe/holeaudit
+BIN=$HOME/raptorpath/target/release/raptorpath
+RUN=$HOME/holeaudit
 OUT=$RUN/battery-s${SEED}.log
 DDIR=$RUN/diag
 mkdir -p "$DDIR"
 : > "$OUT"
 echo "# holeaudit battery $(date -u +%FT%TZ) seed=$SEED reps=$REPS" >> "$OUT"
 echo "# binary: $(sha256sum $BIN)" >> "$OUT"
-echo "# source: $(cat /home/vibe/raptorpath/COMMIT)" >> "$OUT"
+echo "# source: $(cat $HOME/raptorpath/COMMIT)" >> "$OUT"
 lscpu | grep "Model name" >> "$OUT"
 
 # Sentinel: writability proven, by the unprivileged user, at launch.

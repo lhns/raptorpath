@@ -2,7 +2,7 @@
 # The crown no-regression spot: the realtime tail matrix on the shipped
 # defaults (result in docs/status.md §2).
 #
-#   bash crownspot8.sh          # run as `vibe`, unprivileged; sudo is taken
+#   bash crownspot8.sh          # run as the VM user, unprivileged; sudo is taken
 #                               # per stage, inside, so the sentinels are
 #                               # written by the level that reads them.
 #
@@ -20,8 +20,8 @@ set -uo pipefail
 
 # CROWNSPOT_OUT / RWM_BIN: overridable so an envelope (stage3_run_all.sh) can
 # run the spot into its own run directory on its own binary; unset = unchanged.
-OUT="${CROWNSPOT_OUT:-/home/vibe/crownspot8}"
-BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
+OUT="${CROWNSPOT_OUT:-$HOME/crownspot8}"
+BIN="${RWM_BIN:-$HOME/raptorpath/target/release/raptorpath}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CELLS="${CROWNSPOT_CELLS:-c2 c3}"
 REPS="${CROWNSPOT_REPS:-8}"

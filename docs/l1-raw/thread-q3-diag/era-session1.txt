@@ -1,5 +1,5 @@
 LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
-LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
 build start commit=81b5335 2026-10-06T13:18:50Z
 build done wall=296s sha256=b25fea272e6d2496ee5a6a9072518213ea8903c217baabbfae3fe6489f413cf9 2026-10-06T13:23:46Z
 tests rc=0 test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 527 filtered out; finished in 0.25s 2026-10-06T13:28:18Z
@@ -24,4 +24,4 @@ RUN E-c1s-perf cell=c1s rtobs=1 diag=1 perf=1 rc=0 wall=21s "mbps":770.508 2026-
 RUN E-c1d-perf cell=c1d rtobs=1 diag=1 perf=1 rc=0 wall=12s "mbps":670.663 2026-10-06T13:30:43Z
 END raptorpath=0 netns=0 2026-10-06T13:30:49Z
 LOCK-RELEASED /tmp/rwm-vm.lock
-LOCK-RELEASED /home/vibe/rp.lock
+LOCK-RELEASED ~/rp.lock

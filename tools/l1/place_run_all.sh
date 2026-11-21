@@ -3,9 +3,9 @@
 # `place_battery.sh` under the five-hour cap (docs/measurement-discipline.md,
 # "The five-hour cap").
 #
-#   nohup bash place_run_all.sh >/home/vibe/placement/launch.out 2>&1 &
+#   nohup bash place_run_all.sh >$HOME/placement/launch.out 2>&1 &
 #
-# Started as `vibe`, not root. It uses `sudo` for the battery invocations
+# Started as the VM user, not root. It uses `sudo` for the battery invocations
 # alone (the battery needs root for the rp-* namespaces) and does every
 # sentinel operation as the unprivileged user,
 # so the sentinel writability it proves at launch is the writability the exit
@@ -43,11 +43,11 @@
 # process table: `pgrep -f place_battery.sh` matches the watcher's own shell
 # whenever its command line carries the string.
 set -u
-cd /home/vibe/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+cd $HOME/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard place_run_all.sh place_battery.sh lib_battery.sh
-OUTDIR="${RWM_PLACE_OUTDIR:-/home/vibe/placement}"
+OUTDIR="${RWM_PLACE_OUTDIR:-$HOME/placement}"
 TAG="${RWM_PLACE_TAG:-place}"
 REPS="${RWM_PLACE_REPS:-4}"
 SEEDS="42 7"
@@ -161,7 +161,7 @@ run_seed() {
   t0=$(date +%s)
   echo "PLACE-ALL invoke seed=$s reps=$REPS $(date -u +%FT%TZ)"
   # `sudo` here and nowhere else: the battery needs root for the rp-*
-  # namespaces; every sentinel path above and below is touched as `vibe`.
+  # namespaces; every sentinel path above and below is touched as the VM user.
   # Backgrounded only to learn its pid, then waited on: still one battery at
   # a time, and `wait` returns the battery's own rc (sudo passes it through).
   sudo env RWM_PLACE_TAG="$TAG" RWM_PLACE_OUTDIR="$OUTDIR" bash place_battery.sh "$s" "$REPS" &

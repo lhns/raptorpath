@@ -1,0 +1,8 @@
+design-skills ea48dcf9 (https://github.com/lhns/design-skills, path skills/tech-tree/)
+
+This directory is a verbatim copy of skills/tech-tree/ at that commit, plus this file.
+Local patches: none. Any local change must be listed here and sent upstream.
+Update in either direction (run from the repo root, with a design-skills clone at $DS):
+  git -C $DS fetch && git -C $DS archive origin/main skills/tech-tree | tar -x --strip-components=2 -C tools/roadmap/skill
+  (then diff, set the new commit above, re-run build/check/tests)
+  upstream: diff tools/roadmap/skill against $DS/skills/tech-tree and commit there.

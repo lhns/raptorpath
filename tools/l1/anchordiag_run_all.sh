@@ -3,9 +3,9 @@
 # storelaw19_run_all.sh. ONE binary, built fresh from $AD_ROOT/src (a git
 # archive with a COMMIT file at $AD_ROOT/COMMIT) into a fresh $AD_ROOT/target.
 #
-#   AD_ROOT=/home/vibe/n1/ad setsid nohup bash anchordiag_run_all.sh > $AD_ROOT/launch.out 2>&1 < /dev/null &
+#   AD_ROOT=$HOME/n1/ad setsid nohup bash anchordiag_run_all.sh > $AD_ROOT/launch.out 2>&1 < /dev/null &
 #
-# Run from $AD_ROOT/src/tools/l1 as `vibe`; `sudo -n` only for the
+# Run from $AD_ROOT/src/tools/l1 as the VM user; `sudo -n` only for the
 # measurement stages. WAITS for both operator locks (never breaks them), then
 # holds them for the whole session: build -> smoke -> battery -> score.
 set -u
@@ -36,9 +36,9 @@ install_lock_traps
 # Wait read-only (test -e only) until both locks are free, then take them with
 # lib_battery.sh take_lock (noclobber + flock on a <> fd). A lost race aborts
 # with ABORT-LOCK and nothing run; relaunch.
-until ! test -e /tmp/rwm-vm.lock && ! test -e /home/vibe/rp.lock; do sleep 30; done
+until ! test -e /tmp/rwm-vm.lock && ! test -e $HOME/rp.lock; do sleep 30; done
 take_lock /tmp/rwm-vm.lock
-take_lock /home/vibe/rp.lock
+take_lock $HOME/rp.lock
 era "AD-ALL locks held; cotenants cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg)"
 
 python3 ./test_anchordiag_parse.py > "$RUN/parser-test.log" 2>&1 || fail_all "ABORT-TESTS (parser-test.log)"

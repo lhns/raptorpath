@@ -1,20 +1,20 @@
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/DONE-ALL (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/FAILED-ALL (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/all-era.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/SMOKE-PASS (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/ABORT-SMOKE (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/BINSHA.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/build-law.log (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/build-main.log (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/smoke.log (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/smoke-check.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/sl.log (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/score.txt (probed as vibe, create+unlink)
-SENTINEL-WRITABLE /home/vibe/n1/s19/run/parser-test.log (probed as vibe, create+unlink)
-SENTINEL-PROOF-COMPLETE 2026-10-26T06:42:04Z user=vibe dir=/home/vibe/n1/s19/run launch=2026-10-26T06:42:04Z
+SENTINEL-WRITABLE ~/n1/s19/run/DONE-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/FAILED-ALL (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/all-era.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/SMOKE-PASS (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/ABORT-SMOKE (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/BINSHA.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/build-law.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/build-main.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/smoke.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/smoke-check.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/sl.log (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/score.txt (probed as VMUSER, create+unlink)
+SENTINEL-WRITABLE ~/n1/s19/run/parser-test.log (probed as VMUSER, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-10-26T06:42:04Z user=VMUSER dir=~/n1/s19/run launch=2026-10-26T06:42:04Z
 SL19-ALL start load=3.99 4.39 4.00 3/357 308163 2026-10-26T06:42:04Z
 LOCK-TAKEN /tmp/rwm-vm.lock
-LOCK-TAKEN /home/vibe/rp.lock
+LOCK-TAKEN ~/rp.lock
 SL19-ALL locks held; cotenants cargo=0 rustc=0 load=1.41 2.01 2.72 2026-10-26T07:08:24Z
 SL19-ALL parser test ok 2026-10-26T07:08:33Z
 SL19-ALL law built wall=441s 2026-10-26T07:15:54Z
@@ -28,4 +28,4 @@ SMOKE ('c1s-400', 'LAW-realtime'): mbps=140.032 eng=4444/4444 pin=0.0 win_med=10
 SMOKE-FAIL ('c2-100', 'MAIN'): WITNESS-FAIL ['main-sumcap-eng-zero-at-N2']
 SL19-ALL FAILED: ABORT-SMOKE (smoke-check.txt) 2026-10-26T07:26:32Z
 LOCK-RELEASED /tmp/rwm-vm.lock
-LOCK-RELEASED /home/vibe/rp.lock
+LOCK-RELEASED ~/rp.lock

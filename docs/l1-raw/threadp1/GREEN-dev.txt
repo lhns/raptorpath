@@ -1,11 +1,11 @@
 ##### green1.log
 LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
-LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
-=== e8f876c start 2026-10-05T15:44:03Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast 2>&1 | grep -E "^test result|FAILED|panicked|^error|warning: unused" ; for t in lock_order_loopback perf_loopback shutdown_test walldiag_loopback emit_batch_default_loopback wire_compact_loopback ackdiag_repair_recon copa_sole_loopback; do echo "== $t"; cargo test -p raptorpath --test $t -- --nocapture 2>&1 | grep -E "^test |test result|panicked|lockorder|lock order|^error"; done
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+=== e8f876c start 2026-10-05T15:44:03Z cmd: export CARGO_TARGET_DIR=~/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast 2>&1 | grep -E "^test result|FAILED|panicked|^error|warning: unused" ; for t in lock_order_loopback perf_loopback shutdown_test walldiag_loopback emit_batch_default_loopback wire_compact_loopback ackdiag_repair_recon copa_sole_loopback; do echo "== $t"; cargo test -p raptorpath --test $t -- --nocapture 2>&1 | grep -E "^test |test result|panicked|lockorder|lock order|^error"; done
 ##### green2.log
 LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
-LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
-=== a557afc start 2026-10-05T15:51:16Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|^test |test result|panicked|^error"; cargo test -p raptorpath --release --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|^test |test result|panicked|^error"; cd raptorpath/tools/l1 && python3 -c "import threadp1_parse" && echo parse-import-ok
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+=== a557afc start 2026-10-05T15:51:16Z cmd: export CARGO_TARGET_DIR=~/tp1/target-dev; cargo test -p raptorpath --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|^test |test result|panicked|^error"; cargo test -p raptorpath --release --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|^test |test result|panicked|^error"; cd raptorpath/tools/l1 && python3 -c "import threadp1_parse" && echo parse-import-ok
 [ack-wake] tun=877 paused=943 pace=0 gen=0 nack=337 defc=0 tail=28 flush=0 ack=3526  (paused/ack = 0.2674)
 thread 'a_paused_sender_is_woken_by_acks_not_by_the_timer' (1456264) panicked at raptorpath/tests/ack_wake_loopback.rs:44:5:
 test a_paused_sender_is_woken_by_acks_not_by_the_timer ... FAILED
@@ -19,11 +19,11 @@ error: test failed, to rerun pass `-p raptorpath --test ack_wake_loopback`
 parse-import-ok
 === DONE rc=0 2026-10-05T15:57:02Z
 LOCK-RELEASED /tmp/rwm-vm.lock
-LOCK-RELEASED /home/vibe/rp.lock
+LOCK-RELEASED ~/rp.lock
 ##### green3.log
 LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
-LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
-=== 1c2a57c start 2026-10-05T15:58:21Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast -- p1_ wait_attribution_tests connections_are_reached sched_lock path_ref_is 2>&1 | grep -E "^test |test result|panicked|^error"; for i in 1 2 3; do cargo test -p raptorpath --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|test result|panicked|^error"; done; cargo test -p raptorpath --release --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|test result|panicked|^error"; cargo test -p raptorpath --test lock_order_loopback -- --nocapture 2>&1 | grep -E "lockorder|test result"
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+=== 1c2a57c start 2026-10-05T15:58:21Z cmd: export CARGO_TARGET_DIR=~/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast -- p1_ wait_attribution_tests connections_are_reached sched_lock path_ref_is 2>&1 | grep -E "^test |test result|panicked|^error"; for i in 1 2 3; do cargo test -p raptorpath --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|test result|panicked|^error"; done; cargo test -p raptorpath --release --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|test result|panicked|^error"; cargo test -p raptorpath --test lock_order_loopback -- --nocapture 2>&1 | grep -E "lockorder|test result"
 test monitor::stats::tests::path_ref_is_the_same_stats_as_path ... ok
 test net::diag::wait_attribution_tests::a_busy_iteration_lands_in_busy_not_in_the_next_arm ... ok
 test net::diag::wait_attribution_tests::the_histogram_is_wide_enough_for_every_bucket ... ok
@@ -52,4 +52,4 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.49s
 === DONE rc=0 2026-10-05T16:03:34Z
 LOCK-RELEASED /tmp/rwm-vm.lock
-LOCK-RELEASED /home/vibe/rp.lock
+LOCK-RELEASED ~/rp.lock

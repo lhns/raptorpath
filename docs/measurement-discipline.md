@@ -189,7 +189,7 @@ abort. An absent gauge is printed `-` if and only if n = 0.
 
 ## The VM protocol
 
-- **Locks.** Take both `/tmp/rwm-vm.lock` and `/home/vibe/rp.lock` for the
+- **Locks.** Take both `/tmp/rwm-vm.lock` and `~/rp.lock` for the
   whole session (build, smoke and battery), and release both at exit.
   A lock is held while its file exists: create it with noclobber
   (`set -o noclobber; : > /tmp/rwm-vm.lock`, which fails if it is held),

@@ -4,11 +4,11 @@
 # a short matrix of single invocations, per-CPU /proc/stat sampling around
 # each, and two system-wide `perf record`s.
 #
-#   Q3_ROOT=/home/vibe/q3diag setsid nohup bash q3diag_run.sh \
+#   Q3_ROOT=$HOME/q3diag setsid nohup bash q3diag_run.sh \
 #       > $Q3_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree ($Q3_ROOT/src/tools/l1). Started as
-# `vibe`; `sudo -n` only for the measurement stages. Both operator locks are
+# the VM user; `sudo -n` only for the measurement stages. Both operator locks are
 # held for the whole session (build included). Sentinel: $RUN/DONE or
 # $RUN/FAILED (cause in era.txt).
 set -u
@@ -29,7 +29,7 @@ LB_TAG="q3diag_run:$$"
 LB_LOG="$RUN/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 trap 'release_locks; touch "$RUN/FAILED"' INT TERM
 fail() { era "FAILED: $*"; touch "$RUN/FAILED"; release_locks; exit 5; }
 

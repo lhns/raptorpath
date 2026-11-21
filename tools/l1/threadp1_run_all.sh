@@ -2,11 +2,11 @@
 # THE V-P1 ENVELOPE (docs/status.md, "Threading P1 — pre-registration";
 # docs/measurement-discipline.md "The five-hour cap").
 #
-#   TP1_ROOT=/home/vibe/tp1run TP1_HARD_DEADLINE=<epoch> \
+#   TP1_ROOT=$HOME/tp1run TP1_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash threadp1_run_all.sh > $TP1_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced P1 tree ($TP1_ROOT/src/tools/l1); the MAIN
-# tree (archive of main 8d7d8c1) is at $TP1_ROOT/main-src. STARTED AS `vibe`,
+# tree (archive of main 8d7d8c1) is at $TP1_ROOT/main-src. STARTED AS the VM user,
 # NOT ROOT; `sudo -n` only for the measurement stages.
 #
 # ORDER (pre-registered), all under both operator locks taken HERE:
@@ -75,7 +75,7 @@ LB_LOG="$RUN/all-era.txt"
 echo "TP1-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg) hard=$TP1_HARD_DEADLINE soft=$SOFT" > "$RUN/all-era.txt"
 install_lock_traps
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+RP_LOCK="${RWM_RP_LOCK:-$HOME/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export TP1_LOCK_OWNER="threadp1_run_all:$$"

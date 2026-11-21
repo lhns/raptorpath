@@ -282,7 +282,7 @@ contaminated, 0 DNF); 6 per (cell, arm), 3 per seed. Ledgers:
 with every per-rep value and per-seed median, `TESTS.txt`, `smoke.log`,
 `smoke-check.txt`, `PLAN.txt`, `BINSHA.txt`, `all-era.txt`, and the dev
 `RED.txt` / `GREEN-dev.txt`); per-invocation endpoint logs stay on the VM
-under `/home/vibe/tp1run/run/diag-tp1`.
+under `~/tp1run/run/diag-tp1`.
 
 *Per cell* (P1 vs MAIN, n = 6 each; median [min–max]; relative tolerance in
 brackets; the min–max rule as pre-registered):

@@ -4,11 +4,11 @@
 # each with a 10 Hz per-CPU /proc/stat sampler; then lagdiag_digest.py scores
 # the rows (are late [LAG] ticks inside long task polls, or VM/guest CPU?).
 #
-#   LGD_ROOT=/home/vibe/lagdiag LGD_HARD_DEADLINE=<epoch> \
+#   LGD_ROOT=$HOME/lagdiag LGD_HARD_DEADLINE=<epoch> \
 #     setsid nohup bash lagdiag_run.sh > $LGD_ROOT/launch.out 2>&1 < /dev/null &
 #
 # Run from the synced tree $LGD_ROOT/src/tools/l1 (git archive of
-# the DIAG commit; $LGD_ROOT/src/COMMIT names it). Started as `vibe`;
+# the DIAG commit; $LGD_ROOT/src/COMMIT names it). Started as the VM user;
 # `sudo -n` only to run.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -35,7 +35,7 @@ LB_TAG="lagdiag_run:$$"
 LB_LOG="$RUN/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 cotenants() { echo "cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg)"; }
 era "LGD start commit=$(cat "$ROOT/src/COMMIT" 2>/dev/null) hard=$LGD_HARD_DEADLINE soft=$SOFT $(cotenants)"
 

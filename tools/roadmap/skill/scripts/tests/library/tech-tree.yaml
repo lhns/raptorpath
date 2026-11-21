@@ -1,0 +1,14 @@
+# A small parsing library: two tracks, three lanes, no queue, no overview bounds, no history key.
+nodes: nodes.yaml
+page: roadmap.md
+
+tracks:
+  core: {name: "parser core", scope: "tokenizer, grammar, error recovery"}
+  docs: {name: "documentation", scope: "tutorial, reference, examples"}
+
+kinds:
+  change: {}
+  spike: {shape: slant}
+  decision: {shape: hexagon, owner_gate: true}
+
+lanes: [local, owner, none]

@@ -166,7 +166,9 @@ removed in `dacfd7c` (ADR-0069) after the Stage-3 re-test found the window not
 worse at any cell and ahead at every Auto cell (Section 10). The retention
 contract ρ is the named point's preset — ρ = 1 at Bulk/Auto, EVICT at
 Realtime (declared ρ = 0.99 by ADR-0084, engine change pending) — and never
-selects a pipeline.
+selects a pipeline. On main it is still the bool `window_reliable`; ADR-0084
+Amendment 1 removes that flag, so the number `window_rho` is the only
+retention dial (Section 5.1).
 
 ### 1.6 Reading guide
 
@@ -1469,8 +1471,53 @@ and the finite-T_cut interior of one dial, not two policies. Second, the
 shipped machine exposes ρ only structurally: the reliable window seat is
 ρ = 1, and the evicting Realtime seat is the only ρ < 1 seat. On main ρ is
 not a runtime input anywhere in the engine (Section 11.1). ADR-0084 makes it
-one, read only by the shed budget (Section 5.6); the engine change is
+one, read as a number by the shed budget (Section 5.6) and by the opt-in
+three-term cap's `stall(δ, ρ)` (Section 6.1); the engine change is
 pending.
+
+*The flag leaves (ADR-0084 Amendment 1; engine change pending).* "There is no
+such thing as reliable; it is just ρ = 1" (owner, 2026-11-20). The bool
+`window_reliable` and every name derived from it leave the config, the CLI
+and the engine. ρ is one declared number, `window_rho`: Bulk and Auto 1,
+Realtime 0.99, an explicit value winning at any hint, domain 0 < ρ ≤ 1. A
+removed key or flag fails at startup with a pointer to `window_rho`. In
+engine code ρ enters only as a number in a formula continuous in ρ; a
+comparison of ρ that selects a path, a law or an argument is the
+NO-MODE-SWITCH trap, `reliable = (ρ ≥ 1)` renamed, and a source deny test
+refuses it.
+
+The engine readers of the flag split four ways (inventory in
+`docs/derivations/adr84-engine-brief.md` §1):
+- (A) removed by ADR-0084's engine change: the store fill, the serve, the
+  clamp bounds, both copies of the intake pause, the pooled cap's scope, the
+  path-map floor and the eviction prune. At ρ = 1 each is identical by data.
+- (B) zero by formula: the shed arm. With the budget `(1 − ρ)·S_src` it is
+  armed at every ρ, and at ρ = 1 the budget admits no shed:
+
+  ```text
+     shed admissible  ⇔  age > D  ∧  Ab + 1 ≤ (1 − ρ)·S_src        ρ = 1  ⇒  never (1 ≤ 0 is false)
+  ```
+
+- (C) no ρ-continuous form yet: twelve sites (Section 11.3, rows C1–C12),
+  among them the placement split, SACK release and the receiver's reorder
+  buffer. The owner chose to rewrite all twelve (option B): each split gets
+  a derived law continuous in ρ, or is deleted if it has no reason
+  (`docs/derivations/rho-step-sites.md`, in progress). Until each lands, a
+  mid-stack scaffolding bit `(ρ ≥ 1)` carries the old behaviour under one
+  pinned name with a reader list that only shrinks; nothing merges while a
+  reader remains. Until then the sender-side step at ρ → 1⁻ goes only for the
+  store and the budget: seven sender sites (C1–C7) still step there.
+- (D) log and diagnostic lines, counted with (C).
+
+The receiver's law needs no ρ (ADR-0084 default 5 stands). The floor pass
+is its own function, separate from the hold expiry, and reads no seat bit,
+so the ρ = 1 buffer honours a floor exactly like the evicting one; no floor
+is sent at ρ = 1. The receiver's (C) sites read the bit from the receiver's
+own configured ρ mid-stack, the same information as today's local flag;
+whether the receiver reads ρ after its sites are rewritten is pending
+`rho-step-sites.md` (Amendment 1 item 5). On main each end reading its own flag stalls a
+Realtime sender against a Bulk receiver (`tests/sim_mixed_rho.rs`); the
+store at every ρ and the seat-free floor pass remove that stall.
 
 *Verdicts (ADR-0084; engine change pending).* A sent source seq leaves the
 sender's unresolved set U in one of three ways: acknowledgement, a shed
@@ -1514,7 +1561,9 @@ at every ρ removes on the sender.
 ```
 
 - F: measured by the receiver, its newest advertised `next_expected`
-  (Section 6.3's F).
+  (Section 6.3's F); "newest" is the greatest `next_expected` heard, taken
+  as a pair with its G_rx (the pair rule of Section 5.6, ADR-0084
+  Amendment 2).
 - V: sender state, as above.
 
 "While the floor is above the receiver's acknowledged frontier, the sender
@@ -1871,6 +1920,23 @@ leaves the pending term in the update that adds it to G_rx, and a lost ack
 delays the move without duplicating it. At ρ = 1 the budget is 0 at every δ,
 so nothing is shed.
 
+"The sender takes the frontier and the receiver's count as one pair, from the
+ack that reached furthest" (ADR-0084 Amendment 2):
+
+```text
+   (F, G_rx)  =  (next_expected, passed_undelivered) of the ack with the greatest next_expected;
+                 on a tie, the larger passed_undelivered
+```
+
+- next_expected, passed_undelivered: measured, the two fields of one
+  `WindowAck` (wire v11).
+
+G_rx is a level, not a counter: it falls when a passed hole is filled late.
+At N ≥ 2 acks arrive reordered, so taking G_rx from the latest-arriving ack
+could pair a stale, lower G_rx with a newer F, under-count Ab and overshoot
+the budget. The pair rule never does that, and it converges as the frontier
+moves.
+
 "Every unresolved seq in a reported gap is judged on the unclamped gap; the
 clamp only bounds what is served":
 
@@ -1886,6 +1952,30 @@ clamp only bounds what is served":
 - [f, c]: sender state, the servable span over the window and the store.
   With a store at every ρ every member of U is in it, so the FORCED arm is
   empty and carries a gauge that must read 0.
+
+"A verdict stops retrying; it does not withhold the last copy" (ADR-0084
+Amendment 2):
+
+```text
+   verdict(s)  ⇒  send one copy of s  and the floor F_v,   at the same instant
+```
+
+- The copy: the stored payload of s (sender state); a FORCED verdict has
+  none, because the last servable copy has left the sender, so it sends the
+  floor alone and always consumes one unit. That is the absence of data,
+  not a branch on δ or ρ.
+
+The copy and the floor travel together, and the floor then waits the
+receiver's hold H_hold (Section 5.1). Without the copy a verdict resolves an
+isolated hole H_hold later than a resend whose copy arrives, and spends a
+unit for every such hole. With it the hole resolves at the earlier of its
+fill and one one-way delay plus H_hold, never later than serving, and a unit
+is spent only when the copy is lost too. The allowance used falls from the
+share of source seqs left as holes after FEC to that share times the resend
+loss rate (`docs/derivations/skip-rule-efficiency.md` §3.1, finding F1, with
+the worked numbers). A filled
+verdict seq is delivered in order and leaves Ab's pending term without
+entering G_rx, so most verdict seqs end delivered, not passed.
 
 Beyond the budget the machine serves: ρ wins over δ. R > 1 − ρ marks an
 operating point where the contract can be held only by serving holes past
@@ -2445,9 +2535,19 @@ has not yet passed, net of SACK-released ones, reach the pooled cap":
 
 - H, F: Section 6.3 (the highest seq sent, sender state; the newest
   `next_expected`, measured by the receiver).
-- released: Section 6.3's count. SACK release requires `reliable`, and
-  ADR-0084 keeps it so, so `released = ∅` at ρ < 1 and O over-counts the
-  seqs received above the frontier: the safe side.
+- released: Section 6.3's count. SACK release requires `reliable` on main;
+  ADR-0084 keeps it on the ρ = 1 arm only until its rewrite (Amendment 1,
+  Section 11.3 row C2), so `released = ∅` at ρ < 1 and O over-counts the
+  seqs received above the frontier: the safe side. **The bound therefore
+  steps at ρ = 1 through its input, though its formula reads no ρ:**
+
+  ```text
+     Δ O  =  |released|_(ρ = 1)  ∈  [0, received_above]  ⊆  [0, H + 1 − F]
+  ```
+
+  bounded by the release law's own lower-bound property and by T7's
+  `released ≡ 0` at ρ < 1 and `released ≤ received_above` at ρ = 1
+  (ADR-0084 Amendment 1). It goes when C2 retires.
 - cap: this section's law, which has no ρ input.
 - cwnd_full: `∀ i ∈ live: in_flightᵢ ≥ cwndᵢ`, the per-path gate, unarmed by
   default and untouched.
@@ -2814,7 +2914,8 @@ threshold, and empty windows are counted.
 - δ enters only through q(δ), which is continuous; the standing decision of
   status §40 stands. The battery runs Bulk.
 - The ρ hole term is not added, as on the shipped seat (above: ρ < 1 has no
-  outstanding gate, status §3.3). The arm runs at ρ = 1 (`--window-reliable`).
+  outstanding gate, status §3.3). The arm runs at ρ = 1 (`--window-reliable` on
+  main; `--window-rho 1` after ADR-0084 Amendment 1).
 - The Σ has the same form at every N. A single-path battery is a choice of
   cells, not a guard. If the L list's length differs from the configured
   path count, the arm refuses to start (a configuration error at the
@@ -2938,7 +3039,8 @@ every received sequence past the cap until the frontier moved (the store
 bench read 4 071 counted against 2 483 unacknowledged at the c8 geometry).
 The bound assumes a receiver that never evicts above its frontier, which is
 the ρ = 1 receiver. At ρ < 1 the frontier also moves by give-ups; release
-does not run there (it requires `reliable`, and ADR-0084 keeps it so), so
+does not run there (it requires `reliable`; ADR-0084 Amendment 1 rewrites
+it under option B, Section 11.3 row C2), so
 Section 6.1's source bound reads `released = ∅` at ρ < 1.
 
 `store_gate_released` (`net/sack.rs`), gate `RWM_STORE_SACK_RELEASE`,
@@ -4495,7 +4597,7 @@ never-delivered tail target.
 | # | question | what would decide it |
 |---|---|---|
 | 0 | Do sc3 and c7 still read far below their earlier values? The sc2 regression (~2 Mbit/s) was a CPU-bound sender and is fixed in `1b890e0` (status §3.1 item 2); the sc3 and c7 low readings came from the same binary line, and no re-measure after the fix is recorded | re-run sc3 and c7 on the current binary (Section 9.2) |
-| 2 | Is ρ a runtime dial? Today ρ is structural (1 on the retain seat, < 1 only on the evicting Realtime seat) | plumbing ρ to the store and the receiver; the hard-coded `SRTT/2` receiver hold is the first site that would break. Under ADR-0084 (engine change pending) the shed budget reads ρ as a number (`window_rho`, Section 5.6), and the store fill, the serve clamp and the intake pause stop reading the seat; the receiver's reorder buffer and hold still read it (Section 11.3) |
+| 2 | Is ρ a runtime dial? Today ρ is structural (1 on the retain seat, < 1 only on the evicting Realtime seat) | plumbing ρ to the store and the receiver; the hard-coded `SRTT/2` receiver hold is the first site that would break. Under ADR-0084 (engine change pending) the shed budget reads ρ as a number (`window_rho`, Section 5.6), and the store fill, the serve clamp and the intake pause stop reading the seat. Amendment 1 removes the seat flag; the twelve sites with no ρ-continuous form are all rewritten under option B (`rho-step-sites.md`), carried mid-stack by a scaffolding bit `ρ ≥ 1` that must reach zero readers before merge, among them the receiver's reorder buffer and hold (Section 11.3, rows C1–C12) |
 | 3 | Does Auto's rate sit at the corner r* = 0? | an echo of Copa's delay normaliser d beside D_arq (Section 4.9) |
 | 4 | Does the span law stay continuous at the named points? | an isolating pure-law test of `(δ, ρ, r) → (A*, M*, Δ)` with ±2 % nudges, as the rate law has |
 | 5 | Is cross-path correlation a cause or an effect of pooling? At c8 both legs' drain collapses in the same window | a per-path-account arm (the refuted one is removed) against pooled at a four-path cell, now that legs are seeded independently; a correlated-loss dial for the harness |
@@ -4506,7 +4608,7 @@ never-delivered tail target.
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? Open, and now unmeasured: the shipped default reads c1s 826.3 and c1d 751.4 Mbit/s (status §32), the earlier "446–505" is superseded, and the quinn-BBR 915 is a July number from another session (cross-session drift about 24 %, status §19) | a same-session competitor battery at c1 (none exists); then the engine's remaining per-message service walls |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
-| 13 | Remaining hint- and ρ-keyed sites (status §3.3; each read in source at `168f161`). **Engine, hint equality:** the Realtime duplicate source send (`net/emit_source.rs:475`); `use_packing = protocol_hint == Realtime` (`net/sender_policy.rs:746`), whose consumer `emit_batch_on` (`:805`) also requires `reliable` and `!use_packing`, so emission batching steps off at Realtime and at ρ < 1. **Engine, hint tables:** `queue_target_mult` 1.08 / 1.125 / 1.25 (`scheduler/copa.rs:316-318`); the symbol size 512 / 1200 (`net/mod.rs:179-183`, `symbol_size_for_hint`); the default ρ, `window_reliable = hint != Realtime` (`config.rs:295`, overridable by an explicit `window_reliable`). **Engine, gate:** `RWM_COPA_COMPETE` (`gates/scheduler_gates.rs:74`, default off; read at `net/control_msg.rs:404`). **Engine, `reliable` boolean branches (ρ = 1 against ρ < 1 selecting a path, not composing with δ):** placement law against best-path pick plus duplicate (`net/emit_source.rs:308`); the sent store (`:299`) and the correction path (`:829`); `tx_paused` (`net/mod.rs:2517`); the dynamic store cap (`net/sender_policy.rs:542`), SACK release (`:667`) and per-path recovery (`:760`, `:773`); the sender's gap clamp (`net/sender_phases.rs:984`), repair and retransmit placement (`:1161`, `:1173`, `:1314`) and path-map floor (`:1597`); the shed law's arming (`net/shed.rs:24`); the receiver's reorder buffer (`net/reorder.rs:88`, `:118`, `:182`). Not counted: the dial's own named-point tables that feed continuous laws (`delta_price`, `tail_loss_scale` in `control/fec_rate.rs:70-75`, `SchedulingWeights::from_hint`, which calls `from_delta`), and the log echo at `net/mod.rs:651`. **Visualizer model** (`raptorpath-wasm/src/lib.rs`): `hint_bulk` is set once at construction (`:1022`) and is true only for the classic `"bulk"` hint string; the dial's `"continuum"` path sets it false. Construction-only: `:1022`. Legacy-ablation-only: `:784` (the `legacy_bulk_delta` half) and `:1386-1387`. They route behaviour downstream for the classic `"bulk"` hint, so they are a debt: `:666` (the completion-χ glide applies only to Bulk), `:706` (the completion-debt increment is zeroed for Bulk), `:787` (`bulk_late_is_fine` takes `hint_bulk`) and `:1673` (the displayed `delta_eff`). The visualizer's dial does not reach them, and the classic hint strings are used by the API and the tests. The construction comment's "no hint branch exists downstream of construction" is therefore true of the continuum path only. | route the classic hints through the continuum constructor (Bulk as δ = 0.005) and delete the flag; for the engine, each site is a declared corner, not a law, until it is expressed as a function of the dial |
+| 13 | Remaining hint- and ρ-keyed sites (status §3.3; each read in source at `168f161`). **Engine, hint equality:** the Realtime duplicate source send (`net/emit_source.rs:475`); `use_packing = protocol_hint == Realtime` (`net/sender_policy.rs:746`), whose consumer `emit_batch_on` (`:805`) also requires `reliable` and `!use_packing`, so emission batching steps off at Realtime and at ρ < 1. **Engine, hint tables:** `queue_target_mult` 1.08 / 1.125 / 1.25 (`scheduler/copa.rs:316-318`); the symbol size 512 / 1200 (`net/mod.rs:179-183`, `symbol_size_for_hint`); the default ρ, `window_reliable = hint != Realtime` (`config.rs:295`, overridable by an explicit `window_reliable`; ADR-0084 Amendment 1 replaces it with the declared numbers Bulk/Auto 1, Realtime 0.99, overridable by `window_rho`). **Engine, gate:** `RWM_COPA_COMPETE` (`gates/scheduler_gates.rs:74`, default off; read at `net/control_msg.rs:404`). **Engine, `reliable` boolean branches (ρ = 1 against ρ < 1 selecting a path, not composing with δ):** placement law against best-path pick plus duplicate (`net/emit_source.rs:308`); the sent store (`:299`) and the correction path (`:829`); `tx_paused` (`net/mod.rs:2517`); the dynamic store cap (`net/sender_policy.rs:542`), SACK release (`:667`) and per-path recovery (`:760`, `:773`); the sender's gap clamp (`net/sender_phases.rs:984`), repair and retransmit placement (`:1161`, `:1173`, `:1314`) and path-map floor (`:1597`); the shed law's arming (`net/shed.rs:24`); the receiver's reorder buffer (`net/reorder.rs:88`, `:118`, `:182`). ADR-0084 Amendment 1 re-reads these on `060db8af` and splits them: the removed ones (store, clamp, pause, cap scope, path-map floor), the shed arming (zero by formula) and the twelve rows C1–C12 of Section 11.3. Not counted: the dial's own named-point tables that feed continuous laws (`delta_price`, `tail_loss_scale` in `control/fec_rate.rs:70-75`, `SchedulingWeights::from_hint`, which calls `from_delta`), and the log echo at `net/mod.rs:651`. **Visualizer model** (`raptorpath-wasm/src/lib.rs`): `hint_bulk` is set once at construction (`:1022`) and is true only for the classic `"bulk"` hint string; the dial's `"continuum"` path sets it false. Construction-only: `:1022`. Legacy-ablation-only: `:784` (the `legacy_bulk_delta` half) and `:1386-1387`. They route behaviour downstream for the classic `"bulk"` hint, so they are a debt: `:666` (the completion-χ glide applies only to Bulk), `:706` (the completion-debt increment is zeroed for Bulk), `:787` (`bulk_late_is_fine` takes `hint_bulk`) and `:1673` (the displayed `delta_eff`). The visualizer's dial does not reach them, and the classic hint strings are used by the API and the tests. The construction comment's "no hint branch exists downstream of construction" is therefore true of the continuum path only. | route the classic hints through the continuum constructor (Bulk as δ = 0.005) and delete the flag; for the engine, each site is a declared corner, not a law, until it is expressed as a function of the dial |
 | 14 | The overload region. Past Section 6.1's line λ·(1 − (1 − ρ − R)⁺) > C the dial cannot hold both δ and ρ. Under ADR-0084 the engine delays the source once the shed budget is spent; receiver give-ups and forced verdicts can still exceed 1 − ρ there, and they are printed, not prevented. Thinning at the source within (1 − ρ − R)⁺ is not built | a cell driven past C at a declared ρ < 1: the paused share on the `O ≥ cap` disjunct beside G_rx/src_total against 1 − ρ |
 
 ### 11.2 Open-constants register
@@ -4576,8 +4678,19 @@ decide it.
 | BOCD quantile | mixture quantile | run-length-weighted average of quantiles |
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
 | give-up budget (Section 5.6) | the paper: `Ab + 1 ≤ (1 − ρ)·src_total` after D(δ), ρ declared (`window_rho`; Realtime 0.99), R a gauge (ADR-0084). The wasm model still runs `min(1 − ρ, R)` against its shed count until its own `GOLDEN_CAPTURE=1` commit | on main a seat switch: the evicting seat (not `--window-reliable`; the CLI reaches it only at Realtime) runs budget R against the cumulative shed count, the retain seat 0. The wasm model and main agree at ρ = 1 and wherever 1 − ρ ≥ R; the model is tighter only for 0 < 1 − ρ < R. Bounded at equal R by `giveup_budget_vs_engine_seats_at_equal_r_is_bounded` (`raptorpath-wasm`). Both move to the paper's law with the ADR-0084 engine change |
-| retention at ρ → 1⁻ | a store at every ρ (Section 5.1): no forced verdicts, continuous through ρ = 1 | on main the evicting seat keeps no store, so window evictions of unresolved seqs happen at ρ < 1 and never at ρ = 1, untold and uncounted: a step. ADR-0084 removes it on the sender; the step test (sender observables identical at ρ = 1 and at 1 − ε with ε·src_total < 1) is owed with the engine change |
-| receiver give-up at ρ → 1⁻ | (not modelled) | the reorder buffer never passes a hole at ρ = 1 and passes on its ε̂_recv budget below it: a step that ADR-0084 keeps. Owed: the step test's receiver observables (passes, G_rx), record-only |
+| retention at ρ → 1⁻ | a store at every ρ (Section 5.1): no forced verdicts, continuous through ρ = 1 | on main the evicting seat keeps no store, so window evictions of unresolved seqs happen at ρ < 1 and never at ρ = 1, untold and uncounted: a step. ADR-0084 removes the store's part of it; the sender sites C1–C7 below still step until their option-B rewrites (Amendment 1). The step test (ρ = 1 against 1 − ε with ε·src_total < 1) asserts V = ∅ on both sides and records per-seq sends and resends; it is owed with the engine change |
+| C1: placement split | one placement law at every ρ (Section 5.7) | the `place_symbol` law with the ρ_fate penalty at ρ = 1 and the best-goodput pick (`select_source_path`, `select_repair_path[_avoiding]`) below it, at four sites: the source send, the correction slot, the NACK resend and the repair margin. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G01). Bounded by `rho1_debt_bounds::c01_placement_split_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C2: SACK release | O net of SACK-released seqs at every ρ (Section 6.3) | release runs at ρ = 1 only; below it `released = ∅` and O over-counts the seqs received above the frontier (the safe side, ADR-0084 question 8). On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G02). Bounded by `rho1_debt_bounds::c02_sack_release_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C3: multipath hole law | per-flight suppression at every ρ (Section 7.1) | `recov_mp` is armed at ρ = 1 only; below it the global clock re-fires. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G03). Bounded by `rho1_debt_bounds::c03_recov_mp_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C4: single-path hole law | as C3 at N = 1 | `recov_sp` (gate default off) is armed at ρ = 1 only. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G04). Bounded by `rho1_debt_bounds::c04_recov_sp_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C5: emission batching scope | batching wherever the intake pause bounds the burst | `emit_batch_on` requires ρ = 1 and, separately, not Realtime packing (the hint debt of ledger S09). On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger S09). Bounded by `rho1_debt_bounds::c05_emit_batch_scope_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C6: receiver request arms | a request law defined at every ρ (Section 7.6) | the receiver arms (A)/(B) and the sender's `request_arm` exist at ρ = 1 only (gates default off). On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G06). Bounded by `rho1_debt_bounds::c06_request_arms_step_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C7: Copa plain feed | delivery attribution at every ρ | the opt-in feed runs on the plain in-order ρ = 1 path only; below it a give-up advance would be credited as delivery. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G07). Bounded by `rho1_debt_bounds::c07_copa_plain_feed_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C8: object corners at ρ < 1 | each corner defined at every ρ | out-of-order, coded-only, generation and systematic are refused at config time below ρ = 1 (`config::check_window_rho`, allowlisted in the deny test; the redundant runtime conjuncts are deleted). Generation is ρ-inert (no store, no per-seq ARQ); coded-only would arm the shed; the out-of-order frontier needs the floor (ledger G08). Bounded by `rho1_debt_bounds::c08_corner_refusal_is_config_only` (owed): refused at 0.99, accepted at 1, and no runtime reader |
+| C9: receiver give-up at ρ → 1⁻ | a receiver budget `(1 − ρ)·frontier` that passes nothing at ρ = 1 by formula (not derived; ADR-0084 question 5) | the reorder buffer never passes a hole, never force-drains and never expires at ρ = 1, and below it passes on its ε̂_recv budget, its hold expiry and its capacity force-drain: a step that ADR-0084 keeps. The step test's receiver observables (passes, G_rx) are record-only. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G09). Bounded by `rho1_debt_bounds::c09_reorder_buffer_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C10: delivery on a full consumer channel | a drop is an abandonment within 1 − ρ, else a hold | ρ = 1 holds, ρ < 1 drops, and the drop is not counted in G_rx. On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G10). Bounded by `rho1_debt_bounds::c10_delivery_drop_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C11: receiver shed hold arm | the hold `b(δ)·SRTT` within the receiver's budget at every ρ | `recv_shed_on` is armed below ρ = 1 only, with `SRTT/2` (the row "receiver shed hold"). On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G11). Bounded by `rho1_debt_bounds::c11_receiver_shed_hold_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
+| C12: receiver hole timer | the refresh at every ρ, the expiry inside C9's budget | at ρ = 1 the timer re-advertises the gap at `hole_nack_refresh`; below it the same timer is the hold expiry (give-up). On main the `reliable` flag selects it; after ADR-0084 Amendment 1 a mid-stack scaffolding bit `rho1_debt` (ρ ≥ 1) does until the site is rewritten (option B; nothing merges with a reader left) (ledger G12). Bounded by `rho1_debt_bounds::c12_hole_timer_steps_only_at_rho_1` (owed with the engine change): the arm at ρ = 1 against 0.99 and 0.97, and the step recorded at ρ = 1 against 1 − ε with ε·src_total < 1 |
 | verdict floor | every verdict reaches the receiver (`WindowFloor`, Section 5.1) | not on main (wire v10): a shed or an eviction sends nothing, so a lost tail with nothing above it stalls the frontier (roadmap `rec-evict-blocker-unresolved`) |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |
 
@@ -4983,6 +5096,8 @@ engine.
 
    shed  ⇔  age > D(δ)  ∧  G_rx + |{v ∈ V : v ≥ F}| + 1 ≤ (1 − ρ)·src_total   shed_allowed (ADR-0084; main: shed_total against ε̂·(1 − P_fec(r, A*)))
    F_v   =  min{ s ≥ F : s ∉ V } ,   F_rx = max over paths of the floors received   WindowFloor, wire v11 (ADR-0084, pending)
+   verdict(s) ⇒ one copy of s + F_v (FORCED: F_v alone)                           ADR-0084 Amendment 2, pending
+   (F, G_rx) from the ack with the greatest next_expected (tie: larger G_rx)      ADR-0084 Amendment 2, pending
 
    W_mp  ≳  Σᵢ gᵢ·(RTT_max + t_slack)                                      —
    deficit = Σ_{unacked s} ε_path(s) ;  cross-path r = ε_A/(1 − ε_B)        (analytic only)

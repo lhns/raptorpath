@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scorer for the r > 0 battery (the corner r* = 0 and δ_exit: paper §4.9).
 
-    r_report.py --outdir /home/vibe/rbattery [--calib] [--max-rep N]
+    r_report.py --outdir ~/rbattery [--calib] [--max-rep N]
 
 Reads the per-seed `RRESULT {json}` rows out of the logs and applies the
 pre-registered rules, and nothing else. `--max-rep N` keeps only rows with
@@ -485,7 +485,7 @@ def calibration(live, cells, sizes, arms):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--outdir", default="/home/vibe/rbattery")
+    ap.add_argument("--outdir", default=os.path.expanduser("~/rbattery"))
     ap.add_argument("--calib", action="store_true")
     ap.add_argument("--max-rep", type=int, default=None,
                     help="keep only RRESULT rows with rep <= N (balance after "

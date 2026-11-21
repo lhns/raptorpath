@@ -35,6 +35,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: release }
       - run: cargo test -p raptorpath --lib --release
+  model:
+    # Hole-lifecycle model (ADR-0083, test-detection plan S7). Its own workspace and lock file
+    # (stateright stays out of the engine's lock). Two tests: the reliable seat (rho = 1) is the
+    # control and must pass every property; the evicting seat (rho < 1) must show the lost-tail
+    # counterexample, which the test asserts exists (today's behaviour; ADR-0084 changes the
+    # intended law, and that test flips when the defect is fixed). --nocapture prints the
+    # counterexample traces and state counts into the log.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+        with: { workspaces: raptorpath-model, shared-key: model }
+      - run: cargo test --locked --release --manifest-path raptorpath-model/Cargo.toml -- --nocapture
   tools:
     runs-on: ubuntu-24.04
     steps:
@@ -47,11 +61,20 @@ jobs:
         run: python tools/ci/run_py_tests.py
       - name: CI checkers (flake rule, shed-site rule, expected-failure scanner), red and green on fixtures
         run: python tools/ci/test_ci_tools.py
+      # Blocks the VM login name and address from tracked files (patterns built from parts).
+      - name: no VM login name or address in tracked files
+        run: |
+          u=$(printf '%s%s' vi be); h=$(printf '%s.%s.%s.%s' 10 1 5 16)
+          if git grep -I -i -w -e "$u" || git grep -I -F -e "$h"; then echo 'VM login name or address found'; exit 1; fi
       - name: roadmap
         run: |
           python tools/roadmap/build.py
           python tools/roadmap/check.py | tee check.out
           grep -q '^check: OK' check.out
+      - name: roadmap tool tests (vendored tech-tree skill and the wrappers)
+        run: |
+          python -m unittest discover -s tools/roadmap/skill/scripts/tests
+          python tools/roadmap/test_wrappers.py
   visualizer:
     runs-on: ubuntu-24.04
     steps:
@@ -92,7 +115,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.7.8
         with: { shared-key: sim }
-      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail --test sim_lost_tail_paced --test sim_shed_reach -- --nocapture
+      - run: cargo test -p raptorpath --features sim,test-seams --test sim_determinism --test sim_lost_tail --test sim_lost_tail_paced --test sim_shed_reach --test sim_mixed_rho -- --nocapture
   sim-cross-os:
     # The same sim scenarios on Linux and Windows (sim_cross_os.rs); the
     # compare job diffs the traces and logs. A difference means the OS is

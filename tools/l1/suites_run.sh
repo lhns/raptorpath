@@ -3,10 +3,10 @@
 # precondition (agent rules; status §26 amendment 1): release, doc, wasm,
 # debug, as threadr2_run_all.sh step 1, plus the python parser tests.
 #
-#   SU_ROOT=/home/vibe/suites SU_SRC=<tree root> bash suites_run.sh
+#   SU_ROOT=$HOME/suites SU_SRC=<tree root> bash suites_run.sh
 #
 # Exit: 0 all green (TESTS-OK), 1 any failure outside the quarantine list, FLAKE or REAL (TESTS-FAIL), 3 precondition
-# not met, 4 a lock is held (nothing run; retry later). Started as `vibe`.
+# not met, 4 a lock is held (nothing run; retry later). Started as the VM user.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || exit 3
@@ -29,7 +29,7 @@ LB_TAG="suites_run:$$"
 LB_LOG="$ROOT/era.txt"
 install_lock_traps
 take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "${RWM_RP_LOCK:-$HOME/rp.lock}"
 trap release_locks EXIT
 era "SUITES start src=$SRC commit=$(cat "$SRC/COMMIT" 2>/dev/null) $(iostate)"
 
