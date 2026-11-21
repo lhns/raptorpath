@@ -697,3 +697,25 @@ Witnesses (§1.3):
 - Engine untouched: `git diff <old> <new>` over `raptorpath/src raptorpath-math/src raptorpath-core raptorpath-wasm gf256 Cargo.toml Cargo.lock vendor` is empty for S1 and S2. Over `raptorpath*` it lists exactly main's nine files above. The seat-against-base engine patch-id is unchanged: S1 `ac12e9b5` (with `.github`), S2 `008dc9da` (without `.github`; with it, the ci.yml merge line differs).
 - CI (`ci`, `binid`) green on both new heads; nightly dispatched on both.
 - The new heads need `LD_PIN_S1=6628e93b` and `LD_PIN_S2=3d06984e`: plan67.py's defaults (#1) are the old heads.
+
+### Proposed text changes (draft, for review)
+
+Each item replaces or extends the registration text named. The code fixes for #49, #51, #58, #74, #76, #80/#112, #81, #85, #91, #100, #101, #111 (G), #121 and #128/#134 are on branch `harness67c`, not here.
+
+- **#12 (§1.3, tools witness).** Replace the third bullet with: "`git diff B0 S1 -- tools` is empty. `git diff S1 S2 -- tools` lists one file, `tools/ci/coverage_sites.json`, where S2 drops the stale `shed-slot` and `shed-slot-denied` entries (§1.2's merge-up); that is the one sanctioned tools difference besides the pacer seats' `lib.sh` line. The harness checks `tools/l1` byte for byte on every seat (the pacer seats by that one line)."
+- **#39 (§3.1, §4.1).** Add: "GATE-67G1 / GATE-67G2 PASS iff GATE-41d PASS, no `S06-FAIL` row (G2) and no unreplaced witness failure. An abort reads FAIL (UNSCOREABLE)."
+- **#40, #79 (§4.1, §4.3).** The S2 outcome witness is `taper = 0` and `plost = 0` (§4.2's rule), not `taper = 0` alone. An S2 row with `pslot = 0` is VOID-WITNESS.
+- **#41 (§4.1).** Add: "§4.2's rule 'a DNF where every S1 row completes is `S06-FAIL`' applies to G2 too, over S1's LIVE rows."
+- **#59 (§4.2, A1).** Add: "A1 needs at least 4 live B0 rows per cell; fewer is UNSCOREABLE."
+- **#86 (§4.4, twins).** Replace "a row with neither is VOID" with "a twin row missing either `[ACCT]` (client) or `[ACCT-RX]` (server) is VOID".
+- **#110 (§5.2, block-1).** Add: "Block-1 reads each arm's first ledger row as scored: a first row that was replaced counts by its replacement, and a first-row `S06-FAIL` stops the stage as a failure, not as a void. In Stage A both cells' first rows are read." (If the code keeps the current reading, this line is changed to match it before acceptance.)
+- **#111 (§5.2, block-1 scope).** Replace "after each stage's first block" with "after the first block of G1, G2, A, R1, R2 and the pool block". Stage T is four invocations with no blocks; its bring-up abort (#101) covers it. The dump twins are eight reported rows with no verdict, so a failed first row is reported, not a stop.
+- **#126 (§4.4, R2 smoke).** Replace "A failure makes R2 VOID; it goes back to the coordinator" with "The R2 smoke runs in the rehearsal (§6.1). A failure there is ABORT-SMOKE: the rehearsal is re-run after a fix, and session 3 does not launch R2 before a rehearsal whose R2 smoke passed. Session 3 runs no second R2 smoke."
+- **#129 (§5.4, abort classes).** Add the harness's further tokens, in their order: ABORT-REHEARSE, ABORT-CUT, ABORT-SHM, ABORT-SUITES, ABORT-BUDGET, ABORT-ROWS, ABORT-SHA, ABORT-BIN, ABORT-PLAN67, ABORT-PRECONDITION, `FAILED-<stage>` (FAILED-STAGE67), BUSY, BINID67 FAIL, and ABORT-PREFLIGHT from the session-0 envelope on `harness67c`.
+- **#130 (§5.4, order).** Add: "In practice the tools-test gate (ABORT-TESTS) runs first, then commit pin (ABORT-SEAT), build and sha (ABORT-BUILD), identity strings and tools witness (ABORT-SEAT), suite reuse (ABORT-SUITES), tools tests (ABORT-TESTS). The Result lists the first one that fired."
+- **#132 (§9 item 5).** Replace "parsed with `verify4_parse.py tun`" with "parsed by `s67_score.py`'s T parser, which reads the bring-up lines; a test on `harness67c` checks that it and `verify4_parse.py tun` agree on a fixture".
+
+### B0 and the binid runs (2026-11-21)
+
+- **B0** is `9bc656bf`, the merge base of the new `vmb-s1` and github/main (the main commit inside S1), not a moving main.
+- **What the push binid runs compared.** On the pushes of `vmb-s1` `6628e93b` and `vmb-s2` `3d06984e`, `binid.yml` compared main `9bc656bf` (base, base2: identical) against each seat head. Both passed only through the `binid: expected-change` line of `2d590cdc`. They did not compare old seat head against new. Dispatched old-against-new runs: 44938909897 (S1, base `2d590cdc`) and 44938912735 (S2, base `1953abd1`).
