@@ -60,6 +60,7 @@ flowchart TB
     rec_s64_delay_lean["✔ Realtime delay lean,<br/>post-hoc read"]
     rec_realtime_delay_recheck["✔ Realtime delay re-<br/>check"]
     rec_mixed_rho_stall>"⚠ Mixed retention<br/>settings stall a<br/>transfer"]
+    rec_shed_d_defects>"⚠ Give-up deadline D<br/>defects on main"]
     rec_realtime_srv_lag_lean["⏸ Possible extra<br/>server delay after fix"]
     rec_framing_followups["○ Framing fix<br/>leftovers"]
     rec_w0_leg_question["⛔ Which path carries<br/>retransmissions"]
@@ -123,9 +124,10 @@ flowchart TB
     rec_f2_merge_guard ~~~ rec_s64_delay_lean
     rec_s64_delay_lean ~~~ rec_realtime_delay_recheck
     rec_s64_delay_lean ~~~ rec_mixed_rho_stall
+    rec_s64_delay_lean ~~~ rec_shed_d_defects
     rec_realtime_delay_recheck ~~~ rec_realtime_srv_lag_lean
     rec_mixed_rho_stall ~~~ rec_framing_followups
-    rec_mixed_rho_stall ~~~ rec_w0_leg_question
+    rec_shed_d_defects ~~~ rec_w0_leg_question
     rec_realtime_srv_lag_lean ~~~ rec_leverb_guard
     rec_framing_followups ~~~ rec_fix_perleg_clock_n1
     rec_w0_leg_question ~~~ rec_fix_perleg_clock_n1
@@ -166,7 +168,7 @@ flowchart TB
     rec_s54_session --> rec_fix_perleg_clock_n1
     rec_wire_clock_derivation --> rec_fix_perleg_clock_n1
     rec_fix_perleg_clock_n1 --> rec_recovery_timeouts
-    linkStyle 64,65,66,76 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 65,66,67,77 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -187,7 +189,7 @@ flowchart TB
     class rec_rwm_phase_c mixed
     class rec_recov_sp,rec_dispersion_est,rec_realtime_srv_lag_lean,rec_leverb_guard parked
     class rec_gap_horizon waiting
-    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_mixed_rho_stall,rec_evict_blocker_unresolved finding
+    class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_mixed_rho_stall,rec_shed_d_defects,rec_evict_blocker_unresolved finding
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
     class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
     class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock,rec_adr84_guard blocked
@@ -263,6 +265,7 @@ flowchart TB
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | law | no-cargo | done | unrated | 2026-09-06 | 2026-09-07 |  |  |  |  | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |
 | `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | defect-verdict | host-cargo | in-progress | unrated | 2026-11-20 |  |  |  |  |  | raptorpath/tests/sim_mixed_rho.rs |
 | `rec-adr84-guard` | Merge guard for the ADR-0084 sender side | research | vm | blocked | unrated | 2026-11-21 |  | meas-vm-batch-1, model-adr84-sender-first, model-floor-hold |  |  |  | docs/derivations/adr84-guard-registration.md (branch adr84-guard-registration); docs/derivations/adr84-engine-brief.md |
+| `rec-shed-d-defects` | Give-up deadline D defects on main | defect-verdict | host-cargo | next | unrated | 2026-11-22 |  |  |  |  |  | docs/derivations/tail-and-hold.md par. 3.2 (branch tail-fix-derivation); raptorpath/src/net/emit_source.rs:631; raptorpath/src/net/shed.rs:31 |
 
 ### Details per node
 
@@ -332,6 +335,7 @@ flowchart TB
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | R4's c1 firing RESOLVED by a pre-stated prediction |  | The repair decision was written as one sequential test whose corner is a theorem with a bounded value; its two levers were specified as predictions and never built. | Split 2026-11-20 from meas-attribution-audit. Three parallel plans (session record 2026-09-06) led to it. |  |  |  |  |
 | `rec-mixed-rho-stall` | Mixed retention settings stall a transfer |  |  | A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish. | Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation. 2026-11-21 (ADR-0084 Amendment 3): the forward pairing goes green at the ADR-0084 floor step; the reverse pairing (rho = 1 sender, rho < 1 receiver) stays red until the release-rule build, because the receiver keeps its old arm. |  |  |  |  |
 | `rec-adr84-guard` | Merge guard for the ADR-0084 sender side |  |  | The test the sender-side give-up change must pass before it merges: the usual settings behave exactly as before, and at the low-latency setting each new part is shown to have actually run. | Pre-registration draft on branch adr84-guard-registration (11b7edb6), about 11 to 17 h in five VM sessions after batch 1. 2026-11-22 Fable review of the full text: not ready; revision round with its author: an age-gate witness (visit count printed, age refusals required at Auto or AGE-GATE-INERT finding), power sized for the floor-only cells (predicted verdict and floor-pass counts, rehearsal power check, pooled per-row floor-pass rule), last-copy identity at the last tick if counters can split, the admitted-verdict count renamed apart from the hold H, row precedence fixed (outcome labels above infra voids), the batch-1 harness rules adopted by name and harness84 derived from the merged harness67c, the exhaust rule made consistent (XL-NOT-EXHAUSTED precondition, XE-NOT-EXHAUSTED holds the merge), the pause witness at XE one rule, B84 outside the minimum in floor-only cells. Coordinator decision: the lost-tail sim gate T1 must assert its tail verdict was admitted; the pre-spent-allowance variant stays the L-TAIL record until the release-rule build. Owner items parked as defaults: W = 10 s with the max, one guard on the head with bisection seats, L-TAIL as an interim. Owner 2026-11-22: one guard on the whole head with pre-pinned bisection seats confirmed. Owner 2026-11-22: the lost-tail limit (L-TAIL) is NOT accepted as an interim: fix first. The sender build and this guard are on hold until the fix is chosen (node model-tail-and-hold). Revision rounds 1 and 2 done (a727535a): age-gate gauge, power resized (300 MB, 45 s window in the floor-only cells), V_adm rename, precedence with a timing-witness exception, batch-1 rules adopted, exhaust rule consistent, T1 a liveness gate that records the closing writer. Correction: the stage-1 offline-simulation finding that the floor overtakes its copy was a simulation artefact (copies and floors drew independent jitter on a FIFO path), not an engine risk. |  |  |  |  |
+| `rec-shed-d-defects` | Give-up deadline D defects on main |  |  | Three faults in how the engine sets the age before a lost packet may be given up: on two paths it follows whichever path currently looks lossiest, so it jumps between the fast and slow path; before the first round-trip sample it uses a 50 ms placeholder; and it is only refreshed when new data is sent, so it freezes during the end of a transfer. | Found 2026-11-22 by the tail-and-hold derivation. The paper (par. 5.6) says D uses the largest RTprop over live paths, 0 before the first sample; main reads min(b,2) times the EWMA RTT of the highest-loss path (ties to the last maximum), seeded at 50 ms, refreshed only on source sends. Bounding tests owed now: an absolute ratio bound at two paths with the fast leg lossier, d_is_zero_before_the_first_sample, and a refresh-during-tail test. The fix (largest RTprop over live paths) is a precondition of option (c) at two paths. Separately, D from the smoothed RTT rather than RTprop decides whether the age half of the verdict can refuse at all at Auto (open; model-tail-and-hold). |  |  |  |  |
 
 ### Folded items per node
 

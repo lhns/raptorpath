@@ -89,6 +89,7 @@ gantt
     Sequential-classification repair law (§… :rec_seqclass_law, 2026-09-06, 2026-09-07
     Mixed retention settings stall a transf… :active, rec_mixed_rho_stall, 2026-11-20, 2026-11-22
     Merge guard for the ADR-0084 sender side :rec_adr84_guard, 2026-11-21, 2026-11-22
+    Give-up deadline D defects on main :rec_shed_d_defects, 2026-11-22, 2026-11-22
     section rate - rate law
     Gilbert-Elliott loss model :rate_ge_hmm, 2026-03-14, 2026-07-07
     First automatic repair-rate control :rate_fec_rate_v1, 2026-03-18, 2026-03-21
