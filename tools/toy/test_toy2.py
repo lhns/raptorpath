@@ -144,7 +144,7 @@ class P4(unittest.TestCase):
 
     def test_ewma_arm_cold_start_and_ablation_are_distinct(self):
         s = toy2.Sim(cfg(d_arm="EWMA"))
-        self.assertEqual(s.D_now(), (0.0, False))                # nothing sheddable before the first sample
+        self.assertEqual(s.D_now(), (min(s.b, 2.0) * 0.050, True))   # main's 50 ms SRTT seed before the first sample
         self.assertEqual(toy2.Sim(cfg(d_arm="ZERO")).D_now(), (0.0, True))   # the gate always admits
         r = run(cell="I1", sender="S1c", recv="U", seed=1, delta=0.5, rho=0.99, d_arm="EWMA")
         self.assertIsNotNone(r["srtt"])
@@ -287,6 +287,14 @@ class Receivers(unittest.TestCase):
         self.assertGreater(r["gauges"]["rel_ho"], 0)
         self.assertEqual(r["gauges"]["passes"], 0)
         self.assertEqual(r["G_final"], 0)
+
+    def test_r0c_counts_only_floor_passes_for_admission(self):
+        a = toy2.run(toy2.object_cfg("I2", "R0e", 1))
+        c = toy2.run(toy2.object_cfg("I2", "R0c", 1))
+        self.assertEqual(c["gauges"]["pass_r0e"] > 0, True)
+        self.assertGreaterEqual(c["gauges"]["verdicts"], a["gauges"]["verdicts"])
+        self.assertLessEqual(c["GF_final"], c["G_final"])
+        self.assertLessEqual(c["GF_final"], 121)
 
     def test_tail_cell_witnesses(self):
         for cell in ("I1", "I2", "L10"):

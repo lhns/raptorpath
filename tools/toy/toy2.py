@@ -210,6 +210,7 @@ class Sim:
         self.last_send = [0.0] * self.nmax
         self.A_known = 0
         self.G_known = 0
+        self.GF_known = 0
         self.rhi_known = -1
         self.M_known = set()
         self.last_gen = -1.0
@@ -233,6 +234,8 @@ class Sim:
         self.released = set()
         self.passed = set()
         self.G = 0
+        self.GF = 0                                  # floor passes net of their late fills (R0c's count)
+        self.passed_by = {}
         self.rhi = -1
         self.next_deliver = 0
         self.F_rx = 0
@@ -254,7 +257,7 @@ class Sim:
         self.g = dict(verdicts=0, verdict_copies=0, floors=0, floor_rep=0, repair_sends=0, serves=0, refusals=0,
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
-                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0)
+                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -298,16 +301,15 @@ class Sim:
         return self.est.value(now)
 
     def D_now(self):
-        """(D, enabled).  EWMA before its first sample: nothing is sheddable (enabled False), which is
-        distinct from the ZERO ablation (D = 0, the gate always admits)."""
+        """(D, enabled).  EWMA before its first sample uses main's SRTT seed of 50 ms (7.2, a known main defect,
+        modelled on purpose).  ZERO is the ablation: D = 0, the gate always admits."""
         arm = self.cfg.d_arm
         if arm == "RT":
             return self.D_rt, True
         if arm == "ZERO":
             return 0.0, True
-        if self.srtt is None:
-            return 0.0, False
-        return min(self.b, 2.0) * self.srtt, True
+        seed = 0.050 if self.srtt is None else self.srtt        # main's 50 ms seed until the first sample replaces it
+        return min(self.b, 2.0) * seed, True
 
     def d_now(self):
         if self.cfg.d_frozen is not None:
@@ -479,12 +481,14 @@ class Sim:
             elif s in self.passed:
                 self.passed.discard(s)
                 self.G -= 1
+                if self.passed_by.pop(s, "") == "floor":
+                    self.GF -= 1
                 self.g["late"] += 1
                 self.g["ooo_loss"] += 1
                 self.tfill[s] = now
                 self.dlv[s] = now
             self.dirty = True
-            if self.cfg.recv == "R0e":
+            if self.cfg.recv in ("R0e", "R0c"):
                 self.r0e_buffer(now, s)
         self.advance(now)
 
@@ -518,11 +522,14 @@ class Sim:
             self.unrel.discard(m)
             self.released.discard(m)
             self.passed.add(m)
+            self.passed_by[m] = who
             self.tpass[m] = now
             self.passed_since_report.append(m)
             n += 1
         if n:
             self.G += n
+            if who == "floor":
+                self.GF += n
             self.g["passes"] += n
             self.g["pass_" + who] += n
             self.ep_pass += n
@@ -572,7 +579,7 @@ class Sim:
             self.dirty = False
             m = self.min_hole()
             A = m if m is not None else self.rhi + 1
-            rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report))
+            rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report), self.GF)
             self.passed_since_report = []
             self.push(now + self.cfg.owd, 3, rep)
         if now + self.cfg.tick <= self.t_end:
@@ -580,12 +587,12 @@ class Sim:
 
     # ---- sender ---------------------------------------------------------------------------
     def on_report(self, now, rep):
-        gen, A, G, rhi, M, passed = rep
+        gen, A, G, rhi, M, passed, GF = rep
         if (A, G) > (self.A_known, self.G_known):
             if A > self.A_known:                       # RTT sample (7.2): the report's arrival minus the send time of
                 smp = now - self.sent_t[A - 1]         # the highest seq it newly acknowledges
                 self.srtt = smp if self.srtt is None else self.srtt + (smp - self.srtt) / 8.0
-            self.A_known, self.G_known = A, G
+            self.A_known, self.G_known, self.GF_known = A, G, GF
         if gen > self.last_gen:
             self.last_gen = gen
             if rhi > self.rhi_known:
@@ -624,7 +631,8 @@ class Sim:
         g = self.g
         verdict_seqs, serve_seqs = [], []
         if c.sender != "S0":
-            A_avail = self.allow() - (self.G_known + len(self.pending))
+            held = self.GF_known if c.recv == "R0c" else self.G_known     # R0c: only the floor pass's passes admit nothing else
+            A_avail = self.allow() - (held + len(self.pending))
             D, en = self.D_now()
             for s in cands_:
                 age = now - self.sent_t[s]
@@ -649,6 +657,8 @@ class Sim:
             ver.add(s)
             self.pending.add(s)
         g["verdicts"] += len(verdict_seqs)
+        if self.srtt is None:
+            g["seed_verdicts"] += len(verdict_seqs)
         F = self.floor_value() if verdict_seqs or self.pending else self.last_floor
         need_floor = bool(self.pending) and any(s < F for s in self.pending) and F > self.last_floor
         if verdict_seqs and c.sender == "S1c":
@@ -681,6 +691,11 @@ class Sim:
                 break
             if s not in self.verdicted:
                 tail.append(s)
+        if self.cfg.n_total:
+            # object mode: the sweep also re-serves reported holes.  Without it a finished stream sends no new
+            # reports, so holes whose copies were lost are never served again (a stall the engine's NACK refresh avoids)
+            known = [x for x in self.M_known if x not in self.verdicted and now - self.last_send[x] >= P]
+            tail = sorted(set(tail) | set(known))
         if tail:
             self.act(now, now, tail, open_tail=True)
         if self.last_floor_t != now:
@@ -787,6 +802,8 @@ class Sim:
             iso_n=int(len(iso)), iso_p50=float(np.median(iso)) if len(iso) else float("nan"),
             iso_mean=float(iso.mean()) if len(iso) else float("nan"),
             repair_per_delivered=g["repair_sends"] / max(delivered, 1),
+            floors_per_delivered=g["floors"] / max(delivered, 1), copies_per_delivered=g["verdict_copies"] / max(delivered, 1),
+            GF_final=self.GF, GF_ratio=self.GF / max(n, 1),
             h_hat=self.n_missing / max(n, 1), orig_lost=len(self.orig_lost),
             rbf_num=rbf_num, rbf=rbf_num / max(n_holes, 1), fp_release_filled=fp_rel, fp_after_ho=fp_after_ho,
             ooo_per_delivered=g["ooo_loss"] / max(delivered, 1),

@@ -108,7 +108,7 @@ def build():
     # ---- Part T
     for cell in ("I1", "I2", "L10"):
         job("T", "REFT-%s" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S0", "R1", seed)))
-        for recv in ("R0e", "R1", "U"):
+        for recv in ("R0e", "R0c", "R1", "U"):
             job("T", "T-%s-%s" % (cell, recv), lambda seed, cell=cell, recv=recv: ("sim", tail_cfg(cell, "S1c", recv, seed)))
         job("T", "T-%s-R0x" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, recv_eps="ewma")))
     # ---- Part B
