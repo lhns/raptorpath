@@ -197,8 +197,16 @@ check("p67: a battery (or a G replacement run) that exits rc 124 gets `LD-BATTER
       p67.count("LD-BATTERY-TRUNCATED at LD_HARD") == 2 and 'if [ "$brc" = "124" ]; then' in p67 and '>> "$dir/ld.log"; touch "$dir/TRUNCATED"' in p67 and '>> "$dir/repl.log"; touch "$dir/TRUNCATED"' in p67
       and p67.index('if [ "$brc" = "124" ]; then') < p67.index('if [ "$brc" = "6" ]'))
 check("p67: a cut stage returns 7 (TRUNCATED) and a stage not started for lack of time 8; a session whose only not-ok stages are 7 / 8 ends TRUNCATED-ALL (exit 7, never DONE-ALL, never FAILED-ALL); any other not-ok stage is FAILED-ALL",
-      '[ -e "$dir/TRUNCATED" ] && return 7' in p67 and 'touch "$dir/NOT-STARTED"; return 8; fi' in p67 and "7|8) P67CUT+=" in p67 and 'touch "$RUN/TRUNCATED-ALL"; persist; echo "LD-ALL-TRUNCATED"; exit 7; fi' in p67
+      '[ -e "$dir/TRUNCATED" ] && return 7' in p67 and 'touch "$dir/NOT-STARTED"; return 8; fi' in p67 and "7|8) P67CUT+=" in p67 and 'touch "$RUN/TRUNCATED-ALL"; persist; echo "LD-ALL-TRUNCATED"; exit $P67_EXIT_NONPASS; fi' in p67 and "P67_EXIT_NONPASS=7 " in p67
       and p67.index('touch "$RUN/TRUNCATED-ALL"') < p67.index('fail_all "plan $PLAN: stages not run to the end'))
+check("p67: a session cut at LD_HARD lists the non-pass verdict lines of the cut stages (s67_score.py nonpass) in the `LD-ALL TRUNCATED` era line and in $RUN/score.txt; the exit code and the TRUNCATED-ALL vs FAILED-ALL choice are unchanged",
+      "nonpass67()" in p67 and 'python3 ./s67_score.py nonpass "$_d/score.txt"' in p67 and 'non-pass verdict lines of the cut stages: ${P67NP:-none}' in p67 and "NONPASS-IN-CUT-STAGE" in p67
+      and p67.index("nonpass67 | sed 's/^/NONPASS-IN-CUT-STAGE /'") < p67.index('} > "$RUN/score.txt"') and p67.index("${P67NP:-none}") < p67.index('touch "$RUN/TRUNCATED-ALL"'))
+check("p67: an R2 smoke failure in the rehearsal is R2 VOID, not FAILED-ALL (registration 5.2 / 4.4): the R2-VOID marker beside the kept ABORT-SMOKE, the other stages' smokes run, AMENDMENT2.txt says `R2 VOID`, the session ends LD-ALL-REHEARSAL-R2-VOID with the sentinel REHEARSAL-R2-VOID and the one non-pass exit; every other stage's smoke failure stays fail_all",
+      '[ "$_st" = "r2" ] && [ "$_rc" = "1" ]' in p67 and "R2-VOID" in p67 and 'echo "R2 VOID (rehearsal smoke failed: guard 2 waits for an R2 re-run)"' in p67
+      and 'echo "LD-ALL-REHEARSAL-R2-VOID"; exit $P67_EXIT_NONPASS' in p67 and 'touch "$RUN/REHEARSAL-R2-VOID"' in p67 and 'fail_all "rehearsal: stage $_st smoke did not pass ($_st)"' in p67
+      and p67.index('"$_st" = "r2"') < p67.index('fail_all "rehearsal: stage $_st smoke did not pass') and p67.count("LD-ALL-REHEARSAL-DONE") >= 1
+      and 'SENTINELS="DONE-ALL FAILED-ALL TRUNCATED-ALL REHEARSAL-R2-VOID ' in open(os.path.join(HERE, "loopdiag_run_all.sh")).read())
 check("run_all: TRUNCATED-ALL is a sentinel (cleared and proven like DONE-ALL / FAILED-ALL)", 'SENTINELS="DONE-ALL FAILED-ALL TRUNCATED-ALL ' in open(os.path.join(HERE, "loopdiag_run_all.sh")).read())
 check("p67: stage T is ok only without a TUN-BRINGUP-FAIL line in its ledger (ABORT-BRINGUP-T)", "! grep -aq '^TUN-BRINGUP-FAIL' \"$dir/ld.log\" && ok=1" in p67)
 check("battery: plan 41d with LD_WITNESS67 applies the block-1 rule after G_BLOCK1_N rows (s67_score.py block1g, exit 6), not on the smoke and not on the replacement run",

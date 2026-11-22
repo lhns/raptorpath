@@ -910,8 +910,8 @@ def test_r2_candidate_crash():
     rows = crash_twins("P2T", 2)
     check("r2_crash_red: the crashed twin rows are VOID-RC (not replaceable)", sum(1 for r in rows if r["arm"] == "P2T" and r["status"] == "VOID-RC") == 2 and "VOID-RC" not in plan67.REPLACEABLE, [r["status"] for r in rows if r["arm"] == "P2T"])
     t = scored("67p", rows)
-    check("r2_crash_red: P2T live + crashes reach the minimum -> R2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n=2: a finding to investigate, not cleared by a plain re-run); crash counts printed",
-          "\nR2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n=2: a finding to investigate, not cleared by a plain re-run)" in t and "P2T 4 (crashes 2)" in t and "CLEAR" not in t.split("LIVE TWIN ROWS")[1], t[-900:])
+    check("r2_crash_red: P2T live + crashes reach the minimum -> R2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n=2 in twins: a finding to investigate, not cleared by a plain re-run); crash counts printed",
+          "\nR2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n=2 in twins: a finding to investigate, not cleared by a plain re-run)" in t and "P2T 4 (crashes 2)" in t and "CLEAR" not in t.split("LIVE TWIN ROWS")[1], t[-900:])
     t = scored("67p", crash_twins("P1T", 2))
     check("r2_crash_green: P1T (reference) crashes -> a plain UNSCOREABLE with the counts, no CANDIDATE-CRASH", "\nR2-HOLD UNSCOREABLE (live twin rows P1T 4 (crashes 2)" in t and "CANDIDATE-CRASH" not in t, t[-900:])
 
@@ -1080,6 +1080,131 @@ def test_t_bringup_attribution():
           and "(4) both ends of every S1 invocation print TUNPIPE with the given hint and a TUNCFG whose four fields read false: ok" in tx and "T FAIL" not in tx, (res, tx[-900:]))
 
 
+
+# ═════════════ harness 67c, round 3 (brief D) ═════════════
+def _crash_in(rows, arm, cell, n):
+    """The first n rows of (cell, arm) replaced by crash rows (VOID-RC, never replaced)."""
+    out, k = [], 0
+    for r in rows:
+        if r["arm"] == arm and r["cell"] == cell and k < n:
+            out.append(build("67a", r["cell"], arm, r["seed"], r["rep"], rc=1))
+            k += 1
+        else:
+            out.append(r)
+    return out
+
+
+def _partial(arm, cell, n_crash, keep_reps):
+    """Rows of (cell, arm) beyond rep <= keep_reps never ran (missing slots), then n_crash of the rest crash: live + crashes stays under the minimum."""
+    rows = ledger_rows("67a", drop=lambda c, a, s, r: a == arm and c == cell and r > keep_reps)
+    return _crash_in(rows, arm, cell, n_crash)
+
+
+def test_partial_crash_cause():
+    """Item 1: a candidate cell under its minimum with any crash names CANDIDATE-CRASH, and says when live + crashes is itself under the minimum."""
+    t = scored("67a", _partial("S2", "c2-100", 2, 3))
+    want = "\nAS UNSCOREABLE (CANDIDATE-CRASH S2 n=2 in c2-100: a finding to investigate, not cleared by a plain re-run (live + crashes 6 < minimum 10: other voids also short))"
+    check("partial_crash_red: AS, S2 cell with 2 crashes and live + crashes 6 < 10 -> CANDIDATE-CRASH S2 n=2 in c2-100 with the live + crashes parenthesis", want in t, t[-900:])
+    t = scored("67a", _partial("S1", "c2-100", 2, 3))
+    want = "\nA1 UNSCOREABLE (CANDIDATE-CRASH S1 n=2 in c2-100: a finding to investigate, not cleared by a plain re-run (live + crashes 6 < minimum 10: other voids also short))"
+    check("partial_crash_red: A1, S1 cell likewise", want in t, t[-900:])
+    check("partial_crash_green: AS reads S1 as the reference: a plain UNSCOREABLE (no CANDIDATE-CRASH) for the same ledger", "\nAS UNSCOREABLE (fewer live rows than the minimum: c2-100 S1 4<10 (crashes 2))" in t, t[-900:])
+    t = scored("67a", _partial("S2", "c2-100", 0, 3))
+    check("partial_crash_green: a shortfall with no crash row stays the plain wording", "\nAS UNSCOREABLE (fewer live rows than the minimum: c2-100 S2 6<10 (crashes 0))" in t and "CANDIDATE-CRASH" not in t, t[-700:])
+    t = scored("67a", _crash_rows("S2", "c2-100", 3))
+    check("partial_crash_green: the full cause (live + crashes reach the minimum) keeps its wording, no parenthesis",
+          "\nAS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 in c2-100: a finding to investigate, not cleared by a plain re-run)" in t, t[-700:])
+    twin = _twin_rows()
+    p2t = [i for i, r in enumerate(twin) if r["arm"] == "P2T"]
+    rows = [build("67p", r["cell"], "P2T", r["seed"], r["rep"], rc=1) if i == p2t[0] else r for i, r in enumerate(twin) if i not in p2t[1:3]]
+    t = scored("67p", rows)
+    want = "\nR2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n=1 in twins: a finding to investigate, not cleared by a plain re-run (live + crashes 4 < minimum 5: other voids also short))"
+    check("partial_crash_red: R2, P2T with 1 crash and live + crashes 4 < 5 -> CANDIDATE-CRASH P2T n=1 in twins", want in t and "guard 2 NOT ELIGIBLE" in t, t[-900:])
+
+
+def test_crash_without_shortfall():
+    """Item 2: crashes with live >= minimum keep the verdict and are reported once per (arm, cell)."""
+    line = "CANDIDATE-CRASHES (reported; worst rank in the test, not a shortfall): "
+    t = scored("67a", _crash_rows("S2", "c2-100", 2))
+    check("crash_noshort_red: 2 S2 crashes, 10 live -> the reported line for S2 c2-100 n=2, AS scored (not UNSCOREABLE)", "\n" + line + "S2 c2-100 n=2" in t and ("\nAS PASS" in t or "\nAS FAIL" in t), t[-900:])
+    t = scored("67a", _crash_rows("S1", "c8-100", 1))
+    check("crash_noshort_red: 1 S1 crash -> S1 c8-100 n=1, A1 scored", "\n" + line + "S1 c8-100 n=1" in t and ("\nA1 PASS" in t or "\nA1 FAIL" in t), t[-900:])
+    t = scored("67a", ledger_rows("67a"))
+    check("crash_noshort_green: no crash -> no such line", "CANDIDATE-CRASHES" not in t)
+    twin = _twin_rows()
+    k = next(i for i, r in enumerate(twin) if r["arm"] == "P2T")
+    rows = [build("67p", r["cell"], "P2T", r["seed"], r["rep"], rc=1) if i == k else r for i, r in enumerate(twin)]
+    t = scored("67p", rows)
+    check("crash_noshort_red: R2, 1 P2T crash, 5 live -> `P2T twins n=1` reported, the verdict is not UNSCOREABLE", "\n" + line + "P2T twins n=1" in t and "R2-HOLD UNSCOREABLE" not in t, t[-900:])
+    t = scored("67p", _twin_rows())
+    check("crash_noshort_green: R2 without crash -> no such line", "CANDIDATE-CRASHES" not in t)
+
+
+def test_nonpass_lines():
+    """Item 3: the non-pass verdict lines of a cut stage (what the era line and $RUN/score.txt list)."""
+    txt = "\n".join(["AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 in c2-100: x)", "A1 TRUNCATED (cut)", "A1-R FAIL", "R1 PASS", "R2-HOLD FIRED (x)", "R2-HOLD CLEAR (x)", "T PASS", "T VOID (x)",
+                     "S06-FAIL rows: 2 (the merge is held)", "S06-FAIL-ROWS 2", "S06-FAIL-ROWS 0", "NO VERDICT (x)", "GATE-67G2 FAIL (x)", "GATE-67G2 PASS", "  S06-FAIL c2-100 S2 s42", "VERDICT-67A AS PASS; A1 PASS; S06-FAIL rows 0",
+                     "AS FAIL (p=0.01; PASS iff p > 0.05)", "R1-BLIND (x)"])
+    got = S.nonpass_lines(txt.splitlines())
+    want = ["AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 in c2-100: x)", "A1-R FAIL", "R2-HOLD FIRED (x)", "T VOID (x)", "S06-FAIL rows: 2 (the merge is held)", "S06-FAIL-ROWS 2", "NO VERDICT (x)", "GATE-67G2 FAIL (x)",
+            "AS FAIL (p=0.01; PASS iff p > 0.05)", "R1-BLIND (x)"]
+    check("nonpass_red: FAIL / S06-FAIL / UNSCOREABLE / NO VERDICT / FIRED / VOID / BLIND lines are listed; PASS, CLEAR, TRUNCATED, zero-count and indented lines are not", got == want, got)
+
+
+def _g_run(which, rows, name, extra=()):
+    p = os.path.join(TMP, name)
+    with open(p, "w") as f:
+        for r in rows:
+            f.write("P38ROW " + json.dumps(r, sort_keys=True) + "\n")
+        for x in extra:
+            f.write(x + "\n")
+        f.write("LD-BATTERY-DONE\n")
+    lines = []
+    S.score67g([p], lines.append, which)
+    return "\n".join(lines)
+
+
+def test_g_empty_sets():
+    """Item 4 (a), (b), (c): an empty set is a named outcome, never silence."""
+    rows = [r for r in _g_ledger("g2") if not (r["cell"] == "c1s-400" and r["arm"] == "BASE")]
+    t = _g_run("g2", rows, "g2-nobase.log")
+    check("g_dnf_rule_red: a cell with no live S1 (BASE) rows -> `S06-DNF-RULE NOT EVALUATED c1s-400 (no live S1 rows)`, in the gate's why list (FAIL)",
+          "\nS06-DNF-RULE NOT EVALUATED c1s-400 (no live S1 rows)" in t and re.search(r"^GATE-67G2 FAIL \(.*S06-DNF-RULE NOT EVALUATED c1s-400", t, re.M) is not None, t[-900:])
+    rows = _g_ledger("g2")
+    for r in rows:
+        if r["cell"] == "c2-100" and r["arm"] == "BASE" and r["seed"] == "42" and r["rep"] == 1:
+            r["dnf"] = True
+    t = _g_run("g2", rows, "g2-basednf.log")
+    check("g_dnf_rule_red: a BASE row DNF -> `S06-DNF-RULE not applicable c2-100 (an S1 row DNF)` (registered rule, no failure of its own)",
+          "\nS06-DNF-RULE not applicable c2-100 (an S1 row DNF)" in t and "NOT EVALUATED" not in t, t[-900:])
+    t = _g_run("g2", _g_ledger("g2"), "g2-clean.log")
+    check("g_dnf_rule_green: clean rows print neither line and GATE-67G2 PASS", "S06-DNF-RULE" not in t and "GATE-67G2 PASS" in t, t[-500:])
+    t = _g_run("g1", _g_ledger("g1"), "g1-clean.log")
+    check("g_dnf_rule_green: g1 has no such rule (the DNF rule is g2-only): no S06-DNF-RULE line", "S06-DNF-RULE" not in t and "GATE-67G1 PASS" in t, t[-300:])
+    rows = [r for r in _g_ledger("g2") if not (r["cell"] == "c2-100" and r["arm"] == "CAND")]
+    t = _g_run("g2", rows, "g2-nocand.log")
+    check("g2_no_s2_red: no S2 rows in a cell -> `G2 UNSCOREABLE (no S2 rows in c2-100)` and GATE-67G2 UNSCOREABLE (not PASS)",
+          "\nG2 UNSCOREABLE (no S2 rows in c2-100)" in t and re.search(r"^GATE-67G2 UNSCOREABLE", t, re.M) is not None and "GATE-67G2 PASS" not in t, t[-900:])
+    rows = [r for r in _g_ledger("g2") if r["arm"] != "CAND"]
+    t = _g_run("g2", rows, "g2-nocand-all.log")
+    check("g2_no_s2_red: no S2 rows at all -> a line per cell and GATE-67G2 UNSCOREABLE", all(f"\nG2 UNSCOREABLE (no S2 rows in {c})" in t for c in ("c1s-400", "c1d-400", "c2-100", "c8-100")) and re.search(r"^GATE-67G2 UNSCOREABLE", t, re.M) is not None, t[-900:])
+    t = _g_run("g2", _g_ledger("g2"), "g2-dropped.log", extra=("LD-PLAN67 plan=41d stage=g2 drop_s2=1",))
+    check("g2_dropped_red: a g2 ledger whose LD-PLAN67 line says drop_s2=1 -> `GATE-67G2 UNSCOREABLE (G2 ran with S2 dropped)`", re.search(r"^GATE-67G2 UNSCOREABLE \(G2 ran with S2 dropped\)", t, re.M) is not None, t[-500:])
+    t = _g_run("g2", _g_ledger("g2", lambda c, a, s, r: "s2-taper-nonzero" if (a == "CAND" and c == "c2-100" and s == "42" and r == 1) else None), "g2-dropped-s06.log", extra=("LD-PLAN67 plan=41d stage=g2 drop_s2=1",))
+    check("g2_dropped_green: a finding together with the drop reads FAIL and still names the drop (a named outcome is never lost)", re.search(r"^GATE-67G2 FAIL \(.*UNSCOREABLE: G2 ran with S2 dropped", t, re.M) is not None, t[-400:])
+    t = _g_run("g2", _g_ledger("g2"), "g2-notdropped.log", extra=("LD-PLAN67 plan=41d stage=g2 drop_s2=0",))
+    check("g2_dropped_green: drop_s2=0 -> PASS, and the state line is printed", "GATE-67G2 PASS" in t and "LD-PLAN67 STATE drop_s2=0" in t, t[-500:])
+    t = _g_run("g1", _g_ledger("g1"), "g1-nostate.log")
+    check("g1_state_green: a ledger without the line prints drop_s2=unknown", "LD-PLAN67 STATE drop_s2=unknown" in t and "GATE-67G1 PASS" in t, t[-300:])
+    for val, want in (("1", "1"), ("0", "0"), (None, "unknown")):
+        p = _tun()
+        q = os.path.join(TMP, "tun-state-%s.log" % val)
+        open(q, "w").write(open(p).read() + (f"LD-PLAN67 plan=t drop_s2={val}\n" if val is not None else ""))
+        lines = []
+        S.score_t(q, lines.append)
+        check(f"t_state_red: score_t prints `LD-PLAN67 STATE drop_s2={want}`", f"LD-PLAN67 STATE drop_s2={want}" in lines and any(x.startswith("T PASS") for x in lines), lines[-4:])
+
+
 TESTS = [test_s06_taper_red, test_s06_taper_green, test_s2_pslot_red, test_s2_pslot_green, test_s1_gauge_red, test_s1_gauge_green, test_b0_gauge_red, test_seat_sha_red_green, test_short_red_green,
          test_dnf_row, test_rows_never_raise, test_as_red_green, test_a1_red_green, test_a1_exact_matches_mc, test_unscoreable_red_green, test_replacement_cap, test_s06_stage_red_green,
          test_s06_dnf_red_green, test_belowfloor_red_green, test_succ_red_green, test_rate_table, test_owner_flag, test_block1, test_a1r_red_green, test_r1_red_green, test_r1_blind,
@@ -1087,7 +1212,7 @@ TESTS = [test_s06_taper_red, test_s06_taper_green, test_s2_pslot_red, test_s2_ps
          test_t_green_red, test_smoke_t, test_g1_red_green, test_g2_red_green, test_g_gate, test_smoke_g, test_fixtures_deterministic,
          test_s06_precedence, test_slotfill_live_only, test_replaceable_set, test_r1_b0_gauge, test_r1_readouts, test_r1_complete, test_truncated, test_r2_blind, test_r2_missing_field,
          test_rho_witness_line, test_t_precedence, test_t_parser_agrees_with_verify4, test_g_block1,
-         test_candidate_crash, test_truncation_every_verdict, test_ledger_drop_state, test_g2_taper_preconditions, test_r1_readout_values, test_t_bringup_attribution]
+         test_candidate_crash, test_truncation_every_verdict, test_ledger_drop_state, test_g2_taper_preconditions, test_r1_readout_values, test_t_bringup_attribution, test_partial_crash_cause, test_crash_without_shortfall, test_nonpass_lines, test_g_empty_sets]
 
 if __name__ == "__main__":
     import time

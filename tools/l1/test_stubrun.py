@@ -2697,6 +2697,7 @@ def case63(plan, path):
 import plan67  # noqa: E402
 
 REH67 = {}          # the rehearsal's persisted run dir
+TRUNC_EXIT67 = 7   # the session exit of a non-pass that is not a failure (loopdiag_p67.sh P67_EXIT_NONPASS): TRUNCATED-ALL and the rehearsal's R2 void; every assertion of it reads this one constant
 TREES67 = ("B0", "S1", "S2", "P1", "P2")
 COMMIT67 = {"B0": "b0" * 20, "S1": "2d590cdc" + "0" * 32, "S2": "1953abd1" + "0" * 32, "P1": "a1" * 20, "P2": "a2" * 20}
 ALL67 = tuple(p for p in ("67pre", "67", "67g", "67x"))
@@ -3086,13 +3087,14 @@ def case67(plan, path):
         extra.update(ref67_files(root, sb))
         rehearse = plan == "67" and path != "not-rehearsal"
         bad = {"s2-taper-nonzero": "s2-taper-nonzero", "s2-no-pslot": "s2-no-pslot@2:c2-100", "s2-belowfloor-high": "s2-belowfloor-high", "r1-blind": "r1-blind", "twin-no-final": "twin-no-final", "twin-worse": "twin-worse",
-               "twin-under-min": "twin-under-min@1-99", "twin-no-kept-acct": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-crash@1-3:c2-100", "block1-fail": "s1-no-gauge@0:c2-100",
+               "twin-under-min": "twin-under-min@1-99", "rehearsal-r2-smoke-fail": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-crash@1-3:c2-100", "block1-fail": "s1-no-gauge@0:c2-100",
                "s2-taper-cotenant": "s2-taper-cotenant@2:c2-100", "r1-b0-gauge": "b0-gauge@2-99:c2-100", "r2-blind": "r2-blind", "twin-missing-field": "twin-missing-field"}
         if plan == "67g":
             # the defects sit PAST block 1 (the first 8 rows of each guard: the block-1 rule would stop the stage there): the 5th invocation of the seat on (@4); g1-fail counts over the whole session (@@), the replacement run included
             bad.update({"s2-taper-nonzero": "s2-taper-nonzero@4", "s1-no-gauge": "s1-no-gauge@4", "g1-fail": "s1-no-gauge@@4-99", "g-block1-fail": "s1-no-gauge@0", "g2-taper-replaced": "g2-taper-no-pslot@4"})
         if plan == "67x":
-            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100"})
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100", "truncated-s06-fail": "s2-taper-nonzero@2:c2-100",
+                        "a-crash-partial": "s2-crash@@0:c8-100,s2-no-pslot@@1-6:c8-100", "truncated-candidate-crash": "s2-crash@@0-2:c8-100"})      # S2 in c8 (not the block-1 row): one crash and every other slot (its replacement included) VOID-WITNESS / three crashes
         if path in bad:
             extra["STUB_BAD67"] = bad[path]
         # per-path breakages of the trees / the environment
@@ -3113,6 +3115,8 @@ def case67(plan, path):
             extra["STUB_B0_KEYFALSE"] = "1"
         if path == "truncated":
             extra["STUB_TRUNC"] = "67r"
+        if path in ("truncated-s06-fail", "truncated-candidate-crash"):
+            extra["STUB_TRUNC"] = "67a"      # stage A is the cut stage: its S2 finding must stay on record
         if path == "tools-diff":
             append67(root, "S2", "tools/l1/l1common.py", "# one more byte: this seat's tools tree is not the harness's\n")
         if path == "manifest-miss":
@@ -3222,7 +3226,17 @@ def case67(plan, path):
                 EXECUTED.add((plan, path))
                 return
             # the remaining rehearsal paths: one finding / one broken input stops the rehearsal (rc 5, ABORT-SMOKE of the stage)
-            stage_of = {"twin-no-kept-acct": "r2", "t-base-refuses": "t", "s2-taper-nonzero": "g2"}[path]
+            if path == "rehearsal-r2-smoke-fail":
+                am = txt67(run_dir, "AMENDMENT2.txt")
+                others = ["g1", "g2", "a", "r1", "t"]
+                check(f"{tag}: an R2-only smoke failure makes R2 VOID, it does not stop the rehearsal: the R2-VOID marker and ABORT-SMOKE in the r2 dir, every other stage's smoke passed ({' '.join(others)}: REHEARSAL-PASS), AMENDMENT2.txt carries `R2 VOID (rehearsal smoke failed: guard 2 waits for an R2 re-run)`, the sentinel REHEARSAL-R2-VOID, rc {TRUNC_EXIT67} and the token LD-ALL-REHEARSAL-R2-VOID (not -DONE, no FAILED-ALL)",
+                      rc == TRUNC_EXIT67 and "LD-ALL-REHEARSAL-R2-VOID" in out and "LD-ALL-REHEARSAL-DONE" not in out and not failed and os.path.exists(os.path.join(run_dir, "REHEARSAL-R2-VOID"))
+                      and os.path.exists(os.path.join(stage_dirs["r2"], "R2-VOID")) and os.path.exists(os.path.join(stage_dirs["r2"], "ABORT-SMOKE")) and not os.path.exists(os.path.join(stage_dirs["r2"], "REHEARSAL-PASS"))
+                      and all(os.path.exists(os.path.join(stage_dirs[s], "REHEARSAL-PASS")) for s in others) and "R2 VOID (rehearsal smoke failed: guard 2 waits for an R2 re-run)" in am and "BINSHA S1 " in am,
+                      (rc, tail(e, 8), tail(out, 6), am[-300:]))
+                EXECUTED.add((plan, path))
+                return
+            stage_of = {"t-base-refuses": "t", "s2-taper-nonzero": "g2"}[path]
             check(f"{tag}: the rehearsal stops: rc 5, FAILED-ALL, ABORT-SMOKE of stage {stage_of} (a defect or a finding is never a pass), no LD-ALL-REHEARSAL-DONE",
                   rc == 5 and failed and os.path.exists(os.path.join(stage_dirs[stage_of], "ABORT-SMOKE")) and "LD-ALL-REHEARSAL-DONE" not in out, (rc, tail(e, 8), tail(txt67(stage_dirs[stage_of], "smoke-check.txt"), 8)))
             if path == "t-base-refuses":
@@ -3334,7 +3348,20 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         check(f"{tag}: the R1 battery returned timeout's rc 124: LD-BATTERY-TRUNCATED in its ledger, the TRUNCATED marker, A1-R and R1 read TRUNCATED (never PASS), the stage is not ok, the session ends TRUNCATED-ALL (rc 7: not DONE-ALL, not FAILED-ALL), the other stages ran",
               "LD-BATTERY-TRUNCATED at LD_HARD" in txt67(stage_dirs["r1"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "TRUNCATED")) and re.search(r"^A1-R TRUNCATED", sc["r1"], re.M) is not None
               and re.search(r"^R1 TRUNCATED", sc["r1"], re.M) is not None and "PASS" not in sc["r1"].split("VERDICT-67R")[-1] and not os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and os.path.exists(os.path.join(stage_dirs["a"], "DONE"))
-              and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and not failed and os.path.exists(os.path.join(run_dir, "TRUNCATED-ALL")) and rc == 7 and "LD-ALL-TRUNCATED" in out, (rc, tail(sc["r1"], 5), tail(e, 6)))
+              and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and not failed and os.path.exists(os.path.join(run_dir, "TRUNCATED-ALL")) and rc == TRUNC_EXIT67 and "LD-ALL-TRUNCATED" in out, (rc, tail(sc["r1"], 5), tail(e, 6)))
+    elif path in ("truncated-s06-fail", "truncated-candidate-crash"):
+        runsc = txt67(run_dir, "score.txt")
+        tline = next((ln for ln in e.splitlines() if "LD-ALL TRUNCATED" in ln), "")
+        want = "S06-FAIL rows: 1" if path == "truncated-s06-fail" else "AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 in c8-100: a finding to investigate, not cleared by a plain re-run)"
+        va = next((ln for ln in sc["a"].splitlines() if ln.startswith("VERDICT-67A")), "")
+        label_ok = (re.search(r"^S06-FAIL rows: 1", sc["a"], re.M) is not None and "S06-FAIL rows 1" in va) if path == "truncated-s06-fail" else (re.search(r"^AS UNSCOREABLE \(CANDIDATE-CRASH S2 n=3 in c8-100", sc["a"], re.M) is not None and "AS UNSCOREABLE" in va)
+        check(f"{tag}: stage A is cut (rc 124 from the stub timeout): its own outcome label stays on the verdict line ({'S06-FAIL rows 1' if path == 'truncated-s06-fail' else 'AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 ...)'}, never TRUNCATED), the TRUNCATED marker, the stage returns the cut (not DONE), the session ends TRUNCATED-ALL (rc {TRUNC_EXIT67}, not FAILED-ALL), the era line `LD-ALL TRUNCATED` and $RUN/score.txt list the non-pass line `{want[:40]}...`",
+              "LD-BATTERY-TRUNCATED at LD_HARD" in txt67(stage_dirs["a"], "ld.log") and os.path.exists(os.path.join(stage_dirs["a"], "TRUNCATED")) and label_ok and (path == "truncated-s06-fail" or "AS TRUNCATED" not in sc["a"].split("VERDICT-67A")[-1].split(";")[0])
+              and not os.path.exists(os.path.join(stage_dirs["a"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and not failed and os.path.exists(os.path.join(run_dir, "TRUNCATED-ALL")) and rc == TRUNC_EXIT67 and "LD-ALL-TRUNCATED" in out
+              and ("a: " + want) in tline and ("NONPASS-IN-CUT-STAGE a: " + want) in runsc, (rc, va, tail(sc["a"], 6), tline[-400:], tail(runsc, 6)))
+    elif path == "a-crash-partial":
+        check(f"{tag}: S2 in c8 has one crash and every other slot void (live + crashes under the minimum): AS UNSCOREABLE names CANDIDATE-CRASH S2 n=1 in c8-100 with `live + crashes 1 < minimum 2: other voids also short`, never the plain `fewer live rows`",
+              "AS UNSCOREABLE (CANDIDATE-CRASH S2 n=1 in c8-100: a finding to investigate, not cleared by a plain re-run (live + crashes 1 < minimum 2: other voids also short))" in sc["a"] and re.search(r"^AS UNSCOREABLE \(fewer live", sc["a"], re.M) is None, (tail(sc["a"], 10),))
     elif path == "s2-no-pslot":
         check(f"{tag}: an S2 row of stage A without pslot is VOID-WITNESS and re-run once (REPLACE67 on record, a second row of that slot); the stage still scores", any(r["status"] == "VOID-WITNESS" and r["arm"] == "S2" for r in a_rows) and "REPLACE67 c2-100 S2" in txt67(stage_dirs["a"], "ld.log"), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"],))
     elif path == "s2-belowfloor-high":

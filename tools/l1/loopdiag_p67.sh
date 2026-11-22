@@ -164,6 +164,7 @@ era "LD-ALL tools tests ok"
 # returns 0 = the stage ran to the end (its verdicts are in score.txt), 1 = it did not complete, 2 = the rehearsal's smoke passed, 6 = the block-1 rule stopped it (FAILED-<stage>; the next stage still runs),
 # 7 = cut at LD_HARD (TRUNCATED: the battery or its replacement run was killed by the timeout; scored, every PASS reads TRUNCATED), 8 = not started: too little time left before LD_HARD (ABORT-BUDGET).
 # 7 and 8 are not failures (measurement-discipline: the truncation sentinel is not a failure): the session ends TRUNCATED-ALL unless another stage failed.
+P67_EXIT_NONPASS=7      # the session exit of a non-pass that is not a failure (TRUNCATED-ALL; the rehearsal's R2 void): one value, never DONE (0) and never FAILED-ALL (5)
 stage67() { # name
   local name="$1" bplan dir smk scr chk bto brc ok=0 cand="" base="" w="" seats="" s v sbrc smrc nrows T1
   bplan="$(python3 -c "import plan67; print(plan67.STAGE_PLAN.get('$name', ''))")"
@@ -261,11 +262,18 @@ stage67() { # name
 }
 
 # ── 8. the session ──
-P67RC=()
+P67RC=(); P67R2VOID=0
 if [ "$REHEARSE" = 1 ]; then
   for _st in "${P67STAGES[@]}"; do
     stage67 "$_st"; _rc=$?
-    [ "$_rc" = "2" ] || fail_all "rehearsal: stage $_st smoke did not pass ($_st)"
+    [ "$_rc" = "2" ] && continue
+    # registration 5.2 / 4.4: an R2 smoke failure makes R2 VOID (guard 2 waits for an R2 re-run); it does not stop guard 1. Every other stage's smoke failure stays ABORT-SMOKE + FAILED-ALL.
+    if [ "$_st" = "r2" ] && [ "$_rc" = "1" ] && [ -e "$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['r2'])")/ABORT-SMOKE" ]; then
+      touch "$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['r2'])")/R2-VOID"; P67R2VOID=1
+      era "LD-ALL R2-VOID: the rehearsal's R2 smoke failed (ABORT-SMOKE kept); the other stages' smokes still run, guard 2 waits for an R2 re-run"
+      continue
+    fi
+    fail_all "rehearsal: stage $_st smoke did not pass ($_st)"
   done
   {
     echo "AMENDMENT2 plan 67 rehearsal $(date -u +%FT%TZ)"
@@ -273,11 +281,20 @@ if [ "$REHEARSE" = 1 ]; then
     if grep -aq 'DUMP-TWINS-NEEDED' "$RUN/sa/smoke-check.txt" 2>/dev/null; then echo "DUMP67=1 (the [SUCC] line lacks the close times without RWM_SUCC_DUMP: run the dump twins, LD_DUMP67=1)"; else echo "DUMP67=0 (the [SUCC] line carries both close times: no dump twins)"; fi
     echo "SUITE-REUSE HIT for: $(for _s in S1 S2; do [[ " ${P67NEED[*]} " == *" $_s "* ]] && echo -n "$_s "; done)"
     echo "TOOLS-MANIFEST $(sha256sum "$SD/TOOLS-MANIFEST.sha256" 2>/dev/null | cut -d' ' -f1)"
+    [ "$P67R2VOID" != 1 ] || echo "R2 VOID (rehearsal smoke failed: guard 2 waits for an R2 re-run)"
   } > "$RUN/AMENDMENT2.txt"
   cat "$RUN/AMENDMENT2.txt"
+  if [ "$P67R2VOID" = 1 ]; then touch "$RUN/REHEARSAL-R2-VOID"; era "LD-ALL REHEARSAL-R2-VOID: every other stage's smoke passed; R2 is VOID (guard 2 waits for an R2 re-run; guard 1 may launch)"; persist; echo "LD-ALL-REHEARSAL-R2-VOID"; exit $P67_EXIT_NONPASS; fi
   persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0
 fi
 P67BAD=(); P67CUT=()
+nonpass67() { # the non-pass verdict lines of the stages cut at LD_HARD, "<stage>: <line>" (a cut stage's passes read TRUNCATED; a FAIL / S06-FAIL / UNSCOREABLE / CANDIDATE-CRASH it found stays on record here)
+  local _c _st _d
+  for _c in "${P67CUT[@]}"; do
+    _st="${_c%%(*}"; _d="$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['$_st'])")"
+    python3 ./s67_score.py nonpass "$_d/score.txt" | awk -v s="$_st" '{print s ": " $0}'
+  done
+}
 for _st in "${P67STAGES[@]}"; do
   stage67 "$_st"; _rc=$?
   case "$_rc" in 0) ;; 7|8) P67CUT+=("$_st(rc=$_rc)") ;; *) P67BAD+=("$_st(rc=$_rc)") ;; esac
@@ -288,9 +305,10 @@ done
     _d="$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['$_st'])")"
     echo "== $_st"; grep -aE '^(VERDICT|GATE-67|A1|AS |R1|R2-HOLD|T |FAILED|S06-FAIL|NO VERDICT|UNSCOREABLE)' "$_d/score.txt" 2>/dev/null; ls "$_d" 2>/dev/null | grep -a '^FAILED-' | sed 's/^/MARKER /'
   done
+  [ "${#P67CUT[@]}" = 0 ] || { echo "== CUT AT LD_HARD (${P67CUT[*]}): non-pass verdict lines of the cut stages (their passes read TRUNCATED; these were found)"; nonpass67 | sed 's/^/NONPASS-IN-CUT-STAGE /'; }
 } > "$RUN/score.txt"
 era "LD-ALL end plan $PLAN stages=${P67STAGES[*]} not-ok=${P67BAD[*]:-none} cut-at-LD_HARD=${P67CUT[*]:-none} raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
 if [ "${#P67BAD[@]}" = 0 ] && [ "${#P67CUT[@]}" = 0 ]; then touch "$RUN/DONE-ALL"; persist; echo "LD-ALL-DONE"; exit 0; fi
 # A session cut at LD_HARD with no stage failing is TRUNCATED-ALL: a distinct outcome, never a pass (its verdicts read TRUNCATED) and not a failure (exit 7). Any other not-ok stage is FAILED-ALL.
-if [ "${#P67BAD[@]}" = 0 ]; then era "LD-ALL TRUNCATED: plan $PLAN cut at LD_HARD: ${P67CUT[*]} (verdicts read TRUNCATED; not a pass, not a failure)"; touch "$RUN/TRUNCATED-ALL"; persist; echo "LD-ALL-TRUNCATED"; exit 7; fi
+if [ "${#P67BAD[@]}" = 0 ]; then P67NP="$(nonpass67 | tr '\n' '|')"; P67NP="${P67NP%|}"; era "LD-ALL TRUNCATED: plan $PLAN cut at LD_HARD: ${P67CUT[*]} (verdicts read TRUNCATED; not a pass, not a failure); non-pass verdict lines of the cut stages: ${P67NP:-none}"; touch "$RUN/TRUNCATED-ALL"; persist; echo "LD-ALL-TRUNCATED"; exit $P67_EXIT_NONPASS; fi
 fail_all "plan $PLAN: stages not run to the end: ${P67BAD[*]}${P67CUT[*]:+; cut at LD_HARD: ${P67CUT[*]}}"

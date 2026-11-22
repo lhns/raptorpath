@@ -108,6 +108,21 @@ def trunc_v(verdict, name, tr):
     return verdict
 
 
+_VERDICT_HEAD = re.compile(r"^(AS|A1|A1-R|R1|R1-BLIND|R2-HOLD|T|GATE-67G[12]|ABORT-BRINGUP-T|NO VERDICT|UNSCOREABLE|FAILED)\b")
+
+
+def nonpass_lines(lines):
+    """The non-pass verdict lines of a scored stage: a verdict line that is not a PASS / CLEAR / ELIGIBLE (a FAIL, UNSCOREABLE, NO VERDICT, R2-HOLD FIRED, VOID, BLIND, CANDIDATE-CRASH line) and the S06-FAIL row counts above zero.
+    A TRUNCATED line is the cut's own replacement for a pass and is not listed; the cut is stated beside the list. loopdiag_p67.sh prints these for the cut stages (the era line and $RUN/score.txt)."""
+    out = []
+    for ln in lines:
+        if re.match(r"^S06-FAIL rows: [1-9]", ln) or re.match(r"^S06-FAIL-ROWS [1-9]", ln):
+            out.append(ln)
+        elif _VERDICT_HEAD.match(ln) and not passing(ln) and "TRUNCATED" not in ln.split(" (")[0]:
+            out.append(ln)
+    return out
+
+
 def nodata_line(rows_all, out):
     """Measurement-discipline rule 8: aborted invocations are recorded and retried per protocol, never discarded: the original NO_DATA rows stay in the ledger and are counted here."""
     nd = [r for r in rows_all if r["status"] == "NO_DATA"]
@@ -459,6 +474,14 @@ def crashes(rows, cell, arm):
     return [r for r in rows if r["cell"] == cell and r["arm"] == arm and r["status"] in CRASH]
 
 
+CRASHES_LINE = "CANDIDATE-CRASHES (reported; worst rank in the test, not a shortfall): "
+
+
+def _also_short(n_l, n_c, mn):
+    """The crashes alone do not account for the shortfall: say so (live + crashes still under the minimum)."""
+    return "" if n_l + n_c >= mn else f" (live + crashes {n_l + n_c} < minimum {mn}: other voids also short)"
+
+
 def _fmt_short(e):
     c, a, (n_l, n_c), mn = e
     return f"{c} {a} {n_l}<{mn} (crashes {n_c})"
@@ -680,7 +703,7 @@ def score_a(paths, out, plan_id="67a", repl=None):
     # (MIN_LIVE_A) and B0's (MIN_LIVE_B0): an S2 shortfall never makes A1 UNSCOREABLE.
     # A candidate arm's crashes (VOID-RC / NO_DATA after replacement: not replaced, not live) can put a cell under the minimum. The rule, in one sentence:
     # An UNSCOREABLE caused by candidate-arm crashes is a finding to investigate, not something a plain re-run clears.
-    # The candidate arm of AS is S2, of A1 S1; the cell's shortfall is crash-caused when live + crashes reaches the minimum.
+    # The candidate arm of AS is S2, of A1 S1; any crash row in a candidate cell under its minimum names CANDIDATE-CRASH (and says so when live + crashes is itself under the minimum).
     dropped = ledger_drop_s2(paths)
     if dropped is None:
         dropped = plan67.drop_s2()
@@ -696,15 +719,20 @@ def score_a(paths, out, plan_id="67a", repl=None):
             + "; ".join(f"{c} {a} live {count(c, a)[0]} crashes {count(c, a)[1]}" for c in (C2, C8) for a in (("S1", "S2", "B0") if not dropped else ("S1", "B0"))))
         out("")
 
+    for arm_, cell_ in ((a_, c_) for a_ in ("S1", "S2") for c_ in (C2, C8)):      # crashes with live >= the minimum: the registered rule (worst rank in the test) holds, the crash is reported
+        n_l_, n_c_ = count(cell_, arm_)
+        if n_c_ and n_l_ >= plan67.MIN_LIVE_A and not (arm_ == "S2" and dropped):
+            out(f"{CRASHES_LINE}{arm_} {cell_} n={n_c_}")
+
     def verdict_of(name, short, fn, cand):
         if aborted:
             return f"{name} UNSCOREABLE (abort {','.join(aborted)})"
         if short:
-            cc = [(c, n_c) for c, a, (n_l, n_c), mn in short if a == cand and n_l + n_c >= mn]
+            cc = [(c, n_l, n_c, mn) for c, a, (n_l, n_c), mn in short if a == cand and n_c > 0]
             if cc:
-                rest = [e for e in short if not (e[1] == cand and e[2][0] + e[2][1] >= e[3])]
-                return (f"{name} UNSCOREABLE (" + "; ".join(f"CANDIDATE-CRASH {cand} n={n_c} in {c}" for c, n_c in cc)
-                        + ": a finding to investigate, not cleared by a plain re-run" + (f"; also under the minimum: {'; '.join(_fmt_short(e) for e in rest)}" if rest else "") + ")")
+                rest = [e for e in short if not (e[1] == cand and e[2][1] > 0)]
+                return (f"{name} UNSCOREABLE (" + "; ".join(f"CANDIDATE-CRASH {cand} n={n_c} in {c}: a finding to investigate, not cleared by a plain re-run" + _also_short(n_l, n_c, mn) for c, n_l, n_c, mn in cc)
+                        + (f"; also under the minimum: {'; '.join(_fmt_short(e) for e in rest)}" if rest else "") + ")")
             return f"{name} UNSCOREABLE (fewer live rows than the minimum: {'; '.join(_fmt_short(e) for e in short)})"
         if info["too_many"]:
             return f"{name} NO VERDICT (more than {info['cap']} replaced slots: {len(info['void_slots'])} voided)"
@@ -867,14 +895,17 @@ def score_r2(paths, out, plan_id="67p"):
     n1, n2 = len(tw["P1T"]), len(tw["P2T"])
     c1, c2_ = (len([r for r in rows0 if r["arm"] == a and r["status"] in CRASH]) for a in ("P1T", "P2T"))
     out(f"LIVE TWIN ROWS: P1T {n1} (crashes {c1}), P2T {n2} (crashes {c2_}) (minimum {plan67.MIN_TWIN} per seat; crash rows VOID-RC + NO_DATA after replacement)")
+    if c2_ and n2 >= plan67.MIN_TWIN:
+        out(f"{CRASHES_LINE}P2T twins n={c2_}")
     hold = None
     miss = [nm for nm, get in (("U (O_serv, O_strand)", lambda r: r["w67"].get("acct_U")), ("oldest_unchanged_max", lambda r: (r["w67"].get("acct") or {}).get("oldest_unchanged_max"))) if any(get(r) is None for r in tw["P1T"] + tw["P2T"])]
     if aborted:
         verdict = f"R2-HOLD UNSCOREABLE (abort {','.join(aborted)}); guard 2 NOT ELIGIBLE"
     elif blind:
         verdict = f"R2-HOLD UNSCOREABLE (R2 VOID: the mechanism did not run; guard 2 waits for an R2 re-run; blind seat {','.join(blind)}); guard 2 NOT ELIGIBLE"
-    elif n2 < plan67.MIN_TWIN and n2 + c2_ >= plan67.MIN_TWIN and not info["too_many"]:      # the candidate twin's crashes account for the shortfall (the same rule as AS / A1)
-        verdict = (f"R2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n={c2_}: a finding to investigate, not cleared by a plain re-run" + (f"; also under the minimum: P1T {n1}<{plan67.MIN_TWIN} (crashes {c1})" if n1 < plan67.MIN_TWIN else "")
+    elif n2 < plan67.MIN_TWIN and c2_ > 0 and not info["too_many"]:      # the candidate twin's crashes are in the shortfall (the same rule as AS / A1)
+        verdict = (f"R2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n={c2_} in twins: a finding to investigate, not cleared by a plain re-run{_also_short(n2, c2_, plan67.MIN_TWIN)}"
+                   + (f"; also under the minimum: P1T {n1}<{plan67.MIN_TWIN} (crashes {c1})" if n1 < plan67.MIN_TWIN else "")
                    + "); guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')")
     elif n1 < plan67.MIN_TWIN or n2 < plan67.MIN_TWIN or info["too_many"]:
         verdict = f"R2-HOLD UNSCOREABLE (live twin rows P1T {n1} (crashes {c1}), P2T {n2} (crashes {c2_}), minimum {plan67.MIN_TWIN}{'; more replaced slots than the cap' if info['too_many'] else ''}); guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')"
@@ -1106,6 +1137,8 @@ def score_t(path, out=print):
     ref = {(r["seat"], r["cmd"], r["key"]): r for r in refs}
     out("STAGE T (registration 3.3): the tunnel itself, c2, hints auto and realtime, B0 and S1")
     tr = truncated([path])
+    dropped = ledger_drop_s2([path])      # stage T runs B0 and S1 only: the drop state is printed (the ledger's line), nothing reads it
+    out("LD-PLAN67 STATE drop_s2=" + ("unknown" if dropped is None else str(int(dropped))))
     bring = [f"ABORT-BRINGUP-T seat={s} hint={h}" for h in ("auto", "realtime") for s in ("B0", "S1") if (inv.get((s, h)) or {}).get("bringup_fail")]
     bring += [f"ABORT-BRINGUP-T unattributed ({x!r}: a bring-up failure outside any invocation of the battery)" for x in unattr]      # never dropped
     bring += [f"ABORT-BRINGUP-T seat={s} hint={h}" for (s, h), i in sorted(inv.items()) if i.get("bringup_fail") and (s, h) not in {(a, b) for a in ("B0", "S1") for b in ("auto", "realtime")} and f"seat={s} hint={h}" not in " ".join(bring)]
@@ -1305,11 +1338,28 @@ def score67g(paths, out=print, which="g1"):
         out(f"  {cell:<8} CAND({plan67.G_SEATS[which][0]}) rows {len(rc_)} BASE({plan67.G_SEATS[which][1]}) rows {len(rb_)}  witness failures {sum(1 for w in ws if w.get('fail'))}  "
             f"rr>0 rows {sum(1 for w in ws if (w.get('rr_max') or 0) > 0)}  S06-FAIL {sum(1 for r in rc_ if r['status'] == 'S06-FAIL')}")
     s06 = [r for r in rows if r["status"] == "S06-FAIL"]
-    dnf06 = []
+    dnf06, unsc, dnf_ne = [], [], []
     for cell, _ in pp.GUARD_CELLS:
+        if which != "g2":      # the DNF rule is G2's (registration 4.1); G1 has none
+            break
         base = [r for r in rows if r["cell"] == cell and r["arm"] == "BASE" and r["status"] in ("LIVE",)]
-        if which == "g2" and base and all(not r.get("dnf") for r in base):
+        if not base:
+            out(f"S06-DNF-RULE NOT EVALUATED {cell} (no live S1 rows)")      # the rule needs the S1 rows: an empty set is a named outcome, never silence
+            dnf_ne.append(cell)
+        elif any(r.get("dnf") for r in base):
+            out(f"S06-DNF-RULE not applicable {cell} (an S1 row DNF)")      # the registered rule: an S2 DNF is only S06-FAIL where every S1 row completes
+        else:
             dnf06 += [r for r in rows if r["cell"] == cell and r["arm"] == "CAND" and r.get("dnf") and r["status"] == "LIVE"]
+    dropped = ledger_drop_s2(paths)
+    out("LD-PLAN67 STATE drop_s2=" + ("unknown" if dropped is None else str(int(dropped))))
+    if which == "g2":
+        if dropped:
+            unsc.append("G2 ran with S2 dropped")
+        else:
+            for cell, _ in pp.GUARD_CELLS:
+                if not [r for r in rows if r["cell"] == cell and r["arm"] == "CAND"]:
+                    out(f"G2 UNSCOREABLE (no S2 rows in {cell})")
+                    unsc.append(f"no S2 rows in {cell}")
     for r in s06:
         out(f"  S06-FAIL {r['cell']} CAND s{r['seed']} rep{r['rep']} (would be {r.get('status_41d')}): {'; '.join(r.get('s06_why') or [])}")
     for r in dnf06:
@@ -1331,8 +1381,10 @@ def score67g(paths, out=print, which="g1"):
     why = []
     if aborted:
         why.append("UNSCOREABLE (abort " + ",".join(aborted) + ")")
-    if res["gate"] != "PASS":
+    if res["gate"] != "PASS" and not (unsc and res["gate"] == "NO VERDICT"):      # an empty S2 set is named below; score41d's NO VERDICT for it is not a second cause
         why.append("GATE-41d " + ("NO VERDICT, re-run" if res["gate"] == "NO VERDICT" else res["gate"]))
+    if dnf_ne:
+        why += [f"S06-DNF-RULE NOT EVALUATED {c} (no live S1 rows)" for c in dnf_ne]
     if s06 or dnf06:
         why.append(f"{len(s06) + len(dnf06)} S06-FAIL row(s)")
     if nw:
@@ -1341,11 +1393,13 @@ def score67g(paths, out=print, which="g1"):
     if nzw:
         why.append(f"{len(nzw)} G2-TAPER-NONZERO row(s) that are not S06-FAIL (taper > 0 on an S2 row is never cleared by a replacement)")
     name = "GATE-67G" + which[1:]
-    if not why and tr:
+    if unsc and not why:      # a void: nothing was found, nothing could be read
+        out(f"{name} UNSCOREABLE ({'; '.join(unsc)})")
+    elif not why and tr:
         out(f"{name} TRUNCATED (the battery was cut at LD_HARD: the ledger holds the LD-BATTERY-TRUNCATED line; this is not the registered design)")
     else:
-        out(f"{name} PASS" if not why else f"{name} FAIL (" + "; ".join(why) + ")")
-    res = dict(res, truncated=tr, gate=("TRUNCATED" if tr and res["gate"] == "PASS" else res["gate"]))      # the returned result carries the cut: the gate is not PASS on a truncated ledger
+        out(f"{name} PASS" if not why else f"{name} FAIL (" + "; ".join(why + [f"UNSCOREABLE: {u}" for u in unsc]) + ")")
+    res = dict(res, truncated=tr, gate=("UNSCOREABLE" if unsc and not why else "TRUNCATED" if tr and res["gate"] == "PASS" else res["gate"]))      # the returned result carries the cut: the gate is not PASS on a truncated ledger
     return res, len(s06) + len(dnf06), nw
 
 
@@ -1415,6 +1469,10 @@ def main(argv):
         return 0
     if cmd == "smokeT":
         return smoke_t(a[0])
+    if cmd == "nonpass":
+        for ln in nonpass_lines(lc.read(a[0]) if os.path.exists(a[0]) else []):
+            print(ln)
+        return 0
     if cmd == "scoreg":
         score67g(a[1:], print, a[0])
         return 0

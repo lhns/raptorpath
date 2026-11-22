@@ -170,7 +170,7 @@ Plan 67 (the rehearsal, session 1):
   manifest-miss          one byte of S1's engine source differs from session 0's manifest: ABORT-SUITES
   flake-rule-edit        one byte of S1's tools/ci/flake_rule.py differs: ABORT-SUITES (the manifest covers the rule)
   ref-missing            no reference manifest for S1: ABORT-SUITES
-  twin-no-kept-acct      a twin smoke row has no [ACCT] line: ABORT-SMOKE of stage r2
+  rehearsal-r2-smoke-fail a twin smoke row has no [ACCT] line: ABORT-SMOKE of stage r2 makes R2 VOID (R2-VOID marker); the other smokes still run, AMENDMENT2.txt says `R2 VOID`, the session ends LD-ALL-REHEARSAL-R2-VOID (rc 7, not FAILED-ALL): guard 1 may launch
   dump-needed            the [SUCC] line lacks the close times: DUMP-TWINS-NEEDED, AMENDMENT2 says DUMP67=1, the rehearsal passes
   t-base-refuses         B0's `run` refuses with the guard's text: ABORT-SEAT in the T ledger, ABORT-SMOKE of stage t
   s2-taper-nonzero       S2's guard-2 smoke row prints taper > 0 (S06-FAIL): ABORT-SMOKE, a finding is never a pass
@@ -205,6 +205,9 @@ Plan 67x (the stages off Bulk, the tunnel and the pool block):
   t-refusal-and-void     an S1 refusal failure together with B0's key reading false: T FAIL (a finding before a void)
   t-bringup-fail         tun_bulk.sh's TUN-BRINGUP-FAIL for B0 at realtime: ABORT-BRINGUP-T seat=B0 hint=realtime, no T verdict, stage not ok
   truncated              the R1 battery returns timeout's rc 124 (a stub timeout): LD-BATTERY-TRUNCATED, TRUNCATED marker, A1-R / R1 TRUNCATED, stage not ok
+  truncated-s06-fail     the A battery is cut (stub timeout rc 124) and an S2 row is S06-FAIL: the verdict line keeps `S06-FAIL rows 1` (never TRUNCATED), the stage returns the cut, the session ends TRUNCATED-ALL (rc 7); the era line and $RUN/score.txt list the non-pass line
+  truncated-candidate-crash  the A battery is cut and S2 has crash rows in c8: AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 ...) stays on the verdict line and in the era line / $RUN/score.txt; TRUNCATED-ALL (rc 7)
+  a-crash-partial        S2 in c8 has one crash and every other slot void (live + crashes under the minimum): AS UNSCOREABLE (CANDIDATE-CRASH S2 n=1 in c8-100: ... (live + crashes 1 < minimum 2: other voids also short))
   b0-run-key-false       B0's resolved configuration reads the key false: T VOID, not a pass
   g2-fail                LD_G2_FAIL67=1 (so LD_DROP_S2=1): the S2 arms, R2, the pool block and the dump twins are dropped; A1, A1-R and T still run; R1's ledger carries `LD-PLAN67 ... drop_s2=1` and the pulled ledger re-scored on the host with LD_DROP_S2 unset reads A1-R PASS (not INCOMPLETE)
   cut-pool               LD_CUT67=pool: ABORT-CUT (only the dump twins may be cut)
@@ -239,8 +242,8 @@ HARNESS_PATHS = {
     "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt"),
     "67pre": ("full", "check-fail-s1", "check-fail-s2", "gates-no-result", "gates-mismatch", "gates-equal-b0", "gates-and-flake", "flake-not-quarantined", "repeat-one-failure", "visualizer-fail", "golden-fail", "s2-dropped", "budget", "budget-step", "rehearse-refused", "lock-inherit-fail", "binid-test-mismatch", "binid-test-equal-b0", "seam-r67-n"),
     "67": ("rehearse", "not-rehearsal", "seat-s1-no-pfec", "seat-b0-has-gauge", "seat-commit-mismatch", "pin-missing-b0", "pin-missing-s1", "s2-seat-abort", "s2-dropped", "tools-diff", "manifest-miss", "flake-rule-edit", "ref-missing",
-           "twin-no-kept-acct", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
+           "rehearsal-r2-smoke-fail", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
     "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "g2-taper-replaced", "g-block1-fail", "seam-without-marker", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
     "67x": ("full", "dump-twins", "s2-taper-nonzero", "s2-taper-cotenant", "s2-no-pslot", "s2-belowfloor-high", "a-under-min", "block1-fail", "r1-blind", "r1-b0-gauge", "r2-blind", "twin-no-final", "twin-under-min", "twin-worse", "twin-missing-field",
-            "t-refusal-missing", "t-refusal-and-void", "t-bringup-fail", "b0-run-key-false", "g2-fail", "cut-pool", "truncated", "budget"),
+            "t-refusal-missing", "t-refusal-and-void", "t-bringup-fail", "b0-run-key-false", "g2-fail", "cut-pool", "truncated", "truncated-s06-fail", "truncated-candidate-crash", "a-crash-partial", "budget"),
 }
