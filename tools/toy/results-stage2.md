@@ -568,6 +568,21 @@ Tail-seq verdict counts per run (mean over 12 seeds):
 - I2: G_rx(R0c) - G_rx(R0e) = 29.4 packets per object (0.0024 of S_src); seqs with a verdict under R0c only 28.2; tail seqs in G under R0c but not under R0e 29.4; overlap of the two sets 28.2
 - L10: G_rx(R0c) - G_rx(R0e) = 30.4 packets per object (0.0025 of S_src); seqs with a verdict under R0c only 24.4; tail seqs in G under R0c but not under R0e 25.2; overlap of the two sets 24.4
 
+### What the passed packets do afterwards (Part T, per run, 12 seeds)
+
+A passed packet that is later filled is delivered after the frontier has passed it, which is out of order in the engine (`reorder.rs:75-82`); one that never arrives stays in G_rx. Early-skip passes are the receiver's own; floor passes are the floor's.
+
+| cell | receiver | early-skip passes | filled later (out of order) | never arrive | floor passes | floor-passed, filled later | floor-passed, never arrive |
+|---|---|---|---|---|---|---|---|
+| I2 | R0e | 278.8 | 250.7 | 28.2 | 91.7 | 0.0 | 91.7 |
+| I2 | R0c | 290.2 | 252.2 | 38.0 | 111.2 | 0.0 | 111.2 |
+| I2 | R1 | 0.0 | 0.0 | 0.0 | 121.0 | 0.0 | 121.0 |
+| L10 | R0e | 859.8 | 830.8 | 28.9 | 91.1 | 0.0 | 91.1 |
+| L10 | R0c | 853.2 | 823.8 | 29.4 | 121.0 | 0.0 | 121.0 |
+| L10 | R1 | 0.0 | 0.0 | 0.0 | 121.0 | 0.0 | 121.0 |
+
+In words: about 90 % (I2) and 97 % (L10) of the early-skip passes are later filled, so each is one out-of-order delivery; the floor passes are all of the dead window's tail, which no copy fills before the run ends, so none is delivered late.
+
 ### Part B tables
 
 ### P3 power: HZ and the planted controls (U at Auto, I1, omega = 1, rho = 1)

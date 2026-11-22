@@ -280,7 +280,7 @@ class Sim:
         self.g = dict(verdicts=0, verdict_copies=0, floors=0, floor_rep=0, repair_sends=0, serves=0, refusals=0,
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
-                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0)
+                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0, late_floor=0, late_r0e=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -516,7 +516,9 @@ class Sim:
             elif s in self.passed:
                 self.passed.discard(s)
                 self.G -= 1
-                if self.passed_by.pop(s, "") == "floor":
+                who_ = self.passed_by.pop(s, "")
+                self.g["late_" + who_] += 1                      # passed, then filled: out of order in the engine (reorder.rs:75-82)
+                if who_ == "floor":
                     self.GF -= 1
                 self.g["late"] += 1
                 self.g["ooo_loss"] += 1
