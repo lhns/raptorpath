@@ -131,6 +131,8 @@ def build():
     for pl in ("STEP", "SPIKE", "KINK"):
         for h in NUDGE:
             job("B", "PL-%s-%s" % (pl, tag(h)), ucfg("I1", 0.5 * h, 1.0, 1.0, plant=pl, plant_p=0.5))
+    for h in (0.995, 1.005):                               # registered curvature follow-up (7.9), KINK only
+        job("B", "PL-KINK-%s" % tag(h), ucfg("I1", 0.5 * h, 1.0, 1.0, plant="KINK", plant_p=0.5))
     dpts = (("Realtime", 50.0), ("Auto", 0.5), ("b115", toy2.delta_at_b(1.15)), ("b13", toy2.delta_at_b(1.3)), ("Bulk", 0.005))
     for cname, cell, q in (("I1", "I1", False), ("I2", "I2", False), ("Q", "I1", True)):
         for nm, dd in dpts:

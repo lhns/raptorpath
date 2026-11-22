@@ -123,7 +123,7 @@ def part_T():
                 g("passes"), g("pass_floor"), g("pass_r0e"), g("p1_viol"), g("p1_worst"),
                 "%.1f" % (np.mean(tt) * 1e3) if tt else "n/a", sum(1 for r in rr if r["stalled"]), len(rr),
                 np.mean([r["tail_verdicts"] for r in rr]), np.mean([r["tail_filled_after_window"] for r in rr]), g("r0e_fallback"),
-                mean(nm, "repair_per_delivered")))
+                mean(nm, "repair_per_delivered"), np.mean([x["GF_ratio"] for x in rr]), mean(nm, "floors_per_delivered"), mean(nm, "copies_per_delivered")))
     p("\nTail-only waits (the 347 tail seqs; ms): mean v / median v")
     for c in cells:
         for rc, lab in recvs:
@@ -191,6 +191,17 @@ def part_B():
     sp_ok = any(ctl["SPIKE"][k]["P"]["word"].startswith("shown") for k in ("rbf", "e_mean")) and not any(ctl["SPIKE"][k]["K"]["word"].startswith("shown") for k in ("rbf", "e_mean"))
     ki_ok = all(ctl["KINK"][k][s]["word"] == "equivalent" for k in ("rbf", "e_mean") for s in "KP")
     p("- STEP fails on K (rbf or mean e): **%s**; SPIKE fails on P with K passing: **%s**; KINK passes both K and P on rbf and mean e: **%s**." % (st_ok, sp_ok, ki_ok))
+    # curvature follow-up for KINK (three widths fit a + c h + k h^2; only a is a preset anomaly)
+    p("KINK curvature follow-up: intercept a of Delta(h) = a + c h + k h^2 from widths 0.005, 0.01, 0.02, per seed")
+    for k in ("rbf", "e_mean"):
+        ss = sorted(set(S.seeds_of("PL-KINK-0.995")) & set(S.seeds_of("PL-KINK-1.005")) & set(S.seeds_of("PL-KINK-1")))
+        v = lambda n: S.vals(n, k, ss)
+        Dl = {h: v("PL-KINK-1") - 0.5 * (v("PL-KINK-%s" % tag(1 - h)) + v("PL-KINK-%s" % tag(1 + h))) for h in (0.005, 0.01, 0.02)}
+        hs = np.array([0.005, 0.01, 0.02])
+        Ainv = np.linalg.inv(np.stack([np.ones(3), hs, hs ** 2], 1))
+        a_ = Ainv[0, 0] * Dl[0.005] + Ainv[0, 1] * Dl[0.01] + Ainv[0, 2] * Dl[0.02]
+        m = max(Tbar("PL-KINK-1", k, "I1", "REF-I1"), nf["kp"]["Auto"][k]["NF_P"])
+        p("- %s: a %s" % (k, S.fmt(S.read(a_, m), 3)))
     # ---- P3 for U
     p("\n### P3 for U at the three presets, I1 (12 seeds; K and P each read against m = max(T, NF))\n")
     p("Cells show K/P readings: E equivalent, S shown, ? undetermined. Readouts: e mean, e p99, rbf, G_rx/S_src, repair sends per delivered.\n")
