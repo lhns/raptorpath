@@ -24,6 +24,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 fails = 0
+FAILED = []
+DIAGBUF = []
 
 
 def check(name, ok, detail=""):
@@ -31,6 +33,16 @@ def check(name, ok, detail=""):
     print(("ok   " if ok else "FAIL ") + name + ((" -- " + str(detail)[-1500:]) if not ok else ""), flush=True)
     if not ok:
         fails += 1
+        FAILED.append("FAIL %s -- %s" % (name[:70], str(detail).replace(chr(10), " | ")[-110:]))
+
+
+def xt_tail(path, n=14):
+    """The row loop's xtrace up to the point the cleanup starts (what ran last before the session ended)."""
+    if not os.path.exists(path):
+        return "(no xtrace)"
+    L = open(path, errors="replace").readlines()
+    cut = next((i for i, l in enumerate(L) if "omega_cleanup" in l), len(L))
+    return "".join(x[:170] + chr(10) if len(x) > 170 else x for x in L[max(0, cut - n):cut])
 
 
 def find_bash():
@@ -499,8 +511,7 @@ if wanted("full") or wanted("no-seed") or wanted("table-too-small") or wanted("i
         rd = run_dir(sb, "R")
         if rc != 0 and rd:
             xt = os.path.join(rd, "xtrace.log")
-            print("DIAG R rc=%s; xtrace tail:" % rc)
-            print("".join(open(xt).readlines()[-40:]) if os.path.exists(xt) else "(none)")
+            DIAGBUF.append("DIAG R(%s) rc=%s xtrace before cleanup:%s%s" % (name, rc, chr(10), xt_tail(xt)))
         L = ledger(rd) if rd else []
         rows = [x for x in L if x.get("kind") == "row"]
         r0 = json.load(open(os.path.join(rd, "R0.json"))) if rd and os.path.exists(os.path.join(rd, "R0.json")) else {}
@@ -565,4 +576,10 @@ if wanted("abort-build"):
     check("abort-build: a raptorpath sha that differs from the pin -> ABORT-BUILD", rc == 3 and "ABORT-BUILD" in out, (rc, out[-500:]))
     cleanup(sb)
 
+if FAILED:
+    print("=== SUMMARY: %d failed checks (first shown), first diagnostic last ===" % len(FAILED))
+    for f in FAILED[:5]:
+        print(f[:230])
+    if DIAGBUF:
+        print(DIAGBUF[0][:2600])
 sys.exit(fails)
