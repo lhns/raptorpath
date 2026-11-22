@@ -206,8 +206,18 @@ The r_src and ĥ figures are the registration's XR power numbers, not measuremen
   - §5.4's admitted-verdict table: the matched cells now admit verdicts at roughly XR's rate, so W4 and W6 become witnessable there;
   - EX is redefined on G_floor. At ρ = 0.99 no cell then exhausts the allowance, because the sender's own spend is about `ε_c·ĥ` (≈ 0.013–0.065 % at c2, at most ≈ 1 % at XE). So XE is predicted `XE-NOT-EXHAUSTED`, and that state no longer holds the merge;
   - **the refusal witness, without a seam:** it needs a cell where `1 − ρ < ε_c·ĥ`, so that the sender's own floor passes spend the allowance. ρ is a dial, so a point closer to 1 does it. **At ρ = 0.9999** the budget is 10⁻⁴·S_src. At c2 the predicted spend of 1.3–6.5·10⁻⁴ exceeds it: XR predicts 80–390 floor passes per 607 k-symbol row, against a budget of 61. At XE (≈ 0.1·ĥ) it exceeds it by far. The allowance opens only after `1/(1 − ρ) = 10 000` source symbols;
-  - **so XL runs at `--window-rho 0.9999` on C84.** B84 has no spelling for that ρ; it keeps its evicting preset and is read only as the defect. The 20 MB object (≈ 40 000 source symbols, a budget of 4) has its allowance spent by the sender's own passes before the tail, on every row by prediction. XL then carries both EX (on G_floor) and the contract-case tail: the tail served until filled, with its tail time. The rows and the time are unchanged (24 rows, ≈ 25 min);
-  - optionally, X1 adds 6 C84 rows at 0.9999 (≈ 6 min) for EX at a mid-stream point. If neither cell exhausts, the simulation carries the refusal path (T6, and §3.1's record turned into a test with a forced budget seam), and the guard lists it under "cannot see".
+  - **XL's power: ρ = 0.9999 on a 20 MB object is marginal, so XL moves to ρ = 0.99998 and a 99 999-symbol object.**
+    - **Why 0.9999 is marginal.** `Ab_c = G_floor + pending`. A unit is freed when a grant arrives, at every 1/(1 − ρ) source symbols. An admitted verdict holds it as pending for one round (≈ 100 ms at XE), and only becomes G_floor with probability ε_c ≈ 10 % (its last copy lost). Otherwise the copy fills, the unit is free again, and the next verdict takes it. So a granted unit becomes G_floor only after `m ≈ 1/ε_c ≈ 10` rounds (≈ 1 s) on average; it is still free, or merely pending, after m rounds with probability `(1 − ε_c)^m`.
+    - At 0.9999 and 20 MB (≈ 40 500 source symbols), the 4th unit is granted at 40 000, about 500 symbols before the end. The tail therefore nearly always finds a free or only-pending unit, and is admitted once that verdict clears. The refusals seen there would be the pending over-count, not the contract.
+    - **The sizing rule.** The last grant must come at least `m* = ln(0.01)/ln(1 − ε_c) ≈ 44` rounds before the tail, so that the unit is G_floor at the tail with probability ≥ 99 %. At XE that is `44 × 0.1 s = 4.4 s`, i.e. `4.4·r_src` source symbols.
+    - **XL therefore runs at `--window-rho 0.99998`, with an object of 99 999 source symbols (≈ 49.4 MB at 494 B).** The budget `⌊2·10⁻⁵·S_src⌋` is 0 until 50 000 and 1 from then to the end. The single unit is granted 49 999 symbols before the tail, which is ≥ 44 rounds whenever `r_src ≤ 11 000` symbols/s. The rehearsal (§8.4 there) measures r_src at XE. If it exceeds 11 000, the object grows to `2·G − 1` symbols with `G = ⌈4.4 s·r_src⌉`, and `1 − ρ = 1/G`, which keeps exactly one grant, at the midpoint. This is recorded by amendment before the launch. At r_src ≥ 1 250 symbols/s the object is sent inside the 40 s window.
+    - **The predicted floor-pass count before the tail is exactly 1**, the budget. Admission needs `G_floor + pending + 1 ≤ budget`, so G_floor cannot pass the budget. It is reached at about `S_src ≈ 50 000 + r_src·T_round/ε_c` (≈ 60 000 at 10 000 symbols/s). A late fill of that hole would free the unit again; at N = 1 on a FIFO link no earlier copy can arrive after the floor, so none is predicted.
+    - **The exhaust witness, split by cause, at every judged verdict, and in particular at the tail's first judgment:**
+      - `EX-FLOOR`: `G_floor + 1 > budget`. The sender's own floor passes have spent the allowance. This is the contract case;
+      - `EX-PENDING`: `G_floor + 1 ≤ budget < G_floor + pending + 1`. The allowance is held by verdicts in flight. This is the pending over-count (§1.3 item 2), and it is reported, not counted as the contract.
+    - **Is the contract-case tail reached?** It is reached on a row iff `EX-FLOOR` holds at the tail's first judgment. Predicted on ≥ 11 of 12 C84 rows (per-row ≥ 99 % at the sized object). XL reads `CONTRACT-TAIL-REACHED` at ≥ 10 of 12, else `CONTRACT-TAIL-MARGINAL`, which re-sizes the cell by amendment. The tail time on those rows is the contract's cost: served until filled, `ε_c/(1 − ε_c)` extra sweeps in mean.
+    - **The rows and the time:** 24 rows. A 49.4 MB object at XE takes up to ≈ 10–40 s, against 20 MB before, so the session grows by ≈ 5–10 min.
+  - optionally, X1 adds 6 C84 rows (≈ 6 min) for EX at a mid-stream point, sized by the same rule (at c2, `m* ≈ 175` rounds of ≈ 10 ms, so 1.75 s before the end of the row's last grant). If neither cell exhausts, the simulation carries the refusal path (T6, and §3.1's record turned into a test with a forced budget seam), and the guard lists it under "cannot see".
 - **At N ≥ 2, §3.2's D-input fix is a precondition of (c), not an option.** The verdict is judged on every reported gap, whether or not C3's hole law has ripened the seq. Where D reads the fast leg (§3.2, XK when the worst-ε pick flips), a slow-leg seq still in flight passes the age gate. Under Amendment 3 as written, the exhausted allowance refused those verdicts in matched cells; under (c) they are admitted. Each sends a spurious last copy and a floor. The original then fills the hole, so nothing is lost, but there is up to one extra copy per slow-leg source seq while D reads the fast leg. Counting those copies would not remove them. The D defects are on main anyway, so the fix (the largest RTprop over live paths, with D = 0 before the first sample) lands first, and §3.2's bounding tests become its tests.
 - **Wire:** 8 bytes per `WindowAck`.
 
@@ -226,7 +236,7 @@ The r_src and ĥ figures are the registration's XR power numbers, not measuremen
 - **Price:**
   - one 8-byte ack field riding v11;
   - no latency change (a pass can only come earlier);
-  - no new VM session: XL runs at ρ = 0.9999 on C84 as the seam-free witness for the refusal and the contract-case tail;
+  - no new VM session: XL runs at ρ = 0.99998 with a 99 999-symbol object on C84, as the seam-free witness for the refusal (split `EX-FLOOR` / `EX-PENDING`) and for the contract-case tail; ≈ +5–10 min;
   - total interim abandonment up by at most `(1 − ρ)·S_src`, and only on holes the old arm did not pass first;
   - at N ≥ 2, §3.2's D-input fix is a precondition;
   - `passed_by_floor` goes on Amendment 3's removal list.
@@ -302,6 +312,8 @@ The floor is sent on every live path at one instant τ_F. On each path it is sta
 
 **The PTO source.** quinn-proto 0.11.19 keeps an RFC 9002 `var` and `pto_base()` per connection, one connection per path (`src/connection/paths.rs:297`, `:331`). Both are crate-private, so the engine cannot read them; it can read only `rtt()` and `min()`. The engine already has its own per-path deviation, `rtt_sigma_us()`, with paper provenance (§7.4), and E0 reads that. **No new estimator is owed.** The `0.1·srtt` placeholder in `p_lost_inputs` is unrelated, and stays a separate finding.
 
+**`pto_us` is the maximum over the paths the floor was sent on.** The sender computes `PTO_F = max_p (srtt_p + max(4·σ_rtt,p, 1 ms))` over exactly the n_F paths it sends that floor on, at τ_F. One value suffices, because the timer must cover the slowest path still unresolved, and the receiver does not know which one that is. A path without an RTT sample contributes nothing, and the marker waits for its first sample (below).
+
 **Why it is safe, given the premise.**
 - **A floor witness on p:** the floor was staged after every send on p before τ_F, so all of them have arrived or are lost.
 - **A data witness on p:** a batch stamped after τ_F was staged after the floor on p. The extra clause, "p delivered something stamped ≤ τ_F before", keeps a path that only started delivering after τ_F from being counted in place of a silent old one.
@@ -367,6 +379,22 @@ The floor is sent on every live path at one instant τ_F. On each path it is sta
   - (r2) carry the first floor inside the copy's datagram, so the copy cannot be overtaken by its own floor. A lost copy then loses its floor, and the hole waits one repeat. The toy measured this shared-fate cost as a refresh round, and the data witness would still have to be disabled there;
   - (r3) accept the misses and leave their price to ω, under U.
 - **Owed test:** `copy_floor_swap_on_reordering_path`, loopback with netem jitter 4 ms and no `rate`, recording `fh_miss` per verdict against the 49 % prediction, beside `fifo_inv`.
+
+**The silence term's bind fraction, and the miss rate it implies.** Cantelli's 1/17 is above the 1 % bar, so the bar rests on the timer binding rarely. Per cell:
+- **Mid-stream**, every path carries data within an inter-packet gap of the floor, so a lost floor is replaced by a data witness at once. The timer binds only on path death: `fe_pto ≈ 0`.
+- **At a tail** (no data follows), a path whose floor datagram is lost has no witness until the next repeat, one T_sweep later. `T_sweep = clamp(2·SRTT, 25, 100) ms` is at least `PTO_F` whenever `4·σ_rtt < SRTT`, so the timer fires first. So `fe_pto ≈ 1 − (1 − ε)^N` of tail passes.
+- **The miss it implies.** A timer-resolved pass misses only if a covering send on the silent path is still in flight past `PTO_F`. Under Cantelli that is at most 1/17 of those passes; on these cells' bounded netem jitter (J ≤ 4 ms, far below srtt) it is ≈ 0.
+
+| cell | N | ε per leg | `fe_pto`, mid-stream | `fe_pto`, tail passes | miss bound `fe_pto/17` (tail) | predicted miss |
+|---|---|---|---|---|---|---|
+| c2 (X1, XR) | 1 | 2.6 % | ≈ 0 | ≈ 2.6 % | ≤ 0.15 % | ≈ 0 |
+| c8 (X2) | 2 | 2.7 / 4.1 % | ≈ 0 | ≈ 6.7 % | ≤ 0.4 % | ≈ 0 |
+| XK, XRK | 2 | 2.6 / 2.6 % | ≈ 0 | ≈ 5.1 % | ≤ 0.3 % | ≈ 0 |
+| XE, XL | 1 | ≈ 10 % | ≈ 0 | ≈ 10 % | ≤ 0.6 % | ≈ 0 |
+
+So the distribution-free bound stays under the 1 − ρ = 1 % bar in every cell, even at the tail. A measured `fe_pto` far above these values (for example, from silent paths mid-stream) is a finding, because there the 1/17 bound would no longer clear the bar.
+
+**A miss is disorder, not loss.** A late fill below the frontier is delivered at once, out of order: `ReorderBuffer::push_with_time` hands out any seq below `next_deliver_seq` immediately (`net/reorder.rs:75–82`), pinned by the unit test at `:267–275` ("a late fill below the frontier is delivered immediately"). The fill is also subtracted from G_rx and G_floor. So a miss of the floor pass costs ω (one out-of-order delivery) and a transient allowance unit, never a packet. The exception is a fill older than the decode floor, which the decoder refuses (`fh_miss_refused`, must read 0; `floor-hold.md` §4).
 
 **Other cases.**
 - **A lost floor datagram:** the next data on that path, the next repeat, or the timer.
