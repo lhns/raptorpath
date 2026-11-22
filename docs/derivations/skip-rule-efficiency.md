@@ -848,7 +848,7 @@ v2's midpoint test cannot tell a kink from a step. b(δ) is clamped exactly at t
 | part | runs (configurations × 12 seeds) | estimated | cap | what it decides |
 |---|---|---|---|---|
 | **A. Calibration and checks** | A/A 6 cells × 2 arms (144 runs); K and P sets, 2 presets × 5 points × 2 arms (240 runs); P4j, 6 configurations (72 runs); P4h bridge on the stage 1 toy and the v3 toy (≈ 144 runs); unit tests; timing | ≈ 0.6 h | 0.75 h | the one-path bar sizes (frozen and committed before T and B); instrument validity (P1, P2, P4, A/A self-check); the measured cost per run, which drives the fallback below |
-| **T. The lost tail (question 0, first decision part)** | §7.13: 3 cells × 3 receivers (R0e, R1, U at ω = 1) × 12 seeds = 108 runs, short objects | ≈ 0.2 h | 0.5 h | the cost of Amendment 3's fallback in measured ms: v and e quantiles, spend, tail time and stalls, R0e against R1 |
+| **T. The lost tail (question 0, first decision part)** | §7.13: 3 cells × 4 receivers (R0e, R0c, R1, U at ω = 1) × 12 seeds = 144 runs, short objects | ≈ 0.25 h | 0.5 h | the cost of Amendment 3's fallback in measured ms: v and e quantiles, spend, tail time and stalls, R0e against R0c against R1 |
 | **B. U at one path (question 1)** | I1: ω (6) × δ (15: 5 points × 3 presets) = 90; I2 and G: ω (6) × 3 presets = 36; c_H arm at 3 presets; HZ at Auto, 5 points; ρ nudges at Realtime in I2, 9; d_rep at 3 presets (P4g witness), 3; P2 at ρ = 1 and 1 − ε, 2; planted controls STEP, SPIKE and KINK, 5 points each, 15; AG1 (moved here from D: 5 δ × 3 cells × 3 arms), 45. In all 208 configurations, 2 496 runs | ≈ 2.5 h | 2.75 h | P3 at all three presets for U (a fail is a NO-MODE-SWITCH defect that blocks the release-arm build); the ω band in which Bulk and Auto keep order (rbf bar), handed to `meas-disorder-price` as the threshold the measured ω is read against; ratio_U against the 2× bound; P3's power (HZ) |
 | **C. Two paths with skew (question 2, and question 4 at N = 2). Waiting on `tail-and-hold.md`** | φ_slow = 0.25: ω ∈ {1, 10} × 15 δ points × d (2) = 60, plus ω ∈ {0, 0.3, 3, 100} × 3 presets × d (2) = 24; φ_slow = 0.5: ω ∈ {1, 10, 100} × 3 × 2 = 18; φ_slow = 0: 6 × 3 with d_all only = 18; HZ, 5; slow-path outage (B10 on the slow path, φ_slow = 0.5) ω ∈ {1, 10} × 3, 6; AG2 ablation arms, 6. In all 137 configurations, 1 644 runs | ≈ 3.4 h | 3.75 h | d_all against d_rep (the finding owed to `ordering-hold.md`: which d its law reads); the skew out-of-order rate and the v and e quantiles per φ_slow and preset (the input to the owner's C1 decision, `ordering-hold.md` §5); P3 at two paths; the AG2 witness and the D reading at N = 2 |
 | **D. Floor, H and the rest (questions 3–5). Waiting on `tail-and-hold.md`** | W spike cell, 75 s: N = 2, φ_slow = 0.25, slow-path delay +40 ms for 200 ms at t = 5 s, ramped down at slope −½ so the path stays FIFO; W ∈ {1, 10, 60 s} × {U at ω = 1, R1} at Realtime (72 runs); W steady cells: N = 1 with J_r = 4 ms, and N = 2 at φ_slow = 0.5, W ∈ {1, 10} × 2 (96 runs); overtake cells, 12; jitter J ∈ {0, 4 ms} FIFO × 3 presets, 6; S1c bracket at I1 and G, 6 seeds | ≈ 1.35 h | 1.5 h | the W recommendation to the owner; the overtake harm reading; jitter sensitivity; S1c's bracket (reported only) |
@@ -898,18 +898,52 @@ Part A, Part B, the witness cells AG1 and AG2, the overtake cells and every P3 b
 - **Loss before the tail:** I1; I2, which spends the allowance before the tail; and **L10**, i.i.d. 10 % on originals and on copies at RTT 100 ms, with the tail sweep at its 100 ms cap. Toy choice, the high-loss, long-RTT corner.
 - At the tail the allowance is at most ⌊0.01·12 147⌋ = 121, less what loss already spent. So at least 226 tail seqs are refused and served, in every cell.
 
-**Receivers:** R0e, R1, and U at ω = 1 as the target. 12 seeds.
+**Receivers:** 12 seeds each.
+- **R0e, the interim:** early skip, and the sender's allowance counts every pass (`Ab = G_rx + pending`).
+- **R0c, option (c)** of `tail-and-hold.md` §1.4: the same early-skip receiver, but the sender's allowance counts only the holes the floor passed, `Ab_c = G_floor + |{v ∈ V : v ≥ A_rx}|`. G_floor is the floor pass's own passes net of their late fills, and a late fill refunds the writer that passed the hole. The early skip's passes still move the ack and still count in G_rx, which is printed against (1 − ρ)·S_src but admits nothing.
+- **R1:** the floor-only receiver.
+- **U** at ω = 1 as the target.
 
 **Readouts:**
 - v and e at p50, p99 and p99.9, and their means, over the whole object (§7.4);
-- G_rx/S_src, and the passes by decider (R0e's expiry, the floor pass);
+- G_rx/S_src against 1 − ρ (for R0c also G_floor/S_src, the share its sender budgets), and the passes by decider (the early skip's expiry, the floor pass);
+- floor datagrams and last copies sent, each per delivered packet;
 - **the tail time:** from the send of the last seq to the first instant the ack frontier reaches S_src;
 - **stalled:** the frontier has not reached S_src at 40 s, counted per seed;
 - the share of tail seqs that got a verdict, and how many filled after the dead window.
 
 **Witnesses:** the dead window covers ≥ 1 copy of every tail seq; R0e's hold falls back at least once in I2 (its budget test bound), or that reading is void; P1 holds at every instant.
 
-**Reading.** Each readout is compared between R0e and R1 under §7.7's bars, against U as the target. Nothing is adopted. The result is the measured cost of keeping R0e in the interim, and whether either receiver leaves the tail stalled.
+**Reading.** Each readout is compared pairwise between R0e, R0c and R1 under §7.7's bars, against U as the target. Nothing is adopted. The result is the measured cost of keeping the early skip in the interim, with and without option (c), and whether any receiver leaves the tail stalled. `tail-and-hold.md` §1.4 predicts that R0c's passes come no later than R0e's, that its total abandonment exceeds R0e's by at most G_floor ≤ (1 − ρ)·S_src, and that its tail is passed by the floor where R0e's is refused.
+
+### 7.14 The floor-pass hold: two candidate rules (Parts C and D, registered now, waiting)
+
+From `tail-and-hold.md` (branch `tail-fix-derivation`, f1851c4c) §2.3. The floor pass's hold gets two candidates, run with every receiver that has a floor pass (R1 and U):
+- **HW, the windowed maximum:** `floor-hold.md` §2's H, W = 10 s (§7.2).
+- **E0, the event rule in its form E0:** pass the holes below F once, on every path the floor was sent on, the floor itself or a later-sent datagram has arrived, or else at `t_F + PTO_p`:
+
+  ```text
+     p resolved for F   ⇔   τ_max_rx(p) > τ_F   ∨   floor_rx(p) ≥ F   ∨   τ_max_rx(any) ≥ τ_F + PTO_p   ∨   now ≥ t_F + PTO_p
+     pass [next_deliver, F)   ⇔   every path that carried this floor is resolved for F
+     PTO_p  =  srtt_p + max( 4·rttvar_p , 1 ms )
+  ```
+
+  - σ_p = τ_F, the floor's own send stamp (form E0; form E1 carries per-path copy stamps and is not run).
+  - srtt_p and rttvar_p: RFC 6298 §2 estimators per path over that path's RTT samples, as the toy defines them for D_EWMA (§7.2). 4 and 1 ms: cited, RFC 6298 §2 and RFC 9002 §6.2.1.
+  - E0 has no memory, and it reads no dial.
+
+**Cells.**
+- The two-path cells of Part C at φ_slow ∈ {0.25, 0.5} (I1), and the slow-path outage (B10 on the slow path).
+- The W spike cell of Part D (E0 forgets the spike by construction, HW holds it for W).
+- **R (in-path reorder):** N = 1 and N = 2 at φ_slow = 0.25, each with per-datagram i.i.d. jitter J_r = 4 ms on every datagram and no rate limit, the netem `delay … jitter` shape without `rate`. Here a later-sent datagram can arrive before an earlier one on the same path, so E0's per-path witness can fire while a copy is still in flight. This is the cell that can show E0 missing. Witness: the overtake count of §7.6 > 0, or the cell is void.
+
+**Readouts, per rule:**
+- **the wait** `t_pass − t_F` per floor-passed hole: p50, p99 and the maximum;
+- **the miss rate:** fills arriving after the pass, per floor-passed hole, read against the `fh_miss` bars of §7.7 (hard 0 on FIFO cells; the one-sided 95 % upper bound against 1 − ρ on two-path and reorder cells);
+- which term of E0 resolved each path (per-path witness, floor, send-anchored silence bound, local silence bound), as its bind gauge;
+- v and e over the stream (§7.4), so the wait is read for what it costs the user.
+
+**Reading.** HW against E0 on wait and miss rate under §7.7's bars, per cell. Predicted (`tail-and-hold.md` §2.4): equal waits of about the skew at two paths when both legs carry repair, E0 shorter after a spike and when the slow leg carries only old originals, E0 at the silence bound on a dead copy-carrying path, and E0's misses above HW's only in R. Nothing is adopted; the owner decides the hold with `tail-and-hold.md`. Budget: about 0.5 h, added to C and D, re-sized when those parts are re-registered.
 
 ## 8. What this blocks
 
