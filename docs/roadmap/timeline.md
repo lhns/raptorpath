@@ -345,6 +345,7 @@ gantt
     The most efficient give-up rule below ρ… :model_skip_rule_efficiency, 2026-11-21, 2026-11-22
     Toy stage 1 - sender give-up rules :model_toy_stage1, 2026-11-21, 2026-11-21
     Offline simulation stage 2 - plan :active, model_toy_stage2_plan, 2026-11-21, 2026-11-22
+    Fix the lost tail, re-derive the hold :active, model_tail_and_hold, 2026-11-22, 2026-11-22
     Owner call - last copy, ack pairs :model_adr84_amend2, 2026-11-21, 2026-11-21
     Owner call - sender side first :model_adr84_sender_first, 2026-11-21, 2026-11-21
     The ordering hold H_o(δ) for design U :model_ordering_hold, 2026-11-21, 2026-11-22

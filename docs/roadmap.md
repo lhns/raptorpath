@@ -463,6 +463,7 @@ flowchart TB
 | Make all twelve ρ splits continuous | ▶ in progress | Twelve places in the engine behave one way when no data may be dropped (ρ = 1) and another way below it. Each is checked for a reason; each split is replaced by one formula continuous in ρ that keeps today's ρ = 1 behaviour, and the reliable flag is deleted. |
 | The most efficient give-up rule below ρ = 1 | ⛔ blocked | Which lost packets a ρ < 1 stream should give up on, when, and on which side. Every give-up should still send one last copy; whether the receiver may stop waiting on its own depends on whether a packet that arrives after its successors counts as delivered; the owner decided it does (2026-11-21). |
 | Offline simulation stage 2: plan | ▶ in progress | Rewrite the plan for the second run of the offline simulation, which compares receiver rules (how long to hold out-of-order packets), fixing the weak spots stage 1 exposed before anything runs. |
+| Fix the lost tail; re-derive the hold | ▶ in progress | The owner rejected two parts of the sender-first plan: a lost packet at the end of a transfer may wait without limit once the receiver's old early skips have used up the allowance, and the receiver waits a fixed-window delay before honouring the sender's skip message. This derivation prices the ways to fix the first before the sender build ships, and re-derives the second without the borrowed 10 s window. |
 | The ordering hold H_o(δ) for design U | ⛔ blocked | How long the receiver should wait for a missing packet before delivering the ones behind it out of order, as one smooth function of the latency price. Whether Bulk and Auto keep strict order depends on a new number, the price of one out-of-order delivery, to be measured. |
 | How long the floor pass waits | ▶ in progress | How long a receiver waits after the sender's skip message before passing the holes below it. |
 | One metrics system: design | ⏳ waiting | A design for one metrics system that feeds the status page, the logs and standard monitoring tools, including a packet-level recorder. |
@@ -542,6 +543,7 @@ flowchart TB
 - `store-law-derivation`: Deriving the in-flight data limit
 - `model-rho-step-sites`: Make all twelve ρ splits continuous
 - `model-toy-stage2-plan`: Offline simulation stage 2: plan
+- `model-tail-and-hold`: Fix the lost tail; re-derive the hold
 - `model-floor-hold`: How long the floor pass waits
 
 **none**
@@ -1222,7 +1224,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 68 nodes (49 done, 6 in progress, 7 next, 5 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 43 nodes (27 done, 10 in progress, 2 next, 3 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 44 nodes (27 done, 11 in progress, 2 next, 3 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 30 nodes (21 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->
