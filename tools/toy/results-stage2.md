@@ -43,6 +43,8 @@ Times in ms, 12 seeds. Bars m = max(T, NF), NF from the I2 A/A (the frozen table
 - **R0c against R0e, stated plainly.** R0c's total abandonment G_rx/S_src is **0.0123 (I2) and 0.0124 (L10)** against the 0.01 promise, and R0e's is 0.0099 and 0.0099; only R0c's floor share stays within the promise (G_floor/S_src 0.0092 and 0.0100). R0c gets 117 (I2) and 116 (L10) tail verdicts against 90 and 92 for R0e (R1: 90 and 98). What option (c) buys: 3.4 ms of mean wait in I2 (shown; equivalent in L10, 3.3 ms against a 14 ms bar) and 0.141 (I2) and 0.034 (L10) fewer repair sends per delivered (shown), by giving up the refused tail within the floor allowance instead of serving it. Its passes come no later than R0e's.
 - **Tail-only wait, R0c - R0e, paired per seed** (wait to release: delivery, or the pass if the seq was passed; the lost tail seqs only): I1 +1.3 ms [0.0, 4.0]; I2 +3.7 ms [-1.9, 11.3]; L10 +2.8 ms [-15.3, 18.8]. These do not separate the designs: the sampler and sweep phases scatter the resent tail by about 10 ms per seed. The split shows where the difference is: the seqs that get a verdict under R0c but are re-sent under R0e (28 per run in I2, 24 in L10) are released **7.9 ms earlier in I2 [-10.6, -5.4] and 42.6 ms earlier in L10 [-67.5, -16.5]** per seq (mean wait 1497 against 1505 ms in I2, 1558 against 1600 ms in L10), against the derivation's expectation of about one sweep round (25 ms in I2, 100 ms in L10): below it in both cells, since the saved round overlaps the resends' own wait. The other tail seqs differ by +4.7 ms [-1.3, 13.0] (I2) and +6.5 ms [-12.4, 23.2] (L10), undetermined.
 - **Short-window cell (reported only; 70 lost tail seqs, chosen as 0.58 of the allowance and 0.78 of the about 90 I2 leaves free).** The whole lost tail fits the allowance. Tail time is 1513 ms for every receiver, and all four receivers verdict 69 of the 70 tail seqs; R0e and R0c are identical (G_rx/S_src 0.0084, below the 0.01 promise, so R0e's allowance was never exhausted and (c) has nothing to change). Mean wait is 6.3 ms (R0e, R0c), 8.5 ms (R1) and 0.45 ms (U); R0e against R1 is -2.3 ms (equivalent), median -2.7 ms (shown).
+- **Accounting.** R0c's extra G_rx over R0e is 29.4 packets per object in I2 (0.0024 of S_src) and 30.4 in L10 (0.0025). They are the seqs that get a verdict under R0c only: 28.2 per run in I2 and 24.4 in L10, and every one of those is among the extra passed seqs (overlap 28.2 and 24.4); the remaining 1 (I2) and 6 (L10) extra packets are other tail seqs passed by R0c's floor that R0e's allowance also let through or that differ by phase. Tail-seq verdicts per run: I2 R0e 90.3, R0c 117.2, R1 89.7 (R1 - R0e -0.7 seqs, undetermined); L10 R0e 92.3, R0c 115.8, R1 98.2 (R1 - R0e +5.9 seqs [3.7, 8.3], shown).
+- **A/A on the global-hold model** (I2 tail cell, variants 0 and 1, 12 seeds): the 95th percentile of |A - A'| on mean wait is 1.0 ms (R0e) and 1.05 ms (R0c), under the frozen 3.03 ms. On repair sends per delivered it is 0.0159 (R0e) and 0.0227 (R0c) against the frozen NF of 0.0159, over it by 0.0001 (R0e) and 0.0069 (R0c), but under the bar actually used in Part T, max(T, NF) = 0.0859 (T is 5 % of S0's value); the frozen table is not changed. The p99 and tail-time scatter (50 to 82 ms) is also near the 81 and 85 ms floors.
 - **Against U (the target).** U has R1's sender trace and is shown better on wait: mean v 8.5 ms below R1 in I2, 99 ms below in L10. R0e and R0c sit between them.
 - **In words.** The interim receiver costs nothing at the tail (no stall anywhere), buys about 2 ms of mean wait in I2 and 38 ms in L10 against R1, and breaks the promise by a few seqs (I1, I2) to 40 seqs (L10) at its worst. Option (c) adds a few ms of mean wait and one tenth of a repair send per delivered by passing, through the floor, the tail that today refuses and serves, at a total abandonment of 0.0123 against the 0.01 promise. Neither beats U. Nothing is adopted.
 
@@ -511,6 +513,60 @@ Readings shown across the replication: 0
 - I1: n_dec 6, of which in the seed era (D = 25 ms) 6, after the first sample 0
 - I2: n_dec 48, of which in the seed era (D = 25 ms) 13, after the first sample 35
 - Q: n_dec 22, of which in the seed era (D = 25 ms) 6, after the first sample 16
+
+### Reading labels, A/A on the global-hold model, and the accounting check
+
+### Paired readings on the global-hold model (difference [CI] | m | label)
+
+| cell | contrast | metric | difference [CI] | m | label |
+|---|---|---|---|---|---|
+| I2 | R0e - R1 | v_mean | -2.129 [-2.39, -1.945] | 3.03 | equivalent |
+| I2 | R0e - R1 | v_p99 | -7.771 [-19.74, -0.6713] | 81.2 | equivalent |
+| I2 | R0e - R1 | G_ratio | -9.605e-05 [-0.0001441, -5.488e-05] | 0.00183 | equivalent |
+| I2 | R0e - R1 | repair_per_delivered | 0.01001 [0.005678, 0.01487] | 0.0859 | equivalent |
+| I2 | R0e - R1 | tail_time | -7.395 [-19.22, 0] | 85.1 | equivalent |
+| I2 | R0c - R0e | v_mean | -3.449 [-3.79, -3.08] | 3.03 | shown smaller |
+| I2 | R0c - R0e | v_p99 | 6.191 [-3.093, 19.11] | 81.2 | equivalent |
+| I2 | R0c - R0e | G_ratio | 0.002422 [0.00223, 0.002621] | 0.00183 | shown larger |
+| I2 | R0c - R0e | repair_per_delivered | -0.1412 [-0.1518, -0.1299] | 0.0859 | shown smaller |
+| I2 | R0c - R0e | tail_time | 7.407 [-1.743, 20.34] | 85.1 | equivalent |
+| I2 | R1 - R0e | tail seqs with a verdict | -0.6667 [-1.667, 0.25] | 1 | undetermined |
+| L10 | R0e - R1 | v_mean | -38 [-39.64, -36.34] | 14.3 | shown smaller |
+| L10 | R0e - R1 | v_p99 | -31.79 [-56.59, -7.88] | 81.2 | equivalent |
+| L10 | R0e - R1 | G_ratio | -8.232e-05 [-0.0001578, -2.744e-05] | 0.00183 | equivalent |
+| L10 | R0e - R1 | repair_per_delivered | 0.00301 [0.0003863, 0.005396] | 0.0291 | equivalent |
+| L10 | R0e - R1 | tail_time | -24.54 [-49.18, 0] | 85.1 | equivalent |
+| L10 | R0c - R0e | v_mean | -3.259 [-3.831, -2.691] | 14.3 | equivalent |
+| L10 | R0c - R0e | v_p99 | 12.91 [-18.02, 42.05] | 81.2 | equivalent |
+| L10 | R0c - R0e | G_ratio | 0.002504 [0.002106, 0.002957] | 0.00183 | shown larger |
+| L10 | R0c - R0e | repair_per_delivered | -0.03448 [-0.04061, -0.02911] | 0.0291 | shown smaller |
+| L10 | R0c - R0e | tail_time | -1.409 [-26.42, 23.35] | 85.1 | equivalent |
+| L10 | R1 - R0e | tail seqs with a verdict | 5.917 [3.667, 8.25] | 1 | shown larger |
+
+Tail-seq verdict counts per run (mean over 12 seeds):
+
+- I2: R0e 90.3, R0c 117.2, R1 89.7
+- L10: R0e 92.3, R0c 115.8, R1 98.2
+
+### A/A on the global-hold R0e and R0c (I2 tail cell, variants 0 and 1, 12 seeds): 95th percentile of |A - A'| per metric against the frozen floors
+
+| receiver | metric | p95 abs(A - A') | frozen NF (tail cells) | bar m = max(T, NF) used in Part T | under NF? | under m? |
+|---|---|---|---|---|---|---|
+| R0e | v_mean | 0.9901 | 3.026 | 3.026 | yes | yes |
+| R0e | repair_per_delivered | 0.01594 | 0.01585 | 0.08589 | NO, over by 9.336e-05 | yes |
+| R0e | v_p99 | 49.58 | 81.18 | 81.18 | yes | yes |
+| R0e | tail_time | 55.08 | 85.12 | 85.12 | yes | yes |
+| R0e | G_ratio | 0.000284 | 0.001832 | 0.001832 | yes | yes |
+| R0c | v_mean | 1.05 | 3.026 | 3.026 | yes | yes |
+| R0c | repair_per_delivered | 0.02274 | 0.01585 | 0.08589 | NO, over by 0.006894 | yes |
+| R0c | v_p99 | 78.08 | 81.18 | 81.18 | yes | yes |
+| R0c | tail_time | 82.08 | 85.12 | 85.12 | yes | yes |
+| R0c | G_ratio | 0.000284 | 0.001832 | 0.001832 | yes | yes |
+
+### Accounting: R0c's extra G_rx over R0e, in packets per object, and its overlap with the seqs that get a verdict under R0c only
+
+- I2: G_rx(R0c) - G_rx(R0e) = 29.4 packets per object (0.0024 of S_src); seqs with a verdict under R0c only 28.2; tail seqs in G under R0c but not under R0e 29.4; overlap of the two sets 28.2
+- L10: G_rx(R0c) - G_rx(R0e) = 30.4 packets per object (0.0025 of S_src); seqs with a verdict under R0c only 24.4; tail seqs in G under R0c but not under R0e 25.2; overlap of the two sets 24.4
 
 ### Part B tables
 

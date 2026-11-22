@@ -130,6 +130,10 @@ def build():
     job("T", "TSREF-R1", lambda seed: ("sim", tail_cfg("I2", "S0", "R1", seed, tail=70)))
     for recv in ("R0e", "R0c", "R1", "U"):
         job("T", "TS-%s" % recv, lambda seed, recv=recv: ("sim", tail_cfg("I2", "S1c", recv, seed, tail=70)))
+    # ---- A/A on the global-hold early-skip model (frozen NF is not recomputed)
+    for recv in ("R0e", "R0c"):
+        for arm, var in (("A", 0), ("B", 1)):
+            job("REP", "AAN-I2-%s-%s" % (recv, arm), lambda seed, recv=recv, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var)))
     # ---- Part B
     for pre in ("Bulk", "Auto", "Realtime"):
         p, rho = toy2.PRESETS[pre], toy2.RHO[pre]
