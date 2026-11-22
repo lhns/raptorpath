@@ -62,6 +62,7 @@ flowchart TB
     meas_defect_cr61_large_pool>"⚠ Collapse detector<br/>misfires on large<br/>limits"]
     meas_s51b_rho["⛔ Measurements with<br/>droppable data"]
     meas_guard_bulk_blind["○ Merge check only<br/>tests bulk"]
+    meas_vm_batch_1["▶ VM batch 1: S06<br/>merge guard"]
     meas_s51_c8_gauges["○ Per-path readouts<br/>for two-path runs"]
     meas_adversarial_cells_build["✔ Adversarial cells:<br/>build and validate"]
     meas_harness_robustness["○ Every test plan<br/>rehearsable offline"]
@@ -129,9 +130,11 @@ flowchart TB
     meas_blocke_pacing_gate ~~~ meas_defect_cr61_large_pool
     meas_blocke_steady_rule ~~~ meas_s51b_rho
     meas_w1_bracket_fix ~~~ meas_guard_bulk_blind
-    meas_defect_cr61_large_pool ~~~ meas_s51_c8_gauges
-    meas_s51b_rho ~~~ meas_adversarial_cells_build
-    meas_guard_bulk_blind ~~~ meas_harness_robustness
+    meas_defect_cr61_large_pool ~~~ meas_guard_bulk_blind
+    meas_s51b_rho ~~~ meas_vm_batch_1
+    meas_guard_bulk_blind ~~~ meas_s51_c8_gauges
+    meas_guard_bulk_blind ~~~ meas_adversarial_cells_build
+    meas_vm_batch_1 ~~~ meas_harness_robustness
     meas_s51_c8_gauges ~~~ meas_guard_resolution
     meas_adversarial_cells_build ~~~ meas_test_hygiene
     meas_harness_robustness ~~~ meas_adversarial_cells_run
@@ -139,6 +142,7 @@ flowchart TB
     meas_test_hygiene ~~~ meas_progress_baseline
     meas_adversarial_cells_run ~~~ meas_fix_gauges_p3
     meas_competitor_battery ~~~ meas_disorder_price
+    meas_progress_baseline ~~~ meas_disorder_price
     meas_l0_sim_bench --> meas_transport_comparison
     meas_l0_sim_bench --> meas_matrix_bench
     meas_adr51_scenarios --> meas_l1_harness
@@ -154,10 +158,11 @@ flowchart TB
     meas_s51_harness --> meas_s51_session
     meas_blocke_pacing_gate --> meas_blocke_steady_rule
     meas_s51_session --> meas_s51b_rho
+    meas_guard_bulk_blind --> meas_vm_batch_1
     meas_s51_session --> meas_s51_c8_gauges
     meas_adversarial_cells_build --> meas_adversarial_cells_run
     meas_s51_session --> meas_fix_gauges_p3
-    linkStyle 74 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 77 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -177,7 +182,7 @@ flowchart TB
     class meas_c8_aggregation_arc,meas_coupling_model,meas_anchor_era_suspect dead
     class meas_sf_accounting mixed
     class meas_defect_eta_witness,meas_defect_c8_bimodal,meas_defect_diag_rtp_ms,meas_defect_rtp_floor,meas_defect_cr61_large_pool finding
-    class meas_w1_bracket_fix inprog
+    class meas_w1_bracket_fix,meas_vm_batch_1 inprog
     class meas_s51b_rho,meas_adversarial_cells_run,meas_competitor_battery,meas_fix_gauges_p3,meas_disorder_price blocked
     class meas_guard_bulk_blind,meas_s51_c8_gauges,meas_harness_robustness,meas_guard_resolution,meas_test_hygiene,meas_progress_baseline next
 ```
@@ -254,6 +259,7 @@ flowchart TB
 | `meas-crown-spot-v8` | Crown no-regression spot (wire v8) | research | vm | done | unrated | 2026-09-08 | 2026-09-08 |  |  |  |  | commit b5e94b32; commit f671f61d |
 | `meas-rerun-0708` | Full benchmark re-run (8 July) | research | vm | done | unrated | 2026-07-08 | 2026-07-08 |  |  |  |  | commit bfc71e8e |
 | `meas-gate-audit` | Gate-forwarding audit | research | vm | done | unrated | 2026-08-09 | 2026-08-09 |  |  |  |  | commit 2aeea9d7; commit 689f9e89; commit 7014ba19; commit 451ecfa6 |
+| `meas-vm-batch-1` | VM batch 1: S06 merge guard | research | vm | in-progress | unrated | 2026-11-21 |  | meas-guard-bulk-blind, rate-s06-plost-derivation |  |  |  | docs/derivations/vm-batch-1-registration.md; branch harness67c; branch vmb-amend2 |
 | `meas-disorder-price` | Measure the price of disorder ω on a TCP-in-tunnel test | research | vm | blocked | unrated |  |  | model-ordering-hold |  |  |  | docs/derivations/ordering-hold.md; docs/derivations/disorder-price-registration.md |
 
 ### Details per node
@@ -326,7 +332,8 @@ flowchart TB
 | `meas-crown-spot-v8` | Crown no-regression spot (wire v8) | crown spot v8: THE SCORED RESULT — the repairs are INERT on the crown |  | A pre-registered check confirmed that the newly merged repair changes left the best historic single-path results unchanged. | Split 2026-11-20 from meas-wire-v8 (pre-registration b5e94b32 and scored result f671f61d). |  |  |  |  |
 | `meas-rerun-0708` | Full benchmark re-run (8 July) | C4 regresses to DNF. |  | A full re-run showed the CPU fix held for clean throughput and tail latency, but lossy completion did not improve and the high-delay lossy cell now stalled. | Read from the session record; the re-run itself is commit bfc71e8e (also folded in meas-c8-aggregation-arc). |  |  |  |  |
 | `meas-gate-audit` | Gate-forwarding audit | It voids nothing, |  | An audit of which engine gates reached the test binary only by accident found twelve missing from the harness list, but no recorded result was voided; the list became one shared source. | Was folded in obs-gates-echo, which is the echo it added. |  |  |  |  |
-| `meas-disorder-price` | Measure the price of disorder ω on a TCP-in-tunnel test |  |  | Force late, out-of-order deliveries in the tunnel and measure what each one costs an inner TCP flow, so the receiver's ordering hold has a measured price instead of a guess. Runs after VM batch 1. | ordering-hold.md par. 1: per released-then-filled hole, inner goodput deficit and retransmits against a matched no-release run, per inner stack (Linux Cubic with RACK and DSACK undo; RACK off). Warning carried to the owner: modern TCP tolerates reordering, so omega may be small and Auto/Bulk would then reorder in normal operation. Owner 2026-11-21: measure omega on this test and follow its result. Pre-registered in disorder-price-registration.md (round 4): netem reorderer in rp-* namespaces, no engine code; REL - CLEAN and HOLD - CLEAN scored, omega derived; Linux stack first, 8 flows, standing queue measured through the tunnel, holds split within/beyond the standing delay; about 20 h of VM at n = 8, up to about 27 h after cuts at the n = 24 clamp, more than 20 h goes back to the owner. Size default (2026-11-21, Fable, awaiting owner confirmation): session R first (about 2.5 h, measures the tunnel queue and noise, settling the 14 h or 20 h+ case), then the Linux-defaults phase with the registered cut order capped at 20 h; anything above 20 h returns to the owner before launch; the classic stack (about 8 h) is decided with the first result. Runs after VM batch 1. |  |  |  |  |
+| `meas-vm-batch-1` | VM batch 1: S06 merge guard |  |  | The VM test sessions that must pass before the S06 change and its test branches merge into main; every later engine build starts from that merge. | Plan 67, sessions 0 to 3. 2026-11-22: harness fixes on branch harness67c (4e673410: S06-FAIL above infra labels, live-row minimum counts live rows only, crashes not replaceable, truncated runs never read PASS, missing slots read incomplete, R2 blind check, no default pins, test-seam marker, session 0 envelope LD_PLAN=67pre); ci and nightly stub run green. Fable review round 1: nine more fixes (candidate crashes read as a finding, truncation on every scorer, R1 incomplete under LD_DROP_S2, lock inheritance probe, binid inner-test rule, block 1 on all 8 G rows, G mechanism precondition, seam list, small checks) with the harness worker. Then Amendment 2 (draft vmb-amend2 33b2f876) is regenerated against the final head, Fable sees the crash rule and the amendment text, the seats are re-merged and the new seats cut, then pin, rehearsal, sessions 0 to 3. Seat vmb-s2: missing sim_s06_nack test manifest entry fixed (1ea78c26), test now runs in CI, release binary unchanged. Binid old against new: both seats byte-identical across the main merge. |  |  |  |  |
+| `meas-disorder-price` | Measure the price of disorder ω on a TCP-in-tunnel test |  |  | Force late, out-of-order deliveries in the tunnel and measure what each one costs an inner TCP flow, so the receiver's ordering hold has a measured price instead of a guess. Runs after VM batch 1. 2026-11-22: the measurement harness is being built on branch omega-harness (new files only, stub-run tested, no VM contact), so it is ready when the VM is free during the sender build. | ordering-hold.md par. 1: per released-then-filled hole, inner goodput deficit and retransmits against a matched no-release run, per inner stack (Linux Cubic with RACK and DSACK undo; RACK off). Warning carried to the owner: modern TCP tolerates reordering, so omega may be small and Auto/Bulk would then reorder in normal operation. Owner 2026-11-21: measure omega on this test and follow its result. Pre-registered in disorder-price-registration.md (round 4): netem reorderer in rp-* namespaces, no engine code; REL - CLEAN and HOLD - CLEAN scored, omega derived; Linux stack first, 8 flows, standing queue measured through the tunnel, holds split within/beyond the standing delay; about 20 h of VM at n = 8, up to about 27 h after cuts at the n = 24 clamp, more than 20 h goes back to the owner. Size default (2026-11-21, Fable, awaiting owner confirmation): session R first (about 2.5 h, measures the tunnel queue and noise, settling the 14 h or 20 h+ case), then the Linux-defaults phase with the registered cut order capped at 20 h; anything above 20 h returns to the owner before launch; the classic stack (about 8 h) is decided with the first result. Runs after VM batch 1. |  |  |  |  |
 
 ### Folded items per node
 

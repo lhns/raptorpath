@@ -70,6 +70,7 @@ flowchart TB
     rec_fix_nack_throttle[/"○ Hidden re-send<br/>limit: measure, then<br/>justify"/]
     rec_retx_behind_source["○ Do re-sends wait<br/>behind new data"]
     rec_evict_blocker_unresolved>"⚠ Lost packet neither<br/>resent nor dropped"]
+    rec_adr84_guard["⛔ Merge guard for the<br/>ADR-0084 sender side"]
     rec_early_arq ~~~ rec_bulk_arq
     rec_nack_congestion ~~~ rec_p10a_repair_floor
     rec_plost_sack ~~~ rec_reliable_window
@@ -133,7 +134,7 @@ flowchart TB
     rec_fix_perleg_clock_n1 ~~~ rec_fix_nack_throttle
     rec_recovery_timeouts ~~~ rec_retx_behind_source
     rec_fix_refresh_clock ~~~ rec_evict_blocker_unresolved
-    rec_fix_nack_throttle ~~~ rec_evict_blocker_unresolved
+    rec_fix_nack_throttle ~~~ rec_adr84_guard
     rec_nack_congestion -.-> rec_fix_nack_throttle
     rec_per_path_clocks -.-> rec_defect_qclk_clamp
     rec_per_path_clocks -.-> rec_defect_hole_law
@@ -189,7 +190,7 @@ flowchart TB
     class rec_defect_qclk_clamp,rec_defect_hole_law,rec_defect_refresh_input,rec_leverb_c1d_cost,rec_defect_base_duplicates,rec_mixed_rho_stall,rec_evict_blocker_unresolved finding
     class rec_s63_f2_first_contact,rec_f2_merge_guard vsucc
     class rec_framing_followups,rec_fix_perleg_clock_n1,rec_fix_nack_throttle,rec_retx_behind_source next
-    class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock blocked
+    class rec_w0_leg_question,rec_recovery_timeouts,rec_fix_refresh_clock,rec_adr84_guard blocked
 ```
 <!-- END GENERATED: track-rec -->
 
@@ -261,6 +262,7 @@ flowchart TB
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | mechanism | vm | done | successful | 2026-07-08 | 2026-07-08 |  |  |  |  | commit 663d3ec9; commit 6f2b084f |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | law | no-cargo | done | unrated | 2026-09-06 | 2026-09-07 |  |  |  |  | commit 67a090b4; commit 971bda19; commit 6edf0c60; paper §16.80 |
 | `rec-mixed-rho-stall` | Mixed retention settings stall a transfer | defect-verdict | host-cargo | in-progress | unrated | 2026-11-20 |  |  |  |  |  | raptorpath/tests/sim_mixed_rho.rs |
+| `rec-adr84-guard` | Merge guard for the ADR-0084 sender side | research | vm | blocked | unrated | 2026-11-21 |  | meas-vm-batch-1, model-adr84-sender-first, model-floor-hold |  |  |  | docs/derivations/adr84-guard-registration.md (branch adr84-guard-registration); docs/derivations/adr84-engine-brief.md |
 
 ### Details per node
 
@@ -329,6 +331,7 @@ flowchart TB
 | `rec-arq-overrequest-bound` | Bounded ARQ over-request | RESULT: FEC no longer loses — parity, with 1.04× at RTT200/10% (G=128). |  | A broken probe was fixed and the reactive resend bounded to once per round trip, which removed an over-request flood and brought coded repair to parity with plain retransmission on one path. | Was folded in rec-present-at-stall, whose dead-end verdict is about the pacer, not this fix. |  |  |  |  |
 | `rec-seqclass-law` | Sequential-classification repair law (§16.80) | R4's c1 firing RESOLVED by a pre-stated prediction |  | The repair decision was written as one sequential test whose corner is a theorem with a bounded value; its two levers were specified as predictions and never built. | Split 2026-11-20 from meas-attribution-audit. Three parallel plans (session record 2026-09-06) led to it. |  |  |  |  |
 | `rec-mixed-rho-stall` | Mixed retention settings stall a transfer |  |  | A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish. | Found by the ADR-0084 amendment worker on main code; each end reads its own setting today. The floor message of ADR-0084 resolves it; the test is un-ignored at the floor step. The reverse pairing (a sender that keeps data, a receiver that may skip) is specified by the rho-step-sites derivation. 2026-11-21 (ADR-0084 Amendment 3): the forward pairing goes green at the ADR-0084 floor step; the reverse pairing (rho = 1 sender, rho < 1 receiver) stays red until the release-rule build, because the receiver keeps its old arm. |  |  |  |  |
+| `rec-adr84-guard` | Merge guard for the ADR-0084 sender side |  |  | The test the sender-side give-up change must pass before it merges: the usual settings behave exactly as before, and at the low-latency setting each new part is shown to have actually run. | Pre-registration draft on branch adr84-guard-registration (11b7edb6), about 11 to 17 h in five VM sessions after batch 1. 2026-11-22 Fable review of the full text: not ready; revision round with its author: an age-gate witness (visit count printed, age refusals required at Auto or AGE-GATE-INERT finding), power sized for the floor-only cells (predicted verdict and floor-pass counts, rehearsal power check, pooled per-row floor-pass rule), last-copy identity at the last tick if counters can split, the admitted-verdict count renamed apart from the hold H, row precedence fixed (outcome labels above infra voids), the batch-1 harness rules adopted by name and harness84 derived from the merged harness67c, the exhaust rule made consistent (XL-NOT-EXHAUSTED precondition, XE-NOT-EXHAUSTED holds the merge), the pause witness at XE one rule, B84 outside the minimum in floor-only cells. Coordinator decision: the lost-tail sim gate T1 must assert its tail verdict was admitted; the pre-spent-allowance variant stays the L-TAIL record until the release-rule build. Owner items parked as defaults: W = 10 s with the max, one guard on the head with bisection seats, L-TAIL as an interim. |  |  |  |  |
 
 ### Folded items per node
 
