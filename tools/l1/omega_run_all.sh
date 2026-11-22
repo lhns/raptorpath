@@ -286,9 +286,11 @@ OMEGA_SEED_OK="${OMEGA_SEED_OK:-1}"
 if [ "$SESSION" = R ] && [ "$REHEARSAL" != 1 ]; then
   omega_r0
   omega_tunnel_measure || true
+  omega_note "STEP tunnel-measure-done"
   topo_up || omega_abort ABORT-TOOLS "the topology did not come back after the tunnel measurement"
   sysctl_apply $OMEGA_NS_CLI >/dev/null && sysctl_apply $OMEGA_NS_SRV >/dev/null || omega_abort ABORT-SYSCTL "stack D after the tunnel measurement"
   hoststate_check "$RUN/hoststate.pre" || omega_abort ABORT-HOSTSTATE "after the tunnel measurement"
+  omega_note "STEP stack-reapplied"
   QTPINS="$RUN/pins-from-R.json"
   $PY -c '
 import json, sys
@@ -301,6 +303,7 @@ fi
 $PY omega_cells.py rows "$SESSION_DESIGN" $PINS > "$ROWSF" || omega_abort ABORT-BUILD "cannot list the rows of $SESSION_DESIGN"
 if [ "${SKIP_OUT:-0}" = 1 ]; then awk '$5 != "OUT"' "$ROWSF" > "$ROWSF.x" && mv "$ROWSF.x" "$ROWSF"; fi
 export OMEGA_L OMEGA_SEED_OK
+omega_note "STEP rows-listed $(wc -l < "$ROWSF")"
 
 # stage T: the tunnel comes up when the first T row is reached (omega_run_rows calls this)
 omega_stage_t_start() {
@@ -316,6 +319,7 @@ omega_stage_t_start() {
 
 # ── 7. the rows ──
 omega_run_rows "$ROWSF"; RC=$?
+omega_note "STEP rows-done rc=$RC"
 case "$RC" in
   0) FINAL="done" ;;
   10) FINAL="truncated"; omega_note "TRUNCATED-$SESSION" ;;
