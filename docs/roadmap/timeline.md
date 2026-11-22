@@ -88,6 +88,7 @@ gantt
     Bounded ARQ over-request :rec_arq_overrequest_bound, 2026-07-08, 2026-07-08
     Sequential-classification repair law (§… :rec_seqclass_law, 2026-09-06, 2026-09-07
     Mixed retention settings stall a transf… :active, rec_mixed_rho_stall, 2026-11-20, 2026-11-22
+    Merge guard for the ADR-0084 sender side :rec_adr84_guard, 2026-11-21, 2026-11-22
     section rate - rate law
     Gilbert-Elliott loss model :rate_ge_hmm, 2026-03-14, 2026-07-07
     First automatic repair-rate control :rate_fec_rate_v1, 2026-03-18, 2026-03-21
@@ -308,6 +309,7 @@ gantt
     Crown no-regression spot (wire v8) :meas_crown_spot_v8, 2026-09-08, 2026-09-08
     Full benchmark re-run (8 July) :meas_rerun_0708, 2026-07-08, 2026-07-08
     Gate-forwarding audit :meas_gate_audit, 2026-08-09, 2026-08-09
+    VM batch 1 - S06 merge guard :active, meas_vm_batch_1, 2026-11-21, 2026-11-22
     section model - model and paper
     Visualizer and engine share one code :active, model_shared_core, 2026-11-14, 2026-11-22
     Shared core steps 0.1–0.3 :model_shared_core_0, 2026-11-14, 2026-11-14
@@ -342,6 +344,7 @@ gantt
     Make all twelve ρ splits continuous :active, model_rho_step_sites, 2026-11-20, 2026-11-22
     The most efficient give-up rule below ρ… :model_skip_rule_efficiency, 2026-11-21, 2026-11-22
     Toy stage 1 - sender give-up rules :model_toy_stage1, 2026-11-21, 2026-11-21
+    Offline simulation stage 2 - plan :active, model_toy_stage2_plan, 2026-11-21, 2026-11-22
     Owner call - last copy, ack pairs :model_adr84_amend2, 2026-11-21, 2026-11-21
     Owner call - sender side first :model_adr84_sender_first, 2026-11-21, 2026-11-21
     The ordering hold H_o(δ) for design U :model_ordering_hold, 2026-11-21, 2026-11-22
@@ -384,5 +387,5 @@ gantt
     Deterministic simulation of the engine :active, infra_test_sim_engine, 2026-11-20, 2026-11-22
 ```
 
-Not shown (no `start`): `cod-user-generation-seat`, `rec-realtime-srv-lag-lean`, `rec-framing-followups`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rec-evict-blocker-unresolved`, `rec-adr84-guard`, `rate-spare-clamp-verdict`, `rate-delta-jitter-fix`, `rate-fix-rate-readout`, `rate-s06-plost-derivation`, `rate-shed-budget-rho`, `rate-adr50-split-unwired`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `perf-config-dropped`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51b-rho`, `meas-guard-bulk-blind`, `meas-s51-c8-gauges`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `meas-disorder-price`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-dead-code-batch`
+Not shown (no `start`): `cod-user-generation-seat`, `rec-realtime-srv-lag-lean`, `rec-framing-followups`, `rec-w0-leg-question`, `rec-leverb-guard`, `rec-recovery-timeouts`, `rec-fix-perleg-clock-n1`, `rec-fix-refresh-clock`, `rec-fix-nack-throttle`, `rec-retx-behind-source`, `rec-evict-blocker-unresolved`, `rate-spare-clamp-verdict`, `rate-delta-jitter-fix`, `rate-fix-rate-readout`, `rate-s06-plost-derivation`, `rate-shed-budget-rho`, `rate-adr50-split-unwired`, `rate-user-rate-law`, `rate-law-reconcile`, `rate-fix-term-gauge`, `rate-fix-estimators`, `rate-fix-rho-realtime`, `store-defect-b0p-brake`, `store-sampler-design`, `store-engine-form-guard`, `store-s48c-session`, `store-engine-form-impl`, `store-delta-seat`, `store-fix-maxbw-minrtt`, `place-user-perleg-questions`, `place-per-leg-impl`, `cc-s48d-session`, `cc-pacing-seam-reading`, `cc-user-adr68-direction`, `cc-user-bbrrs-promotion`, `cc-copa-consumers`, `cc-bbrrs-promote`, `cc-hybrid`, `perf-fix-burst-bound`, `perf-config-dropped`, `meas-blocke-pacing-gate`, `meas-defect-cr61-large-pool`, `meas-s51b-rho`, `meas-guard-bulk-blind`, `meas-s51-c8-gauges`, `meas-adversarial-cells-build`, `meas-harness-robustness`, `meas-guard-resolution`, `meas-test-hygiene`, `meas-adversarial-cells-run`, `meas-competitor-battery`, `meas-progress-baseline`, `meas-fix-gauges-p3`, `meas-disorder-price`, `model-fix-hint-keyed-paths`, `model-user-weak-identity`, `model-wasm-fixes`, `model-fix-paper-p2`, `model-fix-paper-p3`, `obs-impl`, `infra-dead-code-batch`
 <!-- END GENERATED: timeline -->

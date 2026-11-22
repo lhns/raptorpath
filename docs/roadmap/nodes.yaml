@@ -9878,6 +9878,76 @@ nodes:
   overview: false
   plain: 'A small offline simulation tested two extra sender rules for giving up on lost packets. Giving up on a whole run of missing packets at once saved budget in outages but never cut delay; a time-based give-up deadline cut one worst case but doubled repair traffic and made bursty loss worse. Both are dropped, so the accepted rule stays.'
   notes: 'Fable-reviewed. 12 seeds (registered 20), LP on 3-6 seeds in some cells, MILP on 3; the H = 5 ms, separate-floor and N=2 outage cells were added after registration and are reported only. Run-atomic: largest-episode spend falls at B10 (-191) but HOL p99 worsens beyond the CI at B10n2f/B10n2a (+0.025 ms), so DROP under the registered bar; recorded as not shown to help, its designed case (a closed run longer than the bank) was never produced. Instrument defect: with common random numbers the paired CI collapses, so later bars need a stated minimum size. T_rho: G p99 +0.37 ms, B60 unmoved; T_rho = max(D, S^-1 - L) falls with H, so it is inert for H above about 3 ms; inert at N=2 under the derived H on a one-seed 8 s check only (not a full run). Carried to the guard registration review: with the floor as its own datagram at H = 0 the floor overtakes its copy about half the time (487 transient passes per run at I1 against 65 shared). Findings carried forward: the age gate (age > D) refused nothing in any cell, N=2 included, so the next stage (skew and U) needs a cell where reports can be younger than D; the toy shared-fate floor (floor inside the copy) is an artefact, since the engine sends WindowFloor as its own datagram and repeats it, and the separate-floor model resolves isolated holes faster (I1 p99 11.5 against S0 14.4 ms), slightly slower in bursts (G 12.5 against 12.0 shared) because one floor datagram has one loss draw; the LP gap is not a distance to the optimum where the count binds.'
+- id: meas-vm-batch-1
+  title: 'VM batch 1: S06 merge guard'
+  track: meas
+  kind: research
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/vm-batch-1-registration.md
+  - branch harness67c
+  - branch vmb-amend2
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - meas-guard-bulk-blind
+  - rate-s06-plost-derivation
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-21'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The VM test sessions that must pass before the S06 change and its test branches merge into main; every later engine build starts from that merge.'
+  notes: 'Plan 67, sessions 0 to 3. 2026-11-22: harness fixes on branch harness67c (4e673410: S06-FAIL above infra labels, live-row minimum counts live rows only, crashes not replaceable, truncated runs never read PASS, missing slots read incomplete, R2 blind check, no default pins, test-seam marker, session 0 envelope LD_PLAN=67pre); ci and nightly stub run green. Fable review round 1: nine more fixes (candidate crashes read as a finding, truncation on every scorer, R1 incomplete under LD_DROP_S2, lock inheritance probe, binid inner-test rule, block 1 on all 8 G rows, G mechanism precondition, seam list, small checks) with the harness worker. Then Amendment 2 (draft vmb-amend2 33b2f876) is regenerated against the final head, Fable sees the crash rule and the amendment text, the seats are re-merged and the new seats cut, then pin, rehearsal, sessions 0 to 3. Seat vmb-s2: missing sim_s06_nack test manifest entry fixed (1ea78c26), test now runs in CI, release binary unchanged. Binid old against new: both seats byte-identical across the main merge.'
+- id: rec-adr84-guard
+  title: 'Merge guard for the ADR-0084 sender side'
+  track: rec
+  kind: research
+  state: blocked
+  outcome: unrated
+  evidence:
+  - docs/derivations/adr84-guard-registration.md (branch adr84-guard-registration)
+  - docs/derivations/adr84-engine-brief.md
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - meas-vm-batch-1
+  - model-adr84-sender-first
+  - model-floor-hold
+  replaced_by: []
+  qualified_by: []
+  lane: vm
+  start: '2026-11-21'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The test the sender-side give-up change must pass before it merges: the usual settings behave exactly as before, and at the low-latency setting each new part is shown to have actually run.'
+  notes: 'Pre-registration draft on branch adr84-guard-registration (11b7edb6), about 11 to 17 h in five VM sessions after batch 1. 2026-11-22 Fable review of the full text: not ready; revision round with its author: an age-gate witness (visit count printed, age refusals required at Auto or AGE-GATE-INERT finding), power sized for the floor-only cells (predicted verdict and floor-pass counts, rehearsal power check, pooled per-row floor-pass rule), last-copy identity at the last tick if counters can split, the admitted-verdict count renamed apart from the hold H, row precedence fixed (outcome labels above infra voids), the batch-1 harness rules adopted by name and harness84 derived from the merged harness67c, the exhaust rule made consistent (XL-NOT-EXHAUSTED precondition, XE-NOT-EXHAUSTED holds the merge), the pause witness at XE one rule, B84 outside the minimum in floor-only cells. Coordinator decision: the lost-tail sim gate T1 must assert its tail verdict was admitted; the pre-spent-allowance variant stays the L-TAIL record until the release-rule build. Owner items parked as defaults: W = 10 s with the max, one guard on the head with bisection seats, L-TAIL as an interim. Branch adr84-guard-registration (2026-11-22): verdict-visit gauge with the age half scored at XA (AGE-GATE-INERT a defect finding); XR and XRK resized for power (300 MB, 45 s), R-W6 counted rows at V_adm >= 300; section 7 precedence and harness67c rules; XE-NOT-EXHAUSTED holds, XL-NOT-EXHAUSTED a precondition; brief T1 asserts the tail verdict admitted; 11.4 h typical in five sessions.'
+- id: model-toy-stage2-plan
+  title: 'Offline simulation stage 2: plan'
+  track: model
+  kind: research
+  state: in-progress
+  outcome: unrated
+  evidence:
+  - docs/derivations/skip-rule-efficiency.md (branch toy-plan-v3, new par. 7)
+  verdict_quote: ''
+  headline: ''
+  depends_on:
+  - model-toy-stage1
+  - model-floor-hold
+  replaced_by: []
+  qualified_by: []
+  lane: no-cargo
+  start: '2026-11-21'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'Rewrite the plan for the second run of the offline simulation, which compares receiver rules (how long to hold out-of-order packets), fixing the weak spots stage 1 exposed before anything runs.'
+  notes: 'Paper only, then Fable before any build. Registers: a minimum effect size per bar with an A/A calibration; a cell where the age gate refuses; the separate-datagram floor only, staged after the copy, repeated per path; replacements for the failed two-path positive control and the meaningless two-path stall metric; which bound each comparison uses; an explicit staged wall-clock budget; the two-path T_rho inertness as a registered check.'
 - id: model-adr84-amend2
   title: 'Owner call: last copy, ack pairs'
   track: model
@@ -9966,7 +10036,7 @@ nodes:
   end: ''
   folded: []
   overview: false
-  plain: 'Force late, out-of-order deliveries in the tunnel and measure what each one costs an inner TCP flow, so the receiver''s ordering hold has a measured price instead of a guess. Runs after VM batch 1.'
+  plain: 'Force late, out-of-order deliveries in the tunnel and measure what each one costs an inner TCP flow, so the receiver''s ordering hold has a measured price instead of a guess. Runs after VM batch 1. 2026-11-22: the measurement harness is being built on branch omega-harness (new files only, stub-run tested, no VM contact), so it is ready when the VM is free during the sender build.'
   notes: 'ordering-hold.md par. 1: per released-then-filled hole, inner goodput deficit and retransmits against a matched no-release run, per inner stack (Linux Cubic with RACK and DSACK undo; RACK off). Warning carried to the owner: modern TCP tolerates reordering, so omega may be small and Auto/Bulk would then reorder in normal operation. Owner 2026-11-21: measure omega on this test and follow its result. Pre-registered in disorder-price-registration.md (round 4): netem reorderer in rp-* namespaces, no engine code; REL - CLEAN and HOLD - CLEAN scored, omega derived; Linux stack first, 8 flows, standing queue measured through the tunnel, holds split within/beyond the standing delay; about 20 h of VM at n = 8, up to about 27 h after cuts at the n = 24 clamp, more than 20 h goes back to the owner. Size default (2026-11-21, Fable, awaiting owner confirmation): session R first (about 2.5 h, measures the tunnel queue and noise, settling the 14 h or 20 h+ case), then the Linux-defaults phase with the registered cut order capped at 20 h; anything above 20 h returns to the owner before launch; the classic stack (about 8 h) is decided with the first result. Runs after VM batch 1.'
 - id: model-floor-hold
   title: How long the floor pass waits
@@ -9989,29 +10059,3 @@ nodes:
   overview: false
   plain: 'How long a receiver waits after the sender''s skip message before passing the holes below it.'
   notes: 'Reads the last-copy rule (model-adr84-amend2: the copy travels with the floor, which is what H waits for); no depends_on edge, because the sender build (rec-evict-blocker-unresolved, upstream of every ADR-0084 model node) depends on this node. Owner 2026-11-21 (ADR-0084 Amendment 3, Q-b (iii), node model-adr84-sender-first): derive the floor pass hold H properly before the floor-pass step (brief step 8) is built; options (i) shed_recv_hold as is (bit-selected) and (ii) SRTT/2 are not adopted. Today shed_recv_hold is UNDERIVED (paper par. 11.3, rho-step-sites C11); ordering-hold par. 8 path-support H not adopted (the receiver has no per-seq path map; an observed maximum never comes down). Derivation on branch floor-hold-derivation (docs/derivations/floor-hold.md), reviewed by Fable before merge. Done when: H is one expression from receiver-observable quantities with provenance per symbol and its bind gauges, accepted, and the step-1 test bounds H_max are restated from it. 2026-11-21 derivation on branch floor-hold-derivation: H = windowed max over W = 10 s of the RFC 4737 reordering late time offset, any path, with send order taken from send_timestamp_us; no wire field, no rho/delta/hint; H = 0 at N = 1 FIFO (so H_max = 0 in T1, T2, T1prime), about the skew at N = 2. Fable-reviewed twice and merged to main. W = 10 s and the max (not a quantile) are defaults awaiting owner confirmation before the floor-pass step is built; the toy W sweep informs W.'
-- id: rec-adr84-guard
-  title: Merge guard for the ADR-0084 sender side
-  track: rec
-  kind: research
-  state: blocked
-  outcome: unrated
-  evidence:
-  - docs/derivations/adr84-guard-registration.md
-  - ADR-0084 Amendments 1 and 2
-  - docs/derivations/adr84-engine-brief.md
-  verdict_quote: ''
-  headline: ''
-  depends_on:
-  - rate-s06-plost-derivation
-  - rec-evict-blocker-unresolved
-  - model-adr84-amend2
-  - model-adr84-sender-first
-  replaced_by: []
-  qualified_by: []
-  lane: vm
-  start: ''
-  end: ''
-  folded: []
-  overview: false
-  plain: 'The regression test the sender-side give-up change must pass before it merges: the usual settings must behave exactly as before, and at the low-latency setting, where data may be dropped, the test must show that each new part actually ran (the give-up count, the last copy, the floor message, the source pause), including on two paths with unequal delay and on a link lossy enough to spend the whole give-up allowance.'
-  notes: 'Pre-registration draft (paper only, no VM), on main 4832cf3c: ADR-0084 Amendment 3 Accepted (Q-a yes with fallback, Q-b (iii) derived H, floor-hold.md), C1 in this build (option (a), interim XK delay rise accepted and reported). BASE = main after the S06 merge, CAND = the sender-side build head; spelling detected from perf --help. Stages: Bulk guard v2 (96), Auto rho = 1 (48), Realtime rho = 1 (24); Realtime 0.99 matched cells c2, c8, 20 ms skew, budget exhaust (96), where the old arm spends the allowance first so few verdicts are admitted (predicted per cell); floor-only pairings sender 0.99 / receiver 1 at c2 and on the skew link (30 + 30) requiring verdicts, last copies, floor passes, G_rx within budget at every [BUDGET] line and the derived H''s miss bar (any miss fails at N = 1; 95 % upper bound vs 1 - rho at N = 2); lost tail after the allowance is spent, limit L-TAIL (24); Auto 0.99 vs 1 (12); twins (24); optional paced (12). UNSCOREABLE anywhere blocks; more WARMUP-DEAD rows on CAND holds the merge. Typical 11.4 h in five sessions. Open: W = 10 s awaits the owner; one guard on the head or three at the rho-step-sites cut points; owed release gauges. Blocked on VM batch 1 / S06 merge and the build. Done when: the guard Result is scored against this registration.'
