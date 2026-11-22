@@ -72,7 +72,7 @@ class Cfg:
     want_trace: bool = False
     want_p4: bool = False
     check_p1: bool = True
-    recv_eps: str = "cum"          # R0e's eps_hat: cum (registered: cumulative missing fraction) | ewma (reported-only variant)
+    recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
 
 
 def ge_cell(cell, seed, slots, dur_slots_unused=None):
@@ -257,7 +257,7 @@ class Sim:
         self.g = dict(verdicts=0, verdict_copies=0, floors=0, floor_rep=0, repair_sends=0, serves=0, refusals=0,
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
-                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0)
+                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -266,6 +266,7 @@ class Sim:
         self.last_arr = -1.0
         self.pass_dt = []
         self.eps_ew = 0.0
+        self.eps_eng = 0.0
 
     # ---- helpers --------------------------------------------------------------------------
     def push(self, t, kind, payload):
@@ -454,6 +455,8 @@ class Sim:
         else:
             got[s] = 1
             self.arr[s] = now
+            e_ = s - self.rhi if s > self.rhi else 1                  # one arrival = one batch: e seqs expected, r = 1 received
+            self.eps_eng = 0.1 * ((e_ - 1) / e_) + 0.9 * self.eps_eng
             ell = self.est.feed(now, tau)
             if ell > 0:
                 self.g["fh_late"] += 1
@@ -557,7 +560,12 @@ class Sim:
             return
         srtt = self.srtt if self.srtt is not None else 0.05
         frontier = self.rhi + 1
-        eps_hat = self.eps_ew if self.cfg.recv_eps == "ewma" else self.n_missing / max(frontier, 1)
+        if self.cfg.recv_eps == "engine":
+            eps_hat = self.eps_eng
+        elif self.cfg.recv_eps == "ewma":
+            eps_hat = self.eps_ew
+        else:
+            eps_hat = self.n_missing / max(frontier, 1)
         if self.r0e_given_up < eps_hat * frontier:
             hold = srtt / 2
             self.g["r0e_budget_open"] += 1
@@ -648,6 +656,8 @@ class Sim:
                         g["age_gate_fail"] += 1
                         if A_avail >= 1:
                             g["n_dec"] += 1
+                            if self.srtt is None:
+                                g["n_dec_seed"] += 1
                     else:
                         g["gate_cold"] += 1
                     serve_seqs.append(s)

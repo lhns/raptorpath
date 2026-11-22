@@ -110,7 +110,16 @@ def build():
         job("T", "REFT-%s" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S0", "R1", seed)))
         for recv in ("R0e", "R0c", "R1", "U"):
             job("T", "T-%s-%s" % (cell, recv), lambda seed, cell=cell, recv=recv: ("sim", tail_cfg(cell, "S1c", recv, seed)))
+        job("T", "T-%s-R0cum" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, recv_eps="cum")))
+        job("T", "T-%s-R0ccum" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0c", seed, recv_eps="cum")))
         job("T", "T-%s-R0x" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, recv_eps="ewma")))
+    # ---- replication of the I2 tail A/A with fresh phase draws (variants 2, 3), and the AG1 n_dec split
+    for recv, eps in (("R0e", "engine"), ("R0e", "cum"), ("R1", "engine")):
+        for arm, var in (("C", 2), ("D", 3)):
+            job("REP", "REP-I2-%s-%s-%s" % (recv, eps, arm),
+                lambda seed, recv=recv, eps=eps, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var, recv_eps=eps)))
+    for cname, cell, q in (("I1", "I1", False), ("I2", "I2", False), ("Q", "I1", True)):
+        job("REP", "AG1S-%s-Realtime-EWMA" % cname, ucfg(cell, 50.0, 0.99, 1.0, q=q, d_arm="EWMA"))
     # ---- Part B
     for pre in ("Bulk", "Auto", "Realtime"):
         p, rho = toy2.PRESETS[pre], toy2.RHO[pre]

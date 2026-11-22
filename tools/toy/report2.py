@@ -106,7 +106,7 @@ def part_T():
     d = S.load()
     nf = S.nf_table()
     cells = ("I1", "I2", "L10")
-    recvs = (("R0e", "R0e (today's early-skip)"), ("R0c", "R0c (early skip, allowance counts floor passes only)"), ("R1", "R1 (floor only)"), ("U", "U, omega = 1"), ("R0x", "R0e with an EWMA epsilon-hat (reported only)"))
+    recvs = (("R0e", "R0e (today's early-skip, engine eps-hat)"), ("R0c", "R0c (early skip, allowance counts floor passes only)"), ("R1", "R1 (floor only)"), ("U", "U, omega = 1"), ("R0cum", "R0e, cumulative eps-hat (history, reported only)"), ("R0ccum", "R0c, cumulative eps-hat (history, reported only)"), ("R0x", "R0e, per-seq EWMA eps-hat alpha 1/256 (history, reported only)"))
     p("### Part T: per-config means over 12 seeds (times in ms)\n")
     p("| cell | receiver | v p50 | v p99 | v p99.9 | v mean | e mean | G_rx/S_src | passes (floor / R0e) | P1 violations (worst excess) | tail time | stalled | tail seqs with a verdict | filled after the window | R0e hold fell back | repair sends / delivered | G_floor/S_src | floors / delivered | last copies / delivered |")
     p("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
@@ -332,5 +332,39 @@ def part_B():
             p("- %s %.2f s over %d runs" % (grp, np.mean(w), len(w)))
 
 
+def part_REP():
+    nf = S.nf_table()
+    p("### Replication of the I2 tail A/A with fresh phase draws (variants 2 and 3, 12 seeds)\n")
+    p("| receiver, eps-hat | metric | C - D mean [CI] | T | reading |")
+    p("|---|---|---|---|---|")
+    shown = 0
+    for recv, eps in (("R0e", "engine"), ("R0e", "cum"), ("R1", "engine")):
+        a, b = "REP-I2-%s-%s-C" % (recv, eps), "REP-I2-%s-%s-D" % (recv, eps)
+        for k in S.T_M:
+            T = S.T_of(k, "I2", 0.99, R(a)["n_src"], R(a)["delivered"], "REFT-I2")
+            rd = S.read(S.vals(a, k) - S.vals(b, k), T)
+            if rd["word"].startswith("shown"):
+                shown += 1
+            if k in ("v_p99", "v_p999", "e_p99", "e_p999", "tail_time", "tail_v_mean", "tail_v_p50") or rd["word"].startswith("shown"):
+                p("| %s %s | %s | %.4g [%.4g, %.4g] | %.3g | %s |" % (recv, eps, k, rd["mean"], rd["lo"], rd["hi"], T, rd["word"]))
+    p("\nReadings shown across the replication: %d" % shown)
+    p("\n### Phase scatter of tail time (ms): mean over 12 seeds per phase set, and per-seed SD of the difference between two sets\n")
+    for recv, eps in (("R0e", "engine"), ("R0e", "cum"), ("R1", "engine")):
+        names = ["REP-I2-%s-%s-C" % (recv, eps), "REP-I2-%s-%s-D" % (recv, eps)]
+        v = [S.vals(n, "tail_time") for n in names]
+        p("- %s %s: variant 2 mean %.1f, variant 3 mean %.1f; SD of per-seed difference %.1f" % (recv, eps, v[0].mean(), v[1].mean(), (v[0] - v[1]).std(ddof=1)))
+    for recv in ("R0e", "R1"):
+        a, b = "AAT-I2-%s-A" % recv, "AAT-I2-%s-B" % recv
+        v = [S.vals(a, "tail_time"), S.vals(b, "tail_time")]
+        p("- %s (frozen A/A, cumulative eps-hat for R0e): variant 0 mean %.1f, variant 1 mean %.1f; SD of per-seed difference %.1f" % (recv, v[0].mean(), v[1].mean(), (v[0] - v[1]).std(ddof=1)))
+    p("\n### AG1 at Realtime under D_EWMA: n_dec before and after the first RTT sample (summed over 12 seeds)\n")
+    d = S.load()
+    for c in ("I1", "I2", "Q"):
+        nm = "AG1S-%s-Realtime-EWMA" % c
+        tot = sum(d[(nm, s)]["gauges"]["n_dec"] for s in range(12))
+        sd = sum(d[(nm, s)]["gauges"]["n_dec_seed"] for s in range(12))
+        p("- %s: n_dec %d, of which in the seed era (D = 25 ms) %d, after the first sample %d" % (c, tot, sd, tot - sd))
+
+
 def main(cmd):
-    {"A": part_A, "T": part_T, "B": part_B}[cmd]()
+    {"A": part_A, "T": part_T, "B": part_B, "REP": part_REP}[cmd]()

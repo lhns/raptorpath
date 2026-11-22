@@ -7,9 +7,9 @@ Spec: `docs/derivations/skip-rule-efficiency.md` §7 (toy plan v3, merged from t
 ## Deviations from registration (all of them)
 
 1. **12 seeds, no 24-seed reruns.** Every "undetermined" decision clause below was left undetermined; the reserve was not spent.
-2. **A/A self-check failed for R0e's tail metrics** (7 readings in the I2 tail cell: v and e at p99 and p99.9, tail time, tail-only mean and median v): the mean A/A difference reads "shown" against T = 1 ms (about -8 to -9 ms, CI excluding 0). I looked for a code cause and found none: those metrics are quantised by the 25 ms tail sweep, whose phase is drawn per seed, so per-seed values scatter by about 8 ms (R1: 20 to 30 ms). Six phase draws (12 seeds each) give R0e tail-time means of 1486 to 1496 ms and R1's of 1512 to 1526 ms, so variant A is one low draw, not a bias in the code. In the strict reading of the registration this is "the toy depends on clock phase" (the sweep phase moves tail resend instants by up to one sweep period), so I report it as a failed check that I did not fix. The table was frozen with `--force` and the failure is listed in it (`selfcheck_shown`). Effect: Part T's bars for tail time and p99 metrics are large (NF about 80 ms), so those readings are conservative. 16 further readings (all cells) are undetermined and 95 equivalent.
+2. **A/A self-check: 7 of 118 readings read "shown" in the first A/A, and did not replicate.** The 7 are R0e's tail metrics in the I2 tail cell (v and e at p99 and p99.9, tail time, tail-only mean and median v): the mean A/A difference was about -8 to -9 ms against T = 1 ms, CI excluding 0. Both arms draw phases from the same distribution, so the true mean difference is zero; 7 of 118 is about what a 95 % CI gives with no multiplicity allowance, and all 7 are one quantity in one cell. Replication with two fresh phase draws (variants 2 and 3, 12 seeds) for R0e (engine and cumulative eps-hat) and R1: **0 of 7 readings are shown again** (all undetermined, differences of +2 to +12 ms with CIs spanning 0). So this is recorded as a chance result of the self-check, not a toy defect. The frozen NF stays, because the per-seed phase scatter it measures is real: the SD of the per-seed tail-time difference between two phase sets is 9.5 to 10 ms for R0e and 41 to 42 ms for R1. Phase-set means of the I2 tail time (ms, 12 seeds): R0e 1488.0, 1495.5, 1495.2, 1489.6, 1490.3, 1485.9 (variants 0 to 5); R1 1512.1, 1522.6, 1524.0, 1511.7, 1512.3, 1526.2. Effect: Part T's bars for tail time and p99 metrics are large (NF about 80 ms). The table was frozen with `--force` because the first reading looked like a failure; no code was changed.
 3. **P4a is registered for S1c and cannot hold as written.** S1c's last copy rides the verdict and fills an isolated hole at the instant S0's first resend would, so the median stall equals S0's (measured S1c - S0 = 0 within 1 ms). The +H appears on S1 (a verdict without the copy): S1 - S0 = H within 1 ms (test). The hold itself is checked absolutely: every floor pass in an I1 run with H forced to 5 ms happens exactly 5 ms after that floor's arrival (to 1e-9 s). The copy-less S1 sender exists in `toy2.py` for this test only.
-4. **R0e's ε̂_recv** (cumulative missing fraction, as registered) can never make the hold fall back: when an entry is buffered above an open hole, the holes given up are always fewer than the holes detected. The registered witness "R0e's hold falls back at least once in I2" fails (0 fallbacks in every R0e run), so **R0e's I2 reading is void by the plan's own rule**. As a reported-only extra I ran R0x, R0e with ε̂ an EWMA of the per-seq missing indicator (α = 1/256, a toy choice); it falls back thousands of times per run in I2 and L10 and reads like R0e.
+4. **The early-skip receivers use the engine's eps-hat** (owner's coordinator, after review): a per-batch EWMA with alpha = 0.1 (`raptorpath/src/control/estimator.rs:92` for alpha, `:103-110` for the update `rx_ewma_loss <- 0.1 (e - r)/e + 0.9 rx_ewma_loss`, read as the maximum over live paths, `receiver.rs:2266`; one path here). One arrival is one batch: for an arrival above rhi e = s - rhi and r = 1, otherwise e = r = 1. Both R0e and R0c use it, so they differ only in the allowance operand. Part T was rerun for R0e and R0c (all cells, 12 seeds) and these are the reported rows. The registered cumulative eps-hat (which can never make the hold fall back) and R0x (per-seq EWMA, alpha 1/256, my own toy choice) stay as history rows, labelled. **Witness:** the hold falls back about 1 546 (I1), 7 650 (I2) and 8 690 (L10) times per run under the engine eps-hat, for both R0e and R0c, so the I2 witness is met and R0e's I2 reading stands.
 5. **Part T additions and choices.** R0c was added after Part A had run and before Part T. Dead window: every datagram (original, copy or floor) for a tail seq (floor value at or above the first tail seq) sent in [1.18 s, 2.68 s) is lost. In object mode the sweep also re-serves reported holes: without it a finished stream sends no more gap reports, so holes whose copies were lost are never served again, and R1 stalled at 40 s in I2 (seen in the first A/A run; the AAT runs were rerun after the fix, which touches no non-object cell). Runs end 1 s after the ack frontier reaches S_src (or at 40 s). The EWMA arm's seed-era change and R0c were merged from the plan during the work; Part A's frozen noise floors were computed before either and neither changes a Part A cell.
 6. **S0 reference runs** (36 for Parts A and B, 36 for Part T, one per cell and seed) were added; the relative bars need them. They are not in the registered counts.
 7. **c_H rent arm: skipped.** The plan's B (sender backlog) and g (delivery rate) are not defined enough to build. The d_rep arm ran at the three presets (P4g witness).
@@ -22,21 +22,21 @@ Spec: `docs/derivations/skip-rule-efficiency.md` §7 (toy plan v3, merged from t
 
 ## Checks
 
-- **P1:** 0 violations in every Part B run and every Part T run of R1 and U; the positive control (a sender that ignores the count) trips it. **R0e and R0c violate P1** (today's receiver ignores the count): about 5 (I1), 27 (I2) and 190 to 320 (L10) pass events above the allowance per run, worst excess 5 to 60 seqs.
+- **P1:** 0 violations in every Part B run and every Part T run of R1 and U; the positive control (a sender that ignores the count) trips it. **R0e and R0c violate P1** (today's receiver ignores the count): about 5 (I1), 27 (I2) and 160 to 250 (L10) pass events above the allowance per run (engine eps-hat), worst excess 5 to 54 seqs.
 - **P2** (ρ = 1 and 1 - 1e-7): sender traces equal S0's for S1c with R1 and with U (unit tests); in Part B 0 verdicts, floors and passes at both.
 - **P4a** (deviation 3), **P4b** (S1c's G_rx/S_src within 1.5 ε ĥ), **P4c** (U's consumer stall per isolated hole equals min(H_o, R - t_detect, t_F + H - t_detect), observed to within 1e-5 s in four settings), **P4e** (sweep == TU LP == brute force on 200 random instances, LP integral every time), **P4f** (n_dec = 0 at Realtime and Auto under D_RTprop in I1, I2 and Q; above 0 at b = 1.3 and Bulk), **P4g** (d_all == d_rep exactly), **P4h** (deviation 11), **P4i** (e over non-hole packets equals stage 1's HOL sum), **P4j** (below), the **H estimator tests** (FIFO gives 0; a 7 ms late packet gives 6 ms until the window passes; empty window and cold start 0; strict and non-strict; two-path synthetic skew; a later floor never delays an earlier marker), the **deny test** with a planted positive control, and **FIFO** (no datagram overtook another in any run; H is 0 and the estimator counted no late arrival in any Part B run). All pass.
 - **P4j:** on isolated holes the bound ratio_U <= 2 + omega N_{R=inf} / cost_U* holds in every seed at omega in {1, 10} and the three presets (worst slack 5.8e-11). The isolated-hole ratio is 2.02 at Realtime, 1.02 at Auto omega = 1, and 1.00 elsewhere.
 
 ## Readings, Part T first (lost tail; Realtime, rho = 0.99, one path)
 
-Times in ms, 12 seeds. Bars m = max(T, NF), NF from the I2 A/A. R0e's I2 reading is void (deviation 4); the others stand.
+Times in ms, 12 seeds. Bars m = max(T, NF), NF from the I2 A/A. The early-skip rows use the engine eps-hat (deviation 4); the hold falls back, so the witness is met.
 
 - **Nothing stalled.** Every receiver in every cell got the ack to S_src. Tail time (last send to ack frontier) is 1.49 s in I1 and I2 and 1.67 to 1.81 s in L10. The dead window is itself 1.5 s, so nearly all of this is the window; receivers differ in how fast the denied tail seqs are served after it.
-- **R0e against R1.** I1: equivalent on every wait readout; R0e makes 183 passes against 121. I2: R0e's median v is 4.7 ms lower (shown), mean v 5.1 ms lower (shown), largest-episode spend 22.8 higher (shown), tail time 24 ms shorter (equivalent under the 85 ms bar). L10: R0e is shown better on every wait readout: median -37 ms, p99 -121 ms, mean -45 ms, tail time -142 ms. So the early skip buys a few ms in I2 and tens of ms at RTT 100 ms with 10 % loss, and costs spend.
-- **R0c against R0e.** R0c's passes come no later and its floor share G_floor/S_src is 0.0090 to 0.0100 against the 0.01 allowance. In I2 R0c is shown better than R0e: mean v 4.1 ms lower, repair sends per delivered 0.161 lower, tail seqs with a verdict 121 against 89 (R0e's allowance is eaten by early-skip passes). R0c's G_rx/S_src exceeds R0e's by 0.0027 in I2 and 0.0033 in L10, which is at most the 0.01 the plan predicts. **The plan's prediction holds on all three counts:** passes no later, total abandonment above R0e's by at most G_floor <= (1 - rho) S_src, and the tail passed by the floor where R0e's is refused (R0c: all 121 verdicts used; R0e: 89 in I2, 84 in L10).
+- **R0e against R1.** I1: equivalent on every wait readout; R0e makes 183 passes against 121. I2: R0e's median v is 4.7 ms lower (shown), mean v 5.1 ms lower (shown), largest-episode spend 22.8 higher (shown), tail time 24 ms shorter (equivalent under the 85 ms bar). L10: R0e is shown better on every wait readout: median -36 ms, p99 -120 ms, mean -44 ms, tail time -141 ms. So the early skip buys a few ms in I2 and tens of ms at RTT 100 ms with 10 % loss, and costs spend.
+- **R0c against R0e.** R0c's passes come no later and its floor share G_floor/S_src is 0.0090 to 0.0100 against the 0.01 allowance. In I2 R0c is shown better than R0e: mean v 4.1 ms lower, repair sends per delivered 0.161 lower, tail seqs with a verdict 121 against 89 (R0e's allowance is eaten by early-skip passes). R0c's G_rx/S_src exceeds R0e's by 0.0027 in I2 and 0.0028 in L10, which is at most the 0.01 the plan predicts. **The plan's prediction holds on all three counts:** passes no later, total abandonment above R0e's by at most G_floor <= (1 - rho) S_src, and the tail passed by the floor where R0e's is refused (R0c: all 121 verdicts used in I1 and I2 and 117.5 in L10; R0e: 89 in I2, 81 in L10).
 - **Against U (the target).** U has R1's sender trace and is shown better on wait: mean v 8.5 ms lower than R1 in I2, 99 ms lower in L10. R0e and R0c sit between R1 and U in I2 and L10.
-- **Tail-only wait (the 347 seqs).** I2: R0e 1487, R0c 1484, R1 1509, U 1481 ms. L10: 1623, 1619, 1727, 1536 ms.
-- **In words.** The interim receiver costs nothing at the tail (no stall in any cell), buys 5 to 45 ms of mean wait, breaks the promise (P1) by up to 60 seqs, and R0c keeps that benefit while admitting verdicts up to the allowance on floor passes alone. Neither interim receiver beats U. Nothing is adopted.
+- **Tail-only wait (the 347 seqs).** I2: R0e 1487, R0c 1484, R1 1509, U 1481 ms. L10: about 1624, 1620, 1727, 1536 ms (engine eps-hat rows).
+- **In words.** The interim receiver costs nothing at the tail (no stall in any cell), buys 5 to 45 ms of mean wait, breaks the promise (P1) by up to 60 seqs (about 5 events per run in I1, 27 in I2, 160 to 250 in L10), and R0c keeps that benefit while admitting verdicts up to the allowance on floor passes alone. Neither interim receiver beats U. Nothing is adopted.
 
 ## Readings, Part A (noise floors)
 
@@ -49,12 +49,12 @@ The frozen one-path noise-floor table is `tools/toy/nf_stage2.json`, committed b
 - **Order kept (rbf below eps^2).** Bulk keeps order for every omega >= 0.3 in all three cells (H_o of 0.7 s or more: every hole is filled first), and releases everything at omega = 0. Auto keeps order for omega >= 3 (rbf 0 to 4e-5); at omega = 1 it breaks it in I1 and G (rbf 0.010 and 0.012 against 6.3e-4) and is undetermined in I2 (0.010 against 0.010); at omega <= 0.3 it releases nearly everything. Realtime releases nearly every hole for omega <= 10 (H_o of 0.02 to 2.3 ms is shorter than one repair round) and keeps order only at omega = 100 in I2. **The band where Bulk and Auto both keep order is omega >= 3 in I1, I2 and G.** This is the threshold the measured omega is read against, a toy result.
 - **ratio_U** (d moves, early holes pay no H_o). Over all holes: 1.00 at Bulk; at Auto 1.00 to 1.14 for omega >= 1 but 1.9 to 4.4 at omega = 0.3; at Realtime 1.6 to 2.2 for omega <= 10 and 1.01 at omega = 100. The 2x bound is proven only on isolated holes with d frozen (P4j, passes); in decision runs the isolated-hole bound is exceeded in 5 to 9 of 12 seeds at Auto omega = 0.3 and at Realtime (the omega N_{R=inf} term and the moving d), so it stays "sketch, measured".
 - **d_all against d_rep** at one path: identical, as the plan says.
-- **AG1 (the age gate).** Witnesses met in I1, I2 and Q. Under D_RTprop n_dec is 0 at Realtime and Auto and rises with b (I1, summed over 12 seeds: 5 325 at b = 1.15, 14 146 at b = 1.3, 55 501 at Bulk). Under D_EWMA at Auto n_dec is 3 668 (I1), 316 210 (I2) and 7 434 (Q), and 6, 48 and 22 at Realtime (reported; the prediction of 0 does not hold). Seed-era verdicts (before the first RTT sample) are about 0 per run under D_EWMA at every point, so main's 50 ms seed bounds nothing here. Reading: at Realtime D is live but decides only timing (equivalent on every readout). From Auto down, **D is live and changes a readout by a shown amount**: under D_EWMA in I2 mean e is 1.6 to 2.7 ms higher and e p99 8 to 12 ms higher than under D_RTprop (shown), and repair sends move by 0.003 to 0.03 per delivered; in I1 and Q the effect is on repair sends only (shown, 0.001 to 0.005) with e equivalent. D = 0 changes spend and repair sends below Auto in I1 and Q, and lowers mean e by 1.9 ms at Bulk in I2.
+- **AG1 (the age gate).** Witnesses met in I1, I2 and Q. Under D_RTprop n_dec is 0 at Realtime and Auto and rises with b (I1, summed over 12 seeds: 5 325 at b = 1.15, 14 146 at b = 1.3, 55 501 at Bulk). Under D_EWMA at Auto n_dec is 3 668 (I1), 316 210 (I2) and 7 434 (Q), and 6, 48 and 22 at Realtime (reported; the prediction of 0 does not hold). Seed-era verdicts (before the first RTT sample) are about 0 per run under D_EWMA at every point. The n_dec at Realtime split by the first RTT sample: I1 6 of 6 in the seed era (D = 25 ms), I2 13 of 48, Q 6 of 22; so the 50 ms seed explains the whole miss in I1 and part in I2 and Q, and the rest (35 in I2, 16 in Q) are refusals after the first sample, where a first report is younger than half the EWMA (sampler wait and jitter in the sample). Reading: at Realtime D is live but decides only timing (equivalent on every readout). From Auto down, **D is live and changes a readout by a shown amount**: under D_EWMA in I2 mean e is 1.6 to 2.7 ms higher and e p99 8 to 12 ms higher than under D_RTprop (shown), and repair sends move by 0.003 to 0.03 per delivered; in I1 and Q the effect is on repair sends only (shown, 0.001 to 0.005) with e equivalent. D = 0 changes spend and repair sends below Auto in I1 and Q, and lowers mean e by 1.9 ms at Bulk in I2.
 - Several AG1 e p99 and e mean readings at Bulk and the KINK rbf anomaly are undetermined and were not rerun at 24 seeds.
 
 ## Open problems
 
-- A/A phase noise on the tail cell (deviation 2) and R0e's void fallback witness (deviation 4).
+- A/A phase noise on the tail cell (deviation 2, a chance result).
 - STEP does not fail on the continuous readouts at Auto omega = 1; KINK's rbf curvature leaves P undetermined.
 - c_H not built; no 24-seed reruns.
 
@@ -158,214 +158,9 @@ The frozen one-path noise-floor table is `tools/toy/nf_stage2.json`, committed b
 
 ### Part T tables
 
-### Part T: per-config means over 12 seeds (times in ms)
 
-| cell | receiver | v p50 | v p99 | v p99.9 | v mean | e mean | G_rx/S_src | passes (floor / R0e) | P1 violations (worst excess) | tail time | stalled | tail seqs with a verdict | filled after the window | R0e hold fell back | repair sends / delivered | G_floor/S_src | floors / delivered | last copies / delivered |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| I1 | R0e (today's early-skip) | 0.00 | 1488.1 | 1496.2 | 28.71 | 28.71 | 0.00995 | 183 (109 / 74) | 4.8 (4.9) | 1485.0 | 0/12 | 120.0 | 226.1 | 0.0 | 1.12477 | 0.00901 | 0.01071 | 0.01486 |
-| I1 | R0c (early skip, allowance counts floor passes only) | 0.00 | 1487.9 | 1495.7 | 28.47 | 28.47 | 0.01011 | 185 (121 / 64) | 6.2 (6.6) | 1485.0 | 0/12 | 121.0 | 224.2 | 0.0 | 1.11687 | 0.00996 | 0.01067 | 0.01495 |
-| I1 | R1 (floor only) | 0.00 | 1499.3 | 1508.5 | 30.93 | 30.93 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1498.1 | 0/12 | 120.0 | 226.0 | 0.0 | 1.12160 | 0.00996 | 0.01153 | 0.01486 |
-| I1 | U, omega = 1 | 0.00 | 1483.3 | 1494.1 | 28.03 | 28.03 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1498.1 | 0/12 | 120.0 | 226.0 | 0.0 | 1.12160 | 0.00996 | 0.01153 | 0.01486 |
-| I1 | R0e with an EWMA epsilon-hat (reported only) | 0.00 | 1488.1 | 1496.2 | 28.79 | 28.79 | 0.00996 | 182 (110 / 72) | 4.8 (5.0) | 1485.0 | 0/12 | 120.0 | 226.0 | 331.8 | 1.12437 | 0.00902 | 0.01075 | 0.01486 |
-| I1 | S0 reference | 0.06 | 1512.2 | 1521.2 | 45.81 | 45.81 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1499.1 | 0/12 | 0.0 | 346.0 | 0.0 | 1.68875 | 0.00000 | 0.00000 | 0.00000 |
-| I2 | R0e (today's early-skip) | 4.70 | 1493.3 | 1503.4 | 35.51 | 35.51 | 0.01030 | 459 (80 / 379) | 27.8 (23.4) | 1488.0 | 0/12 | 88.8 | 252.8 | 0.0 | 1.30671 | 0.00659 | 0.02999 | 0.03553 |
-| I2 | R0c (early skip, allowance counts floor passes only) | 4.69 | 1489.9 | 1500.2 | 31.42 | 31.42 | 0.01304 | 490 (111 / 379) | 27.2 (54.0) | 1488.0 | 0/12 | 121.0 | 219.4 | 0.0 | 1.14573 | 0.00913 | 0.03040 | 0.03893 |
-| I2 | R1 (floor only) | 9.38 | 1515.1 | 1523.6 | 40.60 | 40.60 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1512.1 | 0/12 | 89.7 | 256.3 | 0.0 | 1.29514 | 0.00996 | 0.03084 | 0.03630 |
-| I2 | U, omega = 1 | 0.00 | 1487.5 | 1503.1 | 32.14 | 32.14 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1512.1 | 0/12 | 89.7 | 256.3 | 0.0 | 1.29514 | 0.00996 | 0.03084 | 0.03630 |
-| I2 | R0e with an EWMA epsilon-hat (reported only) | 5.49 | 1493.6 | 1503.8 | 36.36 | 36.36 | 0.01032 | 430 (84 / 346) | 27.2 (23.7) | 1488.3 | 0/12 | 88.8 | 252.5 | 3151.2 | 1.30523 | 0.00692 | 0.03011 | 0.03560 |
-| I2 | S0 reference | 10.63 | 1526.5 | 1535.3 | 54.86 | 54.86 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1516.6 | 0/12 | 0.0 | 346.0 | 0.0 | 1.71776 | 0.00000 | 0.00000 | 0.00000 |
-| L10 | R0e (today's early-skip) | 95.59 | 1630.6 | 1641.4 | 121.99 | 121.99 | 0.00965 | 1298 (72 / 1226) | 318.2 (48.7) | 1666.8 | 0/12 | 83.6 | 265.9 | 0.0 | 0.55125 | 0.00591 | 0.03115 | 0.08250 |
-| L10 | R0c (early skip, allowance counts floor passes only) | 95.55 | 1626.1 | 1637.0 | 116.56 | 116.56 | 0.01299 | 1335 (111 / 1224) | 193.7 (60.4) | 1666.8 | 0/12 | 121.0 | 224.6 | 0.0 | 0.50304 | 0.00913 | 0.04465 | 0.11157 |
-| L10 | R1 (floor only) | 132.48 | 1751.4 | 1775.1 | 166.67 | 166.67 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1809.0 | 0/12 | 98.2 | 247.8 | 0.0 | 0.54254 | 0.00996 | 0.04381 | 0.10786 |
-| L10 | U, omega = 1 | 1.90 | 1533.0 | 1629.1 | 67.27 | 67.27 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1809.0 | 0/12 | 98.2 | 247.8 | 0.0 | 0.54254 | 0.00996 | 0.04381 | 0.10786 |
-| L10 | R0e with an EWMA epsilon-hat (reported only) | 95.79 | 1630.7 | 1641.5 | 122.24 | 122.24 | 0.00973 | 1252 (74 / 1178) | 315.8 (48.7) | 1667.1 | 0/12 | 83.8 | 264.9 | 1159.2 | 0.55010 | 0.00608 | 0.03054 | 0.08247 |
-| L10 | S0 reference | 234.53 | 1782.6 | 1805.6 | 285.80 | 285.80 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1834.0 | 0/12 | 0.0 | 346.0 | 0.0 | 0.58212 | 0.00000 | 0.00000 | 0.00000 |
+### Replication, phase scatter and the AG1 n_dec split
 
-Tail-only waits (the 347 tail seqs; ms): mean v / median v
-- I1 R0e: 1481.7 / 1488.8
-- I1 R0c: 1481.5 / 1488.6
-- I1 R1: 1492.6 / 1499.9
-- I1 U: 1477.7 / 1484.1
-- I1 R0x: 1481.8 / 1488.8
-- I2 R0e: 1486.6 / 1492.7
-- I2 R0c: 1484.0 / 1491.0
-- I2 R1: 1508.6 / 1514.7
-- I2 U: 1481.3 / 1486.7
-- I2 R0x: 1486.9 / 1493.0
-- L10 R0e: 1622.8 / 1629.2
-- L10 R0c: 1618.6 / 1626.9
-- L10 R1: 1726.8 / 1743.9
-- L10 U: 1536.2 / 1532.7
-- L10 R0x: 1622.9 / 1629.4
-
-### Part T readings: paired per-seed differences, 95 percent bootstrap CI against m = max(T, NF)
-
-| cell | contrast | metric | difference [CI] | m | reading |
-|---|---|---|---|---|---|
-| I1 | R0e - R0c | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0e - R0c | v_p99 | 0.2395 [0.1366, 0.383] | 81.2 | equivalent |
-| I1 | R0e - R0c | v_p999 | 0.485 [0.03978, 1.302] | 82 | equivalent |
-| I1 | R0e - R0c | v_mean | 0.2365 [0.1756, 0.3147] | 3.03 | equivalent |
-| I1 | R0e - R0c | e_mean | 0.2365 [0.1756, 0.3147] | 3.03 | equivalent |
-| I1 | R0e - R0c | G_ratio | -0.0001578 [-0.0002127, -0.0001166] | 0.00183 | equivalent |
-| I1 | R0e - R0c | max_ep_spend | -1.667 [-2, -1.333] | 9.35 | equivalent |
-| I1 | R0e - R0c | repair_per_delivered | 0.007902 [0.006319, 0.00949] | 0.0844 | equivalent |
-| I1 | R0e - R0c | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| I1 | R0e - R1 | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0e - R1 | v_p99 | -11.21 [-19.51, -4.818] | 81.2 | equivalent |
-| I1 | R0e - R1 | v_p999 | -12.29 [-21.48, -5.323] | 82 | equivalent |
-| I1 | R0e - R1 | v_mean | -2.218 [-2.381, -2.074] | 3.03 | equivalent |
-| I1 | R0e - R1 | e_mean | -2.218 [-2.381, -2.074] | 3.03 | equivalent |
-| I1 | R0e - R1 | G_ratio | -6.86e-06 [-5.488e-05, 4.116e-05] | 0.00183 | equivalent |
-| I1 | R0e - R1 | max_ep_spend | 4.917 [3.75, 6.167] | 9.35 | equivalent |
-| I1 | R0e - R1 | repair_per_delivered | 0.003173 [0.001195, 0.005162] | 0.0844 | equivalent |
-| I1 | R0e - R1 | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
-| I1 | R0c - R1 | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0c - R1 | v_p99 | -11.45 [-19.77, -5.033] | 81.2 | equivalent |
-| I1 | R0c - R1 | v_p999 | -12.78 [-21.94, -5.786] | 82 | equivalent |
-| I1 | R0c - R1 | v_mean | -2.455 [-2.665, -2.276] | 3.03 | equivalent |
-| I1 | R0c - R1 | e_mean | -2.455 [-2.665, -2.276] | 3.03 | equivalent |
-| I1 | R0c - R1 | G_ratio | 0.0001509 [8.232e-05, 0.0002333] | 0.00183 | equivalent |
-| I1 | R0c - R1 | max_ep_spend | 6.583 [5.5, 7.75] | 9.35 | equivalent |
-| I1 | R0c - R1 | repair_per_delivered | -0.004729 [-0.006696, -0.002759] | 0.0844 | equivalent |
-| I1 | R0c - R1 | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
-| I1 | R0e - U | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0e - U | v_p99 | 4.806 [4.088, 5.219] | 81.2 | equivalent |
-| I1 | R0e - U | v_p999 | 2.088 [1.183, 3.071] | 82 | equivalent |
-| I1 | R0e - U | v_mean | 0.678 [0.592, 0.7666] | 3.03 | equivalent |
-| I1 | R0e - U | e_mean | 0.678 [0.592, 0.7666] | 3.03 | equivalent |
-| I1 | R0e - U | G_ratio | -6.86e-06 [-5.488e-05, 4.116e-05] | 0.00183 | equivalent |
-| I1 | R0e - U | max_ep_spend | 14.83 [3.75, 35.75] | 9.35 | undetermined |
-| I1 | R0e - U | repair_per_delivered | 0.003173 [0.001195, 0.005162] | 0.0844 | equivalent |
-| I1 | R0e - U | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
-| I1 | R0c - U | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0c - U | v_p99 | 4.567 [3.86, 5.003] | 81.2 | equivalent |
-| I1 | R0c - U | v_p999 | 1.603 [0.7116, 2.628] | 82 | equivalent |
-| I1 | R0c - U | v_mean | 0.4415 [0.3084, 0.5622] | 3.03 | equivalent |
-| I1 | R0c - U | e_mean | 0.4415 [0.3084, 0.5622] | 3.03 | equivalent |
-| I1 | R0c - U | G_ratio | 0.0001509 [8.232e-05, 0.0002333] | 0.00183 | equivalent |
-| I1 | R0c - U | max_ep_spend | 16.5 [5.5, 37.5] | 9.35 | undetermined |
-| I1 | R0c - U | repair_per_delivered | -0.004729 [-0.006696, -0.002759] | 0.0844 | equivalent |
-| I1 | R0c - U | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
-| I1 | R1 - U | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R1 - U | v_p99 | 16.02 [9.378, 24.47] | 81.2 | equivalent |
-| I1 | R1 - U | v_p999 | 14.38 [7.353, 23.26] | 82 | equivalent |
-| I1 | R1 - U | v_mean | 2.896 [2.784, 3.004] | 3.03 | equivalent |
-| I1 | R1 - U | e_mean | 2.896 [2.784, 3.004] | 3.03 | equivalent |
-| I1 | R1 - U | G_ratio | 0 [0, 0] | 0.00183 | equivalent |
-| I1 | R1 - U | max_ep_spend | 9.917 [0, 29.75] | 9.35 | undetermined |
-| I1 | R1 - U | repair_per_delivered | 0 [0, 0] | 0.0844 | equivalent |
-| I1 | R1 - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| I2 | R0e - R0c | v_p50 | 0.009626 [0.008398, 0.01101] | 1 | equivalent |
-| I2 | R0e - R0c | v_p99 | 3.439 [3.223, 3.641] | 81.2 | equivalent |
-| I2 | R0e - R0c | v_p999 | 3.251 [2.583, 3.906] | 82 | equivalent |
-| I2 | R0e - R0c | v_mean | 4.091 [3.864, 4.329] | 3.03 | shown larger |
-| I2 | R0e - R0c | e_mean | 4.091 [3.864, 4.329] | 3.03 | shown larger |
-| I2 | R0e - R0c | G_ratio | -0.002737 [-0.002895, -0.002586] | 0.00183 | shown smaller |
-| I2 | R0e - R0c | max_ep_spend | -30.75 [-32.83, -28.92] | 9.35 | shown smaller |
-| I2 | R0e - R0c | repair_per_delivered | 0.161 [0.1527, 0.1698] | 0.0859 | shown larger |
-| I2 | R0e - R0c | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| I2 | R0e - R1 | v_p50 | -4.682 [-4.767, -4.593] | 1 | shown smaller |
-| I2 | R0e - R1 | v_p99 | -21.82 [-35.67, -12.97] | 81.2 | equivalent |
-| I2 | R0e - R1 | v_p999 | -20.2 [-34.6, -10.91] | 82 | equivalent |
-| I2 | R0e - R1 | v_mean | -5.087 [-6.006, -4.402] | 3.03 | shown smaller |
-| I2 | R0e - R1 | e_mean | -5.087 [-6.006, -4.402] | 3.03 | shown smaller |
-| I2 | R0e - R1 | G_ratio | 0.000343 [1.372e-05, 0.0007823] | 0.00183 | equivalent |
-| I2 | R0e - R1 | max_ep_spend | 22.75 [19.83, 25.5] | 9.35 | shown larger |
-| I2 | R0e - R1 | repair_per_delivered | 0.01158 [0.007159, 0.01611] | 0.0859 | equivalent |
-| I2 | R0e - R1 | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
-| I2 | R0c - R1 | v_p50 | -4.692 [-4.776, -4.603] | 1 | shown smaller |
-| I2 | R0c - R1 | v_p99 | -25.26 [-39.01, -16.56] | 81.2 | equivalent |
-| I2 | R0c - R1 | v_p999 | -23.45 [-38.06, -14.13] | 82 | equivalent |
-| I2 | R0c - R1 | v_mean | -9.179 [-9.987, -8.529] | 3.03 | shown smaller |
-| I2 | R0c - R1 | e_mean | -9.179 [-9.987, -8.529] | 3.03 | shown smaller |
-| I2 | R0c - R1 | G_ratio | 0.00308 [0.002765, 0.003451] | 0.00183 | shown larger |
-| I2 | R0c - R1 | max_ep_spend | 53.5 [50.83, 56.75] | 9.35 | shown larger |
-| I2 | R0c - R1 | repair_per_delivered | -0.1494 [-0.1572, -0.1421] | 0.0859 | shown smaller |
-| I2 | R0c - R1 | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
-| I2 | R0e - U | v_p50 | 4.702 [4.569, 4.835] | 1 | shown larger |
-| I2 | R0e - U | v_p99 | 5.783 [5.246, 6.291] | 81.2 | equivalent |
-| I2 | R0e - U | v_p999 | 0.3103 [-6.343, 4.935] | 82 | equivalent |
-| I2 | R0e - U | v_mean | 3.365 [2.661, 3.9] | 3.03 | undetermined |
-| I2 | R0e - U | e_mean | 3.365 [2.661, 3.9] | 3.03 | undetermined |
-| I2 | R0e - U | G_ratio | 0.000343 [1.372e-05, 0.0007823] | 0.00183 | equivalent |
-| I2 | R0e - U | max_ep_spend | 30.5 [20, 47.75] | 9.35 | shown larger |
-| I2 | R0e - U | repair_per_delivered | 0.01158 [0.007159, 0.01611] | 0.0859 | equivalent |
-| I2 | R0e - U | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
-| I2 | R0c - U | v_p50 | 4.693 [4.559, 4.825] | 1 | shown larger |
-| I2 | R0c - U | v_p99 | 2.344 [1.819, 2.868] | 81.2 | equivalent |
-| I2 | R0c - U | v_p999 | -2.941 [-9.746, 1.736] | 82 | equivalent |
-| I2 | R0c - U | v_mean | -0.7268 [-1.335, -0.2054] | 3.03 | equivalent |
-| I2 | R0c - U | e_mean | -0.7268 [-1.335, -0.2054] | 3.03 | equivalent |
-| I2 | R0c - U | G_ratio | 0.00308 [0.002765, 0.003451] | 0.00183 | shown larger |
-| I2 | R0c - U | max_ep_spend | 61.25 [51.08, 77.75] | 9.35 | shown larger |
-| I2 | R0c - U | repair_per_delivered | -0.1494 [-0.1572, -0.1421] | 0.0859 | shown smaller |
-| I2 | R0c - U | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
-| I2 | R1 - U | v_p50 | 9.384 [9.315, 9.445] | 1 | shown larger |
-| I2 | R1 - U | v_p99 | 27.61 [18.98, 41.26] | 81.2 | equivalent |
-| I2 | R1 - U | v_p999 | 20.51 [14.43, 29.32] | 82 | equivalent |
-| I2 | R1 - U | v_mean | 8.452 [8.237, 8.761] | 3.03 | shown larger |
-| I2 | R1 - U | e_mean | 8.452 [8.237, 8.761] | 3.03 | shown larger |
-| I2 | R1 - U | G_ratio | 0 [0, 0] | 0.00183 | equivalent |
-| I2 | R1 - U | max_ep_spend | 7.75 [0, 23.25] | 9.35 | undetermined |
-| I2 | R1 - U | repair_per_delivered | 0 [0, 0] | 0.0859 | equivalent |
-| I2 | R1 - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| L10 | R0e - R0c | v_p50 | 0.03216 [0.02563, 0.03882] | 1 | equivalent |
-| L10 | R0e - R0c | v_p99 | 4.477 [3.474, 5.554] | 81.2 | equivalent |
-| L10 | R0e - R0c | v_p999 | 4.418 [3.488, 5.417] | 82 | equivalent |
-| L10 | R0e - R0c | v_mean | 5.422 [4.444, 6.611] | 14.3 | equivalent |
-| L10 | R0e - R0c | e_mean | 5.422 [4.444, 6.611] | 14.3 | equivalent |
-| L10 | R0e - R0c | G_ratio | -0.003334 [-0.00376, -0.003032] | 0.00183 | shown smaller |
-| L10 | R0e - R0c | max_ep_spend | 0 [0, 0] | 9.35 | equivalent |
-| L10 | R0e - R0c | repair_per_delivered | 0.04821 [0.04111, 0.05649] | 0.0291 | shown larger |
-| L10 | R0e - R0c | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| L10 | R0e - R1 | v_p50 | -36.89 [-39.81, -33.78] | 1 | shown smaller |
-| L10 | R0e - R1 | v_p99 | -120.8 [-151.9, -89.1] | 81.2 | shown smaller |
-| L10 | R0e - R1 | v_p999 | -133.6 [-160.2, -108.1] | 82 | shown smaller |
-| L10 | R0e - R1 | v_mean | -44.69 [-45.95, -43.43] | 14.3 | shown smaller |
-| L10 | R0e - R1 | e_mean | -44.69 [-45.95, -43.43] | 14.3 | shown smaller |
-| L10 | R0e - R1 | G_ratio | -0.0003087 [-0.0004048, -0.0002127] | 0.00183 | equivalent |
-| L10 | R0e - R1 | max_ep_spend | 1093 [1077, 1109] | 9.35 | shown larger |
-| L10 | R0e - R1 | repair_per_delivered | 0.00871 [0.00509, 0.01213] | 0.0291 | equivalent |
-| L10 | R0e - R1 | tail_time | -142.1 [-167.2, -117.1] | 85.1 | shown smaller |
-| L10 | R0c - R1 | v_p50 | -36.92 [-39.84, -33.81] | 1 | shown smaller |
-| L10 | R0c - R1 | v_p99 | -125.3 [-156.7, -93.35] | 81.2 | shown smaller |
-| L10 | R0c - R1 | v_p999 | -138 [-164.7, -112.3] | 82 | shown smaller |
-| L10 | R0c - R1 | v_mean | -50.11 [-51.88, -48.28] | 14.3 | shown smaller |
-| L10 | R0c - R1 | e_mean | -50.11 [-51.88, -48.28] | 14.3 | shown smaller |
-| L10 | R0c - R1 | G_ratio | 0.003025 [0.002765, 0.003382] | 0.00183 | shown larger |
-| L10 | R0c - R1 | max_ep_spend | 1093 [1077, 1109] | 9.35 | shown larger |
-| L10 | R0c - R1 | repair_per_delivered | -0.0395 [-0.04505, -0.03498] | 0.0291 | shown smaller |
-| L10 | R0c - R1 | tail_time | -142.1 [-167.2, -117.1] | 85.1 | shown smaller |
-| L10 | R0e - U | v_p50 | 93.69 [93.61, 93.76] | 1 | shown larger |
-| L10 | R0e - U | v_p99 | 97.52 [96.84, 98.37] | 81.2 | shown larger |
-| L10 | R0e - U | v_p999 | 12.32 [9.961, 14.47] | 82 | equivalent |
-| L10 | R0e - U | v_mean | 54.72 [53.89, 55.86] | 14.3 | shown larger |
-| L10 | R0e - U | e_mean | 54.72 [53.89, 55.86] | 14.3 | shown larger |
-| L10 | R0e - U | G_ratio | -0.0003087 [-0.0004048, -0.0002127] | 0.00183 | equivalent |
-| L10 | R0e - U | max_ep_spend | 1093 [1077, 1109] | 9.35 | shown larger |
-| L10 | R0e - U | repair_per_delivered | 0.00871 [0.00509, 0.01213] | 0.0291 | equivalent |
-| L10 | R0e - U | tail_time | -142.1 [-167.2, -117.1] | 85.1 | shown smaller |
-| L10 | R0c - U | v_p50 | 93.65 [93.58, 93.73] | 1 | shown larger |
-| L10 | R0c - U | v_p99 | 93.05 [92.39, 93.63] | 81.2 | shown larger |
-| L10 | R0c - U | v_p999 | 7.905 [6.074, 9.547] | 82 | equivalent |
-| L10 | R0c - U | v_mean | 49.29 [48.63, 49.91] | 14.3 | shown larger |
-| L10 | R0c - U | e_mean | 49.29 [48.63, 49.91] | 14.3 | shown larger |
-| L10 | R0c - U | G_ratio | 0.003025 [0.002765, 0.003382] | 0.00183 | shown larger |
-| L10 | R0c - U | max_ep_spend | 1093 [1077, 1109] | 9.35 | shown larger |
-| L10 | R0c - U | repair_per_delivered | -0.0395 [-0.04505, -0.03498] | 0.0291 | shown smaller |
-| L10 | R0c - U | tail_time | -142.1 [-167.2, -117.1] | 85.1 | shown smaller |
-| L10 | R1 - U | v_p50 | 130.6 [127.4, 133.5] | 1 | shown larger |
-| L10 | R1 - U | v_p99 | 218.4 [186.4, 250] | 81.2 | shown larger |
-| L10 | R1 - U | v_p999 | 146 [120.2, 172.6] | 82 | shown larger |
-| L10 | R1 - U | v_mean | 99.4 [97.78, 101.1] | 14.3 | shown larger |
-| L10 | R1 - U | e_mean | 99.4 [97.78, 101.1] | 14.3 | shown larger |
-| L10 | R1 - U | G_ratio | 0 [0, 0] | 0.00183 | equivalent |
-| L10 | R1 - U | max_ep_spend | 0 [0, 0] | 9.35 | equivalent |
-| L10 | R1 - U | repair_per_delivered | 0 [0, 0] | 0.0291 | equivalent |
-| L10 | R1 - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
-
-NF for Part T comes from the A/A on the I2 cell (R0e and R1) and is applied to all three cells.
 
 ### Part B tables
 
