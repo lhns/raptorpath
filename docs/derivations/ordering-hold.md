@@ -145,7 +145,7 @@ Charging δ/d per packet-second to every packet held behind the hole gives `B_s 
 
 ### 4.1 Numbers
 
-**Example** (skip-rule §8): d = 11 ms. The fill arrives τ₁ = 11 ms after detect with probability 1 − ε (ε = 2.5 %), and each further round adds about 25 ms (the refresh floor, C12).
+**Example** (skip-rule §9): d = 11 ms. The fill arrives τ₁ = 11 ms after detect with probability 1 − ε (ε = 2.5 %), and each further round adds about 25 ms (the refresh floor, C12).
 
 rbf ≈ ε^k, where k is the number of rounds that complete before H_o. With fills at exact round times this column is a staircase. Real fills are jittered, and behaviour continuity is the toy's nudge check (§9), not shown here. Brackets give H_o at δ × 0.98 and δ × 1.02.
 
