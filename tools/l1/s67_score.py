@@ -17,7 +17,9 @@ VOID-RHO (R1), LIVE. A DNF is LIVE with dnf true (it keeps its worst rank; preco
 
 The UNSCOREABLE minimum (registration 4.2) counts LIVE rows only (a DNF is LIVE), and a crash (VOID-RC, NO_DATA after replacement) is not replaced and does not count, so a candidate arm's crashes can put a cell under the
 minimum. An UNSCOREABLE caused by candidate-arm crashes is a finding to investigate, not something a plain re-run clears. AS reads `UNSCOREABLE (CANDIDATE-CRASH S2 n=<k> in <cell>: a finding to investigate, not cleared
-by a plain re-run)` when S2's live rows plus its crash rows reach the minimum (A1: the same for S1); every UNSCOREABLE-minimum line prints the per-arm live and crash counts. R1 / A1-R have no live minimum: a crash row is
+by a plain re-run)` when S2's live rows plus its crash rows reach the minimum (A1: the same for S1; R2-HOLD: the same for P2T against MIN_TWIN); every UNSCOREABLE-minimum line prints the per-arm live and crash counts.
+The minimum is per cell and per arm, and each clause reads only the arms in its own test: AS S1 and S2, A1 S1 and B0 (its rank test, stratified within seed per cell, reads no S2 row), so an S2
+shortfall makes AS UNSCOREABLE and leaves A1 scored. R1 / A1-R have no live minimum: a crash row is
 a row (never INCOMPLETE) and reads as a not-completed row of its arm (A1-R / R1 FAIL), so the rule does not apply there.
 The drop state (LD_DROP_S2) is read from the ledger's `LD-PLAN67 ... drop_s2=<0|1>` header line (the battery writes it); the environment is only the fallback for a ledger without it, so a pulled ledger scores the same on the host."""
 import itertools
@@ -674,7 +676,8 @@ def score_a(paths, out, plan_id="67a", repl=None):
             out(f"    S2 s{r['seed']} r{r['rep']} below_floor={bb} fill_coded={ff} ratio={fm(ratio, 2)}{' HOLD' if flag else ''}")
     out("")
     verdict = {}
-    # UNSCOREABLE: fewer than MIN_LIVE_A live S1 or S2 rows per cell (MIN_LIVE_B0 live B0 rows for A1)
+    # UNSCOREABLE, per cell and per arm: AS reads S1 and S2 (MIN_LIVE_A each); A1 reads ONLY S1 and B0 (its test, rank_minp_exact / _mc over B0 and S1, stratified within seed per cell), so A1's minimum is S1's
+    # (MIN_LIVE_A) and B0's (MIN_LIVE_B0): an S2 shortfall never makes A1 UNSCOREABLE.
     # A candidate arm's crashes (VOID-RC / NO_DATA after replacement: not replaced, not live) can put a cell under the minimum. The rule, in one sentence:
     # An UNSCOREABLE caused by candidate-arm crashes is a finding to investigate, not something a plain re-run clears.
     # The candidate arm of AS is S2, of A1 S1; the cell's shortfall is crash-caused when live + crashes reaches the minimum.
@@ -687,7 +690,7 @@ def score_a(paths, out, plan_id="67a", repl=None):
     entries = [(c, a, count(c, a), plan67.MIN_LIVE_A) for c in (C2, C8) for a in ("S1", "S2") if count(c, a)[0] < plan67.MIN_LIVE_A]
     entries_b0 = [(c, "B0", count(c, "B0"), plan67.MIN_LIVE_B0) for c in (C2, C8) if count(c, "B0")[0] < plan67.MIN_LIVE_B0]
     short_as = entries
-    short_a1 = [e for e in entries if not (dropped and e[1] == "S2")] + entries_b0
+    short_a1 = [e for e in entries if e[1] == "S1"] + entries_b0      # S2 is not in A1's test
     if entries or entries_b0:
         out("MINIMUM-COUNTS (live rows, a LIVE DNF counts / crash rows VOID-RC + NO_DATA after replacement; minimum %d per S1 / S2 cell, %d per B0 cell): " % (plan67.MIN_LIVE_A, plan67.MIN_LIVE_B0)
             + "; ".join(f"{c} {a} live {count(c, a)[0]} crashes {count(c, a)[1]}" for c in (C2, C8) for a in (("S1", "S2", "B0") if not dropped else ("S1", "B0"))))
@@ -820,6 +823,8 @@ def score_r1(paths, out, plan_id="67r"):
     a1 = pre1 and "A1-R " + pre1 or f"A1-R {'PASS' if a1r_ok else 'FAIL'}"
     r1 = pre and "R1 " + pre or ("R1 FAIL" if not r1_ok else ("R1-BLIND" if blind else "R1 PASS"))
     a1, r1 = trunc_v(a1, "A1-R", tr), trunc_v(r1, "R1", tr)
+    if tr and r1.startswith("R1-BLIND"):      # a blind reading of a cut stage is not the registered design either
+        r1 = "R1 TRUNCATED (R1-BLIND on a battery cut at LD_HARD: the ledger holds the LD-BATTERY-TRUNCATED line; this is not the registered design)"
     out(a1)
     out(r1)
     out(f"VERDICT-67R {a1}; {r1}")
@@ -860,15 +865,19 @@ def score_r2(paths, out, plan_id="67p"):
     if "ACCT-LAST" in labels:
         out("  NOTE: ACCT-LAST rows (a killed process runs no Drop): the reading is the last periodic line, labelled; " + ("MIXED with final=1 rows: read the labelled sets apart" if "final" in labels else "no final=1 row"))
     n1, n2 = len(tw["P1T"]), len(tw["P2T"])
-    out(f"LIVE TWIN ROWS: P1T {n1}, P2T {n2} (minimum {plan67.MIN_TWIN} per seat)")
+    c1, c2_ = (len([r for r in rows0 if r["arm"] == a and r["status"] in CRASH]) for a in ("P1T", "P2T"))
+    out(f"LIVE TWIN ROWS: P1T {n1} (crashes {c1}), P2T {n2} (crashes {c2_}) (minimum {plan67.MIN_TWIN} per seat; crash rows VOID-RC + NO_DATA after replacement)")
     hold = None
     miss = [nm for nm, get in (("U (O_serv, O_strand)", lambda r: r["w67"].get("acct_U")), ("oldest_unchanged_max", lambda r: (r["w67"].get("acct") or {}).get("oldest_unchanged_max"))) if any(get(r) is None for r in tw["P1T"] + tw["P2T"])]
     if aborted:
         verdict = f"R2-HOLD UNSCOREABLE (abort {','.join(aborted)}); guard 2 NOT ELIGIBLE"
     elif blind:
         verdict = f"R2-HOLD UNSCOREABLE (R2 VOID: the mechanism did not run; guard 2 waits for an R2 re-run; blind seat {','.join(blind)}); guard 2 NOT ELIGIBLE"
+    elif n2 < plan67.MIN_TWIN and n2 + c2_ >= plan67.MIN_TWIN and not info["too_many"]:      # the candidate twin's crashes account for the shortfall (the same rule as AS / A1)
+        verdict = (f"R2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n={c2_}: a finding to investigate, not cleared by a plain re-run" + (f"; also under the minimum: P1T {n1}<{plan67.MIN_TWIN} (crashes {c1})" if n1 < plan67.MIN_TWIN else "")
+                   + "); guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')")
     elif n1 < plan67.MIN_TWIN or n2 < plan67.MIN_TWIN or info["too_many"]:
-        verdict = "R2-HOLD UNSCOREABLE; guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')"
+        verdict = f"R2-HOLD UNSCOREABLE (live twin rows P1T {n1} (crashes {c1}), P2T {n2} (crashes {c2_}), minimum {plan67.MIN_TWIN}{'; more replaced slots than the cap' if info['too_many'] else ''}); guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')"
     elif miss:
         verdict = f"R2-HOLD UNSCOREABLE (a counted twin row lacks {', '.join(miss)}); guard 2 NOT ELIGIBLE (UNSCOREABLE is never read as 'did not fire')"
     else:
@@ -1251,12 +1260,13 @@ def g_s2_taper(row):
 
 
 def g_status(row):
-    """The S06-FAIL precedence on a finished stage G row (the F2-FAIL analogue): an S2 row (g2 CAND) with taper > 0 or plost > 0 whose mechanism preconditions hold as in stage A (pslot > 0 and the [SPAN] median rr > 0)
-    keeps its 41d label in status_41d and reads S06-FAIL, never replaced. A row where the mechanism never ran (pslot 0 or rr median 0: G2 is Bulk, rr = 0 by design) keeps its own label; score67g reports it
-    as G2-TAPER-NONZERO whatever its label, so registration 4.1's `taper = 0 on every S2 row` witness is never silently lost."""
+    """The S06-FAIL precedence on a finished stage G row (the F2-FAIL analogue; the 4e673410 rule, restored): an S2 row (g2 CAND, the right binary, `pslot=` printed: the seat witness) with taper > 0 or plost > 0
+    keeps its 41d label in status_41d and reads S06-FAIL, never replaced, whatever that label (infra, crash, WITNESS-FAIL). G2 is Bulk (rr = 0 by design), so stage A's mechanism precondition (pslot > 0, rr > 0) is not
+    applied here: it would make S06-FAIL unreachable. A taper > 0 row that is not S06-FAIL (no `pslot=`: a seat-witness failure) is still G2-TAPER-NONZERO in score67g, read on every row run, replacements
+    included, so a clean replacement never clears it."""
     w = row.get("w67g") or {}
     why = g_s2_taper(row)
-    if why and w.get("pslot") is not None and (w.get("pslot") or 0) > 0 and (w.get("rr_med") or 0) > 0:      # any other label (infra, crash, WITNESS-FAIL) is below the finding
+    if why and w.get("pslot") is not None:
         row["status_41d"], row["status"], row["s06_why"] = row["status"], "S06-FAIL", why
 
 
@@ -1309,10 +1319,10 @@ def score67g(paths, out=print, which="g1"):
         if w.get("fail") and r["status"] != "LIVE" or (w.get("fail") and not r.get("dnf") and r["status"] == "WITNESS-FAIL"):
             nw += 1
             out(f"  WITNESS-FAIL {r['cell']} {r['arm']} s{r['seed']} rep{r['rep']} not replaced ({r['status']}): {'; '.join(w['fail'])}")
-    nz = [r for r in rows if g_s2_taper(r)]      # the rows score41d scores (replacements applied), whatever their label and whether or not the mechanism ran
+    nz = [r for r in rows_all if g_s2_taper(r)]      # EVERY row run (the voided originals and their replacements alike): a replacement never clears a taper > 0 reading (registration 4.1: taper = 0 on every S2 row)
     for r in nz:
         out(f"  G2-TAPER-NONZERO {r['cell']} CAND s{r['seed']} rep{r['rep']} ({r['status']}): {'; '.join(g_s2_taper(r))} pslot={(r.get('w67g') or {}).get('pslot')} rr_med={(r.get('w67g') or {}).get('rr_med')} "
-            f"(registration 4.1: taper = 0 on every S2 row){'' if r['status'] == 'S06-FAIL' else ' - the mechanism preconditions did not hold: a witness failure, not S06-FAIL'}")
+            f"(registration 4.1: taper = 0 on every S2 row){'' if r['status'] == 'S06-FAIL' else ' - not S06-FAIL (no pslot= seat witness): it fails the gate whatever its replacement shows'}")
     for r in rows_all:
         w = r.get("w67g") or {}
         if (w.get("rr_max") or 0) > 0:
@@ -1329,7 +1339,7 @@ def score67g(paths, out=print, which="g1"):
         why.append(f"{nw} unreplaced witness failure(s)")
     nzw = [r for r in nz if r["status"] != "S06-FAIL"]
     if nzw:
-        why.append(f"{len(nzw)} G2-TAPER-NONZERO row(s) without the mechanism preconditions (a witness failure)")
+        why.append(f"{len(nzw)} G2-TAPER-NONZERO row(s) that are not S06-FAIL (taper > 0 on an S2 row is never cleared by a replacement)")
     name = "GATE-67G" + which[1:]
     if not why and tr:
         out(f"{name} TRUNCATED (the battery was cut at LD_HARD: the ledger holds the LD-BATTERY-TRUNCATED line; this is not the registered design)")

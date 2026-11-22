@@ -216,7 +216,7 @@ def test_a1_exact_matches_mc():
 def test_unscoreable_red_green():
     drop = lambda c, a, s, r: a == "S2" and c == "c8-100" and r > 2          # S2 at c8 keeps 6 of 12 rows: below plan67.MIN_LIVE_A
     t = scored("67a", ledger_rows("67a", drop=drop))
-    check("a_under_min_red: fewer than MIN_LIVE_A live S2 rows in a cell -> AS and A1 UNSCOREABLE (never a PASS)", "AS UNSCOREABLE" in t and "A1 UNSCOREABLE" in t, t[-700:])
+    check("a_under_min_red: fewer than MIN_LIVE_A live S2 rows in a cell -> AS UNSCOREABLE (never a PASS); A1 (S1 against B0) is still scored", "AS UNSCOREABLE" in t and ("\nA1 PASS" in t or "\nA1 FAIL" in t), t[-700:])
     drop0 = lambda c, a, s, r: a == "B0" and c == "c2-100" and r > 1
     t = scored("67a", ledger_rows("67a", drop=drop0))
     check("a_under_min_red: fewer than MIN_LIVE_B0 live B0 rows -> A1 UNSCOREABLE, AS still scored", "A1 UNSCOREABLE" in t and ("AS PASS" in t or "AS FAIL" in t))
@@ -500,9 +500,9 @@ def test_g2_red_green():
     r = g_make("g2", "c2-100", "CAND", "42", 1, "s2-no-pslot")
     check("g2_pslot_red: an S2 (CAND) row without pslot= is WITNESS-FAIL", r["status"] == "WITNESS-FAIL" and any("g2-no-pslot" in x for x in r["problems"]), (r["status"], r["problems"]))
     r = g_make("g2", "c2-100", "CAND", "42", 1, "s2-taper-nonzero")
-    check("g2_taper_red: an S2 row with taper > 0 whose mechanism preconditions hold (pslot > 0, rr > 0) is S06-FAIL, keeps its 41d label (WITNESS-FAIL: rr > 0 on a Bulk row), is not replaceable",
-          r["status"] == "S06-FAIL" and r["status_41d"] == "WITNESS-FAIL" and "S06-FAIL" not in pp.REPLACEABLE and r["w67g"]["pslot"] > 0 and r["w67g"]["rr_med"] > 0, (r["status"], r["problems"]))
-    check("g2_taper_red: view41d scores it under its 41d label (a replaceable one reads as a crash, never replaced)", S.view41d_g(r)["status"] == "VOID-RC")
+    check("g2_taper_red: an S2 row with taper > 0 (pslot= printed; Bulk, rr = 0) is S06-FAIL, keeps its 41d label, is not replaceable",
+          r["status"] == "S06-FAIL" and r["status_41d"] == "LIVE" and "S06-FAIL" not in pp.REPLACEABLE and r["w67g"]["pslot"] is not None and (r["w67g"]["rr_med"] or 0) == 0, (r["status"], r.get("status_41d"), r["problems"]))
+    check("g2_taper_red: view41d scores it under its 41d label (LIVE here; a replaceable one reads as a crash, never replaced)", S.view41d_g(r)["status"] == "LIVE")
     r = g_make("g2", "c2-100", "CAND", "42", 1, "bulk-rr")
     check("g_route_red: rr > 0 on a Bulk row is a witness failure (W-ROUTE), reported with the row", r["status"] == "WITNESS-FAIL" and any("w-route" in x for x in r["problems"]), (r["status"], r["problems"]))
     c, b = g_make("g2", "c2-100", "CAND", "42", 1), g_make("g2", "c2-100", "BASE", "42", 1)
@@ -896,14 +896,34 @@ def _crash_rows(arm, cell, n):
     return out
 
 
+def test_r2_candidate_crash():
+    """Round 2, item 2: the candidate-crash rule on R2's twin minimum: P2T crash rows (VOID-RC: never replaced) that account for the shortfall read CANDIDATE-CRASH P2T; P1T (the reference) crashes read a plain UNSCOREABLE."""
+    def crash_twins(arm, n):
+        out, k = [], 0
+        for r in _twin_rows():
+            if r["arm"] == arm and k < n:
+                out.append(build("67p", r["cell"], arm, r["seed"], r["rep"], rc=1))
+                k += 1
+            else:
+                out.append(r)
+        return out
+    rows = crash_twins("P2T", 2)
+    check("r2_crash_red: the crashed twin rows are VOID-RC (not replaceable)", sum(1 for r in rows if r["arm"] == "P2T" and r["status"] == "VOID-RC") == 2 and "VOID-RC" not in plan67.REPLACEABLE, [r["status"] for r in rows if r["arm"] == "P2T"])
+    t = scored("67p", rows)
+    check("r2_crash_red: P2T live + crashes reach the minimum -> R2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n=2: a finding to investigate, not cleared by a plain re-run); crash counts printed",
+          "\nR2-HOLD UNSCOREABLE (CANDIDATE-CRASH P2T n=2: a finding to investigate, not cleared by a plain re-run)" in t and "P2T 4 (crashes 2)" in t and "CLEAR" not in t.split("LIVE TWIN ROWS")[1], t[-900:])
+    t = scored("67p", crash_twins("P1T", 2))
+    check("r2_crash_green: P1T (reference) crashes -> a plain UNSCOREABLE with the counts, no CANDIDATE-CRASH", "\nR2-HOLD UNSCOREABLE (live twin rows P1T 4 (crashes 2)" in t and "CANDIDATE-CRASH" not in t, t[-900:])
+
+
 def test_candidate_crash():
     """Item 1: a candidate arm's crashes that account for the shortfall read CANDIDATE-CRASH; the per-arm counts are printed."""
     t = scored("67a", _crash_rows("S2", "c2-100", 3))
     check("candidate_crash_red: 3 S2 crashes in c2-100 (9 live + 3 crashes >= the minimum) -> AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 in c2-100: a finding to investigate, not cleared by a plain re-run)",
           "\nAS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 in c2-100: a finding to investigate, not cleared by a plain re-run)" in t, t[-900:])
     check("candidate_crash_red: the per-arm live / crash counts are printed (MINIMUM-COUNTS)", "MINIMUM-COUNTS" in t and "c2-100 S2 live 9 crashes 3" in t and "c2-100 S1 live 12 crashes 0" in t, t[-1400:])
-    check("candidate_crash_green: A1 keeps its pre-existing S2 minimum (test a_under_min_red): UNSCOREABLE with S2's plain line (S1 is not short: no CANDIDATE-CRASH S1)",
-          "\nA1 UNSCOREABLE (fewer live rows than the minimum: c2-100 S2 9<10 (crashes 3))" in t and "CANDIDATE-CRASH S1" not in t, t[-900:])
+    check("candidate_crash_green: S2 crashes do not touch A1 (its test reads S1 and B0 only): A1 is scored, no CANDIDATE-CRASH S1",
+          ("\nA1 PASS" in t or "\nA1 FAIL" in t) and "CANDIDATE-CRASH S1" not in t, t[-900:])
     t = scored("67a", _crash_rows("S1", "c2-100", 3))
     check("candidate_crash_red: 3 S1 crashes -> A1 UNSCOREABLE (CANDIDATE-CRASH S1 n=3 in c2-100: ...) (S1 is A1's candidate)", "\nA1 UNSCOREABLE (CANDIDATE-CRASH S1 n=3 in c2-100: a finding to investigate, not cleared by a plain re-run)" in t, t[-900:])
     check("candidate_crash_green: AS reads S1 as its reference: a plain UNSCOREABLE with the crash count beside the live count", "\nAS UNSCOREABLE (fewer live rows than the minimum: c2-100 S1 9<10 (crashes 3))" in t, t[-900:])
@@ -934,6 +954,9 @@ def test_truncation_every_verdict():
         clean = scored(plan, rows)
         check(f"trunc_{name}: the passing fixture reads a PASS / CLEAR verdict untruncated (the control)", plan in ("67o", "67d") or bool(_passing_lines(clean)), clean[-400:])
         check(f"trunc_{name}: LD-BATTERY-TRUNCATED -> no line carries a PASS / CLEAR / ELIGIBLE verdict and a TRUNCATED line exists", not _passing_lines(t) and "TRUNCATED" in t, _passing_lines(t) or t[-400:])
+    rows = ledger_rows("67r", lambda c, a, s, r: "r1-blind" if a == "S1" else None)
+    t, clean = scored("67r", rows, extra=(TRUNC,)), scored("67r", rows)
+    check("trunc_R1-BLIND: a blind R1 (the control reads R1-BLIND) cut at LD_HARD reads R1 TRUNCATED, never R1-BLIND", "\nR1-BLIND" in clean and "\nR1 TRUNCATED" in t and "\nR1-BLIND" not in t, t[-400:])
     p = _tun()
     open(p, "a").write(TRUNC + "\n")
     lines = []
@@ -987,24 +1010,34 @@ def test_ledger_drop_state():
     check("ledger_drop_green: the ledger's line wins over the environment (drop_s2=0 against env 1: the 30 slots are expected)", "INCOMPLETE" not in t_env and "\nR1 PASS" in t_env, t_env[-400:])
     ta = scored("67a", ledger_rows("67a", drop=lambda c, a, s, r: a == "S2"), extra=("LD-PLAN67 plan=67a drop_s2=1 dump=0",))
     tn = scored("67a", ledger_rows("67a", drop=lambda c, a, s, r: a == "S2"))
-    check("ledger_drop_green: stage A reads the ledger's drop state too: A1 scores S1 against B0 with S2 dropped (without the line or the env the missing S2 rows make A1 UNSCOREABLE)",
-          ("\nA1 PASS" in ta or "\nA1 FAIL" in ta) and "\nA1 UNSCOREABLE" in tn, (ta[-300:], tn[-300:]))
+    check("ledger_drop_green: stage A reads the ledger's drop state (its minimum counts leave S2 out); A1 scores S1 against B0 either way (S2 is not in A1's test)",
+          ("\nA1 PASS" in ta or "\nA1 FAIL" in ta) and ("\nA1 PASS" in tn or "\nA1 FAIL" in tn) and "S2 live" not in ta and "c2-100 S2 live 0" in tn, (ta[-400:], tn[-400:]))
 
 
 def test_g2_taper_preconditions():
-    """Item 7: S06-FAIL only where the mechanism ran (pslot > 0 and rr median > 0); a Bulk row (rr = 0) with taper > 0 keeps its label and is reported as G2-TAPER-NONZERO, failing the gate as a witness failure."""
+    """Round 2, item 1: G2 is Bulk (rr = 0 by design), so S06-FAIL in G needs only the S2 seat witness (pslot= printed), not stage A's mechanism precondition; and a taper > 0 reading on an S2 row
+    is never cleared by a replacement: G2-TAPER-NONZERO is read over every row run, and GATE-67G2 fails whatever the replacement shows."""
     r = g_make("g2", "c2-100", "CAND", "42", 1, "s2-taper-nonzero")
-    check("g2_s06_red: taper > 0 with pslot > 0 and rr > 0 -> S06-FAIL", r["status"] == "S06-FAIL" and r["w67g"]["pslot"] > 0 and r["w67g"]["rr_med"] > 0 and r["w67g"]["taper"] > 0, (r["status"], r["w67g"].get("pslot"), r["w67g"].get("rr_med")))
-    r = g_make("g2", "c2-100", "CAND", "42", 1, "g2-taper-no-mechanism")
-    check("g2_s06_green: taper > 0 with rr = 0 (the mechanism never ran, Bulk) keeps its own label: LIVE here, never S06-FAIL", r["status"] == "LIVE" and r["w67g"]["taper"] > 0 and (r["w67g"]["rr_med"] or 0) == 0 and r["w67g"]["pslot"] > 0, (r["status"], r["problems"]))
-    rows = _g_ledger("g2", lambda c, a, s, r_: "g2-taper-no-mechanism" if (a == "CAND" and c == "c2-100" and s == "42" and r_ == 1) else None)
-    t = _g_score("g2", rows, "g2nm.log")
-    check("g2_taper_nonzero_red: the row is reported (G2-TAPER-NONZERO ... taper=) and GATE-67G2 FAILs as a witness failure, not as an S06-FAIL row",
-          "G2-TAPER-NONZERO c2-100 CAND s42 rep1" in t and "GATE-67G2 FAIL" in t and "G2-TAPER-NONZERO row(s)" in t and "S06-FAIL row" not in t, t[-900:])
+    check("g2_s06_red: taper > 0 on a Bulk S2 row (pslot printed, rr = 0) -> S06-FAIL (reachable in G2)", r["status"] == "S06-FAIL" and (r["w67g"]["rr_med"] or 0) == 0 and r["w67g"]["taper"] > 0, (r["status"], r["w67g"].get("rr_med")))
+    r = g_make("g2", "c2-100", "CAND", "42", 1, "g2-taper-no-pslot")
+    check("g2_s06_green: taper > 0 without the pslot= seat witness -> WITNESS-FAIL (replaceable), not S06-FAIL", r["status"] == "WITNESS-FAIL" and r["w67g"]["taper"] > 0 and r["w67g"]["pslot"] is None, (r["status"], r["problems"]))
+    rows = _g_ledger("g2", lambda c, a, s, r_: "g2-taper-no-pslot" if (a == "CAND" and c == "c2-100" and s == "42" and r_ == 1) else None)
+    p = os.path.join(TMP, "g2tr.log")
+    with open(p, "w") as f:
+        for x in rows:
+            f.write("P38ROW " + json.dumps(x, sort_keys=True) + "\n")
+        f.write("LD-BATTERY-DONE\n")
+    q = os.path.join(TMP, "g2tr-repl.log")
+    with open(q, "w") as f:
+        f.write("P38ROW " + json.dumps(g_make("g2", "c2-100", "CAND", "42", 1), sort_keys=True) + "\n")      # the replacement is clean
+        f.write("LD-BATTERY-DONE\n")
+    lines = []
+    S.score67g([p, q], lines.append, "g2")
+    t_ = "\n".join(lines)
+    check("g2_taper_replaced_red: a first row with taper > 0 whose replacement is clean still fails GATE-67G2 (G2-TAPER-NONZERO read over every row run)",
+          "G2-TAPER-NONZERO c2-100 CAND s42 rep1" in t_ and re.search(r"^GATE-67G2 FAIL .*G2-TAPER-NONZERO", t_, re.M) is not None, t_[-900:])
     t = _g_score("g2", _g_ledger("g2"), "g2nz-clean.log")
     check("g2_taper_nonzero_green: clean G2 rows print no G2-TAPER-NONZERO line", "G2-TAPER-NONZERO" not in t and "GATE-67G2 PASS" in t, t[-500:])
-    wr = g_make("g2", "c2-100", "CAND", "42", 1, "s2-no-pslot")
-    check("g2_s06_green: without pslot the preconditions fail: still WITNESS-FAIL (replaceable)", wr["status"] == "WITNESS-FAIL")
 
 
 def test_r1_readout_values():
@@ -1050,7 +1083,7 @@ def test_t_bringup_attribution():
 TESTS = [test_s06_taper_red, test_s06_taper_green, test_s2_pslot_red, test_s2_pslot_green, test_s1_gauge_red, test_s1_gauge_green, test_b0_gauge_red, test_seat_sha_red_green, test_short_red_green,
          test_dnf_row, test_rows_never_raise, test_as_red_green, test_a1_red_green, test_a1_exact_matches_mc, test_unscoreable_red_green, test_replacement_cap, test_s06_stage_red_green,
          test_s06_dnf_red_green, test_belowfloor_red_green, test_succ_red_green, test_rate_table, test_owner_flag, test_block1, test_a1r_red_green, test_r1_red_green, test_r1_blind,
-         test_rho_red_green, test_r2_hold_red_green, test_r2_final_label, test_r2_under_min_red_green, test_r2_pace_witness, test_mw_exact, test_pool_red_green, test_dump_twins, test_smoke_red_green,
+         test_rho_red_green, test_r2_hold_red_green, test_r2_final_label, test_r2_under_min_red_green, test_r2_candidate_crash, test_r2_pace_witness, test_mw_exact, test_pool_red_green, test_dump_twins, test_smoke_red_green,
          test_t_green_red, test_smoke_t, test_g1_red_green, test_g2_red_green, test_g_gate, test_smoke_g, test_fixtures_deterministic,
          test_s06_precedence, test_slotfill_live_only, test_replaceable_set, test_r1_b0_gauge, test_r1_readouts, test_r1_complete, test_truncated, test_r2_blind, test_r2_missing_field,
          test_rho_witness_line, test_t_precedence, test_t_parser_agrees_with_verify4, test_g_block1,

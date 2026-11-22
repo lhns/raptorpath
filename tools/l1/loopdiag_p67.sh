@@ -161,7 +161,9 @@ fi
 era "LD-ALL tools tests ok"
 
 # ── 7. one stage ──
-# returns 0 = the stage ran to the end (its verdicts are in score.txt), 1 = it did not complete, 2 = the rehearsal's smoke passed, 6 = the block-1 rule stopped it (FAILED-<stage>; the next stage still runs)
+# returns 0 = the stage ran to the end (its verdicts are in score.txt), 1 = it did not complete, 2 = the rehearsal's smoke passed, 6 = the block-1 rule stopped it (FAILED-<stage>; the next stage still runs),
+# 7 = cut at LD_HARD (TRUNCATED: the battery or its replacement run was killed by the timeout; scored, every PASS reads TRUNCATED), 8 = not started: too little time left before LD_HARD (ABORT-BUDGET).
+# 7 and 8 are not failures (measurement-discipline: the truncation sentinel is not a failure): the session ends TRUNCATED-ALL unless another stage failed.
 stage67() { # name
   local name="$1" bplan dir smk scr chk bto brc ok=0 cand="" base="" w="" seats="" s v sbrc smrc nrows T1
   bplan="$(python3 -c "import plan67; print(plan67.STAGE_PLAN.get('$name', ''))")"
@@ -193,7 +195,7 @@ stage67() { # name
     *) smk=(smoke "$bplan"); scr=(score "$bplan") ;;
   esac
   local runner=loopdiag_battery.sh
-  [ "$name" != "t" ] || { runner=tun67_battery.sh; SENV=(LD_OUTDIR="$dir" LD_BIN_B0="${P67BIN[B0]}" LD_SHA_B0="${P67SHA[B0]}" LD_BIN_S1="${P67BIN[S1]}" LD_SHA_S1="${P67SHA[S1]}" LD_HARD="${LD_HARD:-}"); }
+  [ "$name" != "t" ] || { runner=tun67_battery.sh; SENV=(LD_OUTDIR="$dir" LD_BIN_B0="${P67BIN[B0]}" LD_SHA_B0="${P67SHA[B0]}" LD_BIN_S1="${P67BIN[S1]}" LD_SHA_S1="${P67SHA[S1]}" LD_HARD="${LD_HARD:-}" LD_DROP_S2="$LD_DROP_S2"); }
   if [ "$REHEARSE" = 1 ]; then
     era "LD-ALL stage $name smoke; $(prec_samples | cut -d" " -f2-) io=$(grep '^full' "$PROCFS"/pressure/io)"
     # the smoke is bounded: min(1800 s, the time left to LD_HARD); a timeout is ABORT-SMOKE with the reason (a hung smoke must not eat the session's budget)
@@ -215,7 +217,7 @@ stage67() { # name
     return 2
   fi
   bto=$(( LD_HARD - $(date +%s) ))
-  if [ "$bto" -lt 1800 ]; then era "ABORT-BUDGET stage $name: ${bto}s left before LD_HARD (need 1800)"; return 1; fi
+  if [ "$bto" -lt 1800 ]; then era "ABORT-BUDGET stage $name: ${bto}s left before LD_HARD (need 1800): not started"; touch "$dir/NOT-STARTED"; return 8; fi
   T1=$(date +%s)
   timeout "$bto" sudo -n env "${SENV[@]}" LD_TAG=ld bash ./$runner
   brc=$?
@@ -253,6 +255,7 @@ stage67() { # name
   fi
   era "LD-ALL stage $name end ok=$ok $(grep -aE '^(VERDICT|GATE-67|R2-HOLD|A1|AS |R1|T )' "$dir/score.txt" | head -3 | tr '\n' ';' | cut -c1-200)"
   [ -z "${w:-}" ] || era "LD-ALL stage $name resolution NOT computed on the VM; on the host: python3 tools/l1/place38_parse.py resolution41d <pulled run dir>/$name/ld.log"
+  [ -e "$dir/TRUNCATED" ] && return 7      # cut at LD_HARD: scored (TRUNCATED verdicts), not a failure
   [ "$ok" = "1" ] && touch "$dir/DONE" && return 0
   return 1
 }
@@ -274,10 +277,10 @@ if [ "$REHEARSE" = 1 ]; then
   cat "$RUN/AMENDMENT2.txt"
   persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0
 fi
-P67BAD=()
+P67BAD=(); P67CUT=()
 for _st in "${P67STAGES[@]}"; do
   stage67 "$_st"; _rc=$?
-  [ "$_rc" = "0" ] || P67BAD+=("$_st(rc=$_rc)")
+  case "$_rc" in 0) ;; 7|8) P67CUT+=("$_st(rc=$_rc)") ;; *) P67BAD+=("$_st(rc=$_rc)") ;; esac
 done
 {
   echo "VM BATCH 1 (status 67, plan $PLAN): suites/TESTS.txt, one score.txt per stage"
@@ -286,6 +289,8 @@ done
     echo "== $_st"; grep -aE '^(VERDICT|GATE-67|A1|AS |R1|R2-HOLD|T |FAILED|S06-FAIL|NO VERDICT|UNSCOREABLE)' "$_d/score.txt" 2>/dev/null; ls "$_d" 2>/dev/null | grep -a '^FAILED-' | sed 's/^/MARKER /'
   done
 } > "$RUN/score.txt"
-era "LD-ALL end plan $PLAN stages=${P67STAGES[*]} not-ok=${P67BAD[*]:-none} raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
-if [ "${#P67BAD[@]}" = 0 ]; then touch "$RUN/DONE-ALL"; persist; echo "LD-ALL-DONE"; exit 0; fi
-fail_all "plan $PLAN: stages not run to the end: ${P67BAD[*]}"
+era "LD-ALL end plan $PLAN stages=${P67STAGES[*]} not-ok=${P67BAD[*]:-none} cut-at-LD_HARD=${P67CUT[*]:-none} raptorpath=$(pgrep -xc raptorpath) netns=$(sudo -n ip netns list 2>/dev/null | grep -c '^rp-')"
+if [ "${#P67BAD[@]}" = 0 ] && [ "${#P67CUT[@]}" = 0 ]; then touch "$RUN/DONE-ALL"; persist; echo "LD-ALL-DONE"; exit 0; fi
+# A session cut at LD_HARD with no stage failing is TRUNCATED-ALL: a distinct outcome, never a pass (its verdicts read TRUNCATED) and not a failure (exit 7). Any other not-ok stage is FAILED-ALL.
+if [ "${#P67BAD[@]}" = 0 ]; then era "LD-ALL TRUNCATED: plan $PLAN cut at LD_HARD: ${P67CUT[*]} (verdicts read TRUNCATED; not a pass, not a failure)"; touch "$RUN/TRUNCATED-ALL"; persist; echo "LD-ALL-TRUNCATED"; exit 7; fi
+fail_all "plan $PLAN: stages not run to the end: ${P67BAD[*]}${P67CUT[*]:+; cut at LD_HARD: ${P67CUT[*]}}"

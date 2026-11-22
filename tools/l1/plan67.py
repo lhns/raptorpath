@@ -69,7 +69,9 @@ PACE_MBIT = "35"
 SMOKE_ARMS_A = ("S1", "S2", "B0")
 # the registered design: the constants above as the registration states them. test_stubrun's fast mode shrinks them (source edits) and so does any hand edit: `plan67.py seams` reports a constant that differs.
 REGISTERED = {"N_BLOCKS": 6, "N_TWIN_REPS": 3, "N_POOL_REPS": 3, "MIN_LIVE_A": 10, "MIN_LIVE_B0": 4, "MIN_TWIN": 5, "G_ROWS67": 96}
-SEAM_ENV = ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S", "R67_N", "R67_BUDGET_S", "R67_SIM")      # R67_N / R67_BUDGET_S / R67_SIM shrink session 0's repeat and binid: seams too
+SEAM_ENV = ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S", "R67_N", "R67_BUDGET_S", "R67_SIM", "LD_DEVSHM", "LD_PROCFS", "LD_LOCK_VM", "LD_LOCK_RP", "LD_TMPD")
+# R67_N / R67_BUDGET_S / R67_SIM shrink session 0's repeat and binid. LD_DEVSHM / LD_PROCFS / LD_LOCK_VM / LD_LOCK_RP / LD_TMPD redirect /dev/shm, /proc, the two operator locks and the per-row /tmp logs into a stub sandbox:
+# a real session never sets them (run_all / the batteries default to /dev/shm, /proc, /tmp/rwm-vm.lock, $HOME/rp.lock, /tmp), so on a plan-67 session they are seams too.
 BUDGET_S = {"67pre": 17040, "67": 7500, "67g": 10000, "67x": 15600}               # section 6 worst cases under LD_HARD = launch + 4.9 h (17 640 s, less the 600 s slack the others keep) / 2.25 h / 3 h / 4.5 h (the registration's 15.5 h worst total is the sum of re-runs); LD_HARD_MIN_S is a test seam
 
 PLANS = ("41d", "67a", "67r", "67p", "67o", "67d")

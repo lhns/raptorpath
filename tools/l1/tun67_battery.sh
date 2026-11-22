@@ -59,6 +59,7 @@ printf '# plan 67 stage T: the transfer rows load this file; it sets no object-m
 echo "=== TUN67 BATTERY tag=$TAG smoke=$SMOKE reps=$REPS $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary B0 ${LD_BIN_B0} sha256 ${LD_SHA_B0}" >> "$OUT"
 echo "=== binary S1 ${LD_BIN_S1} sha256 ${LD_SHA_S1}" >> "$OUT"
+echo "LD-PLAN67 plan=t drop_s2=${LD_DROP_S2:-0}" >> "$OUT"      # the drop state in the ledger, as every plan-67 ledger (stage T runs B0 and S1 only: nothing reads it here yet)
 
 # ── transfer rows: seats alternate inside each hint (B0 first, then S1), the hints in order ──
 for hint in "${HINTS[@]}"; do

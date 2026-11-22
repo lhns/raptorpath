@@ -645,8 +645,8 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
 echo "=== LOOP-DIAG BATTERY tag=$TAG smoke=${LD_SMOKE:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary $BIN sha256 $WANT" >> "$OUT"
 { [ "$P41" = 1 ] || [ "$P46" = 1 ] || [ "$P63" = 1 ]; } && echo "=== binary-base $BIN_BASE sha256 $WANT_BASE" >> "$OUT"
-# Plan 67: the drop state rides IN the ledger (s67_score.py reads it, the environment is only its fallback), so a pulled ledger scores on the host exactly as on the VM
-if [ "$P67" = 1 ]; then echo "LD-PLAN67 plan=$PLAN drop_s2=${LD_DROP_S2:-0} dump=${LD_DUMP67:-0}" >> "$OUT"; fi
+# Plan 67 (stages A / R1 / R2 / pool / dump, and stage G: plan 41d with LD_WITNESS67): the drop state rides IN the ledger (s67_score.py reads it, the environment is only its fallback), so a pulled ledger scores on the host exactly as on the VM
+if [ "$P67" = 1 ] || [ -n "$W67" ]; then echo "LD-PLAN67 plan=$PLAN${W67:+ stage=$W67} drop_s2=${LD_DROP_S2:-0}" >> "$OUT"; fi
 echo "=== env RWM_GEN=0 RWM_DIAG=1 ${INSTR_ENV[*]} bulk window runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS RWM_ACKDIAG RWM_LOOPDIAG RWM_IO_RT RWM_STORE_PATHS RWM_PLAIN_RS RWM_STORE RWM_QUIC_CC RWM_STORE_LAW RWM_RDIAG RWM_PCAP_DIR RWM_UNIFIED RWM_UNIFIED_SHED RWM_C_RELIABLE RWM_SLAW RWM_THREE_TERM RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX RWM_STORE_PATH_POOL; plan=$PLAN witness54=$W54 (plan 36: no ACKDIAG/LOOPDIAG; CAP<n> sets RWM_PCAP_DIR=<pcap dir>) (plan 34 adds RWM_RDIAG=1); S<n>/DEF<n> set RWM_STORE=<n>, BRS<n> sets RWM_QUIC_CC=bbr_rs RWM_STORE=<n>, PWR sets RWM_STORE_LAW=power, KNEE sets RWM_STORE=<cell knee>" >> "$OUT"
 [ "${#SCRUB_EXTRA[@]}" -gt 0 ] && echo "=== scrub (plans 51 / 51e) ${SCRUB_EXTRA[*]}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags|^CPU\(s\)' | head -3 >> "$OUT" || true

@@ -179,7 +179,7 @@ Plan 67g (the Bulk guards; a launch on the rehearsal's artifacts):
   g1-fail                S1 is slower than B0: GATE-67G1 FAIL and G2 still runs (guard 2's base is S1)
   s1-no-gauge            an S1 row of G1 (past block 1) lacks the gauge prints: WITNESS-FAIL, replaced once
   s2-taper-nonzero       an S2 row of G2 (past block 1) prints taper > 0 with the mechanism preconditions holding (pslot > 0, [SPAN] median rr > 0): S06-FAIL, never replaced, GATE-67G2 FAIL, G1 unaffected
-  g2-taper-no-mechanism  the same taper > 0 with rr = 0 (Bulk: the mechanism never ran): no S06-FAIL, the row keeps its label, `G2-TAPER-NONZERO` is reported and GATE-67G2 FAILs as a witness failure
+  g2-taper-replaced      an S2 row of G2 prints taper > 0 but no pslot= (a seat-witness failure, so not S06-FAIL): it is replaced once by a clean row, and GATE-67G2 still FAILs (G2-TAPER-NONZERO: a replacement never clears it)
   g-block1-fail          S1's first G1 row lacks the gauge prints: the block-1 rule (the first row of each of plan 41c's first 8 (cell, arm) pairs) stops G1 (exit 6, FAILED-g1), G2 still runs
   seam-without-marker    LD_HARD_MIN_S set without LD_TEST_SEAMS=1: ABORT-SEAM before the locks, nothing run
   prebuilt-sha-mismatch  LD_BIN_SHA_S1 differs from the prebuilt S1 binary: ABORT-BUILD
@@ -240,7 +240,7 @@ HARNESS_PATHS = {
     "67pre": ("full", "check-fail-s1", "check-fail-s2", "gates-no-result", "gates-mismatch", "gates-equal-b0", "gates-and-flake", "flake-not-quarantined", "repeat-one-failure", "visualizer-fail", "golden-fail", "s2-dropped", "budget", "budget-step", "rehearse-refused", "lock-inherit-fail", "binid-test-mismatch", "binid-test-equal-b0", "seam-r67-n"),
     "67": ("rehearse", "not-rehearsal", "seat-s1-no-pfec", "seat-b0-has-gauge", "seat-commit-mismatch", "pin-missing-b0", "pin-missing-s1", "s2-seat-abort", "s2-dropped", "tools-diff", "manifest-miss", "flake-rule-edit", "ref-missing",
            "twin-no-kept-acct", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
-    "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "g2-taper-no-mechanism", "g-block1-fail", "seam-without-marker", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
+    "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "g2-taper-replaced", "g-block1-fail", "seam-without-marker", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
     "67x": ("full", "dump-twins", "s2-taper-nonzero", "s2-taper-cotenant", "s2-no-pslot", "s2-belowfloor-high", "a-under-min", "block1-fail", "r1-blind", "r1-b0-gauge", "r2-blind", "twin-no-final", "twin-under-min", "twin-worse", "twin-missing-field",
             "t-refusal-missing", "t-refusal-and-void", "t-bringup-fail", "b0-run-key-false", "g2-fail", "cut-pool", "truncated", "budget"),
 }

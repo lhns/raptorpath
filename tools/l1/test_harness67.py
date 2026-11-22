@@ -135,8 +135,8 @@ plan67.N_BLOCKS, plan67.MIN_TWIN = _old
 check("seams names a shrunk G_ROWS67 (the shell passes it in)", plan67.seams(16) == ["G_ROWS67=16(registered 96)"])
 for _k in plan67.SEAM_ENV:
     os.environ[_k] = "1"
-check("seams names the environment seams: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S and session 0's R67_N, R67_BUDGET_S, R67_SIM",
-      plan67.seams(96) == list(plan67.SEAM_ENV) and plan67.SEAM_ENV == ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S", "R67_N", "R67_BUDGET_S", "R67_SIM"))
+check("seams names the environment seams: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S, session 0's R67_N, R67_BUDGET_S, R67_SIM and the stub path seams LD_DEVSHM, LD_PROCFS, LD_LOCK_VM, LD_LOCK_RP, LD_TMPD",
+      plan67.seams(96) == list(plan67.SEAM_ENV) and plan67.SEAM_ENV == ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S", "R67_N", "R67_BUDGET_S", "R67_SIM", "LD_DEVSHM", "LD_PROCFS", "LD_LOCK_VM", "LD_LOCK_RP", "LD_TMPD"))
 for _k in plan67.SEAM_ENV:
     os.environ.pop(_k)
 for _k in ("R67_N", "R67_BUDGET_S", "R67_SIM"):
@@ -149,7 +149,7 @@ check("the fast-mode shrink table (test_stubrun.py FAST_PATCHES) names the const
 runall, p67, bat, tun = rd("loopdiag_run_all.sh"), rd("loopdiag_p67.sh"), rd("loopdiag_battery.sh"), rd("tun67_battery.sh")
 check("run_all: plans 67pre / 67 / 67g / 67x are selectable (P67), rehearsable only as 67 (67pre is not in the REHEARSE list), and the envelope is sourced after the helpers are defined and never falls through",
       'P67=0; case "$PLAN" in 67|67g|67x|67pre) P67=1 ;; esac' in runall and re.search(r"^  67\|67g\|67x\|67pre\) P_SMOKE=", runall, re.M) is not None and '|59|60a|60b|65|67) ;; *) echo "ABORT-REHEARSE' in runall and "ABORT-PLAN LD_PLAN=$PLAN (67pre|67|67g|67x|" in runall
-      and '[ "$P67" != 1 ] || source "$HERE/loopdiag_p67.sh"' in runall and runall.index("framing_bench() {") < runall.index('source "$HERE/loopdiag_p67.sh"') and p67.rstrip().endswith('fail_all "plan $PLAN: stages not run to the end: ${P67BAD[*]}"'))
+      and '[ "$P67" != 1 ] || source "$HERE/loopdiag_p67.sh"' in runall and runall.index("framing_bench() {") < runall.index('source "$HERE/loopdiag_p67.sh"') and p67.rstrip().endswith('fail_all "plan $PLAN: stages not run to the end: ${P67BAD[*]}${P67CUT[*]:+; cut at LD_HARD: ${P67CUT[*]}}"'))
 check("run_all: the budget guard (plan67.py budget), no CAND commit / LD_BASE_SHA requirement for plan 67 (its seats have their own pins), the tools gates incl. test_s67 / test_harness67, and the python and bash tools tests of run_suites",
       'P67_NEED="$(python3 ./plan67.py budget "$PLAN")"' in runall and 'ABORT-BUDGET plan $PLAN: ${P67_LEFT}s before LD_HARD' in runall and '[ "$P65" != 1 ] && [ "$P67" != 1 ]; then\n  CAND_SHA=' in runall
       and "test_s67.py test_harness67.py; do" in runall and '|| [ "$P65" = 1 ] || [ "$P67" = 1 ] || { [ "$P46" = 1 ]' in runall and '[ "$P65" = 1 ] || [ "$P67" = 1 ]; } && { tst bashtests' in runall)
@@ -169,7 +169,7 @@ check("ref_manifest67.sh lists the same sets as src_manifest67 (Cargo files, the
 check("p67: the S2 family aborts name LD_DROP_S2=1 (guard 1 launches alone, registration 5.2); LD_G2_FAIL67 implies LD_DROP_S2; LD_CUT67 accepts only `dump`",
       "relaunch with LD_DROP_S2=1" in p67 and '[ "$LD_G2_FAIL67" != 1 ] || LD_DROP_S2=1' in p67 and "ABORT-CUT plan 67" in p67 and ",,|,dump,)" in p67)
 check("p67: the block-1 stop (battery rc 6) leaves FAILED-<stage> and the NEXT stage still runs; a G1 verdict does not stop G2 (every stage returns to the session loop)",
-      'if [ "$brc" = "6" ]; then touch "$dir/FAILED-$name"' in p67 and 'for _st in "${P67STAGES[@]}"; do\n  stage67 "$_st"; _rc=$?\n  [ "$_rc" = "0" ] || P67BAD+=' in p67 and "fail_all" not in p67.split('if [ "$brc" = "6" ]')[1].split("return 6")[0])
+      'if [ "$brc" = "6" ]; then touch "$dir/FAILED-$name"' in p67 and 'for _st in "${P67STAGES[@]}"; do\n  stage67 "$_st"; _rc=$?\n  case "$_rc" in 0) ;; 7|8) P67CUT+=("$_st(rc=$_rc)") ;; *) P67BAD+=' in p67 and "fail_all" not in p67.split('if [ "$brc" = "6" ]')[1].split("return 6")[0])
 check("p67: stage G is plan 41d with LD_WITNESS67 = g1 (S1 against B0) / g2 (S2 against S1) and BASE's commit as LD_BASE_SHA; the rehearsal runs only smokes (no battery), a launch only the battery",
       'g1) cand=S1; base=B0; w=g1' in p67 and 'g2) cand=S2; base=S1; w=g2' in p67 and 'LD_PLAN=41d LD_WITNESS67="$w"' in p67 and 'LD_BASE_SHA="${P67PIN[$base]}"' in p67 and 'if [ "$REHEARSE" = 1 ]; then\n    era "LD-ALL stage $name smoke' in p67)
 check("p67: the rehearsal writes AMENDMENT2.txt (the shas, the dump-twin decision from DUMP-TWINS-NEEDED, the suite-reuse and tools manifests) and ends LD-ALL-REHEARSAL-DONE; plan 67 without LD_REHEARSE=1 is ABORT-REHEARSE",
@@ -196,11 +196,16 @@ check("p67: the rehearsal smoke runs under timeout min(1800 s, the time left to 
 check("p67: a battery (or a G replacement run) that exits rc 124 gets `LD-BATTERY-TRUNCATED at LD_HARD <epoch>` appended to its ledger (ld.log / repl.log) and a TRUNCATED marker, for every stage (one code path)",
       p67.count("LD-BATTERY-TRUNCATED at LD_HARD") == 2 and 'if [ "$brc" = "124" ]; then' in p67 and '>> "$dir/ld.log"; touch "$dir/TRUNCATED"' in p67 and '>> "$dir/repl.log"; touch "$dir/TRUNCATED"' in p67
       and p67.index('if [ "$brc" = "124" ]; then') < p67.index('if [ "$brc" = "6" ]'))
+check("p67: a cut stage returns 7 (TRUNCATED) and a stage not started for lack of time 8; a session whose only not-ok stages are 7 / 8 ends TRUNCATED-ALL (exit 7, never DONE-ALL, never FAILED-ALL); any other not-ok stage is FAILED-ALL",
+      '[ -e "$dir/TRUNCATED" ] && return 7' in p67 and 'touch "$dir/NOT-STARTED"; return 8; fi' in p67 and "7|8) P67CUT+=" in p67 and 'touch "$RUN/TRUNCATED-ALL"; persist; echo "LD-ALL-TRUNCATED"; exit 7; fi' in p67
+      and p67.index('touch "$RUN/TRUNCATED-ALL"') < p67.index('fail_all "plan $PLAN: stages not run to the end'))
+check("run_all: TRUNCATED-ALL is a sentinel (cleared and proven like DONE-ALL / FAILED-ALL)", 'SENTINELS="DONE-ALL FAILED-ALL TRUNCATED-ALL ' in open(os.path.join(HERE, "loopdiag_run_all.sh")).read())
 check("p67: stage T is ok only without a TUN-BRINGUP-FAIL line in its ledger (ABORT-BRINGUP-T)", "! grep -aq '^TUN-BRINGUP-FAIL' \"$dir/ld.log\" && ok=1" in p67)
 check("battery: plan 41d with LD_WITNESS67 applies the block-1 rule after G_BLOCK1_N rows (s67_score.py block1g, exit 6), not on the smoke and not on the replacement run",
       'b1g="$(python3 -c \'import s67_score; print(s67_score.G_BLOCK1_N)\')"' in bat and 'python3 ./s67_score.py block1g "$W67" "$OUT"' in bat and '[ -n "${LD_REPL_FILE:-}" ] || b1g=' in bat and '[ "$1" = "1" ] || [ -n "${LD_REPL_FILE:-}" ] || b1g' in bat)
-check("battery: a plan-67 ledger carries its drop state (`LD-PLAN67 plan= drop_s2= dump=` header line, read by s67_score.ledger_drop_s2; the environment is only the scorer's fallback)",
-      'if [ "$P67" = 1 ]; then echo "LD-PLAN67 plan=$PLAN drop_s2=${LD_DROP_S2:-0} dump=${LD_DUMP67:-0}" >> "$OUT"; fi' in bat and bat.index('echo "LD-PLAN67 plan=') < bat.index("# ── plan 41c ──"))
+check("battery: a plan-67 ledger, stage G's included, carries its drop state (`LD-PLAN67 plan= [stage=] drop_s2=` header line, read by s67_score.ledger_drop_s2; the environment is only the scorer's fallback); no dump= field (nothing reads it)",
+      'if [ "$P67" = 1 ] || [ -n "$W67" ]; then echo "LD-PLAN67 plan=$PLAN${W67:+ stage=$W67} drop_s2=${LD_DROP_S2:-0}" >> "$OUT"; fi' in bat and bat.index('echo "LD-PLAN67 plan=') < bat.index("# ── plan 41c ──"))
+check("stage T: its ledger carries the LD-PLAN67 drop-state line and the envelope forwards LD_DROP_S2 to it", 'echo "LD-PLAN67 plan=t drop_s2=${LD_DROP_S2:-0}"' in open(os.path.join(HERE, "tun67_battery.sh")).read() and 'LD_HARD="${LD_HARD:-}" LD_DROP_S2="$LD_DROP_S2"); }' in open(os.path.join(HERE, "loopdiag_p67.sh")).read())
 check("block1g: the CLI doc line, the battery comment and the code agree: the first row of EACH of the 8 (cell, arm) pairs", "the first row of each of the 8 (cell, arm) pairs of block 1" in rd("s67_score.py") and "each (cell, arm)'s first row must be LIVE" in bat
       and "for cell, arm in [(c, a) for c, _, a, _, _ in pp.plan41c()[:G_BLOCK1_N]]" in rd("s67_score.py"))
 import s67_score  # noqa: E402

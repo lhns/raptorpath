@@ -3090,7 +3090,7 @@ def case67(plan, path):
                "s2-taper-cotenant": "s2-taper-cotenant@2:c2-100", "r1-b0-gauge": "b0-gauge@2-99:c2-100", "r2-blind": "r2-blind", "twin-missing-field": "twin-missing-field"}
         if plan == "67g":
             # the defects sit PAST block 1 (the first 8 rows of each guard: the block-1 rule would stop the stage there): the 5th invocation of the seat on (@4); g1-fail counts over the whole session (@@), the replacement run included
-            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@4", "s1-no-gauge": "s1-no-gauge@4", "g1-fail": "s1-no-gauge@@4-99", "g-block1-fail": "s1-no-gauge@0", "g2-taper-no-mechanism": "g2-taper-no-mechanism@4"})
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@4", "s1-no-gauge": "s1-no-gauge@4", "g1-fail": "s1-no-gauge@@4-99", "g-block1-fail": "s1-no-gauge@0", "g2-taper-replaced": "g2-taper-no-pslot@4"})
         if plan == "67x":
             bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100"})
         if path in bad:
@@ -3274,13 +3274,14 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         if path == "s1-no-gauge":
             rp = led56(stage_dirs["g1"], "repl.log")
             check(f"{tag}: an S1 row without the gauge prints is WITNESS-FAIL in G1 and re-run once (repl.log holds its replacement), and the gate still reads", any(r["status"] == "WITNESS-FAIL" for r in g1) and len(rp) >= 1 and gate1 is not None, ([r["status"] for r in g1], len(rp)))
-        if path == "g2-taper-no-mechanism":
-            check(f"{tag}: an S2 row printing taper > 0 with rr = 0 (Bulk, the mechanism never ran) is not S06-FAIL (it keeps its own label), G2-TAPER-NONZERO is reported with the row and GATE-67G2 FAILs as a witness failure (the registered `taper = 0 on every S2 row` is not lost); guard 1 is unaffected",
-                  not any(r["status"] == "S06-FAIL" for r in g2) and "G2-TAPER-NONZERO c" in sc["g2"] and re.search(r"^GATE-67G2 FAIL .*G2-TAPER-NONZERO row\(s\)", sc["g2"], re.M) is not None and "S06-FAIL row" not in sc["g2"] and gate1.group(1) == "PASS",
-                  (tail(sc["g2"], 8), [r["status"] for r in g2]))
+        if path == "g2-taper-replaced":
+            rp = led56(stage_dirs["g2"], "repl.log")
+            check(f"{tag}: an S2 row printing taper > 0 without pslot= (not S06-FAIL) is replaced once by a clean row (repl.log), and GATE-67G2 still FAILs on G2-TAPER-NONZERO (a replacement never clears it); guard 1 is unaffected",
+                  len(rp) >= 1 and not any(r["status"] == "S06-FAIL" for r in g2 + rp) and "G2-TAPER-NONZERO c" in sc["g2"] and re.search(r"^GATE-67G2 FAIL .*G2-TAPER-NONZERO row\(s\)", sc["g2"], re.M) is not None and gate1.group(1) == "PASS",
+                  (tail(sc["g2"], 8), [r["status"] for r in g2], len(rp)))
         if path == "s2-taper-nonzero":
             rp = led56(stage_dirs["g2"], "repl.log")
-            check(f"{tag}: an S2 row printing taper > 0 (with pslot > 0 and rr > 0: the mechanism ran) is S06-FAIL, never replaced, GATE-67G2 FAIL; guard 1 is unaffected (GATE-67G1 PASS)",
+            check(f"{tag}: an S2 row printing taper > 0 (pslot= printed; Bulk, rr = 0) is S06-FAIL, never replaced, GATE-67G2 FAIL; guard 1 is unaffected (GATE-67G1 PASS)",
                   any(r["status"] == "S06-FAIL" for r in g2) and not any(r["status"] == "S06-FAIL" for r in rp) and gate2.group(1) == "FAIL" and gate1.group(1) == "PASS", ([r["status"] for r in g2], gate2.group(0), gate1.group(0)))
         EXECUTED.add((plan, path))
         return
@@ -3330,10 +3331,10 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
               "TUN-BRINGUP-FAIL label=B0-realtime" in txt67(stage_dirs["t"], "ld.log") and "ABORT-BRINGUP-T seat=B0 hint=realtime" in sc["t"] and re.search(r"^T (PASS|FAIL|VOID)", sc["t"], re.M) is None
               and not os.path.exists(os.path.join(stage_dirs["t"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(sc["t"], 6)))
     elif path == "truncated":
-        check(f"{tag}: the R1 battery returned timeout's rc 124: LD-BATTERY-TRUNCATED in its ledger, the TRUNCATED marker, A1-R and R1 read TRUNCATED (never PASS), the stage is not ok, the session is not DONE-ALL, the other stages ran",
+        check(f"{tag}: the R1 battery returned timeout's rc 124: LD-BATTERY-TRUNCATED in its ledger, the TRUNCATED marker, A1-R and R1 read TRUNCATED (never PASS), the stage is not ok, the session ends TRUNCATED-ALL (rc 7: not DONE-ALL, not FAILED-ALL), the other stages ran",
               "LD-BATTERY-TRUNCATED at LD_HARD" in txt67(stage_dirs["r1"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "TRUNCATED")) and re.search(r"^A1-R TRUNCATED", sc["r1"], re.M) is not None
               and re.search(r"^R1 TRUNCATED", sc["r1"], re.M) is not None and "PASS" not in sc["r1"].split("VERDICT-67R")[-1] and not os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and os.path.exists(os.path.join(stage_dirs["a"], "DONE"))
-              and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(sc["r1"], 5), tail(e, 6)))
+              and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and not failed and os.path.exists(os.path.join(run_dir, "TRUNCATED-ALL")) and rc == 7 and "LD-ALL-TRUNCATED" in out, (rc, tail(sc["r1"], 5), tail(e, 6)))
     elif path == "s2-no-pslot":
         check(f"{tag}: an S2 row of stage A without pslot is VOID-WITNESS and re-run once (REPLACE67 on record, a second row of that slot); the stage still scores", any(r["status"] == "VOID-WITNESS" and r["arm"] == "S2" for r in a_rows) and "REPLACE67 c2-100 S2" in txt67(stage_dirs["a"], "ld.log"), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"],))
     elif path == "s2-belowfloor-high":
