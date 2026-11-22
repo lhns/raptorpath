@@ -248,8 +248,7 @@ def diag(rd, sb=None):
     if not rd:
         print("DIAG no run directory")
         return
-    print("DIAG session.log tail:
-" + "".join(open(os.path.join(rd, "session.log")).readlines()[-12:]) if os.path.exists(os.path.join(rd, "session.log")) else "DIAG no session.log")
+    print("DIAG session.log tail:" + chr(10) + "".join(open(os.path.join(rd, "session.log")).readlines()[-12:]) if os.path.exists(os.path.join(rd, "session.log")) else "DIAG no session.log")
     rows = os.path.join(rd, "rows")
     for r in sorted(os.listdir(rows))[:2] if os.path.isdir(rows) else []:
         d = os.path.join(rows, r)
