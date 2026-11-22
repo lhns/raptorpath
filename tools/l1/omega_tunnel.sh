@@ -66,11 +66,12 @@ omega_tunnel_phase() { # phase nflows
   omega_sleep "${OMEGA_SETTLE_S:-0.5}"
   omega_bg $OMEGA_NS_CLI "$RUN/tunq-$ph.json" iperf3 -c 10.99.0.2 -p 5301 -P "$nf" -J -t "$dur"; cpid="$OMEGA_LASTPID"
   t="$(omega_now)"
-  while kill -0 "$cpid" 2>/dev/null; do
+  while :; do
     nsx $OMEGA_NS_CLI ss -tin dst 10.99.0.2 2>/dev/null | tr '\n' ' ' \
       | sed -n "s/.*[ ]rtt:\([0-9.]*\)\/[0-9.]*.*minrtt:\([0-9.]*\).*/$(omega_now) \1 \2/p" >> "$RUN/tunq-$ph.ss"
     nsx $OMEGA_NS_CLI tc -s qdisc show dev rpcli0 > "$RUN/tunq-$ph.tc-rpcli0" 2>/dev/null
     nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 > "$RUN/tunq-$ph.tc-cli0" 2>/dev/null
+    kill -0 "$cpid" 2>/dev/null || break
     omega_sleep 0.1
     if [ "$(awk -v n="$(omega_now)" -v t="$t" -v d="$dur" 'BEGIN{print (n - t > d + 10) ? 1 : 0}')" = 1 ]; then kill -TERM "$cpid" 2>/dev/null; break; fi
   done
@@ -91,7 +92,7 @@ omega_tunnel_measure() { # -> 0 measured, 1 skipped or failed (reported; R conti
   omega_tunnel_phase f8 8
   $PY "$HERE/omega_parse.py" tunq "$RUN/tunq-f8.ss" "$RUN/tunq-f8.json" "${OMEGA_TUN_CEIL_MBIT:-100}" > "$RUN/QT.json" || true
   $PY "$HERE/omega_parse.py" tunq "$RUN/tunq-single.ss" "$RUN/tunq-single.json" "${OMEGA_TUN_CEIL_MBIT:-100}" > "$RUN/QT-single.json" || true
-  omega_note "QT $(cat "$RUN/QT.json" 2>/dev/null)"
+  omega_note "QT samples=$(wc -l < "$RUN/tunq-f8.ss") $(cat "$RUN/QT.json" 2>/dev/null)"
   omega_stop_raptorpath
   return 0
 }

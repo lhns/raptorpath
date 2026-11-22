@@ -88,6 +88,14 @@ omega_cleanup() {
     [ -n "$p" ] && kill -0 "$p" 2>/dev/null && kill -TERM "$p" 2>/dev/null
   done < "$RUN/pids"
   omega_stop_raptorpath
+  # give the recorded PIDs a moment to leave (by PID only), then KILL the stragglers by PID
+  for p in 1 2 3 4 5 6 7 8 9 10; do
+    alive=0
+    [ -z "$RUN" ] || [ ! -f "$RUN/pids" ] || while read -r q; do [ -n "$q" ] && kill -0 "$q" 2>/dev/null && alive=1; done < "$RUN/pids"
+    [ "$alive" = 0 ] && break
+    "${OMEGA_SLEEP:-sleep}" 0.3
+  done
+  [ "$alive" = 0 ] || { while read -r q; do [ -n "$q" ] && kill -0 "$q" 2>/dev/null && kill -KILL "$q" 2>/dev/null; done < "$RUN/pids"; }
   [ "$TOPO_STARTED" != 1 ] || topo_down
   if [ -n "$RUN" ] && [ -f "$RUN/hoststate.pre" ] && [ "$FINAL" != failed ]; then
     hoststate_check "$RUN/hoststate.pre" || { FINAL="failed"; echo "ABORT-HOSTSTATE (at exit)"; }
