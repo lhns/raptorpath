@@ -165,7 +165,7 @@ omega_run_rows() { # rowsfile
     [ -n "$cfg" ] || continue
     if [ "$cfg:$rep" != "$curcfg:$currep" ]; then
       # a round boundary: honour a stop request here (balanced rounds)
-      if [ -e "$RUN/STOP" ]; then omega_note "TRUNCATE-STOP the stopper fired; ending at a round boundary"; return 10; fi
+      if [ -e "$RUN/STOP" ] && [ "$nrows" -gt 0 ]; then omega_note "TRUNCATE-STOP the stopper fired; ending at a round boundary"; return 10; fi
       curcfg="$cfg"; currep="$rep"
     fi
     if [ "$cfg" = T ]; then

@@ -480,6 +480,8 @@ for name, extra, arm in [("rel-no-events", {"STUB_REL_NO_EVENTS": "1"}, "REL@k_a
         rc, out = run(sb, "R", extra, rehearse=True)
         rd = run_dir(sb, "R")
         rows = {x["arm"]: x for x in ledger(rd) if x.get("kind") == "row"} if rd else {}
+        if rows.get(arm, {}).get("status") != "VOID-WITNESS":
+            diag(rd)
         check("%s: the %s row is VOID-WITNESS with its reason; the others stay OK" % (name, arm), rows.get(arm, {}).get("status") == "VOID-WITNESS" and rows.get("CLEAN", {}).get("status") == "OK", {a: r["status"] for a, r in rows.items()})
         cleanup(sb)
 

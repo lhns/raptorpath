@@ -24,6 +24,22 @@ def fmt_udp(t, ipid):
             "    10.77.1.2.40000 > 10.77.2.2.9: [udp sum ok] UDP, length 100\n" % (t, ipid))
 
 
+def hold_posts(times, sel, dt, g, base=0.0001):
+    """Post-reorderer arrival times through a FIFO that holds the head of each selected packet dt, then drains the run at 10 g until it catches up."""
+    out, rel = [], None
+    for i, t in enumerate(times):
+        if i in sel and (rel is None or t + base >= rel):
+            rel = t + dt
+            out.append(rel + base)
+        elif rel is not None and t + base < rel + 1.0 / (10.0 * g):
+            rel += 1.0 / (10.0 * g)
+            out.append(rel + base)
+        else:
+            rel = None
+            out.append(t + base)
+    return out
+
+
 def row_capture(path):
     d = os.path.dirname(path)
     P = json.load(open(os.path.join(d, "params.json")))
@@ -38,38 +54,18 @@ def row_capture(path):
     ev_idx = [int((t_ev + off - t0) * g) for off in (0.05, 0.25)] if kind in ("REL", "HOLD") else []
     if kind == "REL" and os.environ.get("STUB_REL_NO_EVENTS"):
         ev_idx = []
-    post_t = {}
-    for j in ev_idx:
-        k = max(1, int(dt * g))
-        if kind == "REL":
-            post_t[j] = (j, dt)
-        else:
-            for m in range(k):
-                post_t[j + m] = (j + m, None, j, m)
     out = []
     flows = {}
+    times = [t0 + i / g for i in range(n)]
+    posts = hold_posts(times, set(ev_idx), dt, g) if kind == "HOLD" else [t + 0.0001 + (dt if (kind == "REL" and i in ev_idx) else 0.0) for i, t in enumerate(times)]
+    if kind == "HOLD" and os.environ.get("STUB_HOLD_REORDERS") and ev_idx:
+        posts[ev_idx[0] + 1] = times[ev_idx[0] + 1] + 0.0001      # one successor is not held: it overtakes the head
     for i in range(n):
         f = i % 8
         seq = flows.get(f, 0)
         flows[f] = seq + 1448
-        t = t0 + i / g
-        if side == "pre":
-            out.append((t, f, seq, i + 10))
-            continue
-        tp = t + 0.0001
-        if i in post_t:
-            e = post_t[i]
-            if kind == "REL":
-                tp += dt
-            else:
-                j, m = e[2], e[3]
-                tp = (t0 + j / g) + dt + 0.0001 + m / (10.0 * g)
-        out.append((tp, f, seq, i + 10))
+        out.append(((times[i] if side == "pre" else posts[i]), f, seq, i + 10))
     if side == "post":
-        if kind == "HOLD" and os.environ.get("STUB_HOLD_REORDERS") and ev_idx:
-            # one successor of the first hold is not held: it overtakes
-            j = ev_idx[0] + 1
-            out = [(t0 + j / g + 0.0001, f, s, ip) if ip == j + 10 else (t, f, s, ip) for (t, f, s, ip) in out]
         out.sort()
     return "".join(fmt(*x) for x in out)
 
@@ -84,18 +80,12 @@ def r0_capture(path):
     period = max(1, int(round(g * 0.1)))
     bad = os.environ.get("STUB_R0_BAD")
     sel = {int(i): float(t) for i, (t, ident) in enumerate(sent) if mode != "CLEAN" and i % period == period // 2 and float(t) > e0 + 0.05}
-    posts = []
-    for i, (t, ident) in enumerate(sent):
-        t, ident = float(t), int(ident)
-        tp = t + 0.0001
-        if mode == "REL" and i in sel:
-            tp += dt * (0.4 if bad else 1.0)
-        if mode == "HOLD":
-            for j, tj in sel.items():
-                if j <= i < j + max(1, int(dt * g)):
-                    tp = tj + dt + 0.0001 + (i - j) / (10.0 * g)
-        posts.append((tp, ident))
-    posts.sort()
+    times = [float(t) for t, _ in sent]
+    if mode == "HOLD":
+        pt = hold_posts(times, set(sel), dt, g)
+    else:
+        pt = [t + 0.0001 + (dt * (0.4 if bad else 1.0) if (mode == "REL" and i in sel) else 0.0) for i, t in enumerate(times)]
+    posts = sorted((pt[i], int(ident)) for i, (_, ident) in enumerate(sent))
     return "".join(fmt_udp(t, ident) for t, ident in posts)
 
 
