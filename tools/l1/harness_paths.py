@@ -144,12 +144,16 @@ binaries (LD_BIN_PREBUILT_<SEAT> + LD_BIN_SHA_<SEAT>) and tools result (LD_PRIOR
   gates-equal-b0         the same gates failure on B0 and S1: GATES-B0-FINDING and GATES-FINDING-ON-MAIN seat=S1, the session completes
   gates-and-flake        both a gates failure absent on B0 and a non-quarantined FLAKE on S1: both lines printed, the abort is ABORT-PREFLIGHT
   flake-not-quarantined  a non-gates test fails once on S1's suite and passes its solo re-run, not on quarantine.txt: ABORT-TESTS seat S1
-  repeat-one-failure     one failing run of S2's gating tests: ABORT-REPEAT seat S2 (guard 2's stop), S1 read zero failures
+  repeat-one-failure     one failing run of S2's gating tests: ABORT-REPEAT seat S2 (guard 2's stop), S1 read zero failures; REF-MANIFEST-S1 is already in the persisted run (written when S1's own steps passed), REF-MANIFEST-S2 is not
   visualizer-fail        build_visualizer.sh fails on S2: ABORT-PREFLIGHT seat S2 (visualizer), no golden, no binid
   golden-fail            the native golden test fails on S2: ABORT-PREFLIGHT seat S2 (golden), no binid
   s2-dropped             LD_DROP_S2=1: no S2 step, binid on B0 and S1, REF-MANIFEST-S1 only, LD-ALL-SESSION0-DONE
   budget                 less than the registered worst case (17 040 s) before LD_HARD: ABORT-BUDGET, rc 3, nothing run
   budget-step            under 600 s left when a step would start: ABORT-BUDGET plan 67pre step check-S1, nothing ran
+  lock-inherit-fail      (STUB_LOCK_PARENT, under LD_TEST_SEAMS=1) the step-0 child sees another parent pid and cannot inherit the locks: ABORT-PREFLIGHT plan 67pre step locks, nothing ran after it
+  binid-test-mismatch    S1's math + wasm tests (BINTEST) fail a test that B0 passes: ABORT-PREFLIGHT binid: BINTEST S1 <names> not equal on B0 (guard 1's seat), the manifests of the passed steps are kept
+  binid-test-equal-b0    the same test fails on B0 and on S1: BINTEST-FINDING-ON-MAIN on record, the session completes
+  seam-r67-n             R67_N set without LD_TEST_SEAMS=1: ABORT-SEAM (a session-0 seam), rc 3, nothing ran
   rehearse-refused       LD_REHEARSE=1 with LD_PLAN=67pre: ABORT-REHEARSE (not in run_all's REHEARSE list), nothing run
 Plan 67 (the rehearsal, session 1):
   rehearse               the 7 seat builds (the twins --features test-seams), ABORT-SEAT identity strings (S1 and S2 hold pfec=), the tools-diff witness, the suite-reuse HIT of S1 and S2 (manifest incl. tools/ci/flake_rule.py), the tools tests,
@@ -174,8 +178,9 @@ Plan 67g (the Bulk guards; a launch on the rehearsal's artifacts):
   full                   G1 then G2 to LD-ALL-DONE; no build, no cargo test, TOOLS-TESTS-REUSED, GATE-67G1 / GATE-67G2 PASS
   g1-fail                S1 is slower than B0: GATE-67G1 FAIL and G2 still runs (guard 2's base is S1)
   s1-no-gauge            an S1 row of G1 (past block 1) lacks the gauge prints: WITNESS-FAIL, replaced once
-  s2-taper-nonzero       an S2 row of G2 (past block 1) prints taper > 0: S06-FAIL, never replaced, GATE-67G2 FAIL, G1 unaffected
-  g-block1-fail          S1's first G1 row lacks the gauge prints: the block-1 rule (plan 41c's first 8 rows) stops G1 (exit 6, FAILED-g1), G2 still runs
+  s2-taper-nonzero       an S2 row of G2 (past block 1) prints taper > 0 with the mechanism preconditions holding (pslot > 0, [SPAN] median rr > 0): S06-FAIL, never replaced, GATE-67G2 FAIL, G1 unaffected
+  g2-taper-no-mechanism  the same taper > 0 with rr = 0 (Bulk: the mechanism never ran): no S06-FAIL, the row keeps its label, `G2-TAPER-NONZERO` is reported and GATE-67G2 FAILs as a witness failure
+  g-block1-fail          S1's first G1 row lacks the gauge prints: the block-1 rule (the first row of each of plan 41c's first 8 (cell, arm) pairs) stops G1 (exit 6, FAILED-g1), G2 still runs
   seam-without-marker    LD_HARD_MIN_S set without LD_TEST_SEAMS=1: ABORT-SEAM before the locks, nothing run
   prebuilt-sha-mismatch  LD_BIN_SHA_S1 differs from the prebuilt S1 binary: ABORT-BUILD
   prebuilt-missing       no prebuilt for S2: ABORT-BUILD (a launch never builds)
@@ -201,7 +206,7 @@ Plan 67x (the stages off Bulk, the tunnel and the pool block):
   t-bringup-fail         tun_bulk.sh's TUN-BRINGUP-FAIL for B0 at realtime: ABORT-BRINGUP-T seat=B0 hint=realtime, no T verdict, stage not ok
   truncated              the R1 battery returns timeout's rc 124 (a stub timeout): LD-BATTERY-TRUNCATED, TRUNCATED marker, A1-R / R1 TRUNCATED, stage not ok
   b0-run-key-false       B0's resolved configuration reads the key false: T VOID, not a pass
-  g2-fail                LD_G2_FAIL67=1: the S2 arms, R2, the pool block and the dump twins are dropped; A1, A1-R and T still run
+  g2-fail                LD_G2_FAIL67=1 (so LD_DROP_S2=1): the S2 arms, R2, the pool block and the dump twins are dropped; A1, A1-R and T still run; R1's ledger carries `LD-PLAN67 ... drop_s2=1` and the pulled ledger re-scored on the host with LD_DROP_S2 unset reads A1-R PASS (not INCOMPLETE)
   cut-pool               LD_CUT67=pool: ABORT-CUT (only the dump twins may be cut)
   budget                 less than the registered worst case before LD_HARD: ABORT-BUDGET
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
@@ -232,10 +237,10 @@ HARNESS_PATHS = {
     "51e": ("rehearse", "reuse-hit", "reuse-miss", "bin-sha-mismatch", "pace-void", "spc-void", "calibrate", "recheck"),
     "51": ("rehearse", "full", "bin-sha-mismatch", "delta-echo-void", "short-void", "dialpins-fail"),
     "63": ("rehearse", "full", "cand-sha-missing", "cand-sha-mismatch", "control-sha-mismatch", "cand-fail", "cand-noctld", "cand-ctld-send-only", "cand-prebuilt"),
-    "67pre": ("full", "check-fail-s1", "check-fail-s2", "gates-no-result", "gates-mismatch", "gates-equal-b0", "gates-and-flake", "flake-not-quarantined", "repeat-one-failure", "visualizer-fail", "golden-fail", "s2-dropped", "budget", "budget-step", "rehearse-refused"),
+    "67pre": ("full", "check-fail-s1", "check-fail-s2", "gates-no-result", "gates-mismatch", "gates-equal-b0", "gates-and-flake", "flake-not-quarantined", "repeat-one-failure", "visualizer-fail", "golden-fail", "s2-dropped", "budget", "budget-step", "rehearse-refused", "lock-inherit-fail", "binid-test-mismatch", "binid-test-equal-b0", "seam-r67-n"),
     "67": ("rehearse", "not-rehearsal", "seat-s1-no-pfec", "seat-b0-has-gauge", "seat-commit-mismatch", "pin-missing-b0", "pin-missing-s1", "s2-seat-abort", "s2-dropped", "tools-diff", "manifest-miss", "flake-rule-edit", "ref-missing",
            "twin-no-kept-acct", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
-    "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "g-block1-fail", "seam-without-marker", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
+    "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "g2-taper-no-mechanism", "g-block1-fail", "seam-without-marker", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
     "67x": ("full", "dump-twins", "s2-taper-nonzero", "s2-taper-cotenant", "s2-no-pslot", "s2-belowfloor-high", "a-under-min", "block1-fail", "r1-blind", "r1-b0-gauge", "r2-blind", "twin-no-final", "twin-under-min", "twin-worse", "twin-missing-field",
             "t-refusal-missing", "t-refusal-and-void", "t-bringup-fail", "b0-run-key-false", "g2-fail", "cut-pool", "truncated", "budget"),
 }

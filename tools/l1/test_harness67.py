@@ -135,9 +135,12 @@ plan67.N_BLOCKS, plan67.MIN_TWIN = _old
 check("seams names a shrunk G_ROWS67 (the shell passes it in)", plan67.seams(16) == ["G_ROWS67=16(registered 96)"])
 for _k in plan67.SEAM_ENV:
     os.environ[_k] = "1"
-check("seams names the environment seams: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S", plan67.seams(96) == list(plan67.SEAM_ENV) and plan67.SEAM_ENV == ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S"))
+check("seams names the environment seams: LD_HARD_MIN_S, R67_T1_S, LD_ROW_BYTES, LD_BLOCK_ROW_S and session 0's R67_N, R67_BUDGET_S, R67_SIM",
+      plan67.seams(96) == list(plan67.SEAM_ENV) and plan67.SEAM_ENV == ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S", "R67_N", "R67_BUDGET_S", "R67_SIM"))
 for _k in plan67.SEAM_ENV:
     os.environ.pop(_k)
+for _k in ("R67_N", "R67_BUDGET_S", "R67_SIM"):
+    check(f"`plan67.py seams` prints {_k} when it is set (so run_all aborts ABORT-SEAM without LD_TEST_SEAMS=1)", cli("seams", "96", env={_k: "3"})[1] == _k and plan67.seams(96) == [], cli("seams", "96", env={_k: "3"}))
 check("the fast-mode shrink table (test_stubrun.py FAST_PATCHES) names the constants this file registers, each anchor once in plan67.py / loopdiag_p67.sh",
       all(rd("plan67.py").count(x) == 1 for x in ("N_BLOCKS = 6  ", "N_TWIN_REPS = 3  ", "N_POOL_REPS = 3  ", "MIN_LIVE_A = 10  ", "MIN_LIVE_B0 = 4  ", "MIN_TWIN = 5  ")) and rd("loopdiag_p67.sh").count("G_ROWS67=96     #") == 1
       and all(x in rd("test_stubrun.py") for x in ('("plan67.py", "N_BLOCKS = 6  "', '("plan67.py", "MIN_LIVE_A = 10  "', '("loopdiag_p67.sh", "G_ROWS67=96     #"')))
@@ -196,6 +199,10 @@ check("p67: a battery (or a G replacement run) that exits rc 124 gets `LD-BATTER
 check("p67: stage T is ok only without a TUN-BRINGUP-FAIL line in its ledger (ABORT-BRINGUP-T)", "! grep -aq '^TUN-BRINGUP-FAIL' \"$dir/ld.log\" && ok=1" in p67)
 check("battery: plan 41d with LD_WITNESS67 applies the block-1 rule after G_BLOCK1_N rows (s67_score.py block1g, exit 6), not on the smoke and not on the replacement run",
       'b1g="$(python3 -c \'import s67_score; print(s67_score.G_BLOCK1_N)\')"' in bat and 'python3 ./s67_score.py block1g "$W67" "$OUT"' in bat and '[ -n "${LD_REPL_FILE:-}" ] || b1g=' in bat and '[ "$1" = "1" ] || [ -n "${LD_REPL_FILE:-}" ] || b1g' in bat)
+check("battery: a plan-67 ledger carries its drop state (`LD-PLAN67 plan= drop_s2= dump=` header line, read by s67_score.ledger_drop_s2; the environment is only the scorer's fallback)",
+      'if [ "$P67" = 1 ]; then echo "LD-PLAN67 plan=$PLAN drop_s2=${LD_DROP_S2:-0} dump=${LD_DUMP67:-0}" >> "$OUT"; fi' in bat and bat.index('echo "LD-PLAN67 plan=') < bat.index("# ── plan 41c ──"))
+check("block1g: the CLI doc line, the battery comment and the code agree: the first row of EACH of the 8 (cell, arm) pairs", "the first row of each of the 8 (cell, arm) pairs of block 1" in rd("s67_score.py") and "each (cell, arm)'s first row must be LIVE" in bat
+      and "for cell, arm in [(c, a) for c, _, a, _, _ in pp.plan41c()[:G_BLOCK1_N]]" in rd("s67_score.py"))
 import s67_score  # noqa: E402
 check("block 1 of G = plan 41c's first 8 rows: the smallest prefix that holds every (cell, arm) once", s67_score.G_BLOCK1_N == 8 and len({(c, a) for c, _, a, _, _ in __import__("place38_parse").plan41c()[:8]}) == 8
       and len({(c, a) for c, _, a, _, _ in __import__("place38_parse").plan41c()[:7]}) == 7)
@@ -217,7 +224,7 @@ check("repeat67_run.sh: N = 30 default, S1 repeats `--lib -- config::`, S2 the t
       'N="${R67_N:-30}"' in rep and "-- config::" in rep and "--test s06_no_copy --test s06_reactive --test holeclass_reachability" in rep and "SIM-DIGEST-DIFFERS" in rep and "ABORT-REPEAT seat=$seat" in rep and "REPEAT-CUT seat=" in rep and "flake_rule" not in rep)
 check("binid67_run.sh: B0, S1 and S2 are packed with their COMMIT and built by binid_run.sh at one path; the shas must be pairwise different (BINID67 FAIL otherwise)",
       'for seat in "${SEATS[@]}"; do' in bid and 'set -- B0 S1 S2' in bid and 'bash ./binid_run.sh "${args[@]}"' in bid and "two seats built to the same binary" in bid and "BINID67 PASS" in bid)
-check("the crlf guards name the two new scripts", all(f in runall and f in bat for f in ("repeat67_run.sh", "binid67_run.sh")))
+check("the crlf guards name the new scripts", all(f in runall and f in bat for f in ("repeat67_run.sh", "binid67_run.sh", "lockcheck67.sh")) and os.path.exists(os.path.join(HERE, "lockcheck67.sh")))
 
 # ═══ 4. session 0 (LD_PLAN=67pre; loopdiag_p67pre.sh; the launch paths run in test_stubrun.case67pre) ═══
 pre = rd("loopdiag_p67pre.sh")
@@ -228,7 +235,8 @@ check("plan67: 67pre has the registered budget (17 040 s = LD_HARD launch + 4.9 
 check("p67: 67pre needs the seats B0 S1 S2, sources the session-0 file right after the seat pins (before any build), and src_manifest67 is defined above that point (one definition for the record and for section 5)",
       "67pre) P67NEED=(B0 S1 S2)" in p67 and p67.index("src_manifest67() {") < p67.index('source "$HERE/loopdiag_p67pre.sh"') < p67.index("# ── 2. the binaries") and p67.count("src_manifest67() {") == 1 and "loopdiag_p67pre.sh" in runall.split("crlf_guard plan67.py")[1].split("\n")[0])
 check("p67pre: the steps in the registered order (check, gates reference, suites, repeat, visualizer, golden, binid, record), every path exits, no build and no battery",
-      [code.index(x) for x in ("check --all-targets", "--lib gates", "run_suites", "repeat67_run.sh", "build_visualizer.sh", "raptorpath-wasm golden", "binid67_run.sh", "src_manifest67")] == sorted(code.index(x) for x in ("check --all-targets", "--lib gates", "run_suites", "repeat67_run.sh", "build_visualizer.sh", "raptorpath-wasm golden", "binid67_run.sh", "src_manifest67"))
+      [code.index(x) for x in ("lockcheck67.sh", "check --all-targets", "--lib gates", "run_suites", "repeat67_run.sh", "p0_manifest \"$_s\"", "build_visualizer.sh", "raptorpath-wasm golden", "p0_manifest S2", "binid67_run.sh", "BINTEST")]
+      == sorted(code.index(x) for x in ("lockcheck67.sh", "check --all-targets", "--lib gates", "run_suites", "repeat67_run.sh", "p0_manifest \"$_s\"", "build_visualizer.sh", "raptorpath-wasm golden", "p0_manifest S2", "binid67_run.sh", "BINTEST"))
       and pre.rstrip().endswith("exit 0") and " build --release" not in pre and "sudo" not in pre and "loopdiag_battery" not in pre)
 check("p67pre: the abort strings of registration 5.4 (ABORT-PREFLIGHT / ABORT-TESTS / ABORT-REPEAT / ABORT-BUDGET per step, GATES-FINDING-ON-MAIN, GATES-B0-FINDING), every step is bounded by timeout at LD_HARD and starts only with 600 s left",
       all(s in pre for s in ("ABORT-PREFLIGHT plan 67pre seat $_s: cargo check --all-targets failed", "ABORT-PREFLIGHT plan 67pre seat B0: the gates reference did not run", "gates failure not equal on B0", "ABORT-TESTS plan 67pre seat $_s:",

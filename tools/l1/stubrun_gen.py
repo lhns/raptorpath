@@ -898,7 +898,7 @@ def qcap(before, durings, after):
 BAD67_SEAT = {"s2-taper-nonzero": ("S2",), "s2-no-pslot": ("S2", "P2", "P2T"), "s2-belowfloor-high": ("S2",), "s1-no-gauge": ("S1", "CAND"), "s1-no-pfec": ("S1",), "r1-blind": ("S1",), "twin-no-final": ("P1T", "P2T"),
               "twin-under-min": ("P2T",), "twin-worse": ("P2T",), "twin-no-acct": ("P1T", "P2T"), "no-succ-times": ("S1", "S2", "B0"), "rho-one-end": ("S1", "S2", "B0"), "pool-echo-wrong": ("S1", "S2"),
               "s2-goodput-low": ("S2", "CAND"), "s1-goodput-low": ("S1", "CAND"), "dnf": ("S2",), "bulk-rr": ("S2", "S1", "B0", "CAND"), "no-pace-echo": ("P1", "P2", "P1T", "P2T"),
-              "r2-blind": ("P1", "P2"), "b0-gauge": ("B0",), "twin-missing-field": ("P2T",), "s2-taper-cotenant": ("S2",), "s1-crash": ("S1",)}
+              "r2-blind": ("P1", "P2"), "b0-gauge": ("B0",), "twin-missing-field": ("P2T",), "s2-taper-cotenant": ("S2",), "s1-crash": ("S1",), "g2-taper-no-mechanism": ("S2",)}
 CELL67 = {"c1s": "c1s-400", "c1d": "c1d-400", "c2": "c2-100", "c8": "c8-100"}
 
 
