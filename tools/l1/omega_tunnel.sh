@@ -67,8 +67,9 @@ omega_tunnel_phase() { # phase nflows
   omega_bg $OMEGA_NS_CLI "$RUN/tunq-$ph.json" iperf3 -c 10.99.0.2 -p 5301 -P "$nf" -J -t "$dur"; cpid="$OMEGA_LASTPID"
   t="$(omega_now)"
   while :; do
-    nsx $OMEGA_NS_CLI ss -tin dst 10.99.0.2 2>/dev/null | tr '\n' ' ' \
-      | sed -n "s/.*[ ]rtt:\([0-9.]*\)\/[0-9.]*.*minrtt:\([0-9.]*\).*/$(omega_now) \1 \2/p" >> "$RUN/tunq-$ph.ss"
+    raw="$(nsx $OMEGA_NS_CLI ss -tin dst 10.99.0.2 2>/dev/null | tr '\n' ' ')"
+    echo "$raw" >> "$RUN/tunq-$ph.ssraw"
+    echo "$raw" | sed -n "s/.*[ ]rtt:\([0-9.]*\)\/[0-9.]*.*minrtt:\([0-9.]*\).*/$(omega_now) \1 \2/p" >> "$RUN/tunq-$ph.ss"
     nsx $OMEGA_NS_CLI tc -s qdisc show dev rpcli0 > "$RUN/tunq-$ph.tc-rpcli0" 2>/dev/null
     nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 > "$RUN/tunq-$ph.tc-cli0" 2>/dev/null
     kill -0 "$cpid" 2>/dev/null || break

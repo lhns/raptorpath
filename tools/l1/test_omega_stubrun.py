@@ -482,6 +482,7 @@ for name, extra, arm in [("rel-no-events", {"STUB_REL_NO_EVENTS": "1"}, "REL@k_a
         rows = {x["arm"]: x for x in ledger(rd) if x.get("kind") == "row"} if rd else {}
         if rows.get(arm, {}).get("status") != "VOID-WITNESS":
             diag(rd)
+            print("DIAG rc=%s out tail: %s" % (rc, out[-900:]))
         check("%s: the %s row is VOID-WITNESS with its reason; the others stay OK" % (name, arm), rows.get(arm, {}).get("status") == "VOID-WITNESS" and rows.get("CLEAN", {}).get("status") == "OK", {a: r["status"] for a, r in rows.items()})
         cleanup(sb)
 
@@ -502,6 +503,9 @@ if wanted("full") or wanted("no-seed") or wanted("table-too-small") or wanted("i
         if name == "full":
             check("full R: DONE-ALL; R0 passed; tool checks recorded", rc == 0 and rd and os.path.exists(os.path.join(rd, "DONE-ALL")) and "R0-PASS" in open(os.path.join(rd, "R0.log")).read() and r0.get("L") == 16384 and r0.get("seed_ok") is True, (rc, out[-900:]))
             qt = json.load(open(os.path.join(rd, "QT.json"))) if os.path.exists(os.path.join(rd, "QT.json")) else {}
+            for f in ("tunq-f8.ssraw", "tunq-f8.ss", "tunq-f8.json"):
+                pp = os.path.join(rd, f)
+                print("DIAG %s: %r" % (f, open(pp).read()[:300] if os.path.exists(pp) else None))
             check("full R: the standing queue through the tunnel is measured (B_t pinned per rate) and the pinned binary's sha is recorded", qt.get("B_t_pkts") and "TUNSHA" in open(os.path.join(rd, "session.log")).read(), qt)
             check("full R: calibration and smoke rows only (nothing scored), AMENDMENT.txt written", rows and all(r["stage"] in ("calib", "smoke") for r in rows) and os.path.exists(os.path.join(rd, "AMENDMENT.txt")), [r["stage"] for r in rows][:5])
             check("full R: only rp-* was touched; raptorpath only by exact name", vm_safe(log_lines(sb)) == [], vm_safe(log_lines(sb))[:4])
