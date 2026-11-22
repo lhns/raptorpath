@@ -6732,3 +6732,94 @@ mod account_arith {
         }
     }
 }
+
+/// Bounding tests for the give-up deadline D's engine inputs, node
+/// `rec-shed-d-defects`. The paper (§5.6) has `D = b(δ) · RTprop`, RTprop the
+/// largest per-path windowed minimum over live paths, and D = 0 before the
+/// first sample. The engine (`emit_source.rs`, the span block under
+/// `pol.shed_on`) computes `shed_deadline_us(b, est.rtt())` with `est` the
+/// worst-ε path's EWMA RTT. Each test bounds one divergence
+/// (`docs/derivations/tail-and-hold.md` §3.2).
+#[cfg(test)]
+mod d_bounding_tests {
+    use super::*;
+
+    /// A path with `n` identical RTT samples and a loss rate of `lost`/100.
+    fn add_leg(sched: &mut Scheduler, id: u32, rtt_ms: u64, lost: u32) {
+        sched.add_path(id);
+        let p = sched.path_mut(id).unwrap();
+        for _ in 0..32 {
+            p.record_rtt_sample(Duration::from_millis(rtt_ms));
+            p.estimator.record_rtt(Duration::from_millis(rtt_ms));
+            p.estimator.record_batch(100, 100 - lost);
+        }
+    }
+
+    /// The engine's D, as the refresh site computes it: `b` and the worst-ε
+    /// estimator's EWMA RTT. A source pin keeps this copy honest.
+    fn engine_d_us(sched: &Scheduler, b: f64) -> Option<u64> {
+        let src = include_str!("emit_source.rs").split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            src.contains("st.shed_deadline_us_live = shed_deadline_us( b, est.rtt().as_micros() as u64, );")
+                && src.contains("let path_estimator = super::worst_eps_estimator(&sched);"),
+            "the D refresh site changed shape: re-derive these bounding tests"
+        );
+        worst_eps_estimator(sched).map(|est| shed_deadline_us(b, est.rtt().as_micros() as u64))
+    }
+
+    /// DIVERGENCE (paper §5.6, tail-and-hold §3.2 item 1, node
+    /// `rec-shed-d-defects`): the engine reads D off the highest-loss path,
+    /// the paper off the largest RTprop. Two paths, the fast leg (5 ms one
+    /// way, RTT 10 ms) lossier than the slow leg (25 ms one way, RTT 50 ms):
+    /// engine D / paper D = 10/50 = 0.2. In general it lies in
+    /// [min RTT / max RTT, 1]. Delete this test when D reads the largest
+    /// RTprop; it then asserts the ratio is 1.
+    #[test]
+    fn d_input_is_the_lossiest_path_not_the_largest_rtprop() {
+        let b = delta_budget_b(ProtocolHint::Realtime);
+        let mut sched = Scheduler::new(Arc::new(crate::scheduler::MockClock::new()));
+        add_leg(&mut sched, 0, 10, 4); // fast, lossier
+        add_leg(&mut sched, 1, 50, 1); // slow
+        let (id, _) = worst_eps_channel_path(&sched).unwrap();
+        assert_eq!(id, 0, "the fast leg is the worst-ε path");
+        let rtts: Vec<f64> = [0u32, 1]
+            .iter()
+            .map(|&i| sched.path(i).unwrap().estimator.rtt().as_micros() as f64)
+            .collect();
+        let rtprop_max = rtts.iter().cloned().fold(0.0, f64::max);
+        let rtprop_min = rtts.iter().cloned().fold(f64::MAX, f64::min);
+        let d_engine = engine_d_us(&sched, b).unwrap() as f64;
+        let d_paper = b.min(2.0) * rtprop_max;
+        let ratio = d_engine / d_paper;
+        println!("b={b} engine D={d_engine} us, paper D={d_paper} us, ratio={ratio:.4}");
+        assert!((ratio - 0.2).abs() < 0.01, "D_engine / D_paper = {ratio}, expected 0.2 (10 ms / 50 ms)");
+        assert!(ratio >= rtprop_min / rtprop_max - 1e-9 && ratio <= 1.0);
+        // N = 1, absolute: the two agree (the slow leg alone).
+        let mut one = Scheduler::new(Arc::new(crate::scheduler::MockClock::new()));
+        add_leg(&mut one, 1, 50, 1);
+        let d1 = engine_d_us(&one, b).unwrap() as f64;
+        let rtt1 = one.path(1).unwrap().estimator.rtt().as_micros() as f64;
+        assert_eq!(d1, (b.min(2.0) * rtt1).min(2.0 * rtt1).floor(), "N = 1: engine D = paper D");
+    }
+
+    /// DIVERGENCE (paper §5.6: "no seed, D = 0 before the first sample";
+    /// tail-and-hold §3.2 item 3, node `rec-shed-d-defects`): before any RTT
+    /// sample `est.rtt()` is the 50 ms constructor seed, so the engine's D is
+    /// `b · 50 ms` (25 ms at Realtime). Rename this test to
+    /// `d_is_zero_before_the_first_sample` and assert D = 0 when the fix
+    /// lands.
+    #[test]
+    fn d_uses_the_seed_before_the_first_sample() {
+        let b = delta_budget_b(ProtocolHint::Realtime);
+        let mut sched = Scheduler::new(Arc::new(crate::scheduler::MockClock::new()));
+        sched.add_path(0);
+        let est = &sched.path(0).unwrap().estimator;
+        assert!(est.rtt_measured().is_none(), "no RTT sample yet");
+        assert_eq!(est.rtt(), Duration::from_millis(50), "the constructor seed");
+        let d = engine_d_us(&sched, b).unwrap();
+        println!("b={b}, D before the first sample = {d} us (paper: 0)");
+        assert_eq!(d, shed_deadline_us(b, 50_000));
+        assert_eq!(d, (b * 50_000.0) as u64, "D = b · 50 ms; the paper says 0");
+        assert!(d > 0);
+    }
+}
