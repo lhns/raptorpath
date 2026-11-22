@@ -89,7 +89,7 @@ omega_row() { # cfg arm rep half stage
   omega_bg "$SRV_NS" "$rdir/iperf-s.log" iperf3 -s -1 -p 5201 --pidfile "$rdir/iperf-s.pid"; srvpid="$OMEGA_LASTPID"
   omega_sleep "${OMEGA_SETTLE_S:-0.5}"
   t_launch="$(omega_now)"
-  omega_bg "$CLI_NS" "$rdir/iperf.json" iperf3 -c "$SRV_ADDR" -p 5201 -P 8 -J --get-server-output -i 1 -t $(( ${OMEGA_NOFILL_S:-60} + ${OMEGA_EVENT_S:-12} + 5 )); cpid="$OMEGA_LASTPID"
+  omega_bg "$CLI_NS" "$rdir/iperf.json" iperf3 -c "$SRV_ADDR" -p 5201 -P 8 -J --get-server-output -i 1 -t "$(awk -v a="${OMEGA_NOFILL_S:-60}" -v b="${OMEGA_EVENT_S:-12}" 'BEGIN{printf "%d", a + b + 5.999}')"; cpid="$OMEGA_LASTPID"
   # warm-up ends on the witness, not on a clock; no event is injected before it
   while :; do
     ti="$($PY "$HERE/omega_parse.py" warmup "$rdir/backlog.txt" "$B" "${OMEGA_WIN_S:-1.0}" "${OMEGA_NOFILL_S:-60}" "$t_launch")"

@@ -332,7 +332,7 @@ if wanted("static"):
           not re.search(r"/home/\w+|/Users/\w+|192\.168\.|\bssh\b|@[a-z0-9.-]+\.(de|com|net)", txt))
     check("static: the guards exist (rp-* names, ens18 and lo refused)", "omega_guard_ns" in src["omega_topo.sh"] and "omega_guard_dev" in src["omega_topo.sh"] and 'OMEGA_MGMT_IF:-ens18' in src["omega_topo.sh"])
     check("static: HOME resolved after the shebang the way place_battery.sh does",
-          src["omega_run_all.sh"].splitlines()[1].startswith('HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"'))
+          src["omega_run_all.sh"].splitlines()[2].startswith('HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"'))
 
 # ───────────── guard unit paths (no session) ─────────────
 if wanted("guards"):
@@ -578,8 +578,8 @@ if wanted("abort-build"):
 
 if FAILED:
     print("=== SUMMARY: %d failed checks (first shown), first diagnostic last ===" % len(FAILED))
-    for f in FAILED[:5]:
-        print(f[:230])
+    for f in FAILED[:14]:
+        print(f[:170])
     if DIAGBUF:
-        print(DIAGBUF[0][:2600])
+        print(DIAGBUF[0][:900])
 sys.exit(fails)
