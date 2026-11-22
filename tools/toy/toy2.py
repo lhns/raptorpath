@@ -169,6 +169,28 @@ def hz_hold(cfg):
     return 0.0 if cfg.delta > dstar else cal["q99"]
 
 
+class PathEps:
+    """The engine-like incoming-loss EWMA (estimator.rs:41-50, 92, 103-110; net/mod.rs PathBatchTracker::record_batch): one
+    batch is one datagram keyed on a per-path path_seq.  expected = gap to the highest path_seq seen, received = 1; the sample
+    (e - r)/e updates an EWMA with alpha 0.1.  A late arrival (path_seq below the highest) has expected 0: it skips the update
+    and its symbol becomes a loss credit that pays down a later loss."""
+
+    def __init__(self, alpha=0.1):
+        self.alpha, self.hi, self.credit, self.ewma = alpha, -1, 0, 0.0
+
+    def record(self, ps):
+        if ps > self.hi:
+            e = ps - self.hi
+            loss = e - 1
+            pay = min(self.credit, loss)
+            self.credit -= pay
+            loss -= pay
+            self.ewma = self.alpha * (loss / e) + (1.0 - self.alpha) * self.ewma
+            self.hi = ps
+        else:
+            self.credit += 1
+
+
 class Sim:
     def __init__(self, cfg: Cfg):
         self.cfg = cfg
@@ -257,7 +279,7 @@ class Sim:
         self.g = dict(verdicts=0, verdict_copies=0, floors=0, floor_rep=0, repair_sends=0, serves=0, refusals=0,
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
-                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0)
+                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -266,7 +288,8 @@ class Sim:
         self.last_arr = -1.0
         self.pass_dt = []
         self.eps_ew = 0.0
-        self.eps_eng = 0.0
+        self.eps_trk = PathEps()
+        self.ps_ctr = 0
 
     # ---- helpers --------------------------------------------------------------------------
     def push(self, t, kind, payload):
@@ -348,10 +371,12 @@ class Sim:
         self.fifo_note(a)
         if self.trace is not None:
             self.trace.append((round(t, 9), s, 0, 0, 0))
+        ps = self.ps_ctr
+        self.ps_ctr += 1
         if self.lost(s, 0, t):
             self.orig_lost.append(s)
         else:
-            self.push(a, 0, (s, 0, t))
+            self.push(a, 0, (s, 0, t, ps))
         nxt = t + self.dt
         o = self.O()
         if o > self.g["max_O"]:
@@ -378,8 +403,10 @@ class Sim:
             self.trace.append((round(now, 9), s, k, 0, 1))
         a = now + self.delay.at(now)
         self.fifo_note(a)
+        ps = self.ps_ctr
+        self.ps_ctr += 1
         if not self.lost(s, k, now):
-            self.push(a, 0, (s, k, now))
+            self.push(a, 0, (s, k, now, ps))
 
     def send_floor(self, now, f):
         rep = self.floor_rep.get(f, 0)
@@ -392,8 +419,10 @@ class Sim:
         self.last_floor_t = now
         a = now + self.delay.at(now)
         self.fifo_note(a)
+        ps = self.ps_ctr
+        self.ps_ctr += 1
         if not self.lost(f, rep, now, SALT_FLOORLOSS):
-            self.push(a, 1, f)
+            self.push(a, 1, (f, ps))
 
     # ---- receiver -------------------------------------------------------------------------
     def min_hole(self):
@@ -448,15 +477,15 @@ class Sim:
         if ho is not None:
             self.push(now + ho, 6, q)
 
-    def on_data(self, now, s, c, tau):
+    def on_data(self, now, s, c, tau, ps=None):
         got = self.got
+        if ps is not None:
+            self.eps_trk.record(ps)
         if got[s]:
             self.g["dup"] += 1
         else:
             got[s] = 1
             self.arr[s] = now
-            e_ = s - self.rhi if s > self.rhi else 1                  # one arrival = one batch: e seqs expected, r = 1 received
-            self.eps_eng = 0.1 * ((e_ - 1) / e_) + 0.9 * self.eps_eng
             ell = self.est.feed(now, tau)
             if ell > 0:
                 self.g["fh_late"] += 1
@@ -495,7 +524,9 @@ class Sim:
                 self.r0e_buffer(now, s)
         self.advance(now)
 
-    def on_floor(self, now, f):
+    def on_floor(self, now, f, ps=None):
+        if ps is not None:
+            self.eps_trk.record(ps)
         h = self.H_now(now)
         if h <= 0:
             self.apply_floor(now, f, now)
@@ -561,26 +592,36 @@ class Sim:
         srtt = self.srtt if self.srtt is not None else 0.05
         frontier = self.rhi + 1
         if self.cfg.recv_eps == "engine":
-            eps_hat = self.eps_eng
+            eps_hat = self.eps_trk.ewma
+        elif self.cfg.recv_eps == "zero":                     # planted control: the budget is always spent
+            eps_hat = 0.0
+        elif self.cfg.recv_eps == "one":                      # planted control: the budget is never spent
+            eps_hat = 1.0
         elif self.cfg.recv_eps == "ewma":
             eps_hat = self.eps_ew
         else:
             eps_hat = self.n_missing / max(frontier, 1)
         if self.r0e_given_up < eps_hat * frontier:
             hold = srtt / 2
+            fb = 0
             self.g["r0e_budget_open"] += 1
         else:
             hold = min(0.300, max(0.060, 4 * srtt))
+            fb = 1
             self.g["r0e_fallback"] += 1
-        self.push(now + hold, 7, s)
+            self.g["r0e_fallback_open"] += 1               # buffered above an unpassed hole by construction
+        self.push(now + hold, 7, (s, fb))
 
-    def on_r0e_expiry(self, now, j):
+    def on_r0e_expiry(self, now, pl):
+        j, fb = pl
         self.g["r0e_expiries"] += 1
         m = self.min_hole()
         if m is not None and m < j:
             before = self.g["passes"]
             self.pass_below(now, j, "r0e")
             self.r0e_given_up += self.g["passes"] - before
+            if fb:
+                self.g["pass_r0e_fb"] += self.g["passes"] - before
 
     def on_tick(self, now):
         if self.dirty:
@@ -732,9 +773,9 @@ class Sim:
             t, _, kind, pl = heapq.heappop(heap)
             self.t_last = t
             if kind == 0:
-                self.on_data(t, pl[0], pl[1], pl[2])
+                self.on_data(t, pl[0], pl[1], pl[2], pl[3])
             elif kind == 1:
-                self.on_floor(t, pl)
+                self.on_floor(t, pl[0], pl[1])
             elif kind == 2:
                 self.apply_floor(t, pl[0], pl[1])
             elif kind == 3:

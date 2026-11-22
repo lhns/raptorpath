@@ -273,6 +273,23 @@ class HEstimator(unittest.TestCase):
             self.assertAlmostEqual(s.tpass[q], 1.011)
 
 
+class PathEpsModel(unittest.TestCase):
+    def test_gap_loss_ewma_and_late_credit(self):
+        e = toy2.PathEps()
+        for ps in range(10):
+            e.record(ps)
+        self.assertEqual(e.ewma, 0.0)
+        e.record(12)                                  # path_seq 10 and 11 lost: expected 3, 2 lost
+        self.assertAlmostEqual(e.ewma, 0.1 * 2 / 3)
+        before = e.ewma
+        e.record(11)                                  # late arrival: expected 0, no update, one credit
+        self.assertEqual(e.ewma, before)
+        self.assertEqual(e.credit, 1)
+        e.record(14)                                  # one lost (13), paid by the credit: sample 0
+        self.assertAlmostEqual(e.ewma, 0.9 * before)
+        self.assertEqual(e.credit, 0)
+
+
 class Receivers(unittest.TestCase):
     def test_r0e_passes_move_the_ack_count_and_refund(self):
         r = run(cell="I2", sender="S1c", recv="R0e", seed=1, dur=6.0)

@@ -118,6 +118,9 @@ def build():
         for arm, var in (("C", 2), ("D", 3)):
             job("REP", "REP-I2-%s-%s-%s" % (recv, eps, arm),
                 lambda seed, recv=recv, eps=eps, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var, recv_eps=eps)))
+    for recv in ("R0e", "R0c"):                            # planted controls for the fallback mechanism
+        for eps in ("zero", "one"):
+            job("REP", "CTL-I2-%s-%s" % (recv, eps), lambda seed, recv=recv, eps=eps: ("sim", tail_cfg("I2", "S1c", recv, seed, recv_eps=eps)))
     for cname, cell, q in (("I1", "I1", False), ("I2", "I2", False), ("Q", "I1", True)):
         job("REP", "AG1S-%s-Realtime-EWMA" % cname, ucfg(cell, 50.0, 0.99, 1.0, q=q, d_arm="EWMA"))
     # ---- Part B
