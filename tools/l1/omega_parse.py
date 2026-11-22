@@ -327,8 +327,8 @@ def r0_check(mode, dt_ms, g, k_exp, pre_txt, post_txt, p=None, t_switch=None):
     p: the table's delayed share (property 4: the selection count inside the binomial 99% interval); t_switch: the table switch instant (property 5: no event before it)."""
     pre = parse_probe(pre_txt) or parse_pcap_text(pre_txt)
     post = parse_pcap_text(post_txt)
-    pre = [dict(q, seq=q["ipid"]) for q in pre]
-    post = [dict(q, seq=q["ipid"]) for q in post]
+    pre = [dict(q, seq=q["ipid"], flow=0) for q in pre]       # one probe flow: match on the id alone
+    post = [dict(q, seq=q["ipid"], flow=0) for q in post]
     pk = match(pre, post)
     if not pk or any(p["t2"] is None for p in pk):
         return False, "probe packets missing at the post capture"

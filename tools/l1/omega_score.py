@@ -448,10 +448,6 @@ def score(path, nboot=10000, seed=1):
     out = {"lines": [], "notes": [], "rent": {}, "header": {k: v for k, v in header.items() if k != "kind"}}
     L = out["lines"]
     state = (footer or {}).get("state")
-    if header.get("rehearsal") or any(r.get("rehearsal") for r in rows):
-        L.append("REHEARSAL-NOT-SCORED")
-        out["exit"] = 2
-        return out
     truncated = (state is None or state.startswith("TRUNCATED") or header.get("truncated") or any(r.get("truncated") for r in rows))
     if truncated:
         why = "no footer" if state is None else state
@@ -463,6 +459,10 @@ def score(path, nboot=10000, seed=1):
         L.append("n reached per cell (live reps; nothing is scored): " + ", ".join("%s/%s=%d" % (c, a, n) for (c, a), n in sorted(reached.items())))
         out["exit"] = 2
         out["measurement"] = "TRUNCATED"
+        return out
+    if header.get("rehearsal") or any(r.get("rehearsal") for r in rows):
+        L.append("REHEARSAL-NOT-SCORED")
+        out["exit"] = 2
         return out
     if state != "DONE-ALL":
         L.append("UNSCOREABLE ledger state %s (only DONE-ALL is scored)" % state)

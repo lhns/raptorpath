@@ -204,7 +204,7 @@ def run(sb, session="R", extra=None, rehearse=False, hard=None, drop_tools=(), t
         "OMEGA_LOCK_RP": px(os.path.join(sb, "locks", "rp.lock")), "OMEGA_PROCFS": px(os.path.join(sb, "proc")),
         "OMEGA_SESSION": session, "OMEGA_TINY": "1", "OMEGA_ROW_KB": "1",
         "OMEGA_HARD": str(hard if hard is not None else int(time.time()) + 86400),
-        "OMEGA_WIN_S": "0.2", "OMEGA_NOFILL_S": "30", "OMEGA_EVENT_S": "0.3", "OMEGA_SETTLE_S": "0.5", "OMEGA_TUNQ_S": "1",
+        "OMEGA_WIN_S": "0.2", "OMEGA_NOFILL_S": "6", "OMEGA_EVENT_S": "0.3", "OMEGA_SETTLE_S": "0.5", "OMEGA_TUNQ_S": "1",
         "STUB_EV_S": "0.5", "STUB_IPERF_MIN_S": "0",
     })
     if rehearse:
@@ -243,7 +243,26 @@ def log_lines(sb):
     return [l.rstrip("\n") for l in open(os.path.join(sb, "log.txt")) if l.strip()]
 
 
+def diag(rd, sb=None):
+    """Print what a failed run left behind (CI logs only show the checks)."""
+    if not rd:
+        print("DIAG no run directory")
+        return
+    print("DIAG session.log tail:
+" + "".join(open(os.path.join(rd, "session.log")).readlines()[-12:]) if os.path.exists(os.path.join(rd, "session.log")) else "DIAG no session.log")
+    rows = os.path.join(rd, "rows")
+    for r in sorted(os.listdir(rows))[:2] if os.path.isdir(rows) else []:
+        d = os.path.join(rows, r)
+        print("DIAG row %s: %s" % (r, sorted(os.listdir(d))))
+        for f in ("backlog.txt", "sampler.err", "iperf.err", "tc-before-cli0.txt"):
+            p = os.path.join(d, f)
+            if os.path.exists(p):
+                print("DIAG   %s: %d lines, head=%r" % (f, len(open(p).readlines()), open(p).read()[:200]))
+
+
 def score(rd):
+    if not rd:
+        return 99, "no run directory"
     r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "omega_score.py"), os.path.join(rd, "ledger.jsonl"), "--boot", "100"], capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
 
@@ -333,6 +352,9 @@ if wanted("rehearse"):
     rd = run_dir(sb, "R")
     L = ledger(rd) if rd else []
     rows = [x for x in L if x.get("kind") == "row"]
+    if rc != 0 or not rd:
+        diag(rd)
+        print(out[-1500:])
     check("rehearse: exits 0 with DONE-ALL", rc == 0 and rd and os.path.exists(os.path.join(rd, "DONE-ALL")) and not os.path.exists(os.path.join(rd, "FAILED-ALL")), (rc, out))
     check("rehearse: one row per arm type and both outage arms, every row digested OK", sorted(r["arm"] for r in rows) == ["CLEAN", "HOLD@k_a=3", "OUT-HOLD", "OUT-REL", "REL@k_a=3"] and all(r["status"] == "OK" for r in rows), [(r["arm"], r["status"]) for r in rows])
     check("rehearse: the ledger header says rehearsal and the footer DONE-ALL", L and L[0].get("rehearsal") is True and L[-1].get("state") == "DONE-ALL")

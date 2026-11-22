@@ -98,7 +98,7 @@ omega_row() { # cfg arm rep half stage
   mpid="$(omega_cap "$PRE_NS" "$PRE_DEV" "$rdir/pre.pcap")"
   ppid="$(omega_cap "$POST_NS" "$POST_DEV" "$rdir/post.pcap")"
   : > "$rdir/backlog.txt"
-  omega_sampler "$rdir/backlog.txt" & spid=$!; omega_record_pid "$spid"
+  omega_sampler "$rdir/backlog.txt" 2> "$rdir/sampler.err" & spid=$!; omega_record_pid "$spid"
   nsx "$SRV_NS" iperf3 -s -1 -p 5201 --pidfile "$rdir/iperf-s.pid" > "$rdir/iperf-s.log" 2>&1 & srvpid=$!; omega_record_pid "$srvpid"
   omega_sleep "${OMEGA_SETTLE_S:-0.5}"
   t_launch="$(omega_now)"
