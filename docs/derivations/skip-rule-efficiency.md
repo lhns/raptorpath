@@ -561,7 +561,9 @@ Everything not listed here is as in §6.1 and stage 1 (source 10 000 packets/s, 
 - RTprop: paper §5.6, "the largest over live paths". The toy's path round trip is `2·owd_p`, which is a toy choice: symmetric paths.
 - At N = 1 Realtime this gives stage 1's D exactly, so stage 1's base cells are a bridge (§7.8).
 - **This form is the arm D_RTprop.** RTprop is the exact propagation round trip, `2·owd_p` with no jitter or queue.
-- **The engine computes the arm D_EWMA:** `D = min(b, 2)·SRTT` (`shed.rs:31` `shed_deadline_us`, fed `est.rtt()` at `emit_source.rs:631`), where SRTT is the EWMA RTT of `estimator.rs:465–481`: α = 1/8, and the first measured sample replaces the 50 ms seed. Before the first sample D = 0, so nothing is sheddable (`shed_allowed`).
+- **The engine computes the arm D_EWMA:** `D = min(b, 2)·SRTT` (`shed.rs:31` `shed_deadline_us`, fed `est.rtt()` at `emit_source.rs:631`), where SRTT is the EWMA RTT of `estimator.rs:465–481`: α = 1/8, and the first measured sample replaces the 50 ms seed.
+  - **Before the first sample, the arm models main's seed:** SRTT = 50 ms, so D = min(b, 2)·50 ms (25 ms at Realtime, 50 ms at Auto, 100 ms at Bulk). `shed_allowed`'s "D = 0 ⇒ nothing sheddable" never fires on main, because `est.rtt()` is the seed and not 0.
+  - This is a main defect, pinned by roadmap node `rec-shed-d-defects`, and not a law. Paper §5.6 says no seed: D = 0 before the first sample. The arm follows main deliberately. The verdicts taken before the first sample are counted and reported as "seed-era verdicts", so the defect's effect is visible.
   - **The toy's RTT sample** is one per gap report: the report's arrival at the sender minus the send time of the highest seq it newly acknowledges. That includes the jitter, the sampler wait and any queue, as an RTT sample without an ack-delay correction does. This is a toy choice.
   - SRTT exceeds RTprop by the mean jitter, the mean sampler wait and the mean queue, and it lags any change of the queue by about 8 samples (16 ms at one report per 2 ms tick).
 - **Which path:** main today (the ADR-0084 build is pending) reads the EWMA RTT of the path with the highest loss estimate: `emit_source.rs:631` takes `est.rtt()` from `worst_eps_estimator`, which is the `max_by` over channel paths on `loss_rate()` (`channel_set.rs:40–53`). At N = 2 that is either path, depending on which loss estimate is higher at the moment. So the two-path age-gate cells run both ends as arms: D from the slow path (the paper's form) and D from the fast path (stage 1's form). The engine lies between them. That is a model-against-engine divergence, reported in §7.12.
@@ -920,6 +922,8 @@ Part A, Part B, the witness cells AG1 and AG2, the overtake cells and every P3 b
 
 From `tail-and-hold.md` (branch `tail-fix-derivation`, f1851c4c) §2.3. The floor pass's hold gets two candidates, run with every receiver that has a floor pass (R1 and U):
 - **HW, the windowed maximum:** `floor-hold.md` §2's H, W = 10 s (§7.2).
+- **r1, E0 plus a per-path lateness** (`tail-and-hold.md` 3d98ec09, item 8): E0's per-path witness waits a further `ℓ_p` after it fires. ℓ_p is the RFC 4737 late time offset of §7.2, measured only between datagrams on path p and windowed over W = 10 s. It is 0 on a FIFO path, so on an order-keeping path r1 equals E0.
+- **r2, the floor inside the last copy** (same item): the verdict's floor rides in the last copy's datagram, so it cannot overtake that copy. A stand-alone floor datagram is sent only on the tail-sweep clock. The pass rule is E0's. Its cost appears only when the copy is lost: the floor is lost with it, and the pass waits for the next sweep floor, 25–100 ms later. That is stage 1's shared-fate model, now as a candidate on the sweep clock rather than the toy's refresh rule.
 - **E0, the event rule in its form E0:** pass the holes below F once, on every path the floor was sent on, the floor itself or a later-sent datagram has arrived, or else at `t_F + PTO_p`:
 
   ```text
@@ -937,13 +941,18 @@ From `tail-and-hold.md` (branch `tail-fix-derivation`, f1851c4c) §2.3. The floo
 - The W spike cell of Part D (E0 forgets the spike by construction, HW holds it for W).
 - **R (in-path reorder):** N = 1 and N = 2 at φ_slow = 0.25, each with per-datagram i.i.d. jitter J_r = 4 ms on every datagram and no rate limit, the netem `delay … jitter` shape without `rate`. Here a later-sent datagram can arrive before an earlier one on the same path, so E0's per-path witness can fire while a copy is still in flight. This is the cell that can show E0 missing. Witness: the overtake count of §7.6 > 0, or the cell is void.
 
+**All four rules (HW, E0, r1, r2) run in cell R and in the one-path order-keeping cell with loss (I1, FIFO, J = 1 ms).** The second cell is required because r2's cost appears only when the copy is lost, and an order-keeping path is where r1 and E0 must add nothing.
+- **Why r1 and r2 exist.** On a path that reorders packets, E0 passes about half of the skips whose last copy got through before that copy arrives. The engine delivers such a late fill at once, out of order (`reorder.rs:267`). Nothing is lost, but it is disorder, which costs ω.
+
 **Readouts, per rule:**
 - **the wait** `t_pass − t_F` per floor-passed hole: p50, p99 and the maximum;
 - **the miss rate:** fills arriving after the pass, per floor-passed hole, read against the `fh_miss` bars of §7.7 (hard 0 on FIFO cells; the one-sided 95 % upper bound against 1 − ρ on two-path and reorder cells);
 - which term of E0 resolved each path (per-path witness, floor, send-anchored silence bound, local silence bound), as its bind gauge;
 - v and e over the stream (§7.4), so the wait is read for what it costs the user.
 
-**Reading.** HW against E0 on wait and miss rate under §7.7's bars, per cell. Predicted (`tail-and-hold.md` §2.4): equal waits of about the skew at two paths when both legs carry repair, E0 shorter after a spike and when the slow leg carries only old originals, E0 at the silence bound on a dead copy-carrying path, and E0's misses above HW's only in R. Nothing is adopted; the owner decides the hold with `tail-and-hold.md`. Budget: about 0.5 h, added to C and D, re-sized when those parts are re-registered.
+**The deciding reading:** which rule meets the miss bar in cell R while adding no wait on the order-keeping cell. "No wait added" means the wait `t_pass − t_F`, and e at p99, read as equivalent to E0's under §7.7's bars in I1. A rule that meets only one half is reported as such.
+
+**Reading.** The four rules compared on wait and miss rate under §7.7's bars, per cell. Predicted (`tail-and-hold.md` §2.4): equal waits of about the skew at two paths when both legs carry repair, E0 shorter after a spike and when the slow leg carries only old originals, E0 at the silence bound on a dead copy-carrying path, and E0's misses above HW's only in R. Nothing is adopted; the owner decides the hold with `tail-and-hold.md`. Budget: about 0.75 h with four rules, added to C and D, re-sized when those parts are re-registered.
 
 ## 8. What this blocks
 
