@@ -59,6 +59,30 @@ nsip() { # ns ip-args...   ip -n rp-<ns> ...
   $OMEGA_SUDO ip -n "$ns" "$@"
 }
 
+# PID discipline: $RUN/pids holds "<pid> <start time>" (field 22 of /proc/<pid>/stat). A recorded PID is signalled only while its start time still
+# matches (omega_pid_ours), so a PID the kernel reused for another process is never touched. No /proc or no recorded start: never signalled.
+omega_pid_start() { # pid -> the process start time (clock ticks since boot), nothing if the process is gone
+  local s
+  s="$(cat "/proc/$1/stat" 2>/dev/null)" || return 1
+  s="${s##*) }"
+  set -- $s
+  echo "${20:-}"
+}
+omega_pid_record() { # pid
+  [ -z "${RUN:-}" ] || echo "$1 $(omega_pid_start "$1")" >> "$RUN/pids"
+}
+omega_pid_ours() { # pid -- true iff pid is recorded and still the process that was started
+  local rec cur
+  rec="$(awk -v p="$1" '$1 == p {s = $2} END {print s}' "${RUN:-/nonexistent}/pids" 2>/dev/null)"
+  [ -n "$rec" ] || return 1
+  cur="$(omega_pid_start "$1")" || return 1
+  [ "$cur" = "$rec" ]
+}
+omega_signal() { # sig pid -- signal a recorded PID only if it is still ours
+  omega_pid_ours "$2" || return 1
+  kill "-$1" "$2" 2>/dev/null
+}
+
 # A long-running process in rp-<ns>, a DIRECT child of this shell ($! is the sudo process, which relays TERM to the command): so a kill by recorded PID
 # reaches it. ns, a log file (stdout; stderr goes to <log>.err), then the command. Sets OMEGA_LASTPID and records it in $RUN/pids.
 omega_bg() {
@@ -67,7 +91,7 @@ omega_bg() {
   omega_guard_ns "$ns"
   $OMEGA_SUDO ip netns exec "$ns" "$@" > "$lf" 2> "$lf.err" &
   OMEGA_LASTPID=$!
-  [ -z "${RUN:-}" ] || echo "$OMEGA_LASTPID" >> "$RUN/pids"
+  omega_pid_record "$OMEGA_LASTPID"
 }
 
 ns_add() { omega_guard_ns "$1"; $OMEGA_SUDO ip netns add "$1"; }

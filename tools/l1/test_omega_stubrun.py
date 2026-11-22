@@ -333,7 +333,7 @@ if wanted("static"):
     wrappers = [l.strip() for l in code if "$OMEGA_SUDO ip" in l]
     check("static: ip is run through sudo only in the guarded wrappers (nsx, nsip, ns_add, ns_del, ns list)", 4 <= len(wrappers) <= 9 and all(("netns exec" in l or "ip -n" in l or "netns add" in l or "netns del" in l or "netns list" in l) for l in wrappers), wrappers)
     kills = [l.strip() for l in code if re.search(r"(^|[;&|]\s*|\s)kill\s", l)]
-    check("static: every kill takes a recorded PID variable", kills and all(re.search(r'kill\s+(-\w+\s+)*"?\$', l) for l in kills), kills)
+    check("static: every kill takes a recorded PID variable", kills and all(re.search(r'kill\s+(-\w+\s+|"-\$\w+"\s+)*"?\$', l) for l in kills), kills)
     check("static: pkill only with -x raptorpath", all("-x raptorpath" in l for l in code if re.search(r"\bpkill\b", l)))
     check("static: no VM user name, address or home path in the repo files",
           not re.search(r"/home/\w+|/Users/\w+|192\.168\.|\bssh\b|@[a-z0-9.-]+\.(de|com|net)", txt))
@@ -583,6 +583,36 @@ if wanted("abort-build"):
     check("abort-build: a raptorpath sha that differs from the pin -> ABORT-BUILD", rc == 3 and "ABORT-BUILD" in out, (rc, out[-500:]))
     cleanup(sb)
 
+
+# ───────────── PID discipline: a reused PID is never signalled ─────────────
+if wanted("pid-reuse"):
+    if not os.path.isdir("/proc/self"):
+        print("skip pid-reuse (no /proc)")
+    else:
+        sb = make_sandbox("pidreuse")
+        d = px(os.path.join(sb, "state", "r"))
+        l1 = px(os.path.join(sb, "l1"))
+        script = r"""
+source %s/omega_topo.sh; source %s/omega_battery.sh
+RUN=%s; mkdir -p "$RUN"; : > "$RUN/pids"
+/bin/sleep 30 & p=$!
+omega_pid_record "$p"
+omega_pid_ours "$p" && echo OURS_AFTER_RECORD
+echo "$p 1" > "$RUN/pids"                 # the recorded start time no longer matches: the PID now belongs to someone else
+omega_pid_ours "$p" || echo NOT_OURS_AFTER_REUSE
+omega_stop_pid "$p"; omega_signal KILL "$p"
+kill -0 "$p" 2>/dev/null && echo ALIVE_AFTER_REUSE_STOP
+: > "$RUN/pids"; echo "$p" > "$RUN/pids"       # a record without a start time is never signalled either
+omega_signal KILL "$p"; kill -0 "$p" 2>/dev/null && echo ALIVE_WITHOUT_START
+: > "$RUN/pids"; omega_pid_record "$p"
+omega_stop_pid "$p"
+kill -0 "$p" 2>/dev/null || echo GONE_WHEN_OURS
+""" % (l1, l1, d)
+        r = subprocess.run([BASH, "-c", script], capture_output=True, text=True, timeout=60)
+        o = r.stdout
+        check("pid-reuse: a recorded PID is signalled only while its start time matches", "OURS_AFTER_RECORD" in o and "NOT_OURS_AFTER_REUSE" in o and "ALIVE_AFTER_REUSE_STOP" in o
+              and "ALIVE_WITHOUT_START" in o and "GONE_WHEN_OURS" in o, (r.returncode, o, r.stderr[-300:]))
+        cleanup(sb)
 
 # ───────────── the rehearsal runs R0 and the tunnel; NO-GO on failure; the seed check ─────────────
 if wanted("rehearse-r0"):

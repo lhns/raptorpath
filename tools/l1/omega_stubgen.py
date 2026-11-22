@@ -82,7 +82,7 @@ def r0_capture(path):
     e0 = float(sent[0][0])
     period = max(1, int(round(g * 0.1)))
     bad = os.environ.get("STUB_R0_BAD")
-    sel = {int(i): float(t) for i, (t, ident) in enumerate(sent) if mode != "CLEAN" and i % period == (period // 2 + shift) % period and float(t) > e0 + 0.05}
+    sel = {int(i): float(t) for i, (t, ident) in enumerate(sent) if mode != "CLEAN" and i % period == (period // 2 + shift) % period and i > 0.05 * g}
     times = [float(t) for t, _ in sent]
     if mode == "HOLD":
         pt = hold_posts(times, set(sel), dt, g)

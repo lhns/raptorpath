@@ -74,7 +74,7 @@ omega_tunnel_phase() { # phase nflows
     nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 > "$RUN/tunq-$ph.tc-cli0" 2>/dev/null
     kill -0 "$cpid" 2>/dev/null || break
     omega_sleep 0.1
-    if [ "$(awk -v n="$(omega_now)" -v t="$t" -v d="$dur" 'BEGIN{print (n - t > d + 10) ? 1 : 0}')" = 1 ]; then kill -TERM "$cpid" 2>/dev/null; break; fi
+    if [ "$(awk -v n="$(omega_now)" -v t="$t" -v d="$dur" 'BEGIN{print (n - t > d + 10) ? 1 : 0}')" = 1 ]; then omega_signal TERM "$cpid"; break; fi
   done
   wait "$cpid" 2>/dev/null
   omega_stop_pid "$spid"

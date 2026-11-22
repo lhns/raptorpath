@@ -24,12 +24,11 @@ omega_now() { date +%s.%N; }
 omega_sleep() { "${OMEGA_SLEEP:-sleep}" "$1"; }
 omega_note() { echo "$*" | tee -a "$RUN/session.log"; }
 
-omega_record_pid() { echo "$1" >> "$RUN/pids"; }
+omega_record_pid() { omega_pid_record "$1"; }
 omega_stop_pid() { # pid  -- TERM by recorded PID, then reap
   local p="$1"
   [ -n "$p" ] || return 0
-  kill -TERM "$p" 2>/dev/null || true
-  wait "$p" 2>/dev/null || true
+  if omega_signal TERM "$p"; then wait "$p" 2>/dev/null || true; fi    # a PID that is no longer ours is neither signalled nor waited for
 }
 
 omega_cap() { # ns dev pcap   start tcpdump, headers only; its PID is in OMEGA_LASTPID
@@ -112,7 +111,7 @@ omega_row() { # cfg arm rep half stage
   nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 > "$rdir/tc-after-cli0.txt" 2>/dev/null
   nsx "$RO_NS" tc -s qdisc show dev "$RO_DEV" > "$rdir/tc-after-ro.txt" 2>/dev/null
   # stop by recorded PID: iperf3 gets TERM (a background job ignores SIGINT; iperf3 handles TERM like INT and prints the interval JSON), the rest TERM too
-  kill -TERM "$cpid" 2>/dev/null || true; wait "$cpid" 2>/dev/null || true
+  if omega_signal TERM "$cpid"; then wait "$cpid" 2>/dev/null || true; fi
   omega_stop_pid "$srvpid"; omega_stop_pid "$mpid"; omega_stop_pid "$ppid"; omega_stop_pid "$spid"
   if [ "$nofill" = 1 ] && [ ! -s "$rdir/backlog.txt" ]; then
     # no backlog readout at all: the witness is missing, which is not a NO_FILL (a queue that never filled)
