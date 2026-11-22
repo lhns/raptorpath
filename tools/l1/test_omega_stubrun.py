@@ -494,9 +494,13 @@ if wanted("full") or wanted("no-seed") or wanted("table-too-small") or wanted("i
             continue
         sb = make_sandbox("R" + name)
         binp = os.path.join(sb, "bin", "raptorpath-stub")
-        ex = dict(extra, OMEGA_BIN=px(binp), OMEGA_BIN_SHA=sha(binp))
+        ex = dict(extra, OMEGA_BIN=px(binp), OMEGA_BIN_SHA=sha(binp), OMEGA_XTRACE="1")
         rc, out = run(sb, "R", ex)
         rd = run_dir(sb, "R")
+        if rc != 0 and rd:
+            xt = os.path.join(rd, "xtrace.log")
+            print("DIAG R rc=%s; xtrace tail:" % rc)
+            print("".join(open(xt).readlines()[-40:]) if os.path.exists(xt) else "(none)")
         L = ledger(rd) if rd else []
         rows = [x for x in L if x.get("kind") == "row"]
         r0 = json.load(open(os.path.join(rd, "R0.json"))) if rd and os.path.exists(os.path.join(rd, "R0.json")) else {}

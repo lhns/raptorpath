@@ -318,6 +318,7 @@ omega_stage_t_start() {
 }
 
 # ── 7. the rows ──
+[ -z "${OMEGA_XTRACE:-}" ] || { exec 19> "$RUN/xtrace.log"; BASH_XTRACEFD=19; set -x; }   # debugging aid: the row loop traced to $RUN/xtrace.log
 omega_run_rows "$ROWSF"; RC=$?
 omega_note "STEP rows-done rc=$RC"
 case "$RC" in
