@@ -134,6 +134,13 @@ def build():
     for recv in ("R0e", "R0c"):
         for arm, var in (("A", 0), ("B", 1)):
             job("REP", "AAN-I2-%s-%s" % (recv, arm), lambda seed, recv=recv, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var)))
+    # ---- mid-stream outage (reported only): all datagrams lost for 1.5 s from 40 % of the object's send time; the source pauses at
+    # 2048 outstanding, so the last seq is sent after the outage ends
+    for cell in ("I2", "L10"):
+        for recv in ("R0e", "R0c", "R1", "U"):
+            job("T", "MID-%s-%s" % (cell, recv), lambda seed, cell=cell, recv=recv: ("sim", toy2.Cfg(
+                cell=cell, sender="S1c", recv=recv, seed=seed, n_total=12147, delta=50.0, rho=0.99, owd=0.05 if cell == "L10" else 0.005,
+                dead=(0, 0.4 * 12147 / 10000.0, 1.5))))
     # ---- Part B
     for pre in ("Bulk", "Auto", "Realtime"):
         p, rho = toy2.PRESETS[pre], toy2.RHO[pre]

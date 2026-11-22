@@ -583,6 +583,25 @@ A passed packet that is later filled is delivered after the frontier has passed 
 
 In words: about 90 % (I2) and 97 % (L10) of the early-skip passes are later filled, so each is one out-of-order delivery; the floor passes are all of the dead window's tail, which no copy fills before the run ends, so none is delivered late.
 
+### Mid-stream outage cell (reported only)
+
+Part T conditions (I2 and L10 loss, Realtime, rho = 0.99, one path, S_src = 12 147 seqs per object), but every datagram, original, copy and floor, sent in a 1.5 s window starting at 40 % of the object's send time (0.486 s, ending 1.986 s) is lost, instead of the window at the tail. The source pauses at 2 048 outstanding (once per run), so the sends resume after the window ends: the last send is at about 2.54 s (I2) and 2.66 s (L10), well after it. 12 seeds, per run:
+
+| cell | receiver | G_rx/S_src (abandoned at the end) | P1 breach events (worst excess) | early-skip passes | filled later | never arrived | floor passes | v mean ms | v median ms | tail time ms | stalled |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| I2 | R0e | 0.00722 | 9.8 (53.7) | 252.2 | 221.1 | 31.2 | 56.5 | 241.26 | 7.84 | 13.0 | 0/12 |
+| I2 | R0c | 0.00814 | 19.2 (48.2) | 235.2 | 205.5 | 29.8 | 69.2 | 240.40 | 7.81 | 12.7 | 0/12 |
+| I2 | R1 | 0.00679 | 0.0 (0.0) | 0.0 | 0.0 | 0.0 | 82.5 | 251.13 | 9.99 | 14.6 | 0/12 |
+| I2 | U | 0.00679 | 0.0 (0.0) | 0.0 | 0.0 | 0.0 | 82.5 | 232.38 | 0.00 | 14.6 | 0/12 |
+| L10 | R0e | 0.01079 | 132.4 (61.8) | 497.5 | 367.2 | 130.3 | 0.8 | 422.61 | 178.39 | 220.1 | 0/12 |
+| L10 | R0c | 0.01520 | 108.4 (110.2) | 499.8 | 386.2 | 113.5 | 71.2 | 386.12 | 141.19 | 173.7 | 0/12 |
+| L10 | R1 | 0.00600 | 0.0 (0.0) | 0.0 | 0.0 | 0.0 | 72.9 | 596.84 | 172.12 | 204.0 | 0/12 |
+| L10 | U | 0.00600 | 0.0 (0.0) | 0.0 | 0.0 | 0.0 | 72.9 | 276.19 | 3.95 | 204.0 | 0/12 |
+
+How v and e are defined in `toy2.py` (the same in every cell): v_j is, for every seq j the consumer was handed (in order, released past a hole, or by a late fill after a pass; a seq passed and never filled is not in v and is counted separately), the time from its loss-free arrival (the instant its original would have arrived, tau_j + owd + jitter + queue, whether or not the original was lost) to its delivery instant to the consumer; e_j is the same delivery instant minus the loss-free in-order delivery instant, the running maximum of those loss-free arrivals, which on this FIFO one-path model equals the loss-free arrival, so e equals v here. S_src is 12 147 seqs per object (about 12 074 delivered per run in this cell, the rest passed and never filled).
+
+In words: the outage cell shows the same ordering as the tail cell with the cost moved to the middle: R0e and R0c finish the object about as fast as R1 (tail time under 15 ms in I2) because the outage is over long before the last send, and they break the promise more (about 10 to 19 pass events per run in I2, 108 to 132 in L10, worst excess 48 to 110 seqs); R0c's abandonment (0.0081 in I2, 0.0152 in L10) exceeds R0e's (0.0072, 0.0108) and, in L10, the promise (0.01); U has the lowest mean wait (232 and 276 ms) and a near-zero median, since it releases past the holes the outage leaves. Nothing stalled.
+
 ### Part B tables
 
 ### P3 power: HZ and the planted controls (U at Auto, I1, omega = 1, rho = 1)
