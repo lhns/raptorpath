@@ -89,6 +89,7 @@ gantt
     Sequential-classification repair law (§… :rec_seqclass_law, 2026-09-06, 2026-09-07
     Mixed retention settings stall a transf… :active, rec_mixed_rho_stall, 2026-11-20, 2026-11-22
     Merge guard for the ADR-0084 sender side :rec_adr84_guard, 2026-11-21, 2026-11-22
+    Give-up deadline D defects on main :rec_shed_d_defects, 2026-11-22, 2026-11-22
     section rate - rate law
     Gilbert-Elliott loss model :rate_ge_hmm, 2026-03-14, 2026-07-07
     First automatic repair-rate control :rate_fec_rate_v1, 2026-03-18, 2026-03-21
@@ -345,6 +346,7 @@ gantt
     The most efficient give-up rule below ρ… :model_skip_rule_efficiency, 2026-11-21, 2026-11-22
     Toy stage 1 - sender give-up rules :model_toy_stage1, 2026-11-21, 2026-11-21
     Offline simulation stage 2 - plan :active, model_toy_stage2_plan, 2026-11-21, 2026-11-22
+    Fix the lost tail, re-derive the hold :active, model_tail_and_hold, 2026-11-22, 2026-11-22
     Owner call - last copy, ack pairs :model_adr84_amend2, 2026-11-21, 2026-11-21
     Owner call - sender side first :model_adr84_sender_first, 2026-11-21, 2026-11-21
     The ordering hold H_o(δ) for design U :model_ordering_hold, 2026-11-21, 2026-11-22

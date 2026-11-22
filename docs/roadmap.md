@@ -346,6 +346,7 @@ flowchart TB
 | Lost packet neither resent nor dropped | ⚠ open | When late data may be dropped (ρ below 1), a lost packet can be neither re-sent nor dropped, and the transfer then waits for the receiver to skip it; a lost final packet with nothing after it is never resolved. |
 | Mixed retention settings stall a transfer | ⚠ open | A sender that may drop late data talking to a receiver that never skips a missing packet stalls almost at once (ack 49 of 12 147 in the simulation); matched settings finish. |
 | Merge guard for the ADR-0084 sender side | ⛔ blocked | The test the sender-side give-up change must pass before it merges: the usual settings behave exactly as before, and at the low-latency setting each new part is shown to have actually run. |
+| Give-up deadline D defects on main | ⚠ open | Three faults in how the engine sets the age before a lost packet may be given up: on two paths it follows whichever path currently looks lossiest, so it jumps between the fast and slow path; before the first round-trip sample it uses a 50 ms placeholder; and it is only refreshed when new data is sent, so it freezes during the end of a transfer. |
 | First automatic repair-rate control | ✔ done · successful | The first automatic way to decide how much error-correcting (FEC) data to send, driven by an estimator that detects changes in the loss rate (BOCD). |
 | Owner call: retention is ρ | ✔ done · n/a | The owner decided that how long data is kept for resending is the reliability dial ρ, one of the three main dials, not a separate setting. |
 | Loss estimator updates in batches | ✔ done · very-successful ⚠ | Made the loss estimator update in batches instead of on every packet, which raised two-path throughput by about 40 percent and cut sender CPU. |
@@ -463,6 +464,7 @@ flowchart TB
 | Make all twelve ρ splits continuous | ▶ in progress | Twelve places in the engine behave one way when no data may be dropped (ρ = 1) and another way below it. Each is checked for a reason; each split is replaced by one formula continuous in ρ that keeps today's ρ = 1 behaviour, and the reliable flag is deleted. |
 | The most efficient give-up rule below ρ = 1 | ⛔ blocked | Which lost packets a ρ < 1 stream should give up on, when, and on which side. Every give-up should still send one last copy; whether the receiver may stop waiting on its own depends on whether a packet that arrives after its successors counts as delivered; the owner decided it does (2026-11-21). |
 | Offline simulation stage 2: plan | ▶ in progress | Rewrite the plan for the second run of the offline simulation, which compares receiver rules (how long to hold out-of-order packets), fixing the weak spots stage 1 exposed before anything runs. |
+| Fix the lost tail; re-derive the hold | ▶ in progress | The owner rejected two parts of the sender-first plan: a lost packet at the end of a transfer may wait without limit once the receiver's old early skips have used up the allowance, and the receiver waits a fixed-window delay before honouring the sender's skip message. This derivation prices the ways to fix the first before the sender build ships, and re-derives the second without the borrowed 10 s window. |
 | The ordering hold H_o(δ) for design U | ⛔ blocked | How long the receiver should wait for a missing packet before delivering the ones behind it out of order, as one smooth function of the latency price. Whether Bulk and Auto keep strict order depends on a new number, the price of one out-of-order delivery, to be measured. |
 | How long the floor pass waits | ▶ in progress | How long a receiver waits after the sender's skip message before passing the holes below it. |
 | One metrics system: design | ⏳ waiting | A design for one metrics system that feeds the status page, the logs and standard monitoring tools, including a packet-level recorder. |
@@ -501,6 +503,7 @@ flowchart TB
 - `rec-fix-nack-throttle`: Hidden re-send limit: measure, then justify
 - `perf-config-dropped`: Benchmark tool ignores the config file
 - `infra-dead-code-batch`: Remove 24 dead functions
+- `rec-shed-d-defects`: Give-up deadline D defects on main
 
 **no-cargo**
 
@@ -542,6 +545,7 @@ flowchart TB
 - `store-law-derivation`: Deriving the in-flight data limit
 - `model-rho-step-sites`: Make all twelve ρ splits continuous
 - `model-toy-stage2-plan`: Offline simulation stage 2: plan
+- `model-tail-and-hold`: Fix the lost tail; re-derive the hold
 - `model-floor-hold`: How long the floor pass waits
 
 **none**
@@ -1215,14 +1219,14 @@ History before November 2026 is reconstructed from commits, status sections and 
 Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 23 nodes (12 done, 2 parked, 9 abandoned)
-- [rec - recovery](roadmap/tracks/rec.md): 64 nodes (30 done, 8 in progress, 4 next, 4 blocked, 4 parked, 14 abandoned)
+- [rec - recovery](roadmap/tracks/rec.md): 65 nodes (30 done, 8 in progress, 5 next, 4 blocked, 4 parked, 14 abandoned)
 - [rate - rate law](roadmap/tracks/rate.md): 39 nodes (19 done, 5 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 71 nodes (37 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 22 nodes (8 done, 3 in progress, 1 next, 1 blocked, 9 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 68 nodes (49 done, 6 in progress, 7 next, 5 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 43 nodes (27 done, 10 in progress, 2 next, 3 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 44 nodes (27 done, 11 in progress, 2 next, 3 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 30 nodes (21 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->
