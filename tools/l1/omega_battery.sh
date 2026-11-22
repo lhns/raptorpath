@@ -32,16 +32,6 @@ omega_stop_pid() { # pid  -- TERM by recorded PID, then reap
   wait "$p" 2>/dev/null || true
 }
 
-omega_sampler() { # outfile  -- runs until killed by PID: "<epoch> <backlog packets>" of cli0's qdisc
-  local t b
-  while :; do
-    t="$(omega_now)"
-    b="$(nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 2>/dev/null | awk '/backlog/ && !d {sub(/p$/,"",$3); print $3; d=1}')"
-    [ -z "$b" ] || echo "$t $b" >> "$1"
-    omega_sleep "${OMEGA_SAMPLE_S:-0.01}"
-  done
-}
-
 omega_cap() { # ns dev pcap   start tcpdump, headers only, print its PID
   nsx "$1" tcpdump -i "$2" -nn -s 96 -w "$3" >/dev/null 2>&1 &
   local p=$!
@@ -98,7 +88,7 @@ omega_row() { # cfg arm rep half stage
   mpid="$(omega_cap "$PRE_NS" "$PRE_DEV" "$rdir/pre.pcap")"
   ppid="$(omega_cap "$POST_NS" "$POST_DEV" "$rdir/post.pcap")"
   : > "$rdir/backlog.txt"
-  omega_sampler "$rdir/backlog.txt" 2> "$rdir/sampler.err" & spid=$!; omega_record_pid "$spid"
+  bash "$HERE/omega_sampler.sh" "$rdir/backlog.txt" 2> "$rdir/sampler.err" & spid=$!; omega_record_pid "$spid"
   nsx "$SRV_NS" iperf3 -s -1 -p 5201 --pidfile "$rdir/iperf-s.pid" > "$rdir/iperf-s.log" 2>&1 & srvpid=$!; omega_record_pid "$srvpid"
   omega_sleep "${OMEGA_SETTLE_S:-0.5}"
   t_launch="$(omega_now)"

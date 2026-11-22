@@ -49,7 +49,7 @@ def px(p):
     return "/%s/%s" % (m.group(1).lower(), m.group(2)) if m and os.name == "nt" else p
 
 
-HARNESS = ["omega_run_all.sh", "omega_topo.sh", "omega_battery.sh", "omega_tunnel.sh", "omega_cells.py", "omega_dist.py", "omega_parse.py", "omega_score.py",
+HARNESS = ["omega_run_all.sh", "omega_topo.sh", "omega_battery.sh", "omega_tunnel.sh", "omega_sampler.sh", "omega_cells.py", "omega_dist.py", "omega_parse.py", "omega_score.py",
            "omega_probe.py", "omega_stubgen.py", "lib.sh", "lib_battery.sh"]
 
 LOG_STUB = 'echo "ns=${STUB_NS:--} %s $*" >> "$STUB_LOG"\n'

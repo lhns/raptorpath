@@ -133,7 +133,7 @@ for _l in "$OMEGA_LOCK_VM" "$OMEGA_LOCK_RP"; do
 done
 
 # ── 2. CRLF (rule 10), tools, amendment, budget, disk: all before any lock is taken or any VM command is issued ──
-crlf_guard omega_run_all.sh omega_topo.sh omega_battery.sh omega_tunnel.sh omega_cells.py omega_dist.py omega_parse.py omega_score.py omega_probe.py lib.sh lib_battery.sh
+crlf_guard omega_run_all.sh omega_topo.sh omega_battery.sh omega_tunnel.sh omega_sampler.sh omega_cells.py omega_dist.py omega_parse.py omega_score.py omega_probe.py lib.sh lib_battery.sh
 omega_check_names
 for _t in iperf3 tcpdump ethtool ss ip tc awk; do
   command -v "$_t" >/dev/null 2>&1 || { echo "ABORT-TOOLS $_t is missing; NOTHING WAS RUN"; exit 3; }
