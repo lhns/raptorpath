@@ -500,9 +500,12 @@ B60 runs 70 s.
 
 **Status.** Pre-registration for stage 2 of the toy simulation, written for review before anything is built. No code and no runs in this section. It supersedes §6 for stage 2; §6 stays as the stage 1 registration, and `tools/toy/results-stage1.md` (stage 1, "the stage 1 results") is the evidence every change below cites. The toy fixes no constant. Every number in this section is either a provenance-carrying input or a decision bar for the toy; **no toy choice becomes engine provenance.**
 
+**Review outcome (2026-11-22).** The one-path parts may be built after the edits of this revision: the engine's EWMA form of D (§7.2, §7.5), P3's residuals and planted controls (§7.9), and a new first decision part on the lost tail (Part T, §7.13), from the owner's answer of 2026-11-22, "fix the lost tail first". **The two-path parts (C) and the floor and W parts (D) wait on the hold re-derivation** (branch `tail-fix-derivation`, `docs/derivations/tail-and-hold.md`, in progress). They are not built until it lands, and they may be re-registered then.
+
 **Settled before stage 2, not revisited.** Run-atomic spending (S2) and the time-based give-up deadline T_ρ (S3) are dropped (stage 1, P5). The sender rule is ADR-0084's verdict, `age > D ∧ Ab + 1 ≤ (1 − ρ)·S_src`, plus one last copy with the floor (Amendment 2). Stage 1 called this rule S1c, and so does this section.
 
 **What stage 2 asks, most important first.**
+0. With the sender build's interim receivers, today's early-skip arm (Amendment 3's fallback) and the floor-only receiver, what does the lost tail cost in measured milliseconds, and does it stall? (Part T.)
 1. Does design U's release rule (§4.1, `ordering-hold.md`) behave as derived at one path: continuous through the three presets, order kept at Bulk and Auto where the derivation says it is, and within its proven factor of its own offline optimum U\*?
 2. At two paths with skew: how much out-of-order delivery does U cause per slow-path share φ_slow, does the definition of d (with or without skew self-heals) change that, and what does the user actually wait?
 3. Does the derived floor hold H (`floor-hold.md`) cover the late fills, and which memory W does the evidence favour?
@@ -531,6 +534,7 @@ B60 runs 70 s.
 - **B10:** a 200 ms blackout at 10 s.
 - **The presets:** δ = 0.005 (Bulk), 0.5 (Auto), 50 (Realtime), the `net::delta_price` values. Bulk and Auto ship at ρ = 1, and Realtime at ρ = 0.99.
 - ε_cell is a cell's mean per-copy loss: 2.5 % in I1, 10 % in I2, 2.5 % in G.
+- **Q (light standing queue):** a queue delay added to the path's delay process, a sawtooth that rises from 0 to 10 ms over 0.98 s and falls back over 20 ms (slope −½, so the path stays FIFO), period 1 s, mean ≈ 5 ms. The windowed-min RTprop stays the propagation round trip, and the EWMA follows the queue. Toy choice.
 
 Everything not listed here is as in §6.1 and stage 1 (source 10 000 packets/s, the 2 ms gap-report sampler, the tail sweep at `clamp(2·SRTT, 25, 100) ms`, the RFC 9002 hole law of 9/8 of the seq's path one-way delay at N = 2, B = N·2 048, common random numbers keyed by seed, seq, copy index and path).
 
@@ -556,7 +560,11 @@ Everything not listed here is as in §6.1 and stage 1 (source 10 000 packets/s, 
 - b(δ): derived, paper §5.4. It is ½ at Realtime, 1 at Auto and 2 at Bulk.
 - RTprop: paper §5.6, "the largest over live paths". The toy's path round trip is `2·owd_p`, which is a toy choice: symmetric paths.
 - At N = 1 Realtime this gives stage 1's D exactly, so stage 1's base cells are a bridge (§7.8).
-- **Main today does not compute this** (the ADR-0084 build is pending). It reads the EWMA RTT of the path with the highest loss estimate: `emit_source.rs:631` takes `est.rtt()` from `worst_eps_estimator`, which is the `max_by` over channel paths on `loss_rate()` (`channel_set.rs:40–53`). At N = 2 that is either path, depending on which loss estimate is higher at the moment. So the two-path age-gate cells run both ends as arms: D from the slow path (the paper's form) and D from the fast path (stage 1's form). The engine lies between them. That is a model-against-engine divergence, reported in §7.12.
+- **This form is the arm D_RTprop.** RTprop is the exact propagation round trip, `2·owd_p` with no jitter or queue.
+- **The engine computes the arm D_EWMA:** `D = min(b, 2)·SRTT` (`shed.rs:31` `shed_deadline_us`, fed `est.rtt()` at `emit_source.rs:631`), where SRTT is the EWMA RTT of `estimator.rs:465–481`: α = 1/8, and the first measured sample replaces the 50 ms seed. Before the first sample D = 0, so nothing is sheddable (`shed_allowed`).
+  - **The toy's RTT sample** is one per gap report: the report's arrival at the sender minus the send time of the highest seq it newly acknowledges. That includes the jitter, the sampler wait and any queue, as an RTT sample without an ack-delay correction does. This is a toy choice.
+  - SRTT exceeds RTprop by the mean jitter, the mean sampler wait and the mean queue, and it lags any change of the queue by about 8 samples (16 ms at one report per 2 ms tick).
+- **Which path:** main today (the ADR-0084 build is pending) reads the EWMA RTT of the path with the highest loss estimate: `emit_source.rs:631` takes `est.rtt()` from `worst_eps_estimator`, which is the `max_by` over channel paths on `loss_rate()` (`channel_set.rs:40–53`). At N = 2 that is either path, depending on which loss estimate is higher at the moment. So the two-path age-gate cells run both ends as arms: D from the slow path (the paper's form) and D from the fast path (stage 1's form). The engine lies between them. That is a model-against-engine divergence, reported in §7.12.
 
 **The floor (item 3), one model, as the engine sends it** (ADR-0084 decision 1, `adr84-engine-brief.md` step 8):
 - At each verdict, the sender stages the last copy, then the floor `F = min{s ≥ A_rx : s ∉ V}`, on the same path at the same instant.
@@ -587,7 +595,13 @@ Everything not listed here is as in §6.1 and stage 1 (source 10 000 packets/s, 
 - **U:** the S1c sender plus the receiver release `min(t_detect + H_o, t_F + H)`, with the ack held (§4.1, `ordering-hold.md` §8):
   - `H_o = ω·d/δ`, ω ∈ {0, 0.3, 1, 3, 10, 100}, d ∈ {d_all, d_rep};
   - the rent arms are as in §6.2: linear, and the c_H arm at N = 1 only (its optimum needs the episode state, below).
-- **R1:** U with the H_o term absent, the floor-only receiver. It is the ω → ∞ end of the same law, not a separate rule, and runs only in the W sweep, where the floor pass is the only release.
+- **R1:** U with the H_o term absent, the floor-only receiver: it passes only below the sender's floor, after H. It is the ω → ∞ end of the same law, not a separate rule. It runs in Part T and in the W sweep, where the floor pass is the only release.
+- **R0e, today's early-skip receiver (Part T only):** the receiver arm Amendment 3 keeps until the release rule. It is modelled on `shed.rs:389` and `:44–78` and `reorder.rs:112–186`:
+  - each buffered entry expires `hold` after it is buffered, and an expiry passes every hole below the largest expired entry;
+  - `hold = SRTT/2` while its own budget is open, `holes_given_up < ε̂_recv·frontier`, and `(4·SRTT).clamp(60, 300) ms` otherwise;
+  - ε̂_recv is the fraction of originals the receiver saw missing (a toy choice for the engine's incoming-loss EWMA), and SRTT is the sender's EWMA (a toy simplification);
+  - its passes move the ack, so the sender stops serving them. They count in G_rx, and so in the sender's allowance, and a late fill refunds them.
+  - It is today's code, and it carries a bit (the budget test selects the hold). It is a reference, not a candidate, and the deny test names it as an exception.
 - **HZ:** P3's positive control, as in §6.2. It is a deliberate jump, not a candidate, and exists to show that P3 can fail.
 - **Ablations, not candidates, in the age-gate cells only:** S1c with D = 0, and S1c with D from the fast path. They are configurations, not branches on a dial.
 
@@ -662,10 +676,15 @@ At two paths with skew, the frontier is almost always blocked, so "frontier-stal
 
 The gate decides something at a report only when `age ≤ D(δ)` and the count would have admitted the verdict.
 
-**N = 1: the gate can refuse only below Auto.** `a_det − τ_s ≥ owd + 1/rate` and `owd_fb ≥ owd`, so `age₁ ≥ RTprop + 1/rate > RTprop`, and:
+**N = 1, arm D_RTprop: the gate can refuse only below Auto.** `a_det − τ_s ≥ owd + 1/rate` and `owd_fb ≥ owd`, so `age₁ ≥ RTprop + 1/rate > RTprop`. This is a property of the exact-RTprop arm only:
 - **Realtime (b = ½, D = RTprop/2):** never refuses. This is a proof, not a prediction, and it explains stage 1's zero.
 - **Auto (b = 1, D = RTprop):** never refuses, strictly.
 - **Below Auto:** a first report is refused while `(b(δ) − 1)·RTprop > j + w + 1/rate`, with j the jitter draw. The refused share rises continuously from 0 at Auto to about 1 at `b ≈ 1 + (J + tick)/RTprop`, which is 1.3 at the base cell (δ ≈ 0.087). At Bulk (b = 2, D = 20 ms against an age of 10–13 ms) it is about 1. Then the hole is served, and its verdict, if any, waits until age > D.
+**N = 1, arm D_EWMA (the engine's form): the gate can refuse at Auto.** Write `SRTT ≈ RTprop + J̄ + w̄ + q̄`, where J̄ is the mean jitter (J/2), w̄ the mean sampler wait (tick/2) and q̄ the mean queue, all lagged by the EWMA. The first report's age is `RTprop + j + w + q(t) + 1/rate`.
+- **Auto (D = SRTT):** a first report is refused when its own jitter, wait and queue fall below the EWMA's mean, `j + w + q(t) < J̄ + w̄ + q̄`. That is about half of the first reports in the base cells (J = 1 ms, tick 2 ms), and more in Q's falling phase, where SRTT lags above the current RTT.
+- **Realtime (D = SRTT/2):** a refusal needs `SRTT > 2·age₁`, so an EWMA above twice the current RTT. In the base cells that cannot happen: `J̄ + w̄ = 1.5 ms`, far below RTprop = 10 ms. In Q it needs the EWMA to lag a queue drop larger than about RTprop, but Q's drop is 10 ms at most. **Predicted: 0 in every one-path cell.** It is reported, not required, because it is a prediction, not a proof.
+- **Below Auto** the EWMA arm refuses more than the RTprop arm at every δ, since SRTT > RTprop.
+
 - Bulk and Auto run at ρ = 1, so there the count refuses first and the gate decides nothing. The gate decides only where ρ < 1 is composed with a δ below Auto. NO-MODE-SWITCH makes that a legal point, since ρ is an independent dial.
 
 **N = 2 (owd 5 and 25 ms): the gate refuses fast-path holes when D is sized by the slow path.** With RTprop = 50 ms, D is 25 ms at Realtime:
@@ -679,7 +698,7 @@ The gate decides something at a report only when `age ≤ D(δ)` and the count w
 
 | cell | dial point | arms | witness required | predicted |
 |---|---|---|---|---|
-| AG1 | N = 1, ρ = 0.99, δ ∈ {Auto, δ at b = 1.15 (≈ 0.2, a toy choice inside the predicted rise), δ at b = 1.3, Bulk}; I1 and I2 | D(δ); D = 0 | decisive refusals n_dec > 0 at b = 1.3 and at Bulk, or the cell is void | n_dec = 0 at Auto (a P4 check, §7.8); rising with b; about every first report at Bulk |
+| AG1 | N = 1, ρ = 0.99, δ ∈ {Realtime, Auto, δ at b = 1.15 (≈ 0.2, a toy choice inside the predicted rise), δ at b = 1.3, Bulk}; I1, I2 and Q (Q on I1 loss) | D_RTprop; D_EWMA; D = 0 | n_dec > 0 at b = 1.3 and at Bulk under D_RTprop, and at Auto under D_EWMA, or the cell is void | D_RTprop: n_dec = 0 at Realtime and Auto (check P4f), rising with b, about every first report at Bulk. D_EWMA: about half the first reports at Auto, more in Q; 0 at Realtime (reported) |
 | AG2 | N = 2, Realtime, ρ = 0.99, φ_slow ∈ {0, 0.25, 0.5} | D from the slow path (paper); D from the fast path (stage 1); D = 0 | n_dec > 0 under the paper's D, or the cell is void | fast-path holes refused at first report; slow-path holes not refused; n_dec = 0 under the fast-path D |
 
 - **The witness.** n_dec counts the (hole, report) pairs where `age ≤ D` and `Ab + 1 ≤ (1 − ρ)·S_src`, so the gate alone refused. Stage 1's `D-fail` column counted refusals without the count condition; v3 prints both.
@@ -732,7 +751,7 @@ Every T has an absolute floor, so T > 0 in every row, ρ = 1 included, and a zer
 **The A/A calibration (Part A, before any decision cell runs).**
 - **A and A′ are the same candidate, configuration and seed, except for the phases of the sender's two clocks.** The gap-report sampler's phase is drawn from U[0, tick) and the tail sweep's from U[0, P), separately for A and A′.
 - **Why that is inert by design:** no candidate's law reads a clock phase, and the engine's phases are set by when the connection started. It is not bit-inert, though. It moves decision instants by less than one tick, and that is exactly the micro-timing difference that read as "shown" in stage 1. The same seed with the same phases would be bit-identical and give NF = 0.
-- **Cells:** {I1, G} × {N = 1, N = 2 at φ_slow = 0.25}, plus I2 at N = 1, where the count binds and the ρ-nudge block runs. Each runs U at Realtime with ρ = 0.99 and U at Auto with ρ = 1, all at ω = 1, 12 seeds, two arms: 10 cells.
+- **Cells (one path, frozen in Part A):** I1, I2 and G at N = 1. Each runs U at Realtime with ρ = 0.99 and U at Auto with ρ = 1, all at ω = 1, 12 seeds, two arms: 6 cells. Plus the five-point K and P sets of §7.9, and R0e and R1 in Part T's I2 tail cell. **Two-path noise floors** are frozen at the start of Part C, from {I1, G} at φ_slow = 0.25, and do not apply to the one-path parts.
 - **Output:** NF for every metric in the table below, frozen in a committed file before Part B starts.
 - **A/A self-check:** the mean A/A difference must read "equivalent" against T on every metric. If it reads "shown", the toy depends on clock phase, which is a defect. Part B does not start until that is fixed.
 
@@ -776,7 +795,7 @@ These debug the toy. They are not evidence for the derivation, and no ranking is
   - Under U, the skew out-of-order count equals the number with `Δ_j > H_o`, computed from the draws.
   - On every FIFO cell the overtake count is 0.
 - **P4e:** U\*'s sweep equals the TU LP and brute force on small instances (§7.3).
-- **P4f:** n_dec = 0 at N = 1 at Realtime and at Auto, in every cell (§7.5's proof).
+- **P4f:** under D_RTprop only, n_dec = 0 at N = 1 at Realtime and at Auto, in every cell (§7.5's proof). Under D_EWMA nothing is required at Auto, and Realtime is a reported prediction.
 - **P4g:** at N = 1 on a FIFO path, d_all = d_rep exactly, since there are no self-heals. So the d arm is not run there.
 - **P4h (bridge, D and floor):** at N = 1 Realtime I1 with J = 0, the v3 toy and the stage 1 toy (commit `c9ab6e9a`, `floor_with_copy = False`) give bit-identical S0 runs, and S1c runs with the same verdict count. Any other difference must lie in floor timing alone, and is reported.
 - **P4i (bridge, wait metric):** §7.4.
@@ -795,11 +814,26 @@ v2's midpoint test cannot tell a kink from a step. b(δ) is clamped exactly at t
 ```
 
 - Both statistics cancel a kink: J(h) and Δ(h) are linear in h on a kink, and the combinations remove the linear term.
+- **What is left over.** K is exact to third order: J is odd in h, so a smooth readout leaves only `O(h³)`. **P is not zero to second order.** A smooth readout has `Δ(h) = −½·m″·(h·p)²`, so curvature leaves
+
+  ```text
+     P_smooth  =  m″(p) · (0.01·p)²
+  ```
+
+  - For a readout ∝ 1/δ (H_o = ω·d/δ and everything linear in it), `m″ = 2·m/p²`, so `P_smooth = 2·10⁻⁴·m(p)`. That is 250 times below a 5 % relative bar and below every absolute floor at the presets. It is under the bar.
+  - Other readouts can curve more, rbf for example, which follows a survival function of H_o. A P that reads "shown" on such a readout triggers one registered follow-up: two more points at p·(1 ± 0.005). Three widths fit `Δ(h) = a + c·h + k·h²` exactly, and only a ≠ 0 (shown against the bar) is a preset anomaly.
+- **Clock phases in the decision runs.** A 1 % nudge moves D by 0.05–0.25 ms, against a 2 ms sampler tick. With one phase for every seed, the readouts would be staircases in δ at the scale of the nudge. So the sampler and sweep phases are drawn per seed (shared across candidates and nudge points, §7.2). That is required in every P3 run.
+- **Noise floor on K and P themselves.** The A/A of §7.7 also runs whole five-point sets: arm A′ redraws the phases for all five points. `NF_K` and `NF_P` are the 95th percentiles over seeds of `|K_k(A) − K_k(A′)|` and `|P_k(A) − P_k(A′)|`, and they enter K's and P's bars as `max(T, NF)`. The sets run on U at Auto and Realtime, I1, N = 1, ω = 1.
 - K catches a step located at p, and P catches the visualizer-style defect where the preset point itself behaves differently.
 - For ρ the nudges are taken on 1 − ρ: ρ ∈ {0.9902, 0.9901, 0.99, 0.9899, 0.9898}.
 - **Which ρ each preset runs at:** Bulk and Auto at ρ = 1, as shipped, and Realtime at ρ = 0.99. The ρ-nudge block runs at the Realtime δ in I2, where the count binds.
 - **Readouts under P3:** mean e, e at p99, rbf, the skew out-of-order rate (N = 2), G_rx/S_src, and repair sends per delivered packet.
 - **Positive control:** HZ at Auto must **fail** on rbf and on mean e, at N = 1 and at N = 2 (φ_slow = 0.25). If it passes, P3 has no power, every P3 reading is void, and the remaining P3 blocks are skipped to save time.
+- **Planted controls**, U at Auto, I1, N = 1, ω = 1. Each is a deliberate defect, not a candidate, and is named in the deny test:
+  - **STEP:** H_o doubled for δ < p. It must **fail** on K.
+  - **SPIKE:** H_o doubled at δ = p exactly, the preset-only override. This is the only test of P. It must **fail** on P, and K must pass, since K does not read m(p).
+  - **KINK:** H_o times `1 + 25·max(0, 1 − δ/p)`, continuous at p and steep on one side (×1.5 at 0.98·p). Like the b(δ) clamp, but large enough to see. It must **pass** both K and P. If it fails P, the curvature follow-up above decides; if it still fails, P3 is too sensitive and its fails are reported as undetermined.
+  - Readouts: rbf and mean e, as for HZ.
 
 ### 7.10 Parts, runs and the wall-clock budget (item 7)
 
@@ -809,14 +843,15 @@ v2's midpoint test cannot tell a kink from a step. b(δ) is clamped exactly at t
 - LP up to 57 s and MILP 90 s (capped).
 - One process, seeds in sequence (low memory); 12 seeds per configuration unless stated.
 
-**Budget: 9 h sequential in all.** The four parts below come to about 7.1 h, and 1 h is held in reserve for the registered 24-seed reruns.
+**Budget: 9 h sequential in all**, with 1 h held in reserve for the registered 24-seed reruns. **Built now: A, T and B, about 3.3 h, capped at 4 h.** C and D (about 4.75 h) wait on the hold re-derivation, and their rows are kept as the current registration.
 
 | part | runs (configurations × 12 seeds) | estimated | cap | what it decides |
 |---|---|---|---|---|
-| **A. Calibration and checks** | A/A 10 cells × 2 arms (240 runs); P4j, 6 configurations (72 runs); P4h bridge on the stage 1 toy and the v3 toy (≈ 144 runs); unit tests; timing | ≈ 0.5 h | 0.75 h | the bar sizes (frozen and committed before B); instrument validity (P1, P2, P4, A/A self-check); the measured cost per run, which drives the fallback below |
-| **B. U at one path (question 1)** | I1: ω (6) × δ (15: 5 points × 3 presets) = 90; I2 and G: ω (6) × 3 presets = 36; c_H arm at 3 presets; HZ at Auto, 5 points; ρ nudges at Realtime in I2, 9; d_rep at 3 presets (P4g witness), 3; P2 at ρ = 1 and 1 − ε, 2. In all 148 configurations, 1 776 runs | ≈ 1.8 h | 2 h | P3 at all three presets for U (a fail is a NO-MODE-SWITCH defect that blocks the release-arm build); the ω band in which Bulk and Auto keep order (rbf bar), handed to `meas-disorder-price` as the threshold the measured ω is read against; ratio_U against the 2× bound; P3's power (HZ) |
-| **C. Two paths with skew (question 2, and question 4 at N = 2)** | φ_slow = 0.25: ω ∈ {1, 10} × 15 δ points × d (2) = 60, plus ω ∈ {0, 0.3, 3, 100} × 3 presets × d (2) = 24; φ_slow = 0.5: ω ∈ {1, 10, 100} × 3 × 2 = 18; φ_slow = 0: 6 × 3 with d_all only = 18; HZ, 5; slow-path outage (B10 on the slow path, φ_slow = 0.5) ω ∈ {1, 10} × 3, 6; AG2 ablation arms, 6. In all 137 configurations, 1 644 runs | ≈ 3.4 h | 3.75 h | d_all against d_rep (the finding owed to `ordering-hold.md`: which d its law reads); the skew out-of-order rate and the v and e quantiles per φ_slow and preset (the input to the owner's C1 decision, `ordering-hold.md` §5); P3 at two paths; the AG2 witness and the D reading at N = 2 |
-| **D. Floor, H and the rest (questions 3–5)** | W spike cell, 75 s: N = 2, φ_slow = 0.25, slow-path delay +40 ms for 200 ms at t = 5 s, ramped down at slope −½ so the path stays FIFO; W ∈ {1, 10, 60 s} × {U at ω = 1, R1} at Realtime (72 runs); W steady cells: N = 1 with J_r = 4 ms, and N = 2 at φ_slow = 0.5, W ∈ {1, 10} × 2 (96 runs); overtake cells, 12; AG1, 16; jitter J ∈ {0, 4 ms} FIFO × 3 presets, 6; S1c bracket at I1 and G, 6 seeds | ≈ 1.35 h | 1.5 h | the W recommendation to the owner; the overtake harm reading; the AG1 witness and the N = 1 D reading; jitter sensitivity; S1c's bracket (reported only) |
+| **A. Calibration and checks** | A/A 6 cells × 2 arms (144 runs); K and P sets, 2 presets × 5 points × 2 arms (240 runs); P4j, 6 configurations (72 runs); P4h bridge on the stage 1 toy and the v3 toy (≈ 144 runs); unit tests; timing | ≈ 0.6 h | 0.75 h | the one-path bar sizes (frozen and committed before T and B); instrument validity (P1, P2, P4, A/A self-check); the measured cost per run, which drives the fallback below |
+| **T. The lost tail (question 0, first decision part)** | §7.13: 3 cells × 3 receivers (R0e, R1, U at ω = 1) × 12 seeds = 108 runs, short objects | ≈ 0.2 h | 0.5 h | the cost of Amendment 3's fallback in measured ms: v and e quantiles, spend, tail time and stalls, R0e against R1 |
+| **B. U at one path (question 1)** | I1: ω (6) × δ (15: 5 points × 3 presets) = 90; I2 and G: ω (6) × 3 presets = 36; c_H arm at 3 presets; HZ at Auto, 5 points; ρ nudges at Realtime in I2, 9; d_rep at 3 presets (P4g witness), 3; P2 at ρ = 1 and 1 − ε, 2; planted controls STEP, SPIKE and KINK, 5 points each, 15; AG1 (moved here from D: 5 δ × 3 cells × 3 arms), 45. In all 208 configurations, 2 496 runs | ≈ 2.5 h | 2.75 h | P3 at all three presets for U (a fail is a NO-MODE-SWITCH defect that blocks the release-arm build); the ω band in which Bulk and Auto keep order (rbf bar), handed to `meas-disorder-price` as the threshold the measured ω is read against; ratio_U against the 2× bound; P3's power (HZ) |
+| **C. Two paths with skew (question 2, and question 4 at N = 2). Waiting on `tail-and-hold.md`** | φ_slow = 0.25: ω ∈ {1, 10} × 15 δ points × d (2) = 60, plus ω ∈ {0, 0.3, 3, 100} × 3 presets × d (2) = 24; φ_slow = 0.5: ω ∈ {1, 10, 100} × 3 × 2 = 18; φ_slow = 0: 6 × 3 with d_all only = 18; HZ, 5; slow-path outage (B10 on the slow path, φ_slow = 0.5) ω ∈ {1, 10} × 3, 6; AG2 ablation arms, 6. In all 137 configurations, 1 644 runs | ≈ 3.4 h | 3.75 h | d_all against d_rep (the finding owed to `ordering-hold.md`: which d its law reads); the skew out-of-order rate and the v and e quantiles per φ_slow and preset (the input to the owner's C1 decision, `ordering-hold.md` §5); P3 at two paths; the AG2 witness and the D reading at N = 2 |
+| **D. Floor, H and the rest (questions 3–5). Waiting on `tail-and-hold.md`** | W spike cell, 75 s: N = 2, φ_slow = 0.25, slow-path delay +40 ms for 200 ms at t = 5 s, ramped down at slope −½ so the path stays FIFO; W ∈ {1, 10, 60 s} × {U at ω = 1, R1} at Realtime (72 runs); W steady cells: N = 1 with J_r = 4 ms, and N = 2 at φ_slow = 0.5, W ∈ {1, 10} × 2 (96 runs); overtake cells, 12; jitter J ∈ {0, 4 ms} FIFO × 3 presets, 6; S1c bracket at I1 and G, 6 seeds | ≈ 1.35 h | 1.5 h | the W recommendation to the owner; the overtake harm reading; jitter sensitivity; S1c's bracket (reported only) |
 
 **The W sweep needs a spike that can age out.** At 20 s, W = 10 s and W = 60 s are indistinguishable. So the spike cell runs 75 s: the spike at 5 s ages out of W = 60 s at 65 s.
 - **Witness, per arm:** H returns to its level before the spike within W + 1 s after the spike ends. fh_age at the floor passes reaches W.
@@ -831,7 +866,7 @@ v2's midpoint test cannot tell a kink from a step. b(δ) is clamped exactly at t
 
 Part A, Part B, the witness cells AG1 and AG2, the overtake cells and every P3 block are never cut. After any cut, the stages still answer their questions, at coarser ω resolution.
 
-**Order and stopping.** Run A, then B, then C, then D, and read each part before the next starts.
+**Order and stopping.** Run A, then T, then B, then (once the hold re-derivation lands) C and D, and read each part before the next starts.
 - If A fails, fix the toy and rerun A.
 - If HZ passes P3 in B, P3 is void, and the remaining P3 blocks of C are skipped.
 - No part's result changes a later part's registration. A later part may only be cut by the fallback.
@@ -849,9 +884,32 @@ Part A, Part B, the witness cells AG1 and AG2, the overtake cells and every P3 b
 2. **The tolerances T are toy choices** (1 ms, 5 %, 1/20 of the allowance, ε², one verdict). They are decision bars, not law constants, and the reviewer may want different ones. They must be fixed before Part A runs.
 3. **Is clock phase a fair A/A perturbation?** If the reviewer prefers a second nuisance, say an independent jitter salt with loss and placement draws kept, the noise floor grows. The table's `max(T, NF)` form accepts either.
 4. **Path round trip in the toy.** `2·owd_p` assumes symmetric paths, while the toy's reports return on the fast path, which would make the slow path's round trip 30 ms rather than 50. AG2's prediction holds for both (fast-path report age 10–13 ms against D = 15 or 25 ms), but the D reading differs in size.
-5. **d's cold start.** The H_o term is absent until the first d sample. Whether the engine does the same is for the release-rule build.
-6. **The c_H rent at two paths** has no scalable exact optimum here: the episode state does not collapse the way e does. It runs at one path only.
-7. **The 40 % per-run overhead is a guess.** Part A measures it; if it is much larger, the fallback cuts the ω resolution first.
+5. **The EWMA arm's RTT sample** (one per report, including the sampler wait) is a toy choice. The engine's sample site and its ack-delay handling were not read for this plan, and they set the size of SRTT − RTprop, which is what makes the gate live at Auto.
+6. **R0e's ε̂_recv** is a cumulative missing fraction in the toy, not the engine's per-path EWMA. That sets when its hold falls back from SRTT/2 to 60–300 ms.
+7. **d's cold start.** The H_o term is absent until the first d sample. Whether the engine does the same is for the release-rule build.
+8. **The c_H rent at two paths** has no scalable exact optimum here: the episode state does not collapse the way e does. It runs at one path only.
+9. **The 40 % per-run overhead is a guess.** Part A measures it; if it is much larger, the fallback cuts the ω resolution first.
+### 7.13 Part T: the lost tail under the interim receivers (owner, 2026-11-22)
+
+**Why first.** The owner answered "fix the lost tail first", before the sender build. Amendment 3 ships the sender with today's receiver arm (R0e) kept below ρ = 1, with the floor pass beside it. Its fallback is the floor-only receiver (R1). Part T prices that choice in measured milliseconds.
+
+**Cells.** Realtime, ρ = 0.99, N = 1, FIFO, J = 1 ms, sender S1c with the floor:
+- **The short object** is S_src = 12 147 seqs (`sim_lost_tail.rs`'s object). Every copy of the last 347 seqs is lost during a `dead` window of 1.5 s from the send of the first of them, T1's shape (`adr84-engine-brief.md` T1); after the window, copies arrive. The run continues until every seq is delivered or passed, or until 40 s (T1's `limit_s`).
+- **Loss before the tail:** I1; I2, which spends the allowance before the tail; and **L10**, i.i.d. 10 % on originals and on copies at RTT 100 ms, with the tail sweep at its 100 ms cap. Toy choice, the high-loss, long-RTT corner.
+- At the tail the allowance is at most ⌊0.01·12 147⌋ = 121, less what loss already spent. So at least 226 tail seqs are refused and served, in every cell.
+
+**Receivers:** R0e, R1, and U at ω = 1 as the target. 12 seeds.
+
+**Readouts:**
+- v and e at p50, p99 and p99.9, and their means, over the whole object (§7.4);
+- G_rx/S_src, and the passes by decider (R0e's expiry, the floor pass);
+- **the tail time:** from the send of the last seq to the first instant the ack frontier reaches S_src;
+- **stalled:** the frontier has not reached S_src at 40 s, counted per seed;
+- the share of tail seqs that got a verdict, and how many filled after the dead window.
+
+**Witnesses:** the dead window covers ≥ 1 copy of every tail seq; R0e's hold falls back at least once in I2 (its budget test bound), or that reading is void; P1 holds at every instant.
+
+**Reading.** Each readout is compared between R0e and R1 under §7.7's bars, against U as the target. Nothing is adopted. The result is the measured cost of keeping R0e in the interim, and whether either receiver leaves the tail stalled.
 
 ## 8. What this blocks
 
