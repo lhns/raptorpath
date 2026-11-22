@@ -103,7 +103,7 @@ Each must pass on C84. Each that the brief makes red-first must also be shown fa
 
 | gate | file | the condition |
 |---|---|---|
-| **T1** lost tail | `sim_lost_tail.rs` `lost_tail_ack_reaches_s_src_at_rho_below_1` | the ack reaches S_src within the brief's bound; red on B84 (ack stays at 11 800). **It also asserts, inside the test, that the tail's verdict is admitted:** `Ab + 1 ≤ budget` at that verdict (coordinator decision 2026-11-22). So it cannot pass only because its `dead` window ends. The pre-spent-allowance variant is the record below (L-TAIL), and it becomes a gate in the release-rule build |
+| **T1** lost tail | `sim_lost_tail.rs` `lost_tail_ack_reaches_s_src_at_rho_below_1` | the ack reaches S_src within the brief's bound; red on B84 (ack stays at 11 800). It is a liveness gate in the matched cell, which the re-cut brief reserves for liveness, so it asserts no verdict. **It records which writer closed the tail (a fill or `G_floor`), and `Ab` against `budget` at that moment.** The ablation shows that T1 at 0.99 stays live with the floor disabled, so its tail closes by a fill; an admitted-verdict assertion there would contradict that row. The floor path is gated by T1′ (and, at the matched cell, by the 0.97 ablation variant, which needs the floor). The pre-spent-allowance variant is the record below (L-TAIL), and it becomes a gate in the release-rule build |
 | **T1′** last seq | `last_seq_lost_is_passed_by_a_floor` | k = S_src − 1 shed and passed by a floor; `floor_sent ≥ 1`, `floor_passes ≥ 1` |
 | **T2** stalled blocker | `sim_shed_reach.rs` `shed_blocker_ack_reaches_s_src` | ack 12 147; red on B84 (12 087) |
 | **the ablation** | `ablation_without_the_floor_t1prime_and_t2_stall` | under `RWM_TEST_TS_NO_FLOOR=1`, T1′, T2 and T1 at 0.97 stop short; T1 at 0.99 stays live |
@@ -447,7 +447,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 **Prediction:**
 - C84 reaches A = S_src on every row by a fill. Under 10 % loss, a resend round is lost with probability ε, so the tail time is a few RTTs at p50, about 0.1–0.5 s, with a geometric tail.
 - B84 strands some tails: A stays below S_src at the window end on some rows (the `rec-evict-blocker-unresolved` defect).
-- A C84 row that does not reach S_src inside the window is **L-TAIL observed**. It is reported with its denied count and tail age, not as a fail: the limit is named (§3.1, §11), and it ends with the release-rule build. More than 2 of 12 such rows go to the owner as the limit's measured size, with Amendment 3's fallback clause.
+- A C84 row that does not reach S_src inside the window is **L-TAIL observed**. It is reported with its denied count and tail age, not as a fail: the limit is named (§3.1, §11), and it ends with the release-rule build. More than 2 of 12 such rows (counting exhausted rows only: `XL-NOT-EXHAUSTED` rows are neither counted nor in the denominator) go to the owner as the limit's measured size, with Amendment 3's fallback clause.
 
 ### 5.6 Stage XT (scored twins: the account, both seats)
 
@@ -485,36 +485,38 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 - **Truncation:** a truncated stage (`TRUNCATED-<stage>`) never reads PASS. A guard with a truncated scored stage is not eligible.
 - **Every slot filled:** every registered slot must hold a row. Otherwise the stage reads `UNSCOREABLE (INCOMPLETE)`.
 - **Candidate crashes:** a C84 or C84T crash (VOID-RC, NO_DATA) makes its cell `UNSCOREABLE (CANDIDATE-CRASH)`. It is a finding against the build, and a plain re-run does not clear it. Only a diagnosed cause, written into an amendment, re-opens the cell.
-- **No default pins:** every `LD_PIN_*` (and `LD_BIN_SHA_*`) is required. A missing one is ABORT-PIN.
-- **The test-seam marker:** a row whose environment carries an engine test seam that the gates use (`RWM_TEST_TS_NO_FLOOR`, `RWM_TEST_TS_BUDGET_FRAC`, or any `RWM_TEST_TS_*`), or a release seat whose binary carries the seam marker, is ABORT-SEAM. The twins are built with `test-seams`, but their rows set no seam variable.
-- **The session-0 envelope:** `suites_run.sh` with ABORT-PREFLIGHT, the lock-inheritance probe (a child of the session holds both locks, and nothing else can take them), and binid's inner-test rule (`binid_run.sh` runs its own inner test before a sha is trusted).
+- **No default pins:** every `LD_PIN_<SEAT>` is required, and a missing one is ABORT-SEAT (`harness67c`'s own string). `LD_BIN_SHA_*` cannot be required in the rehearsal, which produces the shas. They are pinned by the second amendment and required from session 2 on (a mismatch is ABORT-BUILD).
+- **The test-seam marker:** `harness67c`'s own rule and list (`plan67.py` `SEAM_ENV`: `LD_HARD_MIN_S`, `R67_T1_S`, `LD_ROW_BYTES`, `LD_BLOCK_ROW_S`, plus `harness84`'s own fast-mode seams). Any of them active without `LD_TEST_SEAMS=1` is ABORT-SEAM before the locks. For battery rows the list also holds the engine seams that the gates use (`RWM_TEST_TS_NO_FLOOR`, `RWM_TEST_TS_BUDGET_FRAC`, any `RWM_TEST_TS_*`): no scored row sets one. **Session 0's sim gates are exempt**, because they set the engine seams themselves. The twins are built with `test-seams`, but their rows set no seam variable.
+- **The session-0 envelope:** `suites_run.sh` with ABORT-PREFLIGHT, the lock-inheritance probe and binid's inner-test rule, as batch 1 Amendment 2's rows (`vmb-amend2`, being regenerated).
 
 **Abort classes**, filled in the Result in this order:
 1. ABORT-LOCK;
 2. ABORT-CRLF;
-3. ABORT-PIN;
-4. ABORT-SEAT: missing or present strings (§2, §6), or a sha mismatch;
-5. ABORT-SEAM;
-6. ABORT-SPELL: `perf --help`'s spelling disagrees with the seat's expected one, or a row requests a ρ that its seat cannot spell (Auto ρ < 1 on B84);
-7. ABORT-BUILD;
-8. ABORT-PREFLIGHT;
-9. ABORT-TESTS;
-10. ABORT-REPEAT;
-11. ABORT-SMOKE;
-12. a non-zero stage exit;
-13. the cap stopper's `TRUNCATED-<stage>` (not a failure, but never a PASS; §8).
+3. ABORT-SEAT: missing or present strings (§2, §6), a missing `LD_PIN_<SEAT>`, or a sha mismatch;
+4. ABORT-SEAM;
+5. ABORT-SPELL: `perf --help`'s spelling disagrees with the seat's expected one, or a row requests a ρ that its seat cannot spell (Auto ρ < 1 on B84);
+6. ABORT-BUILD;
+7. ABORT-PREFLIGHT;
+8. ABORT-TESTS;
+9. ABORT-REPEAT;
+10. ABORT-SMOKE;
+11. a non-zero stage exit;
+12. the cap stopper's `TRUNCATED-<stage>` (not a failure, but never a PASS; §8).
 
 **Outcome labels.** These are never VOID and never replaced, whatever else the row carries:
 - `ID-FAIL`: a ρ = 1 identity witness violated on C84;
 - `X-FAIL <item>`: a violation of W1–W6, W-C1/C2/C3, PW at XE, BI, the XR and XRK witnesses (R-W3, R-W4, R-W6, R-ONLY, R-BI, R-H, R-H2, R-LIVE, R-LIVE2), XL's W4/W5/BI, or ACCT-ID;
 - `FORCED-NONZERO`: a finding that holds the merge.
 
-**Infrastructure voids** (replaced once, at most 4 slots per stage, more is NO VERDICT): VOID-COTENANT, VOID-ONDISK, CONTAMINATED.
+**Infrastructure voids** (replaced once, at most 4 slots per stage, more is NO VERDICT): VOID-SEAT (row level, precedence 1), VOID-COTENANT, VOID-ONDISK, CONTAMINATED.
 
-**Crash labels** (never replaced): VOID-RC (the process exited non-zero or was killed outside the window), NO_DATA (no summary line).
+**Crash labels** (never replaced): VOID-RC and NO_DATA, as `stage3_parse.py` defines them. **Neither swallows a normal ρ < 1 row:**
+- **VOID-RC** is the driver's non-zero exit (ABORT-RC), excluding the two normal endings of a ρ < 1 row. `perf`'s exit paths:
+  - a timed object that reaches `RWM_PERF_TIMEOUT_S` prints `"dnf": true` and the `"summary"` line, then returns `Ok` (exit 0). That is `WINDOW-END`, never VOID-RC;
+  - a warm-up DNF bails with "warm-up object never acked" (`perf.rs`, non-zero exit). The harness classifies by that line before it reads rc, so the row is `WARMUP-DEAD`, never VOID-RC.
+- **NO_DATA** is a client with no `"summary"` line, other than a `WARMUP-DEAD` row (which by design has none).
 - On C84 or C84T they give `UNSCOREABLE (CANDIDATE-CRASH)` (above).
-- On B84 or B84T the slot stays empty, so the stage reads `UNSCOREABLE (INCOMPLETE)` until a diagnosed re-run.
-- The one exception is the B84 arm of XR and XRK, which is outside the live-row minimum.
+- **On B84 or B84T** (batch 1's rule): the crashed row stays and fills its slot, so it is not INCOMPLETE. It takes the worst rank in rank clauses, and it does not count toward the cell's live-row minimum.
 
 **Precondition voids** (replaced once, within the same 4-slot cap): VOID-RHO, VOID-SHORT (only on a `WINDOW-END` row, §4), VOID-WITNESS.
 
@@ -523,7 +525,8 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 - `WARMUP-DEAD`, outside the slot cap (§4);
 - `NO-VERDICT-ADMITTED` (§5.4);
 - `L-TAIL observed`;
-- `XL-NOT-EXHAUSTED` (a precondition reading, never an X-FAIL).
+- `XL-NOT-EXHAUSTED` (a precondition reading, never an X-FAIL);
+- `NEEDS-MORE-blackout` (recorded, not blocking). The refusal path it would exercise is carried elsewhere: X1's `denied` reading (predicted `denied` ≫ `V_adm`, §5.4) shows the budget conjunct refusing at L1, and T6 (`in_capacity_abandonment_within_budget`: refusals rise when `Ab + 1 > budget`) gates it in the sim.
 
 **Merge holds** (the guard is not eligible until each is read and cleared):
 - `WARMUP-HOLD`;
@@ -534,11 +537,12 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 **Not eligible:**
 - `NEEDS-MORE-verdicts` (fewer than 8 counted XR or XRK rows);
 - `NEEDS-MORE-floor-passes` (under 300 pooled floor-passed holes in XRK);
-- **UNSCOREABLE in any stage or cell**, for any reason (under its live-row minimum, `INCOMPLETE`, `CANDIDATE-CRASH`, or a seat lost to `WARMUP-DEAD`). A cell is never dropped from the verdict. The exception is the B84 arm of XR and XRK, as above.
+- **UNSCOREABLE in any stage or cell**, for any reason (under its live-row minimum, `INCOMPLETE`, `CANDIDATE-CRASH`, or a seat lost to `WARMUP-DEAD`). A cell is never dropped from the verdict. The exception is the B84 arm of XR and XRK, which is outside the live-row minimum (§5.4b).
 
 **Precedence on a row** (the first that applies is the row's label):
-1. a seat or sha problem (ABORT-SEAT, ABORT-PIN, ABORT-SEAM, a row sha that does not match its arm's pin): the row is not a row of its seat;
-2. **an outcome label** (`ID-FAIL`, `X-FAIL`, `FORCED-NONZERO`). A row that also carries an infrastructure void keeps its outcome label and is never replaced: **a cotenant-voided `ID-FAIL` or `X-FAIL` row is still a fail**;
+1. **VOID-SEAT**: a row-level seat or sha problem (the row's binary sha does not match its arm's pin, or its seat strings fail). The row is not a row of its seat. Session aborts (ABORT-*) end the session before any row and are not row labels;
+2. **an outcome label** (`ID-FAIL`, `X-FAIL`, `FORCED-NONZERO`). A row that also carries an infrastructure void keeps its outcome label and is never replaced: **a cotenant-voided `ID-FAIL` or `X-FAIL` row is still a fail**.
+   - **One exception, the timing witnesses R-LIVE and R-LIVE2** (the 1 s stall bounds), because a cotenant can itself cause a stall. A row whose only fail is R-LIVE or R-LIVE2 and that also carries an infrastructure void is replaced once, with the original reading printed. If the replacement fails the same witness, that is the `X-FAIL`. Counter and identity witnesses have no such exception;
 3. an infrastructure void (VOID-COTENANT, VOID-ONDISK, CONTAMINATED);
 4. a crash label (VOID-RC, NO_DATA);
 5. a precondition void (VOID-RHO, VOID-SHORT, VOID-WITNESS);
@@ -568,7 +572,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 | 0, pre-flight (`suites_run.sh` envelope, `LD_HARD` = launch + 4.9 h) | check ≈ 10 min; gates on B84 ≈ 10 min; suites on C84 ≈ 55 min; the §3.1 gates on both trees ≈ 30 min; repeats ≤ 60 min; visualizer ≈ 10 min; binid × 2 ≈ 35 min | **≈ 3.3 h** | batch 1 §6.4 |
 | 1, rehearsal (`LD_PLAN=84 LD_REHEARSE=1`, `LD_HARD` = launch + 2 h) | 4 builds (6 with PB/PC) ≈ 30–45 min; tools tests ≈ 8 min; the stub-run check; one smoke row per (stage, seat) ≈ 16 rows ≈ 20 min | **≈ 1.3 h** | §64, batch 1 |
 | 2, `LD_PLAN=84g` (`LD_HARD` = launch + 3 h) | G 96 ≈ 53 min; A 48 × ≈ 80 s ≈ 64 min; R1 24 ≈ 10 min; replacements and scoring ≈ 15 min | **≈ 2.4 h** | §64 Result; block 51 |
-| 3a, `LD_PLAN=84x` (`LD_HARD` = launch + 4.2 h) | X 96 at ≈ 55 s per row (a 40 s window plus bring-up) ≈ 88 min; XR 30 and XRK 30 at ≈ 60 s (a 45 s window) ≈ 60 min; scoring ≈ 15 min; smoke re-check ≈ 10 min | **≈ 2.9 h** | block E rows ≈ 62 s |
+| 3a, `LD_PLAN=84x` (`LD_HARD` = launch + 4.2 h) | X 96 at ≈ 55 s per row (a 40 s window plus ≈ 15 s bring-up) ≈ 88 min. XR 30 and XRK 30: 300 MB at ≈ 69 Mbit/s is ≈ 35 s of sending, and every row runs to its 45 s window (C84 rows end `WINDOW-END` after any floor pass; B84 rows stall; a `WARMUP-DEAD` row also costs one 45 s window), so ≈ 60 s per row ≈ 60 min. Scoring ≈ 15 min; smoke re-check ≈ 10 min | **≈ 2.9 h** (173 min) | block E rows ≈ 62 s |
 | 3b, `LD_PLAN=84y` (`LD_HARD` = launch + 2.5 h) | XL 24, XA 12, XT 24 ≈ 55 min; XP 12 ≈ 11 min; scoring ≈ 15 min; smoke ≈ 10 min | **≈ 1.5 h** | as 3a |
 | **total** | | **≈ 11.4 h** (≈ 11.2 h without XP) | |
 
@@ -645,10 +649,10 @@ A rehearsal row is not re-run, and a failed outcome witness in the rehearsal is 
    - `x-grx-over-budget-expiry` (a breach from `G_expiry`) → reported, not a failure;
    - `xe-not-exhausted` → `XE-NOT-EXHAUSTED`;
    - `pw-zero-at-xe` → `X-FAIL PW` (never `INERT-AT-CELL`);
-   - `window-end` → WINDOW-END, not DNF;
+   - `window-end` → WINDOW-END, not DNF, and on C84 **not a crash and not CANDIDATE-CRASH** (exit 0 with `"dnf": true`);
    - `x-short` → VOID-SHORT;
    - `x-complete-short` → `COMPLETE`, not VOID-SHORT;
-   - `warmup-dead` → `WARMUP-DEAD`, not replaced, outside the slot cap;
+   - `warmup-dead` → `WARMUP-DEAD`, not replaced, outside the slot cap, and on C84 **not VOID-RC and not CANDIDATE-CRASH** (the non-zero exit is classified by the warm-up line first);
    - `warmup-dead-5` → that seat's cell is UNSCOREABLE, and the guard is not eligible;
    - `age-gate-inert` (XA with `vv − V_adm − denied = 0` pooled) → `AGE-GATE-INERT`, holds the merge;
    - `xe-not-exhausted-hold` → `XE-NOT-EXHAUSTED`, holds the merge until read;
@@ -658,7 +662,11 @@ A rehearsal row is not re-run, and a failed outcome witness in the rehearsal is 
    - `cand-crash` → `UNSCOREABLE (CANDIDATE-CRASH)`, not cleared by a re-run;
    - `slot-empty` → `UNSCOREABLE (INCOMPLETE)`;
    - `truncated-stage` → never PASS, not eligible;
-   - `pin-missing` → ABORT-PIN;
+   - `pin-missing` → ABORT-SEAT;
+   - `row-sha-mismatch` → VOID-SEAT;
+   - `sim-gate-sets-seam` (session 0's sim gates with `RWM_TEST_TS_*`) → no abort;
+   - `live-cotenant-replace` (an R-LIVE fail on a cotenant row) → replaced once, original printed; a second fail → `X-FAIL R-LIVE`;
+   - `base-crash` → the row stays, worst rank, not live, not INCOMPLETE;
    - `seam-env-in-row` (`RWM_TEST_TS_*` in a row's environment) → ABORT-SEAM;
    - `x-quiet-row` (one row with `l = 0`, the rest > 0) → no failure;
    - `twin-no-final` → `ACCT-LAST`;
@@ -711,7 +719,7 @@ A rehearsal row is not re-run, and a failed outcome witness in the rehearsal is 
 1. **Answered:** Q-a accepted with its fallback; Q-b (iii), H derived in `floor-hold.md`; C1 stays in this build (option (a)), and the interim XK delay rise is accepted and reported. **Still open: W = 10 s, with the max** (`floor-hold.md`), is a default awaiting owner confirmation before the floor-pass step is built. If the owner picks another W, the pin amendment restates R-H's and R-H2's predictions; the fail levels do not depend on W.
 2. **One guard or three** (coordinator, then owner): **default, awaiting confirmation: one guard on the head, with the pre-pinned bisection seats (§8.3).** This registration guards the head against main, as the brief's §5 says. rho-step-sites §5 lists three cut points; a FAIL is bisected on them (§8.3).
 3. **L-TAIL** (owner): **a default awaiting confirmation, as an accepted interim.** At a matched ρ < 1 pair, once the old arm has spent the allowance, a lost tail waits for its fill with no time bound. It is named and measured here (§3.1 record, XL), and it ends with the release-rule build.
-4. **T1 against L-TAIL: closed (coordinator decision, 2026-11-22).** T1 stays a gate in its current form and asserts that the tail's verdict is admitted (`Ab + 1 ≤ budget` at that verdict), in the brief's T1 done criterion and §3.1. The pre-spent-allowance variant stays the §3.1 record (L-TAIL) and becomes a gate in the release-rule build.
+4. **T1 against L-TAIL: closed (coordinator decision, 2026-11-22, revised after Fable).** T1 stays a liveness gate in the matched cell and asserts no verdict. It records which writer closed the tail (a fill or `G_floor`) and `Ab` against `budget` at that moment (the brief's T1 done criterion and §3.1). The floor path is gated by T1′ and by the 0.97 ablation variant. The pre-spent-allowance variant stays the §3.1 record (L-TAIL) and becomes a gate in the release-rule build.
 5. **Owed release gauges (§2, P3).** If the build prints them only under test-seams, the twins grow to 12 + 12 per X cell and XR (+≈ 50 min in session 3, which then splits into two sessions).
 6. **The pacer seats (XP):** whether `4ee1df9b` applies to both trees.
 7. **Fable's review of this draft**, before the pin.
