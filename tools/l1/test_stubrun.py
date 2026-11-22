@@ -3300,14 +3300,9 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
               and (path == "g2-fail" or (verdicts["AS"].group(1) == "PASS" and re.search(r"^R1 PASS", sc["r1"], re.M) and re.search(r"^R2-HOLD CLEAR", sc["r2"], re.M))), {k: (v.group(0) if v else None) for k, v in verdicts.items()} | {"t": tail(sc["t"], 4), "r2": tail(sc["r2"], 4)})
         if path == "g2-fail":
             check(f"{tag}: LD_G2_FAIL67=1 (a G2 FAIL): no S2, P2 or P2T row anywhere, no R2 / pool / dump stage dirs, A1, A1-R and T kept", not any(("bin=bin-S2" in c or "bin=bin-P" in c) for c in calls) and not any(os.path.exists(stage_dirs[s]) for s in ("r2", "pool", "dump")), calls[:5])
-            import s67_score
-            saved = os.environ.pop("LD_DROP_S2", None)
-            lines_r1 = []
-            try:
-                s67_score.score("67r", [os.path.join(stage_dirs["r1"], "ld.log")], lines_r1.append)      # the pulled R1 ledger scored on the host: no VM environment
-            finally:
-                if saved is not None:
-                    os.environ["LD_DROP_S2"] = saved
+            env_nov = {k: v for k, v in os.environ.items() if k != "LD_DROP_S2"}
+            cp = subprocess.run([sys.executable, os.path.join(sb["repo"], "tools", "l1", "s67_score.py"), "score", "67r", os.path.join(stage_dirs["r1"], "ld.log")], env=env_nov, capture_output=True, text=True, errors="replace")      # the sandbox's own scorer (fast mode shrinks its tables), no VM environment
+            lines_r1 = cp.stdout.splitlines()
             check(f"{tag}: R1 runs dropped (no S2 arm): its ledger carries `LD-PLAN67 plan=67r drop_s2=1` and the pulled ledger re-scored on the host WITHOUT LD_DROP_S2 reads A1-R PASS, not INCOMPLETE (the drop state is the ledger's, not the environment's)",
                   "LD-PLAN67 plan=67r drop_s2=1" in txt67(stage_dirs["r1"], "ld.log") and any(x.startswith("A1-R PASS") for x in lines_r1) and not any("INCOMPLETE" in x for x in lines_r1), lines_r1[-4:])
         EXECUTED.add((plan, path))
