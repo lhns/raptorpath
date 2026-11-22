@@ -72,6 +72,7 @@ class Cfg:
     want_trace: bool = False
     want_p4: bool = False
     check_p1: bool = True
+    r0e_hold: str = "global"       # global: one hold re-read at drain time (reorder.rs:18,126,174); entry: fixed per entry at buffering (history)
     recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
 
 
@@ -279,7 +280,7 @@ class Sim:
         self.g = dict(verdicts=0, verdict_copies=0, floors=0, floor_rep=0, repair_sends=0, serves=0, refusals=0,
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
-                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0)
+                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -289,6 +290,8 @@ class Sim:
         self.pass_dt = []
         self.eps_ew = 0.0
         self.eps_trk = PathEps()
+        self.r0e_buf = []
+        self.r0e_timer_t = math.inf
         self.ps_ctr = 0
 
     # ---- helpers --------------------------------------------------------------------------
@@ -521,7 +524,10 @@ class Sim:
                 self.dlv[s] = now
             self.dirty = True
             if self.cfg.recv in ("R0e", "R0c"):
-                self.r0e_buffer(now, s)
+                if self.cfg.r0e_hold == "entry":
+                    self.r0e_buffer(now, s)
+                else:
+                    self.r0e_arrival(now, s)
         self.advance(now)
 
     def on_floor(self, now, f, ps=None):
@@ -612,7 +618,75 @@ class Sim:
             self.g["r0e_fallback_open"] += 1               # buffered above an unpassed hole by construction
         self.push(now + hold, 7, (s, fb))
 
+    def r0e_eps(self):
+        if self.cfg.recv_eps == "engine":
+            return self.eps_trk.ewma
+        if self.cfg.recv_eps == "zero":
+            return 0.0
+        if self.cfg.recv_eps == "one":
+            return 1.0
+        if self.cfg.recv_eps == "ewma":
+            return self.eps_ew
+        return self.n_missing / max(self.rhi + 1, 1)
+
+    def r0e_hold_now(self):
+        """shed_recv_hold(srtt, on, budget_open) with the budget re-evaluated now (shed.rs:389): one global hold."""
+        srtt = self.srtt if self.srtt is not None else 0.05
+        if self.r0e_given_up < self.r0e_eps() * self.next_deliver:
+            self.g["r0e_budget_open"] += 1
+            return srtt / 2, False
+        self.g["r0e_fallback"] += 1
+        return min(0.300, max(0.060, 4 * srtt)), True
+
+    def r0e_arrival(self, now, s):
+        m = self.min_hole()
+        if m is not None and s > m:
+            self.r0e_buf.append([now, s, False])
+        self.r0e_drain(now)
+
+    def r0e_drain(self, now):
+        """reorder.rs drain_expired: an entry expires when now - buffered_at >= the current hold; the expiry passes every hole
+        below the largest expired entry.  The hold is re-read at each evaluation, so a closing budget lengthens every buffered entry."""
+        buf = self.r0e_buf
+        while True:
+            m = self.min_hole()
+            if m is None:
+                buf.clear()
+                break
+            if buf:
+                buf[:] = [e for e in buf if e[1] > m]            # entries below the first hole are deliverable and leave
+            if not buf:
+                break
+            hold, fb = self.r0e_hold_now()
+            exp = [e for e in buf if now - e[0] >= hold - 1e-12]
+            if fb:
+                short = (self.srtt if self.srtt is not None else 0.05) / 2
+                for e in buf:
+                    if not e[2] and now - e[0] >= short - 1e-12 and e not in exp:
+                        e[2] = True
+                        self.g["r0e_entries_lengthened"] += 1
+            if not exp:
+                dl = min(e[0] for e in buf) + hold
+                if dl < self.r0e_timer_t or self.r0e_timer_t <= now:
+                    self.r0e_timer_t = dl
+                    self.push(dl, 7, None)
+                break
+            self.g["r0e_expiries"] += 1
+            j = max(e[1] for e in exp)
+            before = self.g["passes"]
+            self.pass_below(now, j, "r0e")
+            n = self.g["passes"] - before
+            self.r0e_given_up += n
+            if fb:
+                self.g["pass_r0e_fb"] += n
+            if any(e[2] for e in exp):
+                self.g["pass_r0e_lengthened"] += n
+
     def on_r0e_expiry(self, now, pl):
+        if pl is None:                                           # global-hold timer
+            self.r0e_timer_t = math.inf
+            self.r0e_drain(now)
+            return
         j, fb = pl
         self.g["r0e_expiries"] += 1
         m = self.min_hole()
@@ -878,6 +952,10 @@ class Sim:
                 out["tail_v_mean"] = float(tv.mean()) if len(tv) else None
                 out["tail_v_p50"] = float(np.median(tv)) if len(tv) else None
                 out["tail_delivered"] = int(len(tv))
+                out["tail_verdicted"] = [s for s in tail if s in self.verdicted]
+                out["tail_v"] = [(dlv[s] - self.atilde[s]) if dlv[s] >= 0 else None for s in tail]
+                # when the frontier is released past the seq: the floor or early-skip pass if it was passed, else its delivery
+                out["tail_res"] = [((self.tpass[s] if s in self.tpass else dlv[s]) - self.atilde[s]) if (s in self.tpass or dlv[s] >= 0) else None for s in tail]
         if c.recv in ("U", "HZ") or c.want_p4:
             out.update(u_costs(self, rows))
         if c.want_p4:

@@ -9,7 +9,12 @@ Spec: `docs/derivations/skip-rule-efficiency.md` §7 (toy plan v3, merged from t
 1. **12 seeds, no 24-seed reruns.** Every "undetermined" decision clause below was left undetermined; the reserve was not spent.
 2. **A/A self-check: 7 of 118 readings read "shown" in the first A/A, and did not replicate.** The 7 are R0e's tail metrics in the I2 tail cell (v and e at p99 and p99.9, tail time, tail-only mean and median v): the mean A/A difference was about -8 to -9 ms against T = 1 ms, CI excluding 0. Both arms draw phases from the same distribution, so the true mean difference is zero; 7 of 118 is about what a 95 % CI gives with no multiplicity allowance, and all 7 are one quantity in one cell. Replication with two fresh phase draws (variants 2 and 3, 12 seeds) for R0e (engine and cumulative eps-hat) and R1: **0 of 7 readings are shown again** (all undetermined, differences of +2 to +12 ms with CIs spanning 0). So this is recorded as a chance result of the self-check, not a toy defect. The frozen NF stays, because the per-seed phase scatter it measures is real: the SD of the per-seed tail-time difference between two phase sets is 9.5 to 10 ms for R0e and 41 to 42 ms for R1. Phase-set means of the I2 tail time (ms, 12 seeds): R0e 1488.0, 1495.5, 1495.2, 1489.6, 1490.3, 1485.9 (variants 0 to 5); R1 1512.1, 1522.6, 1524.0, 1511.7, 1512.3, 1526.2. Effect: Part T's bars for tail time and p99 metrics are large (NF about 80 ms). The table was frozen with `--force` because the first reading looked like a failure; no code was changed.
 3. **P4a is registered for S1c and cannot hold as written.** S1c's last copy rides the verdict and fills an isolated hole at the instant S0's first resend would, so the median stall equals S0's (measured S1c - S0 = 0 within 1 ms). The +H appears on S1 (a verdict without the copy): S1 - S0 = H within 1 ms (test). The hold itself is checked absolutely: every floor pass in an I1 run with H forced to 5 ms happens exactly 5 ms after that floor's arrival (to 1e-9 s). The copy-less S1 sender exists in `toy2.py` for this test only.
-4. **The early-skip receivers use an engine-like eps-hat** (coordinator's request, after review). It models the engine's incoming-loss EWMA: alpha = 0.1 (`raptorpath/src/control/estimator.rs:92`), update `rx_ewma_loss <- 0.1 (e - r)/e + 0.9 rx_ewma_loss` per batch (`:103-110`), batch = one datagram keyed on a per-path path_seq (`net/mod.rs:3755-3800`, `PathBatchTracker::record_batch`): expected = the gap to the highest path_seq seen, received = 1; a late arrival has expected 0, skips the update and becomes a loss credit that pays down a later loss (`estimator.rs:41-50`). In the toy every datagram (originals, copies, floors) takes the next path_seq at send, lost ones included, and every arrival is recorded in send order; on a FIFO path the credit never fires (unit-tested on a synthetic late arrival). Differences from the engine: one path, so the maximum over live paths is trivial; floors are counted as batches here; the engine's batch is a transport batch of symbols. Both R0e and R0c use it, so they differ only in the allowance operand. Part T was rerun for R0e and R0c (all cells, 12 seeds); these are the reported rows. The registered cumulative eps-hat and R0x (per-seq EWMA, alpha 1/256, my own toy choice) stay as labelled history rows. **Fallback witness:** the hold falls back about 1 540 (I1), 7 320 (I2) and 8 400 (L10) times per run, for both receivers. **But the fallback has no effect on the rows**: the I1 and I2 engine-eps-hat rows are identical to the cumulative rows, and to a control with eps-hat forced to 1 (budget never spent). Cause: the first entry buffered above a hole is buffered with the budget open (the gap that made the hole raises eps-hat by at least 0.05, so eps-hat x frontier is about 600 against about 360 holes given up), its SRTT/2 expiry passes the hole, and the fallen-back entries buffered later expire after that. Planted control (I2, 12 seeds, eps-hat forced to 0 so the budget is always spent): R0e and R0c both become R1's output to within 0.2 early-skip passes per run (mean v 40.54 ms against R1's 40.60 ms, median 9.38 ms in both, tail time 1510 against 1512 ms, P1 violations 0.2 against 0 per run); the 0.2 passes per run are all taken by a fallen-back (60 to 300 ms) hold, which is a longer timeout and not a ban on passing. Under the engine-like eps-hat 0 early-skip passes per run were taken in the fallen-back state, and every fallback event happened with at least one hole unpassed (an entry is buffered only above one). So the mechanism executes and is wired to the pass decision; it just never decides anything under this eps-hat.
+4. **The early-skip receivers model the engine's global hold and an engine-like eps-hat** (coordinator's requests, after review; rerun three times, each time all of Part T's R0e and R0c rows).
+   - **Hold.** The engine has one reorder timeout, re-read at every drain: `ReorderBuffer` keeps one `timeout` (`net/reorder.rs:18`), `drain_expired` passes an entry when `now - buffered_at >= timeout` (`:126`), `oldest_deadline` is `buffered_at + timeout` (`:187`), and `set_timeout` (`:174`) is called with `shed_recv_hold(srtt, on, budget_open)` before every drain, with `budget_open = shed_recv_budget_ok(holes_given_up, next_deliver_seq, eps_recv)` (`shed.rs:389`, `holes < eps x frontier`) recomputed each time. The toy now does the same: one current hold; an entry expires at the first evaluation (each arrival, and a timer at the oldest entry's deadline) where its age reaches the current hold; the expiry passes every hole below the largest expired entry; closing the budget lengthens every buffered entry's hold at once and reopening shortens it. Frontier = the delivery frontier, holes given up = the receiver's cumulative early-skip passes. The earlier model (hold fixed per entry at buffering) stays as labelled history rows ("per-entry hold").
+   - **eps-hat.** The engine's incoming-loss EWMA: alpha = 0.1 (`raptorpath/src/control/estimator.rs:92`), update `rx_ewma_loss <- 0.1 (e - r)/e + 0.9 rx_ewma_loss` per batch (`:103-110`), a batch being one datagram keyed on a per-path path_seq (`net/mod.rs:3755-3800`, `PathBatchTracker::record_batch`): expected = the gap to the highest path_seq seen, received = 1; a late arrival has expected 0, skips the update and becomes a loss credit paying down a later loss (`estimator.rs:41-50`). In the toy every datagram takes the next path_seq at send, lost ones included: originals, every copy (verdict last copies, serves and resends all go through the one copy-send function), and floors; every arrival is recorded in send order. On a FIFO path the credit never fires (tested on a synthetic late arrival). Differences from the engine: one path, so the maximum over paths is trivial; floors count as batches here.
+   - **Does the fallback bind? Yes, now.** In the global-hold model the brake decides passes: per run, 175 of R0e's 279 early-skip passes in I2 (11 of 36 in I1, 609 of 860 in L10) were taken by an entry whose hold had been lengthened while it was buffered, and 3 263 entries (I2) were lengthened. P1 breaches fall from 28 to 2.8 events per run in I2. In the per-entry history model the fallback fired thousands of times and decided nothing (rows identical to eps-hat forced to 1).
+   - **Planted controls (I2, 12 seeds, per run).** eps-hat forced to 0 (budget always spent): R0e and R0c both become R1's output exactly (0 early-skip passes, mean v 40.60 ms, median 9.38 ms, tail time 1512 ms, 0 P1 breaches). eps-hat forced to 1 (budget never spent): 368 early-skip passes (R0c 361) and 6.8 P1 breaches against 279 and 2.8 under the engine-like eps-hat, mean v 36.4 ms against 38.5 ms; so the engine-like eps-hat's brake removes about 90 early-skip passes per run and lengthens 175 passes' holds. In the per-entry history model, eps-hat = 0 left 0.2 passes per run and eps-hat = 1 reproduced the engine-like rows.
+   - The cumulative-eps-hat rows and R0x (per-seq EWMA, alpha 1/256, my own toy choice), both per-entry, are history rows.
 5. **Part T additions and choices.** R0c was added after Part A had run and before Part T. Dead window: every datagram (original, copy or floor) for a tail seq (floor value at or above the first tail seq) sent in [1.18 s, 2.68 s) is lost. In object mode the sweep also re-serves reported holes: without it a finished stream sends no more gap reports, so holes whose copies were lost are never served again, and R1 stalled at 40 s in I2 (seen in the first A/A run; the AAT runs were rerun after the fix, which touches no non-object cell). Runs end 1 s after the ack frontier reaches S_src (or at 40 s). The EWMA arm's seed-era change and R0c were merged from the plan during the work; Part A's frozen noise floors were computed before either and neither changes a Part A cell.
 6. **S0 reference runs** (36 for Parts A and B, 36 for Part T, one per cell and seed) were added; the relative bars need them. They are not in the registered counts.
 7. **c_H rent arm: skipped.** The plan's B (sender backlog) and g (delivery rate) are not defined enough to build. The d_rep arm ran at the three presets (P4g witness).
@@ -22,21 +27,24 @@ Spec: `docs/derivations/skip-rule-efficiency.md` §7 (toy plan v3, merged from t
 
 ## Checks
 
-- **P1:** 0 violations in every Part B run and every Part T run of R1 and U; the positive control (a sender that ignores the count) trips it. **R0e and R0c violate P1** (today's receiver ignores the count): about 5 (I1), 27 (I2) and 160 to 250 (L10) pass events above the allowance per run (engine eps-hat), worst excess 5 to 54 seqs.
+- **P1:** 0 violations in every Part B run and every Part T run of R1 and U; the positive control (a sender that ignores the count) trips it. **R0e and R0c violate P1** (today's receiver ignores the count): 0.6 to 0.8 (I1), 3 to 4 (I2) and 43 to 59 (L10) pass events above the allowance per run (global hold), worst excess 2 to 44 seqs.
 - **P2** (ρ = 1 and 1 - 1e-7): sender traces equal S0's for S1c with R1 and with U (unit tests); in Part B 0 verdicts, floors and passes at both.
 - **P4a** (deviation 3), **P4b** (S1c's G_rx/S_src within 1.5 ε ĥ), **P4c** (U's consumer stall per isolated hole equals min(H_o, R - t_detect, t_F + H - t_detect), observed to within 1e-5 s in four settings), **P4e** (sweep == TU LP == brute force on 200 random instances, LP integral every time), **P4f** (n_dec = 0 at Realtime and Auto under D_RTprop in I1, I2 and Q; above 0 at b = 1.3 and Bulk), **P4g** (d_all == d_rep exactly), **P4h** (deviation 11), **P4i** (e over non-hole packets equals stage 1's HOL sum), **P4j** (below), the **H estimator tests** (FIFO gives 0; a 7 ms late packet gives 6 ms until the window passes; empty window and cold start 0; strict and non-strict; two-path synthetic skew; a later floor never delays an earlier marker), the **deny test** with a planted positive control, and **FIFO** (no datagram overtook another in any run; H is 0 and the estimator counted no late arrival in any Part B run). All pass.
 - **P4j:** on isolated holes the bound ratio_U <= 2 + omega N_{R=inf} / cost_U* holds in every seed at omega in {1, 10} and the three presets (worst slack 5.8e-11). The isolated-hole ratio is 2.02 at Realtime, 1.02 at Auto omega = 1, and 1.00 elsewhere.
 
 ## Readings, Part T first (lost tail; Realtime, rho = 0.99, one path)
 
-Times in ms, 12 seeds. Bars m = max(T, NF), NF from the I2 A/A. The early-skip rows use the engine eps-hat (deviation 4); the hold falls back, so the witness is met.
+Times in ms, 12 seeds. Bars m = max(T, NF), NF from the I2 A/A (the frozen table; its R0e arm used the registered per-entry hold). R0e and R0c are the global-hold, engine-like-eps-hat receivers (deviation 4).
 
-- **Nothing stalled.** Every receiver in every cell got the ack to S_src. Tail time (last send to ack frontier) is 1.49 s in I1 and I2 and 1.67 to 1.81 s in L10. The dead window is itself 1.5 s, so nearly all of this is the window; receivers differ in how fast the denied tail seqs are served after it.
-- **R0e against R1.** I1: equivalent on every wait readout; R0e makes 183 passes against 121. I2: R0e's median v is 4.7 ms lower (shown), mean v 5.1 ms lower (shown), largest-episode spend 22.8 higher (shown), tail time 24 ms shorter (equivalent under the 85 ms bar). L10: R0e is shown better on every wait readout: median -36 ms, p99 -120 ms, mean -44 ms, tail time -141 ms. So the early skip buys a few ms in I2 and tens of ms at RTT 100 ms with 10 % loss, and costs spend.
-- **R0c against R0e.** The §1.4 prediction holds on all three counts, and its cost is spelled out. R0c's passes come no later than R0e's. R0c's total abandonment G_rx/S_src is **0.0130 (I2) and 0.0126 (L10)** against the 0.01 promise, and R0e's is 0.0103 and 0.0098: R0c exceeds R0e by 0.0027 and 0.0028, which is at most G_floor; only the floor share stays within the promise (G_floor/S_src 0.0091 and 0.0100). R0c's tail is passed by the floor where R0e's is refused: all 121 verdicts used in I1 and I2 and 118 in L10, against 89 (I2) and 82 (L10). R0c minus R0e on tail time and on the tail-only wait is equivalent (0 ms in I2, 0.2 ms in L10; tail-only mean wait 1484 against 1487 ms in I2). What option (c) buys is 4.1 ms of mean wait in I2 (shown) and, in repair sends per delivered, 0.161 (I2) and 0.043 (L10) fewer, by giving up the refused tail within the floor allowance instead of serving it; in L10 the mean-wait gain (5.1 ms) is equivalent under the bar.
-- **Against U (the target).** U has R1's sender trace and is shown better on wait: mean v 8.5 ms lower than R1 in I2, 99 ms lower in L10. R0e and R0c sit between R1 and U in I2 and L10.
-- **Tail-only wait (the 347 seqs).** I2: R0e 1487, R0c 1484, R1 1509, U 1481 ms. L10: about 1624, 1620, 1727, 1536 ms (engine eps-hat rows).
-- **In words.** The interim receiver costs nothing at the tail (no stall in any cell). Against R1 it buys 5 ms of mean wait in I2 and 44 ms in L10 (none in I1), costs largest-episode spend (+23 in I2, about +1 000 in L10), and breaks the promise (P1): about 5 events per run in I1, 28 in I2 and 160 to 260 in L10, worst excess 5 to 54 seqs. R0c keeps that wait benefit (9 ms below R1 in I2, 49 ms in L10) at a total abandonment above the promise (0.0130 and 0.0126). Neither interim receiver beats U. Nothing is adopted.
+- **Nothing stalled.** Every receiver in every cell got the ack to S_src. Tail time (last send to the ack frontier) is 1.49 to 1.51 s in I1 and I2 and 1.72 to 1.81 s in L10; the dead window is itself 1.5 s.
+- **tail_time cannot separate option (c) from today in these cells.** 347 lost tail seqs against a 121 allowance leave at least 219 resent under every design, and the last fill sets the time. R0c minus R0e in tail time is -7 ms in I2 [-20, 2] and +1 ms in L10 [-23, 26], equivalent under the 85 ms bar; these are the tail time, not a per-seq wait.
+- **R0e against R1.** I1: equivalent on every readout (R0e makes 36 early-skip passes per run). I2: median wait 2.7 ms lower (shown), mean wait 2.1 ms lower (equivalent under the bar), tail time equivalent. L10: shown better on wait: median -33 ms, mean -38 ms; tail time -25 ms (equivalent). So the early skip buys under 3 ms in I2 and about 35 ms at RTT 100 ms with 10 % loss.
+- **P1.** R0e and R0c break the promise: R0e 0.6 (I1), 2.8 (I2) and 59 (L10) pass events per run above the allowance, worst excess 3, 2 and 41 seqs; R0c 0.8, 3.9 and 43 (worst 3, 30, 44). R1 and U never do.
+- **R0c against R0e, stated plainly.** R0c's total abandonment G_rx/S_src is **0.0123 (I2) and 0.0124 (L10)** against the 0.01 promise, and R0e's is 0.0099 and 0.0099; only R0c's floor share stays within the promise (G_floor/S_src 0.0092 and 0.0100). R0c gets 117 (I2) and 116 (L10) tail verdicts against 90 and 92 for R0e (R1: 90 and 98). What option (c) buys: 3.4 ms of mean wait in I2 (shown; equivalent in L10, 3.3 ms against a 14 ms bar) and 0.141 (I2) and 0.034 (L10) fewer repair sends per delivered (shown), by giving up the refused tail within the floor allowance instead of serving it. Its passes come no later than R0e's.
+- **Tail-only wait, R0c - R0e, paired per seed** (wait to release: delivery, or the pass if the seq was passed; the lost tail seqs only): I1 +1.3 ms [0.0, 4.0]; I2 +3.7 ms [-1.9, 11.3]; L10 +2.8 ms [-15.3, 18.8]. These do not separate the designs: the sampler and sweep phases scatter the resent tail by about 10 ms per seed. The split shows where the difference is: the seqs that get a verdict under R0c but are re-sent under R0e (28 per run in I2, 24 in L10) are released **7.9 ms earlier in I2 [-10.6, -5.4] and 42.6 ms earlier in L10 [-67.5, -16.5]** per seq (mean wait 1497 against 1505 ms in I2, 1558 against 1600 ms in L10), against the derivation's expectation of about one sweep round (25 ms in I2, 100 ms in L10): below it in both cells, since the saved round overlaps the resends' own wait. The other tail seqs differ by +4.7 ms [-1.3, 13.0] (I2) and +6.5 ms [-12.4, 23.2] (L10), undetermined.
+- **Short-window cell (reported only; 70 lost tail seqs, chosen as 0.58 of the allowance and 0.78 of the about 90 I2 leaves free).** The whole lost tail fits the allowance. Tail time is 1513 ms for every receiver, and all four receivers verdict 69 of the 70 tail seqs; R0e and R0c are identical (G_rx/S_src 0.0084, below the 0.01 promise, so R0e's allowance was never exhausted and (c) has nothing to change). Mean wait is 6.3 ms (R0e, R0c), 8.5 ms (R1) and 0.45 ms (U); R0e against R1 is -2.3 ms (equivalent), median -2.7 ms (shown).
+- **Against U (the target).** U has R1's sender trace and is shown better on wait: mean v 8.5 ms below R1 in I2, 99 ms below in L10. R0e and R0c sit between them.
+- **In words.** The interim receiver costs nothing at the tail (no stall anywhere), buys about 2 ms of mean wait in I2 and 38 ms in L10 against R1, and breaks the promise by a few seqs (I1, I2) to 40 seqs (L10) at its worst. Option (c) adds a few ms of mean wait and one tenth of a repair send per delivered by passing, through the floor, the tail that today refuses and serves, at a total abandonment of 0.0123 against the 0.01 promise. Neither beats U. Nothing is adopted.
 
 ## Readings, Part A (noise floors)
 
@@ -160,250 +168,319 @@ The frozen one-path noise-floor table is `tools/toy/nf_stage2.json`, committed b
 
 ### Part T: per-config means over 12 seeds (times in ms)
 
-| cell | receiver | v p50 | v p99 | v p99.9 | v mean | e mean | G_rx/S_src | passes (floor / R0e) | P1 violations (worst excess) | tail time | stalled | tail seqs with a verdict | filled after the window | R0e hold fell back | repair sends / delivered | G_floor/S_src | floors / delivered | last copies / delivered |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| I1 | R0e (today's early-skip, engine eps-hat) | 0.00 | 1488.1 | 1496.2 | 28.71 | 28.71 | 0.00995 | 183 (109 / 74) | 4.8 (4.9) | 1485.0 | 0/12 | 120.0 | 226.1 | 1538.8 | 1.12477 | 0.00901 | 0.01071 | 0.01486 |
-| I1 | R0c (early skip, allowance counts floor passes only) | 0.00 | 1487.9 | 1495.7 | 28.47 | 28.47 | 0.01011 | 185 (121 / 64) | 6.2 (6.6) | 1485.0 | 0/12 | 121.0 | 224.2 | 1537.8 | 1.11687 | 0.00996 | 0.01067 | 0.01495 |
-| I1 | R1 (floor only) | 0.00 | 1499.3 | 1508.5 | 30.93 | 30.93 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1498.1 | 0/12 | 120.0 | 226.0 | 0.0 | 1.12160 | 0.00996 | 0.01153 | 0.01486 |
-| I1 | U, omega = 1 | 0.00 | 1483.3 | 1494.1 | 28.03 | 28.03 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1498.1 | 0/12 | 120.0 | 226.0 | 0.0 | 1.12160 | 0.00996 | 0.01153 | 0.01486 |
-| I1 | R0e, cumulative eps-hat (history, reported only) | 0.00 | 1488.1 | 1496.2 | 28.71 | 28.71 | 0.00995 | 183 (109 / 74) | 4.8 (4.9) | 1485.0 | 0/12 | 120.0 | 226.1 | 0.0 | 1.12477 | 0.00901 | 0.01071 | 0.01486 |
-| I1 | R0c, cumulative eps-hat (history, reported only) | 0.00 | 1487.9 | 1495.7 | 28.47 | 28.47 | 0.01011 | 185 (121 / 64) | 6.2 (6.6) | 1485.0 | 0/12 | 121.0 | 224.2 | 0.0 | 1.11687 | 0.00996 | 0.01067 | 0.01495 |
-| I1 | R0e, per-seq EWMA eps-hat alpha 1/256 (history, reported only) | 0.00 | 1488.1 | 1496.2 | 28.79 | 28.79 | 0.00996 | 182 (110 / 72) | 4.8 (5.0) | 1485.0 | 0/12 | 120.0 | 226.0 | 331.8 | 1.12437 | 0.00902 | 0.01075 | 0.01486 |
-| I1 | S0 reference | 0.06 | 1512.2 | 1521.2 | 45.81 | 45.81 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1499.1 | 0/12 | 0.0 | 346.0 | 0.0 | 1.68875 | 0.00000 | 0.00000 | 0.00000 |
-| I2 | R0e (today's early-skip, engine eps-hat) | 4.70 | 1493.3 | 1503.4 | 35.51 | 35.51 | 0.01030 | 459 (80 / 379) | 27.8 (23.4) | 1488.0 | 0/12 | 88.8 | 252.8 | 7322.0 | 1.30671 | 0.00659 | 0.02999 | 0.03553 |
-| I2 | R0c (early skip, allowance counts floor passes only) | 4.69 | 1489.9 | 1500.2 | 31.42 | 31.42 | 0.01304 | 490 (111 / 379) | 27.2 (54.0) | 1488.0 | 0/12 | 121.0 | 219.4 | 7311.8 | 1.14573 | 0.00913 | 0.03040 | 0.03893 |
-| I2 | R1 (floor only) | 9.38 | 1515.1 | 1523.6 | 40.60 | 40.60 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1512.1 | 0/12 | 89.7 | 256.3 | 0.0 | 1.29514 | 0.00996 | 0.03084 | 0.03630 |
-| I2 | U, omega = 1 | 0.00 | 1487.5 | 1503.1 | 32.14 | 32.14 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1512.1 | 0/12 | 89.7 | 256.3 | 0.0 | 1.29514 | 0.00996 | 0.03084 | 0.03630 |
-| I2 | R0e, cumulative eps-hat (history, reported only) | 4.70 | 1493.3 | 1503.4 | 35.51 | 35.51 | 0.01030 | 459 (80 / 379) | 27.8 (23.4) | 1488.0 | 0/12 | 88.8 | 252.8 | 0.0 | 1.30671 | 0.00659 | 0.02999 | 0.03553 |
-| I2 | R0c, cumulative eps-hat (history, reported only) | 4.69 | 1489.9 | 1500.2 | 31.42 | 31.42 | 0.01304 | 490 (111 / 379) | 27.2 (54.0) | 1488.0 | 0/12 | 121.0 | 219.4 | 0.0 | 1.14573 | 0.00913 | 0.03040 | 0.03893 |
-| I2 | R0e, per-seq EWMA eps-hat alpha 1/256 (history, reported only) | 5.49 | 1493.6 | 1503.8 | 36.36 | 36.36 | 0.01032 | 430 (84 / 346) | 27.2 (23.7) | 1488.3 | 0/12 | 88.8 | 252.5 | 3151.2 | 1.30523 | 0.00692 | 0.03011 | 0.03560 |
-| I2 | S0 reference | 10.63 | 1526.5 | 1535.3 | 54.86 | 54.86 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1516.6 | 0/12 | 0.0 | 346.0 | 0.0 | 1.71776 | 0.00000 | 0.00000 | 0.00000 |
-| L10 | R0e (today's early-skip, engine eps-hat) | 96.39 | 1631.2 | 1642.1 | 122.81 | 122.81 | 0.00978 | 1218 (72 / 1147) | 258.9 (48.7) | 1667.6 | 0/12 | 82.0 | 266.2 | 8405.4 | 0.55031 | 0.00591 | 0.02599 | 0.08067 |
-| L10 | R0c (early skip, allowance counts floor passes only) | 96.47 | 1626.7 | 1637.6 | 117.69 | 117.69 | 0.01261 | 1252 (121 / 1131) | 161.6 (53.5) | 1667.4 | 0/12 | 117.9 | 227.7 | 8347.4 | 0.50772 | 0.00996 | 0.03912 | 0.11117 |
-| L10 | R1 (floor only) | 132.48 | 1751.4 | 1775.1 | 166.67 | 166.67 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1809.0 | 0/12 | 98.2 | 247.8 | 0.0 | 0.54254 | 0.00996 | 0.04381 | 0.10786 |
-| L10 | U, omega = 1 | 1.90 | 1533.0 | 1629.1 | 67.27 | 67.27 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1809.0 | 0/12 | 98.2 | 247.8 | 0.0 | 0.54254 | 0.00996 | 0.04381 | 0.10786 |
-| L10 | R0e, cumulative eps-hat (history, reported only) | 95.59 | 1630.6 | 1641.4 | 121.99 | 121.99 | 0.00965 | 1298 (72 / 1226) | 318.2 (48.7) | 1666.8 | 0/12 | 83.6 | 265.9 | 0.0 | 0.55125 | 0.00591 | 0.03115 | 0.08250 |
-| L10 | R0c, cumulative eps-hat (history, reported only) | 95.55 | 1626.1 | 1637.0 | 116.56 | 116.56 | 0.01299 | 1335 (111 / 1224) | 193.7 (60.4) | 1666.8 | 0/12 | 121.0 | 224.6 | 0.0 | 0.50304 | 0.00913 | 0.04465 | 0.11157 |
-| L10 | R0e, per-seq EWMA eps-hat alpha 1/256 (history, reported only) | 95.79 | 1630.7 | 1641.5 | 122.24 | 122.24 | 0.00973 | 1252 (74 / 1178) | 315.8 (48.7) | 1667.1 | 0/12 | 83.8 | 264.9 | 1159.2 | 0.55010 | 0.00608 | 0.03054 | 0.08247 |
-| L10 | S0 reference | 234.53 | 1782.6 | 1805.6 | 285.80 | 285.80 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1834.0 | 0/12 | 0.0 | 346.0 | 0.0 | 0.58212 | 0.00000 | 0.00000 | 0.00000 |
+| cell | receiver | v p50 | v p99 | v p99.9 | v mean | G_rx/S_src | passes (floor / early skip) | P1 violations (worst excess) | tail time | stalled | tail seqs with a verdict | filled after the window | hold evaluations in the fallen-back state | repair sends / delivered | G_floor/S_src | floors / delivered | last copies / delivered |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| I1 | R0e (today's early-skip; engine-like eps-hat, one global hold) | 0.00 | 1494.7 | 1503.4 | 30.44 | 0.00995 | 146 (111 / 36) | 0.6 (3.1) | 1493.3 | 0/12 | 120.1 | 226.2 | 3558 | 1.12239 | 0.00911 | 0.01152 | 0.01486 |
+| I1 | R0c (same receiver; allowance counts floor passes only) | 0.00 | 1497.1 | 1506.1 | 30.43 | 0.00998 | 147 (111 / 36) | 0.8 (3.3) | 1495.6 | 0/12 | 120.2 | 225.8 | 3558 | 1.12040 | 0.00914 | 0.01149 | 0.01488 |
+| I1 | R1 (floor only) | 0.00 | 1499.3 | 1508.5 | 30.93 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1498.1 | 0/12 | 120.0 | 226.0 | 0 | 1.12160 | 0.00996 | 0.01153 | 0.01486 |
+| I1 | U, omega = 1 | 0.00 | 1483.3 | 1494.1 | 28.03 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1498.1 | 0/12 | 120.0 | 226.0 | 0 | 1.12160 | 0.00996 | 0.01153 | 0.01486 |
+| I1 | R0e, hold fixed per entry at buffering (history) | 0.00 | 1488.1 | 1496.2 | 28.71 | 0.00995 | 183 (109 / 74) | 4.8 (4.9) | 1485.0 | 0/12 | 120.0 | 226.1 | 1539 | 1.12477 | 0.00901 | 0.01071 | 0.01486 |
+| I1 | R0c, hold fixed per entry at buffering (history) | 0.00 | 1487.9 | 1495.7 | 28.47 | 0.01011 | 185 (121 / 64) | 6.2 (6.6) | 1485.0 | 0/12 | 121.0 | 224.2 | 1538 | 1.11687 | 0.00996 | 0.01067 | 0.01495 |
+| I1 | R0e, cumulative eps-hat, per-entry hold (history) | 0.00 | 1488.1 | 1496.2 | 28.71 | 0.00995 | 183 (109 / 74) | 4.8 (4.9) | 1485.0 | 0/12 | 120.0 | 226.1 | 0 | 1.12477 | 0.00901 | 0.01071 | 0.01486 |
+| I1 | R0c, cumulative eps-hat, per-entry hold (history) | 0.00 | 1487.9 | 1495.7 | 28.47 | 0.01011 | 185 (121 / 64) | 6.2 (6.6) | 1485.0 | 0/12 | 121.0 | 224.2 | 0 | 1.11687 | 0.00996 | 0.01067 | 0.01495 |
+| I1 | R0e, per-seq EWMA eps-hat alpha 1/256, per-entry hold (history) | 0.00 | 1488.1 | 1496.2 | 28.79 | 0.00996 | 182 (110 / 72) | 4.8 (5.0) | 1485.0 | 0/12 | 120.0 | 226.0 | 332 | 1.12437 | 0.00902 | 0.01075 | 0.01486 |
+| I1 | S0 reference | 0.06 | 1512.2 | 1521.2 | 45.81 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1499.1 | 0/12 | 0.0 | 346.0 | 0 | 1.68875 | 0.00000 | 0.00000 | 0.00000 |
+| I2 | R0e (today's early-skip; engine-like eps-hat, one global hold) | 6.66 | 1507.4 | 1515.3 | 38.47 | 0.00987 | 370 (92 / 279) | 2.8 (1.9) | 1504.7 | 0/12 | 90.3 | 258.1 | 9789 | 1.30515 | 0.00755 | 0.03051 | 0.03575 |
+| I2 | R0c (same receiver; allowance counts floor passes only) | 6.67 | 1513.6 | 1522.5 | 35.02 | 0.01229 | 401 (111 / 290) | 3.9 (29.8) | 1512.2 | 0/12 | 117.2 | 228.8 | 9796 | 1.16399 | 0.00916 | 0.03078 | 0.03863 |
+| I2 | R1 (floor only) | 9.38 | 1515.1 | 1523.6 | 40.60 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1512.1 | 0/12 | 89.7 | 256.3 | 0 | 1.29514 | 0.00996 | 0.03084 | 0.03630 |
+| I2 | U, omega = 1 | 0.00 | 1487.5 | 1503.1 | 32.14 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1512.1 | 0/12 | 89.7 | 256.3 | 0 | 1.29514 | 0.00996 | 0.03084 | 0.03630 |
+| I2 | R0e, hold fixed per entry at buffering (history) | 4.70 | 1493.3 | 1503.4 | 35.51 | 0.01030 | 459 (80 / 379) | 27.8 (23.4) | 1488.0 | 0/12 | 88.8 | 252.8 | 7322 | 1.30671 | 0.00659 | 0.02999 | 0.03553 |
+| I2 | R0c, hold fixed per entry at buffering (history) | 4.69 | 1489.9 | 1500.2 | 31.42 | 0.01304 | 490 (111 / 379) | 27.2 (54.0) | 1488.0 | 0/12 | 121.0 | 219.4 | 7312 | 1.14573 | 0.00913 | 0.03040 | 0.03893 |
+| I2 | R0e, cumulative eps-hat, per-entry hold (history) | 4.70 | 1493.3 | 1503.4 | 35.51 | 0.01030 | 459 (80 / 379) | 27.8 (23.4) | 1488.0 | 0/12 | 88.8 | 252.8 | 0 | 1.30671 | 0.00659 | 0.02999 | 0.03553 |
+| I2 | R0c, cumulative eps-hat, per-entry hold (history) | 4.69 | 1489.9 | 1500.2 | 31.42 | 0.01304 | 490 (111 / 379) | 27.2 (54.0) | 1488.0 | 0/12 | 121.0 | 219.4 | 0 | 1.14573 | 0.00913 | 0.03040 | 0.03893 |
+| I2 | R0e, per-seq EWMA eps-hat alpha 1/256, per-entry hold (history) | 5.49 | 1493.6 | 1503.8 | 36.36 | 0.01032 | 430 (84 / 346) | 27.2 (23.7) | 1488.3 | 0/12 | 88.8 | 252.5 | 3151 | 1.30523 | 0.00692 | 0.03011 | 0.03560 |
+| I2 | S0 reference | 10.63 | 1526.5 | 1535.3 | 54.86 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1516.6 | 0/12 | 0.0 | 346.0 | 0 | 1.71776 | 0.00000 | 0.00000 | 0.00000 |
+| L10 | R0e (today's early-skip; engine-like eps-hat, one global hold) | 99.86 | 1719.6 | 1750.0 | 128.67 | 0.00988 | 951 (91 / 860) | 58.7 (41.4) | 1784.4 | 0/12 | 92.3 | 255.3 | 10959 | 0.54555 | 0.00750 | 0.03117 | 0.09116 |
+| L10 | R0c (same receiver; allowance counts floor passes only) | 99.86 | 1732.5 | 1749.9 | 125.41 | 0.01238 | 974 (121 / 853) | 42.8 (43.6) | 1783.0 | 0/12 | 115.8 | 230.1 | 10939 | 0.51107 | 0.00996 | 0.03668 | 0.10950 |
+| L10 | R1 (floor only) | 132.48 | 1751.4 | 1775.1 | 166.67 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1809.0 | 0/12 | 98.2 | 247.8 | 0 | 0.54254 | 0.00996 | 0.04381 | 0.10786 |
+| L10 | U, omega = 1 | 1.90 | 1533.0 | 1629.1 | 67.27 | 0.00996 | 121 (121 / 0) | 0.0 (0.0) | 1809.0 | 0/12 | 98.2 | 247.8 | 0 | 0.54254 | 0.00996 | 0.04381 | 0.10786 |
+| L10 | R0e, hold fixed per entry at buffering (history) | 96.39 | 1631.2 | 1642.1 | 122.81 | 0.00978 | 1218 (72 / 1147) | 258.9 (48.7) | 1667.6 | 0/12 | 82.0 | 266.2 | 8405 | 0.55031 | 0.00591 | 0.02599 | 0.08067 |
+| L10 | R0c, hold fixed per entry at buffering (history) | 96.47 | 1626.7 | 1637.6 | 117.69 | 0.01261 | 1252 (121 / 1131) | 161.6 (53.5) | 1667.4 | 0/12 | 117.9 | 227.7 | 8347 | 0.50772 | 0.00996 | 0.03912 | 0.11117 |
+| L10 | R0e, cumulative eps-hat, per-entry hold (history) | 95.59 | 1630.6 | 1641.4 | 121.99 | 0.00965 | 1298 (72 / 1226) | 318.2 (48.7) | 1666.8 | 0/12 | 83.6 | 265.9 | 0 | 0.55125 | 0.00591 | 0.03115 | 0.08250 |
+| L10 | R0c, cumulative eps-hat, per-entry hold (history) | 95.55 | 1626.1 | 1637.0 | 116.56 | 0.01299 | 1335 (111 / 1224) | 193.7 (60.4) | 1666.8 | 0/12 | 121.0 | 224.6 | 0 | 0.50304 | 0.00913 | 0.04465 | 0.11157 |
+| L10 | R0e, per-seq EWMA eps-hat alpha 1/256, per-entry hold (history) | 95.79 | 1630.7 | 1641.5 | 122.24 | 0.00973 | 1252 (74 / 1178) | 315.8 (48.7) | 1667.1 | 0/12 | 83.8 | 264.9 | 1159 | 0.55010 | 0.00608 | 0.03054 | 0.08247 |
+| L10 | S0 reference | 234.53 | 1782.6 | 1805.6 | 285.80 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1834.0 | 0/12 | 0.0 | 346.0 | 0 | 0.58212 | 0.00000 | 0.00000 | 0.00000 |
 
-Tail-only waits (the 347 tail seqs; ms): mean v / median v
-- I1 R0e: 1481.7 / 1488.8
-- I1 R0c: 1481.5 / 1488.6
+### Part T: the early-skip hold. Passes decided while the budget had lengthened an entry's hold (global-hold model, per run)
+
+| cell | receiver | entries whose hold was lengthened while buffered | early-skip passes | passes decided by a lengthened hold | hold evaluations, budget open | hold evaluations, fallen back |
+|---|---|---|---|---|---|---|
+| I1 | R0e | 2336 | 35.8 | 11.4 | 1959 | 3558 |
+| I1 | R0c | 2336 | 35.8 | 11.4 | 1959 | 3558 |
+| I2 | R0e | 3263 | 278.8 | 175.2 | 4635 | 9789 |
+| I2 | R0c | 3278 | 290.2 | 175.8 | 4648 | 9796 |
+| L10 | R0e | 5198 | 859.8 | 608.8 | 4752 | 10959 |
+| L10 | R0c | 5146 | 853.2 | 600.3 | 5664 | 10939 |
+
+Tail-only waits (the lost tail seqs; ms): mean v / median v
+- I1 R0e: 1488.3 / 1495.4
+- I1 R0c: 1490.3 / 1497.8
 - I1 R1: 1492.6 / 1499.9
 - I1 U: 1477.7 / 1484.1
-- I1 R0cum: 1481.7 / 1488.8
-- I1 R0ccum: 1481.5 / 1488.6
-- I1 R0x: 1481.8 / 1488.8
-- I2 R0e: 1486.6 / 1492.7
-- I2 R0c: 1484.0 / 1491.0
+- I2 R0e: 1501.0 / 1506.9
+- I2 R0c: 1506.8 / 1514.0
 - I2 R1: 1508.6 / 1514.7
 - I2 U: 1481.3 / 1486.7
-- I2 R0cum: 1486.6 / 1492.7
-- I2 R0ccum: 1484.0 / 1491.0
-- I2 R0x: 1486.9 / 1493.0
-- L10 R0e: 1623.5 / 1629.8
-- L10 R0c: 1618.5 / 1627.3
+- L10 R0e: 1698.9 / 1718.9
+- L10 R0c: 1711.1 / 1733.0
 - L10 R1: 1726.8 / 1743.9
 - L10 U: 1536.2 / 1532.7
-- L10 R0cum: 1622.8 / 1629.2
-- L10 R0ccum: 1618.6 / 1626.9
-- L10 R0x: 1622.9 / 1629.4
 
-### Part T readings: paired per-seed differences, 95 percent bootstrap CI against m = max(T, NF)
+### Part T readings: paired per-seed differences against m = max(T, NF) (NF from the I2 A/A, frozen)
 
 | cell | contrast | metric | difference [CI] | m | reading |
 |---|---|---|---|---|---|
 | I1 | R0e - R0c | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0e - R0c | v_p99 | 0.2395 [0.1366, 0.383] | 81.2 | equivalent |
-| I1 | R0e - R0c | v_p999 | 0.485 [0.03978, 1.302] | 82 | equivalent |
-| I1 | R0e - R0c | v_mean | 0.2365 [0.1756, 0.3147] | 3.03 | equivalent |
-| I1 | R0e - R0c | e_mean | 0.2365 [0.1756, 0.3147] | 3.03 | equivalent |
-| I1 | R0e - R0c | G_ratio | -0.0001578 [-0.0002127, -0.0001166] | 0.00183 | equivalent |
-| I1 | R0e - R0c | max_ep_spend | -1.667 [-2, -1.333] | 9.35 | equivalent |
-| I1 | R0e - R0c | repair_per_delivered | 0.007902 [0.006319, 0.00949] | 0.0844 | equivalent |
-| I1 | R0e - R0c | tail_time | 0 [0, 0] | 85.1 | equivalent |
+| I1 | R0e - R0c | v_p99 | -2.419 [-7.302, 0.03912] | 81.2 | equivalent |
+| I1 | R0e - R0c | v_p999 | -2.672 [-8.017, -8.951e-06] | 82 | equivalent |
+| I1 | R0e - R0c | v_mean | 0.01231 [-0.04196, 0.06076] | 3.03 | equivalent |
+| I1 | R0e - R0c | G_ratio | -3.43e-05 [-6.86e-05, -6.86e-06] | 0.00183 | equivalent |
+| I1 | R0e - R0c | max_ep_spend | -0.4167 [-0.8333, -0.08333] | 9.35 | equivalent |
+| I1 | R0e - R0c | repair_per_delivered | 0.001985 [0.0004011, 0.003956] | 0.0844 | equivalent |
+| I1 | R0e - R0c | tail_time | -2.264 [-6.793, 0] | 85.1 | equivalent |
 | I1 | R0e - R1 | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0e - R1 | v_p99 | -11.21 [-19.51, -4.818] | 81.2 | equivalent |
-| I1 | R0e - R1 | v_p999 | -12.29 [-21.48, -5.323] | 82 | equivalent |
-| I1 | R0e - R1 | v_mean | -2.218 [-2.381, -2.074] | 3.03 | equivalent |
-| I1 | R0e - R1 | e_mean | -2.218 [-2.381, -2.074] | 3.03 | equivalent |
-| I1 | R0e - R1 | G_ratio | -6.86e-06 [-5.488e-05, 4.116e-05] | 0.00183 | equivalent |
-| I1 | R0e - R1 | max_ep_spend | 4.917 [3.75, 6.167] | 9.35 | equivalent |
-| I1 | R0e - R1 | repair_per_delivered | 0.003173 [0.001195, 0.005162] | 0.0844 | equivalent |
-| I1 | R0e - R1 | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
+| I1 | R0e - R1 | v_p99 | -4.625 [-9.641, -1.468] | 81.2 | equivalent |
+| I1 | R0e - R1 | v_p999 | -5.122 [-10.54, -1.477] | 82 | equivalent |
+| I1 | R0e - R1 | v_mean | -0.4852 [-0.5526, -0.4273] | 3.03 | equivalent |
+| I1 | R0e - R1 | G_ratio | -1.372e-05 [-3.43e-05, 0] | 0.00183 | equivalent |
+| I1 | R0e - R1 | max_ep_spend | 2.917 [1, 4.917] | 9.35 | equivalent |
+| I1 | R0e - R1 | repair_per_delivered | 0.0007882 [-1.386e-05, 0.001984] | 0.0844 | equivalent |
+| I1 | R0e - R1 | tail_time | -4.753 [-9.332, -1.477] | 85.1 | equivalent |
 | I1 | R0c - R1 | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0c - R1 | v_p99 | -11.45 [-19.77, -5.033] | 81.2 | equivalent |
-| I1 | R0c - R1 | v_p999 | -12.78 [-21.94, -5.786] | 82 | equivalent |
-| I1 | R0c - R1 | v_mean | -2.455 [-2.665, -2.276] | 3.03 | equivalent |
-| I1 | R0c - R1 | e_mean | -2.455 [-2.665, -2.276] | 3.03 | equivalent |
-| I1 | R0c - R1 | G_ratio | 0.0001509 [8.232e-05, 0.0002333] | 0.00183 | equivalent |
-| I1 | R0c - R1 | max_ep_spend | 6.583 [5.5, 7.75] | 9.35 | equivalent |
-| I1 | R0c - R1 | repair_per_delivered | -0.004729 [-0.006696, -0.002759] | 0.0844 | equivalent |
-| I1 | R0c - R1 | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
+| I1 | R0c - R1 | v_p99 | -2.206 [-3.57, -0.8931] | 81.2 | equivalent |
+| I1 | R0c - R1 | v_p999 | -2.45 [-4.026, -0.9507] | 82 | equivalent |
+| I1 | R0c - R1 | v_mean | -0.4975 [-0.5559, -0.4436] | 3.03 | equivalent |
+| I1 | R0c - R1 | G_ratio | 2.058e-05 [0, 4.116e-05] | 0.00183 | equivalent |
+| I1 | R0c - R1 | max_ep_spend | 3.333 [1.583, 5.25] | 9.35 | equivalent |
+| I1 | R0c - R1 | repair_per_delivered | -0.001196 [-0.002407, 0] | 0.0844 | equivalent |
+| I1 | R0c - R1 | tail_time | -2.488 [-4.092, -0.9613] | 85.1 | equivalent |
 | I1 | R0e - U | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0e - U | v_p99 | 4.806 [4.088, 5.219] | 81.2 | equivalent |
-| I1 | R0e - U | v_p999 | 2.088 [1.183, 3.071] | 82 | equivalent |
-| I1 | R0e - U | v_mean | 0.678 [0.592, 0.7666] | 3.03 | equivalent |
-| I1 | R0e - U | e_mean | 0.678 [0.592, 0.7666] | 3.03 | equivalent |
-| I1 | R0e - U | G_ratio | -6.86e-06 [-5.488e-05, 4.116e-05] | 0.00183 | equivalent |
-| I1 | R0e - U | max_ep_spend | 14.83 [3.75, 35.75] | 9.35 | undetermined |
-| I1 | R0e - U | repair_per_delivered | 0.003173 [0.001195, 0.005162] | 0.0844 | equivalent |
-| I1 | R0e - U | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
+| I1 | R0e - U | v_p99 | 11.39 [6.167, 18.56] | 81.2 | equivalent |
+| I1 | R0e - U | v_p999 | 9.257 [3.905, 16.73] | 82 | equivalent |
+| I1 | R0e - U | v_mean | 2.411 [2.312, 2.524] | 3.03 | equivalent |
+| I1 | R0e - U | G_ratio | -1.372e-05 [-3.43e-05, 0] | 0.00183 | equivalent |
+| I1 | R0e - U | max_ep_spend | 12.83 [1.083, 34.33] | 9.35 | undetermined |
+| I1 | R0e - U | repair_per_delivered | 0.0007882 [-1.386e-05, 0.001984] | 0.0844 | equivalent |
+| I1 | R0e - U | tail_time | -4.753 [-9.332, -1.477] | 85.1 | equivalent |
 | I1 | R0c - U | v_p50 | 0 [0, 0] | 1 | equivalent |
-| I1 | R0c - U | v_p99 | 4.567 [3.86, 5.003] | 81.2 | equivalent |
-| I1 | R0c - U | v_p999 | 1.603 [0.7116, 2.628] | 82 | equivalent |
-| I1 | R0c - U | v_mean | 0.4415 [0.3084, 0.5622] | 3.03 | equivalent |
-| I1 | R0c - U | e_mean | 0.4415 [0.3084, 0.5622] | 3.03 | equivalent |
-| I1 | R0c - U | G_ratio | 0.0001509 [8.232e-05, 0.0002333] | 0.00183 | equivalent |
-| I1 | R0c - U | max_ep_spend | 16.5 [5.5, 37.5] | 9.35 | undetermined |
-| I1 | R0c - U | repair_per_delivered | -0.004729 [-0.006696, -0.002759] | 0.0844 | equivalent |
-| I1 | R0c - U | tail_time | -13.08 [-22.04, -5.805] | 85.1 | equivalent |
+| I1 | R0c - U | v_p99 | 13.81 [6.429, 22.79] | 81.2 | equivalent |
+| I1 | R0c - U | v_p999 | 11.93 [4.35, 21.47] | 82 | equivalent |
+| I1 | R0c - U | v_mean | 2.399 [2.297, 2.511] | 3.03 | equivalent |
+| I1 | R0c - U | G_ratio | 2.058e-05 [0, 4.116e-05] | 0.00183 | equivalent |
+| I1 | R0c - U | max_ep_spend | 13.25 [1.667, 34.67] | 9.35 | undetermined |
+| I1 | R0c - U | repair_per_delivered | -0.001196 [-0.002407, 0] | 0.0844 | equivalent |
+| I1 | R0c - U | tail_time | -2.488 [-4.092, -0.9613] | 85.1 | equivalent |
 | I1 | R1 - U | v_p50 | 0 [0, 0] | 1 | equivalent |
 | I1 | R1 - U | v_p99 | 16.02 [9.378, 24.47] | 81.2 | equivalent |
 | I1 | R1 - U | v_p999 | 14.38 [7.353, 23.26] | 82 | equivalent |
 | I1 | R1 - U | v_mean | 2.896 [2.784, 3.004] | 3.03 | equivalent |
-| I1 | R1 - U | e_mean | 2.896 [2.784, 3.004] | 3.03 | equivalent |
 | I1 | R1 - U | G_ratio | 0 [0, 0] | 0.00183 | equivalent |
 | I1 | R1 - U | max_ep_spend | 9.917 [0, 29.75] | 9.35 | undetermined |
 | I1 | R1 - U | repair_per_delivered | 0 [0, 0] | 0.0844 | equivalent |
 | I1 | R1 - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| I2 | R0e - R0c | v_p50 | 0.009626 [0.008398, 0.01101] | 1 | equivalent |
-| I2 | R0e - R0c | v_p99 | 3.439 [3.223, 3.641] | 81.2 | equivalent |
-| I2 | R0e - R0c | v_p999 | 3.251 [2.583, 3.906] | 82 | equivalent |
-| I2 | R0e - R0c | v_mean | 4.091 [3.864, 4.329] | 3.03 | shown larger |
-| I2 | R0e - R0c | e_mean | 4.091 [3.864, 4.329] | 3.03 | shown larger |
-| I2 | R0e - R0c | G_ratio | -0.002737 [-0.002895, -0.002586] | 0.00183 | shown smaller |
-| I2 | R0e - R0c | max_ep_spend | -30.75 [-32.83, -28.92] | 9.35 | shown smaller |
-| I2 | R0e - R0c | repair_per_delivered | 0.161 [0.1527, 0.1698] | 0.0859 | shown larger |
-| I2 | R0e - R0c | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| I2 | R0e - R1 | v_p50 | -4.682 [-4.767, -4.593] | 1 | shown smaller |
-| I2 | R0e - R1 | v_p99 | -21.82 [-35.67, -12.97] | 81.2 | equivalent |
-| I2 | R0e - R1 | v_p999 | -20.2 [-34.6, -10.91] | 82 | equivalent |
-| I2 | R0e - R1 | v_mean | -5.087 [-6.006, -4.402] | 3.03 | shown smaller |
-| I2 | R0e - R1 | e_mean | -5.087 [-6.006, -4.402] | 3.03 | shown smaller |
-| I2 | R0e - R1 | G_ratio | 0.000343 [1.372e-05, 0.0007823] | 0.00183 | equivalent |
-| I2 | R0e - R1 | max_ep_spend | 22.75 [19.83, 25.5] | 9.35 | shown larger |
-| I2 | R0e - R1 | repair_per_delivered | 0.01158 [0.007159, 0.01611] | 0.0859 | equivalent |
-| I2 | R0e - R1 | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
-| I2 | R0c - R1 | v_p50 | -4.692 [-4.776, -4.603] | 1 | shown smaller |
-| I2 | R0c - R1 | v_p99 | -25.26 [-39.01, -16.56] | 81.2 | equivalent |
-| I2 | R0c - R1 | v_p999 | -23.45 [-38.06, -14.13] | 82 | equivalent |
-| I2 | R0c - R1 | v_mean | -9.179 [-9.987, -8.529] | 3.03 | shown smaller |
-| I2 | R0c - R1 | e_mean | -9.179 [-9.987, -8.529] | 3.03 | shown smaller |
-| I2 | R0c - R1 | G_ratio | 0.00308 [0.002765, 0.003451] | 0.00183 | shown larger |
-| I2 | R0c - R1 | max_ep_spend | 53.5 [50.83, 56.75] | 9.35 | shown larger |
-| I2 | R0c - R1 | repair_per_delivered | -0.1494 [-0.1572, -0.1421] | 0.0859 | shown smaller |
-| I2 | R0c - R1 | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
-| I2 | R0e - U | v_p50 | 4.702 [4.569, 4.835] | 1 | shown larger |
-| I2 | R0e - U | v_p99 | 5.783 [5.246, 6.291] | 81.2 | equivalent |
-| I2 | R0e - U | v_p999 | 0.3103 [-6.343, 4.935] | 82 | equivalent |
-| I2 | R0e - U | v_mean | 3.365 [2.661, 3.9] | 3.03 | undetermined |
-| I2 | R0e - U | e_mean | 3.365 [2.661, 3.9] | 3.03 | undetermined |
-| I2 | R0e - U | G_ratio | 0.000343 [1.372e-05, 0.0007823] | 0.00183 | equivalent |
-| I2 | R0e - U | max_ep_spend | 30.5 [20, 47.75] | 9.35 | shown larger |
-| I2 | R0e - U | repair_per_delivered | 0.01158 [0.007159, 0.01611] | 0.0859 | equivalent |
-| I2 | R0e - U | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
-| I2 | R0c - U | v_p50 | 4.693 [4.559, 4.825] | 1 | shown larger |
-| I2 | R0c - U | v_p99 | 2.344 [1.819, 2.868] | 81.2 | equivalent |
-| I2 | R0c - U | v_p999 | -2.941 [-9.746, 1.736] | 82 | equivalent |
-| I2 | R0c - U | v_mean | -0.7268 [-1.335, -0.2054] | 3.03 | equivalent |
-| I2 | R0c - U | e_mean | -0.7268 [-1.335, -0.2054] | 3.03 | equivalent |
-| I2 | R0c - U | G_ratio | 0.00308 [0.002765, 0.003451] | 0.00183 | shown larger |
-| I2 | R0c - U | max_ep_spend | 61.25 [51.08, 77.75] | 9.35 | shown larger |
-| I2 | R0c - U | repair_per_delivered | -0.1494 [-0.1572, -0.1421] | 0.0859 | shown smaller |
-| I2 | R0c - U | tail_time | -24.14 [-38.37, -14.3] | 85.1 | equivalent |
+| cell | contrast | metric | difference [CI] | m | reading |
+|---|---|---|---|---|---|
+| I2 | R0e - R0c | v_p50 | -0.008105 [-0.03782, 0.01047] | 1 | equivalent |
+| I2 | R0e - R0c | v_p99 | -6.191 [-19.11, 3.093] | 81.2 | equivalent |
+| I2 | R0e - R0c | v_p999 | -7.11 [-19.67, 2.15] | 82 | equivalent |
+| I2 | R0e - R0c | v_mean | 3.449 [3.08, 3.79] | 3.03 | shown larger |
+| I2 | R0e - R0c | G_ratio | -0.002422 [-0.002621, -0.00223] | 0.00183 | shown smaller |
+| I2 | R0e - R0c | max_ep_spend | -26.5 [-33.5, -18.92] | 9.35 | shown smaller |
+| I2 | R0e - R0c | repair_per_delivered | 0.1412 [0.1299, 0.1518] | 0.0859 | shown larger |
+| I2 | R0e - R0c | tail_time | -7.407 [-20.34, 1.743] | 85.1 | equivalent |
+| I2 | R0e - R1 | v_p50 | -2.72 [-2.86, -2.585] | 1 | shown smaller |
+| I2 | R0e - R1 | v_p99 | -7.771 [-19.74, -0.6713] | 81.2 | equivalent |
+| I2 | R0e - R1 | v_p999 | -8.297 [-20.54, -0.8935] | 82 | equivalent |
+| I2 | R0e - R1 | v_mean | -2.129 [-2.39, -1.945] | 3.03 | equivalent |
+| I2 | R0e - R1 | G_ratio | -9.605e-05 [-0.0001441, -5.488e-05] | 0.00183 | equivalent |
+| I2 | R0e - R1 | max_ep_spend | 5.917 [-2.333, 19.09] | 9.35 | undetermined |
+| I2 | R0e - R1 | repair_per_delivered | 0.01001 [0.005678, 0.01487] | 0.0859 | equivalent |
+| I2 | R0e - R1 | tail_time | -7.395 [-19.22, 0] | 85.1 | equivalent |
+| I2 | R0c - R1 | v_p50 | -2.712 [-2.85, -2.58] | 1 | shown smaller |
+| I2 | R0c - R1 | v_p99 | -1.58 [-6.021, 3.661] | 81.2 | equivalent |
+| I2 | R0c - R1 | v_p999 | -1.187 [-5.421, 3.596] | 82 | equivalent |
+| I2 | R0c - R1 | v_mean | -5.578 [-5.936, -5.208] | 3.03 | shown smaller |
+| I2 | R0c - R1 | G_ratio | 0.002326 [0.002154, 0.002518] | 0.00183 | shown larger |
+| I2 | R0c - R1 | max_ep_spend | 32.42 [26.92, 39.92] | 9.35 | shown larger |
+| I2 | R0c - R1 | repair_per_delivered | -0.1311 [-0.1413, -0.1217] | 0.0859 | shown smaller |
+| I2 | R0c - R1 | tail_time | 0.01199 [-5.028, 6.069] | 85.1 | equivalent |
+| I2 | R0e - U | v_p50 | 6.664 [6.482, 6.834] | 1 | shown larger |
+| I2 | R0e - U | v_p99 | 19.84 [16.96, 22.6] | 81.2 | equivalent |
+| I2 | R0e - U | v_p999 | 12.21 [7.736, 16.19] | 82 | equivalent |
+| I2 | R0e - U | v_mean | 6.323 [6.181, 6.451] | 3.03 | shown larger |
+| I2 | R0e - U | G_ratio | -9.605e-05 [-0.0001441, -5.488e-05] | 0.00183 | equivalent |
+| I2 | R0e - U | max_ep_spend | 13.67 [-2, 32] | 9.35 | undetermined |
+| I2 | R0e - U | repair_per_delivered | 0.01001 [0.005678, 0.01487] | 0.0859 | equivalent |
+| I2 | R0e - U | tail_time | -7.395 [-19.22, 0] | 85.1 | equivalent |
+| I2 | R0c - U | v_p50 | 6.672 [6.49, 6.838] | 1 | shown larger |
+| I2 | R0c - U | v_p99 | 26.03 [15.52, 41.01] | 81.2 | equivalent |
+| I2 | R0c - U | v_p999 | 19.32 [12.9, 27.93] | 82 | equivalent |
+| I2 | R0c - U | v_mean | 2.874 [2.472, 3.289] | 3.03 | undetermined |
+| I2 | R0c - U | G_ratio | 0.002326 [0.002154, 0.002518] | 0.00183 | shown larger |
+| I2 | R0c - U | max_ep_spend | 40.17 [28.83, 55.09] | 9.35 | shown larger |
+| I2 | R0c - U | repair_per_delivered | -0.1311 [-0.1413, -0.1217] | 0.0859 | shown smaller |
+| I2 | R0c - U | tail_time | 0.01199 [-5.028, 6.069] | 85.1 | equivalent |
 | I2 | R1 - U | v_p50 | 9.384 [9.315, 9.445] | 1 | shown larger |
 | I2 | R1 - U | v_p99 | 27.61 [18.98, 41.26] | 81.2 | equivalent |
 | I2 | R1 - U | v_p999 | 20.51 [14.43, 29.32] | 82 | equivalent |
 | I2 | R1 - U | v_mean | 8.452 [8.237, 8.761] | 3.03 | shown larger |
-| I2 | R1 - U | e_mean | 8.452 [8.237, 8.761] | 3.03 | shown larger |
 | I2 | R1 - U | G_ratio | 0 [0, 0] | 0.00183 | equivalent |
 | I2 | R1 - U | max_ep_spend | 7.75 [0, 23.25] | 9.35 | undetermined |
 | I2 | R1 - U | repair_per_delivered | 0 [0, 0] | 0.0859 | equivalent |
 | I2 | R1 - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
-| L10 | R0e - R0c | v_p50 | -0.07197 [-0.1727, 0.01825] | 1 | equivalent |
-| L10 | R0e - R0c | v_p99 | 4.585 [3.489, 5.735] | 81.2 | equivalent |
-| L10 | R0e - R0c | v_p999 | 4.478 [3.488, 5.504] | 82 | equivalent |
-| L10 | R0e - R0c | v_mean | 5.115 [4.081, 6.342] | 14.3 | equivalent |
-| L10 | R0e - R0c | e_mean | 5.115 [4.081, 6.342] | 14.3 | equivalent |
-| L10 | R0e - R0c | G_ratio | -0.002833 [-0.00332, -0.002442] | 0.00183 | shown smaller |
-| L10 | R0e - R0c | max_ep_spend | 2.333 [-1.167, 5.583] | 9.35 | equivalent |
-| L10 | R0e - R0c | repair_per_delivered | 0.04259 [0.0352, 0.05107] | 0.0291 | shown larger |
-| L10 | R0e - R0c | tail_time | 0.2134 [0.003671, 0.5828] | 85.1 | equivalent |
-| L10 | R0e - R1 | v_p50 | -36.08 [-38.98, -32.93] | 1 | shown smaller |
-| L10 | R0e - R1 | v_p99 | -120.2 [-151.1, -88.58] | 81.2 | shown smaller |
-| L10 | R0e - R1 | v_p999 | -133 [-159.2, -107.6] | 82 | shown smaller |
-| L10 | R0e - R1 | v_mean | -43.86 [-45.1, -42.6] | 14.3 | shown smaller |
-| L10 | R0e - R1 | e_mean | -43.86 [-45.1, -42.6] | 14.3 | shown smaller |
-| L10 | R0e - R1 | G_ratio | -0.0001852 [-0.0003087, -7.546e-05] | 0.00183 | equivalent |
-| L10 | R0e - R1 | max_ep_spend | 1024 [1006, 1042] | 9.35 | shown larger |
-| L10 | R0e - R1 | repair_per_delivered | 0.007766 [0.004226, 0.01128] | 0.0291 | equivalent |
-| L10 | R0e - R1 | tail_time | -141.3 [-166.6, -116.4] | 85.1 | shown smaller |
-| L10 | R0c - R1 | v_p50 | -36.01 [-38.88, -32.88] | 1 | shown smaller |
-| L10 | R0c - R1 | v_p99 | -124.7 [-156.1, -92.91] | 81.2 | shown smaller |
-| L10 | R0c - R1 | v_p999 | -137.5 [-164, -111.8] | 82 | shown smaller |
-| L10 | R0c - R1 | v_mean | -48.98 [-50.79, -47.1] | 14.3 | shown smaller |
-| L10 | R0c - R1 | e_mean | -48.98 [-50.79, -47.1] | 14.3 | shown smaller |
-| L10 | R0c - R1 | G_ratio | 0.002648 [0.002353, 0.003025] | 0.00183 | shown larger |
-| L10 | R0c - R1 | max_ep_spend | 1022 [1005, 1038] | 9.35 | shown larger |
-| L10 | R0c - R1 | repair_per_delivered | -0.03482 [-0.0405, -0.02998] | 0.0291 | shown smaller |
-| L10 | R0c - R1 | tail_time | -141.6 [-166.6, -116.6] | 85.1 | shown smaller |
-| L10 | R0e - U | v_p50 | 94.49 [94.37, 94.6] | 1 | shown larger |
-| L10 | R0e - U | v_p99 | 98.2 [97.36, 99.17] | 81.2 | shown larger |
-| L10 | R0e - U | v_p999 | 12.94 [10.6, 15.04] | 82 | equivalent |
-| L10 | R0e - U | v_mean | 55.54 [54.65, 56.72] | 14.3 | shown larger |
-| L10 | R0e - U | e_mean | 55.54 [54.65, 56.72] | 14.3 | shown larger |
-| L10 | R0e - U | G_ratio | -0.0001852 [-0.0003087, -7.546e-05] | 0.00183 | equivalent |
-| L10 | R0e - U | max_ep_spend | 1024 [1006, 1042] | 9.35 | shown larger |
-| L10 | R0e - U | repair_per_delivered | 0.007766 [0.004226, 0.01128] | 0.0291 | equivalent |
-| L10 | R0e - U | tail_time | -141.3 [-166.6, -116.4] | 85.1 | shown smaller |
-| L10 | R0c - U | v_p50 | 94.57 [94.4, 94.71] | 1 | shown larger |
-| L10 | R0c - U | v_p99 | 93.62 [92.93, 94.22] | 81.2 | shown larger |
-| L10 | R0c - U | v_p999 | 8.466 [6.575, 10.26] | 82 | equivalent |
-| L10 | R0c - U | v_mean | 50.43 [49.79, 51.04] | 14.3 | shown larger |
-| L10 | R0c - U | e_mean | 50.43 [49.79, 51.04] | 14.3 | shown larger |
-| L10 | R0c - U | G_ratio | 0.002648 [0.002353, 0.003025] | 0.00183 | shown larger |
-| L10 | R0c - U | max_ep_spend | 1022 [1005, 1038] | 9.35 | shown larger |
-| L10 | R0c - U | repair_per_delivered | -0.03482 [-0.0405, -0.02998] | 0.0291 | shown smaller |
-| L10 | R0c - U | tail_time | -141.6 [-166.6, -116.6] | 85.1 | shown smaller |
+| cell | contrast | metric | difference [CI] | m | reading |
+|---|---|---|---|---|---|
+| L10 | R0e - R0c | v_p50 | 0.002492 [-0.0313, 0.03786] | 1 | equivalent |
+| L10 | R0e - R0c | v_p99 | -12.91 [-42.05, 18.02] | 81.2 | equivalent |
+| L10 | R0e - R0c | v_p999 | 0.0875 [-24.42, 25.34] | 82 | equivalent |
+| L10 | R0e - R0c | v_mean | 3.259 [2.691, 3.831] | 14.3 | equivalent |
+| L10 | R0e - R0c | G_ratio | -0.002504 [-0.002957, -0.002106] | 0.00183 | shown smaller |
+| L10 | R0e - R0c | max_ep_spend | 2 [-7.669, 11.5] | 9.35 | undetermined |
+| L10 | R0e - R0c | repair_per_delivered | 0.03448 [0.02911, 0.04061] | 0.0291 | shown larger |
+| L10 | R0e - R0c | tail_time | 1.409 [-23.35, 26.42] | 85.1 | equivalent |
+| L10 | R0e - R1 | v_p50 | -32.61 [-35.53, -29.47] | 1 | shown smaller |
+| L10 | R0e - R1 | v_p99 | -31.79 [-56.59, -7.88] | 81.2 | equivalent |
+| L10 | R0e - R1 | v_p999 | -25.08 [-49.65, -1.076] | 82 | equivalent |
+| L10 | R0e - R1 | v_mean | -38 [-39.64, -36.34] | 14.3 | shown smaller |
+| L10 | R0e - R1 | G_ratio | -8.232e-05 [-0.0001578, -2.744e-05] | 0.00183 | equivalent |
+| L10 | R0e - R1 | max_ep_spend | 761.9 [742.5, 783.1] | 9.35 | shown larger |
+| L10 | R0e - R1 | repair_per_delivered | 0.00301 [0.0003863, 0.005396] | 0.0291 | equivalent |
+| L10 | R0e - R1 | tail_time | -24.54 [-49.18, 0] | 85.1 | equivalent |
+| L10 | R0c - R1 | v_p50 | -32.62 [-35.54, -29.46] | 1 | shown smaller |
+| L10 | R0c - R1 | v_p99 | -18.88 [-53.28, -0.3931] | 81.2 | equivalent |
+| L10 | R0c - R1 | v_p999 | -25.17 [-66.55, 0.002838] | 82 | equivalent |
+| L10 | R0c - R1 | v_mean | -41.26 [-43.19, -39.31] | 14.3 | shown smaller |
+| L10 | R0c - R1 | G_ratio | 0.002422 [0.002031, 0.00284] | 0.00183 | shown larger |
+| L10 | R0c - R1 | max_ep_spend | 759.9 [741.7, 778.3] | 9.35 | shown larger |
+| L10 | R0c - R1 | repair_per_delivered | -0.03147 [-0.03778, -0.02616] | 0.0291 | undetermined |
+| L10 | R0c - R1 | tail_time | -25.95 [-66.74, 0] | 85.1 | equivalent |
+| L10 | R0e - U | v_p50 | 97.96 [97.9, 98.02] | 1 | shown larger |
+| L10 | R0e - U | v_p99 | 186.6 [162.5, 210.5] | 81.2 | shown larger |
+| L10 | R0e - U | v_p999 | 120.9 [104.1, 143.4] | 82 | shown larger |
+| L10 | R0e - U | v_mean | 61.4 [60.71, 62.08] | 14.3 | shown larger |
+| L10 | R0e - U | G_ratio | -8.232e-05 [-0.0001578, -2.744e-05] | 0.00183 | equivalent |
+| L10 | R0e - U | max_ep_spend | 761.9 [742.5, 783.1] | 9.35 | shown larger |
+| L10 | R0e - U | repair_per_delivered | 0.00301 [0.0003863, 0.005396] | 0.0291 | equivalent |
+| L10 | R0e - U | tail_time | -24.54 [-49.18, 0] | 85.1 | equivalent |
+| L10 | R0c - U | v_p50 | 97.96 [97.91, 98] | 1 | shown larger |
+| L10 | R0c - U | v_p99 | 199.5 [164.6, 233] | 81.2 | shown larger |
+| L10 | R0c - U | v_p999 | 120.8 [88.73, 152.6] | 82 | shown larger |
+| L10 | R0c - U | v_mean | 58.14 [57.22, 58.95] | 14.3 | shown larger |
+| L10 | R0c - U | G_ratio | 0.002422 [0.002031, 0.00284] | 0.00183 | shown larger |
+| L10 | R0c - U | max_ep_spend | 759.9 [741.7, 778.3] | 9.35 | shown larger |
+| L10 | R0c - U | repair_per_delivered | -0.03147 [-0.03778, -0.02616] | 0.0291 | undetermined |
+| L10 | R0c - U | tail_time | -25.95 [-66.74, 0] | 85.1 | equivalent |
 | L10 | R1 - U | v_p50 | 130.6 [127.4, 133.5] | 1 | shown larger |
 | L10 | R1 - U | v_p99 | 218.4 [186.4, 250] | 81.2 | shown larger |
 | L10 | R1 - U | v_p999 | 146 [120.2, 172.6] | 82 | shown larger |
 | L10 | R1 - U | v_mean | 99.4 [97.78, 101.1] | 14.3 | shown larger |
-| L10 | R1 - U | e_mean | 99.4 [97.78, 101.1] | 14.3 | shown larger |
 | L10 | R1 - U | G_ratio | 0 [0, 0] | 0.00183 | equivalent |
 | L10 | R1 - U | max_ep_spend | 0 [0, 0] | 9.35 | equivalent |
 | L10 | R1 - U | repair_per_delivered | 0 [0, 0] | 0.0291 | equivalent |
 | L10 | R1 - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
 
-NF for Part T comes from the A/A on the I2 cell (R0e and R1) and is applied to all three cells.
+### Tail-only wait, R0c - R0e, paired per seed (ms): split into the seqs that get a verdict under R0c but not under R0e, and the rest
+
+tail_time is the time to the last fill and is set by the resent tail; it cannot separate (c) from today here, because 347 lost tail seqs against a 121 allowance leave at least 219 resent under every design. The tail-only wait is read per seq.
+
+| cell | R0c - R0e tail-only mean wait [CI] | seqs with a verdict under R0c only (per run) | their mean wait under R0c | their mean wait under R0e | difference per such seq [CI] | difference over the other tail seqs [CI] | overall [CI] |
+|---|---|---|---|---|---|---|---|
+| I1 | 1.33 [0.00, 3.99] | 0.4 | 1493.6 | 1493.6 | 0.00 [0.00, 0.00] | 1.34 [0.00, 4.01] | 1.33 [0.00, 3.99] |
+| I2 | 3.69 [-1.94, 11.31] | 28.2 | 1497.3 | 1505.3 | -7.91 [-10.64, -5.43] | 4.68 [-1.31, 12.96] | 3.69 [-1.94, 11.31] |
+| L10 | 2.78 [-15.27, 18.77] | 24.4 | 1557.7 | 1600.4 | -42.64 [-67.48, -16.48] | 6.47 [-12.44, 23.22] | 2.78 [-15.27, 18.77] |
+| short window (70 lost), I2 | -0.00 [-0.00, 0.00] | 0.0 | n/a | n/a | n/a | -0.00 [-0.00, 0.00] | -0.00 [-0.00, 0.00] |
+
+### Short-window cell (reported only): I2 conditions, the last 70 seqs lost for 1.5 s
+
+70 lost tail seqs is 0.58 of the 121-seq allowance and 0.78 of the roughly 90 that I2's earlier losses leave free (R1 gets 89.7 tail verdicts in the full cell), so the whole lost tail fits the allowance where the floor can pass it. Chosen by hand from that arithmetic; other windows were not tried.
+
+| cell | receiver | v p50 | v p99 | v p99.9 | v mean | G_rx/S_src | passes (floor / early skip) | P1 violations (worst excess) | tail time | stalled | tail seqs with a verdict | filled after the window | hold evaluations in the fallen-back state | repair sends / delivered | G_floor/S_src | floors / delivered | last copies / delivered |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S70 | R0e (today's early-skip; engine-like eps-hat, one global hold) | 6.58 | 12.1 | 12.7 | 6.26 | 0.00835 | 358 (73 / 285) | 2.8 (1.9) | 1513.3 | 0/12 | 69.0 | 0.0 | 9973 | 0.03582 | 0.00600 | 0.03084 | 0.03455 |
+| S70 | R0c (same receiver; allowance counts floor passes only) | 6.60 | 12.1 | 12.7 | 6.27 | 0.00836 | 358 (73 / 285) | 2.9 (1.9) | 1513.3 | 0/12 | 69.0 | 0.0 | 9992 | 0.03559 | 0.00600 | 0.03125 | 0.03510 |
+| S70 | R1 (floor only) | 9.31 | 14.6 | 19.8 | 8.51 | 0.00830 | 101 (101 / 0) | 0.0 (0.0) | 1513.3 | 0/12 | 69.0 | 0.0 | 0 | 0.03617 | 0.00830 | 0.03138 | 0.03515 |
+| S70 | U, omega = 1 | 0.00 | 12.0 | 14.1 | 0.45 | 0.00830 | 101 (101 / 0) | 0.0 (0.0) | 1513.3 | 0/12 | 69.0 | 0.0 | 0 | 0.03617 | 0.00830 | 0.03138 | 0.03515 |
+| S70 | S0 reference | 10.54 | 35.3 | 1537.4 | 20.43 | 0.00000 | 0 (0 / 0) | 0.0 (0.0) | 1539.9 | 0/12 | 0.0 | 69.0 | 0 | 0.37211 | 0.00000 | 0.00000 | 0.00000 |
+
+| cell | contrast | metric | difference [CI] | m | reading |
+|---|---|---|---|---|---|
+| S70 | R0e - R0c | v_p50 | -0.01684 [-0.04615, 0.0006977] | 1 | equivalent |
+| S70 | R0e - R0c | v_p99 | -0.000768 [-0.005259, 0.003693] | 81.2 | equivalent |
+| S70 | R0e - R0c | v_p999 | 0.002522 [-0.009679, 0.01524] | 82 | equivalent |
+| S70 | R0e - R0c | v_mean | -0.01424 [-0.03752, 0.0002872] | 3.03 | equivalent |
+| S70 | R0e - R0c | G_ratio | -6.86e-06 [-5.488e-05, 5.488e-05] | 0.00183 | equivalent |
+| S70 | R0e - R0c | max_ep_spend | -1.667 [-4.917, 0] | 9.35 | equivalent |
+| S70 | R0e - R0c | repair_per_delivered | 0.0002349 [-8.144e-05, 0.0005391] | 0.0186 | equivalent |
+| S70 | R0e - R0c | tail_time | 0 [0, 0] | 85.1 | equivalent |
+| S70 | R0e - R1 | v_p50 | -2.728 [-2.867, -2.594] | 1 | shown smaller |
+| S70 | R0e - R1 | v_p99 | -2.513 [-3.731, -1.497] | 81.2 | equivalent |
+| S70 | R0e - R1 | v_p999 | -7.074 [-9.531, -4.921] | 82 | equivalent |
+| S70 | R0e - R1 | v_mean | -2.251 [-2.371, -2.141] | 3.03 | equivalent |
+| S70 | R0e - R1 | G_ratio | 4.802e-05 [0, 0.0001029] | 0.00183 | equivalent |
+| S70 | R0e - R1 | max_ep_spend | 57.92 [38.41, 79.92] | 9.35 | shown larger |
+| S70 | R0e - R1 | repair_per_delivered | -0.0003442 [-0.0005659, -0.0001082] | 0.0186 | equivalent |
+| S70 | R0e - R1 | tail_time | 0 [0, 0] | 85.1 | equivalent |
+| S70 | R0c - R1 | v_p50 | -2.711 [-2.849, -2.581] | 1 | shown smaller |
+| S70 | R0c - R1 | v_p99 | -2.512 [-3.731, -1.497] | 81.2 | equivalent |
+| S70 | R0c - R1 | v_p999 | -7.077 [-9.544, -4.918] | 82 | equivalent |
+| S70 | R0c - R1 | v_mean | -2.237 [-2.346, -2.137] | 3.03 | equivalent |
+| S70 | R0c - R1 | G_ratio | 5.488e-05 [2.058e-05, 9.605e-05] | 0.00183 | equivalent |
+| S70 | R0c - R1 | max_ep_spend | 59.58 [40.42, 81.17] | 9.35 | shown larger |
+| S70 | R0c - R1 | repair_per_delivered | -0.0005791 [-0.00075, -0.0004] | 0.0186 | equivalent |
+| S70 | R0c - R1 | tail_time | 0 [0, 0] | 85.1 | equivalent |
+| S70 | R0e - U | v_p50 | 6.58 [6.398, 6.749] | 1 | shown larger |
+| S70 | R0e - U | v_p99 | 0.107 [-0.07526, 0.2471] | 81.2 | equivalent |
+| S70 | R0e - U | v_p999 | -1.367 [-3.33, 0.01798] | 82 | equivalent |
+| S70 | R0e - U | v_mean | 5.806 [5.653, 5.954] | 3.03 | shown larger |
+| S70 | R0e - U | G_ratio | 4.802e-05 [0, 0.0001029] | 0.00183 | equivalent |
+| S70 | R0e - U | max_ep_spend | 71.08 [55.25, 91.67] | 9.35 | shown larger |
+| S70 | R0e - U | repair_per_delivered | -0.0003442 [-0.0005659, -0.0001082] | 0.0186 | equivalent |
+| S70 | R0e - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
+| S70 | R0c - U | v_p50 | 6.597 [6.414, 6.762] | 1 | shown larger |
+| S70 | R0c - U | v_p99 | 0.1077 [-0.07078, 0.2447] | 81.2 | equivalent |
+| S70 | R0c - U | v_p999 | -1.369 [-3.329, 0.01037] | 82 | equivalent |
+| S70 | R0c - U | v_mean | 5.82 [5.67, 5.963] | 3.03 | shown larger |
+| S70 | R0c - U | G_ratio | 5.488e-05 [2.058e-05, 9.605e-05] | 0.00183 | equivalent |
+| S70 | R0c - U | max_ep_spend | 72.75 [58, 92.75] | 9.35 | shown larger |
+| S70 | R0c - U | repair_per_delivered | -0.0005791 [-0.00075, -0.0004] | 0.0186 | equivalent |
+| S70 | R0c - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
+| S70 | R1 - U | v_p50 | 9.307 [9.237, 9.369] | 1 | shown larger |
+| S70 | R1 - U | v_p99 | 2.62 [1.637, 3.834] | 81.2 | equivalent |
+| S70 | R1 - U | v_p999 | 5.708 [3.295, 8.506] | 82 | equivalent |
+| S70 | R1 - U | v_mean | 8.057 [7.973, 8.142] | 3.03 | shown larger |
+| S70 | R1 - U | G_ratio | 0 [0, 0] | 0.00183 | equivalent |
+| S70 | R1 - U | max_ep_spend | 13.17 [6.917, 24] | 9.35 | undetermined |
+| S70 | R1 - U | repair_per_delivered | 0 [0, 0] | 0.0186 | equivalent |
+| S70 | R1 - U | tail_time | 0 [0, 0] | 85.1 | equivalent |
 
 ### Replication, phase scatter and the AG1 n_dec split
 
-### Fallback control (I2 tail cell, 12 seeds): eps-hat forced to 0 (budget always spent) and to 1 (never spent), against the engine-like eps-hat and R1
+### Fallback control (I2 tail cell, 12 seeds): eps-hat forced to 0 (budget always spent) and to 1 (never spent), per run
 
-| row | early-skip passes | floor passes | early-skip passes taken in the fallen-back state | fallback events (all above an unpassed hole) | P1 violations | v mean ms | v p50 ms | tail time ms |
-|---|---|---|---|---|---|---|---|---|
-| R0e engine-like eps-hat | 378.7 | 80.1 | 0.00 | 7322 | 27.8 | 35.51 | 4.70 | 1488.0 |
-| R0c engine-like eps-hat | 378.6 | 110.9 | 0.00 | 7312 | 27.2 | 31.42 | 4.69 | 1488.0 |
-| R0e eps-hat = 0 | 0.2 | 121.0 | 0.17 | 11316 | 0.2 | 40.54 | 9.38 | 1510.4 |
-| R0c eps-hat = 0 | 0.2 | 121.0 | 0.17 | 11316 | 0.2 | 40.54 | 9.38 | 1510.4 |
-| R0e eps-hat = 1 | 378.7 | 80.1 | 0.00 | 0 | 27.8 | 35.51 | 4.70 | 1488.0 |
-| R0c eps-hat = 1 | 378.6 | 110.9 | 0.00 | 0 | 27.2 | 31.42 | 4.69 | 1488.0 |
-| R1 | 0.0 | 121.0 | 0.00 | 0 | 0.0 | 40.60 | 9.38 | 1512.1 |
+| row | early-skip passes | floor passes | passes decided by a lengthened hold | entries lengthened while buffered | hold evaluations fallen back | P1 violations | v mean ms | v p50 ms | tail time ms |
+|---|---|---|---|---|---|---|---|---|---|
+| R0e, global hold, engine-like eps-hat | 278.8 | 91.7 | 175.2 | 3263 | 9789 | 2.8 | 38.47 | 6.66 | 1504.7 |
+| R0c, global hold, engine-like eps-hat | 290.2 | 111.2 | 175.8 | 3278 | 9796 | 3.9 | 35.02 | 6.67 | 1512.2 |
+| R0e, global hold, eps-hat = 0 | 0.0 | 121.0 | 0.0 | 5440 | 11733 | 0.0 | 40.60 | 9.38 | 1512.1 |
+| R0c, global hold, eps-hat = 0 | 0.0 | 121.0 | 0.0 | 5440 | 11733 | 0.0 | 40.60 | 9.38 | 1512.1 |
+| R0e, global hold, eps-hat = 1 | 367.7 | 73.1 | 0.0 | 0 | 10 | 6.8 | 36.39 | 4.74 | 1499.4 |
+| R0c, global hold, eps-hat = 1 | 361.3 | 110.9 | 0.0 | 0 | 10 | 7.6 | 32.15 | 4.73 | 1506.4 |
+| R0e, per-entry hold (history), engine-like eps-hat | 378.7 | 80.1 | 0.0 | 0 | 7322 | 27.8 | 35.51 | 4.70 | 1488.0 |
+| R0e, per-entry hold (history), eps-hat = 0 | 0.2 | 121.0 | 0.0 | 0 | 11316 | 0.2 | 40.54 | 9.38 | 1510.4 |
+| R0e, per-entry hold (history), eps-hat = 1 | 378.7 | 80.1 | 0.0 | 0 | 0 | 27.8 | 35.51 | 4.70 | 1488.0 |
+| R1 | 0.0 | 121.0 | 0.0 | 0 | 0 | 0.0 | 40.60 | 9.38 | 1512.1 |
 
 ### Replication of the I2 tail A/A with fresh phase draws (variants 2 and 3, 12 seeds)
 
 | receiver, eps-hat | metric | C - D mean [CI] | T | reading |
 |---|---|---|---|---|
-| R0e engine | v_p99 | 2.36 [-2.134, 7.163] | 1 | undetermined |
-| R0e engine | v_p999 | 2.306 [-2.248, 7.13] | 1 | undetermined |
-| R0e engine | e_p99 | 2.36 [-2.134, 7.163] | 1 | undetermined |
-| R0e engine | e_p999 | 2.306 [-2.248, 7.13] | 1 | undetermined |
-| R0e engine | tail_time | 5.585 [0.374, 11.25] | 1 | undetermined |
-| R0e engine | tail_v_mean | 2.326 [-2.145, 7.089] | 1 | undetermined |
-| R0e engine | tail_v_p50 | 2.487 [-2.005, 7.307] | 1 | undetermined |
+| R0e engine | v_p99 | -2.791 [-18.58, 8.161] | 1 | undetermined |
+| R0e engine | v_p999 | -2.839 [-18.48, 8.267] | 1 | undetermined |
+| R0e engine | e_p99 | -2.791 [-18.58, 8.161] | 1 | undetermined |
+| R0e engine | e_p999 | -2.839 [-18.48, 8.267] | 1 | undetermined |
+| R0e engine | tail_time | -0.7262 [-17.09, 10.65] | 1 | undetermined |
+| R0e engine | tail_v_mean | -2.298 [-17.68, 8.506] | 1 | undetermined |
+| R0e engine | tail_v_p50 | -2.759 [-18.49, 8.181] | 1 | undetermined |
 | R0e cum | v_p99 | 2.36 [-2.134, 7.163] | 1 | undetermined |
 | R0e cum | v_p999 | 2.306 [-2.248, 7.13] | 1 | undetermined |
 | R0e cum | e_p99 | 2.36 [-2.134, 7.163] | 1 | undetermined |
@@ -423,7 +500,7 @@ Readings shown across the replication: 0
 
 ### Phase scatter of tail time (ms): mean over 12 seeds per phase set, and per-seed SD of the difference between two sets
 
-- R0e engine: variant 2 mean 1495.2, variant 3 mean 1489.6; SD of per-seed difference 10.0
+- R0e engine: variant 2 mean 1510.0, variant 3 mean 1510.7; SD of per-seed difference 26.3
 - R0e cum: variant 2 mean 1495.2, variant 3 mean 1489.6; SD of per-seed difference 10.0
 - R1 engine: variant 2 mean 1524.0, variant 3 mean 1511.7; SD of per-seed difference 41.3
 - R0e (frozen A/A, cumulative eps-hat for R0e): variant 0 mean 1488.0, variant 1 mean 1495.5; SD of per-seed difference 9.5

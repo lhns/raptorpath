@@ -76,11 +76,11 @@ def bridge(sender, seed):
                 e_mean=r2["e_mean"], e_p99=r2["e_p99"], hol_p99=r1["hol_p99"])
 
 
-def tail_cfg(cell, sender, recv, seed, **kw):
+def tail_cfg(cell, sender, recv, seed, tail=347, **kw):
     n = 12147
     kw.setdefault("owd", 0.05 if cell == "L10" else 0.005)
     return toy2.Cfg(cell=cell, sender=sender, recv=recv, seed=seed, n_total=n, delta=50.0, rho=0.99,
-                    dead=(n - 347, (n - 347) / 10000.0, 1.5), **kw)
+                    dead=(n - tail, (n - tail) / 10000.0, 1.5), **kw)
 
 
 def build():
@@ -94,7 +94,7 @@ def build():
     for recv in ("R0e", "R1"):
         for arm, var in (("A", 0), ("B", 1)):
             job("A", "AAT-I2-%s-%s" % (recv, arm),
-                lambda seed, recv=recv, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var)))
+                lambda seed, recv=recv, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var, **(dict(r0e_hold="entry", recv_eps="cum") if recv == "R0e" else {}))))
     for pre in ("Realtime", "Auto"):
         p = toy2.PRESETS[pre]
         for h in NUDGE:
@@ -110,19 +110,26 @@ def build():
         job("T", "REFT-%s" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S0", "R1", seed)))
         for recv in ("R0e", "R0c", "R1", "U"):
             job("T", "T-%s-%s" % (cell, recv), lambda seed, cell=cell, recv=recv: ("sim", tail_cfg(cell, "S1c", recv, seed)))
-        job("T", "T-%s-R0cum" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, recv_eps="cum")))
-        job("T", "T-%s-R0ccum" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0c", seed, recv_eps="cum")))
-        job("T", "T-%s-R0x" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, recv_eps="ewma")))
+        job("T", "T-%s-R0cum" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, recv_eps="cum", r0e_hold="entry")))
+        job("T", "T-%s-R0ccum" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0c", seed, recv_eps="cum", r0e_hold="entry")))
+        job("T", "T-%s-R0x" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, recv_eps="ewma", r0e_hold="entry")))
+        job("T", "T-%s-R0eentry" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0e", seed, r0e_hold="entry")))
+        job("T", "T-%s-R0centry" % cell, lambda seed, cell=cell: ("sim", tail_cfg(cell, "S1c", "R0c", seed, r0e_hold="entry")))
     # ---- replication of the I2 tail A/A with fresh phase draws (variants 2, 3), and the AG1 n_dec split
     for recv, eps in (("R0e", "engine"), ("R0e", "cum"), ("R1", "engine")):
         for arm, var in (("C", 2), ("D", 3)):
             job("REP", "REP-I2-%s-%s-%s" % (recv, eps, arm),
-                lambda seed, recv=recv, eps=eps, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var, recv_eps=eps)))
+                lambda seed, recv=recv, eps=eps, var=var: ("sim", tail_cfg("I2", "S1c", recv, seed, variant=var, recv_eps=eps, **(dict(r0e_hold="entry") if eps == "cum" else {}))))
     for recv in ("R0e", "R0c"):                            # planted controls for the fallback mechanism
         for eps in ("zero", "one"):
             job("REP", "CTL-I2-%s-%s" % (recv, eps), lambda seed, recv=recv, eps=eps: ("sim", tail_cfg("I2", "S1c", recv, seed, recv_eps=eps)))
+            job("REP", "CTLentry-I2-%s-%s" % (recv, eps), lambda seed, recv=recv, eps=eps: ("sim", tail_cfg("I2", "S1c", recv, seed, recv_eps=eps, r0e_hold="entry")))
     for cname, cell, q in (("I1", "I1", False), ("I2", "I2", False), ("Q", "I1", True)):
         job("REP", "AG1S-%s-Realtime-EWMA" % cname, ucfg(cell, 50.0, 0.99, 1.0, q=q, d_arm="EWMA"))
+    # ---- short-window tail (reported only): 70 lost tail seqs, about 0.58 of the 121 allowance and 0.78 of what I2 leaves free (about 90)
+    job("T", "TSREF-R1", lambda seed: ("sim", tail_cfg("I2", "S0", "R1", seed, tail=70)))
+    for recv in ("R0e", "R0c", "R1", "U"):
+        job("T", "TS-%s" % recv, lambda seed, recv=recv: ("sim", tail_cfg("I2", "S1c", recv, seed, tail=70)))
     # ---- Part B
     for pre in ("Bulk", "Auto", "Realtime"):
         p, rho = toy2.PRESETS[pre], toy2.RHO[pre]

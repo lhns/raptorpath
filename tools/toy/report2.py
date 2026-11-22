@@ -334,17 +334,6 @@ def part_B():
 
 def part_REP():
     nf = S.nf_table()
-    p("### Fallback control (I2 tail cell, 12 seeds): eps-hat forced to 0 (budget always spent) and to 1 (never spent), against the engine-like eps-hat and R1\n")
-    p("| row | early-skip passes | floor passes | early-skip passes taken in the fallen-back state | fallback events (all above an unpassed hole) | P1 violations | v mean ms | v p50 ms | tail time ms |")
-    p("|---|---|---|---|---|---|---|---|---|")
-    rows = [("R0e engine-like eps-hat", "T-I2-R0e"), ("R0c engine-like eps-hat", "T-I2-R0c"), ("R0e eps-hat = 0", "CTL-I2-R0e-zero"), ("R0c eps-hat = 0", "CTL-I2-R0c-zero"),
-            ("R0e eps-hat = 1", "CTL-I2-R0e-one"), ("R0c eps-hat = 1", "CTL-I2-R0c-one"), ("R1", "T-I2-R1")]
-    for lab, nm in rows:
-        rr = [R(nm, s_) for s_ in S.seeds_of(nm)]
-        g = lambda k: np.mean([r["gauges"].get(k, 0) for r in rr])
-        tt = np.mean([r["tail_time"] for r in rr]) * 1e3
-        p("| %s | %.1f | %.1f | %.2f | %.0f | %.1f | %.2f | %.2f | %.1f |" % (lab, g("pass_r0e"), g("pass_floor"), g("pass_r0e_fb"), g("r0e_fallback_open"), g("p1_viol"), mean(nm, "v_mean"), mean(nm, "v_p50"), tt))
-    p("")
     p("### Replication of the I2 tail A/A with fresh phase draws (variants 2 and 3, 12 seeds)\n")
     p("| receiver, eps-hat | metric | C - D mean [CI] | T | reading |")
     p("|---|---|---|---|---|")
@@ -378,4 +367,8 @@ def part_REP():
 
 
 def main(cmd):
-    {"A": part_A, "T": part_T, "B": part_B, "REP": part_REP}[cmd]()
+    if cmd in ("T", "REP"):
+        import report3
+        report3.main(cmd)
+        return
+    {"A": part_A, "B": part_B}[cmd]()

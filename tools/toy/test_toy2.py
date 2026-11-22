@@ -313,6 +313,15 @@ class Receivers(unittest.TestCase):
         self.assertLessEqual(c["GF_final"], c["G_final"])
         self.assertLessEqual(c["GF_final"], 121)
 
+    def test_global_hold_brake_binds_and_controls(self):
+        cfgs = lambda eps: toy2.object_cfg("I2", "R0e", 1, recv_eps=eps)
+        z, e, o = toy2.run(cfgs("zero")), toy2.run(cfgs("engine")), toy2.run(cfgs("one"))
+        self.assertEqual(z["gauges"]["pass_r0e"], 0)                      # budget always spent: R1's output
+        self.assertGreater(e["gauges"]["pass_r0e_lengthened"], 0)          # the brake decides passes
+        self.assertLess(e["gauges"]["pass_r0e"], o["gauges"]["pass_r0e"])   # and removes early-skip passes against eps-hat = 1
+        r1 = toy2.run(toy2.object_cfg("I2", "R1", 1))
+        self.assertEqual(z["v_mean"], r1["v_mean"])
+
     def test_tail_cell_witnesses(self):
         for cell in ("I1", "I2", "L10"):
             for recv in ("R1", "U"):
