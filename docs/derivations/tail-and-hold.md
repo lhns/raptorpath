@@ -6,7 +6,12 @@
 
 **Short answer.**
 - **Objection 1: count only the sender's own floor passes against the allowance (option (c), §1.4).** The receiver already splits `G_rx` by writer (brief step 4). One more `WindowAck` field, `passed_by_floor` (8 bytes, riding v11, which is not built yet), lets the sender run its budget on `G_floor`. The old arm's passes stay on the wire in `passed_undelivered`, printed against the budget, as today. Realtime latency does not change, no ρ-keyed site is added, and Amendment 3's order stands. L-TAIL then reduces to the ρ contract (§1.1) in this build, as it does under design U. The same operand stays correct after U, where `G_floor ≡ G_rx`.
-- **Objection 2: replace the statistical hold with an event rule (§2.3).** On a FIFO path, any datagram sent after a copy arrives after that copy. So the receiver needs no wait for a path that keeps delivering. It only needs to know which paths carried a send (copy or coded repair) that can still fill a covered hole, and that is a sender fact. With that on the floor, the receiver passes as soon as each such path has delivered something sent later. A wait remains only for a path that falls silent (dead or stalled). No event can tell "slow" from "dead" there, so that wait cannot be removed. Its bound is the path's own loss timeout, `srtt_p + 4·rttvar_p` (RFC 9002 §6.2.1 / RFC 6298 form), anchored on send stamps, so it needs no clock offset. W, the record deque and the 10 s memory go. H = 0 at N = 1 as before. At N = 2 the wait is the remaining transit of the latest send that can still fill the holes on each path. Coded repair counts, and repair keeps covering the holes up to the floor, so on two legs that both carry repair the wait is about the skew: the same size as today's H, but with no memory and no under-cover. It is 0 on a leg that carried nothing covering the holes since their originals.
+- **Objection 2: replace the statistical hold with an event rule, form E0 (§2.3), as a default awaiting owner confirmation.**
+  - **The idea.** The floor is sent on every live path at one instant, and on each path it is staged after every copy and repair sent before it. On a FIFO path, its arrival therefore proves that nothing older is still on its way there. So the receiver passes the holes below F once the floor, or data sent after it, has arrived on as many distinct paths as the floor was sent on (a count, not a path list, so the sender's and receiver's path ids never need to agree).
+  - **The remaining wait.** A wait remains only for a path that falls silent: no event tells "slow" from "dead" there, so it cannot be removed. Its bound is a marker timer `t_F + max_p(srtt_p + 4·σ_rtt,p)`, read from the per-path RTT statistics the engine already keeps (`PathState::srtt_measured`, `rtt_sigma_us`, paper §7.4), with RFC 6298's K and RFC 9002's granularity.
+  - **What goes:** W, the record deque and the 10 s memory. The floor message grows to 21 bytes.
+  - **What it does not change.** H = 0 at N = 1 as before. At N = 2 the wait stays about the skew, because repair keeps covering the holes up to the floor; it is exact and memoryless, never a remembered spike.
+  - **The price.** It is not correct on a path that reorders internally. There the copy and its floor swap about half the time, and about half the skips whose copy got through are delivered out of order (§2.6).
 - **Records (§3).**
   - The age half of the verdict is degenerate at N = 1 at Realtime and Auto in the simulation. In the engine, whether it refuses depends on how far the EWMA RTT sits above the report's round trip; the refusal condition is in §3.1.
   - D's estimator (EWMA against RTprop) is open, and so is its two-path input: the engine reads the highest-loss path, the paper the largest RTprop. A bounding test is proposed.
@@ -35,6 +40,8 @@ Code:
 - `net/mod.rs:236` (`GAP_ACK_MIN_INTERVAL` = 2 ms), `:498` (`DEAD_PATH_TIMEOUT` = 6 s);
 - `transport/protocol.rs:105` (`PROTOCOL_VERSION = 10`: v11 is not built);
 - `scheduler/mod.rs:53` (`PathId = u32`).
+- `net/recovery_laws.rs:311` and `net/mod.rs:2795–2807` (the tail sweep's pooled SRTT, the maximum over paths); `scheduler/path.rs:700–723` (`srtt_measured`, `rtt_sigma_us`);
+- quinn-proto 0.11.19 (crates.io; no vendored copy in the repo), `src/connection/paths.rs:297`, `:313`, `:326`, `:331` (`var` and `pto_base` crate-private; `get` and `min` public).
 
 No ADR-0084 engine branch exists on `github` (only `adr84-amend` and `adr84-guard-registration`), so every wire change below can still ride v11.
 
@@ -46,13 +53,25 @@ No ADR-0084 engine branch exists on `github` (only `adr84-amend` and `adr84-guar
 
 - **A tail longer than the remaining allowance waits for its fills in every design.** That is the ρ contract: deliver at least ρ of every prefix. Brief T1 shows it: a 347-seq tail against an allowance of ⌊0.01·12 147⌋ = 121 gets at most 121 verdicts, and the rest are served until filled. A tail of up to B = N·2048 seqs fits only once `S_src ≥ B/(1 − ρ)`, which is 204 800 source symbols at N = 1 and ρ = 0.99.
 - **A dead link is not the case to fix.** A floor crosses a link exactly as a resend does. On a link that delivers nothing, no design passes the tail; when the link returns, the tail resolves in one round either way (by fill, or by floor). The sim's `RWM_TEST_TS_DROP=dead` seam is different: it kills every copy of one seq while the link carries everything else. "Forever" holds only under that seam, or a seam without end. It is a test adversary, not a link.
-- **On a live link the cost of L-TAIL is extra serve rounds, not forever.** A served tail seq fails each round with probability ε_c, the loss of one copy:
+- **On a live link the cost of L-TAIL is extra serve rounds, not forever.** A tail has nothing above it, so no gap report covers it. Its serve round is the tail-sweep period, not the RTT:
 
 ```text
-   E[extra rounds]  =  ε_c / (1 − ε_c)              P(tail open after k rounds)  =  ε_c^k
+   T_sweep  =  clamp( 2·SRTT_pooled , 25 ms , 100 ms )          SRTT_pooled = max over the recovery paths' smoothed RTT (net/recovery_laws.rs:311, net/mod.rs:2799–2807)
+   E[extra rounds]  =  ε_c / (1 − ε_c)                            P(≥ k extra rounds)  =  ε_c^k        (per tail seq, independent loss)
 ```
 
-  A verdict sends one last copy and the floor together (Amendment 2), so it resolves in the first round unless both are lost. The floor is its own datagram with its own loss draw (toy stage 1, finding 2), so that happens with probability about `ε_c·ε_floor`, and then the next floor repeat (sweep clock) resolves it. The verdict therefore saves only the rounds after the first: at XE (ε ≈ 10 %, a 100 ms round), about 11 ms in mean and 2 rounds (≈ 0.2 s) at p99 under independent loss. GE bursts raise ε_c inside a bad state. XL measures that tail (registration §5.5b).
+  - ε_c is the loss of one copy. For an n-seq tail, the union bound gives `P(tail still open after k extra rounds) ≤ n·ε_c^k`.
+  - A verdict sends one last copy and the floor together (Amendment 2), so it resolves in the first round unless both are lost. The floor is its own datagram with its own loss draw (toy stage 1, finding 2), so that happens with probability about `ε_c·ε_floor`, and then the next floor repeat resolves it, one T_sweep later.
+  - The verdict therefore saves only the rounds after the first. Per cell, per tail seq:
+
+  | cell | SRTT_pooled | T_sweep | ε_c | mean extra (served) | p99 extra (served) | verdict instead |
+  |---|---|---|---|---|---|---|
+  | c2 | 10 ms | 25 ms (floor of the clamp) | ≈ 2.6 % | 0.7 ms | 1 round = 25 ms | first round, + T_sweep with prob ≈ ε_c·ε_floor ≈ 7·10⁻⁴ |
+  | c8 | 40 ms (c3 leg) | 80 ms | 2.7–4.1 % (by leg) | 2.2–3.4 ms | 1 round = 80 ms | as above |
+  | XK | 50 ms (`c2r50` leg) | 100 ms (cap) | ≈ 2.6 % | 2.7 ms | 1 round = 100 ms | as above |
+  | XE | 100 ms | 100 ms (cap; 2·SRTT = 200) | ≈ 10 % | 11 ms | 1–2 rounds = 100–200 ms (P(≥ 2) = 1 %) | first round, + T_sweep with prob ≈ 1 % |
+
+  On the 100 ms link the sweep period and the RTT coincide; on the 10 ms links the round is the sweep's 25 ms floor, 2.5 RTTs. GE bursts raise ε_c inside a bad state. XL measures the tail (registration §5.5b).
 - **So the defect in L-TAIL is not the wait itself.** It is *whose* spending makes the sender refuse. In the sender-first build, the receiver's old arm, an uncounted, untold, ρ-keyed exception (Amendment 3), spends the sender's allowance first. Under any one-decider design the allowance is spent only by the sender's own verdicts. The fix is judged by whether it reaches that state.
 
 ### 1.2 Option (a): Amendment 3's fallback now (floor-only R1)
@@ -141,7 +160,7 @@ So L-TAIL under U is **the contract case plus a bounded over-count (item 2)**. T
 **Why this operand is correct.** A sender verdict on s can lose s only if the receiver would otherwise have waited for s.
 - A hole the old arm passed is dropped from the sender's service by the cumulative ack whether or not a verdict was taken: Amendment 3 item 4 books it as acked. So a verdict on such a hole costs nothing that the old arm did not already cost.
 - G_floor is exactly the abandonment the sender's verdicts caused.
-- Under U, and under R1, the floor pass is the only abandoning frontier writer, so `G_floor ≡ G_rx`: the operand means the same before and after the release rule. The field then becomes an identity gauge, `G_rx − G_floor = 0`, which is the routing witness that no other writer exists. A later version may drop it.
+- Under U, and under R1, the floor pass is the only abandoning frontier writer, so `G_floor ≡ G_rx`: the operand means the same before and after the release rule. The field then becomes an identity gauge, `G_rx − G_floor = 0`, the routing witness that no other writer exists. **It goes on Amendment 3's removal list:** the release-rule build deletes `passed_by_floor` (with its protocol bump) together with the exception rows, once its identity has read 0 in that build's guard.
 
 **The points that must hold:**
 - **Attribution.** A verdict seq the old arm passes before its floor lands in G_expiry, not in G_floor, so Ab_c does not count it. That causes no extra loss: the sends for that hole are the same with or without the admission. A refused verdict is served once at that report; an admitted one sends its last copy once; and the old arm's pass then ends service either way.
@@ -162,6 +181,19 @@ So L-TAIL under U is **the contract case plus a bounded over-count (item 2)**. T
 - **NO-MODE-SWITCH.** No dial is read, and no comparison or branch is added. The operand is one counter at every ρ, δ and hint. At ρ = 1 the budget is 0 and nothing is admitted. No `rho1_debt` identifier is touched: the exception block of Amendment 3 is unchanged, and the deny test's ratchet is unaffected. The old arm itself stays the accepted, named, ρ-keyed exception, and (c) neither widens nor relies on it beyond what it is.
 - **The 1 % promise.** At a matched Realtime pair it is still not kept in the interim, exactly as Amendment 3 states, and the breach is still printed. What (c) adds is that the sender's own part of the promise, `G_floor ≤ (1 − ρ)·S_src`, now holds at every prefix in every cell. The registration's clause BI already scores exactly this (§5.4: "`G_floor ≤ budget` … the only share that the sender's verdict decides").
 
+**What (c) sends in the matched cells.** With verdicts admitted at scale, two send streams change. Let r_src be the source rate and ĥ the share of source seqs that reach a report as holes past D.
+- **Last copies:** one per admitted verdict, `≈ ĥ·r_src`. Each replaces the one serve resend that a refused verdict would have sent at the same report (the old arm's pass then ends service either way), so data sends are unchanged to first order. Where the floor now beats the old arm's clamped hold, the hole gets one copy instead of one serve per round until that hold, which is slightly fewer.
+- **Floor datagrams:** the first floor goes with the verdict's copy. Coalesced to one floor per `serve_gaps` pass (the newest F, staged after the pass's copies; Amendment 2's "same instant" holds per pass), the rate is at most N per gap report, so `≤ N/GAP_ACK_MIN_INTERVAL = 500·N /s`. Repeats add at most N per T_sweep while `F > A_rx`, which in matched cells is short, because the old arm usually moves A_rx first. Each floor is 24–32 bytes (E0, §2.3).
+
+| cell | r_src (source symbols/s) | ĥ (from XR's prediction) | last copies / s | floor datagrams / s | floor bytes / data bytes |
+|---|---|---|---|---|---|
+| X1 c2 (N = 1) | ≈ 17 500 (69 Mbit/s, 494 B) | 0.5–2.5 % | ≈ 90–440 | ≈ 90–440 (cap 500), + ≤ 40 repeats | ≤ 0.15 % |
+| X2 c8 (N = 2) | ≈ 17 500–25 000 | 0.5–2.5 % | ≈ 90–630 | ≤ 2 × min(passes with a verdict, 500) ≈ 180–1 000 | ≤ 0.3 % |
+| XK (N = 2) | as X2 | as X2, with the D-input precondition below | ≈ 90–630 | ≈ 180–1 000 | ≤ 0.3 % |
+| XE (N = 1) | link- and cwnd-bound, not predicted | up to ≈ 10 % | ≈ 0.1·r_src | ≤ 500, + ≤ 10 repeats | ≤ 0.6 % at r_src ≥ 5 000 |
+
+The r_src and ĥ figures are the registration's XR power numbers, not measurements. The guard prints both rates per row.
+
 **L-TAIL under (c).** The old arm can no longer exhaust the sender's allowance. A tail is refused only when the sender's own floor passes plus its pending verdicts have reached `(1 − ρ)·S_src`. That is §1.3's state (the contract case plus the pending over-count), reached in this build and not months later.
 
 **Cost.**
@@ -170,12 +202,13 @@ So L-TAIL under U is **the contract case plus a bounded over-count (item 2)**. T
   - the writer tag on passed holes, which step 4 already owes per writer;
   - `abandon_count(g_floor, pending)` in step 7;
   - the three-component pair merge, with its test extended.
-- **VM: no new session, but one cell is re-scoped.** The registration's predictions are re-registered (§5):
+- **VM: no new session; two cells re-pointed; no test seam on VM rows.** The registration's predictions are re-registered (§5):
   - §5.4's admitted-verdict table: the matched cells now admit verdicts at roughly XR's rate, so W4 and W6 become witnessable there;
-  - EX is redefined on G_floor. No L1 cell then exhausts the allowance (G_floor grows at about `ε_c·ĥ`), so XE is predicted `XE-NOT-EXHAUSTED`, and that state must no longer hold the merge;
-  - **so at L1 the budget-refusal path and the contract-case tail are no longer witnessed by any release-binary cell.** They are witnessed in sim (T6, and §3.1's record turned into a test with the forced budget seam `RWM_TEST_TS_BUDGET_FRAC`). XL's precondition ("EX before the tail") would never hold on the release binary. XL moves to the twins (C84T against B84T) with the forced budget seam at a value that exhausts before the tail: the same 12 + 12 rows, about the same ≈ 25 min in session 3b;
-  - XL's prediction becomes: with allowance left, the tail is passed by its floor within one round when its copy is lost; with the seam exhausting it, the tail is served until filled (the contract case), with its tail time reported.
-- **(c) widens a known N = 2 effect to the matched cells.** The verdict is judged on every reported gap, whether or not C3's hole law has ripened the seq. Where D reads the fast leg (§3.2, XK when the worst-ε pick flips), a slow-leg seq still in flight passes the age gate. Under Amendment 3 as written, the exhausted allowance refused those verdicts in matched cells. Under (c) they are admitted: each sends a spurious last copy and a floor; the original then fills it, so there is no loss, but there is extra traffic, up to one copy per slow-leg source seq while D reads the fast leg. The floor-only cells (XRK) already have this exposure under Amendment 3. **The fix:** make §3.2's D-input fix (the largest RTprop over live paths) a precondition of (c) at N ≥ 2, or have the guard count spurious verdicts (a verdict seq later filled by its own original) in X2 and XK.
+  - EX is redefined on G_floor. At ρ = 0.99 no cell then exhausts the allowance, because the sender's own spend is about `ε_c·ĥ` (≈ 0.013–0.065 % at c2, at most ≈ 1 % at XE). So XE is predicted `XE-NOT-EXHAUSTED`, and that state no longer holds the merge;
+  - **the refusal witness, without a seam:** it needs a cell where `1 − ρ < ε_c·ĥ`, so that the sender's own floor passes spend the allowance. ρ is a dial, so a point closer to 1 does it. **At ρ = 0.9999** the budget is 10⁻⁴·S_src. At c2 the predicted spend of 1.3–6.5·10⁻⁴ exceeds it: XR predicts 80–390 floor passes per 607 k-symbol row, against a budget of 61. At XE (≈ 0.1·ĥ) it exceeds it by far. The allowance opens only after `1/(1 − ρ) = 10 000` source symbols;
+  - **so XL runs at `--window-rho 0.9999` on C84.** B84 has no spelling for that ρ; it keeps its evicting preset and is read only as the defect. The 20 MB object (≈ 40 000 source symbols, a budget of 4) has its allowance spent by the sender's own passes before the tail, on every row by prediction. XL then carries both EX (on G_floor) and the contract-case tail: the tail served until filled, with its tail time. The rows and the time are unchanged (24 rows, ≈ 25 min);
+  - optionally, X1 adds 6 C84 rows at 0.9999 (≈ 6 min) for EX at a mid-stream point. If neither cell exhausts, the simulation carries the refusal path (T6, and §3.1's record turned into a test with a forced budget seam), and the guard lists it under "cannot see".
+- **At N ≥ 2, §3.2's D-input fix is a precondition of (c), not an option.** The verdict is judged on every reported gap, whether or not C3's hole law has ripened the seq. Where D reads the fast leg (§3.2, XK when the worst-ε pick flips), a slow-leg seq still in flight passes the age gate. Under Amendment 3 as written, the exhausted allowance refused those verdicts in matched cells; under (c) they are admitted. Each sends a spurious last copy and a floor. The original then fills the hole, so nothing is lost, but there is up to one extra copy per slow-leg source seq while D reads the fast leg. Counting those copies would not remove them. The D defects are on main anyway, so the fix (the largest RTprop over live paths, with D = 0 before the first sample) lands first, and §3.2's bounding tests become its tests.
 - **Wire:** 8 bytes per `WindowAck`.
 
 **Variant (c1), not recommended:** redefine `passed_undelivered` as G_floor and add no field. The sender could then no longer print the total against the budget (the receiver knows neither S_src nor the sender's ρ), so decision 3's "the breach … is printed" would be lost at the sender.
@@ -193,9 +226,10 @@ So L-TAIL under U is **the contract case plus a bounded over-count (item 2)**. T
 - **Price:**
   - one 8-byte ack field riding v11;
   - no latency change (a pass can only come earlier);
-  - no new VM session, with XL moved to the twins with a budget seam;
+  - no new VM session: XL runs at ρ = 0.9999 on C84 as the seam-free witness for the refusal and the contract-case tail;
   - total interim abandonment up by at most `(1 − ρ)·S_src`, and only on holes the old arm did not pass first;
-  - at N ≥ 2, §3.2's D-input fix becomes a precondition, or the spurious verdicts are counted.
+  - at N ≥ 2, §3.2's D-input fix is a precondition;
+  - `passed_by_floor` goes on Amendment 3's removal list.
 - **Effect on earlier decisions:**
   - Amendment 3's order stands: no reversal, the receiver still lands once, with U;
   - decisions 4 and 5 are amended (one field; the operand);
@@ -240,114 +274,129 @@ These are sender facts. The sender knows them: the path map holds originals to `
 - Every seq in `[A_rx, F)` is a verdict seq, because F is the first non-verdict seq at or above A_rx (paper §5.1).
 - **Repair counts, as in `floor-hold.md` §2 ("a fill can be either").** The encoder keeps its window at W* behind the ack (`sender_phases.rs:1372–1374`: `advance(ack − keep_behind)`), and evicts from the oldest only above `win_cap` (`net/mod.rs:3594–3596`). So the holes at A_rx stay inside the coding window, and **every repair sent on p up to the floor can still decode them.** On any path that carries repair, σ_p is therefore about τ_F.
 
-### 2.3 The event rule
+### 2.3 The event rule, form E0
 
-"Pass the holes below F once every path that carried a copy of one of them has delivered something sent after that copy, or has stayed silent past its own loss timeout."
+"Pass the holes below F once every path the floor was sent on has delivered that floor, or something sent after it, or once the paths' loss timeout has run out since the floor arrived."
+
+The floor is sent on every live path at one instant τ_F. On each path it is staged after every copy and every repair sent before it. So **the floor's own arrival on a path is that path's FIFO witness.** Under E0 the latest covering send on each path is taken as τ_F itself (σ_p = τ_F), which is conservative: repair keeps covering the holes up to the floor (§2.2), so on a leg that carries repair σ_p ≈ τ_F anyway.
 
 ```text
-   p resolved for F   ⇔   τ_max_rx(p) > σ_p                       (a datagram sent after p's last copy has arrived on p)
-                      ∨   floor_rx(p) ≥ F                          (this floor, or a higher one, has arrived on p: staged after the copy)
-                      ∨   τ_max_rx(any) ≥ σ_p + PTO_p              (silence bound, send-anchored: anything sent PTO_p after the copy has arrived, on any path)
-                      ∨   now ≥ t_F + PTO_p                         (silence bound, local: PTO_p since the first floor ≥ F arrived, on any path or the reliable stream)
+   witness on path p for F   ⇔   a floor ≥ F sent at or after τ_F arrives on p
+                             ∨   a data batch with send stamp τ > τ_F arrives on p,  and p delivered something stamped ≤ τ_F before
 
-   pass [next_deliver, F)   ⇔   ∀ p with σ_p present :  p resolved for F
+   pass [next_deliver, F)    ⇔   |{ p : witness on p for F }|  ≥  n_F          (count of distinct arrival paths)
+                             ∨   now  ≥  t_F + PTO_F                           (marker timer)
 
-   PTO_p  =  srtt_p  +  max( 4·rttvar_p ,  1 ms )
+   PTO_F  =  max over the paths the floor was sent on of ( srtt_p  +  max( 4·σ_rtt,p ,  1 ms ) )          computed by the sender at τ_F
 ```
 
 | symbol | meaning | provenance |
 |---|---|---|
-| σ_p | latest send stamp on p of a copy or covering repair of a covered hole, carried on `WindowFloor` (E1); τ_F under E0 | sender state (measured stamps); the stamps are fresh at every send (`floor-hold.md` §1) |
-| τ_max_rx(p) | largest `send_timestamp_us` of a data batch received on p | measured at the receiver |
-| floor_rx(p) | largest floor received on p | measured at the receiver |
-| τ_max_rx(any) | largest send stamp received on any path, data or floor (the floor carries its own `sent_us`) | measured at the receiver |
+| τ_F | the floor's send stamp, carried as `sent_us` | measured (sender clock, fresh at every send) |
+| n_F | the number of paths the floor was sent on (the sender's live set at τ_F), carried as `n_paths: u8` | sender state |
 | t_F | receiver arrival of the first floor ≥ F, on any datagram path or the reliable control stream | measured |
-| srtt_p | the sender's per-path smoothed RTT (`est.rtt()`, which can still be the 50 ms constructor seed before the first sample: §3.2's cold-seed divergence applies here too; with the seed, PTO_p over-covers, never under-covers, for paths faster than 50 ms) | measured |
-| rttvar_p | per-path RTT mean deviation | measured, RFC 6298 §2. **Owed:** the engine has none per path (`p_lost_inputs` uses `0.1·srtt`, a placeholder with no provenance) |
-| 4, 1 ms | K and the clock granularity | cited, RFC 6298 §2 and RFC 9002 §6.2.1 (kGranularity). RFC 9002's `max_ack_delay` is omitted: no ack is awaited |
+| srtt_p | the path's smoothed RTT, `PathState::srtt_measured()` (Copa's EWMA; `None` before a sample, so no constructor seed enters) | measured |
+| σ_rtt,p | the path's RTT standard deviation, `PathState::rtt_sigma_us()` = `√EWMA[(rtt − srtt)²]` (`scheduler/path.rs:714–723`) | measured, paper §7.4 |
+| 4 | K, applied to σ | cited, RFC 6298 §2 (K = 4 on the mean deviation). The standard deviation is never below the mean deviation, so 4σ covers at least as much as RFC 6298's 4·rttvar. Cantelli at k = 4 bounds `P(RTT > srtt + 4σ) ≤ 1/17` for any distribution (paper §7.4's own bound) |
+| 1 ms | the timer granularity | cited, RFC 9002 §6.2.1 (kGranularity). RFC 9002's `max_ack_delay` is omitted: no ack is awaited |
+
+**The PTO source.** quinn-proto 0.11.19 keeps an RFC 9002 `var` and `pto_base()` per connection, one connection per path (`src/connection/paths.rs:297`, `:331`). Both are crate-private, so the engine cannot read them; it can read only `rtt()` and `min()`. The engine already has its own per-path deviation, `rtt_sigma_us()`, with paper provenance (§7.4), and E0 reads that. **No new estimator is owed.** The `0.1·srtt` placeholder in `p_lost_inputs` is unrelated, and stays a separate finding.
 
 **Why it is safe, given the premise.**
-- The first two terms are FIFO witnesses: nothing staged before them on p is still in flight.
-- The third is offset-free, because it compares send stamps on one clock. A datagram sent at `σ_p + PTO_p` arrives at `σ_p + PTO_p + T_q`. A live copy on p arrives at `σ_p + T_p`, and `T_p ≤ srtt_p ≤ PTO_p`, since the one-way transit is part of the round trip. So the bound under-covers only a path whose one-way transit jumps above its own `srtt + 4·rttvar`, a queue ramp faster than the estimator. That is a miss, which is recoverable (§2.6).
-- The fourth is safe by the same inequality, anchored at the receiver instead. The floor was sent at `τ_F ≥ σ_p` and arrived at `t_F ≥ σ_p + T_q`, so `t_F + PTO_p > σ_p + T_p` whenever `PTO_p ≥ T_p`.
+- **A floor witness on p:** the floor was staged after every send on p before τ_F, so all of them have arrived or are lost.
+- **A data witness on p:** a batch stamped after τ_F was staged after the floor on p. The extra clause, "p delivered something stamped ≤ τ_F before", keeps a path that only started delivering after τ_F from being counted in place of a silent old one.
+- **The count needs no shared path ids.** Witnesses arrive only on paths the sender sends on, and at τ_F it sends the floor on exactly n_F of them. So n_F distinct arrival paths with a witness means every one of them has resolved. The receiver distinguishes paths by its own arrival `path_id`. **The path-id agreement precondition of the first draft therefore disappears.**
+- **The count's one exposure is path churn:** a path that joins after τ_F and also delivered something stamped ≤ τ_F. That is not possible for a new path, so the exposure is limited to a path that left and rejoined inside the wait. It shows up as a miss, gauged.
+- **The timer:** the floor was sent at `τ_F ≥` every covering send and arrived at `t_F ≥ τ_F + T_q`. A live covering send on p arrives by `τ_F + T_p`. So `t_F + PTO_F > τ_F + T_p` whenever `PTO_F ≥ T_p`, and `T_p ≤ srtt_p` because the one-way transit is part of the round trip. The timer under-covers only a path whose transit jumps above `srtt + 4σ`, a queue ramp faster than the estimator (Cantelli: at most 1/17 of RTTs exceed it). That is a miss, which is recoverable (§2.6).
 
-**Why a wait cannot be removed entirely.** A path that carried a copy and then delivers nothing gives no event. "The copy is still in flight on a slow path" and "the path died with the copy" produce the same silence.
+**The send-anchored silence term of the first draft is dropped.** Under E0, `σ_p = τ_F`. A datagram stamped `≥ τ_F + PTO_F` arrives on path q at `τ_F + PTO_F + T_q′`, and the timer fires at `t_F + PTO_F = τ_F + PTO_F + T_q`, where T_q is the transit of the first floor's arrival. The send-anchored term can fire first only if T_q′ < T_q, that is, only by the transit change between the floor and that datagram (a draining queue), never by more. And the rule cannot run at all before some floor ≥ F has arrived, because the receiver does not know F before then. So the term adds nothing beyond a transit change. It is dropped, and with it any need for the receiver to compare stamps across paths.
+
+**Why a wait cannot be removed entirely.** A path that carried a covering send and then delivers nothing gives no event. "The copy is still in flight on a slow path" and "the path died with the copy" produce the same silence.
 - Waiting for an event there can stall without bound on a dead path.
 - Passing at once misses a slow path's copy.
 - So some time bound on silence is forced. Its exact value is a price, rent (δ/d per stalled second) against a miss (ω): the same rent-or-buy as design U's `H_o = ω·d/δ`. ω is not measured.
-- Until it is, the path's own loss timeout is the measured, cited bound. It binds only on a silent path, and its bind fraction is gauged (§2.6). When U lands, `min(PTO-bound, t_detect + H_o)` composes as `ordering-hold.md` §8 already states for H.
+- Until it is, the paths' own loss timeout is the measured, cited bound. It binds only on a silent path, and its bind fraction is gauged (§2.6). When U lands, it composes with `t_detect + H_o` as `ordering-hold.md` §8 already states for H.
 
-**The receiver still needs a timer.** The first three terms change only on arrivals, and that is not enough:
-- **At shutdown** the last floor comes on the reliable control stream. That is not a FIFO witness for any datagram path, and its `sent_us` is usually below `σ_p + PTO_p`.
-- **With a dead peer at N = 2**, the floor arrived on q only, and p carried a copy.
+**The timer handles shutdown and a dead peer.** At shutdown the last floor comes on the reliable control stream: it sets t_F, and it is never a per-path witness. With a dead peer at N = 2, the floor may have arrived on only one path. In both cases arrivals stop, and the marker `(F, t_F + PTO_F)` (brief step 8's marker, kept) passes the buffered data. That keeps `floor-hold.md`'s property that "a dead or silent peer cannot stall a floor pass" (T4).
 
-In both cases arrivals stop, and data already buffered above the hole would never be released. The local term `now ≥ t_F + PTO_p` closes this. Brief step 8's marker therefore stays: `(F, t_F + max_p PTO_p)` arms the drain timer, and the timer re-evaluates the rule. A reliable-stream floor sets t_F and is never a per-path witness. That keeps `floor-hold.md`'s property that "a dead or silent peer cannot stall a floor pass" (T4).
+**With no RTT sample** on some path, `PTO_F` is not defined. The marker then waits for the witnesses alone, and the first sample arms it. A verdict needs `D > 0` first, which is D's own information-availability condition (once §3.2's cold-seed fix lands, D = 0 before the first sample), so a verdict, and hence a floor, cannot come before any RTT sample.
 
-**Several floors.** Each floor rise carries its own σ vector. A higher floor's σ is elementwise at least the lower one's, and its floor term is stronger, so "F₂ resolved ⇒ F₁ resolved". Passing in order needs no extra rule. Paper §5.1's newest floor `F_rx` stays the value; the event rule only decides when it acts.
+**Several floors.** A later floor ≥ F is itself a witness for F, so "F₂ resolved ⇒ F₁ resolved", and passing in order needs no extra rule. Paper §5.1's newest floor `F_rx` stays the value; the rule only decides when it acts.
 
-### 2.4 Behaviour and numbers
+**Form E1 (the refinement, not the default).** The floor carries, per path, σ_p, the latest send stamp of a copy or covering repair of the covered holes (§2.2), with the path's id. The witness on p is then any datagram on p stamped after σ_p. That is 0 on a leg that carried nothing covering since the originals, where E0 waits for the floor on that leg. E1 needs per-seq, per-path stamps at the sender, the repair-window tracking, a path list on the wire, and **the sender's and receiver's path ids to agree**, which is unverified. It is worth building only if the gauges show legs that carry no covering traffic.
 
-| case | `floor-hold.md` H | event rule |
+### 2.4 Behaviour and numbers (E0)
+
+| case | `floor-hold.md` H | E0 |
 |---|---|---|
 | N = 1, FIFO (c2, XE, every sim test T1, T2, T1′) | 0 | 0: the floor on the one path is its own witness. H_max = 0 is unchanged in the step-1 bounds |
-| N = 1, floor datagram lost | 0, then the pass at the next floor | the next data batch sent after σ (mid-stream), or the next floor repeat (tail, 25–100 ms): the same as today |
-| N = 2, c8 (skew 15 ms) / XK (skew 20 ms), both legs carrying repair (the usual case with C1 and FEC on) | ≈ 15–18 / 20–23 ms on **every** pass (skew + spread, held for W) | ≈ 15 / 20 ms: σ_slow ≈ τ_F, so the wait is until the slow leg delivers something sent after the floor. The same size as H, but exact: never longer than the skew at that moment, and never shorter (no miss) |
-| N = 2, slow leg carried only an old original (no repair or copy since) | as above | **0**: the slow leg's later datagrams witnessed the original before the floor arrived |
-| N = 2, slow leg idle | ≈ 0 (no sample) | 0 (no σ for that leg) |
-| N = 2, a copy-carrying path dies | ≈ skew; a copy reviving later is a miss | the silence bound, ≈ `σ_p + PTO_p` (≈ 45–60 ms after the copy on XK's slow leg) |
+| N = 1, floor datagram lost | 0, then the pass at the next floor | the next data batch (mid-stream), the next floor repeat (tail, one T_sweep), or the timer `t_F + PTO_F` if an earlier floor ≥ F had arrived |
+| N = 2, c8 (skew 15 ms) / XK (skew 20 ms) | ≈ 15–18 / 20–23 ms on **every** pass (skew + spread, held for W) | ≈ 15 / 20 ms: until the slow leg delivers the floor or later data. The same size as H, but exact: never longer than the skew at that moment, never shorter (no miss on FIFO legs) |
+| N = 2, slow leg idle | ≈ 0 (no sample) | ≈ the skew: the floor is sent on the idle leg too. E1 gives 0 here |
+| N = 2, a path dies | ≈ skew; a copy reviving later is a miss | the timer, `PTO_F` after t_F (≈ 50 + 4·σ ms on XK's slow leg) |
 | a skew spike 5 s ago | still held (W = 10 s) | forgotten: the rule has no memory |
-| over-driven N = 2 (T5 class) | ≤ J + q + d ≈ 943 ms (`floor-hold.md` §7) | the true transit difference of the copy's path, ≤ the same bound; the silence bound carries the queue inside srtt_p |
+| over-driven N = 2 (T5 class) | ≤ J + q + d ≈ 943 ms (`floor-hold.md` §7) | the true transit difference at that moment, ≤ the same bound; the timer carries the queue inside srtt_p |
 
-**What that does to Realtime at N = 2.** The size of the wait does not fall much: with repair on both legs it stays about the skew. What changes is its kind. It is the wait for sends that can still fill the holes, read per floor, with no 10 s memory of an old spike and no miss when a new lateness exceeds the window's maximum. Where the last copy and the repair go is a placement question (§5.7). Repair placed off the slow leg near a verdict would cut the wait to 0, at the cost of that leg's coding share. Not proposed.
+**What that does to Realtime at N = 2.** The size of the wait does not fall: it stays about the skew. What changes is its kind. It is the wait until the slow leg shows that nothing older is still on its way, read per floor, with no 10 s memory of an old spike and no miss when a new lateness exceeds the window's maximum. Where the repair and the last copy go is a placement question (§5.7); not proposed.
 
 ### 2.5 The rejected alternatives, re-read
 
-| alternative (`floor-hold.md` §3, paper §5.1) | rejected because | against the event rule |
+| alternative (`floor-hold.md` §3, paper §5.1) | rejected because | against E0 |
 |---|---|---|
 | (i) `shed_recv_hold` as is | bit-selected, underived | still holds. Not re-proposed |
 | (ii) `SRTT_rx/2` | wrong kind (a δ horizon) | still holds |
-| `ordering-hold.md` §8 path support | (1) the receiver cannot tell which paths carry a copy; (2) the observed maximum never comes down | **no longer holds.** (1) is answered by σ_p on the wire; (2) there is no estimator to come down |
-| per-path transit forecast `max(ĝ + Kv) − min(ĝ − Kv)` | > 0 on FIFO; queue ramps inflate it (7.5 s in T1); needs a live set; freezes on idle | **no longer holds for the role used here.** The PTO term is only a silence bound: on FIFO a witness ends the wait first; a ramp only lengthens a bound that binds on a silent path; the "live set" is the sender's σ list; an idle live path gets floor repeats on the sweep clock, which are witnesses |
-| sender info, "the last copy's path" | earlier copies and the original are on other paths | **no longer holds:** σ_p covers every copy on every path |
-| sender info, "the floor's send stamp" | not needed (the floor's arrival is the reference) | **now needed,** for the silence term when only floors arrive (a tail at N = 2 with the copy's path dead) |
+| `ordering-hold.md` §8 path support | (1) the receiver cannot tell which paths carry a copy; (2) the observed maximum never comes down | **no longer holds.** (1): E0 needs no copy map, because the floor itself is the witness on every path it is sent on; (2): there is no estimator to come down |
+| per-path transit forecast `max(ĝ + Kv) − min(ĝ − Kv)` | > 0 on FIFO; queue ramps inflate it (7.5 s in T1); needs a live set; freezes on idle | **no longer holds for the role used here.** The PTO term is only the timer: on FIFO a witness ends the wait first; a ramp only lengthens a bound that binds on a silent path; the "live set" is n_F; an idle live path gets the floor, which is its witness |
+| sender info, "the last copy's path" | earlier copies and the original are on other paths | **no longer holds:** E0 waits for every path the floor went on |
+| sender info, "the floor's send stamp" | not needed (the floor's arrival is the reference) | **now needed,** for the data witness (a batch stamped after τ_F) |
 | last copy on every path | ε^N against N − 1 copies; a placement question | still holds; not proposed |
 | quantile; ρ-quantile | a constant with no provenance; the receiver has no ρ | moot: no statistic remains |
-| paper §5.1 "the newest floor, not the minimum over paths (a frozen leg holds the minimum)" | the frozen leg | **still holds for the value.** A frozen leg blocks the event rule only if it carried a recent copy, and then the silence term bounds it |
+| paper §5.1 "the newest floor, not the minimum over paths (a frozen leg holds the minimum)" | the frozen leg | **still holds for the value.** A frozen leg blocks E0 only until the timer |
 
 ### 2.6 What breaks it, and the gauges
 
-- **In-path reordering** (Wi-Fi, netem jitter without `rate`) breaks the FIFO premise. A later-sent datagram can overtake the copy, the witness fires early, and that is a miss: the late fill is delivered at once, out of order, and subtracted from G_rx (or G_floor). The miss costs ω, and is the recoverable kind. `floor-hold.md`'s H covered in-path reorder by measuring it, at the price of W. The only cover for it is a lateness statistic with a memory, whose price is ω, so it belongs to U, not here.
-- **A lost floor datagram** on an idle path: the next repeat (sweep clock), or the silence term.
-- **Path ids must agree.** σ_p names paths in the sender's `PathId` (u32) space, and the receiver keys arrivals by the `path_id` each message carries (`receiver.rs:808`). That the two spaces are the same ids is **unverified**: an owed check before the build.
+**Reordering inside one path.** It breaks the FIFO premise, and the copy and its floor are the pair most exposed, because they are sent back to back.
+- **The mechanism.** On a path with independent per-packet jitter and no rate limiter (netem `delay D J` without `rate`, some Wi-Fi), two packets sent g apart swap with probability `P_swap(g) = (J − g)²/(2J²)` for uniform jitter on [0, J], and 1/2 at g → 0 for any continuous jitter. The copy and the floor leave microseconds apart, so they swap about half the time. That is the toy's finding: the floor beat its copy in about half the verdicts (`results-stage1.md` finding 2).
+- **In user terms.** On such a path, about half of the skipped packets whose last copy does get through, `(1 − ε_c)/2 ≈ 49 %` of skips at ε_c = 2.6 %, are delivered **out of order**: just after the packets behind them, instead of in order. Nothing is lost; the late fill is delivered at once and subtracted from G_rx (and G_floor), and it costs ω, the disorder price. The data witness has the same exposure (the next data batch is µs behind the copy at Realtime rates).
+- **The bar.** `fh_miss / floor-passed holes ≤ 1 − ρ` per path, the miss bar of `floor-hold.md` §6, now applied at N = 1 too.
+  - On a FIFO path (every guard cell sets `rate`, so netem is FIFO) the prediction is 0.
+  - On a jittered path without `rate` the prediction is ≈ 49 %, which fails the bar by far. **E0, like every FIFO-witness rule, is not correct on a path that reorders internally.**
+- **Detection:** `fifo_inv` per path, data batches stamped below that path's newest stamp. It is 0 on FIFO paths, and it names the link class where E0 misses.
+- **The options for that class, owner's call later, not part of Amendment 4:**
+  - (r1) shift the witness on a path with `fifo_inv > 0` by that path's own measured in-path late offset (`floor-hold.md`'s ℓ restricted to one path). That is 0 on FIFO paths, but it brings back a memory length W, for reordering paths only;
+  - (r2) carry the first floor inside the copy's datagram, so the copy cannot be overtaken by its own floor. A lost copy then loses its floor, and the hole waits one repeat. The toy measured this shared-fate cost as a refresh round, and the data witness would still have to be disabled there;
+  - (r3) accept the misses and leave their price to ω, under U.
+- **Owed test:** `copy_floor_swap_on_reordering_path`, loopback with netem jitter 4 ms and no `rate`, recording `fh_miss` per verdict against the 49 % prediction, beside `fifo_inv`.
+
+**Other cases.**
+- **A lost floor datagram:** the next data on that path, the next repeat, or the timer.
 - **Gauges** on `[ACCT-RX]` (FORMULA-FIRST):
-  - per pass, which term resolved each path: `fe_data`, `fe_floor`, `fe_pto`. `fe_pto` is the silence bound's bind fraction;
+  - per pass, which term resolved it: `fe_count` (all n_F witnesses) or `fe_timer`. `fe_timer` is the timer's bind fraction;
   - `fh_us` sum and max, the wait `t_pass − t_F`;
-  - `fh_miss`, `fh_miss_us_max` and `fh_miss_refused`, kept from `floor-hold.md` §6 with the same bars;
-  - `fifo_inv` per path: data batches with a stamp below that path's `τ_max_rx`. It must read 0 for the premise; it replaces `fl_late` as the N = 1 premise witness.
+  - `fh_miss`, `fh_miss_us_max` and `fh_miss_refused`, kept from `floor-hold.md` §6, with the bar above;
+  - `fifo_inv` per path; it replaces `fl_late` as the N = 1 premise witness.
 - **Retired:** the ℓ record deque, W, `fh_age_us`, `fl_trunc`, `fl_n`, `fl_late` and `fl_max_us`.
 
 ### 2.7 Cost and NO-MODE-SWITCH
 
-- **Wire** (rides v11; amends decision 4): E0 is `WindowFloor { floor: u64, sent_us: u64, paths: [(path: u32, pto_us: u32)] }`, 16 + 8·N bytes (32 at N = 2). E1 adds `last_copy_us: u64` per path, 16 + 16·N. The floor is sent with each verdict and repeated at most `|channel_paths|` times per sweep.
-- **Sender** (E1 only for the first two items):
-  - per store entry, the latest send stamp per path (N·8 bytes; at most 64 KB at N = 2, B = 4 096), plus the latest repair stamp per path whose window covers the run;
-  - σ_p maintained per floor value as verdicts extend the run, kept until `A_rx ≥ F`;
-  - a per-path RFC 6298 rttvar.
-- **Receiver:** per path, `τ_max_rx` and `floor_rx`; per pending floor, one σ vector. That is far less than the 10⁴-entry record deque.
-- **No δ, ρ or hint** is read. Every term is computed on every arrival. At ρ = 1 no floor exists, so nothing is evaluated. The mixed pairings are unaffected: the rule is one function at every receiver.
+- **Wire** (rides v11; amends decision 4): `WindowFloor { floor: u64, sent_us: u64, n_paths: u8, pto_us: u32 }`, 21 bytes. It is sent with each `serve_gaps` pass that raised F, and repeated at most `|channel_paths|` times per sweep.
+- **Sender:** nothing per seq. At each floor send: the live-path count and `PTO_F` from `srtt_measured()` and `rtt_sigma_us()`, both already per path.
+- **Receiver:** per path, the newest data stamp and whether it delivered anything stamped ≤ τ_F; per pending floor, `(F, τ_F, n_F, PTO_F, t_F)` and a witness set. That is far less than the 10⁴-entry record deque.
+- **No δ, ρ or hint** is read. Every term is computed on every arrival and at the marker. At ρ = 1 no floor exists, so nothing is evaluated. The mixed pairings are unaffected: the rule is one function at every receiver.
 - **Tests owed** (they replace `floor-hold.md` §7):
-  - absolute tests at N = 1 (the floor witness gives 0) and at N = 2: a fast-path copy gives 0; a slow-path copy gives exactly its remaining transit; a dead slow path passes at `σ + PTO`; a lost floor passes on the next data or repeat;
+  - absolute tests at N = 1 (the floor witness gives 0) and at N = 2 (the pass waits for the slow leg's floor or later data; a dead slow leg passes at `t_F + PTO_F`; a lost floor passes on the next data, repeat or timer; a path that joins after τ_F is not counted);
   - "F₂ resolved ⇒ F₁ resolved";
   - the signature test (no hint, δ or ρ);
-  - `floor_never_overtakes_its_copy_real_io` (kept);
-  - `sigma_covers_every_copy` (every send site updates the per-path stamp);
+  - `floor_never_overtakes_its_copy_real_io` (kept), and `copy_floor_swap_on_reordering_path` (§2.6);
   - a `fifo_inv = 0` witness in T1, T2 and T1′.
 
 ### 2.8 Recommendation for objection 2
 
-**Adopt the event rule, in form E0, and drop W.** There is a correct option without a fixed wait on every path that keeps delivering. A wait remains only for a silent copy-carrying path, where none can be removed (§2.3); its bound is the path's own loss timeout, measured and cited, never a borrowed memory.
-
-**Simpler form, E0:** the floor names the paths it was sent on, and the witness is a floor ≥ F (or later data) on each. That needs no per-entry stamps and no repair-window tracking. With repair on both legs it waits the same as E1, about the skew. It loses only the cases where a leg carried nothing covering since the originals (E1: 0; E0: the skew). It still needs `sent_us` and PTO for the silence terms. **Given repair, E0 is nearly as good and much simpler, so it is the recommended first build.** E1 is the refinement if the gauges show legs that carry no covering traffic.
+**Adopt E0 and drop W, as the default awaiting owner confirmation.**
+- On every FIFO path that keeps delivering there is a correct option without a fixed wait: the floor's own arrival on each path.
+- A wait remains only for a silent path, where none can be removed (§2.3). Its bound is the paths' loss timeout, measured (`srtt`, `σ_rtt` per path, already in the engine) and cited (RFC 6298's K, RFC 9002's granularity), never a borrowed memory.
+- It does not shorten the two-path wait (still about the skew), and it is not correct on a path that reorders internally (§2.6), where `floor-hold.md`'s measured H was.
+- E1 is the refinement if legs without covering traffic turn out to matter.
 
 ## 3. Records
 
@@ -419,38 +468,42 @@ Proposed (2026-11-22), answering the owner's objections of 2026-11-22 to limit L
 1. **The operand.** `Ab = G_floor + |{v ∈ V : v ≥ A_rx}|`, where G_floor is the holes the floor pass passed, net of their late fills. The verdict reads `Ab + 1 ≤ (1 − ρ)·S_src` as before. `G_rx` (every writer) is still carried and printed against the budget. Under R1 or U, `G_floor ≡ G_rx`, which is gauged.
 2. **Wire v11** (one bump, still 10 → 11; amends decision 4):
    - `WindowAck.passed_by_floor: u64`, beside `passed_undelivered`;
-   - `WindowFloor { floor: u64, sent_us: u64, paths: [(path: u32, pto_us: u32)] }`: the paths the floor is sent on (form E0); form E1 adds `last_copy_us: u64` per path.
+   - `WindowFloor { floor: u64, sent_us: u64, n_paths: u8, pto_us: u32 }` (form E0).
 3. **The pair merge** (amends Amendment 2 decision 3): keep `(next_expected, G_rx, G_floor)` from the ack with the greatest `next_expected`; on a tie, the larger `G_floor`, then the larger `G_rx`.
-4. **The floor pass** (replaces Amendment 3 item 3's H): pass `[next_deliver, F)` once every path p named in the floor is resolved: `τ_max_rx(p) > σ_p ∨ floor_rx(p) ≥ F ∨ τ_max_rx(any) ≥ σ_p + PTO_p ∨ now ≥ t_F + PTO_p`, with `PTO_p = srtt_p + max(4·rttvar_p, 1 ms)` (RFC 6298 §2, RFC 9002 §6.2.1). Under E0, `σ_p = τ_F` (the floor's `sent_us`). It is evaluated on arrivals and on the marker timer `t_F + max_p PTO_p`; there is no W. It reads no δ, ρ or hint. The receiver's writer per passed hole is kept, so that late fills subtract from the writer that passed the hole.
-5. **No exception changes.** Amendment 3's `rho1-debt-exception` block, its removal trigger and its fallback stand.
+4. **The floor pass** (replaces Amendment 3 item 3's H). **Form E0 is the default awaiting owner confirmation.** Pass `[next_deliver, F)` once:
+   - a witness has arrived on `n_paths` distinct paths, a witness being a floor ≥ F sent at or after `sent_us`, or data stamped after `sent_us` on a path that delivered something stamped ≤ `sent_us` before;
+   - or the marker `t_F + pto_us` has expired, with `pto_us = max_p(srtt_p + max(4·σ_rtt,p, 1 ms))` from `PathState::srtt_measured()` and `rtt_sigma_us()` (paper §7.4; RFC 6298 §2, RFC 9002 §6.2.1).
+
+   There is no W. It reads no δ, ρ or hint. The receiver keeps the writer per passed hole, so late fills subtract from the writer that passed the hole. On a path that reorders internally the rule misses (`fifo_inv`, `fh_miss`), and the remedy is open.
+5. **No exception changes.** Amendment 3's `rho1-debt-exception` block, its removal trigger and its fallback stand. The removal list gains `WindowAck.passed_by_floor`: the release-rule build deletes it, with its protocol bump, once `G_rx − G_floor = 0` has read 0 in that build's guard.
+6. **Precondition at N ≥ 2:** D's input is the largest RTprop over live paths, with D = 0 before the first sample (`tail-and-hold.md` §3.2), before (c) is built.
 
 ### Consequences
 
 - L-TAIL reduces to the ρ contract in this build: a tail is refused only by the sender's own floor passes and pending verdicts.
 - Realtime latency is unchanged or earlier: the old arm still runs, and the earlier writer wins.
 - Total interim abandonment can rise by at most `(1 − ρ)·S_src`, on holes the old arm does not pass first. The 1 % promise in total stays unkept at Realtime until the release rule, as Amendment 3 states. The sender's share of it, `G_floor ≤ (1 − ρ)·S_src`, holds at every prefix.
-- H = 0 at N = 1 as before. At N ≥ 2 the floor pass waits only for copies in flight; a silent path waits its PTO.
-- In-path reordering, which `floor-hold.md`'s H covered by measurement, becomes a gauged, recoverable miss (`fifo_inv`, `fh_miss`), until U's release prices it.
-- Wire: 8 more bytes per `WindowAck`; 16 + 8·N bytes per `WindowFloor` (E0), or 16 + 16·N (E1).
+- H = 0 at N = 1 as before. At N ≥ 2 the floor pass waits until every leg the floor went on has delivered it, about the skew; a silent leg waits the marker.
+- In-path reordering, which `floor-hold.md`'s H covered by measurement, becomes a miss: about half the skips on such a path are delivered out of order. It is gauged (`fifo_inv`, `fh_miss`, bar 1 − ρ) and recoverable, and its remedy is an open owner choice (§2.6).
+- Wire: 8 more bytes per `WindowAck`; `WindowFloor` grows from 8 to 21 bytes.
 - The guard registration's predictions are re-registered: §3.1's L-TAIL record, §5.4's admitted-verdict table and EX, §5.4b–c's R-H clauses, and §5.5b's XL. No VM time is added.
 - Owed:
-  - a per-path RFC 6298 rttvar;
-  - a check that the sender's and receiver's path ids agree;
   - the SACK-aware pending term (`tail-and-hold.md` §1.3), as its own derivation step;
   - D's role and inputs (`tail-and-hold.md` §3).
 
 ## 5. Owed edits (not made here; they move with the owner's decision)
 
+- **`floor-hold.md`:** untouched here. It is marked superseded only once the owner confirms E0.
 - **Paper:**
   - §5.6: the operand, the two v11 fields, the triple pair rule;
   - §5.1: the floor pass's event rule with its provenance table, replacing the `H_hold` formula; `floor-hold.md` marked superseded;
-  - §11.2/§11.3: W's register row deleted, a row added for rttvar's owed estimator, and the two D divergences of §3.2 (path choice, cold seed) as §11.3 rows with their bounding tests.
+  - §11.2/§11.3: W's register row deleted, and the two D divergences of §3.2 (path choice, cold seed) as §11.3 rows with their bounding tests.
 - **Engine brief:**
   - step 4 (the `passed_by_floor` field, the writer tag, the triple merge and its test);
   - step 7 (`abandon_count(g_floor, pending)`);
   - step 8 (the event rule; the §2.6 gauges; §2.7's tests; the first floor leaves with the verdict's copy, and the sweep clock governs repeats);
   - steps 1–2's H_max = 0 is unchanged.
-- **Guard registration** (`adr84-guard-registration`):
+- **Guard registration** (`adr84-guard-registration`; untouched here, and left untouched until the owner decides):
   - §2 tokens;
   - §3.1 (the L-TAIL record becomes a test with a forced budget seam, red on Amendment 3 as written);
   - §5.4 (the admitted-verdict table, EX on G_floor, `XE-NOT-EXHAUSTED` no longer holding the merge, BI unchanged);
@@ -471,18 +524,18 @@ Proposed (2026-11-22), answering the owner's objections of 2026-11-22 to limit L
 - The alternative is to switch the receiver to floor-only now (the fallback you have). It keeps the 1 % promise in total, but it makes Realtime about half a round trip slower per lost packet (≈ +5 ms at 10 ms RTT, +50 ms at 100 ms), and it changes the receiver twice.
 
 **The floor hold.**
-- The receiver should not wait "as long as packets have ever been late". It should wait until it *knows* nothing more can come. On each path packets arrive in order, so once a path has delivered something sent after the last copy, nothing older is still on its way there. The sender tells the receiver, per path, when it sent the last copy.
-- On one path the wait stays zero. On two paths it is still about the difference in the paths' delays while the slower path carries repair. But it is now exactly the time until nothing more can arrive: it never remembers an old spike, and it never gives up too early.
-- Only when a path goes silent does the receiver wait a time-out: that path's normal round trip plus four times its variation, the standard loss timeout.
-- The 10 s memory goes, and the floor message grows by a few bytes per path.
+- The receiver should not wait "as long as packets have ever been late". It should wait until it *knows* nothing more can come.
+- On each path packets arrive in order, and the sender sends its "skip below here" message on every path right after everything else. So once that message, or anything sent after it, has arrived on every path, nothing older is still on its way.
+- On one path the wait stays zero. On two paths it is still about the difference in the paths' delays, but it is exactly the time needed: it never remembers an old spike, and it never gives up too early.
+- Only when a path goes silent does the receiver wait a time-out: the paths' normal round trip plus four times its variation, the standard loss timeout, from measurements the engine already keeps.
+- The 10 s memory goes, and the message grows by 13 bytes.
+- **The catch:** on a link that reorders packets within one path, about half of the skipped packets whose last copy did arrive would come out of order. Nothing is lost. All tested links are in-order; the gauge shows the case if it occurs.
 
 **Your decisions:**
 1. Amendment 4 item 1 (the sender's allowance counts its own passes), or Amendment 3's fallback now (floor-only receiver).
-2. Amendment 4 item 4 (the event rule, recommended in form E0; E1 is the refinement, §2.8), or keep `floor-hold.md` with W confirmed.
+2. Amendment 4 item 4 (E0, the default awaiting your confirmation; E1 the refinement, §2.8), or keep `floor-hold.md` with W confirmed. Later, if a reordering link class matters: r1, r2 or r3 (§2.6).
 
 **Open, not owner calls:**
-- the per-path rttvar estimator;
-- the path-id agreement check;
 - the SACK-aware pending term;
 - D's role (a reorder guard from the hole law) and its estimator;
 - the two D divergences' bounding tests.
