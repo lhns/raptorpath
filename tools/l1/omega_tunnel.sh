@@ -33,14 +33,12 @@ tunnel_up() { # bin hint  -- 0 up; 1 = TUN-BRINGUP-FAIL after three attempts (st
     nsx $OMEGA_NS_SRV tc qdisc replace dev srv0 root netem delay "${one_way}ms" rate "$rate" || return 1
     OMEGA_STARTED_RAPTORPATH=1
     # shellcheck disable=SC2086
-    nsx $OMEGA_NS_SRV env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST $fwd "$bin" run --server --bind 10.77.0.2:7000 \
-      --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$hint" > "$RUN/tun-s.log" 2>&1 &
-    omega_record_pid $!
+    omega_bg $OMEGA_NS_SRV "$RUN/tun-s.log" env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST $fwd "$bin" run --server --bind 10.77.0.2:7000 \
+      --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$hint"
     "${OMEGA_SLEEP:-sleep}" 2
     # shellcheck disable=SC2086
-    nsx $OMEGA_NS_CLI env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST $fwd "$bin" run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
-      --tun-name rpcli0 --tun-addr 10.99.0.1/24 --protocol-hint "$hint" > "$RUN/tun-c.log" 2>&1 &
-    omega_record_pid $!
+    omega_bg $OMEGA_NS_CLI "$RUN/tun-c.log" env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST $fwd "$bin" run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
+      --tun-name rpcli0 --tun-addr 10.99.0.1/24 --protocol-hint "$hint"
     for i in $(seq 1 20); do
       nsx $OMEGA_NS_CLI ping -c1 -W1 10.99.0.2 >/dev/null 2>&1 && { up=1; break; }
       "${OMEGA_SLEEP:-sleep}" 1
@@ -64,9 +62,9 @@ tunnel_app_up() {
 omega_tunnel_phase() { # phase nflows
   local ph="$1" nf="$2" cpid spid dur="${OMEGA_TUNQ_S:-90}" t
   : > "$RUN/tunq-$ph.ss"
-  nsx $OMEGA_NS_SRV iperf3 -s -1 -p 5301 > "$RUN/tunq-$ph.srv" 2>&1 & spid=$!; omega_record_pid "$spid"
+  omega_bg $OMEGA_NS_SRV "$RUN/tunq-$ph.srv" iperf3 -s -1 -p 5301; spid="$OMEGA_LASTPID"
   omega_sleep "${OMEGA_SETTLE_S:-0.5}"
-  nsx $OMEGA_NS_CLI iperf3 -c 10.99.0.2 -p 5301 -P "$nf" -J -t "$dur" > "$RUN/tunq-$ph.json" 2> "$RUN/tunq-$ph.err" & cpid=$!; omega_record_pid "$cpid"
+  omega_bg $OMEGA_NS_CLI "$RUN/tunq-$ph.json" iperf3 -c 10.99.0.2 -p 5301 -P "$nf" -J -t "$dur"; cpid="$OMEGA_LASTPID"
   t="$(omega_now)"
   while kill -0 "$cpid" 2>/dev/null; do
     nsx $OMEGA_NS_CLI ss -tin dst 10.99.0.2 2>/dev/null | tr '\n' ' ' \
@@ -74,7 +72,7 @@ omega_tunnel_phase() { # phase nflows
     nsx $OMEGA_NS_CLI tc -s qdisc show dev rpcli0 > "$RUN/tunq-$ph.tc-rpcli0" 2>/dev/null
     nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 > "$RUN/tunq-$ph.tc-cli0" 2>/dev/null
     omega_sleep 0.1
-    if [ "$(awk -v n="$(omega_now)" -v t="$t" -v d="$dur" 'BEGIN{print (n - t > d + 10) ? 1 : 0}')" = 1 ]; then kill -INT "$cpid" 2>/dev/null; break; fi
+    if [ "$(awk -v n="$(omega_now)" -v t="$t" -v d="$dur" 'BEGIN{print (n - t > d + 10) ? 1 : 0}')" = 1 ]; then kill -TERM "$cpid" 2>/dev/null; break; fi
   done
   wait "$cpid" 2>/dev/null
   omega_stop_pid "$spid"

@@ -59,6 +59,17 @@ nsip() { # ns ip-args...   ip -n rp-<ns> ...
   $OMEGA_SUDO ip -n "$ns" "$@"
 }
 
+# A long-running process in rp-<ns>, a DIRECT child of this shell ($! is the sudo process, which relays TERM to the command): so a kill by recorded PID
+# reaches it. ns, a log file (stdout; stderr goes to <log>.err), then the command. Sets OMEGA_LASTPID and records it in $RUN/pids.
+omega_bg() {
+  local ns="$1" lf="$2"
+  shift 2
+  omega_guard_ns "$ns"
+  $OMEGA_SUDO ip netns exec "$ns" "$@" > "$lf" 2> "$lf.err" &
+  OMEGA_LASTPID=$!
+  [ -z "${RUN:-}" ] || echo "$OMEGA_LASTPID" >> "$RUN/pids"
+}
+
 ns_add() { omega_guard_ns "$1"; $OMEGA_SUDO ip netns add "$1"; }
 ns_del() { omega_guard_ns "$1"; $OMEGA_SUDO ip netns del "$1" 2>/dev/null || true; }
 

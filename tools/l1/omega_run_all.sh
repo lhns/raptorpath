@@ -226,8 +226,8 @@ omega_r0() {
   # plug and the IP-id selector (the outage check)
   if q_outage_setup >/dev/null 2>&1; then PLUG=1; else PLUG=0; echo "SKIPPED-PLUG the outage check is skipped" | tee -a "$RUN/R0.log"; fi
   nsx $OMEGA_NS_MID tc qdisc replace dev mid1 root netem limit 100000 delay 0us >/dev/null 2>&1
-  nsx $OMEGA_NS_SRV iperf3 -s -1 -p 5401 > "$r0/ipid.srv" 2>&1 & omega_record_pid $!
-  e="$(omega_cap $OMEGA_NS_MID mid0 "$r0/ipid.pcap")"
+  omega_bg $OMEGA_NS_SRV "$r0/ipid.srv" iperf3 -s -1 -p 5401
+  omega_cap $OMEGA_NS_MID mid0 "$r0/ipid.pcap"; e="$OMEGA_LASTPID"
   omega_sleep "${OMEGA_SETTLE_S:-0.5}"
   nsx $OMEGA_NS_CLI iperf3 -c 10.77.2.2 -p 5401 -t 2 > "$r0/ipid.cli" 2>&1
   omega_stop_pid "$e"
@@ -250,10 +250,9 @@ omega_r0() {
         omega_table "r0e" "$ent" "$L"
         q_reorder $OMEGA_NS_MID mid1 "$RUN/tables" zero REL 0 "$g" - || omega_abort ABORT-TOOLS "tc refused the zero table"
         tab="$r0/$g-$mode-$k"
-        e="$(omega_cap $OMEGA_NS_SRV srv0 "$tab.pcap")"
+        omega_cap $OMEGA_NS_SRV srv0 "$tab.pcap"; e="$OMEGA_LASTPID"
         omega_sleep "${OMEGA_SETTLE_S:-0.5}"
-        nsx $OMEGA_NS_MID "${OMEGA_PYTHON:-python3}" -I "$PROBE" 10.77.2.2 "$g" 2 "$tab.send" &
-        omega_record_pid $!; pr_pid=$!
+        omega_bg $OMEGA_NS_MID "$tab.out" "${OMEGA_PYTHON:-python3}" -I "$PROBE" 10.77.2.2 "$g" 2 "$tab.send"; pr_pid="$OMEGA_LASTPID"
         omega_sleep 0.8
         sw="$(omega_now)"
         [ "$mode" = CLEAN ] || q_reorder_change $OMEGA_NS_MID mid1 "$RUN/tables" r0e "$mode" "$dt" "$g" - || omega_abort ABORT-TOOLS "tc refused the arm's table"

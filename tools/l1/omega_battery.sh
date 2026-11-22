@@ -32,11 +32,8 @@ omega_stop_pid() { # pid  -- TERM by recorded PID, then reap
   wait "$p" 2>/dev/null || true
 }
 
-omega_cap() { # ns dev pcap   start tcpdump, headers only, print its PID
-  nsx "$1" tcpdump -i "$2" -nn -s 96 -w "$3" >/dev/null 2>&1 &
-  local p=$!
-  omega_record_pid "$p"
-  echo "$p"
+omega_cap() { # ns dev pcap   start tcpdump, headers only; its PID is in OMEGA_LASTPID
+  omega_bg "$1" "$3.log" tcpdump -i "$2" -nn -s 96 -w "$3"
 }
 
 omega_table() { # name delayed_entries size  -> $RUN/tables/<name>.dist
@@ -85,14 +82,14 @@ omega_row() { # cfg arm rep half stage
   nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 > "$rdir/tc-before-cli0.txt" 2>/dev/null
   nsx "$RO_NS" tc -s qdisc show dev "$RO_DEV" > "$rdir/tc-before-ro.txt" 2>/dev/null
   # captures (pre = the bottleneck's output, post = after the reorderer), the sampler and iperf3
-  mpid="$(omega_cap "$PRE_NS" "$PRE_DEV" "$rdir/pre.pcap")"
-  ppid="$(omega_cap "$POST_NS" "$POST_DEV" "$rdir/post.pcap")"
+  omega_cap "$PRE_NS" "$PRE_DEV" "$rdir/pre.pcap"; mpid="$OMEGA_LASTPID"
+  omega_cap "$POST_NS" "$POST_DEV" "$rdir/post.pcap"; ppid="$OMEGA_LASTPID"
   : > "$rdir/backlog.txt"
   bash "$HERE/omega_sampler.sh" "$rdir/backlog.txt" 2> "$rdir/sampler.err" & spid=$!; omega_record_pid "$spid"
-  nsx "$SRV_NS" iperf3 -s -1 -p 5201 --pidfile "$rdir/iperf-s.pid" > "$rdir/iperf-s.log" 2>&1 & srvpid=$!; omega_record_pid "$srvpid"
+  omega_bg "$SRV_NS" "$rdir/iperf-s.log" iperf3 -s -1 -p 5201 --pidfile "$rdir/iperf-s.pid"; srvpid="$OMEGA_LASTPID"
   omega_sleep "${OMEGA_SETTLE_S:-0.5}"
   t_launch="$(omega_now)"
-  nsx "$CLI_NS" iperf3 -c "$SRV_ADDR" -p 5201 -P 8 -J --get-server-output -i 1 -t $(( ${OMEGA_NOFILL_S:-60} + ${OMEGA_EVENT_S:-12} + 5 )) > "$rdir/iperf.json" 2> "$rdir/iperf.err" & cpid=$!; omega_record_pid "$cpid"
+  omega_bg "$CLI_NS" "$rdir/iperf.json" iperf3 -c "$SRV_ADDR" -p 5201 -P 8 -J --get-server-output -i 1 -t $(( ${OMEGA_NOFILL_S:-60} + ${OMEGA_EVENT_S:-12} + 5 )); cpid="$OMEGA_LASTPID"
   # warm-up ends on the witness, not on a clock; no event is injected before it
   while :; do
     ti="$($PY "$HERE/omega_parse.py" warmup "$rdir/backlog.txt" "$B" "${OMEGA_WIN_S:-1.0}" "${OMEGA_NOFILL_S:-60}" "$t_launch")"
@@ -114,12 +111,12 @@ omega_row() { # cfg arm rep half stage
   sysctl_readback_ok "$CLI_NS" && sysctl_readback_ok "$SRV_NS" || sysok=false
   nsx $OMEGA_NS_CLI tc -s qdisc show dev cli0 > "$rdir/tc-after-cli0.txt" 2>/dev/null
   nsx "$RO_NS" tc -s qdisc show dev "$RO_DEV" > "$rdir/tc-after-ro.txt" 2>/dev/null
-  # stop by recorded PID: iperf3 gets SIGINT (it prints the interval JSON on interrupt), the rest TERM
-  kill -INT "$cpid" 2>/dev/null || true; wait "$cpid" 2>/dev/null || true
+  # stop by recorded PID: iperf3 gets TERM (a background job ignores SIGINT; iperf3 handles TERM like INT and prints the interval JSON), the rest TERM too
+  kill -TERM "$cpid" 2>/dev/null || true; wait "$cpid" 2>/dev/null || true
   omega_stop_pid "$srvpid"; omega_stop_pid "$mpid"; omega_stop_pid "$ppid"; omega_stop_pid "$spid"
   if [ "$nofill" = 1 ]; then
     echo "{\"kind\":\"row\",\"cfg\":\"$cfg\",\"arm\":\"$arm\",\"armkind\":\"$kind\",\"label\":\"$label\",\"rep\":$rep,\"seedhalf\":$half,\"stage\":\"$stage\",\"session\":\"$SESSION\",\"status\":\"NO_FILL\",\"witness\":{\"warm_ok\":false}}" >> "$LEDGER"
-    omega_note "NO_FILL $rid"; rm -f "$rdir"/*.pcap; return 0
+    omega_note "NO_FILL $rid samples=$(wc -l < "$rdir/backlog.txt") B=$B"; rm -f "$rdir"/*.pcap; return 0
   fi
   # digest
   nsx "$PRE_NS" tcpdump -nn -tt -v -r "$rdir/pre.pcap" > "$rdir/pre.txt" 2>/dev/null

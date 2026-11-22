@@ -253,7 +253,7 @@ def diag(rd, sb=None):
     for r in sorted(os.listdir(rows))[:2] if os.path.isdir(rows) else []:
         d = os.path.join(rows, r)
         print("DIAG row %s: %s" % (r, sorted(os.listdir(d))))
-        for f in ("backlog.txt", "sampler.err", "iperf.err", "tc-before-cli0.txt"):
+        for f in ("backlog.txt", "sampler.err", "iperf.json.err", "tc-before-cli0.txt"):
             p = os.path.join(d, f)
             if os.path.exists(p):
                 print("DIAG   %s: %d lines, head=%r" % (f, len(open(p).readlines()), open(p).read()[:200]))
@@ -312,7 +312,7 @@ if wanted("static"):
     rawcmd = [l.strip() for l in code if re.match(r"^\s*(sudo\s+-n\s+)?(ip|tc|ethtool|sysctl)\s", l)]
     check("static: no bare ip / tc / ethtool / sysctl command: every call goes through nsx / nsip", not rawcmd, rawcmd[:5])
     wrappers = [l.strip() for l in code if "$OMEGA_SUDO ip" in l]
-    check("static: ip is run through sudo only in the guarded wrappers (nsx, nsip, ns_add, ns_del, ns list)", 4 <= len(wrappers) <= 7 and all(("netns exec" in l or "ip -n" in l or "netns add" in l or "netns del" in l or "netns list" in l) for l in wrappers), wrappers)
+    check("static: ip is run through sudo only in the guarded wrappers (nsx, nsip, ns_add, ns_del, ns list)", 4 <= len(wrappers) <= 9 and all(("netns exec" in l or "ip -n" in l or "netns add" in l or "netns del" in l or "netns list" in l) for l in wrappers), wrappers)
     kills = [l.strip() for l in code if re.search(r"(^|[;&|]\s*|\s)kill\s", l)]
     check("static: every kill takes a recorded PID variable", kills and all(re.search(r'kill\s+(-\w+\s+)*"?\$', l) for l in kills), kills)
     check("static: pkill only with -x raptorpath", all("-x raptorpath" in l for l in code if re.search(r"\bpkill\b", l)))

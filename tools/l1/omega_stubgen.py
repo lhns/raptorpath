@@ -28,10 +28,10 @@ def hold_posts(times, sel, dt, g, base=0.0001):
     """Post-reorderer arrival times through a FIFO that holds the head of each selected packet dt, then drains the run at 10 g until it catches up."""
     out, rel = [], None
     for i, t in enumerate(times):
-        if i in sel and (rel is None or t + base >= rel):
+        if i in sel and (rel is None or t >= rel):
             rel = t + dt
             out.append(rel + base)
-        elif rel is not None and t + base < rel + 1.0 / (10.0 * g):
+        elif rel is not None and t < rel + 1.0 / (10.0 * g):
             rel += 1.0 / (10.0 * g)
             out.append(rel + base)
         else:
