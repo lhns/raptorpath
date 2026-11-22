@@ -19,7 +19,7 @@ Draft for the coordinator to register as its own status section. No row has run,
   - a ρ < 1 part: Realtime at the declared 0.99, at N = 1 and N = 2, including a 20 ms skew cell, a budget-exhaust cell, a lost-tail cell after the allowance is spent (limit L-TAIL, named), and two floor-only pairings (sender 0.99, receiver 1; one single-path, one on the 20 ms skew link) where floor passes, last copies and the derived H's miss count are required witnesses, plus Auto at 0.99 on CAND;
   - simulation gates before any VM contact (the lost tail, the stalled blocker, the mixed pairing).
 - **The binary changes on purpose.** The merge carries a `binid: expected-change` line (§6).
-- **Cost:** five VM sessions. Typical ≈ 3.3 + 1.3 + 2.4 + 2.9 + 1.5 ≈ 11.5 h (rounded), worst ≈ 17 h. Each session stays under the five-hour cap.
+- **Cost:** five VM sessions. Typical ≈ 3.3 + 1.3 + 2.4 + 2.9 + 1.5 ≈ 11.4 h, worst ≈ 17 h. Each session stays under the five-hour cap.
 - **Owner answers now in (Amendment 3, Accepted):** Q-a yes, with its fallback; Q-b (iii), H derived (`floor-hold.md`); C1 stays in this build (option (a)), and the interim XK delay rise is accepted and reported.
 - **Your word is still needed (§11):**
   - **W = 10 s**, H's one borrowed constant, which is a default awaiting your confirmation before the floor-pass step is built;
@@ -570,7 +570,7 @@ The two new cell rows reuse existing scenarios: only a `cell_spec` row each is n
 | 2, `LD_PLAN=84g` (`LD_HARD` = launch + 3 h) | G 96 ≈ 53 min; A 48 × ≈ 80 s ≈ 64 min; R1 24 ≈ 10 min; replacements and scoring ≈ 15 min | **≈ 2.4 h** | §64 Result; block 51 |
 | 3a, `LD_PLAN=84x` (`LD_HARD` = launch + 4.2 h) | X 96 at ≈ 55 s per row (a 40 s window plus bring-up) ≈ 88 min; XR 30 and XRK 30 at ≈ 60 s (a 45 s window) ≈ 60 min; scoring ≈ 15 min; smoke re-check ≈ 10 min | **≈ 2.9 h** | block E rows ≈ 62 s |
 | 3b, `LD_PLAN=84y` (`LD_HARD` = launch + 2.5 h) | XL 24, XA 12, XT 24 ≈ 55 min; XP 12 ≈ 11 min; scoring ≈ 15 min; smoke ≈ 10 min | **≈ 1.5 h** | as 3a |
-| **total** | | **≈ 11.5 h** (≈ 11.3 h without XP) | |
+| **total** | | **≈ 11.4 h** (≈ 11.2 h without XP) | |
 
 **Worst case, about 17 h:** a rehearsal re-run (+1.3 h), a session-0 re-run after a fix (+3.3 h, only if a seat changes), and a NO VERDICT re-run of Stage G (+1 h).
 
