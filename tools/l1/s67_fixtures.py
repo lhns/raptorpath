@@ -13,6 +13,8 @@ Defects (the stub-path names of registration 9.8, plus a few the tests need): s2
 twin-no-acct no-succ-times rho-one-end pool-echo-wrong s2-goodput-low s1-goodput-low dnf bulk-rr no-pace-echo,
 and (harness 67c) r2-blind (P1 taper = 0, P2 pslot = 0), b0-gauge (B0 prints the gauges), twin-missing-field (P2T's [ACCT] lacks oldest_unchanged_max),
 s2-taper-cotenant / s1-crash (the lines of s2-taper-nonzero / a clean row; the STUB makes the driver exit 1, so the row is also a crash void).
+Stage G (Bulk) has rr = 0 by design: s2-taper-nonzero / s2-taper-cotenant on a g2 S2 row carry rr > 0 too (the mechanism preconditions of an S06-FAIL hold: pslot > 0, [SPAN] median rr > 0; the row is also a W-ROUTE
+witness failure), g2-taper-no-mechanism (harness 67c) is the same taper = plost = 40 with rr = 0 (the mechanism never ran: not S06-FAIL, reported as G2-TAPER-NONZERO).
 """
 import os
 import random
@@ -33,7 +35,7 @@ RUN_BYTES = {"c1s-400": 5000000000, "c1d-400": 5000000000, "c2-100": 600000000, 
 BASE_MBPS = {"c1s-400": 600.0, "c1d-400": 380.0, "c2-100": 85.0, "c8-100": 97.0}
 ABOVE = {"c2-100": dict(taper=0.12, bf=4200, bf_s2=900, fill=1500, hb=854), "c8-100": dict(taper=0.20, bf=9000, bf_s2=600, fill=800, hb=122)}
 DEFECTS = {"s2-taper-nonzero", "s2-no-pslot", "s2-belowfloor-high", "s1-no-gauge", "s1-no-pfec", "r1-blind", "twin-no-final", "twin-under-min", "twin-worse", "twin-no-acct", "no-succ-times",
-           "rho-one-end", "pool-echo-wrong", "s2-goodput-low", "s1-goodput-low", "dnf", "bulk-rr", "no-pace-echo", "r2-blind", "b0-gauge", "twin-missing-field", "s2-taper-cotenant", "s1-crash"}
+           "rho-one-end", "pool-echo-wrong", "s2-goodput-low", "s1-goodput-low", "dnf", "bulk-rr", "no-pace-echo", "r2-blind", "b0-gauge", "twin-missing-field", "s2-taper-cotenant", "s1-crash", "g2-taper-no-mechanism"}
 
 
 def spec(plan, cell, arm):
@@ -133,15 +135,16 @@ def extra_lines(plan, cell, arm, seed, rep, defect=None):
         tf = 0.10
     taper_tot = int(total * tf * jit(0.05))
     plost_tot = taper_tot
-    if on_s2 and defect in ("s2-taper-nonzero", "s2-taper-cotenant"):
+    if on_s2 and defect in ("s2-taper-nonzero", "s2-taper-cotenant", "g2-taper-no-mechanism"):
         taper_tot = plost_tot = 40
     pslot_tot = int(total * (ab["taper"] if plan != "67r" else 0.10) * jit(0.05)) if (pslot_on and not (defect == "r2-blind" and seat == "P2")) else 0
     cod_tot = int(total * 0.0056 * jit(0.05))
     if on_s2 and not bulk:
         cod_tot += pslot_tot
     retx_tot = int(total * 0.029 * jit(0.03))
-    rr_val = 0.0 if (bulk and defect != "bulk-rr") else (0.2 if not on_s2 else 0.22) * jit(0.05)
-    if bulk and defect == "bulk-rr":
+    bulk_rr = defect == "bulk-rr" or (on_s2 and defect in ("s2-taper-nonzero", "s2-taper-cotenant"))      # stage G: rr > 0 on a Bulk row (the mechanism ran: an S06-FAIL's precondition)
+    rr_val = 0.0 if (bulk and not bulk_rr) else (0.2 if not on_s2 else 0.22) * jit(0.05)
+    if bulk and bulk_rr:
         rr_val = 0.1
     if seat == "B0" and not bulk:
         rr_val = 0.2 * jit(0.05)

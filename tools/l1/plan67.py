@@ -14,7 +14,7 @@ Battery plans:        41d (stage G, LD_WITNESS67=g1|g2)  67a (stage A)  67r (sta
     plan67.py seat <arm>                     the seat whose binary the arm runs
     plan67.py strings <seat>                 `need <s>` / `forbid <s>` lines: the strings that identify the seat's binary (ABORT-SEAT)
     plan67.py pin <seat>                     the commit pin env name (LD_PIN_<SEAT>); every seat's pin is REQUIRED environment, none has a default (the second amendment names them: ABORT-SEAT when unset)
-    plan67.py seams [<G_ROWS67>]             the test seams that differ from the registered design, space separated (env: LD_HARD_MIN_S R67_T1_S LD_ROW_BYTES LD_BLOCK_ROW_S; source: the constants of REGISTERED and G_ROWS67 as the
+    plan67.py seams [<G_ROWS67>]             the test seams that differ from the registered design, space separated (env: LD_HARD_MIN_S R67_T1_S LD_ROW_BYTES LD_BLOCK_ROW_S R67_N R67_BUDGET_S R67_SIM; source: the constants of REGISTERED and G_ROWS67 as the
                                              shell passes it); prints nothing when none is active. A plan-67 session aborts ABORT-SEAM on any of them unless LD_TEST_SEAMS=1 (the explicit stub marker)
     plan67.py budget <67pre|67|67g|67x>      the registered worst-case seconds the session needs before LD_HARD
     plan67.py check <plan> <ledger>          rc 0 iff the battery finished and the ledger holds a row for every slot (and no other)
@@ -69,7 +69,7 @@ PACE_MBIT = "35"
 SMOKE_ARMS_A = ("S1", "S2", "B0")
 # the registered design: the constants above as the registration states them. test_stubrun's fast mode shrinks them (source edits) and so does any hand edit: `plan67.py seams` reports a constant that differs.
 REGISTERED = {"N_BLOCKS": 6, "N_TWIN_REPS": 3, "N_POOL_REPS": 3, "MIN_LIVE_A": 10, "MIN_LIVE_B0": 4, "MIN_TWIN": 5, "G_ROWS67": 96}
-SEAM_ENV = ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S")
+SEAM_ENV = ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S", "R67_N", "R67_BUDGET_S", "R67_SIM")      # R67_N / R67_BUDGET_S / R67_SIM shrink session 0's repeat and binid: seams too
 BUDGET_S = {"67pre": 17040, "67": 7500, "67g": 10000, "67x": 15600}               # section 6 worst cases under LD_HARD = launch + 4.9 h (17 640 s, less the 600 s slack the others keep) / 2.25 h / 3 h / 4.5 h (the registration's 15.5 h worst total is the sum of re-runs); LD_HARD_MIN_S is a test seam
 
 PLANS = ("41d", "67a", "67r", "67p", "67o", "67d")
@@ -79,8 +79,23 @@ SESSION = {"67pre": (), "67": ("g1", "g2", "a", "r1", "t", "r2"), "67g": ("g1", 
 G_SEATS = {"g1": ("S1", "B0"), "g2": ("S2", "S1")}                  # stage -> (CAND, BASE)
 
 
+_DROP_S2 = [None]      # set by drop_s2_as(): a scorer reading a pulled ledger takes the drop state from the ledger's LD-PLAN67 line, not from the host's environment
+
+
 def drop_s2():
-    return os.environ.get("LD_DROP_S2") == "1"
+    return _DROP_S2[0] if _DROP_S2[0] is not None else os.environ.get("LD_DROP_S2") == "1"
+
+
+class drop_s2_as:
+    """`with drop_s2_as(True | False | None):` the tables below read that drop state (None = the environment)."""
+    def __init__(self, v):
+        self.v = v
+
+    def __enter__(self):
+        self.old, _DROP_S2[0] = _DROP_S2[0], self.v
+
+    def __exit__(self, *a):
+        _DROP_S2[0] = self.old
 
 
 def dump_on():
