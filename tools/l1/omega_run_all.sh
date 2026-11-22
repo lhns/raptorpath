@@ -54,7 +54,9 @@ HOME="$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)"
 # or `pkill -x raptorpath` only; locks only through take_lock / release_locks, never broken; no VM user name, address or home path in the repo.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-set -u
+set -uE
+OMEGA_LASTERR=""
+trap 'OMEGA_LASTERR="${BASH_COMMAND} @${BASH_SOURCE[0]##*/}:${LINENO} rc=$?"' ERR   # the last failing command, printed at exit
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 PY="${OMEGA_PYTHON:-python3} -I"
@@ -118,6 +120,7 @@ omega_cleanup() {
   for p in "${OMEGA_LOCK_VM:-/nonexistent-lock-a}" "${OMEGA_LOCK_RP:-/nonexistent-lock-b}"; do
     [ ! -e "$p" ] || [ "$LOCKS_TAKEN_BY_US" != 1 ] || { echo "EXIT-STATE lock $p still present"; ok=0; }
   done
+  [ "$FINAL" = done ] || echo "OMEGA-LAST-ERR $OMEGA_LASTERR (rc=$rc)"
   echo "OMEGA-END state=$state exit_state_clean=$ok"
   case "$FINAL" in done) exit "$rc" ;; truncated) exit 5 ;; *) exit $(( rc == 0 ? 3 : rc )) ;; esac
 }
