@@ -8,7 +8,8 @@
 Exit: 0 scored; 2 nothing scored (TRUNCATED, REHEARSAL, UNSCOREABLE, no footer); 3 usage.
 
 Rules that hold everywhere (the brief and the registration):
-  * A truncated or footerless ledger is never scored: the scorer prints `TRUNCATED` and the n reached per cell, and no c, omega, outcome or PASS.
+  * A TRUNCATED-<session> ledger is scored at the n it reached (registration 9.3): the first line lists n_reached per cell, every result line carries
+    `[TRUNCATED-<s> n_reached=min..max]`, the measurement is never DELIVERED, and cells under their live minimum stay UNSCOREABLE. A footerless or FAILED-ALL ledger is not scored.
   * A rehearsal ledger is never scored (`REHEARSAL-NOT-SCORED`).
   * A missing field is never read as 0: a row with a missing required field is a MISSING row, void, and counts against the cell's live minimum.
   * A cell under 6 live reps, or under 32 valid rank-1 REL / 32 valid HOLD events, is UNSCOREABLE.
@@ -448,29 +449,31 @@ def score(path, nboot=10000, seed=1):
     out = {"lines": [], "notes": [], "rent": {}, "header": {k: v for k, v in header.items() if k != "kind"}}
     L = out["lines"]
     state = (footer or {}).get("state")
-    truncated = (state is None or state.startswith("TRUNCATED") or header.get("truncated") or any(r.get("truncated") for r in rows))
-    if truncated:
-        why = "no footer" if state is None else state
-        reached = {}
-        for r in rows:
-            if r.get("stage") not in NONSCORED_STAGES:
-                reached[(r["cfg"], r["arm"])] = reached.get((r["cfg"], r["arm"]), 0) + (r.get("status") == "OK")
-        L.append("TRUNCATED %s" % why)
-        L.append("n reached per cell (live reps; nothing is scored): " + ", ".join("%s/%s=%d" % (c, a, n) for (c, a), n in sorted(reached.items())))
-        out["exit"] = 2
-        out["measurement"] = "TRUNCATED"
-        return out
+    trunc = None
+    if (state or "").startswith("TRUNCATED") or header.get("truncated") or any(r.get("truncated") for r in rows):
+        trunc = state if (state or "").startswith("TRUNCATED") else "TRUNCATED-%s" % header.get("session", "?")
     if header.get("rehearsal") or any(r.get("rehearsal") for r in rows):
-        L.append("REHEARSAL-NOT-SCORED")
+        L.append("REHEARSAL-NOT-SCORED" + (" (%s)" % trunc if trunc else ""))
         out["exit"] = 2
         return out
-    if state != "DONE-ALL":
-        L.append("UNSCOREABLE ledger state %s (only DONE-ALL is scored)" % state)
+    if state is None:
+        L.append("UNSCOREABLE ledger has no footer (a crashed or still running session is not scored)")
+        out["exit"] = 2
+        return out
+    if state != "DONE-ALL" and not trunc:
+        L.append("UNSCOREABLE ledger state %s (only DONE-ALL and TRUNCATED-<session> are scored)" % state)
         out["exit"] = 2
         return out
     rows = [r for r in rows if r.get("stage") not in NONSCORED_STAGES]
     live, cnt = classify_rows(rows)
     out["row_counts"] = cnt
+    reached = {}
+    for r in live:
+        reached["%s/%s" % (r["cfg"], r["arm"])] = reached.get("%s/%s" % (r["cfg"], r["arm"]), 0) + 1
+    out["n_reached"] = reached
+    if trunc:
+        # 9.3: a cut session is scored at the n it reached. Every result line carries the mark; cells under the live minimum stay UNSCOREABLE.
+        L.append("%s n_reached(live reps per cell): %s" % (trunc, ", ".join("%s=%d" % kv for kv in sorted(reached.items())) or "none"))
     for r in rows:
         if r.get("_missing"):
             out["notes"].append("MISSING-FIELD %s/%s rep %s: %s" % (r.get("cfg"), r.get("arm"), r.get("rep"), ",".join(r["_missing"][:6])))
@@ -640,8 +643,14 @@ def score(path, nboot=10000, seed=1):
     if "measurement" not in out:
         has91 = all(any(k.endswith("/" + p + "/" + s) for k in out["rent"] for s in ("within", "beyond")) for p in PRESETS)
         out["measurement"] = "VOID" if voidstage else ("DELIVERED" if has91 and out["omega"] else "UNSCOREABLE")
+    if trunc and out["measurement"] == "DELIVERED":
+        out["measurement"] = trunc          # never DELIVERED: a truncated measurement is scored at its n, not delivered
     L.append("MEASUREMENT %s" % out["measurement"])
-    out["exit"] = 0 if out["measurement"] in ("DELIVERED",) else 2
+    out["exit"] = 0 if out["measurement"] in ("DELIVERED",) or (trunc and out["measurement"] == trunc) else 2
+    if trunc:
+        rs = sorted(reached.values())
+        mark = " [%s n_reached=%s]" % (trunc, ("%d..%d live reps/cell" % (rs[0], rs[-1])) if rs else "none")
+        L[1:] = [l + mark for l in L[1:]]
     # unscoreable cells
     out["unscoreable"] = {"%s/%s" % k: p["why"] for k, p in pairs.items() if p["why"]}
     for k, w in sorted(out["unscoreable"].items()):

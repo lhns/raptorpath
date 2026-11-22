@@ -209,7 +209,7 @@ def design_rows(session, pins):
         cid = configs()[0]
         rows = [(cid, a["arm"], 1, 1, "smoke") for a in _one_per_kind(arms(cid, pins))]
         rows += [(OUT_CFG, a["arm"], 1, 1, "smoke") for a in outage_arms() if a["kind"] != "CLEAN"]
-        return rows, len(rows) * REP_S["Qt"] + 60
+        return rows, len(rows) * REP_S["Qt"] + 60 + 2 * 90 + 900   # + R0 and the tunnel bring-up (the rehearsal runs both)
     if session == "R":
         rows = []
         for cid in configs():                       # calibration: 4 arms x 6 reps, nothing scored (11.1)

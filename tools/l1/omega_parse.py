@@ -5,6 +5,7 @@ the iperf3 window, and R0's reorderer checks (registration 4.4, 7.1, 7.2, 11.1).
   omega_parse.py digest <meta.json> <mid0.txt> <srv0.txt> <backlog.txt> [iperf.json]     print one ledger row (JSON)
   omega_parse.py warmup <backlog.txt> <B> <win_s> <nofill_s> [t_start]                    print WITNESS <t> | NO_FILL
   omega_parse.py r0 <mode> <dt_ms> <g> <k_expected> <pre.txt> <post.txt> [p|-] [t_switch]   print R0-PASS | R0-FAIL <why>
+  omega_parse.py selected <mode> <dt_ms> <probe.send> <post.txt>                        print the selected packet ids (seed reproducibility)
   omega_parse.py ipid <pcap.txt>                                                          print the share of consecutive per-flow IP ids (R0's selector check)
   omega_parse.py witness <kind> <g> <limit> <mid_before> <mid_after> <bot_before> <bot_after>   JSON of the tc-counter witness ("-" = file absent)
   omega_parse.py tunq <srtt_samples.txt> <iperf.json> [ceiling_mbit]                       JSON: the tunnel's standing queue B_t
@@ -431,6 +432,16 @@ def tunq(samples_txt, iperf_json, tail_s=60.0, ceiling_mbit=100.0, sizes_B=1500)
             "B_t_pkts": {str(r): int(round(r * tau_ms / 1000.0)) for r in (1000, 10000)}}
 
 
+def selected_ids(mode, dt_ms, pre_txt, post_txt):
+    """The ids of the packets the reorderer selected (delayed by more than dt/2) on a probe: R0's seed-reproducibility check compares two runs of it."""
+    pre = [dict(x, seq=x["ipid"], flow=0) for x in (parse_probe(pre_txt) or parse_pcap_text(pre_txt))]
+    post = [dict(x, seq=x["ipid"], flow=0) for x in parse_pcap_text(post_txt)]
+    pk = match(pre, post)
+    base = base_delay(pk)
+    idxs, _ = events_of(pk, mode, dt_ms / 1000.0, base)
+    return ",".join(str(pk[i]["ipid"]) for i in idxs)
+
+
 def main(argv):
     if len(argv) >= 6 and argv[1] == "digest":
         meta = json.load(open(argv[2]))
@@ -450,6 +461,9 @@ def main(argv):
                            float(argv[8]) if len(argv) > 8 and argv[8] != "-" else None, float(argv[9]) if len(argv) > 9 else None)
         print("R0-PASS" if ok else "R0-FAIL " + why)
         return 0 if ok else 1
+    if len(argv) == 6 and argv[1] == "selected":
+        print(selected_ids(argv[2], float(argv[3]), open(argv[4]).read(), open(argv[5]).read()))
+        return 0
     if len(argv) == 3 and argv[1] == "ipid":
         by = {}
         for q in parse_pcap_text(open(argv[2]).read()):

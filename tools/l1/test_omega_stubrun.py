@@ -217,10 +217,13 @@ def run(sb, session="R", extra=None, rehearse=False, hard=None, drop_tools=(), t
         "OMEGA_SESSION": session, "OMEGA_TINY": "1", "OMEGA_ROW_KB": "1",
         "OMEGA_HARD": str(hard if hard is not None else int(time.time()) + 86400),
         "OMEGA_WIN_S": "0.2", "OMEGA_NOFILL_S": "6", "OMEGA_EVENT_S": "0.3", "OMEGA_SETTLE_S": "0.5", "OMEGA_TUNQ_S": "1",
-        "STUB_EV_S": "0.5", "STUB_IPERF_MIN_S": "0",
+        "STUB_EV_S": "0.5", "STUB_IPERF_MIN_S": "0", "OMEGA_R0_S": "1",
     })
     if rehearse:
         env["OMEGA_REHEARSE"] = "1"
+    if session == "R":     # the rehearsal and session R both run the tunnel bring-up: they need the pinned binary
+        rp = os.path.join(sb, "bin", "raptorpath-stub")
+        env.update({"OMEGA_BIN": px(rp), "OMEGA_BIN_SHA": sha(rp)})
     env.update(extra or {})
     for t in drop_tools:
         os.remove(os.path.join(sb, "bin", t))
@@ -574,6 +577,38 @@ if wanted("abort-build"):
     binp = os.path.join(sb, "bin", "raptorpath-stub")
     rc, out = run(sb, "R", {"OMEGA_BIN": px(binp), "OMEGA_BIN_SHA": "0" * 64})
     check("abort-build: a raptorpath sha that differs from the pin -> ABORT-BUILD", rc == 3 and "ABORT-BUILD" in out, (rc, out[-500:]))
+    cleanup(sb)
+
+
+# ───────────── the rehearsal runs R0 and the tunnel; NO-GO on failure; the seed check ─────────────
+if wanted("rehearse-r0"):
+    sb = make_sandbox("rehr0")
+    rc, out = run(sb, "R", rehearse=True)
+    rd = run_dir(sb, "R")
+    r0log = open(os.path.join(rd, "R0.log")).read() if rd and os.path.exists(os.path.join(rd, "R0.log")) else ""
+    check("rehearse-r0: the rehearsal ran R0 (probe, table size, seed, plug, ids) and the tunnel bring-up, then the rows",
+          rc == 0 and "R0-PASS" in r0log and "seed-reproducible=1" in r0log and os.path.exists(os.path.join(rd, "QT.json")) and "TUNSHA" in open(os.path.join(rd, "session.log")).read(), (rc, r0log[-300:], out[-400:]))
+    cleanup(sb)
+    sb = make_sandbox("rehnogo1")
+    rc, out = run(sb, "R", {"STUB_PING_FAIL": "1"}, rehearse=True)
+    check("rehearse-r0: a tunnel bring-up failure is NO-GO (exit 3, no rows)", rc == 3 and "NO-GO" in out and "TUN-BRINGUP-FAIL" in out and not [x for x in ledger(run_dir(sb, "R")) if x.get("kind") == "row"], (rc, out[-500:]))
+    cleanup(sb)
+    sb = make_sandbox("rehnogo2")
+    rc, out = run(sb, "R", {"OMEGA_BIN": ""}, rehearse=True)
+    check("rehearse-r0: no pinned raptorpath is NO-GO", rc == 3 and "NO-GO" in out, (rc, out[-400:]))
+    cleanup(sb)
+    sb = make_sandbox("rehnogo3")
+    rc, out = run(sb, "R", {"STUB_R0_BAD": "1"}, rehearse=True)
+    check("rehearse-r0: R0 refuting the reorderer is NO-GO (ABORT-BENCH)", rc == 3 and "NO-GO" in out and "ABORT-BENCH" in out, (rc, out[-400:]))
+    cleanup(sb)
+
+if wanted("seed-differs"):
+    sb = make_sandbox("seeddiff")
+    rc, out = run(sb, "R", {"STUB_SEED_DIFFER": "1"}, rehearse=True)
+    rd = run_dir(sb, "R")
+    r0 = json.load(open(os.path.join(rd, "R0.json"))) if rd and os.path.exists(os.path.join(rd, "R0.json")) else {}
+    check("seed-differs: the same seed selecting different packets -> rep halves stand in (seed_ok false, recorded), the session goes on",
+          rc == 0 and r0.get("seed_ok") is False and "seed-reproducible=0" in open(os.path.join(rd, "R0.log")).read(), (rc, r0, out[-300:]))
     cleanup(sb)
 
 if FAILED:

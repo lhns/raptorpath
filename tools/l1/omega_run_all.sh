@@ -75,6 +75,7 @@ source ./omega_tunnel.sh
 omega_abort() { # TOKEN reason...
   echo "$1 ${*:2}"
   [ -z "$RUN" ] || echo "$1 ${*:2}" >> "$RUN/all-era.txt"
+  [ "$REHEARSAL" != 1 ] || echo "NO-GO the rehearsal failed at $1: no scored session may be launched until this is fixed"
   [ -n "$FINAL" ] || FINAL="failed"
   exit 3
 }
@@ -263,7 +264,7 @@ omega_r0() {
         tab="$r0/$g-$mode-$k"
         omega_cap $OMEGA_NS_SRV srv0 "$tab.pcap"; e="$OMEGA_LASTPID"
         omega_sleep "${OMEGA_SETTLE_S:-0.5}"
-        omega_bg $OMEGA_NS_MID "$tab.out" "${OMEGA_PYTHON:-python3}" -I "$PROBE" 10.77.2.2 "$g" 2 "$tab.send"; pr_pid="$OMEGA_LASTPID"
+        omega_bg $OMEGA_NS_MID "$tab.out" "${OMEGA_PYTHON:-python3}" -I "$PROBE" 10.77.2.2 "$g" "${OMEGA_R0_S:-2}" "$tab.send"; pr_pid="$OMEGA_LASTPID"
         omega_sleep 0.8
         sw="$(omega_now)"
         [ "$mode" = CLEAN ] || q_reorder_change $OMEGA_NS_MID mid1 "$RUN/tables" r0e "$mode" "$dt" "$g" - || omega_abort ABORT-TOOLS "tc refused the arm's table"
@@ -277,15 +278,49 @@ omega_r0() {
     done
   done
   [ "$ok" = 1 ] || omega_abort ABORT-BENCH "R0 refutes a reorderer property (see $RUN/R0.log); no battery is launched"
+  if [ "$OMEGA_SEED_OK" = 1 ]; then
+    if omega_seed_check; then echo "R0-TOOL seed-reproducible=1 (the same seed selected the same packets twice)" | tee -a "$RUN/R0.log"
+    else OMEGA_SEED_OK=0; echo "R0-TOOL seed-reproducible=0: the same seed selected different packets; rep halves stand in for seed halves (registration 7.2), recorded" | tee -a "$RUN/R0.log"; fi
+  fi
   $PY -c 'import json,sys; print(json.dumps({"L": int(sys.argv[1]), "seed_ok": sys.argv[2] == "1", "skip_outage": sys.argv[3] == "1"}))' "$L" "$OMEGA_SEED_OK" "${SKIP_OUT:-0}" > "$RUN/R0.json"
   echo "R0-PASS" | tee -a "$RUN/R0.log"
 }
 
+# The netem seed check (registration 7.2 / 11.1): the same seed must reproduce the same selection sequence on the probe. The design uses the seed for
+# run-to-run reproducibility (rule 4: seed 42 for the first half of each arm's reps, 7 for the second); matched arms do NOT rely on equal sequences
+# (events are counted from the pcap, never from p). So a mismatch is not a NO-GO: the registered fallback applies (rep halves stand in), recorded.
+omega_seed_check() { # g tabledir
+  local g=1000 k=3 dt pr ent run ids1 ids2 r0=$RUN/r0
+  dt="$(awk -v g="$g" -v k="$k" 'BEGIN{printf "%.4f", (k + 0.5) / g * 1000}')"
+  pr="$(awk -v g="$g" 'BEGIN{print 1 / (g * 0.1)}')"
+  ent="$(awk -v p="$pr" -v L="$OMEGA_L" 'BEGIN{n = int(p * L + 0.5); print (n < 1) ? 1 : n}')"
+  omega_table "r0e" "$ent" "$OMEGA_L"
+  for run in seedA seedB; do
+    q_reorder $OMEGA_NS_MID mid1 "$RUN/tables" r0e REL "$dt" "$g" 42 >/dev/null 2>&1 || return 1
+    omega_cap $OMEGA_NS_SRV srv0 "$r0/seed-$run.pcap"; e="$OMEGA_LASTPID"
+    omega_sleep "${OMEGA_SETTLE_S:-0.5}"
+    omega_bg $OMEGA_NS_MID "$r0/seed-$run.out" "${OMEGA_PYTHON:-python3}" -I "$PROBE" 10.77.2.2 "$g" "${OMEGA_R0_S:-2}" "$r0/seed-$run.send"; pr_pid="$OMEGA_LASTPID"
+    wait "$pr_pid" 2>/dev/null
+    omega_sleep "${OMEGA_SETTLE_S:-0.5}"
+    omega_stop_pid "$e"
+    nsx $OMEGA_NS_SRV tcpdump -nn -tt -v -r "$r0/seed-$run.pcap" > "$r0/seed-$run.txt" 2>/dev/null
+    # the probe's own send log is the pre side; selected = packets delayed by more than dt/2
+    cp "$r0/seed-$run.send" "$r0/seed-$run.pre"
+    ids="$($PY "$HERE/omega_parse.py" selected REL "$dt" "$r0/seed-$run.pre" "$r0/seed-$run.txt")"
+    if [ "$run" = seedA ]; then ids1="$ids"; else ids2="$ids"; fi
+  done
+  [ -n "$ids1" ] && [ "$ids1" = "$ids2" ]
+}
+
 ROWSF="$RUN/rows.txt"
 OMEGA_SEED_OK="${OMEGA_SEED_OK:-1}"
-if [ "$SESSION" = R ] && [ "$REHEARSAL" != 1 ]; then
+if [ "$SESSION" = R ]; then
   omega_r0
-  omega_tunnel_measure || true
+  if [ "$REHEARSAL" = 1 ]; then
+    omega_tunnel_measure || omega_abort ABORT-BUILD "rehearsal: the tunnel bring-up or the standing-queue measurement failed (needs OMEGA_BIN and OMEGA_BIN_SHA)"
+  else
+    omega_tunnel_measure || true
+  fi
   omega_note "STEP tunnel-measure-done"
   topo_up || omega_abort ABORT-TOOLS "the topology did not come back after the tunnel measurement"
   sysctl_apply $OMEGA_NS_CLI >/dev/null && sysctl_apply $OMEGA_NS_SRV >/dev/null || omega_abort ABORT-SYSCTL "stack D after the tunnel measurement"

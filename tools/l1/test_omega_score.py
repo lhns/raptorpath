@@ -215,9 +215,14 @@ check("Bulk: every hold idles the link -> RENT-UNDERPRICED-Bulk-beyond", "RENT-U
 # failure paths: truncated, footerless, rehearsal, missing, void, under-min, too few configurations
 o, p = run(allq(spec_default()), state="TRUNCATED-D1")
 t = text(o)
-check("truncated ledger: TRUNCATED, no c, omega, outcome or PASS", "TRUNCATED" in t and "OMEGA" not in t and "RENT-" not in t and "PASS" not in t and "DELIVERED" not in t and o["exit"] == 2 and "cH" not in json.dumps(o.get("pairs", {})), t)
-o, p = run(allq(spec_default()), state=None)
-check("footerless ledger is treated as truncated", "TRUNCATED no footer" in text(o) and o["exit"] == 2, text(o))
+check("truncated ledger with enough reps is scored at its n, every result line marked, never DELIVERED, never PASS",
+      "OMEGA_1" in t and o["measurement"] == "TRUNCATED-D1" and "DELIVERED" not in t and "PASS" not in t and o["exit"] == 0
+      and all("[TRUNCATED-D1 n_reached=8..8" in l for l in o["lines"][1:]) and o["lines"][0].startswith("TRUNCATED-D1 n_reached"), t)
+o, _ = run(allq(spec_default()), state="TRUNCATED-D1", reps=3)
+t = text(o)
+check("truncated ledger under the live-rep minimum reads UNSCOREABLE, no omega, no zone verdict", "UNSCOREABLE" in t and "OMEGA_1" not in t and "DELIVERED" not in t and o["exit"] == 2 and o["pairs"]["g1000-rtt10-Qt/k_a=3"]["om1"] is None, t)
+o, _ = run(allq(spec_default()), state=None)
+check("footerless ledger is not scored (a crash is not a truncation)", "no footer" in text(o) and "OMEGA_1" not in text(o) and o["exit"] == 2, text(o))
 os.makedirs(os.path.join(os.path.dirname(p), "x"), exist_ok=True)
 o, _ = run(allq(spec_default()), header={"rehearsal": True})
 check("a rehearsal ledger is never scored", "REHEARSAL-NOT-SCORED" in text(o) and o["exit"] == 2)

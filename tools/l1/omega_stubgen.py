@@ -72,14 +72,17 @@ def row_capture(path):
 
 def r0_capture(path):
     base = os.path.basename(path)[:-5]
-    g, mode, k = base.split("-")
-    g, k = int(g), int(k)
+    if base.startswith("seed-"):             # the seed check: REL at 1000/s, k = 3; STUB_SEED_DIFFER makes the second run select other packets
+        mode, g, k, shift = "REL", 1000, 3, (1 if os.environ.get("STUB_SEED_DIFFER") and base.endswith("seedB") else 0)
+    else:
+        g, mode, k = base.split("-")
+        g, k, shift = int(g), int(k), 0
     dt = (k + 0.5) / g
     sent = [l.split() for l in open(path[:-5] + ".send") if l.strip()]
     e0 = float(sent[0][0])
     period = max(1, int(round(g * 0.1)))
     bad = os.environ.get("STUB_R0_BAD")
-    sel = {int(i): float(t) for i, (t, ident) in enumerate(sent) if mode != "CLEAN" and i % period == period // 2 and float(t) > e0 + 0.05}
+    sel = {int(i): float(t) for i, (t, ident) in enumerate(sent) if mode != "CLEAN" and i % period == (period // 2 + shift) % period and float(t) > e0 + 0.05}
     times = [float(t) for t, _ in sent]
     if mode == "HOLD":
         pt = hold_posts(times, set(sel), dt, g)
