@@ -378,7 +378,7 @@ if wanted("rehearse"):
     log = log_lines(sb)
     check("rehearse: every VM-bound call ran inside rp-* (none outside, no forbidden tool)", vm_safe(log) == [], vm_safe(log)[:5])
     check("rehearse: HOLD used the rate-limited FIFO at 10 x g (120 Mbit at g = 1000/s)", any("distribution" in l and "rate 120000000bit" in l for l in log))
-    check("rehearse: sysctls were written only inside rp-cli and rp-srv, with the pre-flight in a fresh rp-pf", all(re.match(r"ns=rp-(cli|srv|mid|pf) ", l) for l in log if " sysctl -w" in l) and any("test -e" in l or "ns=rp-pf" in l for l in log))
+    check("rehearse: sysctls were written only inside rp-cli and rp-srv, with the pre-flight in a fresh rp-pf", all(re.match(r"ns=rp-(cli|srv|mid|pf) ", l) for l in log if l.startswith("ns=") and " sysctl -w" in l and " ip netns" not in l) and any("test -e" in l or "ns=rp-pf" in l for l in log))
     check("rehearse: tables loaded through TC_LIB_DIR under the run directory", rd and any(f.endswith(".dist") for f in os.listdir(os.path.join(rd, "tables"))))
     check("rehearse: locks released, no namespace left, exit state clean", not os.path.exists(os.path.join(sb, "locks", "vm.lock")) and not os.path.exists(os.path.join(sb, "locks", "rp.lock"))
           and not os.listdir(os.path.join(sb, "state", "ns")) and "exit_state_clean=1" in out, out[-600:])

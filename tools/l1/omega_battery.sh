@@ -114,6 +114,12 @@ omega_row() { # cfg arm rep half stage
   # stop by recorded PID: iperf3 gets TERM (a background job ignores SIGINT; iperf3 handles TERM like INT and prints the interval JSON), the rest TERM too
   kill -TERM "$cpid" 2>/dev/null || true; wait "$cpid" 2>/dev/null || true
   omega_stop_pid "$srvpid"; omega_stop_pid "$mpid"; omega_stop_pid "$ppid"; omega_stop_pid "$spid"
+  if [ "$nofill" = 1 ] && [ ! -s "$rdir/backlog.txt" ]; then
+    # no backlog readout at all: the witness is missing, which is not a NO_FILL (a queue that never filled)
+    [ "$stage" != smoke ] || { omega_note "ABORT-SMOKE $rid: the backlog sampler read nothing (tc counters absent)"; return 11; }
+    echo "{\"kind\":\"row\",\"cfg\":\"$cfg\",\"arm\":\"$arm\",\"armkind\":\"$kind\",\"label\":\"$label\",\"rep\":$rep,\"seedhalf\":$half,\"stage\":\"$stage\",\"session\":\"$SESSION\",\"status\":\"VOID-WITNESS\",\"witness\":{}}" >> "$LEDGER"
+    omega_note "VOID-WITNESS $rid (no backlog readout)"; rm -f "$rdir"/*.pcap; return 0
+  fi
   if [ "$nofill" = 1 ]; then
     echo "{\"kind\":\"row\",\"cfg\":\"$cfg\",\"arm\":\"$arm\",\"armkind\":\"$kind\",\"label\":\"$label\",\"rep\":$rep,\"seedhalf\":$half,\"stage\":\"$stage\",\"session\":\"$SESSION\",\"status\":\"NO_FILL\",\"witness\":{\"warm_ok\":false}}" >> "$LEDGER"
     omega_note "NO_FILL $rid samples=$(wc -l < "$rdir/backlog.txt") B=$B"; rm -f "$rdir"/*.pcap; return 0
@@ -121,7 +127,7 @@ omega_row() { # cfg arm rep half stage
   # digest
   nsx "$PRE_NS" tcpdump -nn -tt -v -r "$rdir/pre.pcap" > "$rdir/pre.txt" 2>/dev/null
   nsx "$POST_NS" tcpdump -nn -tt -v -r "$rdir/post.pcap" > "$rdir/post.txt" 2>/dev/null
-  wj="$($PY "$HERE/omega_parse.py" witness "$kind" "$g" "$limit" "$rdir/tc-before-ro.txt" "$rdir/tc-after-ro.txt" "$rdir/tc-before-cli0.txt" "$rdir/tc-after-cli0.txt")"
+  wj="$($PY "$HERE/omega_parse.py" witness "$kind" "$g" "$([ "$cfg" = T ] && echo 0 || echo "$limit")" "$rdir/tc-before-ro.txt" "$rdir/tc-after-ro.txt" "$rdir/tc-before-cli0.txt" "$rdir/tc-after-cli0.txt")"
   meta="$rdir/meta.json"
   $PY -c '
 import json, sys

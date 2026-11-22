@@ -400,7 +400,7 @@ def witness_of(kind, g, limit, mid_before, mid_after, bot_before, bot_after):
         else:
             w["reorderer_in_force"] = "prio" in c or "netem" in c
     if "conf" in ba:
-        w["bottleneck_in_force"] = "netem" in ba["conf"] and "rate" in ba["conf"] and ("limit %d" % limit) in ba["conf"]
+        w["bottleneck_in_force"] = "netem" in ba["conf"] and "rate" in ba["conf"] and (limit == 0 or ("limit %d" % limit) in ba["conf"])   # limit 0: stage T, the tunnel's own underlay queue
     return w
 
 
