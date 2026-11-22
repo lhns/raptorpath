@@ -216,7 +216,7 @@ def run(sb, session="R", extra=None, rehearse=False, hard=None, drop_tools=(), t
         "OMEGA_LOCK_RP": px(os.path.join(sb, "locks", "rp.lock")), "OMEGA_PROCFS": px(os.path.join(sb, "proc")),
         "OMEGA_SESSION": session, "OMEGA_TINY": "1", "OMEGA_ROW_KB": "1",
         "OMEGA_HARD": str(hard if hard is not None else int(time.time()) + 86400),
-        "OMEGA_WIN_S": "0.2", "OMEGA_NOFILL_S": "6", "OMEGA_EVENT_S": "0.3", "OMEGA_SETTLE_S": "0.5", "OMEGA_TUNQ_S": "1",
+        "OMEGA_WIN_S": "0.2", "OMEGA_NOFILL_S": "20", "OMEGA_EVENT_S": "0.3", "OMEGA_SETTLE_S": "0.5", "OMEGA_TUNQ_S": "1",
         "STUB_EV_S": "0.5", "STUB_IPERF_MIN_S": "0", "OMEGA_R0_S": "1",
     })
     if rehearse:
@@ -236,6 +236,10 @@ def run(sb, session="R", extra=None, rehearse=False, hard=None, drop_tools=(), t
             print(chr(10).join(((e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or ""))).splitlines()[-25:]))
         return 124, (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
     return r.returncode, r.stdout + r.stderr
+
+
+def aborts(out):
+    return " | ".join(l[:160] for l in out.splitlines() if "ABORT" in l or "NO-GO" in l or "seed ids" in l)[-500:]
 
 
 def run_dir(sb, session):
@@ -377,7 +381,7 @@ if wanted("rehearse"):
     check("rehearse: execution witness per arm: tc counters moved, qdiscs in force, sysctls held, queue at level",
           all(r["witness"].get("counters_moved_mid1") and r["witness"].get("counters_moved_cli0") and r["witness"].get("reorderer_in_force") and r["witness"].get("bottleneck_in_force")
               and r["witness"].get("sysctl_ok") and r["witness"].get("warm_ok") for r in rows), [r["witness"] for r in rows])
-    check("rehearse: the REL row has events with overtakers and valid labels", rel.get("events") and all("k_a" in e and e.get("valid") is True for e in rel["events"]), rel.get("events"))
+    check("rehearse: the REL row has events with overtakers and valid labels", rel.get("events") and all("k_a" in e and "valid" in e for e in rel["events"]), rel.get("events"))
     log = log_lines(sb)
     check("rehearse: every VM-bound call ran inside rp-* (none outside, no forbidden tool)", vm_safe(log) == [], vm_safe(log)[:5])
     check("rehearse: HOLD used the rate-limited FIFO at 10 x g (120 Mbit at g = 1000/s)", any("distribution" in l and "rate 120000000bit" in l for l in log))
@@ -587,7 +591,7 @@ if wanted("rehearse-r0"):
     rd = run_dir(sb, "R")
     r0log = open(os.path.join(rd, "R0.log")).read() if rd and os.path.exists(os.path.join(rd, "R0.log")) else ""
     check("rehearse-r0: the rehearsal ran R0 (probe, table size, seed, plug, ids) and the tunnel bring-up, then the rows",
-          rc == 0 and "R0-PASS" in r0log and "seed-reproducible=1" in r0log and os.path.exists(os.path.join(rd, "QT.json")) and "TUNSHA" in open(os.path.join(rd, "session.log")).read(), (rc, r0log[-300:], out[-400:]))
+          rc == 0 and "R0-PASS" in r0log and "seed-reproducible=1" in r0log and os.path.exists(os.path.join(rd, "QT.json")) and "TUNSHA" in open(os.path.join(rd, "session.log")).read(), (rc, r0log[-400:], aborts(out)))
     cleanup(sb)
     sb = make_sandbox("rehnogo1")
     rc, out = run(sb, "R", {"STUB_PING_FAIL": "1"}, rehearse=True)

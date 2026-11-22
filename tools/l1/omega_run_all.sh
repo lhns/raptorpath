@@ -309,6 +309,7 @@ omega_seed_check() { # g tabledir
     ids="$($PY "$HERE/omega_parse.py" selected REL "$dt" "$r0/seed-$run.pre" "$r0/seed-$run.txt")"
     if [ "$run" = seedA ]; then ids1="$ids"; else ids2="$ids"; fi
   done
+  echo "R0-TOOL seed ids: A=$(echo "$ids1" | cut -c1-60) B=$(echo "$ids2" | cut -c1-60)" | tee -a "$RUN/R0.log"
   [ -n "$ids1" ] && [ "$ids1" = "$ids2" ]
 }
 
