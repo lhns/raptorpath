@@ -1381,8 +1381,10 @@ def score67g(paths, out=print, which="g1"):
     why = []
     if aborted:
         why.append("UNSCOREABLE (abort " + ",".join(aborted) + ")")
-    if res["gate"] != "PASS" and not (unsc and res["gate"] == "NO VERDICT"):      # an empty S2 set is named below; score41d's NO VERDICT for it is not a second cause
+    if res["gate"] != "PASS" and not (unsc and res["gate"] == "NO VERDICT"):      # an empty S2 set is named below; score41d's NO VERDICT for it is not a FAIL
         why.append("GATE-41d " + ("NO VERDICT, re-run" if res["gate"] == "NO VERDICT" else res["gate"]))
+    if unsc and res["gate"] == "NO VERDICT":      # still named, so a second cause of score41d's NO VERDICT (e.g. too many voided slots) is not hidden: its reason is in score41d's output above
+        unsc = unsc + ["score41d also reads NO VERDICT (its reason is printed above)"]
     if dnf_ne:
         why += [f"S06-DNF-RULE NOT EVALUATED {c} (no live S1 rows)" for c in dnf_ne]
     if s06 or dnf06:
