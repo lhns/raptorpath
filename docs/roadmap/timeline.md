@@ -349,6 +349,7 @@ gantt
     Fix the lost tail, re-derive the hold :active, model_tail_and_hold, 2026-11-22, 2026-11-23
     Owner call - last copy, ack pairs :model_adr84_amend2, 2026-11-21, 2026-11-21
     Owner call - sender side first :model_adr84_sender_first, 2026-11-21, 2026-11-21
+    Three application knobs (lifetime T, de… :active, model_three_knobs, 2026-11-23, 2026-11-23
     The ordering hold H_o(δ) for design U :model_ordering_hold, 2026-11-21, 2026-11-23
     How long the floor pass waits :active, model_floor_hold, 2026-11-21, 2026-11-23
     section obs - observability
