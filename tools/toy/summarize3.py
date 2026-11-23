@@ -210,13 +210,12 @@ def ident():
                 print("DIFF P2a", cell, s, (d + dg)[:3])
             else:
                 ok1 += 1
-            h = R(cell, gname(0.4, 0.0), s)
-            if h["hol_sum_nonhole"] == 0.0 and h["v_p50"] == 0.0:
+            if all(R(cell, gname(T_, 0.0), s)["hol_sum_nonhole"] == 0.0 and R(cell, gname(T_, 0.0), s)["v_p50"] == 0.0 for T_ in (0.4, 2.0, INF)):
                 ok2 += 1
             else:
                 p2bad += 1
-                print("DIFF P2b", cell, s, h["hol_sum_nonhole"], h["v_p50"])
-        print("- %s: RH(inf) = R1 on every readout and gauge in %d/12 seeds; RH(0) has hol_sum_nonhole = 0 and v_p50 = 0 in %d/12" % (cell, ok1, ok2))
+                print("DIFF P2b", cell, s)
+        print("- %s: RH(inf) = R1 on every readout and gauge in %d/12 seeds; RH(0) has hol_sum_nonhole = 0 and v_p50 = 0 at T = 0.4, 2 and inf in %d/12" % (cell, ok1, ok2))
     print("\nP1 seed-level diffs: %d of %d; trace diffs: %d; P2 diffs: %d" % (bad, n, tbad, p2bad))
     return bad + tbad + p2bad
 

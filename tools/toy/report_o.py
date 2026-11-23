@@ -23,13 +23,14 @@ def main():
             continue
         p("| %s | %d | %s |" % (lab, len(ss), " | ".join(f % (S.mean(CELL, a, k) * sc) for k, _, f, sc in cols)))
     p("")
-    for a, lab in (("G-T0p4-H0", "S2 T=0.4 H=0"), ("S2p", "S2p H=inf"), ("S2p-H0", "S2p H=0 (unregistered)")):
+    for a, lab, reg in (("G-T0p4-H0", "S2 T=0.4 H=0 (the registered arm)", True), ("S2p", "S2p H=inf (not registered for P11)", False),
+                        ("S2p-H0", "S2p H=0 (unregistered)", False)):
         ss = S.seeds_of(CELL, a)
         if not ss:
             continue
         v = np.asarray([S.R(CELL, a, s)["share_T"] for s in ss])
-        p("- P11, %s: share_T per seed min %.4f, mean %.4f, max %.4f (prediction < 0.2): **%s**" % (
-            lab, v.min(), v.mean(), v.max(), "PASS" if v.max() < 0.2 else "FAIL"))
+        verdict = ("**%s**" % ("PASS" if v.max() < 0.2 else "FAIL")) if reg else ("below 0.2: %s (value only, not a reading)" % ("yes" if v.max() < 0.2 else "no"))
+        p("- P11, %s: share_T per seed min %.4f, mean %.4f, max %.4f; prediction < 0.2: %s" % (lab, v.min(), v.mean(), v.max(), verdict))
     ss = S.seeds_of(CELL, "G-T0p4-H0")
     if ss:
         g = S.R(CELL, "G-T0p4-H0", ss[0])["gauges"]

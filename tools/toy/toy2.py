@@ -43,6 +43,12 @@ def resend_admissible(T, age, x):
     return age + x < T
 
 
+def within_lifetime(T, age):
+    """L3 readout (three-knobs.md 2.3, 9.2): which delivered units arrived with age <= T.  A measurement, never a branch; named
+    here so that the deny test keeps T out of every other comparison.  The third place T is compared (worker decision)."""
+    return age <= T
+
+
 def delta_at_b(b):
     return DELTA_AUTO * 10.0 ** (-2.0 * math.log2(b))
 
@@ -1016,7 +1022,7 @@ class Sim:
         w = age - c.owd
         out.update(
             units=units, intake_expired=self.intake_expired, share_any=delivered / max(units, 1),
-            share_T=int(np.less_equal(age, c.T).sum()) / max(units, 1),      # readout, not a branch (np.less_equal: no Compare on T)
+            share_T=int(within_lifetime(c.T, age).sum()) / max(units, 1),
             share_by_0p4=int((age <= 0.4).sum()) / max(units, 1), share_by_2=int((age <= 2.0).sum()) / max(units, 1),
             w_mean=float(w.mean()) if len(w) else float("nan"),
             w_p50=float(np.percentile(w, 50)) if len(w) else float("nan"),

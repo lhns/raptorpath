@@ -334,8 +334,8 @@ class Receivers(unittest.TestCase):
 
 
 DIALS = {"rho", "delta", "hint", "T", "Hk"}
-# HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions are the only places T is compared (three-knobs.md 9.2)
-EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible"}
+# HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions (three-knobs.md 9.2) and the share_T readout are the only places T is compared
+EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime"}
 
 
 def _names(node):
@@ -377,6 +377,12 @@ class DenyTest(unittest.TestCase):
         self.assertTrue(deny_scan("def plantish(cfg):\n    return cfg.delta < 1\n"))
         self.assertFalse(deny_scan("def plant_scale(cfg):\n    return cfg.delta < 1\n"))     # exempt by name only
         self.assertFalse(deny_scan("def k(cfg):\n    return max(0.5, min(2.0, cfg.delta))\n"))   # arithmetic is fine
+
+    def test_stage3_positive_controls(self):
+        self.assertTrue(deny_scan("def f(c):\n    return c.T < 1\n"))                         # three-knobs.md 9.2 test 6
+        self.assertTrue(deny_scan("def f(c):\n    return c.Hk == 0\n"))
+        self.assertFalse(deny_scan("def intake_expired_fn(T, age):\n    return age >= T\n"))   # the named law functions are exempt
+        self.assertTrue(deny_scan("def other(T, age):\n    return age >= T\n"))
 
 
 
