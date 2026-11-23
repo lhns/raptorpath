@@ -8,6 +8,13 @@ CELL = "O-I2"
 
 
 def main():
+    global CELL
+    for CELL, lab in (("O-I2", "10 s overload, 2 000 000 units"), ("O3-I2", "3 s overload, 600 000 units (C1 at 10 s did not finish)")):
+        p("**%s: %s**\n" % (CELL, lab))
+        one()
+
+
+def one():
     arms = [("C1 today's receiver, rho = 0.99", "C1"), ("S2 T=0.4 H=0 (P11 arm)", "G-T0p4-H0"), ("S2 T=0.4 H=inf", "G-T0p4-Hinf"),
             ("S2p T=0.4 H=inf (verdicted seqs stay in the outstanding count)", "S2p"),
             ("S2p T=0.4 H=0 (unregistered)", "S2p-H0")]
@@ -29,7 +36,7 @@ def main():
         if not ss:
             continue
         v = np.asarray([S.R(CELL, a, s)["share_T"] for s in ss])
-        verdict = ("**%s**" % ("PASS" if v.max() < 0.2 else "FAIL")) if reg else ("below 0.2: %s (value only, not a reading)" % ("yes" if v.max() < 0.2 else "no"))
+        verdict = ("**%s**" % ("PASS" if v.max() < 0.2 else "FAIL")) if (reg and CELL == "O-I2") else ("below 0.2: %s (value only, not a reading)" % ("yes" if v.max() < 0.2 else "no"))
         p("- P11, %s: share_T per seed min %.4f, mean %.4f, max %.4f; prediction < 0.2: %s" % (lab, v.min(), v.mean(), v.max(), verdict))
     ss = S.seeds_of(CELL, "G-T0p4-H0")
     if ss:

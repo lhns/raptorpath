@@ -143,14 +143,14 @@ def build():
                 J(part_main, "SW-%s" % tag(T), lambda s, cell=cell, T=T: new_cfg(cell, s, T, 0.0))
 
 
-def add_overload(rate, dur=10.0):
-    """O-I2: cell I2 at `rate` units/s for `dur` s; T = 0.4, H = 0 against C1."""
-    O_CELL["O-I2"] = ("I2", dict(owd=0.005, rate=rate, n_total=int(rate * dur), t_limit=dur + 30.0))
-    job("O", "O-I2.C1", lambda s: cmp_cfg("O-I2", "C1", s))
-    job("O", "O-I2.%s" % gname(0.4, 0.0), lambda s: new_cfg("O-I2", s, 0.4, 0.0))
-    job("O", "O-I2.%s" % gname(0.4, INF), lambda s: new_cfg("O-I2", s, 0.4, INF))
-    job("O", "O-I2.S2p", lambda s: new_cfg("O-I2", s, 0.4, INF, o_excl_verdict=False))
-    job("O", "O-I2.S2p-H0", lambda s: new_cfg("O-I2", s, 0.4, 0.0, o_excl_verdict=False))     # unregistered: S2p with the P11 arm's H
+def add_overload(rate, dur=10.0, name="O-I2", part="O"):
+    """O-I2: cell I2 at `rate` units/s for `dur` s; T = 0.4, H = 0 against C1.  O3-I2 is the same at 3 s (C1 at 10 s did not finish)."""
+    O_CELL[name] = ("I2", dict(owd=0.005, rate=rate, n_total=int(rate * dur), t_limit=dur + 30.0))
+    job(part, "%s.C1" % name, lambda s: cmp_cfg(name, "C1", s))
+    job(part, "%s.%s" % (name, gname(0.4, 0.0)), lambda s: new_cfg(name, s, 0.4, 0.0))
+    job(part, "%s.%s" % (name, gname(0.4, INF)), lambda s: new_cfg(name, s, 0.4, INF))
+    job(part, "%s.S2p" % name, lambda s: new_cfg(name, s, 0.4, INF, o_excl_verdict=False))
+    job(part, "%s.S2p-H0" % name, lambda s: new_cfg(name, s, 0.4, 0.0, o_excl_verdict=False))     # unregistered: S2p with the P11 arm's H
 
 
 def fname(name, seed):
@@ -209,6 +209,8 @@ def main():
     a = ap.parse_args()
     if "O" in a.part.split(","):
         add_overload(a.orate)
+    if "O3" in a.part.split(","):
+        add_overload(a.orate, 3.0, "O3-I2", "O3")
     names = [n for n, (p, _) in JOBS.items() if p in a.part.split(",") and n.startswith(a.only)]
     if a.list:
         print(len(names), "configurations")

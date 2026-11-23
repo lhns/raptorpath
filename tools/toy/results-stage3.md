@@ -8,7 +8,7 @@ Spec: `docs/derivations/three-knobs.md` §9 (registration), §11 (Amendment 1), 
 - **The new design is a limit of today's receiver, exactly.** At T = infinity (and at T = 1e6 s) with the order hold at infinity it is bit-identical to today's receiver at rho = 1 on 20 readouts and on the sender trace, in all 6 cells and 12 seeds (P1). At H = infinity it equals the strict-order receiver on every readout, at H = 0 nothing is ever held (P2).
 - **A call (T = 0.4 s, H = 0) against today's Realtime receiver:** in the call cells it delivers 98.2 % (5 ms path) and 98.0 % (50 ms path) of the frames at all, against 99.5 % and 99.1 % for today's receiver. All of the difference is the 1.5 s outage: today's receiver fills those frames seconds late. In exchange the mean wait beyond the loss-free arrival (w) falls from 17.2 to 2.8 ms and from 47.8 to 14.6 ms, the 99th percentile from 765 to 34 ms and from 959 to 214 ms, total consumer stall from 0.52 s to 0 and from 19.3 s to 0, and repair traffic falls from 0.65 to 0.36 and from 0.31 to 0.20 resends per delivered frame. Outside the outage window it delivers 100.0 % and 99.97 % within 0.4 s, against 99.7 % and 99.2 %. Cost: 3.0 % (5 ms path) and 10.4 % (50 ms path) of delivered frames arrive out of order, against 2.4 % and 6.3 % today.
 - **The outage cells are where the design gives up on purpose.** At T = 0.4 s it delivers 97.1 % of the object in the end-outage cells (the 347 frames sent into the outage are given up) and finishes 0.26 s sooner at 50 ms (1.58 s against 1.83 s), but only 39 to 40 % in the mid-stream outage, against 99 to 100 % for every receiver that never gives up (Q10 in the spec).
-- **Where the registration was wrong, it is reported as wrong** (P4, P5 bullets 3 and 4, P10 at 50 ms, P11), with the cause where it was found. Nothing was tuned.
+- **Where the registration was wrong, it is reported as wrong** (P4, P5 bullets 3 and 4, P10 at 50 ms, P11), and C1 at the 10 s overload did not finish (3 s repetition in its place), with the cause where it was found. Nothing was tuned.
 
 ## Readings (P1 to P11)
 
@@ -24,7 +24,7 @@ Spec: `docs/derivations/three-knobs.md` §9 (registration), §11 (Amendment 1), 
 | P8 | **bullets 1 to 4 PASS; bullet 5 passes on its number, its stated reason is not seen** | outside the outage window share_by_0p4 S2 minus C1 = +0.0027 (I2), +0.0081 (L10), shown larger; v_mean S2 minus C1 = -14.4 ms and -33.2 ms (shown smaller); ooo H = 0 minus H = inf = +0.030 and +0.104 (shown larger); stall_total at H = 0 is 0 in all seeds; stall_p99 S2 H = inf is at most 0.213 s (I2) and 0.609 s (L10), but C2's stall_p99 is 0.039 s and 0.398 s on average, not at least the outage: the longest single stall is 1.53 s and 1.92 s for both C2 and S2 at H = inf |
 | P9 | **PASS, one reading undetermined** | share_T equivalent in 11 of 12 (cell, H) rows, E-L10 at H = inf undetermined (+0.0017 [0.0003, 0.0041] against m = 0.0013: the copy resolves the hole ahead of the floor pass and the units queued behind it get through sooner); share_any not shown smaller anywhere; repair per delivered minus verdicts per delivered has residual below 6e-4 in every cell and seed (the readings are "equivalent" even at the tight outage-cell bars; the call-cell bar of 0.19 is vacuous, the residuals are the evidence) |
 | P10 | **PASS in E and M; FAIL at K-L10 T = 0.10 as stated, a denominator effect** | E and M: floors per delivered below C2's by 0.018 to 0.039 (shown smaller); K-L10 H = 0: 0.228 at T = 0.10 and 0.1755 at T = 0.14 per delivered frame against the registered 0.2. Per frame handed over it is 0.2001 and 0.154: the registered number divides by handed over, the readout by delivered (87.7 % at that T) |
-| P11 | **FAIL, and the cell does not test overload for this arm** | S2 (T = 0.4, H = 0) share_T = 0.975 (0.9747 to 0.9751 over seeds) against < 0.2. See the O-I2 block |
+| P11 | **FAIL, and the cell does not test overload for this arm** | S2 (T = 0.4, H = 0) share_T = 0.975 (0.9747 to 0.9751 over seeds) against < 0.2. C1 at 10 s did not finish; at 3 s C1 delivers 55.7 % within 0.4 s against 98.6 % for S2 at H = 0. See the O-I2 block |
 
 ## Worker decisions (every reading of an ambiguity or a choice not fixed by the spec)
 
@@ -41,7 +41,7 @@ Spec: `docs/derivations/three-knobs.md` §9 (registration), §11 (Amendment 1), 
 11. **P5's "rise to 90 % of the T = 0.4 value" has two readings, both reported.** Reading A: 90 % of the T = 0.4 level (grid point and linear interpolation). Reading B: 90 % of the rise above the lowest-T level. At K-I2 reading A is degenerate (the lowest-T level 0.946 is already above 0.9 x 0.9815 = 0.883). A third, descriptive reading (mid-level crossing of the first step) is labelled "not registered".
 12. **P8, P10 and P9 readings.** P8's outside-window shares come from the per-unit record (units handed over before 19.6 s or from 21.5 s on; the outage is 20.0 to 21.5 s). "C2's stall" in P8 bullet 5 was read as C2's stall_p99, with the longest single episode reported next to it from `diag3.py`. P10's K-L10 reading is on seed means (and the max over seeds is shown). P9's "higher by verdicts/delivered" is the per-seed residual `repair(S2c) - repair(S2) - verdicts/delivered` read against the bar.
 13. **P7 and the S2 arm.** "S2 at T = 0.4" in E and M readings means H = infinity (the strict receiver); H = 0 and H = 0.02 are in the tables.
-14. **Overload cell capacity.** The offline simulation has no link rate limit; the only throttle is the pause at B = 2048 outstanding. I took "the link's capacity" to be the sustained send rate that pause allows: 166 640 units/s for C3 at cell I2 (measured at an offered rate of 10^7 per second over frames 100 000 to 700 000). The offered load is 200 000 per second (1.2 x) for 10 s, 2 000 000 units. C1 costs about 1 ms per unit (the early-skip receiver rescans its buffer), so each C1 run took about 40 minutes; all 12 ran in parallel.
+14. **Overload cell capacity.** The offline simulation has no link rate limit; the only throttle is the pause at B = 2048 outstanding. I took "the link's capacity" to be the sustained send rate that pause allows: 166 640 units/s for C3 at cell I2 (measured at an offered rate of 10^7 per second over frames 100 000 to 700 000). The offered load is 200 000 per second (1.2 x) for 10 s, 2 000 000 units. C1 (the early-skip receiver rescans its buffer) costs about 1.1 to 1.3 ms per unit and grows slightly faster than linearly (54, 122 and 257 s at 50 000, 100 000 and 200 000 units), so C1 at 2 000 000 units did not finish: the 12 parallel runs were stopped after about 75 minutes and 4 100 CPU seconds each, and the O-I2 table shows C1 as not run. To keep the comparison against C1, the whole cell was repeated at 3 s (600 000 units, same rate and arms) as O3-I2; that is a worker addition, not registered.
 15. **Runs and storage.** 12 seeds ran as parallel processes over disjoint seed windows; run order was tests, P1/P2 identity arms in all cells, the call-cell A/A (frozen), the call cells, the outage cells, then O-I2. The per-run JSON drops the three long per-tail-seq lists of the stage 2 readouts; `tail_*` fields count seqs from `dead[0]`, which is not meaningful for arms that expire units. `finish` for a run that never completes is counted at the run limit.
 16. **Unregistered arms and diagnostics, all labelled where used.** `REP` (A/A variants 2 and 3), `S2p-H0` in O-I2, and `diag3.py` (A/A replication, tail delivery ages, longest stall episodes, resend origin, floors per unit, A/A residuals). None changes a reading.
 17. **Bit-identity of stages 1 and 2.** Both existing suites pass unchanged, and 34 stage 2 configurations (every sender and receiver of stages 1 and 2, three cells, streaming and object mode, traces included) give identical output between the stage 2 commit and this one on every key of the old output (checked once with a throwaway script, not committed).
@@ -354,6 +354,8 @@ Bar m = max(T bar, A/A noise floor of the readout); the stage-3 A/A is a two-arm
 
 Cell I2, 200 000 units per second for 10 s (2 000 000 units; 1.2 x the 166 640 per second that the pause at B = 2048 allows a never-give-up sender, worker decision 14), T = 0.4 s, 12 seeds. The cell was registered to show that expiring from the head makes every sent unit arrive after T (P11: share_T below 0.2 for S2 at H = 0).
 
+C1 at 10 s did not finish (worker decision 14); the O3-I2 table below repeats the cell at 3 s for all arms.
+
 **P11 is a miss: share_T = 0.975 for S2 at H = 0 (0.9747 to 0.9751 over seeds), not below 0.2, and for this arm the cell does not test overload.**
 
 - **Mechanism, seen in the gauges (seed 0: 1 662 345 pause events, 1 663 488 verdicts, 0 intake expiries) and in a 4 s probe of the send age.** The age of a unit when it is sent climbs from 0 to 0.385 s over the first 2.4 s and then stays at 0.385 s. At that age the per-seq verdict timer (at hand-over + T - owd = send age + 10 ms) fires before the frame's acknowledgement can return (one round trip is 10 ms plus the report delay), so the unit is verdicted while still in flight. With the L7 rule (verdicted seqs leave the outstanding count) the pause at 2048 outstanding then stops throttling and the sender runs at the full offered 200 000 per second, so the backlog never reaches T and nothing expires in the intake. This is the §2.2 "spurious verdict below about 1.5 round trips", seen from the other side: at overload it removes the only throttle the offline simulation has.
@@ -361,6 +363,10 @@ Cell I2, 200 000 units per second for 10 s (2 000 000 units; 1.2 x the 166 640 p
 - **H = infinity gives share_T = 0.16, but that comes from the receiver hold** (consumer stall 10.4 s in total), not from L1; share_any is 0.975 in both.
 - **With the L7 rule off (S2p) the registered worry shows up.** 328 583 units (16.4 % of the object) expire in the intake and share_any falls to 0.816. The units that are sent leave at age about 0.4 s and arrive after T: share_T is 0.167 at H = 0 (unregistered row) and 0.159 at H = infinity. That is a value for an arm P11 does not register, so it is not counted as a P11 pass. It does say that the collapse the spec describes is real for S2p and absent only because the L7 rule lifts the window.
 - **Consequence for Q11 (what to expire under overload):** with the L7 rule and the verdict timer, delay is pinned at about 0.385 s for every frame instead of share_T collapsing; whether that is wanted or a defect is for the owner. The coordinator should also rule whether this cell counts as "not run" for S2.
+
+- **O3-I2 (3 s, with C1).** Today's receiver (C1) delivers 99.7 % of the units eventually but only 55.7 % within 0.4 s (w mean 354 ms, p99 692 ms, 3.7 s of consumer stall). S2 at H = 0 delivers 98.6 % within 0.4 s (w mean 279 ms, p50 350 ms), the backlog having reached its pinned level at about 2.4 s. S2p (L7 off) expires 51 676 units (8.6 %) and delivers 55.5 % within 0.4 s at H = 0, so in the 3 s cell the collapse is partial (0.56, not below 0.2), because the backlog has been over T for only the last 0.6 s. The registered P11 reading is on the 10 s cell only.
+
+**O-I2: 10 s overload, 2 000 000 units**
 
 | arm | seeds | share any | share by own T | share by 0.4 | share by 2 | w mean ms | w p50 ms | w p99 ms | intake expired | finish s | stall total s |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -374,6 +380,21 @@ Cell I2, 200 000 units per second for 10 s (2 000 000 units; 1.2 x the 166 640 p
 - P11, S2p H=inf (not registered for P11): share_T per seed min 0.1567, mean 0.1588, max 0.1603; prediction < 0.2: below 0.2: yes (value only, not a reading)
 - P11, S2p H=0 (unregistered): share_T per seed min 0.1646, mean 0.1666, max 0.1677; prediction < 0.2: below 0.2: yes (value only, not a reading)
 - S2 H=0, seed 0: pause events 1662345, L2 verdicts 1663488, units 2000000, sent 2000000
+
+**O3-I2: 3 s overload, 600 000 units (C1 at 10 s did not finish)**
+
+| arm | seeds | share any | share by own T | share by 0.4 | share by 2 | w mean ms | w p50 ms | w p99 ms | intake expired | finish s | stall total s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| C1 today's receiver, rho = 0.99 | 12 | 0.9970 | 0.9970 | 0.5571 | 0.9970 | 354 | 354 | 692 | 0 | 0.71 | 3.70 |
+| S2 T=0.4 H=0 (P11 arm) | 12 | 0.9863 | 0.9861 | 0.9861 | 0.9863 | 279 | 350 | 386 | 0 | 0.42 | 0.00 |
+| S2 T=0.4 H=inf | 12 | 0.9863 | 0.5306 | 0.5306 | 0.9863 | 303 | 376 | 429 | 0 | 0.42 | 3.41 |
+| S2p T=0.4 H=inf (verdicted seqs stay in the outstanding count) | 12 | 0.9026 | 0.5293 | 0.5293 | 0.9026 | 297 | 346 | 446 | 51676 | 0.42 | 3.40 |
+| S2p T=0.4 H=0 (unregistered) | 12 | 0.9026 | 0.5552 | 0.5552 | 0.9026 | 275 | 320 | 401 | 51676 | 0.42 | 0.00 |
+
+- P11, S2 T=0.4 H=0 (the registered arm): share_T per seed min 0.9859, mean 0.9861, max 0.9864; prediction < 0.2: below 0.2: no (value only, not a reading)
+- P11, S2p H=inf (not registered for P11): share_T per seed min 0.5222, mean 0.5293, max 0.5345; prediction < 0.2: below 0.2: no (value only, not a reading)
+- P11, S2p H=0 (unregistered): share_T per seed min 0.5488, mean 0.5552, max 0.5592; prediction < 0.2: below 0.2: no (value only, not a reading)
+- S2 H=0, seed 0: pause events 270476, L2 verdicts 271853, units 600000, sent 600000
 
 
 ## Summary tables per cell
@@ -590,7 +611,7 @@ Reported gauges (mean per run) for the new arms:
 cd tools/toy
 python -m unittest test_toy test_toy2                       # stage 1, 2 and 3 tests (55)
 python batch3.py --part ID,AA,K,EM [--seed0 N --seeds M]    # resumable, one file per run in out3/ (ignored by git)
-python batch3.py --part O --orate 200000                    # overload cell (C1 takes about 45 minutes per seed)
+python batch3.py --part O,O3 --orate 200000                 # overload cells (C1 at 10 s does not finish; O3 is the 3 s repetition)
 python summarize3.py ident | freeze | K | EM | ALL | O | tables
 python diag3.py                                             # unregistered diagnostics
 ```
