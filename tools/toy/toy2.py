@@ -33,6 +33,16 @@ def b_of_delta(d):
     return max(0.5, min(2.0, 2.0 ** (-0.5 * math.log10(d / DELTA_AUTO))))
 
 
+def intake_expired_fn(T, age):
+    """L1 (three-knobs.md 2.1, 9.2): a unit that has outlived T is dropped at the intake.  One of the two places T is compared."""
+    return age >= T
+
+
+def resend_admissible(T, age, x):
+    """L2 (three-knobs.md 2.2, 9.2): a resend is worth sending only if it can arrive before T.  x = one-way delay."""
+    return age + x < T
+
+
 def delta_at_b(b):
     return DELTA_AUTO * 10.0 ** (-2.0 * math.log2(b))
 
@@ -40,8 +50,8 @@ def delta_at_b(b):
 @dataclass
 class Cfg:
     cell: str = "I1"
-    sender: str = "S1c"            # S0 | S1 (verdict, no copy; test only) | S1c
-    recv: str = "R1"               # R1 | U | R0e | HZ
+    sender: str = "S1c"            # S0 | S1 (verdict, no copy; test only) | S1c | S2 | S2c (stage 3: L1, L2; S2c adds a copy per verdict)
+    recv: str = "R1"               # R1 | U | R0e | HZ | RH (stage 3: hold Hk)
     seed: int = 0
     dur: float = 20.0
     rate: float = 10000.0
@@ -73,6 +83,9 @@ class Cfg:
     want_p4: bool = False
     check_p1: bool = True
     r0e_hold: str = "global"       # global: one hold re-read at drain time (reorder.rs:18,126,174); entry: fixed per entry at buffering (history)
+    T: float = math.inf            # stage 3: lifetime knob, seconds from hand-over (three-knobs.md 9.2)
+    Hk: float = math.inf           # stage 3: order hold knob, seconds from hole detection
+    o_excl_verdict: bool = True    # stage 3: L7, verdicted seqs leave the outstanding count (S2p sets False)
     recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
 
 
@@ -207,7 +220,8 @@ class Sim:
         else:
             self.dur = c.dur
             self.t_end = c.dur + c.grace
-        self.nmax = (c.n_total if c.n_total else int(c.dur * c.rate)) + 16
+        self.units_total = c.n_total if c.n_total else int(c.dur * c.rate)
+        self.nmax = self.units_total + 16
         self.B = c.pause_B
         self.sweep_P = min(max(2 * self.rtt, c.sweep_lo), c.sweep_hi)
         if c.phases is None:
@@ -243,6 +257,11 @@ class Sim:
         self.last_floor_t = -1e9
         self.floor_rep = {}
         self.src_next = 0.0
+        self.src_done = False
+        self.u_next = 0                              # next application unit (handed over at u * dt)
+        self.h_seq = [0.0] * self.nmax               # hand-over time of the unit each seq carries
+        self.intake_expired = 0
+        self.O_ctl = self.O_eff if c.sender in ("S2", "S2c") else self.O
         self.paused = False
         self.srtt = None
         # receiver state
@@ -280,7 +299,8 @@ class Sim:
         self.g = dict(verdicts=0, verdict_copies=0, floors=0, floor_rep=0, repair_sends=0, serves=0, refusals=0,
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
-                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0, late_floor=0, late_r0e=0)
+                      r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0, late_floor=0, late_r0e=0,
+                      l2_fail=0, rel_by_floor=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -322,6 +342,10 @@ class Sim:
     def O(self):
         return len(self.M_known) + max(0, self.n_sent - 1 - self.rhi_known)
 
+    def O_eff(self):
+        """L7 (three-knobs.md 2.8): verdicted seqs not yet passed by the ack leave the outstanding count (0 at T = inf)."""
+        return self.O() - (len(self.pending) if self.cfg.o_excl_verdict else 0)
+
     def H_now(self, now):
         if self.cfg.H_force is not None:
             return float(self.cfg.H_force)
@@ -354,6 +378,8 @@ class Sim:
             return plant_scale(self.cfg, self.cfg.omega * d / self.cfg.delta)
         if r == "HZ":
             return hz_hold(self.cfg)
+        if r == "RH":
+            return self.cfg.Hk                       # L6: release at t_detect + H; the floor pass is unchanged
         return None
 
     def fifo_note(self, a):
@@ -365,7 +391,18 @@ class Sim:
     # ---- source ---------------------------------------------------------------------------
     def emit(self, t):
         c = self.cfg
+        # L1 at the intake: units that have outlived T before they could be sent are dropped, never get a seq
+        while self.u_next < self.units_total and intake_expired_fn(c.T, t - self.u_next * self.dt):
+            self.intake_expired += 1
+            self.u_next += 1
+        if c.n_total and self.u_next >= self.units_total:        # streaming mode ends on nxt >= dur (float edge: stage 1 sends one more)
+            self.src_done = True
+            self.src_next = math.inf
+            self.advance(t)
+            return
         s = self.n_sent
+        self.h_seq[s] = self.u_next * self.dt
+        self.u_next += 1
         self.n_sent += 1
         self.sent_t[s] = t
         self.last_send[s] = t
@@ -380,15 +417,19 @@ class Sim:
             self.orig_lost.append(s)
         else:
             self.push(a, 0, (s, 0, t, ps))
+        if c.sender in ("S2", "S2c"):                # the per-seq verdict timer (at +inf it never fires)
+            self.push(max(t, self.h_seq[s] + c.T - self.rtt / 2), 8, s)
         nxt = t + self.dt
         o = self.O()
         if o > self.g["max_O"]:
             self.g["max_O"] = o
+        o = self.O_ctl()
         if c.n_total:
-            done = self.n_sent >= c.n_total
+            done = self.u_next >= self.units_total
         else:
             done = nxt >= c.dur
         if done:
+            self.src_done = True
             self.src_next = math.inf
         elif o >= self.B:
             self.paused = True
@@ -458,8 +499,7 @@ class Sim:
         elif self.ep_start is not None:
             self.episodes.append((self.ep_start, now - self.ep_start, self.ep_pass))
             self.ep_start = None
-        if self.t_front is None and self.n_sent >= self.nmax - 16 and not self.holes and self.rhi + 1 >= self.nmax - 16 \
-                and self.cfg.n_total:
+        if self.t_front is None and self.src_done and not self.holes and self.rhi + 1 >= self.n_sent and self.cfg.n_total:
             self.t_front = now
             self.stop_at = min(self.t_end, now + self.cfg.grace)
 
@@ -561,6 +601,8 @@ class Sim:
                 break
             heapq.heappop(self.hheap)
             del self.holes[m]
+            if who == "floor" and m in self.unrel:
+                self.g["rel_by_floor"] += 1          # the floor pass, not the hold, releases this hole
             self.unrel.discard(m)
             self.released.discard(m)
             self.passed.add(m)
@@ -725,10 +767,26 @@ class Sim:
             self.M_known = set(M)
         Ak, Mk, rk = self.A_known, self.M_known, self.rhi_known
         self.pending = {s for s in self.pending if s >= Ak and (s in Mk or s > rk)}
-        if self.paused and self.O() < self.B:
+        self.maybe_resume(now)
+        self.act(now, gen, sorted(Mk), open_tail=False)
+
+    def maybe_resume(self, now):
+        if self.paused and self.O_ctl() < self.B:
             self.paused = False
             self.src_next = max(now, self.src_next if self.src_next != math.inf else now)
-        self.act(now, gen, sorted(Mk), open_tail=False)
+
+    def on_verdict_timer(self, now, s):
+        """S2 / S2c: the per-seq verdict at t_h + T - owd (three-knobs.md 2.2).  No floor of its own: the next sweep or
+        report-driven act sends it."""
+        if s >= self.A_known and (s in self.M_known or s > self.rhi_known) and s not in self.verdicted:
+            self.verdicted.add(s)
+            self.pending.add(s)
+            self.g["verdicts"] += 1
+            self.g["l2_fail"] += 1
+            if self.cfg.sender == "S2c":
+                self.send_copy(now, s)
+                self.g["verdict_copies"] += 1
+            self.maybe_resume(now)
 
     def can_resend(self, s, gen):
         if self.copies[s] == 0:
@@ -755,7 +813,15 @@ class Sim:
             return
         g = self.g
         verdict_seqs, serve_seqs = [], []
-        if c.sender != "S0":
+        if c.sender in ("S2", "S2c"):
+            x = self.rtt / 2                                          # the exact owd, as the D_RTprop arm idealises
+            for s in cands_:
+                if resend_admissible(c.T, now - self.h_seq[s], x):
+                    serve_seqs.append(s)
+                else:
+                    verdict_seqs.append(s)
+            g["l2_fail"] += len(verdict_seqs)
+        elif c.sender != "S0":
             held = self.GF_known if c.recv == "R0c" else self.G_known     # R0c: only the floor pass's passes admit nothing else
             A_avail = self.allow() - (held + len(self.pending))
             D, en = self.D_now()
@@ -788,7 +854,7 @@ class Sim:
             g["seed_verdicts"] += len(verdict_seqs)
         F = self.floor_value() if verdict_seqs or self.pending else self.last_floor
         need_floor = bool(self.pending) and any(s < F for s in self.pending) and F > self.last_floor
-        if verdict_seqs and c.sender == "S1c":
+        if verdict_seqs and c.sender in ("S1c", "S2c"):
             for s in verdict_seqs:
                 self.send_copy(now, s)
                 g["verdict_copies"] += 1
@@ -799,6 +865,8 @@ class Sim:
         if need_floor:
             self.last_floor = F
             self.send_floor(now, F)
+        if verdict_seqs:
+            self.maybe_resume(now)
 
     def floor_repeat(self, now):
         """The floor is sent again at each tail-sweep fire while F > A_rx (7.2)."""
@@ -864,6 +932,8 @@ class Sim:
                 self.on_release(t, pl)
             elif kind == 7:
                 self.on_r0e_expiry(t, pl)
+            elif kind == 8:
+                self.on_verdict_timer(t, pl)
         return self.summary()
 
     # ---- readouts -------------------------------------------------------------------------
@@ -914,9 +984,9 @@ class Sim:
         iso = np.asarray(iso) if iso else np.zeros(0)
         rows = self.hole_table()
         n_holes = len(rows)
-        rbf_num = sum(1 for (s, t0, R, P, T) in rows if T < R)                 # released by H_o, then filled
-        fp_rel = sum(1 for (s, t0, R, P, T) in rows if P < R and T == math.inf)   # floor pass was the release, filled later
-        fp_after_ho = sum(1 for (s, t0, R, P, T) in rows if P < R and T < P)
+        rbf_num = sum(1 for (s, t0, R, P, Tr) in rows if Tr < R)                 # released by H_o, then filled
+        fp_rel = sum(1 for (s, t0, R, P, Tr) in rows if P < R and Tr == math.inf)   # floor pass was the release, filled later
+        fp_after_ho = sum(1 for (s, t0, R, P, Tr) in rows if P < R and Tr < P)
         out = dict(
             cell=c.cell, sender=c.sender, recv=c.recv, seed=c.seed, delta=c.delta, rho=c.rho, omega=c.omega,
             n_src=n, delivered=delivered, never_delivered=n - delivered, open_end=len(self.holes), passed_unfilled=len(self.passed),
@@ -939,6 +1009,20 @@ class Sim:
             d_n=self.d_cnt[0], srtt=self.srtt, H_max=self.est.max_l, t_last=self.t_last,
             gauges=g,
         )
+        # stage 3 readouts (three-knobs.md 9.2, 11 items 1 and 2): h(s) is the unit's application time; w is measured from it
+        units = self.units_total
+        hs_ = np.asarray(self.h_seq[:n])
+        age = (dl - hs_)[ok]
+        w = age - c.owd
+        out.update(
+            units=units, intake_expired=self.intake_expired, share_any=delivered / max(units, 1),
+            share_T=int(np.less_equal(age, c.T).sum()) / max(units, 1),      # readout, not a branch (np.less_equal: no Compare on T)
+            share_by_0p4=int((age <= 0.4).sum()) / max(units, 1), share_by_2=int((age <= 2.0).sum()) / max(units, 1),
+            w_mean=float(w.mean()) if len(w) else float("nan"),
+            w_p50=float(np.percentile(w, 50)) if len(w) else float("nan"),
+            w_p99=float(np.percentile(w, 99)) if len(w) else float("nan"),
+            l2_fail=g["l2_fail"], rel_by_hold=g["rel_ho"], rel_by_floor=g["rel_by_floor"],
+            finish=(self.t_front - (units - 1) * self.dt) if (c.n_total and self.t_front is not None) else None)
         if c.n_total:
             out["tail_time"] = (self.t_front - self.sent_t[n - 1]) if self.t_front is not None else None
             out["stalled"] = self.t_front is None
@@ -967,6 +1051,7 @@ class Sim:
             out["_trace"] = self.trace
             out["_arr"], out["_dlv"], out["_wh"], out["_got"] = arr, dlv, wh, got
             out["_atilde"], out["_sent_t"] = self.atilde[:n], self.sent_t[:n]
+            out["_h"] = self.h_seq[:n]
             out["_rows"] = rows
         return out
 

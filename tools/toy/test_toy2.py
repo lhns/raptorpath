@@ -333,8 +333,9 @@ class Receivers(unittest.TestCase):
                 self.assertGreaterEqual(r["tail_verdicts"] + r["gauges"]["refusals"] // 100000, 0)
 
 
-DIALS = {"rho", "delta", "hint"}
-EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry"}     # HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9)
+DIALS = {"rho", "delta", "hint", "T", "Hk"}
+# HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions are the only places T is compared (three-knobs.md 9.2)
+EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible"}
 
 
 def _names(node):
@@ -376,6 +377,113 @@ class DenyTest(unittest.TestCase):
         self.assertTrue(deny_scan("def plantish(cfg):\n    return cfg.delta < 1\n"))
         self.assertFalse(deny_scan("def plant_scale(cfg):\n    return cfg.delta < 1\n"))     # exempt by name only
         self.assertFalse(deny_scan("def k(cfg):\n    return max(0.5, min(2.0, cfg.delta))\n"))   # arithmetic is fine
+
+
+
+# ---- stage 3 (three-knobs.md 9.2 and 11) ------------------------------------------------------
+P1_KEYS = ("n_src", "delivered", "never_delivered", "open_end", "v_mean", "v_p50", "v_p99", "v_p999", "e_mean", "e_p99",
+           "hol_sum_nonhole", "n_holes", "stall_n", "stall_total", "stall_p99", "repair_per_delivered",
+           "floors_per_delivered", "ooo_per_delivered", "t_last")
+
+
+def s3(**kw):
+    kw.setdefault("rho", 1.0)
+    kw.setdefault("check_p1", False)
+    return toy2.Cfg(**kw)
+
+
+def obj3(cell="I2", sender="S2", recv="RH", seed=0, **kw):
+    kw.setdefault("n_total", 12147)
+    kw.setdefault("owd", 0.05 if cell == "L10" else 0.005)
+    return s3(cell=cell, sender=sender, recv=recv, seed=seed, **kw)
+
+
+class Stage3(unittest.TestCase):
+    def test_1_t_inf_s2_rh_inf_equals_s0_r1(self):
+        for seed in range(3):
+            ref = toy2.run(s3(cell="I1", sender="S0", recv="R1", seed=seed, dur=5.0, want_trace=True))
+            new = toy2.run(s3(cell="I1", sender="S2", recv="RH", seed=seed, dur=5.0, want_trace=True))
+            self.assertEqual(new["_trace"], ref["_trace"])
+            for k in P1_KEYS:
+                self.assertEqual(new[k], ref[k], k)
+
+    def test_2_t_1e6_equals_t_inf(self):
+        for seed in range(3):
+            a = toy2.run(s3(cell="I1", sender="S2", recv="RH", seed=seed, dur=5.0, want_trace=True))
+            b = toy2.run(s3(cell="I1", sender="S2", recv="RH", seed=seed, dur=5.0, want_trace=True, T=1e6))
+            self.assertEqual(a["_trace"], b["_trace"])
+            for k in P1_KEYS:
+                self.assertEqual(a[k], b[k], k)
+
+    def test_3_l1_absolute_and_executes(self):
+        T = 0.05
+        # a 0.5 s outage at 10 000/s.  S2p (verdicted seqs stay in the outstanding count) pauses until the outage ends, so
+        # units age in the intake and expire; S2 resumes at its first verdict, so almost nothing expires (P7)
+        for excl, expect_expiry in ((False, True), (True, False)):
+            sim = toy2.Sim(obj3(sender="S2", recv="RH", Hk=0.0, T=T, n_total=6000, dead=(0, 0.1, 0.5), want_trace=True,
+                                pause_B=200, o_excl_verdict=excl))
+            r = sim.run()
+            if expect_expiry:
+                self.assertGreater(r["intake_expired"], 0)               # the mechanism ran
+            n_data = 0
+            for (t, s, k, _, kind) in r["_trace"]:
+                if kind in (0, 1):
+                    n_data += 1
+                    self.assertLess(t - sim.h_seq[s], T, (excl, t, s, k, kind))
+            self.assertGreater(n_data, 1000)
+
+    def test_4_l2_absolute_no_copy_past_the_bar(self):
+        for cell, owd, T in (("I2", 0.005, 0.05), ("L10", 0.05, 0.3)):
+            sim = toy2.Sim(obj3(cell=cell, sender="S2", recv="RH", Hk=0.0, T=T, owd=owd, want_trace=True))
+            r = sim.run()
+            ncopy = 0
+            for (t, s, k, _, kind) in r["_trace"]:
+                if kind == 1:
+                    ncopy += 1
+                    self.assertLess(t - sim.h_seq[s] + owd, T, (cell, t, s, k))
+            self.assertGreater(ncopy, 0)
+            self.assertGreater(r["l2_fail"], 0)                          # L2 refused something
+
+    def test_5_rh_zero_has_no_non_hole_wait(self):
+        for sender, T in (("S2", 0.4), ("S2", math.inf), ("S1c", math.inf)):
+            r = toy2.run(s3(cell="I2", sender=sender, recv="RH", Hk=0.0, T=T, seed=1, dur=5.0))
+            self.assertEqual(r["hol_sum_nonhole"], 0.0)
+            self.assertEqual(r["v_p50"], 0.0)
+            self.assertGreater(r["n_holes"], 0)
+
+    def test_6_rh_inf_equals_r1_at_finite_t(self):
+        a = toy2.run(obj3(sender="S2", recv="RH", T=0.4, seed=1))
+        b = toy2.run(obj3(sender="S2", recv="R1", T=0.4, seed=1))
+        for k in P1_KEYS + ("share_any", "share_by_2", "w_mean", "l2_fail", "intake_expired"):
+            self.assertEqual(a[k], b[k], k)
+
+    def test_7_fixed_reference_shares_and_w(self):
+        for sender, kw in (("S1c", dict(rho=0.99, check_p1=True)), ("S2", dict(T=0.4, Hk=0.0))):
+            c = obj3(sender=sender, recv="RH" if sender == "S2" else "R1", seed=2, want_trace=True, dead=(0, 0.3, 0.5), **kw)
+            r = toy2.run(c)
+            dlv, h = r["_dlv"], r["_h"]
+            n, units = r["n_src"], r["units"]
+            ok = [s for s in range(n) if dlv[s] >= 0]
+            self.assertAlmostEqual(r["share_by_0p4"], sum(1 for s in ok if dlv[s] - h[s] <= 0.4) / units, places=12)
+            self.assertAlmostEqual(r["share_by_2"], sum(1 for s in ok if dlv[s] - h[s] <= 2.0) / units, places=12)
+            self.assertAlmostEqual(r["share_any"], len(ok) / units, places=12)
+            w = np.asarray([dlv[s] - h[s] - c.owd for s in ok])
+            self.assertAlmostEqual(r["w_mean"], float(w.mean()), places=12)
+            self.assertAlmostEqual(r["w_p50"], float(np.percentile(w, 50)), places=12)
+            self.assertAlmostEqual(r["w_p99"], float(np.percentile(w, 99)), places=12)
+            self.assertLess(r["share_by_0p4"], r["share_by_2"] + 1e-12)
+            self.assertLess(r["share_by_0p4"], r["share_any"])           # the outage window delays some units past 0.4 s or loses them
+
+    def test_8_events_at_infinity_do_not_end_the_run(self):
+        r = toy2.run(obj3(sender="S2", recv="RH", seed=1))              # T = H = inf: every timer sits at +inf
+        self.assertFalse(r["stalled"])
+        self.assertTrue(math.isfinite(r["t_last"]))
+        self.assertEqual(r["intake_expired"], 0)
+
+    def test_9_o_excl_verdict_matters_in_an_outage(self):
+        a = toy2.run(obj3(sender="S2", recv="RH", Hk=0.0, T=0.4, seed=1, dead=(0, 0.4 * 1.2147, 1.5)))
+        b = toy2.run(obj3(sender="S2", recv="RH", Hk=0.0, T=0.4, seed=1, dead=(0, 0.4 * 1.2147, 1.5), o_excl_verdict=False))
+        self.assertLess(a["intake_expired"], b["intake_expired"])
 
 
 if __name__ == "__main__":
