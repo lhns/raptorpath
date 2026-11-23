@@ -572,3 +572,31 @@ Every change here is made before a single stage-3 run. It supersedes §9 where i
    - **Q11, overload at finite T** (item 5).
 7. **Correction to §4 and §6 ("Object API: no change").** `window_out_of_order` also has a sender-side reader: it turns off the plain in-order Copa feed (`net/mod.rs:936–941`, `plain_inorder`). Mapping it to a receiver-only H = 0 therefore changes the sender at that point. The mapping row now reads "becomes H = 0 at the receiver; the sender reader at `net/mod.rs:941` needs its own form (open)".
 8. **Not testable here (adds to §9.1).** The toy has no proactive repair, so it cannot show how a call fares when T is below about 1.5 round trips. The G.114 values were read from the ITU summary page only.
+
+## 12. Findings from the offline simulation, stage 3 (2026-11-23, reviewed with the advisor)
+
+Branch `toy-stage3-knobs` `39efa6a3`, `tools/toy/results-stage3.md`. One path, no proactive repair, no link capacity.
+
+**What holds.**
+- T = ∞ (and T = 10⁶ s) is float-identical to ρ = 1 on every registered readout and on the sender trace (P1, 144/144). RH(∞) equals R1 and RH(0) has no hold (P2).
+- The outage shares came out as predicted (P7): about 97.1 % with an end outage, about 40 % with a mid-stream outage at T = 0.4 s (Q10).
+- Below one resend round nothing is resent and the share equals what the originals deliver (P5 bullet 2).
+
+**What the lifetime buys is not shown.** On the same-footing readout (share delivered within 0.4 s of hand-over), call cells, 3 % | 10 % loss:
+- today (C1) 0.9785 | 0.9705; the sender-only receiver at 0.99 (C2) reads the same; full delivery (C3) 0.9811 | 0.9766;
+- T = 0.4 s with H = 0 is identical to T = ∞ with H = 0 (0.9815 | 0.9794); with strict order T = 0.4 s adds +0.0003 | +0.0019.
+
+So the gain over today comes from the sender not giving up early, not from the lifetime. With no link capacity, giving up frees nothing for other data, so T's expected benefit is untested here, not disproved. The lower mean waits of the T = 0.4 s arms are over delivered units only and leave out the given-up outage units (about 75 × ~1 s ÷ 3000 ≈ 25 ms of the difference); they are not a finding.
+
+**Failed or unsupported checks.**
+- **Continuity is not demonstrated.** The positive control failed (P4): the nudges at T = 1.5 s missed the fill step (fills at 1.53 s and 1.80 s), so P3's pass is flat lines with no shown power. Worker decision 9 also changed the share bar in the outage cells from the registration; P4 is to be re-read under the registered bar.
+- **The resend crossover's shift with the path is not confirmed** (P5 bullets 3 and 4): the registered shift read 0–16 ms against +30 ms. The early rise comes from the tail sweep at its clamped 100 ms period, a constant. A mid-level crossing that moves 29 ms was found after the run and is not registered.
+- **Overload is unmeasured** (P11). The cell is not a valid overload for S2 (share 0.975 against < 0.2 predicted), by §11 item 5's own "cannot throttle" clause. The unregistered 3 s repeat throttles only the old arm and is not used.
+- **A lifetime does not shorten the strict-order stall.** P8's last bullet passed on its number, but the longest stall is identical for C2 and S2 at H = ∞ (1.53 s, 1.92 s): floors are lost in the outage too.
+- **No bandwidth claim** on the call cells: resends there are sweep-driven and bimodal across phases (about 0.19 or 0.39 per delivered).
+
+**New defect D1: the verdict timer fires on data in flight, and with L7 the pause stops braking.** In the overload cell the send age pins at 0.385 s; the timer fires at send age + 10 ms, before the ack returns, so 1.66 M verdicts are taken on data that was delivered, and since verdicted seqs leave the outstanding count (L7, Q6) the pause at B is released by the timer, not by acks (mean delay pinned at 353 ms, zero intake expiries). L2's timer needs a resolved-or-not test it cannot make before one round trip, and L7 needs a different brake (or no exclusion while the seq is within one RTT of its last send). Open; to be derived before any engine sketch.
+
+**Deviations.** `nf_stage3.json` was rewritten once after the call runs and before any reading (three keys added); a third exempt comparison `within_lifetime` was added for `share_T`; the verdict timer is pushed at `max(t, h + T − ô)`.
+
+**Follow-ups, to be registered before running:** a positive control at the measured fill age; a capacity-limited link cell, where giving up can free capacity (the case T is meant for); D1's fix.
