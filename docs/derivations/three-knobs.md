@@ -77,7 +77,7 @@ Every law is written once, with each symbol's provenance. "Declared" means an ap
 "Nothing for s is staged once s has outlived T":
 
 ```text
-   stage any datagram for s   ⇒   a(s)  <  T ,          a(s) = now − t_h(s)
+   stage any payload-bearing datagram for s   ⇒   a(s)  <  T ,          a(s) = now − t_h(s)
 ```
 
 | symbol | provenance |
@@ -87,7 +87,7 @@ Every law is written once, with each symbol's provenance. "Declared" means an ap
 | now | measured |
 
 - **Unsent data is covered too.** A unit still in the intake when `a ≥ T` is dropped there, counted as `intake_expired`, and never gets a seq. This is the same rule at a different seat. Without it a source pause (ADR-0084 decision 3) turns T into "T after the pause ends", which is not what an application means by "stop trying after T".
-- **This is an absolute invariant**, not a target, so it gets an absolute test: no datagram carries a seq whose age at staging is at least T. It holds whatever the link does, which answers "what if we cap it but cannot fulfil it?". The engine keeps the rule, and the share it achieves is reported (L3).
+- **This is an absolute invariant**, not a target, so it gets an absolute test: no payload-bearing datagram (source, resend, coded repair member) carries a seq whose age at staging is at least T. Floors carry no payload and repeat past T by design (ADR-0084 decision 1). It holds whatever the link does, which answers "what if we cap it but cannot fulfil it?". The engine keeps the rule, and the share it achieves is reported (L3).
 - **First sends are not gated by ô.** L1 alone decides whether fresh data is sent. A first send is the data itself, and it is also the probe that keeps ô measured. If L2 gated it, a path with ô > T would stop sending and stop measuring, and stay stuck there (§5).
 
 ### 2.2 L2, resend worth and the verdict
@@ -102,12 +102,17 @@ Every law is written once, with each symbol's provenance. "Declared" means an ap
 
 | symbol | provenance |
 |---|---|
-| ô = SRTT/2 | measured SRTT (`est.rtt()`), with the even split between the two directions as a **declared assumption** (a symmetric path). The measured replacement is a receiver timestamp (ADR-0078's planned field, not yet on the wire). On an asymmetric path the error is half the asymmetry, and a gauge reports it once receiver timestamps exist |
+| ô = SRTT/2 | measured SRTT (`est.rtt()`; before the first sample it is main's 50 ms seed, so ô = 25 ms then, the seed defect skip-rule and tail-and-hold already record), with the even split between the two directions as a **declared assumption** (a symmetric path). The measured replacement is a receiver timestamp (ADR-0078's planned field, not yet on the wire). On an asymmetric path the error is half the asymmetry, and a gauge reports it once receiver timestamps exist |
 | "unresolved" | measured: in a reported gap or the open tail, and not acknowledged (ADR-0084 decision 1) |
 | decision instant | a gap report, a tail-sweep fire, or the per-seq verdict timer at `t_h(s) + T − ô` (below) |
 
 - **Why `a + ô < T` and not a probability.** The full form is "send if P(this resend arrives before T) is worth one wire symbol", that is `P(owd ≤ T − a) ≥ w/(1 + w)`, with `w = W_COST_RATIO = 1` (`net/late.rs:64`, a register row). With the normal RTT model of §3.2 and an even split, that probability reaches ½ exactly at `T − a = SRTT/2`, so the full form reduces to the line above. The reduction adds no constant; it uses one that already exists. If the owner wants a different cost ratio, the bar moves to a quantile of the RTT spread instead of the median. Recommended: keep w = 1 (§7, Q7).
 - **The verdict has its own timer.** Reports and sweeps are coarse: in a 50-packet/s call at 100 ms RTT the sweep fires every 100 ms. A timer at `t_h(s) + T − ô`, re-checked when it fires against the current ô, gives the verdict at its own instant. ADR-0084's tail sweep stays the repeat clock for the floor.
+- **Below about 1.5·RTT the timer fires before the sender can know a seq arrived.** The timer fires at age `T − ô`, while a delivered seq's acknowledgement returns at about one RTT plus the report delay. When `T − ô` is below that, every seq still looks unresolved when its timer fires, so it gets a verdict whether or not it was lost.
+  - Example: a 100 ms RTT call at T = 0.14 s fires at age 0.09 s, against an ack at about 0.10 s. The same holds at the 0.4 s call point once the RTT exceeds about 270 ms.
+  - Such a spurious verdict is harmless to data. Nothing more could have been sent anyway (L2 fails), the store entry would have left on the ack a moment later, and the receiver ignores a floor below data it holds.
+  - Its one cost is floors. Rule: **a verdict taken by the timer sends no floor of its own; the floor goes on the next tail-sweep fire** (ADR-0084's repeat clock, period `clamp(2·RTT, 25 ms, 100 ms)`) or with the next report-driven verdict. That bounds floors to about one per sweep period, and delays a floor pass by at most one sweep period, which matters only to strict-order streams (H = ∞).
+  - `floors_per_delivered` is reported, with a prediction (§9, P10).
 - **No last copy.** ADR-0084 Amendment 2 sends one copy with every verdict, for two reasons: it saves allowance (gone with the count) and it can resolve a hole sooner than the floor alone (finding F1). Under L2 the verdict is taken exactly when no resend can arrive in time, so the copy fails its own worth test. The "last copy" becomes simply the last resend L2 admitted, sent one decision earlier. This amends Amendment 2 (§6; owner question Q4, with the copy kept as a registered arm S2c, §9).
 - **"Only repair helps" falls out.** The first decision instant at which a hole can be resent is the first gap report, at age `a₁ ≈ t_detect − t_h + owd_back`. That is about one RTT plus the gap to the next arrival on one path. L2 admits that resend iff `a₁ + ô < T`, that is `T > a₁ + ô ≈ 1.5·RTT + 1/rate`: the paper's ARQ latency (§3.7, "L_arq ≈ 1.5·RTT"). Below that, every reported hole gets its verdict at the first report, nothing is resent, and only proactive repair (r) recovers anything. No term compares T with a constant or with "one RTT". The comparison is per seq and on measured state, and the aggregate share moves continuously in T through the spread of a₁ (report timing, jitter, the per-seq phase).
 - **The step that remains is physical.** With zero jitter and a fixed report phase, the share as a function of T has a real step at `T = a₁ + ô`, because below it no resend can arrive and above it one can. That is the "valid mode switch" the owner accepted. It is located by measured delays, never by a declared constant, and it moves when the path moves. §9 registers a check that it does (prediction P5).
@@ -142,7 +147,7 @@ The span law (§5.3) is unchanged:
    A*  =  clamp( ⌈rate · b(δ) · RTT⌉ , 1 , W )                          span width, trailing [F, F + A*),  F = oldest unresolved
 ```
 
-- **T reaches the span only through V.** A verdicted seq has left the store and is no longer unresolved, so the span's lower edge F can never be older than about `T − ô`. A repair therefore never codes a member that L2 has given up. No T term and no clamp enter the span, so no new bind gauge is needed.
+- **T reaches the span only through V.** A verdicted seq has left the store and is no longer unresolved, so the span's lower edge F can never be older than about `T − ô`. A repair therefore never codes a member that L2 has given up. No T term enters the formula. In effect, though, V cuts the span's lower edge at `T − ô`, which is an implicit `min(b(δ)·RTT, T − ô)` on the span's reach. So it gets a bind gauge: `span_cut_by_V`, the fraction of granted repairs whose span would have started below F had V been empty.
 - **The 2·RTT cap is already dead.** §5.3 writes `D = min(b(δ)·RTT, 2·RTT)`, and §5.4 clamps b to [½, 2], so `b·RTT ≤ 2·RTT` always and the min never binds. The owner's rejection of the round-trip cap therefore costs the span law nothing: it removes an inert term (`emit_source.rs:620`, `.min(2.0 * rtprop)`), which needs a zero-behaviour-change commit. The cap that did act was D used as a **give-up age** (§5.6, `shed_deadline_us`), and L2 replaces that.
 - **b(δ) keeps its other jobs:** the span width above, the pool setpoint `q(δ) = (b(δ) + 1)/30` (§6.1) and the contract stall (§6.4). It loses one job, the shed deadline.
 
@@ -299,7 +304,7 @@ Two δ-and-ρ laws need their own rewrite, which this draft does not design:
   - T is a give-up rule, so it belongs at the limit beyond which the data is useless (400 ms), not at the comfort level.
   - Keeping the typical delay near 150 ms is δ's job (δ = 50 prices every millisecond). That is the owner's "for a call a fixed latency deadline can be important": the deadline is T, and the comfort level is δ.
   - G.114 measures mouth-to-ear delay, which includes codec, packetisation and playout. T counts from hand-over to the transport, so a call application that knows its own codec delay should state less than 400 ms; 0.4 s is the transport's upper bound.
-- **Why H = 0 for a call.** Real-time media carries its own sequence numbers and a jitter buffer that reorders (RFC 3550 §5.1, §6.4.1). A transport hold only adds delay in front of that buffer. Today's Realtime receiver holds SRTT/2 in order, so H = 0 is a Realtime behaviour change: at N ≥ 2 every slow-path packet is released past and arrives out of order without loss (`ordering-hold.md` §5; Q5).
+- **Why H = 0 for a call.** Real-time media carries its own sequence numbers, which let the receiving application restore order (RFC 3550 §5.1). That the application's playout buffer reorders is common practice, not checked here against a specific text. A transport hold only adds delay in front of that buffer. Today's Realtime receiver holds SRTT/2 in order, so H = 0 is a Realtime behaviour change: at N ≥ 2 every slow-path packet is released past and arrives out of order without loss (`ordering-hold.md` §5; Q5).
 - **The tunnel at Bulk and Auto: H = ∞ now.** The owner accepted "late, out-of-order delivery instead of a stall after a long outage" once the release rule ships. That corresponds to a finite H such as 1 s (outage scale) at T = ∞, and only form (b) can state it. The value is not chosen here: the inner TCP's tolerance is RFC 8985's reordering window, which starts at min_RTT/4 (§6.2 there), and the `meas-disorder-price` TCP-in-tunnel test is what tells whether a finite H costs inner throughput. Until then H = ∞ keeps Bulk and Auto bit-identical (Q2).
 - **Nudge points** for the continuity checks (§9): T = 0.4·{0.98, 0.99, 1, 1.01, 1.02} and H = 0.02·{…}. H = 0 and T = ∞ are one-sided ends, checked by identity (P1, P2), not by nudges.
 
@@ -400,7 +405,8 @@ The toy has one path and no proactive repair. "Repair" in `repair_per_delivered`
 - If `u_next ≥ units_total`, the source is done: `src_next = inf`, and nothing is emitted.
 - Otherwise seq `s = n_sent` takes unit `u_next`: `h_seq[s] = u_next·dt; u_next += 1`, and the rest of `emit` runs as today.
 - `units_total = n_total` in object mode, and `int(dur·rate)` in streaming mode.
-- The existing `done` tests become `u_next ≥ units_total` (object mode) and `nxt ≥ dur` (streaming mode, unchanged). The `t_front` completion test `self.n_sent >= self.nmax - 16` becomes `self.src_done and …`, where `src_done` is set when the source finishes. For every existing arm (no expiry, `u_next == n_sent`) these are the same conditions, so stage 2 stays bit-identical.
+- The existing `done` tests become `u_next ≥ units_total` (object mode) and `nxt ≥ dur` (streaming mode, unchanged). `src_done` is set where `src_next = inf` is set for completion.
+- The `t_front` completion test in `advance` becomes, in full: `if self.t_front is None and self.src_done and not self.holes and self.rhi + 1 >= self.n_sent and self.cfg.n_total:`. The old test, `self.n_sent >= self.nmax - 16 and not self.holes and self.rhi + 1 >= self.nmax - 16`, can never hold once units expire in the intake (`n_sent < n_total`), and S2p would then read as stalled. For every existing arm (no expiry, `n_sent == n_total == nmax − 16` when done) the two tests are the same condition, so stage 2 stays bit-identical.
 - Apply this intake logic for every sender. At `T = inf`, `intake_expired_fn` is always false, so S0 and S1c are unchanged.
 
 **The two law functions** (module level; the only places T is compared; both added to the deny test's `EXEMPT` with a comment citing this section):
@@ -423,7 +429,7 @@ Add `"T"` and `"Hk"` to `DIALS` in `test_toy2.py`, so any other comparison on th
 
 **The per-seq verdict timer (S2, S2c).**
 - In `emit`, push an event of a new kind 8 at `h_seq[s] + c.T − self.rtt/2` with payload s. At `T = inf` this time is inf and the event never fires.
-- On firing: if `s ≥ self.A_known` and (`s in self.M_known` or `s > self.rhi_known`) and `s not in self.verdicted`, call `self.act(now, now, [s], open_tail=True)`. `act` takes the verdict, since L2 fails.
+- On firing: if `s ≥ self.A_known` and (`s in self.M_known` or `s > self.rhi_known`) and `s not in self.verdicted`, take the verdict **without a floor**: `verdicted.add(s); pending.add(s); g["verdicts"] += 1; g["l2_fail"] += 1`, plus one `send_copy(now, s)` for S2c. The floor goes on the next `on_sweep` (its `floor_repeat`) or with the next report-driven `act` (§2.2's timer rule).
 - After any verdict under S2 with `o_excl_verdict`, re-check the pause, as `on_report` does: if `self.paused and self.O_eff() < self.B`, resume.
 
 **The outstanding count.** `O_eff() = O() − (len(self.pending) if o_excl_verdict else 0)`, used in place of `O()` at both pause sites for S2 and S2c. Write it so that S0 and S1c call the unchanged `O()`, for example as a method selected once in `__init__`. The `len(pending)` term is 0 at T = inf.
@@ -438,14 +444,14 @@ Add `"T"` and `"Hk"` to `DIALS` in `test_toy2.py`, so any other comparison on th
 - `share_any = delivered / units`;
 - `share_T = |{s : dlv[s] ≥ 0 ∧ dlv[s] − h_seq[s] ≤ T}| / units`;
 - `finish = t_front − h(units − 1)` in object mode;
-- `l2_fail` (the count of verdicts L2 took), `rel_by_hold` and `rel_by_floor`.
+- `l2_fail` (the count of verdicts L2 took), `rel_by_hold`, `rel_by_floor`, and the existing `floors_per_delivered`.
 
 Existing readouts keep their definitions: `v_mean`, `v_p50`, `v_p99` (wait beyond the loss-free arrival), `ooo_per_delivered` (the out-of-order count per delivered), `repair_per_delivered`, `stall_n`, `stall_total`, `stall_p99`, `tail_time` and `verdicts`.
 
 **Tests to add to `test_toy2.py`, red first:**
 1. T = inf S2 + RH(inf) equals S0 + R1, trace and readouts, on I1 for 3 seeds.
 2. T = 1e6 equals T = inf (same).
-3. L1 absolute: in a traced S2 run at T = 0.05, no trace send has `t − h_seq[s] ≥ T`.
+3. L1 absolute: in a traced S2 run at T = 0.05, no data trace entry has `t − h_seq[s] ≥ T`. Data entries are kinds 0 and 1 in the trace's last field. Floor entries (kind 2) carry the floor value in the seq slot and are excluded.
 4. L2 absolute: no copy is sent at `age + owd ≥ T`.
 5. RH(Hk = 0): `hol_sum_nonhole == 0`.
 6. The deny test, with a positive control `"def f(c):\n    return c.T < 1\n"` flagged.
@@ -494,7 +500,7 @@ Reading rules:
 
 A miss is a finding to explain, never a reason to tune.
 
-- **P1, T → ∞ is a limit (identity).** In every cell and seed, S2 T = inf + RH(inf) and S2 T = 1e6 + RH(inf) equal C3 on every readout exactly (float-equal), and on the sender trace for seeds 0–2. PASS: all equal. FAIL: any difference.
+- **P1, T → ∞ is a limit (identity).** In every cell and seed, S2 T = inf + RH(inf) and S2 T = 1e6 + RH(inf) equal C3 exactly (float-equal) on these keys: `n_src, delivered, never_delivered, open_end, v_mean, v_p50, v_p99, v_p999, e_mean, e_p99, hol_sum_nonhole, n_holes, stall_n, stall_total, stall_p99, repair_per_delivered, floors_per_delivered, ooo_per_delivered, tail_time, t_last`. They also equal it on the sender trace for seeds 0–2. The config echo and the `gauges` dict differ by arm (`refusals`, `age_gate_fail`, `p1_checks`) and are not compared. PASS: all equal. FAIL: any difference.
 - **P2, the two ends of L6.**
   - S2 T = 0.4 + RH(inf) equals S2 T = 0.4 + R1 on every readout exactly.
   - S2 + RH(0) has `hol_sum_nonhole = 0` and `v_p50 = 0` exactly in every cell.
@@ -511,7 +517,7 @@ A miss is a finding to explain, never a reason to tune.
   - M cells: `share_any ∈ [0.39, 0.41]`. Everything after the 4 860 units sent before the outage was sent into it, or handed over more than T before it ended.
   - `intake_expired` is near 0 for S2 and above 4 000 for S2p. Same share, different reason: the L7 term at work.
 - **P8, the call against today** (K cells):
-  - `share_T`(S2 T = 0.4, H = 0) ≥ `share_any`(C1) − m;
+  - outside the outage window (units handed over before 19.6 s or after 21.5 s): `share_T`(S2 T = 0.4, H = 0) ≥ `share_any`(C1) − m. Over the whole run no sign is predicted: S2 loses every outage unit (`share_T ≈ 0.975`, P5), while C1 fills some of them late. Both are reported;
   - `v_mean`(S2, H = 0) < `v_mean`(C1), shown;
   - `ooo_per_delivered`(H = 0) > (H = inf), shown;
   - `stall_total`(H = 0) ≤ 1e-9 s;
@@ -520,6 +526,10 @@ A miss is a finding to explain, never a reason to tune.
   - `share_T` reads equivalent (the copy arrives after T);
   - `share_any`(S2c) ≥ `share_any`(S2);
   - `repair_per_delivered` is higher by `verdicts/delivered` ± m.
+
+- **P10, floors.**
+  - At T = 0.4, `floors_per_delivered` is at most C2's + m in the E and M cells.
+  - In K-L10 below 1.5·RTT (T ≤ 0.14), where the timer gives spurious verdicts (§2.2), it is at most 1/(P·rate) = 0.2 per delivered (one floor per 100 ms sweep against 50 units/s), not about 1.
 
 Report every reading, the A/A self-check as in stage 2, and every deviation.
 
