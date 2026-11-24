@@ -627,9 +627,15 @@ class Stage3b(unittest.TestCase):
         self.assertAlmostEqual(sim.srtt, 0.010, delta=0.004)           # 2 x owd of 5 ms, plus the report tick
 
     def test_10_resend_gate_evidence_executes(self):
-        a = toy2.run(batch3b.s3_cfg("K-L10", 0, 0.4, 0.0, resend_gate="owd"))
-        b = toy2.run(batch3b.s3_cfg("K-L10", 0, 0.4, 0.0, resend_gate="evidence"))
-        self.assertNotEqual(a["gauges"]["repair_sends"], b["gauges"]["repair_sends"])       # the gate executes
+        """The gate "evidence" must change the resend count somewhere.  Amendment (RTT sampling, stage 3d): the first version compared
+        seed 0 only, and the corrected srtt made the two counts coincide there (331 = 331), so the witness reads all of seeds 0 to 4."""
+        pairs = []
+        for seed in range(5):
+            a = toy2.run(batch3b.s3_cfg("K-L10", seed, 0.4, 0.0, resend_gate="owd"))
+            b = toy2.run(batch3b.s3_cfg("K-L10", seed, 0.4, 0.0, resend_gate="evidence"))
+            pairs.append((seed, a["gauges"]["repair_sends"], b["gauges"]["repair_sends"]))
+        print("resend_gate owd vs evidence, repair_sends per seed:", pairs)
+        self.assertTrue(any(x != y for _, x, y in pairs), pairs)                  # the gate executes
 
 
 # ---- stage 3c (three-knobs.md 15.6.1) -----------------------------------------------------------------
@@ -692,10 +698,15 @@ class Stage3c(unittest.TestCase):
                 self.assertEqual(ra["_trace"], rb["_trace"], (cell, seed))
 
     def test_4_commitment_seam_reads_zero_and_the_floor_executes(self):
+        """The floor executes for S4 in every cell.  The commitment seam reads zero for S5 (the sender with the floor re-check), same cell and seed.
+        Amendment (RTT sampling, stage 3d): S4 has no re-check and is known to violate the commitment (stage 3c: 143 violations in 28 runs);
+        the zero asserted for S4 here came partly from the wrong srtt, and with the corrected srtt S4 reads 1 at CL seed 1."""
         for cell in ("K-L10", "OV", "CL"):
+            s5 = toy2.Sim(small_s5(cell, 1, 0.4, INF))
+            s5.run()
+            self.assertEqual(s5.g["commit_viol"], 0, cell)
             sim = toy2.Sim(self._cfgs(cell, 1, 0.4, INF))
             r = sim.run()
-            self.assertEqual(sim.g["commit_viol"], 0, cell)
             self.assertGreater(sim.F_ann, 0, cell)                                   # the floor advanced
             self.assertGreater(r["pass_floor"], 0, cell)                             # and the receiver passed holes by it
             self.assertGreater(sim.g["floor_carried"], 0, cell)                      # the header carrier executed
