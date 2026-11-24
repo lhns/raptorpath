@@ -1008,7 +1008,13 @@ The advisor (Fable) reviewed these, before writing:
 - the per-seed placement of the continuity control, the pause readout and the extra stall part (§15.5);
 - the prediction bands drawn from stage 3b's lightly-resending rows (§15.6).
 
-It also reviewed the whole section before the push.
+It also reviewed the whole section before the push. That review changed six things:
+- the floor is recomputed and sent at every decision instant, with no test on the verdicted-pending set, because §15.1's verdict is unreachable under §15.3;
+- the floor-datagram carrier is coalesced to one per 2 ms;
+- the continuity control is placed off the ramp;
+- the `F_lag` prediction is dropped;
+- the stall window is defined at the receiver;
+- the brake model is checked against the engine's budget decrements, and the stage-3 and 3b references are regenerated because they are not committed.
 
 ### 15.1 D2: withdraw the probe; keep the old sweep; evidence from feedback only (supersedes §13.4 and Q13)
 
@@ -1032,6 +1038,9 @@ The probe's motivation was also wrong: the old sweep's crossover moved +29.9 ms 
   - §13.1's timeout half is deleted, and the per-seq verdict timer (kind 8) is deleted with it.
   - Data nobody has reported missing is never judged. What gives it up is the floor's lifetime term (§15.3), which judges nothing in flight.
 - **The brake is unchanged from §13.1:** the outstanding count falls only on receiver feedback.
+- **This verdict is unreachable under §15.3, stated plainly.** A seq that fails L2 has `a + ô ≥ T`, so it is unprotected. Every older seq is unprotected too, because it is older and its earliest possible resend is no earlier. So the seq always lies below the floor F, and nothing ever judges it.
+  - The gate the owner asked to keep is therefore kept as written but never binds. Giving up is done by the floor's commitment, which judges nothing in flight. The D1 property comes from the feedback-only brake.
+  - The `verdicts` and `l2_fail` witnesses are replaced by floor passes (`pass_floor`) and the floor's lag behind the send frontier (`F_lag`).
 
 **Identity is not enough; liveness is checked beside it.** An identity between two arms that both stall would still pass. So the T = ∞ checks are:
 - S4 at T = ∞ equals C3 in every cell, including the link cells, with the cell's shared mechanisms (§15.4);
@@ -1087,11 +1096,15 @@ The probe's motivation was also wrong: the old sweep's crossover moved +29.9 ms 
   - The brake stays feedback-only: the outstanding count still falls only on acks.
   - The "judged but arrived" gauge becomes the receiver's late fills of floor-passed holes (`late_floor`), which must read 0 on a FIFO path.
   - Absolute test: no copy of s is ever staged after an announced F > s.
-- **Liveness at the lost tail.** When nothing follows the tail, there is no later datagram to carry F. The sweep's floor repeat carries it, every P while an unresolved seq lies below F; floors lost in an outage repeat. This is the same carrier ADR-0084 already has, and stage 3's E cells passed on it.
+- **Liveness at the lost tail.** When nothing follows the tail, there is no later datagram to carry F. So F is recomputed at **every decision instant, sweep fires included**, and the sweep sends it every P while `F > A_rx`, with no condition on the verdicted set. Floors lost in an outage repeat.
+  - This matters because ADR-0084's repeat is guarded by "pending verdicts exist", and under §15.3 V stays empty, so that guard would never send. F would also go stale in an outage if it were recomputed only at sends and reports.
 - **At T = ∞,** `protected` is always true, so F is ADR-0084's verdict floor. With no verdicts nothing lies below it and nothing is carried or sent, so the trace is unchanged.
 - **Continuity:** F is a running max of a minimum over terms continuous in T (through t_h + T).
 - **Limit, stated before the run:** it cannot help T = 2 s strict in OV. Those holes are protected and resent, and the frontier waits for them (§15.2 item 4). Predicted unchanged.
-- **Wire (owner question Q15).** Option (a): a field in the data header, 8 bytes or a smaller delta from the batch's own seq. Option (b): a `WindowFloor` datagram per emission batch while F rises, which costs one link slot each. **Default (a).** (b) carries a measurable link cost under overload.
+- **Wire (owner question Q15).**
+  - Option (a): a field in the data header, 8 bytes or a smaller delta from the batch's own seq.
+  - Option (b): a `WindowFloor` datagram at most once per 2 ms (the engine's report interval, `GAP_ACK_MIN_INTERVAL`) while F rises. One per emission would be one per data datagram under overload, because F sits at the send frontier there. At 500 per second against C = 10 000 per second, (b) takes 5 % of the link under overload.
+  - **Default (a).**
   - Either way this changes ADR-0084's floor meaning, from "below this, every unresolved seq is verdicted" to "below this, the sender will not resend". That is an amendment of decision 1, and it needs a wire version.
   - The toy models (a) at zero link cost: F rides on the data event. A registered arm S4b models (b), so (b)'s link cost is measured.
 
@@ -1124,23 +1137,29 @@ Behaviour of the brake:
 - **Exempt:** floors. They are control traffic, few and payload-free, and the engine's floor goes on its control lane.
 - **The brake does not key on the outstanding count,** which sits at B after an outage, so it cannot wedge resends.
 
+**Checked against the engine.**
+- The budget is decremented once per resend at the gap serve and the margin repair (`sender_phases.rs:1097–1098`, `:1157–1158`) and at the request arm (`net/mod.rs:3509–3510`).
+- The engine's tail sweep feeds `serve_gaps` with the cumulative blocker (`net/mod.rs:3036–3043`), so it draws on the same budget, and the toy counts sweep resends against it too.
+- **Recorded divergence, not changed:** the engine's sweep resends only the cumulative blocker per fire, while the toy's sweep resends the whole open tail. The owner asked to keep the toy's old sweep. The divergence favours the old arms' tail recovery in the toy.
+
 ### 15.5 Readouts and controls (item 4)
 
 - **Pause, by window.** For every 1 s window, report first sends, resends, braked resends, the time paused (O ≥ B) and link utilisation, plus counts of blocked send attempts by cause (pause, resend budget, cooldown).
   - `pause_time_w` is retired: it read 9 s of 9 for every OV arm, which measures the run length.
   - The OV validity witness stays `link_util_w ≥ 0.98` over [1 s, 10 s].
 - **The missing link-cell rows.** T ∈ {0.4, 2, ∞} × H ∈ {0, ∞} for S4 in both CL and OV, plus C1 and C3 (C3 = S4 at T = ∞, H = ∞ by identity, run as both).
-- **The continuity control, placed per seed from the same cell's T = ∞ run** (cell E-I2n, the 50-unit tail):
+- **The continuity control, placed per seed from the same cell's T = ∞ run, off the ramp** (cell E-I2n, the 50-unit tail):
   1. run S4 at T = ∞, H = ∞ for each seed;
   2. take the delivery ages `D_u = dlv − h` of the dead-tail units;
-  3. set `p_seed` to their median, rounded to 1 ms;
-  4. from the same run, compute that seed's curve `F_seed(T) = |{u : D_u ≤ T}| / units`, and from it the expected statistics `K̂ = 2·[F(1.01p) − F(0.99p)] − [F(1.02p) − F(0.98p)]` and `P̂ = 2·[F(p) − ½(F(0.99p) + F(1.01p))] − [F(p) − ½(F(0.98p) + F(1.02p))]`;
-  5. then run that seed at T = p_seed·{0.98, 0.99, 1, 1.01, 1.02}, H = ∞.
+  3. set `p_seed = ceil_1ms(max D_u + 2 ms)`;
+  4. the seed is usable only if `min D_u > 0.99·p_seed + 2 ms`, that is, the whole ramp lies between the nudge points 0.99p and p. Otherwise it is reported as "ramp too wide" and excluded;
+  5. from the same run, compute `F_seed(T) = |{u : D_u ≤ T}| / units`, and from it `K̂ = 2·[F(1.01p) − F(0.99p)] − [F(1.02p) − F(0.98p)]` and `P̂ = 2·[F(p) − ½(F(0.99p) + F(1.01p))] − [F(p) − ½(F(0.98p) + F(1.02p))]`. With the step between 0.99p and p and no other mass nearby, `K̂ = U − L` and `P̂ = (U − L)/2`, where U − L is the tail's share, both non-zero;
+  6. then run that seed at T = p_seed·{0.98, 0.99, 1, 1.01, 1.02}, H = ∞.
 
-  The sweep phase moves the fill step by up to 25 ms per seed, which is more than ±1 % of 1.5 s, so a pooled placement would smear it. K and P are then read as registered (§13.7.4). Prediction in §15.6.
-- **Stall decomposition, registered up front.** For the consumer stall episode containing the outage (K, E and CL cells, strict arms only):
-  - (o) episode start → outage start;
-  - (oo) outage start → outage end;
+  Placing the centre on the median would put p in the middle of the ramp, where 1 ms of rounding moves `share_T(p)` by about a fifth of the step. A pooled placement would smear the step by the sweep phase (up to 25 ms per seed). L2 gives up a fill at about `send age + ô` rather than at its T = ∞ delivery age; the 2 ms margins absorb that. K and P are then read as registered (§13.7.4).
+- **Stall decomposition, registered up front.** The outage is taken **at the receiver**, as `[start + owd, end + owd]`, because `dead` is read at send or departure. For the consumer stall episode that overlaps it (K, E and CL cells, strict arms only), every part is clamped at 0:
+  - (o) episode start → receiver-side outage start;
+  - (oo) receiver-side outage start → receiver-side outage end;
   - (i) outage end → arrival of the first floor or F-carrying datagram after it;
   - (ii) → the last fill inside the episode;
   - (iii) the rest.
@@ -1180,10 +1199,13 @@ New `Cfg` fields (defaults reproduce 3b):
    - stop at the first unresolved, unverdicted, protected seq, or at `n_sent`;
    - set `F_ann` to the larger of the old value and the stop point.
 
-   Unresolved means `s ≥ A_known` and (`s ∈ M_known` or `s > rhi_known`), as stage 3 has it. In `act`, `floor_value()` is replaced by `F_ann` under `"protect"`.
+   - Unresolved means `s ≥ A_known` and (`s ∈ M_known` or `s > rhi_known`), as stage 3 has it.
+   - Recompute also at every sweep fire (`on_sweep`, before `floor_repeat`).
+   - In `act` and `floor_repeat`, under `"protect"`, the floor sent is `F_ann`, and the send condition is `F_ann > A_known and F_ann > last_floor`, with no `pending` test. `floor_repeat` drops its `if not self.pending: return`, and repeats while `F_ann > A_known`.
+   - At T = inf, `F_ann == A_known` always, so nothing is sent.
 3. **The carrier:**
    - `"header"`: in `emit` and `send_copy`, when the datagram is delivered (not lost) and some unresolved seq lies below `F_ann` (`F_ann > lowest unresolved`), push a floor event of kind 1 with value `F_ann` at the **same arrival time**, after the data event (use the next counter value). It takes no link slot and no separate loss draw.
-   - `"datagram"`: at most one `send_floor(now, F_ann)` per emission instant when `F_ann` has risen since the last one sent; it takes a link slot as stage 3b's floors do.
+   - `"datagram"`: at most one `send_floor(now, F_ann)` per 2 ms window (`int(now / 0.002)`), when `F_ann` has risen since the last one sent. It takes a link slot as stage 3b's floors do.
    - `floor_repeat` on the sweep sends `F_ann` under both carriers.
 4. **Commitment:** in `send_copy`, under `"protect"`, assert `s >= F_ann` (a test seam counts violations; the test expects 0). Callers skip a candidate below `F_ann`.
 5. **Resend gate `"cooldown"`:** `can_resend(s, now)` is `copies[s] == 0 or now - last_send[s] >= max(srtt_eff, 0.010)`, for every arm.
@@ -1194,12 +1216,13 @@ New `Cfg` fields (defaults reproduce 3b):
    - the per-window series of §15.5 (first sends, resends, braked resends, pause time and link utilisation per 1 s window, and blocked attempts by cause);
    - `queue_drop_in` and `queue_drop_out`, `late_floor`, `floor_hull_bind`, `resend_braked`;
    - `finished` (bool) and `finish`;
+   - `pass_floor` (floor passes);
    - the stall parts (o), (oo), (i), (ii) and (iii);
    - `F_lag`: the mean over sends of `n_sent − F_ann`, how far the floor trails the send frontier.
 
    No mean is taken over delivered units alone.
 8. **Tests, red first:**
-   1. `check_ident3c.py` (stages 1 to 3b reproduced);
+   1. `check_ident3c.py` (stages 1 to 3b reproduced). The stage 3 and 3b per-run outputs are git-ignored (`out3/`, `out3b/`), so the references are regenerated first. Run every configuration of the check (stage 3 decision 17's 34, plus one per stage-3b arm and cell) at 3 seeds from commit `d0ce4f9d` in a separate worktree, store them under `out3c/ref/`, and compare the new code's outputs on every key and trace;
    2. S4 at T = inf equals C3 in every cell type, link cells included (3 seeds, every key, trace);
    3. S4 at T = 1e6 equals T = inf;
    4. the commitment seam reads 0;
@@ -1240,8 +1263,8 @@ Run order:
 - **Q3c-1, identity and liveness.**
   - Stages 1 to 3b are reproduced.
   - S4 at T = ∞ equals C3, and T = 1e6 equals ∞, in every cell and seed, the link cells included.
-  - `finished` is true for every T = ∞ arm in every cell and seed.
-  - FAIL: any difference, or any unfinished T = ∞ run.
+  - `finished` is true for **every arm at every T** in every cell and seed. A finite-T arm finishes when its frontier passes the last unit by fill or floor.
+  - FAIL: any difference, or any unfinished run.
 - **Q3c-2, the commitment and the brake.**
   - The commitment seam reads 0.
   - `late_floor = 0` in every one-path cell.
@@ -1250,7 +1273,7 @@ Run order:
 - **Q3c-3, the collapse fixed (OV, T = 0.4):**
   - S4 at H = 0: `share_by_0p4` ∈ [0.78, 0.83] (3b: 0.815);
   - S4 at H = ∞: ∈ [0.75, 0.83], and at least the H = 0 value − 0.03 (3b: 0.087);
-  - S4b at H = ∞: within 0.03 of S4 at H = ∞, minus the measured floor-datagram share of link slots.
+  - S4b at H = ∞: `share_by_0p4` within ± 0.02 of `S4(H = ∞) × (1 − floor slots per second / C)`. The predicted factor is 1 − 500/10 000 = 0.95, so about 0.77. `queue_drop_out = 0`.
 - **Q3c-4, the limit (OV, T = 2):**
   - H = ∞ `share_by_2` ∈ [0.65, 0.85] (3b: 0.751; not fixed, by §15.3's limit);
   - H = 0 ∈ [0.90, 0.99].
@@ -1264,14 +1287,14 @@ Run order:
   - S4 at T = 0.4: ∈ [0.78, 0.90] at both H, with H = ∞ within 0.02 of H = 0;
   - S4 at T = 2 against S4 at T = ∞ at the same H: equivalent on both shares;
   - S4 at T = 0.4 minus C3 on `share_by_0p4`: shown larger by more than 0.25.
-- **Q3c-7, no loss of savable data (K cells):** S4 at T = 0.4, H = ∞ `share_by_0p4` ≥ stage 3's S2 at T = 0.4, H = ∞ value − m. `F_lag` ≥ the number of units handed over in `T − 1.5·srtt` (the floor trails the frontier by about the protected span).
+- **Q3c-7, no loss of savable data (K cells):** S4 at T = 0.4, H = ∞ `share_by_0p4` ≥ stage 3's S2 at T = 0.4, H = ∞ value − m. `F_lag` is reported, with no prediction: with nothing given up the floor trails by the in-flight count.
 - **Q3c-8, crossover (S4, old sweep, H = 0):**
   - mid-level crossing shifts: X15 → X20 +15 ± 4 ms, K-L10 → K-L10b +30 ± 5 ms;
   - each crossing within ± 5 ms of the run's own median report-driven resend age plus srtt/2;
   - at each grid's lowest T, zero resends in every seed.
 - **Q3c-9, continuity:**
   - the T and H nudges read equivalent on K and P in every cell (shares, delay p50 and p90, ooo, repair per delivered);
-  - in E-I2n, the per-seed control reads K "shown", with mean K within ± 50 % of the mean K̂ computed beforehand, and P within ± 50 % of P̂ or equivalent where |P̂| < m.
+  - in E-I2n, over the usable seeds, the per-seed control reads K and P "shown". Mean K lies within ± 50 % of the mean K̂ (≈ U − L ≈ 50/12 147 ≈ 0.0041) and mean P within ± 50 % of the mean P̂ (≈ 0.0021). At least 8 of 12 seeds must be usable, else the control is "not placed", which is a finding.
 - **Q3c-10, stall parts (K cells, S4 at T = 0.4, H = ∞):**
   - (i) ≤ P + owd + 5 ms in every seed with an outage episode;
   - (o) ≤ owd + 1/rate + 2 ms where it is non-zero (a hole opened in the last owd before the outage);
