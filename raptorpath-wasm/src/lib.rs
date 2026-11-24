@@ -4,6 +4,7 @@ use wasm_bindgen::prelude::*;
 mod warm_tail;
 pub mod knobs;
 pub mod consumer;
+pub mod link;
 
 // =========================================================================
 // Three-knob laws (proposal; docs/derivations/visualizer-three-knobs-plan.md
@@ -438,6 +439,35 @@ const N_CLASSES: usize = 6;
 /// A unit without a seq (not sent yet, or expired at the intake).
 const NO_SEQ: u32 = u32::MAX;
 
+/// What a datagram on the forward leg carries (addendum 1 A2).
+enum DgKind {
+    /// A source symbol's first copy; it holds a store slot until its SACK.
+    Source,
+    /// A resend of a lost source symbol.
+    Resend,
+    /// A repair with its coded data.
+    Repair { start: u64, count: u16, index: u32, data: Vec<u8> },
+    /// A floor-repeat datagram (no payload, no feedback entry).
+    Floor,
+}
+
+/// One datagram in flight on a path's forward leg (addendum 1 A2). Its loss
+/// outcome and its arrival time are decided at send; `deliver` does every
+/// receiver-side effect at the arrival, keyed by seq.
+struct Datagram {
+    kind: DgKind,
+    seq: u64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    send_tick: u32,
+    path: usize,
+    /// F_ann at the send (the header carrier, read by the receiver at arrival).
+    floor: u32,
+    /// Lost on the wire: it still rides the leg as a ghost so its feedback
+    /// entry is due at the arrival it would have had.
+    lost: bool,
+    arrive_s: f64,
+}
+
 /// Per-path state (§5.5): an independent GE channel with its own
 /// capacity, RTT (feedback delay), estimator feed and traffic counters.
 struct PathState {
@@ -452,11 +482,29 @@ struct PathState {
     wire_idx: usize,
     estimator: math::LossEstimator,
     /// Wire outcomes awaiting THIS path's ACK round-trip:
-    /// (send_tick, arrived, holds_store_slot). The third flag marks SOURCE
-    /// sends, whose retention-store slot is released when this entry pops
-    /// with arrived = true — the SACK-clocked release (§6.3): the slot
-    /// frees on the selective ack, NOT on the cumulative frontier.
+    /// (due tick, arrived, holds_store_slot). The due tick is the arrival
+    /// (or would-be arrival) plus the reverse leg (addendum 1 A2). The third
+    /// flag marks SOURCE sends, whose retention-store slot is released when
+    /// this entry pops with arrived = true — the SACK-clocked release (§6.3):
+    /// the slot frees on the selective ack, NOT on the cumulative frontier.
     feedback_queue: std::collections::VecDeque<(u32, bool, bool)>,
+    /// The forward leg (addendum 1 A2): datagrams in flight, FIFO.
+    leg: std::collections::VecDeque<Datagram>,
+    /// The reverse leg in ticks: feedback is due this long after an arrival,
+    /// the first whole tick count ≥ rtt − d (addendum 1 A2).
+    reverse_ticks: u32,
+    /// The forward leg's service time, queue limit (both s) and propagation
+    /// delay d (s, within rtt/2), and the instant its server is free.
+    link_sv: f64,
+    link_q: f64,
+    link_d: f64,
+    link_free: f64,
+    /// Datagrams the leg's queue dropped (no channel state, no loss draw).
+    qdrop: u32,
+    /// Test-only: extra forward delay added to every arrival on this path,
+    /// to drive the duplicate and late-fill rules (addendum 1 A2).
+    #[cfg(test)]
+    test_extra_s: f64,
     last_flush_tick: u32,
     pending_sent: u32,
     pending_ok: u32,
@@ -688,6 +736,30 @@ pub struct Simulation {
     unit_seq: Vec<u32>,
     unit_emitted: Vec<u8>,
     unit_dirty: Vec<u32>,
+    /// Copies that reached a receiver already holding their seq (addendum 1
+    /// A2): counted, with no decode work, slot release or class change.
+    dup: u32,
+    /// The lead the sender takes by learning a resend's arrival at the
+    /// arrival tick rather than one reverse leg later (addendum 1 A2 gauge):
+    /// count, sum and maximum, in ticks.
+    lead_n: u32,
+    lead_sum: u64,
+    lead_max: u32,
+    /// The resend budget per 5-tick window (addendum 1 A5; ∞ = unlimited).
+    resend_limit: f64,
+    /// Test-only: every delivered datagram (send tick, deliver tick, path,
+    /// kind 0 source / 1 resend / 2 repair / 3 floor, lost), each resend's
+    /// lead (seq, path, ticks), every decoder feed in order (seq or window
+    /// start, u16::MAX for a source or the window count, repair index,
+    /// data), and sends that found the leg's server busy past the send.
+    #[cfg(test)]
+    leg_log: Vec<(u32, u32, usize, u8, bool)>,
+    #[cfg(test)]
+    lead_log: Vec<(u64, usize, u32)>,
+    #[cfg(test)]
+    feed_log: Vec<(u64, u16, u32, Vec<u8>)>,
+    #[cfg(test)]
+    free_after_now: u32,
     /// Test-only: the decode tick of every delivered seq.
     #[cfg(test)]
     decode_log: Vec<(u64, u32)>,
@@ -709,10 +781,24 @@ struct Symbol {
     lost: bool,
     recovered: bool,
     last_retx_tick: i64,
+    /// The tick its arrival's ack lands (arrival + reverse leg); u32::MAX
+    /// until it arrives. Drives only the pruning of arrived symbols.
+    ack_at: u32,
     /// Path the symbol was LAST sent on (original send, then updated per
     /// retransmit): its RTT gates the retry timer and the SACK ack, its
     /// estimator feeds the P_lost retransmit decision.
     path: usize,
+}
+
+/// The reverse leg in whole ticks: the first k with k·TICK ≥ rtt − d, so
+/// exactly `rtt_ticks` at d = 0 (no division by TICK, which can be an ulp off).
+fn reverse_ticks(rtt_ticks: u32, d: f64) -> u32 {
+    let target = rtt_ticks as f64 * TICK_SECS - d;
+    let mut k = rtt_ticks;
+    while k > 0 && (k - 1) as f64 * TICK_SECS >= target {
+        k -= 1;
+    }
+    k
 }
 
 fn xorshift64(state: &mut u64) -> f64 {
@@ -761,9 +847,11 @@ impl Simulation {
         xorshift64(&mut self.rng_state)
     }
 
-    /// Consume the next wire-slot channel outcome on path `pi`. true = lost.
-    fn wire_lost(&mut self, pi: usize) -> bool {
-        let now = self.now_s();
+    /// Consume the next wire-slot channel outcome on path `pi` for a datagram
+    /// departing at `at` (s; the outage is tested there, addendum 1 A2).
+    /// true = lost.
+    fn wire_lost(&mut self, pi: usize, at: f64) -> bool {
+        let now = at;
         let p = &mut self.paths[pi];
         let lost = p.channel_states.get(p.wire_idx).copied().unwrap_or(false);
         p.wire_idx += 1;
@@ -875,17 +963,18 @@ impl Simulation {
             let i = s as usize;
             if !self.acked_seq[i] && self.lat_by_seq[i].is_nan() {
                 let p = self.path_seq[i];
-                self.floor_ack_due[p].push_back((self.tick + self.paths[p].rtt_ticks, s));
+                self.floor_ack_due[p].push_back((self.tick + self.paths[p].reverse_ticks, s));
             }
         }
         self.f_rx = f;
     }
 
-    /// Header carrier (Q-V6 default): every arriving datagram carries F_ann.
-    fn carry_floor(&mut self) {
-        if self.f_ann > self.f_rx {
+    /// Header carrier (Q-V6 default): every arriving datagram carries the
+    /// F_ann stamped at its send.
+    fn carry_floor(&mut self, f: u32) {
+        if f > self.f_rx {
             self.floor_carried += 1;
-            self.receive_floor(self.f_ann);
+            self.receive_floor(f);
         }
     }
 
@@ -1376,35 +1465,22 @@ impl Simulation {
             self.span_cut_pending = false;
             self.span_cut_repairs += 1;
         }
-        let lost = self.wire_lost(pi);
+        let kind = DgKind::Repair {
+            start: repair.window_start, count: repair.window_count,
+            index: repair.repair_index, data: repair.coded_data,
+        };
+        let lost = self.send_datagram(kind, 0, pi);
         self.total_fec += 1;
         self.cum_sent += 1;
-        let tick = self.tick;
         {
             let p = &mut self.paths[pi];
             p.sent += 1;
             p.fec += 1;
-            p.feedback_queue.push_back((tick, !lost, false));
             if lost {
                 p.lost += 1;
-            } else {
-                p.arrived += 1;
             }
         }
-        if !lost {
-            self.cum_arrived += 1;
-            self.carry_floor();
-            let recovered = self.decoder.feed_repair(
-                repair.window_start, repair.window_count,
-                repair.repair_index, &repair.coded_data,
-            );
-            self.mark_recovered(&recovered);
-            self.record_delivery(&recovered);
-            self.cum_decoded += recovered
-                .iter()
-                .filter(|q| !self.given_up_seqs.contains(q))
-                .count() as u32;
-        }
+        self.deliver_due();
         !lost
     }
 
@@ -1433,6 +1509,180 @@ impl Simulation {
                 if slot.is_nan() {
                     *slot = lat;
                 }
+            }
+        }
+    }
+
+    /// Put a datagram on its path's forward leg (addendum 1 A2). Its loss
+    /// outcome is drawn here, at the send, in send order. The default leg
+    /// delivers at the send instant.
+    fn send_datagram(&mut self, kind: DgKind, seq: u64, pi: usize) -> bool {
+        let t = self.now_s();
+        #[cfg(test)]
+        {
+            if self.paths[pi].link_free > t {
+                self.free_after_now += 1;
+            }
+        }
+        let p = &mut self.paths[pi];
+        let leg = link::leg_send(&mut p.link_free, t, p.link_sv, p.link_q, p.link_d);
+        let (lost, arrive_s) = match leg {
+            Some((depart, arrive)) => (self.wire_lost(pi, depart), arrive),
+            None => {
+                // Dropped at the queue: no channel state, no loss draw; it
+                // rides the leg as a ghost to its would-be arrival.
+                let p = &mut self.paths[pi];
+                p.qdrop += 1;
+                (true, link::would_arrive(p.link_free, t, p.link_sv, p.link_d))
+            }
+        };
+        #[cfg(test)]
+        let arrive_s = arrive_s + self.paths[pi].test_extra_s;
+        let dg = Datagram { kind, seq, send_tick: self.tick, path: pi, floor: self.f_ann, lost, arrive_s };
+        self.paths[pi].leg.push_back(dg);
+        lost
+    }
+
+    /// Deliver every datagram whose arrival is due, across paths by arrival
+    /// time, ties by path index, then send order (each leg is FIFO).
+    fn deliver_due(&mut self) {
+        let now = self.now_s();
+        loop {
+            let mut best: Option<(usize, f64)> = None;
+            for (pi, p) in self.paths.iter().enumerate() {
+                if let Some(dg) = p.leg.front() {
+                    if dg.arrive_s <= now && best.is_none_or(|(_, a)| dg.arrive_s < a) {
+                        best = Some((pi, dg.arrive_s));
+                    }
+                }
+            }
+            let Some((pi, _)) = best else { break };
+            let dg = self.paths[pi].leg.pop_front().expect("front");
+            self.deliver(dg);
+        }
+    }
+
+    /// Datagrams in flight on every leg.
+    fn in_flight(&self) -> usize {
+        self.paths.iter().map(|p| p.leg.len()).sum()
+    }
+
+    /// The receiver holds seq s (decoded, given-up seqs excepted).
+    fn receiver_holds(&self, s: u64) -> bool {
+        !self.lat_by_seq[s as usize].is_nan()
+    }
+
+    /// Every receiver-side effect of one datagram, at its arrival (addendum 1
+    /// A2), keyed by seq. Transport effects (the feedback entry, the arrival
+    /// counters, the header floor, an original's set-point-1 ack) always
+    /// happen; a copy for a seq the receiver already holds is a duplicate and
+    /// does no decode work, no slot release and no class change.
+    fn deliver(&mut self, dg: Datagram) {
+        let pi = dg.path;
+        let due = self.tick + self.paths[pi].reverse_ticks;
+        #[cfg(test)]
+        self.leg_log.push((dg.send_tick, self.tick, pi, match dg.kind {
+            DgKind::Source => 0, DgKind::Resend => 1, DgKind::Repair { .. } => 2, DgKind::Floor => 3,
+        }, dg.lost));
+        let is_source = matches!(dg.kind, DgKind::Source);
+        if !matches!(dg.kind, DgKind::Floor) {
+            self.paths[pi].feedback_queue.push_back((due, !dg.lost, is_source));
+        }
+        if dg.lost {
+            return;
+        }
+        let seq = dg.seq;
+        match dg.kind {
+            DgKind::Floor => {
+                self.receive_floor(dg.floor);
+            }
+            DgKind::Source => {
+                self.paths[pi].arrived += 1;
+                self.cum_arrived += 1;
+                self.carry_floor(dg.floor);
+                // Set-point 1: the ack lands one reverse leg after the arrival.
+                self.ack_due[pi].push_back((due, seq as u32));
+                if let Some(sym) = self.symbols.iter_mut().rev().find(|x| x.seq == seq) {
+                    sym.ack_at = due;
+                }
+                if self.receiver_holds(seq) {
+                    self.dup += 1;
+                    return;
+                }
+                let data = self.source_store[seq as usize].clone();
+                #[cfg(test)]
+                self.feed_log.push((seq, u16::MAX, 0, data.clone()));
+                let rec = self.decoder.feed_source(seq, &data);
+                // Cascade outputs may resolve OTHER lost symbols.
+                self.mark_recovered(&rec);
+                self.record_delivery(&rec);
+                self.cum_decoded += rec
+                    .iter()
+                    .filter(|q| !self.given_up_seqs.contains(q))
+                    .count() as u32;
+            }
+            DgKind::Resend => {
+                self.paths[pi].arrived += 1;
+                self.cum_arrived += 1;
+                self.carry_floor(dg.floor);
+                // The sender learns this arrival now, at the arrival tick,
+                // one reverse leg before its feedback could land (coordinator
+                // default, addendum 1 A2): the lead it takes.
+                let lead = due - self.tick;
+                self.lead_n += 1;
+                self.lead_sum += lead as u64;
+                self.lead_max = self.lead_max.max(lead);
+                #[cfg(test)]
+                self.lead_log.push((seq, pi, lead));
+                if self.receiver_holds(seq) {
+                    self.dup += 1;
+                    return;
+                }
+                // The sender's bookkeeping below runs only for a hole still
+                // open at its arrival (always so when the copy arrives at its
+                // send); a hole the floor committed meanwhile is a late fill,
+                // resolved by `mark_recovered` alone.
+                let open = self.symbols.iter().position(|x| x.seq == seq && x.lost && !x.recovered);
+                let data = self.source_store[seq as usize].clone();
+                #[cfg(test)]
+                self.feed_log.push((seq, u16::MAX, 0, data.clone()));
+                let rec = self.decoder.feed_source(seq, &data);
+                // Cascade outputs may resolve OTHER lost symbols;
+                // pruned (given-up) seqs are discarded, not counted.
+                self.mark_recovered(&rec);
+                self.record_delivery(&rec);
+                self.cum_decoded += rec
+                    .iter()
+                    .filter(|q| !self.given_up_seqs.contains(q))
+                    .count() as u32;
+                if let Some(i) = open {
+                    // Recovery releases the lost original's store slot —
+                    // exactly once: mark_recovered above may already have
+                    // resolved this seq (the fed source is in the
+                    // decoder's output) and released it there.
+                    if !self.symbols[i].recovered {
+                        self.store_occupancy = self.store_occupancy.saturating_sub(1);
+                    }
+                    self.symbols[i].recovered = true;
+                    // NOTE (kept bit for bit): this decrements again after
+                    // mark_recovered already did for the same seq.
+                    self.lost_pending = self.lost_pending.saturating_sub(1);
+                    self.acked_seq[seq as usize] = true; // set-point 2
+                }
+            }
+            DgKind::Repair { start, count, index, data } => {
+                self.paths[pi].arrived += 1;
+                self.cum_arrived += 1;
+                self.carry_floor(dg.floor);
+                #[cfg(test)]
+                self.feed_log.push((start, count, index, data.clone()));
+                let recovered = self.decoder.feed_repair(start, count, index, &data);
+                self.mark_recovered(&recovered);
+                self.record_delivery(&recovered);
+                self.cum_decoded += recovered
+                    .iter()
+                    .filter(|q| !self.given_up_seqs.contains(q))
+                    .count() as u32;
             }
         }
     }
@@ -1504,11 +1754,9 @@ impl Simulation {
         .expect("the inert knobs are in the domain")
     }
 
-    /// The one constructor (three-knobs plan §3.1). `lifetime_s` = T ∈ (0, ∞],
-    /// `hold_s` = H ∈ [0, ∞], `source_rate` = λ in units/s (∞ = the object),
-    /// `num_source` units, and a per-path outage window [start, start + len)
-    /// in seconds. `multipath` and `new` delegate here with the inert values;
-    /// at those values the run is main's model bit for bit.
+    /// The three knobs with the default forward leg (no bottleneck, no
+    /// propagation split) and no resend budget: `multipath_link` at
+    /// service 0, queue ∞, propagation 0 per path and limit ∞.
     #[allow(clippy::too_many_arguments)]
     pub fn multipath_knobs(
         eps: Vec<f64>, q: Vec<f64>, rtt_ms: Vec<u32>, capacity: Vec<u32>,
@@ -1517,16 +1765,49 @@ impl Simulation {
         lifetime_s: f64, hold_s: f64, source_rate: f64, num_source: u32,
         outage_start_s: Vec<f64>, outage_len_s: Vec<f64>,
     ) -> Result<Simulation, String> {
+        let n = eps.len().max(1).min(8);
+        let inf = f64::INFINITY;
+        Self::multipath_link(
+            eps, q, rtt_ms, capacity, w, hint, fixed_r, custom_delta, custom_rho,
+            lifetime_s, hold_s, source_rate, num_source, outage_start_s, outage_len_s,
+            vec![0.0; n], vec![inf; n], vec![0.0; n], inf,
+        )
+    }
+
+    /// The one constructor (three-knobs plan §3.1, addendum 1 A2). `lifetime_s`
+    /// = T ∈ (0, ∞], `hold_s` = H ∈ [0, ∞], `source_rate` = λ in units/s (∞ =
+    /// the object), `num_source` units, a per-path outage window [start,
+    /// start + len) in seconds; per path the forward leg's service time and
+    /// queue limit (s) and propagation delay (s, ≤ rtt/2); and the resend
+    /// budget per 5-tick window. `multipath_knobs`, `multipath` and `new`
+    /// delegate here with the inert values; at those values the run is main's
+    /// model bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn multipath_link(
+        eps: Vec<f64>, q: Vec<f64>, rtt_ms: Vec<u32>, capacity: Vec<u32>,
+        w: u32, hint: String,
+        fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
+        lifetime_s: f64, hold_s: f64, source_rate: f64, num_source: u32,
+        outage_start_s: Vec<f64>, outage_len_s: Vec<f64>,
+        service_s: Vec<f64>, queue_s: Vec<f64>, prop_s: Vec<f64>, resend_limit: f64,
+    ) -> Result<Simulation, String> {
         knobs::validate_knobs(lifetime_s, hold_s)?;
         if !(source_rate > 0.0) {
             return Err(format!("source rate must be in (0, inf], got {source_rate}"));
         }
+        if !(resend_limit >= 0.0) {
+            return Err(format!("resend limit must be in [0, inf], got {resend_limit}"));
+        }
         let n = eps.len().max(1).min(8);
         assert!(
             q.len() >= n && rtt_ms.len() >= n && capacity.len() >= n
-                && outage_start_s.len() >= n && outage_len_s.len() >= n,
+                && outage_start_s.len() >= n && outage_len_s.len() >= n
+                && service_s.len() >= n && queue_s.len() >= n && prop_s.len() >= n,
             "per-path parameter arrays must have equal length"
         );
+        for i in 0..n {
+            link::validate_link(service_s[i], queue_s[i], prop_s[i], rtt_ms[i] as f64 / 1000.0)?;
+        }
 
         // Hint -> δ price, then ONE construction path for every hint.
         //
@@ -1579,6 +1860,15 @@ impl Simulation {
                 wire_idx: 0,
                 estimator: math::LossEstimator::new(),
                 feedback_queue: std::collections::VecDeque::new(),
+                leg: std::collections::VecDeque::new(),
+                reverse_ticks: reverse_ticks(rtt.max(2), prop_s[i]),
+                link_sv: service_s[i],
+                link_q: queue_s[i],
+                link_d: prop_s[i],
+                link_free: 0.0,
+                qdrop: 0,
+                #[cfg(test)]
+                test_extra_s: 0.0,
                 last_flush_tick: 0,
                 pending_sent: 0,
                 pending_ok: 0,
@@ -1690,6 +1980,19 @@ impl Simulation {
             unit_seq: vec![NO_SEQ; num_source as usize],
             unit_emitted: vec![CLASS_PENDING; num_source as usize],
             unit_dirty: Vec::new(),
+            dup: 0,
+            lead_n: 0,
+            lead_sum: 0,
+            lead_max: 0,
+            resend_limit,
+            #[cfg(test)]
+            leg_log: Vec::new(),
+            #[cfg(test)]
+            lead_log: Vec::new(),
+            #[cfg(test)]
+            feed_log: Vec::new(),
+            #[cfg(test)]
+            free_after_now: 0,
             #[cfg(test)]
             decode_log: Vec::new(),
             #[cfg(test)]
@@ -1714,12 +2017,14 @@ impl Simulation {
         // PATH (each path has its own ACK delay and its own estimator). Fed
         // with the true per-symbol pattern (§2.6); flushed once per
         // that path's RTT — each estimator honestly lags its own path.
+        // Arrivals due by now (addendum 1 A2), before the feedback pop.
+        self.deliver_due();
         let mut sack_released = 0u32;
         for pi in 0..self.paths.len() {
             let tick = self.tick;
             let p = &mut self.paths[pi];
-            while let Some(&(t, ok, src_slot)) = p.feedback_queue.front() {
-                if tick.saturating_sub(t) < p.rtt_ticks {
+            while let Some(&(due, ok, src_slot)) = p.feedback_queue.front() {
+                if tick < due {
                     break;
                 }
                 p.feedback_queue.pop_front();
@@ -1777,9 +2082,8 @@ impl Simulation {
                 let dest = self.best_correction_path(&free);
                 free[dest] -= 1;
                 self.floors += 1;
-                if !self.wire_lost(dest) {
-                    self.receive_floor(self.f_ann);
-                }
+                self.send_datagram(DgKind::Floor, 0, dest);
+                self.deliver_due();
             }
         }
         let total_slots: u32 = free.iter().sum();
@@ -1833,7 +2137,9 @@ impl Simulation {
                         self.commit_viol += 1; // a copy below the floor (must stay 0)
                     }
                     self.check_l1(seq as usize, 1);
-                    let lost = self.wire_lost(dest);
+                    // A retransmit holds no NEW store slot: the lost
+                    // original's slot is still held (until recovery).
+                    let lost = self.send_datagram(DgKind::Resend, seq, dest);
                     free[dest] -= 1;
                     self.total_arq += 1;
                     arq_n += 1;
@@ -1842,41 +2148,14 @@ impl Simulation {
                         let p = &mut self.paths[dest];
                         p.sent += 1;
                         p.arq += 1;
-                        // A retransmit holds no NEW store slot: the lost
-                        // original's slot is still held (until recovery).
-                        p.feedback_queue.push_back((self.tick, !lost, false));
                         if lost {
                             p.lost += 1;
-                        } else {
-                            p.arrived += 1;
                         }
                     }
                     if lost {
                         lost_n += 1;
-                    } else {
-                        self.cum_arrived += 1;
-                        self.carry_floor();
-                        let data = self.source_store[seq as usize].clone();
-                        let rec = self.decoder.feed_source(seq, &data);
-                        // Cascade outputs may resolve OTHER lost symbols;
-                        // pruned (given-up) seqs are discarded, not counted.
-                        self.mark_recovered(&rec);
-                        self.record_delivery(&rec);
-                        self.cum_decoded += rec
-                            .iter()
-                            .filter(|q| !self.given_up_seqs.contains(q))
-                            .count() as u32;
-                        // Recovery releases the lost original's store slot —
-                        // exactly once: mark_recovered above may already have
-                        // resolved this seq (the fed source is in the
-                        // decoder's output) and released it there.
-                        if !self.symbols[i].recovered {
-                            self.store_occupancy = self.store_occupancy.saturating_sub(1);
-                        }
-                        self.symbols[i].recovered = true;
-                        self.lost_pending = self.lost_pending.saturating_sub(1);
-                        self.acked_seq[seq as usize] = true; // set-point 2
                     }
+                    self.deliver_due();
                     did_retx = true;
                 }
             }
@@ -1931,18 +2210,15 @@ impl Simulation {
                     let oldest = self.encoder.next_seq().saturating_sub(self.w as u64);
                     self.encoder.advance(oldest);
                 }
-                let lost = self.wire_lost(dest);
+                let lost = self.send_datagram(DgKind::Source, seq, dest);
                 free[dest] -= 1;
                 self.store_occupancy += 1; // slot taken at send (§6.3)
                 {
                     let p = &mut self.paths[dest];
                     p.sent += 1;
                     p.src += 1;
-                    p.feedback_queue.push_back((self.tick, !lost, true));
                     if lost {
                         p.lost += 1;
-                    } else {
-                        p.arrived += 1;
                     }
                 }
                 self.symbols.push(Symbol {
@@ -1958,6 +2234,7 @@ impl Simulation {
                     // (immediate P_lost-gated firing would produce phantom
                     // retransmits).
                     last_retx_tick: self.tick as i64,
+                    ack_at: u32::MAX,
                     path: dest,
                 });
                 self.total_src += 1;
@@ -1976,21 +2253,8 @@ impl Simulation {
                     lost_n += 1;
                     self.total_lost += 1;
                     self.lost_pending += 1;
-                } else {
-                    self.cum_arrived += 1;
-                    self.carry_floor();
-                    // Set-point 1: the ack lands one own-path RTT after the send.
-                    let due = self.tick + self.paths[dest].rtt_ticks;
-                    self.ack_due[dest].push_back((due, seq as u32));
-                    let rec = self.decoder.feed_source(seq, &data);
-                    // Cascade outputs may resolve OTHER lost symbols.
-                    self.mark_recovered(&rec);
-                    self.record_delivery(&rec);
-                    self.cum_decoded += rec
-                        .iter()
-                        .filter(|q| !self.given_up_seqs.contains(q))
-                        .count() as u32;
                 }
+                self.deliver_due();
                 self.next_seq += 1;
                 self.u_next += 1;
                 if self.u_next >= self.num_source {
@@ -2053,18 +2317,12 @@ impl Simulation {
             }
         }
 
-        // ACK arrived-but-unmarked symbols after one RTT of THEIR path
-        // (SACK view; per-path ack delay).
+        // ACK arrived-but-unmarked symbols when their arrival's ack lands
+        // (SACK view; arrival + reverse leg, addendum 1 A2).
         let tick = self.tick;
-        {
-            let paths = &self.paths;
-            for sym in &mut self.symbols {
-                if !sym.lost
-                    && !sym.recovered
-                    && tick.saturating_sub(sym.tick) >= paths[sym.path].rtt_ticks
-                {
-                    sym.recovered = true;
-                }
+        for sym in &mut self.symbols {
+            if !sym.lost && !sym.recovered && tick >= sym.ack_at {
+                sym.recovered = true;
             }
         }
 
@@ -2101,12 +2359,16 @@ impl Simulation {
         // the intake, or passed by the floor undelivered (0 at T = ∞).
         let resolved = self.cum_decoded + self.given_up + self.intake_expired
             + self.intake_expired_deq + self.passed_undelivered;
-        if self.source_done && resolved >= self.num_source {
+        // Nothing may still be in flight (addendum 1 A2; always so with the
+        // default leg, which delivers at the send).
+        let drained = self.in_flight() == 0;
+        if self.source_done && resolved >= self.num_source && drained {
             self.finished = true;
         }
         if self.source_done
             && self.lost_pending == 0
             && !self.symbols.iter().any(|s| s.lost && !s.recovered)
+            && drained
         {
             self.finished = true;
         }
@@ -2538,6 +2800,26 @@ impl Simulation {
     /// Holes the consumer released and that were filled later (delivered out
     /// of order at once, O3 = yes).
     pub fn get_late_fills(&self) -> u32 { self.consumer.late_fills }
+    /// Copies that reached a receiver already holding their seq (addendum 1 A2).
+    pub fn get_dup(&self) -> u32 { self.dup }
+    /// The forward leg of path i (addendum 1 A2; routing witnesses): service
+    /// time, queue limit and propagation delay, seconds.
+    pub fn get_link_service_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_sv) }
+    pub fn get_link_queue_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_q) }
+    pub fn get_link_prop_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_d) }
+    /// Datagrams path i's queue dropped.
+    pub fn get_path_qdrop(&self, i: usize) -> u32 { self.paths.get(i).map_or(0, |p| p.qdrop) }
+    /// Datagrams in flight on every forward leg now.
+    pub fn get_in_flight(&self) -> u32 { self.in_flight() as u32 }
+    /// The resend budget per 5 ms window (∞ = unlimited).
+    pub fn get_resend_limit(&self) -> f64 { self.resend_limit }
+    /// The knowledge lead (addendum 1 A2 gauge): the reverse-leg delay the
+    /// sender skips by learning a resend's arrival at the arrival tick, mean
+    /// and maximum over resends, ms (0 before any resend arrived).
+    pub fn get_knowledge_lead_mean_ms(&self) -> f64 {
+        self.lead_sum as f64 / self.lead_n.max(1) as f64 * TICK_SECS * 1000.0
+    }
+    pub fn get_knowledge_lead_max_ms(&self) -> f64 { self.lead_max as f64 * TICK_SECS * 1000.0 }
     /// The units whose class changed since the last call, as flat quadruples
     /// `[unit, hand-over s, delay s (∞ when not delivered), class]`. A unit
     /// appears when it is delivered, expires at the intake, or is passed or

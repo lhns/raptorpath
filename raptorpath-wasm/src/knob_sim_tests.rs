@@ -794,3 +794,285 @@ fn out_of_order_is_zero_when_strict_and_the_late_fills_when_open() {
     }
     assert!(fills > 0, "H = 0 must see late fills somewhere");
 }
+
+// --- Addendum 1 A2 (P10): the forward leg, extracted -------------------------
+
+/// A run with a forward leg per path and a resend limit.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_link(
+    paths: &[Cell], hint: &str, delta: Option<f64>, k: Knobs,
+    sv: &[f64], q: &[f64], d: &[f64], limit: f64,
+) -> Simulation {
+    let n = paths.len();
+    Simulation::multipath_link(
+        paths.iter().map(|c| c.eps).collect(),
+        paths.iter().map(|c| c.q).collect(),
+        paths.iter().map(|c| c.rtt).collect(),
+        paths.iter().map(|c| c.cap).collect(),
+        64, hint.into(), None, delta, None,
+        k.t, k.h, k.load * goodput(paths), k.units,
+        vec![k.outage_start; n], vec![k.outage_len; n],
+        sv.to_vec(), q.to_vec(), d.to_vec(), limit,
+    )
+    .expect("valid link")
+}
+
+/// A2: with the default leg every datagram is delivered inline at its send
+/// tick (nothing is ever in flight at a tick's end), the server is never busy
+/// past a send (free_p <= now), and every resend's knowledge lead is its
+/// path's RTT in ticks.
+#[test]
+fn the_default_leg_delivers_inline_at_the_send_tick() {
+    let mut cells: Vec<(&str, Vec<Cell>, Knobs)> =
+        GOLDEN_CELLS.iter().map(|(h, c)| (*h, vec![*c], OBJECT)).collect();
+    cells.extend(finite_t_cells());
+    cells.push(("auto", TWO_PATH.to_vec(), OBJECT));
+    let mut kinds = [0usize; 4];
+    for (hint, paths, k) in cells {
+        let mut s = build(&paths, hint, None, k);
+        while !s.is_finished() && s.get_tick() < CAP {
+            s.step();
+            assert_eq!(s.get_in_flight(), 0, "{hint} {k:?}: in flight at the end of tick {}", s.get_tick());
+        }
+        assert_eq!(s.free_after_now, 0, "{hint} {k:?}: free_p > now at a send");
+        for &(sent, at, _, kind, _) in &s.leg_log {
+            assert_eq!(sent, at, "{hint} {k:?}: kind {kind} sent {sent} delivered {at}");
+            kinds[kind as usize] += 1;
+        }
+        for &(seq, p, lead) in &s.lead_log {
+            assert_eq!(lead, paths[p].rtt.max(2), "{hint} {k:?} seq {seq}");
+        }
+        assert_eq!(s.get_dup(), 0);
+        store_is_accounted(&s, hint);
+        ack_is_on_its_way(&s, hint);
+    }
+    assert!(kinds.iter().all(|&n| n > 0), "every datagram kind must be exercised: {kinds:?}");
+}
+
+/// A2: the decoder does not depend on arrival order. A run's decoder feeds,
+/// replayed into a fresh decoder in their order and in three permutations,
+/// recover the same set as the run.
+#[test]
+fn the_decoder_is_order_independent() {
+    let cells = [("auto", vec![GOLDEN_CELLS[1].1]), ("realtime", TWO_PATH.to_vec())];
+    for (hint, paths) in cells {
+        let mut s = build(&paths, hint, None, OBJECT);
+        run(&mut s);
+        let mut want: Vec<u64> = s.decode_log.iter().map(|e| e.0).collect();
+        want.sort_unstable();
+        let replay = |order: &[usize]| {
+            let mut dec = math::RlcDecoder::new(8);
+            let mut got = Vec::new();
+            for &i in order {
+                let (a, count, index, ref data) = s.feed_log[i];
+                got.extend(if count == u16::MAX {
+                    dec.feed_source(a, data)
+                } else {
+                    dec.feed_repair(a, count, index, data)
+                });
+            }
+            got.sort_unstable();
+            got.dedup();
+            got
+        };
+        let n = s.feed_log.len();
+        let ident: Vec<usize> = (0..n).collect();
+        assert_eq!(replay(&ident), want, "{hint}: the in-order replay");
+        let mut rng = 0x2545f4914f6cdd1du64;
+        for _ in 0..3 {
+            let mut perm = ident.clone();
+            for i in (1..n).rev() {
+                let j = (xorshift64(&mut rng) * (i + 1) as f64) as usize;
+                perm.swap(i, j.min(i));
+            }
+            assert_eq!(replay(&perm), want, "{hint}: a permuted replay recovered another set");
+        }
+    }
+}
+
+/// The store holds exactly the source slots whose SACK is still on its way,
+/// the open (lost, unresolved) holes and the committed holes owed a slot: no
+/// slot leaks and none is released twice.
+fn store_is_accounted(s: &Simulation, label: &str) {
+    let sack: usize = s.paths.iter().map(|p| p.feedback_queue.iter().filter(|e| e.1 && e.2).count()).sum();
+    let open = s.symbols.iter().filter(|x| x.lost && !x.recovered).count();
+    let owed = s.slot_owed.iter().filter(|&&o| o).count();
+    assert_eq!(s.get_store_occupancy() as usize, sack + open + owed, "{label}: store {} != sack {sack} + open {open} + owed {owed}", s.get_store_occupancy());
+}
+
+/// A_known cannot stall: every seq is acked, or its ack is queued (set-point
+/// 1 or 5), or it is an open hole still being recovered.
+fn ack_is_on_its_way(s: &Simulation, label: &str) {
+    let mut queued = std::collections::HashSet::new();
+    for q in s.ack_due.iter().chain(s.floor_ack_due.iter()) {
+        queued.extend(q.iter().map(|e| e.1 as u64));
+    }
+    let open: std::collections::HashSet<u64> =
+        s.symbols.iter().filter(|x| x.lost && !x.recovered).map(|x| x.seq).collect();
+    for q in 0..s.next_seq as u64 {
+        assert!(s.acked_seq[q as usize] || queued.contains(&q) || open.contains(&q), "{label}: seq {q} can never be acked");
+    }
+}
+
+/// The checks every leg run must pass: it finishes, each seq is decoded and
+/// handed to the consumer at most once, the classes and outcome counts add
+/// up, nothing is left in flight and the store is accounted for.
+fn leg_run_is_sound(s: &Simulation, label: &str) {
+    assert!(s.is_finished() && s.get_tick() < CAP, "{label}: did not finish");
+    let mut seen = std::collections::HashSet::new();
+    for &(q, _) in &s.decode_log {
+        assert!(seen.insert(q), "{label}: seq {q} decoded twice");
+    }
+    let mut seen = std::collections::HashSet::new();
+    for &(q, _) in &s.consumer.deliver_log {
+        assert!(seen.insert(q), "{label}: seq {q} delivered twice");
+    }
+    let counts = s.get_class_counts();
+    assert_eq!(counts[CLASS_PENDING as usize], 0, "{label}: units left pending");
+    let expired = s.get_intake_expired() + s.get_intake_expired_deq();
+    assert_eq!(
+        s.get_cum_decoded() + s.get_passed_undelivered() + s.get_given_up() + expired,
+        s.get_num_source(),
+        "{label}: outcome classes"
+    );
+    assert_eq!(s.get_in_flight(), 0);
+    store_is_accounted(s, label);
+    ack_is_on_its_way(s, label);
+}
+
+/// A2's duplicate rule, driven by a test-only forward delay longer than the
+/// retry timer (a second copy leaves while the first is in flight), and at
+/// N = 2 by a propagation split (an original on the slow path arrives after
+/// a repair on the fast one decoded it). A duplicate counts and does nothing
+/// else: no second decode, delivery or class, no slot leak, A_known reaches
+/// the end at T = inf.
+#[test]
+fn a_duplicate_counts_and_does_nothing_else() {
+    let mut dups = 0;
+    // one path, 60 ms extra forward delay on a 50 ms RTT
+    for hint in ["bulk", "auto"] {
+        let mut s = build(&[GOLDEN_CELLS[0].1], hint, None, OBJECT);
+        s.paths[0].test_extra_s = 0.06;
+        run(&mut s);
+        leg_run_is_sound(&s, hint);
+        assert_eq!(s.get_cum_decoded(), s.get_num_source());
+        ack_is_on_its_way(&s, hint);
+        dups += s.get_dup();
+    }
+    // two paths, the slow path's propagation at its full rtt/2
+    for hint in ["auto", "realtime"] {
+        let mut s = build_link(&TWO_PATH, hint, None, OBJECT, &[0.0; 2], &[INF; 2], &[0.0, 0.04], INF);
+        run(&mut s);
+        leg_run_is_sound(&s, hint);
+        assert_eq!(s.get_cum_decoded(), s.get_num_source());
+        ack_is_on_its_way(&s, hint);
+        dups += s.get_dup();
+    }
+    assert!(dups > 0, "the duplicate rule must execute");
+    println!("duplicates: {dups}");
+}
+
+/// A2's late fill of a committed seq: a copy (or a decode) that arrives
+/// after the floor passed its hole moves the unit from passed-undelivered to
+/// delivered exactly once, re-classes it at most once (a drain between the
+/// commitment and the fill sees `undelivered` first), and its store slot is
+/// released once.
+#[test]
+fn a_late_fill_of_a_committed_seq_moves_the_unit_once() {
+    let (mut late_filled, mut superseded) = (0, 0);
+    for (hint, paths, k) in finite_t_cells() {
+        for extra in [0.02, 0.05] {
+            let mut s = build(&paths, hint, None, k);
+            for p in &mut s.paths {
+                p.test_extra_s = extra;
+            }
+            let hist = run_with_events(&mut s, 1);
+            let label = format!("{hint} {k:?} extra {extra}");
+            leg_run_is_sound(&s, &label);
+            let committed: std::collections::HashMap<u64, u32> =
+                s.commit_log.iter().map(|&(t, q)| (q, t)).collect();
+            for &(q, t) in &s.decode_log {
+                if let Some(&c) = committed.get(&q) {
+                    assert!(t >= c, "{label}: seq {q}");
+                    late_filled += 1;
+                    let u = s.seq_unit[q as usize] as usize;
+                    let ev = &hist[u];
+                    let last = ev.last().expect("an event").2;
+                    assert!([CLASS_ON_TIME, CLASS_LATE, CLASS_OUT_OF_ORDER].contains(&last), "{label}: unit {u} {ev:?}");
+                    assert!(ev.len() == 1 || (ev.len() == 2 && ev[0].2 == CLASS_UNDELIVERED), "{label}: unit {u} {ev:?}");
+                    superseded += (ev.len() == 2) as u32;
+                }
+            }
+            let released: std::collections::HashSet<u64> =
+                s.slot_release_log.iter().map(|e| e.1).collect();
+            assert_eq!(released.len(), s.slot_release_log.len(), "{label}: a slot released twice");
+            assert_eq!(s.get_l1_viol(), 0, "{label}");
+        }
+    }
+    assert!(late_filled > 0 && superseded > 0, "the late-fill rule must execute");
+    println!("late fills of committed seqs: {late_filled}, superseding events {superseded}");
+}
+
+/// A2's knowledge lead, bounded: for every resend the sender learns of at
+/// its arrival, the lead is its path's reverse leg, the first whole tick
+/// count >= rtt - d (so <= rtt - d + 1 tick, and exactly rtt - d when d lies
+/// on the tick grid: the model's reverse leg has no queue).
+#[test]
+fn the_knowledge_lead_is_the_reverse_leg() {
+    let lossy = [GOLDEN_CELLS[1].1];
+    let cases: Vec<(&[Cell], Vec<f64>)> = vec![
+        (&lossy, vec![0.0]),
+        (&lossy, vec![0.010]),
+        (&lossy, vec![0.0125]),
+        (&lossy, vec![0.040]),
+        (&TWO_PATH, vec![0.010, 0.0333]),
+    ];
+    let mut n = 0;
+    for (paths, d) in cases {
+        let np = paths.len();
+        for hint in ["bulk", "realtime"] {
+            let mut s = build_link(paths, hint, None, OBJECT, &vec![0.0; np], &vec![INF; np], &d, INF);
+            run(&mut s);
+            leg_run_is_sound(&s, hint);
+            for &(seq, p, lead) in &s.lead_log {
+                let rtt = paths[p].rtt.max(2) as f64 * TICK_SECS;
+                let rev = rtt - d[p];
+                let lead_s = lead as f64 * TICK_SECS;
+                assert_eq!(lead, s.paths[p].reverse_ticks, "seq {seq}");
+                assert!(lead_s >= rev - 1e-12 && lead_s - TICK_SECS < rev, "seq {seq}: lead {lead_s} rtt - d {rev}");
+                if (d[p] * 1000.0).fract() == 0.0 {
+                    assert!((lead_s - rev).abs() < 1e-12, "seq {seq}: on the grid the lead is rtt - d exactly");
+                }
+                n += 1;
+            }
+            let max = s.lead_log.iter().map(|e| e.2).max().unwrap_or(0) as f64 * TICK_SECS * 1000.0;
+            assert_eq!(s.get_knowledge_lead_max_ms(), max);
+        }
+    }
+    assert!(n > 0, "resends must arrive");
+    println!("knowledge lead: {n} resends checked");
+}
+
+/// The link's domain reaches the constructor's caller.
+#[test]
+fn the_link_constructor_rejects_out_of_domain_values() {
+    let c = [GOLDEN_CELLS[0].1];
+    let try_link = |sv: f64, q: f64, d: f64, lim: f64| {
+        Simulation::multipath_link(
+            vec![c[0].eps], vec![c[0].q], vec![c[0].rtt], vec![4], 64, "continuum".into(),
+            None, Some(50.0), None, INF, INF, INF, 2000, vec![INF], vec![0.0],
+            vec![sv], vec![q], vec![d], lim,
+        )
+    };
+    assert!(try_link(0.0, INF, 0.0, INF).is_ok());
+    assert!(try_link(0.001, 0.1, 0.025, 10.0).is_ok());
+    assert!(try_link(-0.001, INF, 0.0, INF).is_err());
+    assert!(try_link(f64::NAN, INF, 0.0, INF).is_err());
+    assert!(try_link(0.0, 0.0, 0.0, INF).is_err());
+    assert!(try_link(0.0, INF, 0.026, INF).is_err());
+    assert!(try_link(0.0, INF, 0.0, -1.0).is_err());
+    assert!(try_link(0.0, INF, 0.0, f64::NAN).is_err());
+    let s = try_link(0.002, 0.1, 0.01, 10.0).unwrap();
+    let got = (s.get_link_service_s(0), s.get_link_queue_s(0), s.get_link_prop_s(0), s.get_resend_limit());
+    assert_eq!(got, (0.002, 0.1, 0.01, 10.0));
+}

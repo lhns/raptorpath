@@ -540,7 +540,7 @@ function denyViolations(src) {
   check("SimWrapper: one construction path (no `if (knobs)` selecting a constructor)",
     !/if\s*\(\s*!?\s*knobs\b/.test(wrapper) && /knobs = MAIN_KNOBS/.test(wrapper) &&
     (wrapper.match(/Simulation\.multipath\b/g) || []).length === 0 &&
-    (wrapper.match(/Simulation\.multipath_knobs/g) || []).length === 1);
+    (wrapper.match(/Simulation\.multipath_link/g) || []).length === 1);
 }
 
 // ---- 6b. A1: the class drawings compare no delivery tick, delay or seq --------

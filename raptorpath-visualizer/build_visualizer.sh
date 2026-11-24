@@ -89,6 +89,10 @@ const MAIN_KNOBS = {
   lifetimeS: Infinity, holdS: Infinity, sourceRate: Infinity,
   numSource: 2000, outageStartS: Infinity, outageLenS: 0,
 };
+// The forward leg and the resend budget main's page runs at (addendum 1 A2,
+// A5): no bottleneck (service 0 s), no queue limit, no propagation split, no
+// budget. Values, not absent fields: the leg is the send instant there.
+const MAIN_LINK = { serviceS: 0, queueS: Infinity, propS: 0, resendLimit: Infinity };
 
 // The model's unit class codes (CLASS_* in raptorpath-wasm, addendum 1 A1):
 // 0 pending, 1 on time, 2 late, 3 out of order, 4 undelivered, 5 expired.
@@ -98,7 +102,7 @@ class SimWrapper {
   // ONE construction path: the second argument defaults to MAIN_KNOBS, and
   // the knobs page passes its own through SimWrapper.withKnobs. Nothing
   // here inspects a knob value.
-  constructor(params, knobs = MAIN_KNOBS) {
+  constructor(params, knobs = MAIN_KNOBS, link = MAIN_LINK) {
     const fixedR = params.fixedR;
     // Accept both shapes: params.paths array (new) or flat single-path
     // params (compat shim for any old caller).
@@ -106,7 +110,8 @@ class SimWrapper {
       ? params.paths
       : [{ eps: params.eps, q: params.q, rttMs: params.rttMs, cap: 4 }];
     this.knobs = knobs;
-    this.inner = SimWrapper._build(paths, params, fixedR, knobs);
+    this.link = link;
+    this.inner = SimWrapper._build(paths, params, fixedR, knobs, link);
     this.rateHistory = [];
     // Per-path channel-state traces (the strip shows the selected path).
     this.channelStates = paths.map(() => []);
@@ -144,31 +149,36 @@ class SimWrapper {
       // String(): JSON.stringify would turn Infinity into null.
       const key = JSON.stringify([paths, params.hint, params.W,
                                   fixedR, params.customDelta, params.customRho])
-        + '|' + Object.values(knobs).map(String).join(',');
+        + '|' + Object.values(knobs).map(String).join(',')
+        + '|' + Object.values(link).map(String).join(',');
       const hit = BASELINE_CACHE.get(key);
       if (hit !== undefined) {
         this.bestSingleMeasured = hit;
         this.baselineReady = true;
       } else {
-        this._measureBaseline(paths, params, fixedR, key, knobs);
+        this._measureBaseline(paths, params, fixedR, key, knobs, link);
       }
     }
   }
   // The one wasm constructor call, for the run and for each baseline path.
   // The outage window applies to every path it builds.
-  static _build(paths, params, fixedR, knobs) {
-    return Simulation.multipath_knobs(
+  static _build(paths, params, fixedR, knobs, link) {
+    return Simulation.multipath_link(
       paths.map(c => c.eps), paths.map(c => c.q),
       new Uint32Array(paths.map(c => c.rttMs)),
       new Uint32Array(paths.map(c => c.cap)),
       params.W, params.hint, fixedR, params.customDelta, params.customRho,
       knobs.lifetimeS, knobs.holdS, knobs.sourceRate, knobs.numSource,
       new Float64Array(paths.map(() => knobs.outageStartS)),
-      new Float64Array(paths.map(() => knobs.outageLenS)));
+      new Float64Array(paths.map(() => knobs.outageLenS)),
+      new Float64Array(paths.map(() => link.serviceS)),
+      new Float64Array(paths.map(() => link.queueS)),
+      new Float64Array(paths.map(() => link.propS)),
+      link.resendLimit);
   }
-  static withKnobs(params, knobs) { return new SimWrapper(params, knobs); }
-  _measureBaseline(paths, params, fixedR, key, knobs) {
-    const sims = paths.map(c => SimWrapper._build([c], params, fixedR, knobs));
+  static withKnobs(params, knobs, link = MAIN_LINK) { return new SimWrapper(params, knobs, link); }
+  _measureBaseline(paths, params, fixedR, key, knobs, link) {
+    const sims = paths.map(c => SimWrapper._build([c], params, fixedR, knobs, link));
     const wrapper = this;
     let idx = 0, guard = 0, best = 0;
     function slice() {
@@ -299,6 +309,16 @@ class SimWrapper {
   get lateShare()   { return this.inner.get_late_share(); }
   get oooLate()     { return this.inner.get_ooo_late(); }
   get lateFills()   { return this.inner.get_late_fills(); }
+  // --- The forward leg (addendum 1 A2): routing witnesses and gauges ---
+  linkServiceS(i) { return this.inner.get_link_service_s(i); }
+  linkQueueS(i)   { return this.inner.get_link_queue_s(i); }
+  linkPropS(i)    { return this.inner.get_link_prop_s(i); }
+  pathQdrop(i)    { return this.inner.get_path_qdrop(i); }
+  get resendLimit() { return this.inner.get_resend_limit(); }
+  get dup()         { return this.inner.get_dup(); }
+  get inFlight()    { return this.inner.get_in_flight(); }
+  get knowledgeLeadMeanMs() { return this.inner.get_knowledge_lead_mean_ms(); }
+  get knowledgeLeadMaxMs()  { return this.inner.get_knowledge_lead_max_ms(); }
   get relByHold()   { return this.inner.get_rel_by_hold(); }
   get relByFloor()  { return this.inner.get_rel_by_floor(); }
   get releasedHoles() { return this.inner.get_released_holes(); }

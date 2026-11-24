@@ -4,13 +4,16 @@
 //! T and the hold H meet a literal or another knob only inside the law
 //! functions of `src/knobs.rs`, pinned here by name.
 //!
-//! Scanned: the non-test code of `src/lib.rs`, `src/knobs.rs` and
-//! `src/consumer.rs` (comments and string literals removed). Flagged:
+//! Scanned: the non-test code of `src/lib.rs`, `src/knobs.rs`,
+//! `src/consumer.rs` and `src/link.rs` (comments and string literals
+//! removed). Flagged:
 //! - `is_infinite` / `is_finite` anywhere;
 //! - `INFINITY` on a line that compares;
 //! - a knob identifier on a line that compares or clamps (`<`, `>`, `<=`,
 //!   `>=`, `==`, `!=`, `.min(`, `.max(`, `.clamp(`), outside the argument
-//!   list of a `knobs::` call (passing T or H to a law is the allowed form).
+//!   list of a `knobs::` call (passing T or H to a law is the allowed form);
+//! - in `src/link.rs` (the forward leg, addendum 1 A4), any knob identifier
+//!   or law call at all: the leg is a pure function of its own parameters.
 //!
 //! The scan asserts it visited every file, and a planted-fixture self-test
 //! proves each form is flagged, so the gate cannot pass vacuously.
@@ -32,7 +35,7 @@ const KNOB_IDENTS: &[&str] = &[
 /// In `knobs.rs` the law parameters are named `t` and `h`.
 const KNOBS_RS_PARAMS: &[&str] = &["t", "h"];
 
-const FILES: &[&str] = &["src/lib.rs", "src/knobs.rs", "src/consumer.rs"];
+const FILES: &[&str] = &["src/lib.rs", "src/knobs.rs", "src/consumer.rs", "src/link.rs"];
 
 /// Remove `//` comments and the contents of string literals (which may span
 /// lines); newlines are kept so line numbers stay meaningful.
@@ -195,6 +198,16 @@ fn scan_text(text: &str, is_knobs_rs: bool) -> Vec<String> {
     bad
 }
 
+/// `src/link.rs` names no knob and calls no law (addendum 1 A4).
+fn scan_link(text: &str) -> Vec<String> {
+    let code = strip_test_modules(&strip_comments_and_strings(text));
+    code.lines()
+        .enumerate()
+        .filter(|(_, l)| idents(l).any(|i| KNOB_IDENTS.contains(&i) || i == "knobs"))
+        .map(|(n, l)| format!("line {}: a knob in the forward leg: {}", n + 1, l.trim()))
+        .collect()
+}
+
 #[test]
 fn knob_source_has_no_mode_switch_forms() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -206,6 +219,11 @@ fn knob_source_has_no_mode_switch_forms() {
         visited += 1;
         for b in scan_text(&text, f.ends_with("knobs.rs")) {
             bad.push(format!("{f}: {b}"));
+        }
+        if f.ends_with("link.rs") {
+            for b in scan_link(&text) {
+                bad.push(format!("{f}: {b}"));
+            }
         }
     }
     assert_eq!(visited, FILES.len());
@@ -242,4 +260,16 @@ fn the_scan_is_not_vacuous() {
                  fn v() -> Vec<f64> { Vec::new() }\n";
     let got = scan_text(clean, false);
     assert!(got.is_empty(), "false positives: {got:?}");
+    // The forward leg may not name a knob or call a law, even uncompared.
+    for p in [
+        "pub fn leg(t: f64, lifetime_s: f64) -> f64 { t + lifetime_s }",
+        "pub fn leg(t: f64) -> bool { knobs::intake_expired(t, 0.0) }",
+        "pub fn leg(hold: f64) -> f64 { hold }",
+    ] {
+        assert!(!scan_link(p).is_empty(), "link scanner missed: {p}");
+    }
+    let leg = "pub fn leg_send(free: &mut f64, t: f64, sv: f64) -> f64 { t.max(*free) + sv }
+               // the lifetime is not read here
+";
+    assert!(scan_link(leg).is_empty(), "link false positive");
 }
