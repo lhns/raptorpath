@@ -152,6 +152,11 @@ def build():
         if cell.startswith("OV"):
             for H in (0.0, INF):
                 job("LONG", "%s.S5v-H%s" % (cell, tag(H)), lambda s, cell=cell, H=H: s5v_cfg(cell, s, 0.4, H))
+        job("LONG", "%s.%s" % (cell, gname(0.4, 0.02)), lambda s, cell=cell: s5_cfg(cell, s, 0.4, 0.02))        # the unplanted nudges (17.9: every cell but X and P2)
+        for x in NUDGE:
+            if x != 1.0:
+                job("LONG", "%s.NT-%s" % (cell, tag(x)), lambda s, cell=cell, x=x: s5_cfg(cell, s, 0.4 * x, 0.02))
+                job("LONG", "%s.NH-%s" % (cell, tag(x)), lambda s, cell=cell, x=x: s5_cfg(cell, s, 0.4, 0.02 * x))
     # P2: C3 and S5 at T in {0.075, 0.4, inf} x H in {0, inf} x H_f in {est, 0}
     job("ID", "P2.C3", lambda s: cmp_cfg("P2", "C3", s))
     job("ID", "P2.C3S", lambda s: p2_cfg(s, INF, INF, "est"))

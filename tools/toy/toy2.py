@@ -1688,6 +1688,12 @@ class Sim:
         out["H_f_end"] = self.est.value(self.t_last)
         if self.paths is not None:
             out["srtt_path"] = [self.psrtt[i] for i in range(self.npath)]
+            pa = np.frombuffer(bytes(self.path_of[:n]), dtype=np.uint8)
+            d_all = np.where(ok, dl - hs_, np.inf)                       # per seq: delay from hand-over, inf if never delivered
+            for p, nm in ((0, "A"), (1, "B")):                           # 17.8 Q3d-8: the delay of the units first sent on each path
+                d = np.sort(d_all[pa == p])
+                for q in (50, 90, 99):
+                    out["dh%s_p%d" % (nm, q)] = float(d[max(0, math.ceil(q / 100.0 * len(d)) - 1)]) if len(d) else float("nan")
         if not c.windows:
             return
         ages = np.full(self.units_total, np.inf)

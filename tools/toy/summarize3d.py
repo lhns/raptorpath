@@ -102,15 +102,17 @@ def ident_trace(seeds=(0, 1, 2)):
 
 
 def freeze():
-    """A/A: AA-1 (clock-phase variant 1) against C3 (S5 at T = inf, variant 0 is C3S, bit-equal to C3 by the identity of Q3d-1) per cell and readout."""
-    nf = dict(cells={}, selfcheck={}, notes="p95 over 12 seeds of |A - A'|, A = C3 (= S5 at T = inf, H = inf, phase variant 0 by identity), A' = AA-1 (variant 1), per cell and readout; ms for times. NF_K = NF_P = this floor.")
+    """A/A: AA-1 (clock-phase variant 1) against C3S (S5 at T = inf, variant 0) per cell and readout, as stage 3c did; in the four long cells C3S
+    has 3 seeds only, so C3 (bit-equal to C3S by the identity of Q3d-1) is the variant-0 arm there."""
+    nf = dict(cells={}, selfcheck={}, notes="p95 over 12 seeds of |A - A'|, A = C3S (S5 at T = inf, H = inf, phase variant 0; C3 in the long cells), A' = AA-1 (variant 1), per cell and readout; ms for times. NF_K = NF_P = this floor.")
     bad = []
     for cell in ALL_CELLS:
-        if not (S.have(cell, "AA-1") and S.have(cell, "C3")):
+        ref = "C3S" if S.have(cell, "C3S") else "C3"
+        if not (S.have(cell, "AA-1") and S.have(cell, ref)):
             continue
         nf["cells"][cell] = {}
         for k in AA_KEYS:
-            d = S.diffv(cell, "C3", "AA-1", k)
+            d = S.diffv(cell, ref, "AA-1", k)
             if not len(d) or np.all(np.isnan(d)):
                 continue
             fin = np.abs(d[np.isfinite(d)])

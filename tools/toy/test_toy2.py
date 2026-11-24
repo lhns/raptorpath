@@ -333,7 +333,7 @@ class Receivers(unittest.TestCase):
                 self.assertGreaterEqual(r["tail_verdicts"] + r["gauges"]["refusals"] // 100000, 0)
 
 
-DIALS = {"rho", "delta", "hint", "T", "Hk"}
+DIALS = {"rho", "delta", "hint", "T", "Hk", "Te"}        # Te: stage 3d, T_eff = plant_T(cfg, T), the knob under another name
 # HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions (three-knobs.md 9.2) and the share_T readout are the only places T is compared
 EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime",
           "dequeue_expired",      # dequeue_expired: three-knobs.md 13.2 (stage 3b)
@@ -831,7 +831,7 @@ class Stage3d(unittest.TestCase):
 
     def test_2_s5_t_inf_equals_c3_and_t_1e6_equals_t_inf(self):
         for cell in self.ID_CELLS:
-            for seed in range(2):
+            for seed in range(3):
                 a = small_c3(cell, seed)
                 b = small_s5(cell, seed, INF, INF)
                 c = small_s5(cell, seed, 1e6, INF)
@@ -844,8 +844,8 @@ class Stage3d(unittest.TestCase):
                 self.assertTrue(ra["finished"] and rb["finished"] and rc["finished"], (cell, seed))
         for form in ("tail", "blocker"):                              # P2 under both sweep forms
             kw = dict(sweep_form=form, rx_refresh=(form == "blocker"))
-            a = batch3d.cmp_cfg("P2", "C3", 1, **kw)
-            b = batch3d.s5_cfg("P2", 1, INF, INF, H_force=None, **kw)
+            a = batch3d.cmp_cfg("P2", "C3", 2, **kw)
+            b = batch3d.s5_cfg("P2", 2, INF, INF, H_force=None, **kw)
             a.want_trace = b.want_trace = True
             ra, rb = toy2.run(a), toy2.run(b)
             self.assertEqual(id_diff(ra, rb), [], form)

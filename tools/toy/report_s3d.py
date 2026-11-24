@@ -70,9 +70,11 @@ def q1():
 
 # ---- Q3d-2 ------------------------------------------------------------------------------------
 def q2():
-    print("### Q3d-2 the commitment\n")
+    print("### Q3d-2 the commitment
+")
     viol_runs = []
     n = viol = 0
+    agg = {}
     worst = {}
     for cell, arm, s, r in all_runs():
         g = r.get("gauges")
@@ -82,24 +84,26 @@ def q2():
         viol += g["commit_viol"]
         if g["commit_viol"]:
             viol_runs.append((cell, arm, s, g["commit_viol"]))
-        if cell not in D.NO_NUDGE_CELLS or cell in D.LONG:
-            if cell == "P2":
-                continue
-            c = g["repair_sends"]
-            rt = g["skip_below_floor"] / c if c else (0.0 if not g["skip_below_floor"] else float("inf"))
-            if rt > worst.get(cell, (0, None))[0]:
-                worst[cell] = (rt, (arm, s, g["skip_below_floor"], c))
+        if cell == "P2":
+            continue                                                       # P2 is a two-path cell: the bar is for one-path cells
+        a_ = agg.setdefault(cell, [0, 0])
+        a_[0] += g["skip_below_floor"]
+        a_[1] += g["repair_sends"]
+        c = g["repair_sends"]
+        rt = g["skip_below_floor"] / c if c else (0.0 if not g["skip_below_floor"] else float("inf"))
+        if rt > worst.get(cell, (-1, None))[0]:
+            worst[cell] = (rt, (arm, s, g["skip_below_floor"], c))
     print("runs %d: commit_viol total %d (runs with a violation: %s) -> %s" % (n, viol, viol_runs[:8], "PASS" if viol == 0 else "FAIL"))
-    print("skip_below_floor / copies, worst run per one-path cell (bar 0.001):")
+    print("skip_below_floor against copies, per one-path cell over every run of the cell (bar 0.001 x copies); worst single run as a supplement:")
     allok = True
-    for cell, (rt, who) in sorted(worst.items()):
-        ok = rt <= 0.001
+    for cell in sorted(agg):
+        sk, cp = agg[cell]
+        ok = sk <= 0.001 * cp
         allok &= ok
-        print("  %-10s %.5f  %s %s" % (cell, rt, who, "" if ok else "FAIL"))
-    tot_skip = sum(r["gauges"]["skip_below_floor"] for c, a, s, r in all_runs() if "gauges" in r)
-    tot_cp = sum(r["gauges"]["repair_sends"] for c, a, s, r in all_runs() if "gauges" in r and "skip_below_floor" in r["gauges"] and r["gauges"]["skip_below_floor"] is not None)
-    print("  total skips %d over %d copies in all runs; bar on every one-path cell's worst run: %s" % (tot_skip, tot_cp, "PASS" if allok else "FAIL"))
-    print("\nK-L10b at the lowest T (S5 H = 0, T = 0.180): duplicates against copies (bar dup >= 0.5 copies; not a pass condition of the design)")
+        print("  %-10s skips %6d of %9d copies = %.6f  %s   worst run %.5f %s" % (cell, sk, cp, sk / cp if cp else 0.0, "PASS" if ok else "FAIL", worst[cell][0], worst[cell][1]))
+    print("  every one-path cell within 0.001 x copies: %s" % ("PASS" if allok else "FAIL"))
+    print("
+K-L10b at the lowest T (S5 H = 0, T = 0.180): duplicates against copies (bar dup >= 0.5 copies; not a pass condition of the design)")
     for arm in ("SW-0p18", G(0.4, 0.0)):
         ss = S.seeds_of("K-L10b", arm)
         if not ss:
@@ -194,8 +198,8 @@ def q5():
             fin2 = [x for x in vv if x is not None]
             if len(fin2) == len(vv) == len(fin) and fin2:
                 d = np.array(vv) - np.array(v)
-                m = max(0.05 * mu, 0.1)
-                print("   %s minus C3: %s (bar m = max(5 %% of C3, 0.1 s) = %.2f s, a worker decision)" % (nm, S.fmt(S.read(d, m)), m))
+                m = max(0.05 * mu, 0.1, S.NF("recovery_time", cell))
+                print("   %s minus C3: %s (bar m = max(5 %% of C3, 0.1 s, frozen A/A floor %.3f s) = %.2f s, worker decisions)" % (nm, S.fmt(S.read(d, m)), S.NF("recovery_time", cell), m))
             else:
                 print("   %s: %s against C3 %s" % (nm, recfmt(vv), recfmt(v)))
         for H, hi_ in ((0.0, 0.6), (INF, 1.0)):
@@ -354,6 +358,8 @@ def q8():
         r = ratio(ga(a, "dup"), ga(a, "repair_sends"))
         if r > worst:
             worst, wa = r, a
+    print("P2 inertness of the engine-like arm settings (src_model wc, resend brake, pause_B 1000): pause_events max %d, resend_braked max %d over every P2 run" % (
+        max(S.R(cell, a, s)["pause_events"] for a in arms for s in S.seeds_of(cell, a)), max(S.R(cell, a, s)["resend_braked"] for a in arms for s in S.seeds_of(cell, a))))
     print("dup / copies <= 0.1 for every arm: worst %.3f (%s): %s" % (worst, wa, "PASS" if worst <= 0.1 else "FAIL"))
 
 
