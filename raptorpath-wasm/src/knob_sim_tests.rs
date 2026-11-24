@@ -591,3 +591,35 @@ fn test_knobs_golden() {
         }
     }
 }
+
+/// Report (not a gate; `--ignored`): the bind gauges at every named point
+/// (plan §4.2) under the three workloads, with a 0.3 s outage at 0.3 s.
+#[test]
+#[ignore]
+fn report_bind_gauges_at_the_named_points() {
+    let points: [(&str, f64, f64, f64); 6] = [
+        ("Bulk", INF, 0.005, INF),
+        ("Auto", INF, 0.5, INF),
+        ("Realtime object", INF, 50.0, 0.0),
+        ("Realtime call", 0.4, 50.0, 0.0),
+        ("Object API", INF, 0.5, 0.0),
+        ("Buffered video", 2.0, 0.005, 0.0),
+    ];
+    for (name, t, d, h) in points {
+        for (wl, load, units) in [("object", INF, 2000), ("stream", 0.5, 2000), ("overload", 1.2, 6000)] {
+            let k = Knobs { t, h, load, units, outage_start: 0.3, outage_len: 0.3 };
+            let mut s = build(&[GOLDEN_CELLS[0].1], "continuum", Some(d), k);
+            run(&mut s);
+            println!(
+                "gauges {name:16} {wl:8}: ticks {:5} share_any {:.4} share_T {:.4} by_ref {:.4} \
+                 span_cut_by_T {:.4} rel_by_hold {} rel_by_floor {} expired {} deq {} floors {} \
+                 passed {} ooo {} p50 {:.3} p99 {:.3} rec {:.3} stall+ {:.3}",
+                s.get_tick(), s.get_share_any(), s.get_share_t(), s.get_share_by_ref(),
+                s.get_span_cut_by_t(), s.get_rel_by_hold(), s.get_rel_by_floor(),
+                s.get_intake_expired(), s.get_intake_expired_deq(), s.get_floors(),
+                s.get_passed_undelivered(), s.get_ooo(), s.get_delay_quantile(0.5),
+                s.get_delay_quantile(0.99), s.get_recovery_time(), s.get_strict_stall_beyond_outage()
+            );
+        }
+    }
+}
