@@ -62,6 +62,68 @@ def protected(T, now, last_send, c, h, srtt_eff):
     return max(now, last_send + c) - h + srtt_eff / 2.0 < T
 
 
+def trigger_delay(resent, c, srtt_path, p_reach):
+    """Stage 3d, three-knobs.md 17.1: d(s), the delay from a seq's last send to its earliest possible next resend: the cooldown c
+    (the engine's gate) once it has been resent, else its trigger, min(srtt of its path, the sweep's reach P_reach(s))."""
+    return c if resent else min(srtt_path, p_reach)
+
+
+def plant_T(cfg, T):
+    """Stage 3d, three-knobs.md 17.5: the planted controls routed through the knob.  T_eff = plant_T(cfg, T) enters every sender law;
+    the readouts use the declared T.  cfg.plant_T is None or (kind, p).  Named in the deny test (with plant_scale)."""
+    if cfg.plant_T is None:
+        return T
+    kind, p = cfg.plant_T
+    if kind == "STEP":
+        return 2.0 * T if T < p else T
+    if kind == "SPIKE":
+        return 2.0 * T if T == p else T
+    if kind == "KINK":
+        return T * (1.0 + 25.0 * max(0.0, 1.0 - T / p))
+    return T
+
+
+def window_shares(ages, dt, thr, width=0.5, step=0.1):
+    """Stage 3d, three-knobs.md 17.4: the share of the units handed over in each window [k step, k step + width) that were delivered
+    within thr of hand-over (an expired or undelivered unit has age inf and counts as late).  ages is indexed by unit."""
+    n = len(ages)
+    cs = np.concatenate([[0], np.cumsum(ages <= thr)])
+    out = []
+    k = 0
+    while True:
+        lo = int(round(k * step / dt))
+        hi = int(round((k * step + width) / dt))
+        if hi > n:
+            break
+        out.append(float(cs[hi] - cs[lo]) / (hi - lo))
+        k += 1
+    return out
+
+
+def recovery_time(ages, dt, thr, out_start, out_end, step=0.1, width=0.5, pre_from=0.5):
+    """Stage 3d, three-knobs.md 17.4: recovery time after an outage, in seconds after its end, or (None, reason).
+    L0 = the on-time share over hand-over [pre_from, out_start - 0.1]; sd0 = the standard deviation of the pre-outage window shares;
+    theta = L0 - max(0.02, 3 sd0); t_rec = the start of the first window at or after out_end such that every window from it to the
+    readable end (last hand-over - 2 s) has share >= theta."""
+    n = len(ages)
+    sh = window_shares(ages, dt, thr, width, step)
+    a, b = pre_from, out_start - 0.1
+    pre = [sh[k] for k in range(len(sh)) if k * step >= a - 1e-9 and k * step + width <= b + 1e-9]
+    lo, hi = int(round(a / dt)), int(round(b / dt))
+    if not pre or hi <= lo:
+        return None, "no pre-outage level (the interval [%.3g, %.3g] holds no window)" % (a, b)
+    L0 = float(np.sum(ages[lo:hi] <= thr)) / (hi - lo)
+    theta = L0 - max(0.02, 3.0 * float(np.std(pre)))
+    end = (n - 1) * dt - 2.0
+    ks = [k for k in range(len(sh)) if k * step >= out_end - 1e-9 and k * step + width <= end + 1e-9]
+    if not ks or sh[ks[-1]] < theta:
+        return None, "not within the run"
+    j = len(ks) - 1
+    while j > 0 and sh[ks[j - 1]] >= theta:
+        j -= 1
+    return ks[j] * step - out_end, "ok"
+
+
 def delta_at_b(b):
     return DELTA_AUTO * 10.0 ** (-2.0 * math.log2(b))
 
@@ -116,6 +178,16 @@ class Cfg:
     floor_carrier: str = "header"  # stage 3c: "header" = the floor rides on every data datagram at zero link cost; "datagram" = at most one floor datagram per 2 ms (S4b)
     resend_brake: str = "none"     # stage 3c: "engine" = at most 10 copies per 5 ms window (15.4)
     verdict_evidence: str = "rev1"  # stage 3c: "feedback" = a verdict only for a seq a current report lists missing, with a later send received (15.1)
+    trigger_law: str = "cooldown"  # stage 3d: "trigger" = protected() uses d(s): the cooldown for a resent seq, min(srtt of its path, P_reach) for a never-resent one (17.1)
+    owd_est: str = "half"          # stage 3d: "fwd" = o_hat = srtt - RTprop/2 in L2 and protected() (17.1); "half" = srtt/2
+    recheck_floor: bool = False    # stage 3d: before each copy is staged, test s >= F_ann against the current floor (17.1)
+    sweep_form: str = "tail"       # stage 3d: "tail" = the whole-tail sweep; "blocker" = the engine's (only the cumulative blocker, measured srtt deadline) (17.3)
+    rx_refresh: bool = False       # stage 3d: the receiver re-sends its report every clamp(2 srtt, 25, 100 ms) while it holds holes (17.3)
+    plant_T: object = None         # stage 3d: None | (kind, p), kind STEP | SPIKE | KINK, routed through plant_T() into every sender law (17.5)
+    paths: object = None           # stage 3d: None | list of dict(owd=, J=): the two-path model of 17.7 (path 0 is the fast path A)
+    phi: float = 0.5               # stage 3d: share of first sends placed on path B
+    reorder_rack: bool = False     # stage 3d: a report-driven hole is a candidate only if last_send + skew_hat < tau_rx (17.7)
+    windows: bool = False          # stage 3d: the window readouts of 17.4 and 17.8
     recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
 
 
@@ -128,12 +200,12 @@ class Delay:
     """arrival = tau + at(tau); at(t) = owd + J(t) + Q(t).  J piecewise linear through U[0,J] knots 2J apart
     (slope in [-1/2, 1/2], so the path is FIFO for every datagram); Q is the sawtooth of 7.2."""
 
-    def __init__(self, seed, owd, J, q, horizon):
+    def __init__(self, seed, owd, J, q, horizon, path=0):
         self.owd, self.J, self.q = owd, J, q
         if J > 0:
             self.kappa = 2.0 * J
             n = int(horizon / self.kappa) + 4
-            self.K = [J * u01(seed, k, 0, 0, SALT_KNOT) for k in range(n)]
+            self.K = [J * u01(seed, k, 0, path, SALT_KNOT) for k in range(n)]
 
     def at(self, t):
         d = self.owd
@@ -240,7 +312,10 @@ class Sim:
         self.cfg = cfg
         c = cfg
         self.cell = CELLS[c.cell]
-        self.rtt = 2 * c.owd                           # RTprop, exact
+        self.rtt = 2 * c.owd                           # RTprop, exact (the resend path's, path A)
+        self.paths = c.paths
+        self.npath = len(c.paths) if c.paths is not None else 1
+        self.Te = plant_T(c, c.T)                      # T_eff (17.5): enters every sender law; readouts use the declared T
         self.b = b_of_delta(c.delta)
         self.D_rt = min(self.b * self.rtt, 2 * self.rtt)
         self.dt = 1.0 / c.rate
@@ -253,7 +328,8 @@ class Sim:
         self.units_total = c.n_total if c.n_total else int(c.dur * c.rate)
         self.nmax = self.units_total + 16
         self.B = c.pause_B
-        self.sweep_P = min(max(2 * self.rtt, c.sweep_lo), c.sweep_hi)
+        rtt_sw = self.rtt if c.paths is None else 2 * max(p["owd"] for p in c.paths)       # 17.7: the largest path rtt_base
+        self.sweep_P = min(max(2 * rtt_sw, c.sweep_lo), c.sweep_hi)
         if c.phases is None:
             self.ph_s = c.tick * u01(c.seed, c.variant, 0, 0, SALT_PH)
             self.ph_w = self.sweep_P * u01(c.seed, c.variant, 1, 0, SALT_PH)
@@ -268,7 +344,12 @@ class Sim:
             self.ge = toy.ge_states(c.seed * 4, slots, self.cell["mean"] / self.cell["pbad"], self.cell["burst"])
             self.pbad = self.cell["pbad"]
         self.delay = Delay(c.seed, c.owd, c.J, c.q, self.t_end + 2.0)
-        self.est = HEst(c.W, True)
+        if c.paths is None:
+            self.delays = [self.delay]
+        else:
+            self.delays = [Delay(c.seed, p["owd"], p["J"], c.q, self.t_end + 2.0, i) for i, p in enumerate(c.paths)]
+            self.delay = self.delays[0]
+        self.est = HEst(c.W, c.paths is None)          # non-strict across paths (17.7)
         # sender state
         self.n_sent = 0
         self.sent_t = [0.0] * self.nmax
@@ -291,9 +372,9 @@ class Sim:
         self.u_next = 0                              # next application unit (handed over at u * dt)
         self.h_seq = [0.0] * self.nmax               # hand-over time of the unit each seq carries
         self.intake_expired = 0
-        self.s2fam = c.sender in ("S2", "S2c", "S3", "S3x", "S4")
-        self.s3 = c.sender in ("S3", "S3x", "S4")
-        self.resume_on_verdict = c.sender not in ("S3", "S4")       # S3, S4: the pause is released by receiver feedback only (13.1)
+        self.s2fam = c.sender in ("S2", "S2c", "S3", "S3x", "S4", "S5")
+        self.s3 = c.sender in ("S3", "S3x", "S4", "S5")
+        self.resume_on_verdict = c.sender not in ("S3", "S4", "S5")       # S3, S4, S5: the pause is released by receiver feedback only (13.1)
         self.O_ctl = self.O_eff if self.s2fam else self.O
         self.paused = False
         self.srtt = None
@@ -314,6 +395,17 @@ class Sim:
         self.floor_arrivals = []
         self.deq_log = []
         self.trig = "report"
+        # stage 3d state
+        self.psrtt = [None] * self.npath               # per-path RFC 6298 estimators (17.7)
+        self.prttvar = [0.0] * self.npath
+        self.rhi_pk = [-1] * self.npath                # sender: the newest seq per path the receiver reported
+        self.rhi_path = [-1] * self.npath              # receiver: the newest seq received per path
+        self.path_of = bytearray(self.nmax)            # the path of each seq's first send
+        self.last_arr_l = [-1.0] * self.npath
+        self.bl_dl = None                              # blocker sweep: the armed deadline
+        self.bl_fire = -math.inf                       # blocker sweep: the last fire
+        self.last_rep_t = -math.inf                    # receiver: the last report sent (refresh)
+        self.first_deq_exp = None
         # stage 3c state
         self.rs_age = {}
         self.F_ann = 0                               # the announced floor (15.3): no copy of a seq below it is ever staged
@@ -363,7 +455,7 @@ class Sim:
                       r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0, late_floor=0, late_r0e=0,
                       l2_fail=0, rel_by_floor=0, probes=0, queue_drop=0, queue_drop_in=0, queue_drop_out=0,
                       resend_by_R=0, resend_by_report=0, resend_by_sweep=0,
-                      commit_viol=0, commit_skip=0, floor_carried=0, resend_braked=0, hull_upd=0, hull_bind=0)
+                      commit_viol=0, commit_skip=0, skip_below_floor=0, late_floor_ge1=0, l2_skip=0, bl_fires=0, refresh_reports=0, floor_carried=0, resend_braked=0, hull_upd=0, hull_bind=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -382,11 +474,11 @@ class Sim:
         self.ctr += 1
         heapq.heappush(self.heap, (t, self.ctr, kind, payload))
 
-    def lost(self, seq, copy, t, salt=SALT_LOSS):
+    def lost(self, seq, copy, t, salt=SALT_LOSS, path=0):
         dd = self.cfg.dead
         if dd is not None and seq >= dd[0] and dd[1] <= t < dd[1] + dd[2]:
             return True
-        u = u01(self.cfg.seed, seq, copy, 0, salt)
+        u = u01(self.cfg.seed, seq, copy, path, salt)
         if self.loss_kind == "iid":
             return u < (self.p0 if copy == 0 and salt == SALT_LOSS else self.pc)
         if self.loss_kind == "ge":
@@ -459,11 +551,59 @@ class Sim:
         sr, rv = (0.333, 0.1665) if self.srtt is None else (self.srtt, self.rttvar)
         return sr + max(4.0 * rv, self.cfg.tick) + self.cfg.tick
 
+    def srtt_p(self, p):
+        """The smoothed RTT of path p (17.7); on one path the pooled srtt with the RFC seed."""
+        if self.paths is None:
+            return self.srtt_eff()
+        return 0.333 if self.psrtt[p] is None else self.psrtt[p]
+
+    def o_fwd(self):
+        """17.1: the one-way delay of a resend, srtt - RTprop/2 on the resend path (path A), assuming the queueing is on the data direction."""
+        return self.srtt_p(0) - self.rtt / 2.0
+
     def o_hat(self):
-        """One-way delay estimate used by L2: the exact owd for S2 (stage 3); srtt/2 with the RFC seed for S3."""
+        """One-way delay estimate used by L2: the exact owd for S2 (stage 3); srtt/2 with the RFC seed for S3; srtt - RTprop/2 (17.1) with owd_est "fwd"."""
         if self.s3 and self.cfg.rtt_est == "rfc":
+            if self.cfg.owd_est == "fwd":
+                return self.o_fwd()
             return (0.333 if self.srtt is None else self.srtt) / 2.0
         return self.rtt / 2
+
+    def rtt_sample_p(self, p, r):
+        """RFC 6298 on path p (17.7); the pooled srtt is the maximum over paths (an unsampled path reads the 333 ms seed), rttvar the maximum."""
+        if self.psrtt[p] is None:
+            self.psrtt[p], self.prttvar[p] = r, r / 2.0
+        else:
+            self.prttvar[p] = 0.75 * self.prttvar[p] + 0.25 * abs(self.psrtt[p] - r)
+            self.psrtt[p] = 0.875 * self.psrtt[p] + 0.125 * r
+        self.srtt = max(self.srtt_p(i) for i in range(self.npath))
+        self.rttvar = max(self.prttvar)
+
+    def blocker_period(self):
+        """17.3: clamp(2 srtt_pooled, 25 ms, 100 ms), recomputed from the measured srtt."""
+        return min(max(2.0 * self.srtt_eff(), self.cfg.sweep_lo), self.cfg.sweep_hi)
+
+    def sweep_period(self):
+        """The sweep period: fixed from the base RTT under the whole-tail sweep, the measured blocker period under the blocker sweep."""
+        return self.sweep_P if self.cfg.sweep_form == "tail" else self.blocker_period()
+
+    def sweep_reach(self, s):
+        """P_reach(s) (17.1), read by the floor law and by the candidate builder alike: the age at which the sweep first makes s a
+        candidate.  Whole-tail sweep: the period for every seq.  Blocker sweep: the period for the cumulative blocker, never for any other."""
+        if self.cfg.sweep_form == "tail" or s == self.A_known:
+            return self.sweep_period()
+        return math.inf
+
+    def d_of(self, s):
+        """17.1 d(s) of a seq: the cooldown once resent, else its trigger."""
+        return trigger_delay(self.copies[s] > 0, self.cooldown(), self.srtt_p(self.path_of[s]), self.sweep_reach(s))
+
+    def prot_seq(self, s, now):
+        """protected() of one seq under the configured laws (the same expression update_floor scans with)."""
+        c = self.cfg
+        se = self.srtt_eff() if c.owd_est == "half" else 2.0 * self.o_fwd()
+        d = self.d_of(s) if c.trigger_law == "trigger" else self.cooldown()
+        return protected(self.Te, now, self.last_send[s], d, self.h_seq[s], se)
 
     def srtt_eff(self):
         """The RFC 6298 smoothed RTT with the 333 ms seed before the first sample, for every arm alike (the cooldown and the floor)."""
@@ -490,13 +630,23 @@ class Sim:
         n = self.n_sent
         Mk, ver, rk, ls, hs = self.M_known, self.verdicted, self.rhi_known, self.last_send, self.h_seq
         se, cd = self.srtt_eff(), self.cooldown()
-        while s < n:
-            if (s in Mk or s > rk) and s not in ver and protected(c.T, now, ls[s], cd, hs[s], se):
-                break
-            s += 1
+        if c.owd_est != "half":
+            se = 2.0 * self.o_fwd()                  # protected() reads srtt_eff / 2 as its one-way term (17.1)
+        Te = self.Te
+        if c.trigger_law == "trigger":
+            d_of = self.d_of
+            while s < n:
+                if (s in Mk or s > rk) and s not in ver and protected(Te, now, ls[s], d_of(s), hs[s], se):
+                    break
+                s += 1
+        else:
+            while s < n:
+                if (s in Mk or s > rk) and s not in ver and protected(Te, now, ls[s], cd, hs[s], se):
+                    break
+                s += 1
         g = self.g
         g["hull_upd"] += 1
-        if self.lu < self.F_ann and self.lu < n and protected(c.T, now, ls[self.lu], cd, hs[self.lu], se):
+        if self.lu < self.F_ann and self.lu < n and self.prot_seq(self.lu, now):
             g["hull_bind"] += 1                      # the new minimum lies below the old floor: the running maximum absorbed it
         if s > self.F_ann:
             self.F_ann = s
@@ -527,12 +677,12 @@ class Sim:
         ls = self.last_send[s]
         return ls < self.tau_rx or now >= ls + self.R_now()
 
-    def fwd(self, t):
+    def fwd(self, t, path=0):
         """A forward send at t.  Returns (arrival, departure); arrival is None when the bottleneck queue drops it (13.7.1 item 6).
         With no link: arrival = t + delay.at(t), departure = t."""
         lk = self.cfg.link
         if lk is None:
-            return t + self.delay.at(t), t
+            return t + self.delays[path].at(t), t
         if max(0.0, self.link_free - t) >= self.link_qs:
             self.g["queue_drop"] += 1
             dd = self.cfg.dead
@@ -553,23 +703,26 @@ class Sim:
         self.link_free = d
         return d + self.delay.at(d), d
 
-    def fifo_note(self, a):
-        if a < self.last_arr - 1e-12:
+    def fifo_note(self, a, path=0):
+        la = self.last_arr_l
+        if a < la[path] - 1e-12:
             self.g["fifo_viol"] += 1
         else:
-            self.last_arr = a
+            la[path] = a
 
     # ---- source ---------------------------------------------------------------------------
     def emit(self, t):
         c = self.cfg
         # L1 at the intake: units that have outlived T before they could be sent are dropped, never get a seq
-        while self.u_next < self.units_total and intake_expired_fn(c.T, t - self.u_next * self.dt):
+        while self.u_next < self.units_total and intake_expired_fn(self.Te, t - self.u_next * self.dt):
             self.intake_expired += 1
             self.u_next += 1
         if c.deq_expiry:                                         # 13.2: expire the head at the dequeue when a younger unit waits (after L1)
             while (self.u_next + 1 < self.units_total
                    and (self.u_next + 1) * self.dt <= t
-                   and dequeue_expired(c.T, t - self.u_next * self.dt, self.R_now())):
+                   and dequeue_expired(self.Te, t - self.u_next * self.dt, self.R_now())):
+                if self.first_deq_exp is None:
+                    self.first_deq_exp = t
                 self.intake_expired_deq += 1
                 self.u_next += 1
         if c.n_total and self.u_next >= self.units_total:        # streaming mode ends on nxt >= dur (float edge: stage 1 sends one more)
@@ -588,12 +741,16 @@ class Sim:
         self.n_sent += 1
         self.sent_t[s] = t
         self.last_send[s] = t
-        a, dep = self.fwd(t)
+        pth = 0
+        if self.paths is not None and u01(c.seed, s, 0, 0, SALT_PLACE) < c.phi:      # 17.7: first sends go on B with probability phi
+            pth = 1
+            self.path_of[s] = 1
+        a, dep = self.fwd(t, pth)
         if a is None:                                # dropped at the bottleneck queue: no arrival, no loss draw
-            self.atilde[s] = t + self.delay.at(t)
+            self.atilde[s] = t + self.delays[pth].at(t)
         else:
             self.atilde[s] = a
-            self.fifo_note(a)
+            self.fifo_note(a, pth)
         if self.trace is not None:
             self.trace.append((round(t, 9), s, 0, 0, 0))
         if c.floor_law == "protect":
@@ -602,17 +759,19 @@ class Sim:
             self.flag_n += 1
         ps = self.ps_ctr
         self.ps_ctr += 1
-        if a is None or self.lost(s, 0, dep):
+        if a is None or self.lost(s, 0, dep, SALT_LOSS, pth):
             self.orig_lost.append(s)
         else:
-            self.push(a, 0, (s, 0, t, ps))
+            self.push(a, 0, (s, 0, t, ps, pth))
             self.carry_floor(a)
-        if self.s2fam and c.verdict_evidence != "feedback":      # the per-seq verdict timer (at +inf it never fires); none under feedback verdicts
-            self.push(max(t, self.h_seq[s] + c.T - self.o_hat()), 8, s)
+        if self.s2fam and c.verdict_evidence not in ("feedback", "none", "feedback_tail"):      # the per-seq verdict timer (at +inf it never fires); none under feedback verdicts
+            self.push(max(t, self.h_seq[s] + self.Te - self.o_hat()), 8, s)
         self.wadd("first", t)
         self.floor_datagram(t)
         if s == 0 and c.tail_elig == "R":            # the probe timer (13.4): exactly one pending event of kind 9
             self.push(t + self.R_now(), 9, None)
+        if self.bl_dl is None and c.sweep_form == "blocker":
+            self.arm_blocker(t)
         nxt = t + self.dt
         o = self.O()
         if o > self.g["max_O"]:
@@ -638,6 +797,11 @@ class Sim:
     def send_copy(self, now, s):
         """Stage a copy of s.  Returns False when the resend budget (15.4) refuses it; nothing is mutated then."""
         c = self.cfg
+        if c.recheck_floor and c.floor_law == "protect":         # 17.1: the commitment is absolute: re-test against the current floor
+            self.update_floor(now)
+            if s < self.F_ann:
+                self.g["skip_below_floor"] += 1
+                return False
         w = int(now / 0.005)
         if c.resend_brake == "engine" and self.copy_win.get(w, 0) >= 10:
             self.g["resend_braked"] += 1
@@ -661,8 +825,10 @@ class Sim:
         ps = self.ps_ctr
         self.ps_ctr += 1
         if a is not None and not self.lost(s, k, dep):
-            self.push(a, 0, (s, k, now, ps))
+            self.push(a, 0, (s, k, now, ps, 0))          # every copy goes on path A (17.7)
             self.carry_floor(a)
+        if c.sweep_form == "blocker":
+            self.arm_blocker(now)
         return True
 
     def send_floor(self, now, f):
@@ -674,13 +840,14 @@ class Sim:
         if self.trace is not None:
             self.trace.append((round(now, 9), f, -1, 0, 2))
         self.last_floor_t = now
-        a, dep = self.fwd(now)
-        if a is not None:
-            self.fifo_note(a)
-        ps = self.ps_ctr
-        self.ps_ctr += 1
-        if a is not None and not self.lost(f, rep, dep, SALT_FLOORLOSS):
-            self.push(a, 1, (f, ps))
+        for p in range(self.npath):                      # ADR-0084: a floor datagram goes on every live path (17.7)
+            a, dep = self.fwd(now, p)
+            if a is not None:
+                self.fifo_note(a, p)
+            ps = self.ps_ctr
+            self.ps_ctr += 1
+            if a is not None and not self.lost(f, rep, dep, SALT_FLOORLOSS, p):
+                self.push(a, 1, (f, ps))
 
     # ---- receiver -------------------------------------------------------------------------
     def min_hole(self):
@@ -734,10 +901,12 @@ class Sim:
         if ho is not None:
             self.push(now + ho, 6, q)
 
-    def on_data(self, now, s, c, tau, ps=None):
+    def on_data(self, now, s, c, tau, ps=None, path=0):
         got = self.got
         if tau > self.tau_rx_recv:
             self.tau_rx_recv = tau
+        if s > self.rhi_path[path]:
+            self.rhi_path[path] = s
         if ps is not None:
             self.eps_trk.record(ps)
         if got[s]:
@@ -776,6 +945,8 @@ class Sim:
                 self.g["late_" + who_] += 1                      # passed, then filled: out of order in the engine (reorder.rs:75-82)
                 if who_ == "floor":
                     self.GF -= 1
+                    if self.h_seq[s] >= 1.0:
+                        self.g["late_floor_ge1"] += 1
                 self.g["late"] += 1
                 self.g["ooo_loss"] += 1
                 self.tfill[s] = now
@@ -959,11 +1130,18 @@ class Sim:
                 self.g["pass_r0e_fb"] += self.g["passes"] - before
 
     def on_tick(self, now):
-        if self.dirty:
+        refresh = (not self.dirty and self.cfg.rx_refresh and bool(self.holes)
+                   and now >= self.last_rep_t + min(max(2.0 * self.srtt_eff(), self.cfg.sweep_lo), self.cfg.sweep_hi))
+        if self.dirty or refresh:
+            if refresh:
+                self.g["refresh_reports"] += 1
             self.dirty = False
+            self.last_rep_t = now
             m = self.min_hole()
             A = m if m is not None else self.rhi + 1
             rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report), self.GF, self.tau_rx_recv)
+            if self.paths is not None:
+                rep = rep + (tuple(self.rhi_path),)
             self.passed_since_report = []
             self.push(now + self.cfg.owd, 3, rep)
         if now + self.cfg.tick <= self.t_end:
@@ -971,7 +1149,7 @@ class Sim:
 
     # ---- sender ---------------------------------------------------------------------------
     def on_report(self, now, rep):
-        gen, A, G, rhi, M, passed, GF, tau = rep
+        gen, A, G, rhi, M, passed, GF, tau = rep[:8]
         if tau > self.tau_rx:
             self.tau_rx = tau
         if (A, G) > (self.A_known, self.G_known):
@@ -981,8 +1159,15 @@ class Sim:
             self.A_known, self.G_known, self.GF_known = A, G, GF
         if gen > self.last_gen:
             self.last_gen = gen
+            if self.paths is not None:                                      # 17.7: one sample per path, from that path's newest seq
+                for p in range(self.npath):
+                    r = rep[8][p]
+                    if r > self.rhi_pk[p]:
+                        if self.copies[r] == 0:
+                            self.rtt_sample_p(p, now - self.sent_t[r])
+                        self.rhi_pk[p] = r
             if rhi > self.rhi_known:
-                if self.cfg.rtt_est == "rfc" and self.copies[rhi] == 0:      # 13.7.1 item 1: largest newly received seq, Karn's rule
+                if self.paths is None and self.cfg.rtt_est == "rfc" and self.copies[rhi] == 0:      # 13.7.1 item 1: largest newly received seq, Karn's rule
                     self.rtt_sample(now - self.sent_t[rhi])
                 self.rhi_known = rhi
             self.M_known = set(M)
@@ -996,7 +1181,12 @@ class Sim:
         self.rep_n += 1
         self.maybe_resume(now)
         self.trig = "report"
-        self.act(now, gen, sorted(Mk), open_tail=False)
+        holes = sorted(Mk)
+        if self.cfg.reorder_rack and self.paths is not None:      # 17.7: RACK's time test with the reordering window = the measured skew
+            skew = self.srtt_p(1) - self.srtt_p(0)
+            holes = [s for s in holes if self.last_send[s] + skew < self.tau_rx]
+        self.act(now, gen, holes, open_tail=False)
+        self.arm_blocker(now)
 
     def maybe_resume(self, now):
         if self.paused and self.O_ctl() < self.B:
@@ -1015,8 +1205,8 @@ class Sim:
             if c.evidence_verdict:                                   # 13.7.1 item 2: judge only what is known lost
                 x = self.o_hat()
                 h = self.h_seq[s]
-                if resend_admissible(c.T, now - h, x):
-                    self.push(max(h + c.T - x, now + 1e-9), 8, s)
+                if resend_admissible(self.Te, now - h, x):
+                    self.push(max(h + self.Te - x, now + 1e-9), 8, s)
                     return
                 if not self.evidence(s, now):
                     self.push(max(self.last_send[s] + self.R_now(), now + 1e-9), 8, s)
@@ -1086,8 +1276,13 @@ class Sim:
         if self.s2fam:
             x = self.o_hat()                                          # S2: the exact owd, as the D_RTprop arm idealises; S3: srtt/2
             for s in cands_:
-                if resend_admissible(c.T, now - self.h_seq[s], x):
+                if resend_admissible(self.Te, now - self.h_seq[s], x):
                     serve_seqs.append(s)
+                elif c.verdict_evidence == "none":                       # 17.2: a candidate failing L2 is skipped, never judged
+                    g["l2_skip"] += 1
+                elif c.verdict_evidence == "feedback_tail":              # 17.6 (S5v): 15.1's feedback verdict, plus 13.7.1's timeout for the open tail only
+                    if self.fb_evidence(s) or (s > self.rhi_known and now >= self.last_send[s] + self.R_now()):
+                        verdict_seqs.append(s)
                 elif c.verdict_evidence == "feedback":                   # 15.1: only on receiver feedback
                     if self.fb_evidence(s):
                         verdict_seqs.append(s)
@@ -1164,10 +1359,41 @@ class Sim:
             self.last_floor = max(self.last_floor, F)
             self.send_floor(now, F)
 
+    def arm_blocker(self, now):
+        """17.3: the engine's sweep deadline, max(last_send(blocker), last fire) + clamp(2 srtt_pooled, 25 ms, 100 ms), recomputed from
+        the measured srtt whenever the blocker, its last send or the srtt may have changed.  Stale events are ignored by their payload."""
+        if self.cfg.sweep_form != "blocker":
+            return
+        b = self.A_known
+        if b >= self.n_sent:
+            self.bl_dl = None
+            return
+        dl = max(self.last_send[b], self.bl_fire) + self.blocker_period()
+        if dl != self.bl_dl:
+            self.bl_dl = dl
+            self.push(max(dl, now), 10, dl)
+
+    def on_blocker(self, now, dl):
+        """The blocker sweep fires: only the cumulative blocker goes to the serve path (cooldown, budget, L2, floor re-check all apply),
+        then the floor is recomputed and repeated while F_ann > A_known."""
+        if dl != self.bl_dl:
+            return
+        self.bl_fire = now
+        self.bl_dl = None
+        self.g["bl_fires"] += 1
+        if self.cfg.floor_law == "protect":
+            self.update_floor(now)
+        if self.A_known < self.n_sent:
+            self.trig = "sweep"
+            self.act(now, now, [self.A_known], open_tail=True)
+        if self.last_floor_t != now:
+            self.floor_repeat(now)
+        self.arm_blocker(now)
+
     def on_sweep(self, now):
         if self.cfg.floor_law == "protect":
             self.update_floor(now)
-        P = self.sweep_P
+        P = self.sweep_period()
         lo = self.rhi_known + 1
         tail = []
         elig = P if self.cfg.tail_elig == "P" else self.R_now()
@@ -1195,7 +1421,8 @@ class Sim:
     def run(self):
         c = self.cfg
         self.push(self.ph_s + c.tick, 4, None)
-        self.push(self.ph_w + self.sweep_P, 5, None)
+        if c.sweep_form == "tail":
+            self.push(self.ph_w + self.sweep_P, 5, None)
         heap = self.heap
         INF = math.inf
         while True:
@@ -1210,7 +1437,7 @@ class Sim:
             t, _, kind, pl = heapq.heappop(heap)
             self.t_last = t
             if kind == 0:
-                self.on_data(t, pl[0], pl[1], pl[2], pl[3])
+                self.on_data(t, pl[0], pl[1], pl[2], pl[3], pl[4])
             elif kind == 1:
                 self.on_floor(t, pl[0], pl[1])
             elif kind == 2:
@@ -1229,6 +1456,8 @@ class Sim:
                 self.on_verdict_timer(t, pl)
             elif kind == 9:
                 self.on_probe(t)
+            elif kind == 10:
+                self.on_blocker(t, pl)
         return self.summary()
 
     # ---- readouts -------------------------------------------------------------------------
@@ -1320,6 +1549,7 @@ class Sim:
             finish=(self.t_front - (units - 1) * self.dt) if (c.n_total and self.t_front is not None) else None)
         self.summary3b(out, n, ok, dl, hs_)
         self.summary3c(out)
+        self.summary3d(out, n, ok, dl, hs_)
         if c.n_total:
             out["tail_time"] = (self.t_front - self.sent_t[n - 1]) if self.t_front is not None else None
             out["stalled"] = self.t_front is None
@@ -1449,6 +1679,25 @@ class Sim:
                 p_iii = max(0.0, (en - st) - p_o - p_oo - p_i - p_ii)
                 parts = dict(start=st, length=ln, o=p_o, oo=p_oo, i=p_i, ii=p_ii, iii=p_iii, floor_seen=tf is not None)
         out["stall3c"] = parts
+
+    def summary3d(self, out, n, ok, dl, hs_):
+        """Stage 3d readouts (three-knobs.md 17.4, 17.7, 17.8): the window series by hand-over time, recovery time, the first dequeue
+        expiry, the floor hold estimate at the end."""
+        c, g = self.cfg, self.g
+        out["first_deq_exp"] = self.first_deq_exp
+        out["H_f_end"] = self.est.value(self.t_last)
+        if self.paths is not None:
+            out["srtt_path"] = [self.psrtt[i] for i in range(self.npath)]
+        if not c.windows:
+            return
+        ages = np.full(self.units_total, np.inf)
+        u = np.rint(np.asarray(hs_) / self.dt).astype(int)
+        m = ok & (u < self.units_total)
+        ages[u[m]] = (dl - hs_)[m]
+        out["win_ot04"] = [round(x, 6) for x in window_shares(ages, self.dt, 0.4)]
+        out["win_ot2"] = [round(x, 6) for x in window_shares(ages, self.dt, 2.0)]
+        if c.dead is not None and c.n_total:
+            out["recovery_time"], out["recovery_status"] = recovery_time(ages, self.dt, 0.4, c.dead[1], c.dead[1] + c.dead[2])
 
     def p4c(self, rows):
         """(observed consumer stall, expected min(H_o, R - t_det, t_pass - t_det)) per isolated hole; the stall is read

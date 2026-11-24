@@ -337,7 +337,8 @@ DIALS = {"rho", "delta", "hint", "T", "Hk"}
 # HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions (three-knobs.md 9.2) and the share_T readout are the only places T is compared
 EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime",
           "dequeue_expired",      # dequeue_expired: three-knobs.md 13.2 (stage 3b)
-          "protected"}            # protected: three-knobs.md 15.3 and 15.6.1 item 1 (stage 3c)
+          "protected",            # protected: three-knobs.md 15.3 and 15.6.1 item 1 (stage 3c)
+          "plant_T"}              # plant_T: three-knobs.md 17.5 (stage 3d), the planted controls routed through T
 
 
 def _names(node):
@@ -794,6 +795,263 @@ class Stage3c(unittest.TestCase):
         self.assertTrue(r["finished"])
         self.assertTrue(len(r["win_first"]) >= 2 and len(r["win_util"]) == len(r["win_first"]))
         self.assertEqual(sum(r["win_first"]), r["n_src"])
+
+
+# ---- stage 3d (three-knobs.md 17.9, tests 2 to 10) ----------------------------------------------------
+import batch3d  # noqa: E402
+
+SMALL3D = {"CL": dict(n_total=20000, dead=(0, 0.5, 0.5)), "OV": dict(n_total=24000), "CL@b": dict(n_total=20000, dead=(0, 0.5, 0.5)),
+           "OV@b": dict(n_total=24000)}
+
+
+def small_s5(cell, seed, T, H, **kw):
+    lc, d = batch3d.base(cell)
+    d.update(SMALL3D.get(cell, {}))
+    f = dict(evidence_verdict=False, verdict_evidence="none", floor_law="protect", floor_carrier="header", deq_expiry=True,
+             o_excl_verdict=False, rtt_est="rfc", tail_elig="P", trigger_law="trigger", owd_est="fwd", recheck_floor=True)
+    f.update(kw)
+    d.update(f)
+    return toy2.Cfg(cell=lc, sender="S5", recv="RH", seed=seed, delta=50.0, rho=1.0, check_p1=False, T=T, Hk=H, **d)
+
+
+def small_c3(cell, seed, **kw):
+    return batch3d.cmp_cfg(cell, "C3", seed, **dict(SMALL3D.get(cell, {}), **kw))
+
+
+class Stage3d(unittest.TestCase):
+    ID_CELLS = ("E-L10", "M-I2", "K-L10", "K-L10b", "CL", "OV", "X15", "P2", "K-L10@b", "CL@b", "OV@b")
+    SEED_CTRL = 5
+
+    def test_1_defaults(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.trigger_law, c.owd_est, c.recheck_floor, c.sweep_form, c.rx_refresh, c.plant_T, c.paths, c.phi, c.reorder_rack, c.windows),
+                         ("cooldown", "half", False, "tail", False, None, None, 0.5, False, False))
+        self.assertEqual(batch3d.s5_cfg("OV", 0, 0.4, 0.0).sender, "S5")
+        self.assertEqual(batch3d.s5_cfg("OV", 0, 0.4, 0.0).verdict_evidence, "none")
+
+    def test_2_s5_t_inf_equals_c3_and_t_1e6_equals_t_inf(self):
+        for cell in self.ID_CELLS:
+            for seed in range(2):
+                a = small_c3(cell, seed)
+                b = small_s5(cell, seed, INF, INF)
+                c = small_s5(cell, seed, 1e6, INF)
+                a.want_trace = b.want_trace = c.want_trace = True
+                ra, rb, rc = toy2.run(a), toy2.run(b), toy2.run(c)
+                self.assertEqual(id_diff(ra, rb), [], (cell, seed))
+                self.assertEqual(id_diff(rb, rc), [], (cell, seed))
+                self.assertEqual(ra["_trace"], rb["_trace"], (cell, seed))
+                self.assertEqual(rb["_trace"], rc["_trace"], (cell, seed))
+                self.assertTrue(ra["finished"] and rb["finished"] and rc["finished"], (cell, seed))
+        for form in ("tail", "blocker"):                              # P2 under both sweep forms
+            kw = dict(sweep_form=form, rx_refresh=(form == "blocker"))
+            a = batch3d.cmp_cfg("P2", "C3", 1, **kw)
+            b = batch3d.s5_cfg("P2", 1, INF, INF, H_force=None, **kw)
+            a.want_trace = b.want_trace = True
+            ra, rb = toy2.run(a), toy2.run(b)
+            self.assertEqual(id_diff(ra, rb), [], form)
+            self.assertEqual(ra["_trace"], rb["_trace"], form)
+
+    def test_3_commitment_is_absolute_and_the_control_reads_the_old_seam(self):
+        # the planted positive control: 3c's law fields with the re-check disabled reproduce a violation in OV seed 5
+        old = dict(trigger_law="cooldown", owd_est="half", recheck_floor=False)
+        sim = toy2.Sim(batch3d.s5_cfg("OV", self.SEED_CTRL, 0.4, INF, **old))
+        sim.run()
+        self.assertGreater(sim.g["commit_viol"], 0)
+        sim = toy2.Sim(batch3d.s5_cfg("OV", self.SEED_CTRL, 0.4, INF))
+        r = sim.run()
+        self.assertEqual(sim.g["commit_viol"], 0)
+        self.assertLessEqual(sim.g["skip_below_floor"], 0.001 * sim.g["repair_sends"] + 1)
+        self.assertTrue(r["finished"])
+        # the re-check alone, on fabricated state: a candidate below the announced floor is skipped and counted, never sent
+        sim = toy2.Sim(small_s5("K-L10", 1, 0.4, INF))
+        sim.n_sent, sim.F_ann = 20, 10
+        self.assertFalse(sim.send_copy(0.0, 5))
+        self.assertEqual((sim.g["skip_below_floor"], sim.g["commit_viol"], sim.copies[5]), (1, 0, 0))
+
+    def test_4_d_of_s_and_p_reach_from_the_candidate_builder(self):
+        self.assertEqual(toy2.trigger_delay(True, 0.02, 0.05, 0.1), 0.02)                  # resent: the cooldown c
+        self.assertEqual(toy2.trigger_delay(False, 0.02, 0.05, 0.1), 0.05)                 # never resent: min(srtt, P_reach)
+        self.assertEqual(toy2.trigger_delay(False, 0.02, 0.05, 0.025), 0.025)
+        self.assertEqual(toy2.trigger_delay(False, 0.02, 0.05, math.inf), 0.05)
+        for form in ("tail", "blocker"):
+            sim = toy2.Sim(small_s5("K-L10", 0, 0.4, INF, sweep_form=form))
+            sim.n_sent = 10
+            for s in range(10):
+                sim.sent_t[s] = sim.last_send[s] = 0.0
+            sim.A_known = 2
+            sim.srtt = 0.2
+            self.assertAlmostEqual(sim.d_of(2), min(0.2, sim.sweep_reach(2)))
+            self.assertAlmostEqual(sim.d_of(5), min(0.2, sim.sweep_reach(5)))
+            sim.copies[5] = 1
+            self.assertEqual(sim.d_of(5), sim.cooldown())
+            seen = []
+            sim.act = lambda now, gen, holes, open_tail, _s=seen: _s.append(list(holes))
+            if form == "tail":                                                                # the builder: every open-tail seq older than the period
+                sim.rhi_known = 3
+                sim.on_sweep(sim.sweep_period() + 0.001)
+                self.assertEqual(seen[0], list(range(4, 10)))
+                self.assertTrue(all(sim.sweep_reach(s) == sim.sweep_period() for s in seen[0]))
+            else:                                                                             # only the cumulative blocker
+                sim.bl_dl = 1.0
+                sim.on_blocker(1.0, 1.0)
+                self.assertEqual(seen[0], [2])
+                self.assertEqual(sim.sweep_reach(2), sim.blocker_period())
+                self.assertEqual(sim.sweep_reach(3), math.inf)
+
+    def test_5_o_fwd_is_half_srtt_without_a_queue_and_owd_plus_queue_in_ov(self):
+        sim = toy2.Sim(small_s5("K-L10", 0, 0.4, INF))
+        sim.srtt = 2 * sim.cfg.owd                                 # RTprop: no queue
+        self.assertAlmostEqual(sim.o_fwd(), sim.srtt / 2.0)
+        sim.srtt = 2 * sim.cfg.owd + 0.2                           # 0.2 s of queue on the data direction
+        self.assertAlmostEqual(sim.o_fwd(), sim.cfg.owd + 0.2)
+        sim = toy2.Sim(small_s5("OV", 0, 0.4, INF))
+        sim.run()
+        q = sim.o_fwd() - sim.cfg.owd                              # the queue the estimator reads at the end of the run
+        self.assertGreater(q, 0.05)
+        self.assertGreater(sim.o_fwd(), sim.srtt / 2.0 + 0.03)     # srtt/2 would under-read it
+
+    def test_6_blocker_sweep_and_receiver_refresh(self):
+        sim = toy2.Sim(small_s5("K-L10@b", 0, INF, INF))
+        fires, acts, refresh = [], [], []
+        o_blocker, o_act, o_tick = sim.on_blocker, sim.act, sim.on_tick
+
+        def on_blocker(now, dl, _o=o_blocker):
+            if dl == sim.bl_dl:
+                fires.append((now, dl, max(sim.last_send[sim.A_known], sim.bl_fire) + sim.blocker_period()))
+            _o(now, dl)
+
+        def act(now, gen, holes, open_tail, _o=o_act):
+            if sim.trig == "sweep":
+                acts.append((list(holes), sim.A_known))
+            _o(now, gen, holes, open_tail)
+
+        def on_tick(now, _o=o_tick):
+            r0, lr = sim.g["refresh_reports"], sim.last_rep_t
+            period = min(max(2.0 * sim.srtt_eff(), 0.025), 0.1)
+            _o(now)
+            if sim.g["refresh_reports"] != r0:
+                refresh.append((now - lr, period))
+        sim.on_blocker, sim.act, sim.on_tick = on_blocker, act, on_tick
+        r = sim.run()
+        self.assertGreater(len(fires), 5)
+        self.assertGreater(len(acts), 0)
+        self.assertTrue(all(h == [b] for h, b in acts))                      # only the cumulative blocker
+        self.assertTrue(all(abs(now - dl) < 1e-9 and abs(dl - exp) < 1e-9 for now, dl, exp in fires))     # at the engine's deadline
+        self.assertGreater(len(refresh), 0)
+        self.assertTrue(all(p - 1e-9 <= gap <= p + sim.cfg.tick + 1e-9 for gap, p in refresh))            # at the clamped cadence
+        self.assertTrue(r["finished"])
+        # control: without the refresh no such reports
+        sim = toy2.Sim(small_s5("K-L10@b", 0, INF, INF, rx_refresh=False))
+        sim.run()
+        self.assertEqual(sim.g["refresh_reports"], 0)
+
+    def test_7_two_path_model(self):
+        # path 0's draws are today's draws
+        d0 = toy2.Delay(3, 0.005, 0.001, False, 5.0)
+        d1 = toy2.Delay(3, 0.005, 0.001, False, 5.0, 0)
+        self.assertEqual(d0.K, d1.K)
+        self.assertNotEqual(d0.K, toy2.Delay(3, 0.005, 0.001, False, 5.0, 1).K)
+        sim = toy2.Sim(batch3d.s5_cfg("P2", 2, 0.4, INF))
+        self.assertEqual(sim.lost(7, 0, 0.0), sim.lost(7, 0, 0.0, toy2.SALT_LOSS, 0))
+        self.assertEqual(sim.lost(7, 0, 0.0), toy.u01(2, 7, 0, 0, toy.SALT_LOSS) < 0.03)
+        # copies go on A, first sends split by phi, each path FIFO, the paths not ordered against each other
+        log = []
+        o_fwd, o_copy = sim.fwd, sim.send_copy
+        sim._cp = False
+
+        def fwd(t, path=0, _o=o_fwd):
+            log.append((sim._cp, path))
+            return _o(t, path)
+
+        def copy(now, s, _o=o_copy):
+            sim._cp = True
+            try:
+                return _o(now, s)
+            finally:
+                sim._cp = False
+        sim.fwd, sim.send_copy = fwd, copy
+        r = sim.run()
+        cp = [p for c, p in log if c]
+        self.assertGreater(len(cp), 100)
+        self.assertEqual(set(cp), {0})
+        firsts = int(sum(sim.path_of[:sim.n_sent]))
+        self.assertAlmostEqual(firsts / sim.n_sent, 0.5, delta=0.02)
+        self.assertEqual(sim.g["fifo_viol"], 0)
+        cross = sum(1 for s in range(200, 2000) if sim.path_of[s] == 1 and sim.path_of[s + 1] == 0 and sim.got[s] and sim.got[s + 1] and sim.arr[s] > sim.arr[s + 1])
+        self.assertGreater(cross, 10)
+        self.assertTrue(r["finished"])
+
+        def fab(rack, tau):                       # reorder_rack suppresses the resend of an in-flight B unit (fabricated state)
+            sm = toy2.Sim(batch3d.s5_cfg("P2", 0, INF, INF, reorder_rack=rack))
+            sm.n_sent = 10
+            for s in range(10):
+                sm.sent_t[s] = sm.last_send[s] = 0.0
+            sm.path_of[3] = 1
+            sm.psrtt = [0.02, 0.07]                                    # skew_hat = 0.05
+            sm.srtt = 0.07
+            sm.on_report(0.08, (0.08, 3, 0, 9, (3,), (), 0, tau, (-1, -1)))
+            return sm.copies[3]
+        self.assertEqual(fab(True, 0.04), 0)                           # 0 + 0.05 < 0.04 is false: the hole may still be in flight
+        self.assertEqual(fab(True, 0.06), 1)                           # a later datagram arrived beyond the skew: lost
+        self.assertEqual(fab(False, 0.04), 1)                          # control: without the rule it is resent at once
+
+    def test_8_plant_t_values_and_deny(self):
+        P = toy2.plant_T
+        c = lambda k: toy2.Cfg(plant_T=(k, 0.4))      # noqa: E731
+        self.assertEqual(P(toy2.Cfg(), 0.3), 0.3)
+        self.assertAlmostEqual(P(c("STEP"), 0.39), 0.78)
+        self.assertAlmostEqual(P(c("STEP"), 0.4), 0.4)
+        self.assertAlmostEqual(P(c("STEP"), 0.41), 0.41)
+        self.assertAlmostEqual(P(c("SPIKE"), 0.4), 0.8)
+        self.assertAlmostEqual(P(c("SPIKE"), 0.396), 0.396)
+        self.assertAlmostEqual(P(c("KINK"), 0.396), 0.396 * 1.25)
+        self.assertAlmostEqual(P(c("KINK"), 0.392), 0.392 * 1.5)
+        self.assertAlmostEqual(P(c("KINK"), 0.4), 0.4)
+        self.assertAlmostEqual(P(c("KINK"), 0.404), 0.404)
+        for k in ("STEP", "SPIKE", "KINK"):
+            self.assertEqual(P(c(k), INF), INF)
+            self.assertEqual(P(c(k), 1e6), 1e6)
+        self.assertFalse(deny_scan("def plant_T(cfg, T):\n    return 2 * T if T < cfg.plant_p else T\n"))     # exempt by name only
+        self.assertTrue(deny_scan("def plant_Tish(cfg, T):\n    return 2 * T if T < 3 else T\n"))
+        sim = toy2.Sim(batch3d.s5_cfg("OV", 0, 0.396, 0.0, plant_T=("STEP", 0.4)))
+        self.assertAlmostEqual(sim.Te, 0.792)                                   # T_eff enters the laws; the readout keeps the declared T
+        self.assertEqual(sim.cfg.T, 0.396)
+        with open(os.path.join(HERE, "toy2.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertEqual(deny_scan(src), [])
+        self.assertNotIn("isinf", src)
+
+    def test_9_s5v_takes_verdicts_on_real_state(self):
+        sim = toy2.Sim(small_s5("OV", 0, 0.4, INF, verdict_evidence="feedback_tail", floor_law="verdict"))
+        r = sim.run()
+        self.assertGreater(r["verdicts"], 0)
+        self.assertGreater(r["gauges"]["floors"], 0)                           # the verdict floor is sent at verdicts, as a datagram
+        self.assertEqual(sim.g["floor_carried"], 0)
+        self.assertTrue(r["finished"])
+        sim = toy2.Sim(small_s5("OV", 0, 0.4, INF))                              # S5 itself judges nothing
+        r = sim.run()
+        self.assertEqual(r["verdicts"], 0)
+
+    def test_10_windows_on_a_synthetic_run_with_a_known_recovery_time(self):
+        dt, n = 0.01, 2000
+        ages = np.full(n, 0.1)
+        ages[500:1030] = 1.0                                      # late through the outage [5, 8) and until 10.3
+        sh = toy2.window_shares(ages, dt, 0.4)
+        self.assertAlmostEqual(sh[0], 1.0)                                 # [0, 0.5)
+        self.assertAlmostEqual(sh[60], 0.0)                                # [6.0, 6.5)
+        self.assertAlmostEqual(sh[102], 0.8)                               # [10.2, 10.7): the last 0.1 s of lateness
+        rt, why = toy2.recovery_time(ages, dt, 0.4, 5.0, 8.0)
+        self.assertAlmostEqual(rt, 2.3, places=6)
+        ages2 = ages.copy()                                                # late to the end: not within the run
+        ages2[1030:] = 1.0
+        self.assertEqual(toy2.recovery_time(ages2, dt, 0.4, 5.0, 8.0), (None, "not within the run"))
+        self.assertIsNone(toy2.recovery_time(ages, dt, 0.4, 0.4859, 1.9859)[0])      # an outage at 0.4859 s: no pre-outage level
+        ages3 = ages.copy()                                                # an undelivered unit counts as late
+        ages3[1100:1150] = np.inf
+        self.assertAlmostEqual(toy2.window_shares(ages3, dt, 0.4)[110], 0.0)
+        r = toy2.run(small_s5("CL", 0, 0.4, 0.0, windows=True, n_total=30000, dead=(0, 1.0, 0.5)))   # through the simulation
+        self.assertIn("recovery_time", r)
+        self.assertEqual(len(r["win_ot04"]), len(toy2.window_shares(np.zeros(30000), 1e-4, 0.4)))
 
 
 if __name__ == "__main__":
