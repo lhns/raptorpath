@@ -2,6 +2,63 @@ use raptorpath_math as math;
 use wasm_bindgen::prelude::*;
 
 mod warm_tail;
+pub mod knobs;
+
+// =========================================================================
+// Three-knob laws (proposal; docs/derivations/visualizer-three-knobs-plan.md
+// §5.1): thin forwarding wrappers over `knobs.rs`, which holds every law.
+// Prefixed `knob_` (`protected` is a reserved word in JavaScript).
+// =========================================================================
+
+#[wasm_bindgen]
+pub fn knob_law_revision() -> String {
+    knobs::KNOB_LAW_REVISION.to_string()
+}
+
+#[wasm_bindgen]
+pub fn knob_intake_expired(lifetime_s: f64, age: f64) -> bool {
+    knobs::intake_expired(lifetime_s, age)
+}
+
+#[wasm_bindgen]
+pub fn knob_resend_admissible(lifetime_s: f64, age: f64, x: f64) -> bool {
+    knobs::resend_admissible(lifetime_s, age, x)
+}
+
+#[wasm_bindgen]
+pub fn knob_within_lifetime(lifetime_s: f64, age: f64) -> bool {
+    knobs::within_lifetime(lifetime_s, age)
+}
+
+#[wasm_bindgen]
+pub fn knob_dequeue_expired(lifetime_s: f64, age: f64, m: f64) -> bool {
+    knobs::dequeue_expired(lifetime_s, age, m)
+}
+
+#[wasm_bindgen]
+pub fn knob_protected(lifetime_s: f64, now: f64, last_send: f64, d: f64, h: f64, o_hat: f64) -> bool {
+    knobs::protected(lifetime_s, now, last_send, d, h, o_hat)
+}
+
+#[wasm_bindgen]
+pub fn knob_trigger_delay(resent: bool, c: f64, srtt_path: f64, p_reach: f64) -> f64 {
+    knobs::trigger_delay(resent, c, srtt_path, p_reach)
+}
+
+#[wasm_bindgen]
+pub fn knob_one_way_fwd(srtt: f64, rtprop: f64) -> f64 {
+    knobs::one_way_fwd(srtt, rtprop)
+}
+
+#[wasm_bindgen]
+pub fn knob_release_at(t_detect: f64, hold_s: f64, t_floor: f64, h_f: f64) -> f64 {
+    knobs::release_at(t_detect, hold_s, t_floor, h_f)
+}
+
+#[wasm_bindgen]
+pub fn knob_ack_timeout(srtt: f64, rttvar: f64, g: f64, ack_delay: f64) -> f64 {
+    knobs::ack_timeout(srtt, rttvar, g, ack_delay)
+}
 
 // =========================================================================
 // Pure math functions — thin wasm-bindgen wrappers
