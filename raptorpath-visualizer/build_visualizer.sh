@@ -7,6 +7,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Keep the user's home directory out of the embedded wasm (panic locations and
+# debug paths name the cargo registry under it): remap every form of the home
+# this host has to "~". Derived at build time, never written here; appended to
+# any flags the caller already set. A home path with a space is not supported
+# by this space-separated variable.
+REMAP=""
+for h in "${USERPROFILE:-}" "${HOME:-}"; do
+  if [ -n "$h" ]; then REMAP="$REMAP --remap-path-prefix=$h=~"; fi
+done
+if command -v cygpath > /dev/null 2>&1 && [ -n "${HOME:-}" ]; then
+  REMAP="$REMAP --remap-path-prefix=$(cygpath -w "$HOME")=~"
+fi
+export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="${CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS:-}$REMAP"
+
 echo "Building WASM..."
 wasm-pack build raptorpath-wasm --target web --out-dir ../raptorpath-visualizer/wasm 2>&1 | tail -3
 
@@ -413,6 +427,36 @@ PYEOF
 
 python3 "$TMPFILE"
 rm -f "$TMPFILE"
+
+# The embedded wasm of both pages must not name the home directory (the remap
+# above). The home comes from the environment at build time; a planted blob
+# proves the check can fail.
+echo "Checking the embedded wasm for the home path..."
+HOMECHECK=$(mktemp)
+cat > "$HOMECHECK" <<'PYEOF'
+import base64, os, re, sys
+homes = set()
+for v in (os.environ.get("USERPROFILE"), os.environ.get("HOME"), os.environ.get("HOME_WIN")):
+    if v and len(v) > 3:
+        for f in (v, v.replace("\\", "/"), v.replace("/", "\\")):
+            homes.add(f.encode().lower())
+assert homes, "no home directory in the environment"
+def leaks(blob):
+    low = blob.lower()
+    return [h for h in homes if h in low]
+planted = b"panicked at " + sorted(homes)[0] + b"/.cargo/registry/src/x.rs"
+assert leaks(planted), "the home-path check cannot fail"
+bad = 0
+for name in ("interactive-visualizer", "knobs-visualizer"):
+    html = open("raptorpath-visualizer/%s.html" % name, encoding="utf-8").read()
+    wasm = base64.b64decode(re.search(r'const WASM_B64 = "([^"]*)"', html).group(1))
+    hits = leaks(wasm)
+    print("  %s: %d bytes of wasm, %d home-path forms found" % (name, len(wasm), len(hits)))
+    bad += len(hits)
+sys.exit(1 if bad else 0)
+PYEOF
+HOME_WIN="$(command -v cygpath > /dev/null 2>&1 && cygpath -w "${HOME:-/}" || true)" python3 "$HOMECHECK"
+rm -f "$HOMECHECK"
 
 echo "Running engine tests against the built file..."
 node raptorpath-visualizer/test_visualizer.mjs

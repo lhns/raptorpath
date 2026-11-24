@@ -1630,3 +1630,66 @@ fn report_recovery_time_at_the_cl_long_preset() {
         }
     }
 }
+
+/// Report (not a gate; `--ignored`): why the CL-long preset recovers in
+/// 4.9 s. Per hand-over time, the delay from hand-over; the sends and pool
+/// stalls during the outage; when the delay first returns under τ = 0.4 s
+/// and when it returns to its pre-outage level (the backlog fully drained).
+#[test]
+#[ignore]
+fn report_cl_long_recovery_anatomy() {
+    let cell = Cell { eps: 0.03, q: 1.0, rtt: 10, cap: 1 };
+    let k = Knobs { t: INF, h: 0.0, load: 800.0 / 970.0, units: 12000, outage_start: 2.0, outage_len: 1.5 };
+    let mut s = build(&[cell], "continuum", Some(0.005), k);
+    let (mut sent_out, mut stall_out) = (0u32, 0u32);
+    while !s.is_finished() && s.get_tick() < CAP {
+        let now = s.get_tick() as f64 * TICK_SECS;
+        let (a, b) = (s.get_path_sent(0), s.get_pool_stalls());
+        s.step();
+        if (2.0..3.5).contains(&now) {
+            sent_out += s.get_path_sent(0) - a;
+            stall_out += s.get_pool_stalls() - b;
+        }
+    }
+    let d = s.get_unit_delays();
+    let h: Vec<f64> = (0..s.get_num_source()).map(|u| s.handover_s(u)).collect();
+    let at = |t: f64| d[h.partition_point(|&x| x < t)];
+    let mut line = String::new();
+    for i in 0..=26 {
+        let t = 3.5 + i as f64 * 0.25;
+        line += &format!(" {t:.2}:{:.0}", at(t) * 1000.0);
+    }
+    let pre = at(1.5);
+    let under_tau = h.iter().zip(&d).find(|(&x, &y)| x >= 3.5 && y <= 0.4).map(|p| *p.0);
+    let drained = h.iter().zip(&d).find(|(&x, &y)| x >= 3.5 && y <= pre + 0.002).map(|p| *p.0);
+    println!("CL-long anatomy: sends in the outage {sent_out}, pool stalls in it {stall_out}, recovery {:.2} s", s.get_recovery_time());
+    println!("CL-long anatomy: delay (ms) by hand-over time:{line}");
+    println!("CL-long anatomy: pre-outage delay {:.1} ms; first unit under 0.4 s handed over at {under_tau:?} ({:.2} s after the end); back to the pre-outage delay at {drained:?}",
+        pre * 1000.0, under_tau.unwrap_or(f64::NAN) - 3.5);
+}
+
+/// The recovery readout against the drain law, on the CL-long preset at the
+/// Bulk δ (r = 0, ARQ only, as the offline simulation). The outage leaves a
+/// backlog of outage·λ/μ_eff seconds of service (μ_eff = μ(1 − ε), every
+/// send including resends sees ε); it drains at 1 − λ/μ_eff seconds per
+/// second. Recovery reads "on time within τ again", so it comes when the
+/// backlog is down to τ, not to 0:
+///     t_rec = (outage·λ/μ_eff − τ) / (1 − λ/μ_eff)
+/// = (1.5·800/970 − 0.4)/(1 − 800/970) = 4.77 s here (the full drain,
+/// outage·λ/μ_eff/(1 − λ/μ_eff) = 7.06 s; outage·λ/headroom = 6 s only with
+/// ε = 0 and τ = 0). The readout must sit within the window step plus one
+/// window-start alignment (2 × 0.1 s) of it.
+#[test]
+fn the_recovery_time_follows_the_drain_law() {
+    let (eps, mu, lambda, outage, tau) = (0.03, 1000.0, 800.0, 1.5, 0.4);
+    let cell = Cell { eps, q: 1.0, rtt: 10, cap: 1 };
+    let mu_eff = mu * (1.0 - eps);
+    let k = Knobs { t: INF, h: 0.0, load: lambda / mu_eff, units: 12000, outage_start: 2.0, outage_len: outage };
+    let mut s = build(&[cell], "continuum", Some(0.005), k);
+    run(&mut s);
+    let rho = lambda / mu_eff;
+    let want = (outage * rho - tau) / (1.0 - rho);
+    let got = s.get_recovery_time();
+    println!("recovery law: readout {got:.2} s, law {want:.2} s, full drain {:.2} s", outage * rho / (1.0 - rho));
+    assert!((got - want).abs() <= 2.0 * consumer::RECOVERY_STEP_S + 1e-9, "readout {got} vs law {want}");
+}
