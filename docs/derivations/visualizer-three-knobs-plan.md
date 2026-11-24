@@ -443,7 +443,10 @@ It also reviewed the finished addendum; that review is recorded in A8.
   6. `pending` (not yet resolved).
 - A unit that is both late and out of order is classed `out_of_order`, and the overlap is reported as its own count `ooo_late`, so nothing is hidden.
 - **Shares:** `ooo / delivered` (the existing `get_ooo_share`) and `late / delivered`.
-- **Export as append-only events:** `take_unit_events() -> Vec<f64>`, flat triples `[unit, delivery_or_resolution_time_s, class]`, holding only the units whose class became final since the last call. A unit's class is final once it is delivered, expired, or undelivered at the end of the run. This keeps the per-frame cost within the 12 ms step budget the UI gate already enforces. The full arrays stay for tests.
+- **Export as append-only events:** `take_unit_events() -> Vec<f64>`, flat triples `[unit, time_s, class]`, holding only the units whose class changed since the last call. This keeps the per-frame cost within the 12 ms step budget the UI gate already enforces. The full arrays stay for tests.
+  - A unit is emitted when it is delivered, when it expires at the intake, or when it is passed or given up (`undelivered`, so it shows while the run plays).
+  - **One superseding event per unit is allowed:** an `undelivered` unit filled later becomes `out_of_order` or `late`. The page then moves its dot, and the UI gate counts final classes.
+  - Undelivered and expired dots sit on a strip at the chart's top edge, x = the hand-over time, with no delay value drawn.
 
 **Page, extending P6.**
 - A new chart: hand-over time on x, delay from hand-over on y, one dot per unit.
@@ -475,7 +478,7 @@ It also reviewed the finished addendum; that review is recorded in A8.
 **The extraction.**
 - All arrival work moves into one routine, `deliver(dg)`, keyed by **seq**. It is not keyed by the retransmit arm's `symbols[i]` index, which can be stale by the time of arrival.
 - A datagram `dg` carries:
-  - kind (source, resend or repair, with the repair's coded data);
+  - kind (source, resend, repair with its coded data, or floor repeat);
   - seq;
   - send tick;
   - path;
@@ -485,12 +488,19 @@ It also reviewed the finished addendum; that review is recorded in A8.
   - right after each send, for every datagram already due, so at zero delay the just-sent datagram is delivered **at the same code point as today**;
   - at the start of each tick, before the feedback pop, for the rest.
 - The slot loop's priority (retransmit, repair, source) is not touched.
+- **Delivery order at tick start:** across paths, by arrival time; ties go by path index, then by send order.
+- **Two cases a delay makes reachable**, each with one rule:
+  - **duplicate:** a copy arrives for a seq the receiver already holds (a second copy sent while the first sat in the queue, because the retry timer lags a growing backlog). It increments `dup` and nothing else: no decode work, no slot release, no class change;
+  - **late fill of a committed seq:** a copy (or a decode) arrives for a seq the floor already passed (§17.1's copy in flight). The unit moves from `passed_undelivered` to delivered exactly once, its class changes once (A1's superseding event), and its store slot is released only by set-point 5, never a second time.
+- **Decoder order:** `RlcDecoder` is incremental Gaussian elimination over pivots with a cascade on each source (`raptorpath-math/src/rlc.rs` :146–:200), so by construction it does not depend on arrival order. P10 still adds a test before any N = 2 link cell: feeding a run's sources and repairs in a permuted order yields the same recovered set. That matters because the sim's header comment ties "no encoder lag" to FIFO.
 
 **Physical against believed RTT.** Every reader of `rtt_ticks`, `srtt_secs` and `rttvar_secs` on `2932b275` gets a stated source. "Physical" is the configured base RTT and the forward leg's propagation `d_p`. "Belief" is the measured estimator of A3.
 
 | reader (line on `2932b275`) | today | source after P10–P11 |
 |---|---|---|
-| `feedback_queue` pop (:1661) | send + rtt | **physical:** (arrival or would-be arrival) + (rtt − d_p), stored as a due tick; for a queue drop, the drop tick + rtt |
+| `feedback_queue` pop (:1661) | send + rtt | **physical:** (arrival or would-be arrival) + (rtt − d_p), stored as a due tick. A queue drop is due at its **would-be arrival** (departure as if served + d_p) + (rtt − d_p), so the front-popped queue stays monotone |
+| the arrived-symbol ack block (:2001) | `tick − send ≥ rtt` | **physical:** the same due tick as set-point 1. It is kept only for the `symbols` pruning it drives |
+| `get_path_rtt_ms` (:2140) | rtt_ticks | unchanged: it reports the configured base RTT. A new `get_path_srtt_meas_ms` reports the belief |
 | set-point 1 `ack_due` (:1921) | send + rtt | **physical:** arrival + (rtt − d_p) |
 | set-point 5 `floor_ack_due` (:855) | consumer pass + rtt | **physical:** pass tick + (rtt − d_p) |
 | estimator flush period (:1677) | rtt | belief: `retry_delay(p)` |
@@ -509,17 +519,37 @@ There is no `link is None` branch, and no 0·∞ product anywhere. The page stat
 
 **Loss and outage.** Both are decided **at send for the departure instant**, which is known at enqueue. The datagram consumes its channel state at send, in send order (the same as departure order on a FIFO), as today. A queue drop takes no channel state and no loss draw (toy: "dropped at the bottleneck queue: no arrival, no loss draw"). The P2 outage window is tested against the departure tick.
 
-**Delay accounting.** `record_delivery` adds the capacity-weighted RTT/2 as the one-way term. With a modelled forward leg that double-counts, so the addend becomes `agg(rtt/2) − agg(d_p)`, which is bit-identical at `d_p = 0`. Domain: `d_p ∈ [0, rtt_p/2]` (`validate_link`).
+**Delay accounting: one physical term, never the belief.** `record_delivery` adds `agg_srtt()·500` ms and `unit_delays` (:908) adds `one_way_s()`. After P11 both would carry the queue excess that the arrival tick already contains, so `share_T`, the `late` class and the recovery time would double-count it.
+- Every delay readout therefore adds one **physical** accounting term, `acc = agg(rtt_base/2 − d_p)` from the configured values, which is bit-identical to today's addend at `d_p = 0`.
+- ô (the belief) is read only by L2 and `protected`.
+- Domain: `d_p ∈ [0, rtt_p/2]` (`validate_link`).
+
+**ABI, wrapper and page controls.**
+- **ABI:** `Simulation::multipath_link(… every multipath_knobs argument …, service_s: Vec<f64>, queue_s: Vec<f64>, prop_s: Vec<f64>, resend_limit: f64)` is the one constructor. `multipath_knobs` delegates to it with `(0, ∞, 0)` per path and `resend_limit = ∞`, one level more of the same delegation pattern. `validate_link` rejects negative or NaN values, a `queue_s` of 0, `prop_s > rtt/2`, and a `resend_limit < 0`.
+- **`SimWrapper`:** `MAIN_KNOBS` gains `{serviceS: 0, queueS: Infinity, propS: 0, resendLimit: Infinity}`, with no presence test; `withKnobs` passes the page's values.
+- **Routing-witness getters:** `get_link_service_s(i)`, `get_link_queue_s(i)`, `get_link_prop_s(i)`, `get_resend_limit()`.
+
+**The knobs page's controls.** Each map has a value at its end, not a flag:
+
+| control | map | end values |
+|---|---|---|
+| link rate μ/C | `u/(1 − u)`, page writes `sv = 1/μ` | ∞ end gives `sv = 0`: no bottleneck |
+| buffer, ms | `10·(u/(1 − u))` | ∞ end: no limit |
+| propagation share | u ∈ [0, 1], `d_p = u·rtt/2` | — |
+| resend budget per 5 ms | `10·(u/(1 − u))^2` | ∞ end: unlimited, the page default |
+
+The engine's 10 is a named point at u = 0.5, with a button. Under A6 option (b), only the budget control and A1 ship before stage 3d; the link controls stay hidden, the page passes the defaults, and A4's UI gates run as "the default link draws zero queue and zero drops".
 
 **Sender knowledge: a choice for the coordinator.** Today the sender learns a resend's arrival, or a decode recovery, at the arrival instant (the oracle `recovered` flag). With a forward leg, that moves from the send tick to the arrival tick and stays inert at the default. Making the sender learn only through feedback (one reverse delay later) does not reorder the loop either, but it may move the six goldens: FEC-recovered holes could be resent before the feedback lands.
 - P10 measures that on a throwaway build, not committed, and reports the result.
-- Default, unless the coordinator decides otherwise: arrival-tick knowledge, with its lead gauged per resend (`knowledge_lead`, the reverse delay it skips).
+- Default, unless the coordinator decides otherwise: arrival-tick knowledge, with its lead gauged per resend (`knowledge_lead`, the reverse delay it skips). It is **bounded by a test:** for every resend, `knowledge_lead ≤ rtt − d_p` of its path, the reverse delay. It equals that exactly, because the model's reverse leg has no queue.
 - Full feedback routing would need a sender-view flag in every scan. If that moved the goldens, it would be the rewrite trigger of §2.2, and it goes back to the coordinator.
 
 **P10 done when:**
 - main's six golden rows and `test_knobs_golden` pass **unmodified**, with no capture;
 - every existing native test and all four `.mjs` gates pass;
 - a new test shows that with the default link every datagram is delivered inline at its send tick, and that `free_p ≤ now` always holds;
+- the decoder permutation test passes, and so do the duplicate and late-fill rule tests (both driven by a test-only forward delay);
 - the sender-knowledge measurement is reported.
 
 If the extraction cannot be made bit-identical, stop and return the diff that moved.
@@ -527,7 +557,8 @@ If the extraction cannot be made bit-identical, stop and return the diff that mo
 ### A3. The RTT the sender believes, and the one-way term (P11)
 
 **The estimator.**
-- Per path, RFC 6298 (α = 1/8, β = 1/4), **in integer-tick units**, seeded at `rtt_ticks`, with no 333 ms seed: the model knows its base, and Revision 3's seed defect is not modelled (§6).
+- Per path, RFC 6298 (α = 1/8, β = 1/4), **in integer-tick units**, with no 333 ms seed: the model knows its base, and Revision 3's seed defect is not modelled (§6).
+- **Seeds:** srtt at `rtt_ticks`, and rttvar at `rtt_ticks/8`, today's fixed `rttvar_secs` in ticks. With constant samples the measured rttvar decays from that seed by 0.75 per sample. That decay is what changes R in the re-captured knob rows; main's laws never read it.
 - **Samples:** at the feedback pop, `pop_tick − send_tick` of each never-resent source symbol (Karn). With no queue every sample equals `rtt_ticks`, and `0.875·r + 0.125·r` is exact for an integer r, so the estimate stays bit-equal to the base.
 - `retry_delay(p) = round(srtt_meas_p)` ticks.
 - **Inertness is a test, not an argument:** on all six golden cells and the knob golden cells, `srtt_meas` equals `rtt_ticks` at every tick.
@@ -540,8 +571,9 @@ If the extraction cannot be made bit-identical, stop and return the diff that mo
 
 **The divergence, bounded rather than described.**
 - N = 1, standing queue (stream λ steady, below the link rate, constant backlog): for every admitted resend, `|ô − its true one-way delay| ≤ 2 ticks`.
-- N = 2: the same difference is reported (maximum and p99), not asserted, because the aggregate weighting is a declared approximation.
-- Reported on every link cell: the fraction of L2-admitted resends that arrive after T (`l2_late`), and the measured rttvar against the fixed rttvar main's laws read.
+- **N = 2:** for every admitted resend, `|ô − its true one-way delay| ≤ |ô − ô_p| + 2 ticks`, where ô_p = `srtt_meas_p − rtt_p/2` of the path that actually carried it. That bounds the aggregate weighting by the spread between paths, and the maximum and p99 are reported.
+- **The fixed rttvar in main's laws (P_lost, completion), bounded:** on every link cell, `|rttvar_meas − rttvar_fixed| ≤ rttvar_fixed + max queue swing / 4`. It is computed, reported and asserted per cell. A cell where the bound fails is a finding for the coordinator (owner question Q-V10), not a tolerance to widen.
+- Reported on every link cell: the fraction of L2-admitted resends that arrive after T (`l2_late`).
 
 **P11 done when:**
 - the inertness test passes;
@@ -553,7 +585,8 @@ If the extraction cannot be made bit-identical, stop and return the diff that mo
 
 **What fills the queue.** The model has no congestion control (neither has the toy): the sender sends whenever it holds a slot and has something to send. A queue forms when the offered traffic on a path (source at λ, plus repairs at r per source, plus resends) exceeds `1/sv_p`. The only brake is the store pool (512 per path, M01).
 - An object (λ = ∞) behind a bottleneck therefore drops continuously, and the drop rate is shown.
-- The page's **bottleneck preset** follows the toy's CL cell: a stream at λ = 0.8·μ, with μ between λ and the sender's slot rate and a 100 ms buffer.
+- The page's **bottleneck preset** follows the toy's CL cell, sized for the repair overhead the toy lacks. The offered load on the link is `λ·(1 + r) + resends`, where r is the rate the current δ yields: up to about 0.3–0.5 at Realtime on lossy cells. The preset therefore sets `μ = 1.25·λ·(1 + r_est)`, with r_est read from the model's `get_r_star` at the preset's δ before the run (a model accessor, so the page computes nothing), and a 100 ms buffer.
+  - Queue drops feed ε̂ and raise r, a feedback loop the preset cannot remove. It is stated on the page and shown by the drop counter.
 
 **Readouts, all model accessors:**
 - per path: queue length per tick (a ring the page appends), queue drops inside and outside the outage, and one-way delay (last value, p50, p99);
@@ -564,14 +597,16 @@ If the extraction cannot be made bit-identical, stop and return the diff that mo
 
 **Gates.**
 - **Toy vectors:**
-  - a real `toy2.Sim`, built from a CL-like `Cfg` with `link = dict(C, Q)`, `J = 0` and no sawtooth, with its `fwd(t)` called for a scripted sequence of send times;
-  - the model's leg is fed the same sequence in seconds, with `sv = 1/C` and `q = Q/C`;
-  - every arrival time or drop must match. Arrival times compare as floats rounded to the tick, because the model processes arrivals at integer ticks; the file records the rounding.
+  - the forward leg is a **pure function** in its own module `src/link.rs` (no knob identifiers, enforced by the deny test): `fn leg_send(state, t_s, sv_s, q_s, d_s) -> Option<(depart_s, arrive_s)>`;
+  - the generator builds a real `toy2.Sim` from a CL-like `Cfg` (`link = dict(C, Q)`, `J = 0`, no sawtooth) and calls its `fwd(t)` for a scripted sequence of send times in seconds;
+  - `link.rs` is fed the same seconds with `sv = 1/C` and `q = Q/C`, and every departure, arrival and drop must match **bit for bit**;
+  - the tick discretisation, an arrival processed at the first tick ≥ `arrive_s`, is a separate absolute test in `lib.rs`.
 - **Absolute:**
   - arrivals are FIFO per path;
   - conservation: sent = arrived + wire-lost + queue-dropped + in flight;
   - the backlog never exceeds `q_p` plus one service time;
-  - on a loss-free, queue-free cell, delay from hand-over is **identical for any split** of the base RTT into `d_p` and the reverse leg (N = 1, and N = 2 with equal splits).
+  - on a loss-free, queue-free cell, delay from hand-over is **identical for any split** of the base RTT into `d_p` and the reverse leg (N = 1, and N = 2 with equal splits);
+  - on a loss-free cell **with a standing queue**, each unit's delay from hand-over equals its queue wait plus `rtt/2`, for any split (no double-count of the belief).
 - **UI:**
   - at the "no bottleneck" end the drawn queue is 0 and the drops are 0;
   - the drawn queue samples equal the accessor ring.
@@ -608,7 +643,7 @@ If the extraction cannot be made bit-identical, stop and return the diff that mo
 - **The coordinator picks one of two options:**
   - **(a)** P12's page controls ship, with one link setting written to all paths. `late_floor` (late fills of floor-passed holes) is shown, labelled "H_f = 0, not confirmed; stage 3d P2 tests this";
   - **(b)** P12 lands in the model and its gates, but the page's link controls wait for stage 3d P2, so the page keeps the default link until then. A1 and A5 ship regardless.
-- **Recommended: (b),** because the coordinator has said two-path display waits for that result.
+- **Recommended: (b),** because the coordinator has said two-path display waits for that result. Its cost: the owner's queue request stays off the page until stage 3d reads. Out-of-order (A1) and the budget (A5) ship now. With (a), the queue ships now, along with a labelled display of an open defect.
 - **After P2:** the form of H_f the owner confirms becomes the one H_f law in `knobs.rs`. Its vectors come from the toy (`HEst` with `strict = False`, or 0), and per-path link and outage controls open on the page.
 
 **Defaults revisited.**
@@ -632,6 +667,21 @@ If the extraction cannot be made bit-identical, stop and return the diff that mo
 - **Extensions to P0–P8:** P4's consumer gains the class (A1); P6's page and P7's UI gate gain the panels and checks above; P5's knob golden rows are re-captured once in P11.
 - **§6 changes:** its rows for "link queue … resend brake", "cross-path reordering" and "the sender learning a resend's fate" are superseded by A2–A6 from P10 on. The rest of §6 stands.
 
+- **Q-V10 (new), the fixed rttvar in main's laws under a queue.** **Default: keep it fixed,** bounded per A3. If a link cell fails the bound, the choice goes to the coordinator: either main's laws read the measured rttvar on link cells (the six goldens are safe, because there is no queue there), or the page labels that cell.
+
 ### A8. Final review (advisor)
 
-*(Filled in after review.)*
+The advisor reviewed the first push of this addendum (`01999437`). It kept the structure: extraction first, defaults as values, and the two coordinator choices. It found five holes that would have forced the P10–P13 worker into design choices, and seven tightenings. All were taken:
+1. **The delay readouts would have inherited the belief.** After P11, `unit_delays` and `record_delivery` would have double-counted the queue excess that the arrival tick already contains. Now one physical accounting term serves every delay readout, ô serves only L2 and `protected`, and a queued-cell test covers it.
+2. **`deliver`'s duplicate and late-fill-after-commitment cases** are now specified, along with the cross-path order of deliveries at tick start.
+3. **The ABI, the wrapper defaults, the page's dial maps,** the routing-witness getters and A4's UI gates under option (b) are now stated.
+4. **The RTT reader table** now includes the arrived-symbol ack block (:2001) and `get_path_rtt_ms` (:2140), and the datagram kinds include the floor repeat.
+5. **The measured rttvar's seed** (rtt/8 in ticks) and its effect on the re-captured knob rows are stated.
+6. **Tightenings:**
+   - undelivered units show during the run, with one superseding event per unit;
+   - drop feedback is due at the would-be arrival, keeping the queues monotone;
+   - the link vectors compare bit for bit through a pure `link.rs`;
+   - the bottleneck preset is sized for repair overhead;
+   - the knowledge lead, the N = 2 ô and the fixed rttvar each carry a bounding test, with Q-V10 for the last;
+   - the decoder's order independence is checked by a test before any N = 2 link cell;
+   - option (b)'s cost to the owner is stated.
