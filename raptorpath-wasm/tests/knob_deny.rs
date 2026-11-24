@@ -9,7 +9,8 @@
 //! - `is_infinite` / `is_finite` anywhere;
 //! - `INFINITY` on a line that compares;
 //! - a knob identifier on a line that compares or clamps (`<`, `>`, `<=`,
-//!   `>=`, `==`, `!=`, `.min(`, `.max(`, `.clamp(`).
+//!   `>=`, `==`, `!=`, `.min(`, `.max(`, `.clamp(`), outside the argument
+//!   list of a `knobs::` call (passing T or H to a law is the allowed form).
 //!
 //! The scan asserts it visited every file, and a planted-fixture self-test
 //! proves each form is flagged, so the gate cannot pass vacuously.
@@ -117,6 +118,41 @@ fn strip_pinned(text: &str) -> String {
     s
 }
 
+/// Drop the argument lists of calls into the law module: passing T or H to
+/// a pinned law is the allowed form, comparing them is not.
+fn strip_law_calls(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(at) = rest.find("knobs::") {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        let Some(open) = tail.find('(') else {
+            out.push_str(tail);
+            rest = "";
+            break;
+        };
+        let mut depth = 0i32;
+        let mut end = tail.len();
+        for (i, c) in tail[open..].char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        out.push_str("law()");
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn idents(line: &str) -> impl Iterator<Item = &str> {
     line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).filter(|s| !s.is_empty())
 }
@@ -150,8 +186,9 @@ fn scan_text(text: &str, is_knobs_rs: bool) -> Vec<String> {
         if ids.iter().any(|i| i.contains("INFINITY")) {
             bad.push(format!("line {}: compares against INFINITY: {}", n + 1, line.trim()));
         }
-        let knob = |i: &&str| KNOB_IDENTS.contains(i) || (is_knobs_rs && KNOBS_RS_PARAMS.contains(i));
-        if ids.iter().any(knob) {
+        let knob = |i: &str| KNOB_IDENTS.contains(&i) || (is_knobs_rs && KNOBS_RS_PARAMS.contains(&i));
+        let outside_calls = strip_law_calls(line);
+        if idents(&outside_calls).any(knob) {
             bad.push(format!("line {}: compares a knob: {}", n + 1, line.trim()));
         }
     }
@@ -187,6 +224,7 @@ fn the_scan_is_not_vacuous() {
         "fn a(&self) -> bool { self.lifetime_s > self.hold_s }",
         "fn a(&self) -> f64 { self.hold_s.min(1.0) }",
         "fn a(&self, now: f64) -> bool { now + self.lifetime <= now }",
+        "fn a(&self) -> bool { knobs::intake_expired(1.0, 0.5) && self.hold_s > 0.0 }",
     ];
     for p in planted_lib {
         assert!(!scan_text(p, false).is_empty(), "scanner missed: {p}");
@@ -197,6 +235,7 @@ fn the_scan_is_not_vacuous() {
     assert!(scan_text("pub fn intake_expired(t: f64, age: f64) -> bool {\n    age >= t\n}", true).is_empty());
     // Comments, strings and test modules are not code.
     let clean = "// if lifetime_s < 1.0 { mode }\n\
+                 fn w(s: u64, n: u64) { while s < n && knobs::intake_expired(self.lifetime_s, f(s)) {} }\n\
                  fn f() -> &'static str { \"hold_s == 0\" }\n\
                  #[cfg(test)]\nmod tests {\n    fn t() { assert!(x.is_finite() && x == f64::INFINITY); }\n}\n\
                  fn g(lifetime_s: f64) -> f64 { lifetime_s + 1.0 }\n\

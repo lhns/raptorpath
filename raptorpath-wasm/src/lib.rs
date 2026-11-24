@@ -620,6 +620,48 @@ pub struct Simulation {
     last_send_seq: Vec<u32>,
     path_seq: Vec<usize>,
     resent_seq: Vec<bool>,
+    /// `acked_seq[s]`: the sender knows the receiver holds s or has passed
+    /// it. Set at exactly five points (plan §7, sender-state rules): (1) the
+    /// ack of an arrived source after its own path's RTT; (2) a resend's
+    /// arrival; (3) a decode recovery; (4) a ρ give-up; (5) the receiver's
+    /// floor pass of s plus the RTT of the path of s's last copy.
+    acked_seq: Vec<bool>,
+    /// The sender's ack frontier A_known: the first s with !acked_seq[s].
+    a_known: u32,
+    /// The floor F_ann (§17.1/§15.3): the lowest seq the sender still means
+    /// to deliver, a running maximum.
+    f_ann: u32,
+    /// The floor the receiver holds (carried free on every arrival; a floor
+    /// repeat datagram on the sweep clock while F_ann > A_known).
+    f_rx: u32,
+    /// Lost holes below F_ann, resolved at the sender by the commitment and
+    /// not (yet) decoded. A later decode moves the unit to `cum_decoded`.
+    committed_seq: Vec<bool>,
+    passed_undelivered: u32,
+    /// A committed hole keeps its store slot until feedback (set-point 3 or
+    /// 5) releases it: the brake (§15.4).
+    slot_owed: Vec<bool>,
+    /// Set-point 1 and 5 clocks, per path: (due tick, seq).
+    ack_due: Vec<std::collections::VecDeque<(u32, u32)>>,
+    floor_ack_due: Vec<std::collections::VecDeque<(u32, u32)>>,
+    last_sweep_tick: u32,
+    /// Readouts: copies staged below the floor (must be 0), candidates the
+    /// re-check before a copy skipped, payload datagrams with age ≥ T (must
+    /// be 0), floor-repeat datagrams, arrivals that raised the receiver's
+    /// floor, and repairs whose window the L1 age edge cut.
+    commit_viol: u32,
+    skip_below_floor: u32,
+    l1_viol: u32,
+    floors: u32,
+    floor_carried: u32,
+    span_cut_pending: bool,
+    span_cut_repairs: u32,
+    /// Test-only: commitments (tick, seq) and committed-slot releases
+    /// (tick, seq, 3 = decode | 5 = floor pass + RTT).
+    #[cfg(test)]
+    commit_log: Vec<(u32, u64)>,
+    #[cfg(test)]
+    slot_release_log: Vec<(u32, u64, u8)>,
     /// Test-only staging log of every payload-bearing datagram: (tick,
     /// kind 0 = source / 1 = resend / 2 = repair-window member, seq, age s).
     #[cfg(test)]
@@ -711,6 +753,141 @@ impl Simulation {
     /// in the toy's tick), from the aggregate estimator.
     fn ack_timeout_s(&self) -> f64 {
         knobs::ack_timeout(self.agg_srtt(), self.agg_rttvar(), TICK_SECS, TICK_SECS)
+    }
+
+    /// ô, the one-way term of L2 and `protected` (§17.1: srtt − RTprop/2).
+    /// The model has no queue, so srtt = RTprop and ô is exactly the
+    /// capacity-weighted RTT/2 the latency accounting adds: L2 admits
+    /// exactly the resends that arrive in time in this model.
+    fn one_way_s(&self) -> f64 {
+        knobs::one_way_fwd(self.agg_srtt(), self.agg_srtt())
+    }
+
+    /// `protected(s)` (§17.1) with the model's bindings: the cooldown c and
+    /// the never-resent trigger are both the retry timer, the RTT of the
+    /// path of s's last copy (the model's oracle loss notice arrives then);
+    /// no data sweep reaches s (P_reach = ∞).
+    fn seq_protected(&self, i: usize, now: f64, o_hat: f64) -> bool {
+        let c = self.paths[self.path_seq[i]].rtt_ticks as f64 * TICK_SECS;
+        let d = knobs::trigger_delay(self.resent_seq[i], c, c, f64::INFINITY);
+        let last = self.last_send_seq[i] as f64 * TICK_SECS;
+        knobs::protected(self.lifetime_s, now, last, d, self.h_seq[i], o_hat)
+    }
+
+    /// Recompute A_known and the floor F_ann (plan §7): scan up from
+    /// max(F_ann, A_known) past every acked or unprotected seq, stop at the
+    /// first unacked protected seq or at next_seq. At T = ∞ every seq is
+    /// protected, so F_ann = A_known and nothing below it is unresolved.
+    fn update_floor(&mut self) {
+        let n = self.next_seq;
+        while self.a_known < n && self.acked_seq[self.a_known as usize] {
+            self.a_known += 1;
+        }
+        let now = self.now_s();
+        let o_hat = self.one_way_s();
+        let mut s = self.f_ann.max(self.a_known);
+        while s < n {
+            let i = s as usize;
+            if !self.acked_seq[i] && self.seq_protected(i, now, o_hat) {
+                break;
+            }
+            s += 1;
+        }
+        if s > self.f_ann {
+            self.f_ann = s;
+            self.commit_below_floor();
+        }
+    }
+
+    /// The commitment (plan §7): a lost, unrecovered hole below F_ann is
+    /// never resent; it is resolved at the sender (out of `lost_pending`,
+    /// into `passed_undelivered`). Its store slot stays held until feedback.
+    fn commit_below_floor(&mut self) {
+        let f = self.f_ann as u64;
+        for sym in &mut self.symbols {
+            if sym.lost && !sym.recovered && sym.seq < f {
+                sym.recovered = true;
+                self.lost_pending = self.lost_pending.saturating_sub(1);
+                self.passed_undelivered += 1;
+                self.committed_seq[sym.seq as usize] = true;
+                self.slot_owed[sym.seq as usize] = true;
+                #[cfg(test)]
+                self.commit_log.push((self.tick, sym.seq));
+            }
+        }
+    }
+
+    /// Mark s acked; a committed hole's store slot is released here, by
+    /// feedback only (cause 3 = decode, 5 = floor pass + RTT).
+    fn ack_seq(&mut self, s: usize, _cause: u8) {
+        self.acked_seq[s] = true;
+        if self.slot_owed[s] {
+            self.slot_owed[s] = false;
+            self.store_occupancy = self.store_occupancy.saturating_sub(1);
+            #[cfg(test)]
+            self.slot_release_log.push((self.tick, s as u64, _cause));
+        }
+    }
+
+    /// The receiver learns floor f. Every undelivered, unacked seq it now
+    /// passes is acked one RTT (of its last copy's path) later: set-point 5.
+    fn receive_floor(&mut self, f: u32) {
+        if f <= self.f_rx {
+            return;
+        }
+        for s in self.f_rx..f {
+            let i = s as usize;
+            if !self.acked_seq[i] && self.lat_by_seq[i].is_nan() {
+                let p = self.path_seq[i];
+                self.floor_ack_due[p].push_back((self.tick + self.paths[p].rtt_ticks, s));
+            }
+        }
+        self.f_rx = f;
+    }
+
+    /// Header carrier (Q-V6 default): every arriving datagram carries F_ann.
+    fn carry_floor(&mut self) {
+        if self.f_ann > self.f_rx {
+            self.floor_carried += 1;
+            self.receive_floor(self.f_ann);
+        }
+    }
+
+    /// The re-check immediately before a copy is staged (§17.1): a candidate
+    /// below the current floor is skipped and counted.
+    fn floor_recheck(&mut self, i: usize) -> bool {
+        if self.symbols[i].seq < self.f_ann as u64 {
+            self.skip_below_floor += 1;
+            return false;
+        }
+        true
+    }
+
+    /// The L1 age edge of the repair window (plan §7 P3): no window member
+    /// with a ≥ T. Ages fall with seq, so the edge is a window start. True
+    /// when it cut a member.
+    fn apply_age_edge(&mut self) -> bool {
+        let next = self.encoder.next_seq();
+        let start = next - self.encoder.window_size() as u64;
+        let now = self.now_s();
+        let mut s = start;
+        while s < next && knobs::intake_expired(self.lifetime_s, now - self.h_seq[s as usize]) {
+            s += 1;
+        }
+        if s > start {
+            self.encoder.advance(s);
+        }
+        s > start
+    }
+
+    /// Count a payload datagram for seq s that left with age ≥ T (must stay 0).
+    fn check_l1(&mut self, s: usize, _kind: u8) {
+        let age = self.now_s() - self.h_seq[s];
+        if knobs::intake_expired(self.lifetime_s, age) {
+            self.l1_viol += 1;
+        }
+        #[cfg(test)]
+        self.payload_log.push((self.tick, _kind, s as u64, age));
     }
 
     /// The intake (L1, then the §13.2 dequeue rule, oldest first): drops
@@ -1101,6 +1278,13 @@ impl Simulation {
     /// Send one repair symbol on path `pi`. Returns whether it survived.
     fn send_repair(&mut self, pi: usize) -> bool {
         let repair = self.encoder.generate_repair();
+        for m in repair.window_start..repair.window_start + repair.window_count as u64 {
+            self.check_l1(m as usize, 2);
+        }
+        if self.span_cut_pending {
+            self.span_cut_pending = false;
+            self.span_cut_repairs += 1;
+        }
         let lost = self.wire_lost(pi);
         self.total_fec += 1;
         self.cum_sent += 1;
@@ -1118,6 +1302,7 @@ impl Simulation {
         }
         if !lost {
             self.cum_arrived += 1;
+            self.carry_floor();
             let recovered = self.decoder.feed_repair(
                 repair.window_start, repair.window_count,
                 repair.repair_index, &repair.coded_data,
@@ -1168,7 +1353,16 @@ impl Simulation {
                     // (its SACK never came — the slot was held for exactly
                     // the recovery span; §6.3 semantics).
                     self.store_occupancy = self.store_occupancy.saturating_sub(1);
+                    self.acked_seq[*rseq as usize] = true; // set-point 3
                 }
+            }
+            // A committed hole decoded later: out of passed_undelivered here,
+            // into cum_decoded at the caller (the same decoder output).
+            let i = *rseq as usize;
+            if self.committed_seq.get(i).copied().unwrap_or(false) {
+                self.committed_seq[i] = false;
+                self.passed_undelivered -= 1;
+                self.ack_seq(i, 3);
             }
         }
     }
@@ -1379,6 +1573,27 @@ impl Simulation {
             last_send_seq: Vec::new(),
             path_seq: Vec::new(),
             resent_seq: Vec::new(),
+            acked_seq: Vec::new(),
+            a_known: 0,
+            f_ann: 0,
+            f_rx: 0,
+            committed_seq: Vec::new(),
+            passed_undelivered: 0,
+            slot_owed: Vec::new(),
+            ack_due: vec![std::collections::VecDeque::new(); n],
+            floor_ack_due: vec![std::collections::VecDeque::new(); n],
+            last_sweep_tick: 0,
+            commit_viol: 0,
+            skip_below_floor: 0,
+            l1_viol: 0,
+            floors: 0,
+            floor_carried: 0,
+            span_cut_pending: false,
+            span_cut_repairs: 0,
+            #[cfg(test)]
+            commit_log: Vec::new(),
+            #[cfg(test)]
+            slot_release_log: Vec::new(),
             #[cfg(test)]
             payload_log: Vec::new(),
         })
@@ -1448,18 +1663,45 @@ impl Simulation {
         // g_i (smooth WRR). With N = 1 every choice is path 0 and the loop
         // is exactly the single-path loop.
         let mut free: Vec<u32> = self.paths.iter().map(|p| p.capacity).collect();
+        // Floor repeat (plan §7 P3; toy `floor_repeat`): on the sweep clock
+        // clamp(2·srtt, 25, 100 ms), while F_ann > A_known, one datagram
+        // carrying F_ann takes one slot and one loss draw. Never at T = ∞
+        // (F_ann = A_known there).
+        let sweep_ticks = ((2.0 * self.agg_srtt()).clamp(0.025, 0.1) / TICK_SECS).round() as u32;
+        if self.tick.saturating_sub(self.last_sweep_tick) >= sweep_ticks {
+            self.last_sweep_tick = self.tick;
+            self.update_floor();
+            if self.f_ann > self.a_known {
+                let dest = self.best_correction_path(&free);
+                free[dest] -= 1;
+                self.floors += 1;
+                if !self.wire_lost(dest) {
+                    self.receive_floor(self.f_ann);
+                }
+            }
+        }
         let total_slots: u32 = free.iter().sum();
         for _ in 0..total_slots {
+            // F_ann is current at every slot: recomputed after every send
+            // (and once per tick below).
+            self.update_floor();
             // (1) P_lost-gated retransmit across all candidates. Retry timer
             // and loss belief come from the path the symbol was LAST sent on
             // (that is where its feedback lives).
             let mut did_retx = false;
             let mut cand: Option<usize> = None;
+            // Three knobs: no candidate below the floor (the commitment), and
+            // L2 — a resend only if it can arrive before T (§2.2, ô of §17.1).
+            let (now_s, o_hat) = (self.now_s(), self.one_way_s());
             for (i, sym) in self.symbols.iter().enumerate() {
                 if sym.lost
                     && !sym.recovered
                     && (self.tick as i64 - sym.last_retx_tick)
                         >= self.paths[sym.path].rtt_ticks as i64
+                    && sym.seq >= self.f_ann as u64
+                    && knobs::resend_admissible(
+                        self.lifetime_s, now_s - self.h_seq[sym.seq as usize], o_hat,
+                    )
                 {
                     cand = Some(i);
                     break;
@@ -1474,7 +1716,7 @@ impl Simulation {
                     self.paths[sp].srtt_secs,
                     self.paths[sp].rttvar_secs,
                 );
-                if self.rng() < pl {
+                if self.rng() < pl && self.floor_recheck(i) {
                     // Cross-path recovery: resend the EXACT stored bytes on
                     // the best currently-available path, not necessarily the
                     // one that lost them.
@@ -1485,6 +1727,10 @@ impl Simulation {
                     self.last_send_seq[seq as usize] = self.tick;
                     self.path_seq[seq as usize] = dest;
                     self.resent_seq[seq as usize] = true;
+                    if seq < self.f_ann as u64 {
+                        self.commit_viol += 1; // a copy below the floor (must stay 0)
+                    }
+                    self.check_l1(seq as usize, 1);
                     let lost = self.wire_lost(dest);
                     free[dest] -= 1;
                     self.total_arq += 1;
@@ -1507,6 +1753,7 @@ impl Simulation {
                         lost_n += 1;
                     } else {
                         self.cum_arrived += 1;
+                        self.carry_floor();
                         let data = self.source_store[seq as usize].clone();
                         let rec = self.decoder.feed_source(seq, &data);
                         // Cascade outputs may resolve OTHER lost symbols;
@@ -1526,6 +1773,7 @@ impl Simulation {
                         }
                         self.symbols[i].recovered = true;
                         self.lost_pending = self.lost_pending.saturating_sub(1);
+                        self.acked_seq[seq as usize] = true; // set-point 2
                     }
                     did_retx = true;
                 }
@@ -1537,6 +1785,11 @@ impl Simulation {
             // (2) Repair when the taper debt says one is due — on the best
             // available path (repairs are path-agnostic: ANY path's arrival
             // advances the shared window decode).
+            // The L1 age edge (P3), before the arm's window test so an emptied
+            // window cannot take the repair arm.
+            if self.apply_age_edge() {
+                self.span_cut_pending = true;
+            }
             if self.debt >= 1.0 && self.encoder.window_size() > 0 {
                 let dest = self.best_correction_path(&free);
                 self.debt -= 1.0;
@@ -1565,11 +1818,10 @@ impl Simulation {
                 self.last_send_seq.push(self.tick);
                 self.path_seq.push(dest);
                 self.resent_seq.push(false);
-                #[cfg(test)]
-                {
-                    let age = self.now_s() - self.handover_s(self.u_next);
-                    self.payload_log.push((self.tick, 0, seq, age));
-                }
+                self.acked_seq.push(false);
+                self.committed_seq.push(false);
+                self.slot_owed.push(false);
+                self.check_l1(seq as usize, 0);
                 // Slide the encoder window (paper W).
                 if self.encoder.window_size() > self.w as usize {
                     let oldest = self.encoder.next_seq().saturating_sub(self.w as u64);
@@ -1622,6 +1874,10 @@ impl Simulation {
                     self.lost_pending += 1;
                 } else {
                     self.cum_arrived += 1;
+                    self.carry_floor();
+                    // Set-point 1: the ack lands one own-path RTT after the send.
+                    let due = self.tick + self.paths[dest].rtt_ticks;
+                    self.ack_due[dest].push_back((due, seq as u32));
                     let rec = self.decoder.feed_source(seq, &data);
                     // Cascade outputs may resolve OTHER lost symbols.
                     self.mark_recovered(&rec);
@@ -1684,6 +1940,7 @@ impl Simulation {
                         cap,
                     ));
                     self.given_up_seqs.insert(sym.seq);
+                    self.acked_seq[sym.seq as usize] = true; // set-point 4
                     self.lost_pending = self.lost_pending.saturating_sub(1);
                     // Give-up resolves the slot too (§6.3 semantics).
                     self.store_occupancy = self.store_occupancy.saturating_sub(1);
@@ -1706,9 +1963,33 @@ impl Simulation {
             }
         }
 
+        // Three knobs, set-points 1 and 5 (per seq: `symbols` is pruned
+        // before most acks land), then the once-per-tick floor.
+        for pi in 0..self.paths.len() {
+            while let Some(&(due, s)) = self.ack_due[pi].front() {
+                if due > tick {
+                    break;
+                }
+                self.ack_due[pi].pop_front();
+                self.acked_seq[s as usize] = true;
+            }
+            while let Some(&(due, s)) = self.floor_ack_due[pi].front() {
+                if due > tick {
+                    break;
+                }
+                self.floor_ack_due[pi].pop_front();
+                self.ack_seq(s as usize, 5);
+            }
+        }
+        self.update_floor();
+
         // Finish conditions (rho = 100%: retransmit until everything is in;
         // rho < 100%: given-up symbols count as resolved, not delivered).
-        if self.source_done && self.cum_decoded + self.given_up >= self.num_source {
+        // Every unit is in exactly one class: decoded, given up, expired at
+        // the intake, or passed by the floor undelivered (0 at T = ∞).
+        let resolved = self.cum_decoded + self.given_up + self.intake_expired
+            + self.intake_expired_deq + self.passed_undelivered;
+        if self.source_done && resolved >= self.num_source {
             self.finished = true;
         }
         if self.source_done
@@ -1764,7 +2045,8 @@ impl Simulation {
         // SACK-clocked gauge (§6.3) is compared with.
         while (self.frontier as usize) < self.lat_by_seq.len()
             && (!self.lat_by_seq[self.frontier as usize].is_nan()
-                || self.given_up_seqs.contains(&(self.frontier as u64)))
+                || self.given_up_seqs.contains(&(self.frontier as u64))
+                || self.committed_seq.get(self.frontier as usize).copied().unwrap_or(false))
         {
             self.frontier += 1;
         }
@@ -2032,6 +2314,27 @@ impl Simulation {
     pub fn get_intake_expired_deq(&self) -> u32 { self.intake_expired_deq }
     /// Units that have left the intake (sent or expired).
     pub fn get_units_out(&self) -> u32 { self.u_next }
+    /// The floor F_ann, the sender's ack frontier A_known, and the floor the
+    /// receiver holds.
+    pub fn get_f_ann(&self) -> u32 { self.f_ann }
+    pub fn get_a_known(&self) -> u32 { self.a_known }
+    pub fn get_f_rx(&self) -> u32 { self.f_rx }
+    /// Lost units passed by the floor and never decoded.
+    pub fn get_passed_undelivered(&self) -> u32 { self.passed_undelivered }
+    /// Copies staged below the floor and payload datagrams with age ≥ T:
+    /// both must read 0 (the absolute tests read the same counters).
+    pub fn get_commit_viol(&self) -> u32 { self.commit_viol }
+    pub fn get_l1_viol(&self) -> u32 { self.l1_viol }
+    /// Candidates the re-check before a copy skipped (§17.1).
+    pub fn get_skip_below_floor(&self) -> u32 { self.skip_below_floor }
+    /// Floor-repeat datagrams, and arrivals that raised the receiver's floor.
+    pub fn get_floors(&self) -> u32 { self.floors }
+    pub fn get_floor_carried(&self) -> u32 { self.floor_carried }
+    /// Bind gauge of the L1 age edge: the fraction of repairs whose window
+    /// it cut (§2.4 of the derivation).
+    pub fn get_span_cut_by_t(&self) -> f64 {
+        self.span_cut_repairs as f64 / self.total_fec.max(1) as f64
+    }
     /// The residual R after in-window FEC at the live operating point, over
     /// the sim's own window W (`shed_budget_residual`; provisional until the
     /// sliding per-loss P_fec lands, W22).

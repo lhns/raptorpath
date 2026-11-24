@@ -230,3 +230,101 @@ fn constructor_rejects_out_of_domain_knobs() {
     assert!(try_build(INF, INF, INF).is_ok());
     assert!(try_build(0.005, 0.0, 100.0).is_ok());
 }
+
+/// Finite-T cells that exercise the sender laws: streams at Realtime and
+/// Bulk with an outage, overload, a lossy long-RTT path, and two paths.
+fn finite_t_cells() -> Vec<(&'static str, Vec<Cell>, Knobs)> {
+    let one = vec![GOLDEN_CELLS[0].1];
+    let lossy = vec![GOLDEN_CELLS[1].1];
+    let stream = Knobs { t: 0.4, h: INF, load: 0.5, ..OBJECT };
+    let outage = Knobs { outage_start: 0.3, outage_len: 0.3, ..stream };
+    vec![
+        ("realtime", one.clone(), stream),
+        ("realtime", one.clone(), outage),
+        ("bulk", one.clone(), outage),
+        ("realtime", one, Knobs { load: 1.2, units: 6000, ..stream }),
+        ("auto", lossy.clone(), Knobs { t: 0.2, ..stream }),
+        ("bulk", lossy, Knobs { t: 0.2, load: 0.8, ..outage }),
+        ("realtime", TWO_PATH.to_vec(), outage),
+        ("bulk", TWO_PATH.to_vec(), Knobs { t: 0.25, ..outage }),
+    ]
+}
+
+/// §5.4 item 4, L1 absolute: no payload-bearing datagram (source, resend,
+/// or repair-window member) for a seq with age ≥ T; the commitment: no
+/// copy below the announced floor; and the mechanisms execute.
+#[test]
+fn l1_and_the_commitment_are_absolute() {
+    let (mut resends, mut members, mut commits, mut cuts) = (0usize, 0usize, 0usize, 0.0f64);
+    for (hint, paths, k) in finite_t_cells() {
+        let mut s = build(&paths, hint, None, k);
+        run(&mut s);
+        assert!(s.is_finished() && s.get_tick() < CAP, "{hint} {k:?}: did not finish");
+        for &(tick, kind, seq, age) in &s.payload_log {
+            assert!(age < k.t, "{hint} {k:?}: kind {kind} seq {seq} at tick {tick} age {age}");
+        }
+        assert_eq!(s.get_l1_viol(), 0);
+        assert_eq!(s.get_commit_viol(), 0, "{hint} {k:?}: a copy below the floor");
+        resends += s.payload_log.iter().filter(|e| e.1 == 1).count();
+        members += s.payload_log.iter().filter(|e| e.1 == 2).count();
+        commits += s.commit_log.len();
+        cuts += s.get_span_cut_by_t();
+    }
+    assert!(resends > 0 && members > 0, "the resend and repair arms must execute");
+    assert!(commits > 0, "the commitment must execute somewhere");
+    assert!(cuts > 0.0, "the L1 age edge must cut a repair window somewhere");
+}
+
+/// Every handed-over unit lands in exactly one outcome class, per seq and
+/// in the counters (the finish sum).
+#[test]
+fn every_unit_lands_in_exactly_one_outcome_class() {
+    for (hint, paths, k) in finite_t_cells() {
+        let mut s = build(&paths, hint, None, k);
+        run(&mut s);
+        let n = s.next_seq as usize;
+        let (mut dec, mut pass, mut gu) = (0u32, 0u32, 0u32);
+        for i in 0..n {
+            let d = !s.lat_by_seq[i].is_nan();
+            let p = s.committed_seq[i];
+            let g = s.given_up_seqs.contains(&(i as u64));
+            assert_eq!(d as u8 + p as u8 + g as u8, 1, "{hint} {k:?}: seq {i} in {d}/{p}/{g}");
+            dec += d as u32;
+            pass += p as u32;
+            gu += g as u32;
+        }
+        let expired = s.get_intake_expired() + s.get_intake_expired_deq();
+        assert_eq!(n as u32 + expired, s.get_num_source(), "seqs + intake expiries = units");
+        assert_eq!(dec, s.get_cum_decoded());
+        assert_eq!(pass, s.get_passed_undelivered());
+        assert_eq!(gu, s.get_given_up());
+        assert_eq!(dec + pass + gu + expired, s.get_num_source());
+    }
+}
+
+/// §5.4 item 4, the brake: a committed hole's store slot is never released
+/// by the sender's own decision. It is released only by a decode (3) or by
+/// the receiver's floor pass plus one RTT (5), never at the commitment.
+#[test]
+fn the_brake_releases_slots_only_on_feedback() {
+    let mut floor_releases = 0;
+    for (hint, paths, k) in finite_t_cells() {
+        let mut s = build(&paths, hint, None, k);
+        let min_rtt = paths.iter().map(|c| c.rtt.max(2)).min().unwrap();
+        run(&mut s);
+        let commit_tick: std::collections::HashMap<u64, u32> =
+            s.commit_log.iter().map(|&(t, q)| (q, t)).collect();
+        for &(tick, seq, cause) in &s.slot_release_log {
+            let c = *commit_tick.get(&seq).expect("only committed holes owe a slot");
+            assert!(cause == 3 || cause == 5);
+            if cause == 5 {
+                assert!(tick >= c + min_rtt, "{hint} {k:?}: seq {seq} released {tick} < {c} + RTT");
+                floor_releases += 1;
+            }
+        }
+        let released: std::collections::HashSet<u64> =
+            s.slot_release_log.iter().map(|e| e.1).collect();
+        assert_eq!(released.len(), s.slot_release_log.len(), "a slot is released once");
+    }
+    assert!(floor_releases > 0, "set-point 5 must execute");
+}
