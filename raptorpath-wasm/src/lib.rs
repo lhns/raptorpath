@@ -499,8 +499,21 @@ struct PathState {
     link_q: f64,
     link_d: f64,
     link_free: f64,
-    /// Datagrams the leg's queue dropped (no channel state, no loss draw).
+    /// Data datagrams the leg's queue dropped (no channel state, no loss
+    /// draw), those of them sent inside the outage window, the server's busy
+    /// time (s), floor-repeat datagrams sent, lost, dropped and arrived (kept
+    /// apart: they are in no other counter), the one-way delay of every
+    /// arrived data datagram (arrival − send + rtt/2 − d, ms) and the highest
+    /// seq that arrived on this path.
     qdrop: u32,
+    qdrop_in: u32,
+    link_busy: f64,
+    floor_sent: u32,
+    floor_lost: u32,
+    floor_dropped: u32,
+    floor_arrived: u32,
+    owd_ms: Vec<f64>,
+    max_seq_arrived: Option<u64>,
     /// The RTT the sender believes (addendum 1 A3): RFC 6298 (α = 1/8,
     /// β = 1/4) in ticks, seeded at the base (srtt = rtt_ticks, rttvar =
     /// rtt_ticks/8), sampled at each feedback pop of an arrived source symbol
@@ -774,6 +787,15 @@ pub struct Simulation {
     lead_n: u32,
     lead_sum: u64,
     lead_max: u32,
+    /// Arrivals below a seq that already arrived on another path (A4).
+    cross_reorder: u32,
+    /// Each path's backlog (ms of queued work) at the end of every tick,
+    /// tick-major, since the last `take_queue_samples` (A4; the page's strip).
+    queue_pending: Vec<f64>,
+    /// Test-only: sends that left a backlog above the queue limit plus one
+    /// service time (must stay 0).
+    #[cfg(test)]
+    backlog_over: u32,
     /// Resends that arrived, and those of them later than T (L2's outcome).
     resends_arrived: u32,
     l2_late: u32,
@@ -795,7 +817,7 @@ pub struct Simulation {
     /// start, u16::MAX for a source or the window count, repair index,
     /// data), and sends that found the leg's server busy past the send.
     #[cfg(test)]
-    leg_log: Vec<(u32, u32, usize, u8, bool)>,
+    leg_log: Vec<(u32, u32, usize, u8, bool, u64, f64)>,
     #[cfg(test)]
     lead_log: Vec<(u64, usize, u32)>,
     #[cfg(test)]
@@ -831,6 +853,10 @@ struct Symbol {
     /// estimator feeds the P_lost retransmit decision.
     path: usize,
 }
+
+/// The float guard of an arrival's dueness (s): far below a tick, far above
+/// the rounding of a sum of seconds.
+const DUE_GUARD_S: f64 = 1e-9;
 
 /// The reverse leg in whole ticks: the first k with k·TICK ≥ rtt − d, so
 /// exactly `rtt_ticks` at d = 0 (no division by TICK, which can be an ulp off).
@@ -1573,9 +1599,6 @@ impl Simulation {
             let p = &mut self.paths[pi];
             p.sent += 1;
             p.fec += 1;
-            if lost {
-                p.lost += 1;
-            }
         }
         self.deliver_due();
         !lost
@@ -1621,15 +1644,41 @@ impl Simulation {
                 self.free_after_now += 1;
             }
         }
+        let floor = matches!(kind, DgKind::Floor);
         let p = &mut self.paths[pi];
         let leg = link::leg_send(&mut p.link_free, t, p.link_sv, p.link_q, p.link_d);
         let (lost, arrive_s) = match leg {
-            Some((depart, arrive)) => (self.wire_lost(pi, depart), arrive),
+            Some((depart, arrive)) => {
+                self.paths[pi].link_busy += self.paths[pi].link_sv;
+                #[cfg(test)]
+                {
+                    let p = &self.paths[pi];
+                    if p.link_free - t > p.link_q + p.link_sv {
+                        self.backlog_over += 1;
+                    }
+                }
+                let lost = self.wire_lost(pi, depart);
+                let p = &mut self.paths[pi];
+                if floor {
+                    p.floor_sent += 1;
+                    p.floor_lost += lost as u32;
+                } else {
+                    p.lost += lost as u32;
+                }
+                (lost, arrive)
+            }
             None => {
                 // Dropped at the queue: no channel state, no loss draw; it
                 // rides the leg as a ghost to its would-be arrival.
                 let p = &mut self.paths[pi];
-                p.qdrop += 1;
+                let in_outage = t >= p.outage_start_s && t < p.outage_start_s + p.outage_len_s;
+                if floor {
+                    p.floor_sent += 1;
+                    p.floor_dropped += 1;
+                } else {
+                    p.qdrop += 1;
+                    p.qdrop_in += in_outage as u32;
+                }
                 (true, link::would_arrive(p.link_free, t, p.link_sv, p.link_d))
             }
         };
@@ -1649,9 +1698,13 @@ impl Simulation {
     }
 
     /// Deliver every datagram whose arrival is due, across paths by arrival
-    /// time, ties by path index, then send order (each leg is FIFO).
+    /// time, ties by path index, then send order (each leg is FIFO). Due =
+    /// arrival at or before this tick's instant, with a 1 ns guard so that an
+    /// arrival on the tick grid (t + d summed in float seconds can land an ulp
+    /// after it) is processed on its own tick. The default leg's arrival is
+    /// the send instant itself.
     fn deliver_due(&mut self) {
-        let now = self.now_s();
+        let now = self.now_s() + DUE_GUARD_S;
         loop {
             let mut best: Option<(usize, f64)> = None;
             for (pi, p) in self.paths.iter().enumerate() {
@@ -1688,7 +1741,7 @@ impl Simulation {
         #[cfg(test)]
         self.leg_log.push((dg.send_tick, self.tick, pi, match dg.kind {
             DgKind::Source => 0, DgKind::Resend => 1, DgKind::Repair { .. } => 2, DgKind::Floor => 3,
-        }, dg.lost));
+        }, dg.lost, dg.seq, dg.arrive_s));
         let is_source = matches!(dg.kind, DgKind::Source);
         if !matches!(dg.kind, DgKind::Floor) {
             self.paths[pi].feedback_queue.push_back((due, dg.send_tick, !dg.lost, is_source));
@@ -1697,8 +1750,25 @@ impl Simulation {
             return;
         }
         let seq = dg.seq;
+        {
+            let p = &mut self.paths[pi];
+            if !matches!(dg.kind, DgKind::Floor) {
+                let owd = dg.arrive_s - dg.send_tick as f64 * TICK_SECS + p.srtt_secs / 2.0 - p.link_d;
+                p.owd_ms.push(owd * 1000.0);
+            }
+        }
+        if matches!(dg.kind, DgKind::Source | DgKind::Resend) {
+            // Cross-path reordering (addendum 1 A4): a seq arriving below one
+            // that already arrived on another path.
+            let behind = self.paths.iter().enumerate()
+                .any(|(j, q)| j != pi && q.max_seq_arrived.is_some_and(|m| m > seq));
+            self.cross_reorder += behind as u32;
+            let p = &mut self.paths[pi];
+            p.max_seq_arrived = Some(p.max_seq_arrived.map_or(seq, |m| m.max(seq)));
+        }
         match dg.kind {
             DgKind::Floor => {
+                self.paths[pi].floor_arrived += 1;
                 self.receive_floor(dg.floor);
             }
             DgKind::Source => {
@@ -1977,6 +2047,14 @@ impl Simulation {
                 link_d: prop_s[i],
                 link_free: 0.0,
                 qdrop: 0,
+                qdrop_in: 0,
+                link_busy: 0.0,
+                floor_sent: 0,
+                floor_lost: 0,
+                floor_dropped: 0,
+                floor_arrived: 0,
+                owd_ms: Vec::new(),
+                max_seq_arrived: None,
                 srtt_meas: rtt.max(2) as f64,
                 rttvar_meas: rtt.max(2) as f64 / 8.0,
                 rtt_samples: 0,
@@ -2098,6 +2176,10 @@ impl Simulation {
             lead_n: 0,
             lead_sum: 0,
             lead_max: 0,
+            cross_reorder: 0,
+            queue_pending: Vec::new(),
+            #[cfg(test)]
+            backlog_over: 0,
             resends_arrived: 0,
             l2_late: 0,
             #[cfg(test)]
@@ -2275,9 +2357,6 @@ impl Simulation {
                         let p = &mut self.paths[dest];
                         p.sent += 1;
                         p.arq += 1;
-                        if lost {
-                            p.lost += 1;
-                        }
                     }
                     if lost {
                         lost_n += 1;
@@ -2345,9 +2424,6 @@ impl Simulation {
                     let p = &mut self.paths[dest];
                     p.sent += 1;
                     p.src += 1;
-                    if lost {
-                        p.lost += 1;
-                    }
                 }
                 self.symbols.push(Symbol {
                     tick: self.tick,
@@ -2572,6 +2648,10 @@ impl Simulation {
         self.last_fec = fec_n;
         self.last_arq = arq_n;
         self.last_lost = lost_n;
+        let now = self.now_s();
+        for p in &self.paths {
+            self.queue_pending.push((p.link_free - now).max(0.0) * 1000.0);
+        }
         self.tick += 1;
     }
 
@@ -2946,8 +3026,28 @@ impl Simulation {
     pub fn get_link_service_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_sv) }
     pub fn get_link_queue_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_q) }
     pub fn get_link_prop_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_d) }
-    /// Datagrams path i's queue dropped.
+    /// Data datagrams path i's queue dropped, those sent inside the outage
+    /// window and outside it (addendum 1 A4).
     pub fn get_path_qdrop(&self, i: usize) -> u32 { self.paths.get(i).map_or(0, |p| p.qdrop) }
+    pub fn get_path_qdrop_in(&self, i: usize) -> u32 { self.paths.get(i).map_or(0, |p| p.qdrop_in) }
+    pub fn get_path_qdrop_out(&self, i: usize) -> u32 { self.paths.get(i).map_or(0, |p| p.qdrop - p.qdrop_in) }
+    /// Path i's one-way delay of arrived data datagrams (arrival − send +
+    /// rtt/2 − d, ms): the last value and a quantile (NaN before any).
+    pub fn get_path_owd_last_ms(&self, i: usize) -> f64 {
+        self.paths.get(i).and_then(|p| p.owd_ms.last().copied()).unwrap_or(f64::NAN)
+    }
+    pub fn get_path_owd_quantile_ms(&self, i: usize, q: f64) -> f64 {
+        self.paths.get(i).map_or(f64::NAN, |p| consumer::quantile(&p.owd_ms, q))
+    }
+    /// Path i's link use: the server's busy time over the elapsed time.
+    pub fn get_path_link_use(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(0.0, |p| p.link_busy / (self.tick.max(1) as f64 * TICK_SECS))
+    }
+    /// Arrivals below a seq that already arrived on another path.
+    pub fn get_cross_path_reorder(&self) -> u32 { self.cross_reorder }
+    /// Each path's backlog (ms) at the end of every tick since the last call,
+    /// tick-major (`get_num_paths` values per tick): the page appends them.
+    pub fn take_queue_samples(&mut self) -> Vec<f64> { std::mem::take(&mut self.queue_pending) }
     /// Datagrams in flight on every forward leg now.
     pub fn get_in_flight(&self) -> u32 { self.in_flight() as u32 }
     /// The resend budget per 5 ms window (∞ = unlimited).

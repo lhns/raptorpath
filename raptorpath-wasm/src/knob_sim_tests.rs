@@ -835,7 +835,7 @@ fn the_default_leg_delivers_inline_at_the_send_tick() {
             assert_eq!(s.get_in_flight(), 0, "{hint} {k:?}: in flight at the end of tick {}", s.get_tick());
         }
         assert_eq!(s.free_after_now, 0, "{hint} {k:?}: free_p > now at a send");
-        for &(sent, at, _, kind, _) in &s.leg_log {
+        for &(sent, at, _, kind, ..) in &s.leg_log {
             assert_eq!(sent, at, "{hint} {k:?}: kind {kind} sent {sent} delivered {at}");
             kinds[kind as usize] += 1;
         }
@@ -1395,4 +1395,154 @@ fn report_units_held_at_the_end_under_a_delay() {
             );
         }
     }
+}
+
+// --- Addendum 1 A4 (P12): the queue on -----------------------------------------
+
+/// Queue cells: a stream under a link above and below its offered load, small
+/// and large buffers, propagation splits, an outage; two paths; and the
+/// object behind a bottleneck (it drops continuously).
+fn queue_cells() -> Vec<LinkCell> {
+    let stream = Knobs { load: 0.5, ..OBJECT };
+    let outage = Knobs { t: 0.4, outage_start: 0.3, outage_len: 0.3, ..stream };
+    let one = vec![GOLDEN_CELLS[0].1];
+    let mut v: Vec<LinkCell> = Vec::new();
+    for hint in ["realtime", "bulk"] {
+        for (mu, q) in [(2600.0, 0.1), (2000.0, 0.01), (2000.0, 0.1)] {
+            for (k, d) in [(stream, 0.025), (outage, 0.01)] {
+                v.push((hint, one.clone(), k, vec![mu], vec![q], vec![d]));
+            }
+        }
+        v.push((hint, TWO_PATH.to_vec(), outage, vec![2600.0, 2400.0], vec![0.05, 0.05], vec![0.025, 0.02]));
+    }
+    v.push(("auto", one, OBJECT, vec![2000.0], vec![0.05], vec![0.025]));
+    v
+}
+
+/// A4 absolute, on every queue cell and at every tick: conservation per path
+/// (data: sent = arrived + wire-lost + queue-dropped + in flight; floor
+/// repeats likewise, apart), the backlog never above the queue limit plus
+/// one service time, each feedback queue in due order. At the end: arrivals
+/// FIFO per path, each processed at the first tick ≥ its arrival instant
+/// (the tick discretisation), L1 and the commitment hold, the run finishes.
+#[test]
+fn the_queue_conserves_datagrams_and_stays_fifo() {
+    let mut drops = 0;
+    for c in queue_cells() {
+        let (hint, paths, k, mu, q, d) = &c;
+        let sv: Vec<f64> = mu.iter().map(|m| 1.0 / m).collect();
+        let mut s = build_link(paths, hint, None, *k, &sv, q, d, INF);
+        let label = format!("{hint} N={} {k:?} mu {mu:?} q {q:?} d {d:?}", paths.len());
+        while !s.is_finished() && s.get_tick() < CAP {
+            s.step();
+            for (i, p) in s.paths.iter().enumerate() {
+                let fl = |floor: bool| p.leg.iter().filter(|g| !g.lost && matches!(g.kind, DgKind::Floor) == floor).count() as u32;
+                assert_eq!(p.sent, p.arrived + p.lost + p.qdrop + fl(false), "{label} path {i} tick {}: data", s.get_tick());
+                assert_eq!(p.floor_sent, p.floor_arrived + p.floor_lost + p.floor_dropped + fl(true), "{label} path {i}: floors");
+                assert!(p.feedback_queue.iter().zip(p.feedback_queue.iter().skip(1)).all(|(a, b)| a.0 <= b.0),
+                        "{label} path {i}: feedback out of due order");
+            }
+        }
+        assert!(s.is_finished() && s.get_tick() < CAP, "{label}: did not finish");
+        assert_eq!(s.backlog_over, 0, "{label}: backlog above q + sv");
+        assert_eq!((s.get_l1_viol(), s.get_commit_viol()), (0, 0), "{label}");
+        let mut last = vec![f64::NEG_INFINITY; paths.len()];
+        for &(_, at, p, kind, _, seq, arr) in &s.leg_log {
+            assert!(arr >= last[p], "{label} path {p}: arrival {arr} after {}", last[p]);
+            last[p] = arr;
+            // the first tick at or after the arrival (with the 1 ns float guard)
+            let a = arr - DUE_GUARD_S;
+            assert!(at as f64 * TICK_SECS >= a && ((at as f64) - 1.0) * TICK_SECS < a,
+                    "{label}: kind {kind} seq {seq} arriving {arr} processed at tick {at}");
+        }
+        let qd: u32 = (0..paths.len()).map(|i| s.get_path_qdrop(i)).sum();
+        println!(
+            "queue {label}: ticks {} drops {qd} (in outage {}) reorder {} use {:.2} owd p50 {:.1} p99 {:.1} ms share_any {:.4}",
+            s.get_tick(), (0..paths.len()).map(|i| s.get_path_qdrop_in(i)).sum::<u32>(), s.get_cross_path_reorder(),
+            s.get_path_link_use(0), s.get_path_owd_quantile_ms(0, 0.5), s.get_path_owd_quantile_ms(0, 0.99), s.get_share_any()
+        );
+        drops += qd;
+    }
+    assert!(drops > 0, "the queue must drop somewhere");
+}
+
+/// A loss-free cell (ε = 0).
+fn clean(rtt: u32) -> Cell {
+    Cell { eps: 0.0, q: 0.5, rtt, cap: 4 }
+}
+
+/// Unit delays of a loss-free run at H = 0.
+fn clean_delays(paths: &[Cell], mu: &[f64], d: &[f64]) -> (Simulation, Vec<f64>) {
+    let n = paths.len();
+    let sv: Vec<f64> = mu.iter().map(|m| 1.0 / m).collect();
+    let mut s = build_link(paths, "bulk", None, Knobs { h: 0.0, load: 0.5, ..OBJECT }, &sv, &vec![0.1; n], d, INF);
+    run(&mut s);
+    assert!(s.is_finished() && s.get_tick() < CAP);
+    assert_eq!(s.get_total_lost() + s.get_total_arq(), 0, "loss-free");
+    let delays = s.get_unit_delays();
+    (s, delays)
+}
+
+/// A4: on a loss-free, queue-free cell the delay from hand-over is the same
+/// for any split of the base RTT into the forward propagation d and the
+/// reverse leg (N = 1; N = 2 with equal d on both paths), compared to 1e-12 s
+/// (the sums differ in their last bits); splits on the tick grid.
+#[test]
+fn the_delay_does_not_depend_on_the_propagation_split() {
+    let one = [clean(50)];
+    let (_, base) = clean_delays(&one, &[INF], &[0.0]);
+    for d in [0.01, 0.02, 0.025] {
+        let (_, got) = clean_delays(&one, &[INF], &[d]);
+        let worst = base.iter().zip(&got).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
+        assert!(worst <= 1e-12, "N=1 d {d}: delays moved by {worst}");
+    }
+    let two = [clean(50), clean(80)];
+    let (_, base) = clean_delays(&two, &[INF; 2], &[0.0, 0.0]);
+    for d in [0.01, 0.025] {
+        let (_, got) = clean_delays(&two, &[INF; 2], &[d, d]);
+        let worst = base.iter().zip(&got).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
+        assert!(worst <= 1e-12, "N=2 d {d}: delays moved by {worst}");
+    }
+}
+
+/// A4: on a loss-free cell WITH a standing queue, each unit's delay from
+/// hand-over is its intake wait plus its queue wait plus rtt/2, within the
+/// arrival's tick, for any split: no double count of the belief (ô, which
+/// holds the measured queue, is read by L2 and `protected` only).
+#[test]
+fn a_queued_delay_is_the_wait_plus_half_the_rtt() {
+    let one = [clean(50)];
+    for mu in [2600.0, 2050.0] {
+        let (_, base) = clean_delays(&one, &[mu], &[0.0]);
+        for d in [0.0, 0.01, 0.025] {
+            let (s, got) = clean_delays(&one, &[mu], &[d]);
+            let worst = base.iter().zip(&got).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
+            assert!(worst <= 1e-12, "mu {mu} d {d}: delays moved by {worst} across splits");
+            let mut waited = 0.0f64;
+            for &(sent, _, _, kind, _, seq, arr) in &s.leg_log {
+                if kind != 0 {
+                    continue;
+                }
+                let send = sent as f64 * TICK_SECS;
+                let wait = arr - send - d;
+                waited = waited.max(wait);
+                let u = s.seq_unit[seq as usize] as usize;
+                let want = send - s.h_seq[seq as usize] + wait + 0.025;
+                assert!((got[u] - want).abs() < TICK_SECS, "mu {mu} d {d} seq {seq}: delay {} want {want}", got[u]);
+            }
+            assert!(waited > 0.0005, "mu {mu}: a queue must form ({waited} s)");
+        }
+    }
+}
+
+/// A4: the object behind a bottleneck drops continuously; the drops feed ε̂
+/// (the estimate rises above the channel's ε), and the run still finishes.
+#[test]
+fn the_object_behind_a_bottleneck_drops_and_feeds_the_estimate() {
+    let c: LinkCell = ("auto", vec![GOLDEN_CELLS[0].1], OBJECT, vec![2000.0], vec![0.05], vec![0.025]);
+    let (s, _, _) = run_link(&c);
+    assert!(s.is_finished() && s.get_tick() < CAP, "did not finish");
+    assert!(s.get_path_qdrop(0) > 100, "drops {}", s.get_path_qdrop(0));
+    assert!(s.get_path_eps_hat(0) > GOLDEN_CELLS[0].1.eps, "eps_hat {}", s.get_path_eps_hat(0));
+    println!("object behind 2000/s: drops {} eps_hat {:.3} ticks {}", s.get_path_qdrop(0), s.get_path_eps_hat(0), s.get_tick());
 }

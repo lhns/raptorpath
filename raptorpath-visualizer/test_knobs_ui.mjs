@@ -98,7 +98,7 @@ const m = html.match(/<script>([\s\S]*)<\/script>/);
 const fn = new Function(
   "document", "window", "requestAnimationFrame", "cancelAnimationFrame", "performance",
   m[1] +
-    "\n;return { resetSim, updateLabels, updateReadouts, getParams, spanLaw, spanStep, drawSpanViz, updateSpanQuants, spanViz, KN_ROWS, drawUnitStrip, COLORS, sim: () => sim, pinned: () => pinned, drawDelayChart, CLASS_COLORS, drawBudgetBars };"
+    "\n;return { resetSim, updateLabels, updateReadouts, getParams, spanLaw, spanStep, drawSpanViz, updateSpanQuants, spanViz, KN_ROWS, drawUnitStrip, COLORS, sim: () => sim, pinned: () => pinned, drawDelayChart, CLASS_COLORS, drawBudgetBars, drawQueueStrip };"
 );
 const perfStub = { now: () => 0 };
 const api = fn(documentStub, windowStub, cb => { rafQueue.push(cb); return rafQueue.length; }, () => {}, perfStub);
@@ -468,6 +468,46 @@ const reset = () => { for (const [k, v] of Object.entries(dflt)) set(k, v); };
   check("budget readouts: held-back seqs and refusals",
     getEl("kr-braked-units").textContent === String(s.inner.get_resend_braked_units()) &&
     getEl("kr-braked-attempts").textContent === String(s.inner.get_resend_braked_attempts()));
+  reset();
+}
+
+// ---- 4e. addendum 1 A4 under A6 option (b): the default leg draws no queue ----
+// The strip draws the model's per-tick samples (teed here from the one drain)
+// and nothing else; with the default leg every sample, drop and busy time is 0.
+{
+  reset(); set("sl-t", 0.5); set("sl-h", 0); set("sl-load", 1 / 3); set("sl-eps", 0.1);
+  set("sl-outstart", 0.3); set("sl-outlen", 0.4);
+  api.resetSim();
+  const s = api.sim(), real = s.inner, teed = [];
+  const take = real.take_queue_samples.bind(real);
+  real.take_queue_samples = () => { const v = take(); teed.push(...v); return v; };
+  const heights = [];
+  const cv = getEl("queue-strip"), orig = cv.getContext;
+  cv.getContext = () => new Proxy({}, {
+    get: (_, k) => (k === "fillRect" ? (x, y, w, h) => heights.push(h) : (typeof k === "string" ? () => {} : undefined)),
+    set: () => true,
+  });
+  let n = 0;
+  while (!s.finished && n < 20000) { s.step(); n++; if (n % 40 === 0) api.drawQueueStrip(); }
+  heights.length = 0;   // each frame redraws every sample: check the last frame
+  api.drawQueueStrip();
+  cv.getContext = orig;
+  api.updateReadouts();
+  const paths = s.numPaths;
+  check("A4 default leg: the queue strip drew one sample per tick and path, the model's own",
+    teed.length === s.tick * paths && heights.length === teed.length && s.queueRows.flat().length === teed.length,
+    `${heights.length} drawn, ${teed.length} sampled, ${s.tick} ticks x ${paths} paths`);
+  check("A4 default leg: every drawn queue sample is 0",
+    teed.every(v => v === 0) && heights.every(v => v === 0));
+  let drops = 0, busy = 0;
+  for (let i = 0; i < paths; i++) { drops += real.get_path_qdrop(i); busy += real.get_path_link_use(i); }
+  check("A4 default leg: zero drops and zero link use, shown as 0",
+    drops === 0 && busy === 0 && getEl("queue-note").textContent.startsWith("queue drops: 0 ") &&
+    getEl("kr-qdrops").textContent === Array(paths).fill("0 / 0").join(" · "),
+    `${getEl("queue-note").textContent} | ${getEl("kr-qdrops").textContent}`);
+  check("A4 readouts: one-way delay per path renders (rtt/2 with the default leg)",
+    getEl("kr-owd").textContent === "25.0 / 25.0 / 25.0 ms", getEl("kr-owd").textContent);
+  delete real.take_queue_samples;
   reset();
 }
 

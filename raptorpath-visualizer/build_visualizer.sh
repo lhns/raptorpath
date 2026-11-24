@@ -128,6 +128,9 @@ class SimWrapper {
     const nu = this.inner.get_num_source();
     this.unitStore = { n: nu, h: new Float64Array(nu), delay: new Float64Array(nu).fill(Infinity),
                        cls: new Uint8Array(nu), hMax: 0, dMax: 0 };
+    // The forward leg's per-tick backlog per path (addendum 1 A4), filled
+    // only by pullQueueSamples.
+    this.queueRows = paths.map(() => []);
     // Single-path baseline (§5.5), measured-vs-measured: run each path alone through
     // the same engine (same hint, same W, that path's own channel) and take
     // the best completion goodput. The aggregation factor compares the
@@ -315,6 +318,19 @@ class SimWrapper {
   linkPropS(i)    { return this.inner.get_link_prop_s(i); }
   pathQdrop(i)    { return this.inner.get_path_qdrop(i); }
   get resendLimit() { return this.inner.get_resend_limit(); }
+  // --- The queue (addendum 1 A4): the ONE drain of take_queue_samples
+  // (tick-major, one value per path) into one row per path; and readouts.
+  pullQueueSamples() {
+    const v = this.inner.take_queue_samples(), n = this.queueRows.length;
+    for (let i = 0; i < v.length; i++) this.queueRows[i % n].push(v[i]);
+    return this.queueRows;
+  }
+  pathQdropIn(i)  { return this.inner.get_path_qdrop_in(i); }
+  pathQdropOut(i) { return this.inner.get_path_qdrop_out(i); }
+  pathOwdLastMs(i) { return this.inner.get_path_owd_last_ms(i); }
+  pathOwdQuantileMs(i, q) { return this.inner.get_path_owd_quantile_ms(i, q); }
+  pathLinkUse(i)  { return this.inner.get_path_link_use(i); }
+  get crossPathReorder() { return this.inner.get_cross_path_reorder(); }
   // --- The resend budget (addendum 1 A5) ---
   get budgetUsed()  { return this.inner.get_budget_used(); }
   get resendBrakedUnits()    { return this.inner.get_resend_braked_units(); }
