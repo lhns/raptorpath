@@ -335,7 +335,8 @@ class Receivers(unittest.TestCase):
 
 DIALS = {"rho", "delta", "hint", "T", "Hk"}
 # HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions (three-knobs.md 9.2) and the share_T readout are the only places T is compared
-EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime"}
+EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime",
+          "dequeue_expired"}      # dequeue_expired: three-knobs.md 13.2 (stage 3b)
 
 
 def _names(node):
@@ -383,6 +384,11 @@ class DenyTest(unittest.TestCase):
         self.assertTrue(deny_scan("def f(c):\n    return c.Hk == 0\n"))
         self.assertFalse(deny_scan("def intake_expired_fn(T, age):\n    return age >= T\n"))   # the named law functions are exempt
         self.assertTrue(deny_scan("def other(T, age):\n    return age >= T\n"))
+
+    def test_stage3b_positive_controls(self):                                                  # three-knobs.md 13.7.1 test 8
+        self.assertTrue(deny_scan("def dequeue_expiredish(c):\n    return c.T < 1\n"))
+        self.assertFalse(deny_scan("def dequeue_expired(T, age, m):\n    return age + m >= T\n"))
+        self.assertTrue(deny_scan("def f(c, age):\n    return age + 0.1 >= c.T\n"))
 
 
 
@@ -490,6 +496,138 @@ class Stage3(unittest.TestCase):
         a = toy2.run(obj3(sender="S2", recv="RH", Hk=0.0, T=0.4, seed=1, dead=(0, 0.4 * 1.2147, 1.5)))
         b = toy2.run(obj3(sender="S2", recv="RH", Hk=0.0, T=0.4, seed=1, dead=(0, 0.4 * 1.2147, 1.5), o_excl_verdict=False))
         self.assertLess(a["intake_expired"], b["intake_expired"])
+
+
+# ---- stage 3b (three-knobs.md 13.7.1) -----------------------------------------------------------------
+import json  # noqa: E402
+import batch3  # noqa: E402
+import batch3b  # noqa: E402
+
+INF = math.inf
+
+
+def keys_equal(a, b, keys=P1_KEYS):
+    return [k for k in keys if not (a[k] == b[k] or (isinstance(a[k], float) and math.isnan(a[k]) and math.isnan(b[k])))]
+
+
+class Stage3b(unittest.TestCase):
+    CELLS3 = ("E-L10", "M-I2", "K-L10")
+
+    def test_1_defaults_reproduce_stage3(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.rtt_est, c.src_model, c.link, c.tail_elig, c.resend_gate, c.deq_expiry, c.evidence_verdict),
+                         ("old", "old", None, "P", "owd", False, False))
+        # one stored stage 3 run (out3 is not tracked; skipped when absent) re-run through the stage 3 runner
+        f = os.path.join(HERE, "out3", "K", "K-L10.G-T0p4-H0p02-0.json")
+        if os.path.exists(f):
+            batch3.build()
+            with open(f) as fh:
+                old = json.load(fh)
+            new = json.loads(json.dumps(batch3.run_one(batch3.JOBS["K-L10.G-T0p4-H0p02"][1](0))))
+            for k in old:
+                if k not in ("wall_s", "gauges"):
+                    self.assertEqual(json.dumps(old[k]), json.dumps(new[k]), k)          # json: nan == nan
+            for k in old["gauges"]:
+                self.assertEqual(old["gauges"][k], new["gauges"][k], k)
+
+    def test_2_s3_p_at_t_inf_equals_c3(self):
+        batch3b.build()
+        for cell in self.CELLS3:
+            for seed in range(3):
+                a = batch3b.cmp_cfg(cell, "C3", seed)
+                b = batch3b.s3_cfg(cell, seed, INF, INF, tail="P")
+                a.want_trace = b.want_trace = True
+                ra, rb = toy2.run(a), toy2.run(b)
+                self.assertEqual(keys_equal(ra, rb), [], (cell, seed))
+                self.assertEqual(ra["_trace"], rb["_trace"], (cell, seed))
+
+    def test_3_s3_t_1e6_equals_t_inf_both_tail_elig(self):
+        for cell in ("M-I2", "K-L10"):
+            for tail in ("P", "R"):
+                for seed in range(2):
+                    a = batch3b.s3_cfg(cell, seed, INF, INF, tail=tail)
+                    b = batch3b.s3_cfg(cell, seed, 1e6, INF, tail=tail)
+                    a.want_trace = b.want_trace = True
+                    ra, rb = toy2.run(a), toy2.run(b)
+                    self.assertEqual(keys_equal(ra, rb), [], (cell, tail, seed))
+                    self.assertEqual(ra["_trace"], rb["_trace"], (cell, tail, seed))
+
+    def _brake_decreases(self, sender, **kw):
+        c = batch3b.s3_cfg("K-L10", 1, 0.4, 0.0, sender=sender, **kw)
+        sim = toy2.Sim(c)
+        log = []
+        for name in ("on_data", "on_floor", "apply_floor", "on_report", "on_tick", "on_sweep", "on_release", "on_r0e_expiry",
+                     "on_verdict_timer", "on_probe", "emit"):
+            orig = getattr(sim, name)
+
+            def wrap(*a, _o=orig, _n=name, **k):
+                before = sim.O_ctl()
+                r = _o(*a, **k)
+                if sim.O_ctl() < before:
+                    log.append(_n)
+                return r
+            setattr(sim, name, wrap)
+        sim.run()
+        return log, sim
+
+    def test_4_brake_falls_only_on_feedback(self):
+        log, sim = self._brake_decreases("S3")
+        self.assertGreater(sim.g["verdicts"], 0)                     # the mechanism ran: verdicts were taken
+        self.assertGreater(len(log), 0)
+        self.assertEqual(set(log), {"on_report"})
+        log2, _ = self._brake_decreases("S3x")                       # positive control: the exclusion arm releases on a verdict
+        self.assertIn("on_verdict_timer", log2)
+
+    def test_5_vta_zero_in_k_i2_and_spurious_verdicts_at_stage3(self):
+        r = toy2.run(batch3b.s3_cfg("K-I2", 0, 0.14, 0.0))
+        self.assertEqual(r["vta"], 0)
+        r3 = toy2.run(batch3b.s3_cfg("K-L10", 0, 0.14, 0.0))
+        self.assertEqual(r3["vta"], 0)
+        r2 = toy2.run(batch3b.s2_cfg("K-L10", 0, 0.14, 0.0))          # witness: T - owd is below one round trip, stage 3 verdicts delivered data
+        self.assertGreater(r2["vta"], 0)
+
+    def test_6_dequeue_rule_in_overload(self):
+        c = batch3b.s3_cfg("OV", 0, 0.25, 0.0, n_total=24000, want_trace=True)
+        r = toy2.run(c)
+        self.assertGreater(r["intake_expired_deq"], 0)                # the mechanism ran
+        log = r["_deq_log"]
+        self.assertGreater(len(log), 1000)
+        for (t, u, age, R, younger) in log:
+            self.assertFalse(age + R >= c.T and younger, (t, u, age, R))
+        self.assertTrue(any(age + R >= c.T for (_, _, age, R, _) in log))     # the sole-unit clause also executed
+
+    def test_7_link_q0_drops_everything_and_large_link_is_a_wire(self):
+        c = batch3b.s3_cfg("K-L10", 0, INF, INF, link=dict(C=1000.0, Q=0.0), rate=50.0)
+        r = toy2.run(c)
+        self.assertEqual(r["delivered"], 0)
+        self.assertEqual(r["gauges"]["queue_drop"], r["gauges"]["floors"] + r["gauges"]["repair_sends"] + r["n_src"])
+        c = batch3b.s3_cfg("K-L10", 0, INF, INF, link=dict(C=1e9, Q=1e9), want_trace=True)
+        sim = toy2.Sim(c)
+        sim.run()
+        for s in range(0, 3000, 97):
+            d = sim.sent_t[s] + 1e-9
+            self.assertAlmostEqual(sim.atilde[s], d + sim.delay.at(d), places=12)
+
+    def test_8_probe_and_work_conserving_source_execute(self):
+        r = toy2.run(batch3b.s3_cfg("K-L10", 0, INF, INF))
+        self.assertGreater(r["probes"], 0)
+        self.assertGreater(r["gauges"]["resend_by_R"], 0)
+        c = batch3b.s3_cfg("CL", 0, INF, INF, n_total=20000, dead=(0, 0.5, 0.5))
+        r = toy2.run(c)
+        self.assertGreater(r["pause_events"], 0)                       # the pause, not the queue, brakes
+        self.assertEqual(r["queue_drop"], r["queue_drop_in"] + r["queue_drop_out"])
+        self.assertTrue(r["link_util_w"] > 0)
+
+    def test_9_rfc_rtt_estimator_karn_and_seed(self):
+        sim = toy2.Sim(batch3b.s3_cfg("K-I2", 0, INF, INF))
+        self.assertAlmostEqual(sim.R_now(), 0.333 + 4 * 0.1665 + 0.002, places=9)
+        sim.run()
+        self.assertAlmostEqual(sim.srtt, 0.010, delta=0.004)           # 2 x owd of 5 ms, plus the report tick
+
+    def test_10_resend_gate_evidence_executes(self):
+        a = toy2.run(batch3b.s3_cfg("K-L10", 0, 0.4, 0.0, resend_gate="owd"))
+        b = toy2.run(batch3b.s3_cfg("K-L10", 0, 0.4, 0.0, resend_gate="evidence"))
+        self.assertNotEqual(a["gauges"]["repair_sends"], b["gauges"]["repair_sends"])       # the gate executes
 
 
 if __name__ == "__main__":

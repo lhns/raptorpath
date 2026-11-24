@@ -49,6 +49,12 @@ def within_lifetime(T, age):
     return age <= T
 
 
+def dequeue_expired(T, age, m):
+    """Stage 3b, three-knobs.md 13.2: at the dequeue a unit gives its slot to a younger one when it can no longer arrive in
+    time.  m is the ack timeout R, an upper bound on the one-way delay.  The fourth place T is compared."""
+    return age + m >= T
+
+
 def delta_at_b(b):
     return DELTA_AUTO * 10.0 ** (-2.0 * math.log2(b))
 
@@ -56,7 +62,7 @@ def delta_at_b(b):
 @dataclass
 class Cfg:
     cell: str = "I1"
-    sender: str = "S1c"            # S0 | S1 (verdict, no copy; test only) | S1c | S2 | S2c (stage 3: L1, L2; S2c adds a copy per verdict)
+    sender: str = "S1c"            # S0 | S1 (verdict, no copy; test only) | S1c | S2 | S2c (stage 3: L1, L2; S2c adds a copy per verdict) | S3 | S3x (stage 3b: the S2 family on Cfg's stage 3b fields; S3x keeps the O exclusion)
     recv: str = "R1"               # R1 | U | R0e | HZ | RH (stage 3: hold Hk)
     seed: int = 0
     dur: float = 20.0
@@ -92,6 +98,13 @@ class Cfg:
     T: float = math.inf            # stage 3: lifetime knob, seconds from hand-over (three-knobs.md 9.2)
     Hk: float = math.inf           # stage 3: order hold knob, seconds from hole detection
     o_excl_verdict: bool = True    # stage 3: L7, verdicted seqs leave the outstanding count (S2p sets False)
+    rtt_est: str = "old"           # stage 3b: "rfc" = RFC 6298 srtt/rttvar, Karn's rule, sampled from the largest newly received seq; defines R_now()
+    src_model: str = "old"         # stage 3b: "wc" = work-conserving source (a waiting backlog is sent at once, limited by the pause and the link)
+    link: object = None            # stage 3b: dict(C=units/s, Q=queue in units) turns on the bottleneck
+    tail_elig: str = "P"           # stage 3b: "R" = the probe timer (one datagram per R for the oldest open-tail seq)
+    resend_gate: str = "owd"       # stage 3b: "evidence" gates every resend on evidence of loss (link cells)
+    deq_expiry: bool = False       # stage 3b: dequeue expiry (a + R >= T with a younger unit waiting)
+    evidence_verdict: bool = False  # stage 3b: verdicts only on evidence of loss newer than the last send
     recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
 
 
@@ -267,9 +280,31 @@ class Sim:
         self.u_next = 0                              # next application unit (handed over at u * dt)
         self.h_seq = [0.0] * self.nmax               # hand-over time of the unit each seq carries
         self.intake_expired = 0
-        self.O_ctl = self.O_eff if c.sender in ("S2", "S2c") else self.O
+        self.s2fam = c.sender in ("S2", "S2c", "S3", "S3x")
+        self.s3 = c.sender in ("S3", "S3x")
+        self.resume_on_verdict = c.sender != "S3"       # S3: the pause is released by receiver feedback only (13.1)
+        self.O_ctl = self.O_eff if self.s2fam else self.O
         self.paused = False
         self.srtt = None
+        self.rttvar = 0.0
+        self.tau_rx = -1.0                           # sender: newest send stamp the receiver reported having received (13.1)
+        self.tau_rx_recv = -1.0                      # receiver: maximum send stamp over data arrivals
+        self.link_free = 0.0
+        self.link_busy = 0.0
+        self.busy_w = 0.0
+        self.link_sv = (1.0 / c.link["C"]) if c.link is not None else 0.0
+        self.link_qs = (c.link["Q"] / c.link["C"]) if c.link is not None else 0.0
+        self.intake_expired_deq = 0
+        self.pause_t0 = None
+        self.pause_log = []
+        self.R_sum = 0.0
+        self.srtt_sum = 0.0
+        self.rep_n = 0
+        self.floor_arrivals = []
+        self.deq_log = []
+        self.trig = "report"
+        self.oe = (c.dead[1] + c.dead[2]) if c.dead is not None else None
+        self.first_emit_oe = None
         # receiver state
         self.got = bytearray(self.nmax)
         self.arr = [0.0] * self.nmax
@@ -306,7 +341,8 @@ class Sim:
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
                       r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0, late_floor=0, late_r0e=0,
-                      l2_fail=0, rel_by_floor=0)
+                      l2_fail=0, rel_by_floor=0, probes=0, queue_drop=0, queue_drop_in=0, queue_drop_out=0,
+                      resend_by_R=0, resend_by_report=0, resend_by_sweep=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -388,6 +424,51 @@ class Sim:
             return self.cfg.Hk                       # L6: release at t_detect + H; the floor pass is unchanged
         return None
 
+    def rtt_sample(self, r):
+        """RFC 6298 2.2 and 2.3 (stage 3b): first sample srtt = r, rttvar = r/2; then rttvar first, srtt second."""
+        if self.srtt is None:
+            self.srtt, self.rttvar = r, r / 2.0
+        else:
+            self.rttvar = 0.75 * self.rttvar + 0.25 * abs(self.srtt - r)
+            self.srtt = 0.875 * self.srtt + 0.125 * r
+
+    def R_now(self):
+        """The ack timeout R = srtt + max(4 rttvar, g) + ack_delay_max (three-knobs.md 13, RFC 6298 2, RFC 9002 6.2.1), g and
+        ack_delay_max = the toy's tick; before the first sample the RFC 9002 6.2.2 seed (333 ms, rttvar 166.5 ms)."""
+        sr, rv = (0.333, 0.1665) if self.srtt is None else (self.srtt, self.rttvar)
+        return sr + max(4.0 * rv, self.cfg.tick) + self.cfg.tick
+
+    def o_hat(self):
+        """One-way delay estimate used by L2: the exact owd for S2 (stage 3); srtt/2 with the RFC seed for S3."""
+        if self.s3 and self.cfg.rtt_est == "rfc":
+            return (0.333 if self.srtt is None else self.srtt) / 2.0
+        return self.rtt / 2
+
+    def evidence(self, s, now):
+        """13.1: evidence of loss newer than the last send of s: a datagram sent later has arrived, or s is overdue (R)."""
+        ls = self.last_send[s]
+        return ls < self.tau_rx or now >= ls + self.R_now()
+
+    def fwd(self, t):
+        """A forward send at t.  Returns (arrival, departure); arrival is None when the bottleneck queue drops it (13.7.1 item 6).
+        With no link: arrival = t + delay.at(t), departure = t."""
+        lk = self.cfg.link
+        if lk is None:
+            return t + self.delay.at(t), t
+        if max(0.0, self.link_free - t) >= self.link_qs:
+            self.g["queue_drop"] += 1
+            dd = self.cfg.dead
+            if dd is not None and dd[1] <= t < dd[1] + dd[2]:
+                self.g["queue_drop_in"] += 1
+            else:
+                self.g["queue_drop_out"] += 1
+            return None, t
+        d = max(t, self.link_free) + self.link_sv
+        self.link_busy += self.link_sv
+        self.busy_w += max(0.0, min(d, 10.0) - max(d - self.link_sv, 1.0))      # link-busy time inside [1 s, 10 s]
+        self.link_free = d
+        return d + self.delay.at(d), d
+
     def fifo_note(self, a):
         if a < self.last_arr - 1e-12:
             self.g["fifo_viol"] += 1
@@ -401,30 +482,46 @@ class Sim:
         while self.u_next < self.units_total and intake_expired_fn(c.T, t - self.u_next * self.dt):
             self.intake_expired += 1
             self.u_next += 1
+        if c.deq_expiry:                                         # 13.2: expire the head at the dequeue when a younger unit waits (after L1)
+            while (self.u_next + 1 < self.units_total
+                   and (self.u_next + 1) * self.dt <= t
+                   and dequeue_expired(c.T, t - self.u_next * self.dt, self.R_now())):
+                self.intake_expired_deq += 1
+                self.u_next += 1
         if c.n_total and self.u_next >= self.units_total:        # streaming mode ends on nxt >= dur (float edge: stage 1 sends one more)
             self.src_done = True
             self.src_next = math.inf
             self.advance(t)
             return
         s = self.n_sent
+        if self.trace is not None:
+            self.deq_log.append((t, self.u_next, t - self.u_next * self.dt, self.R_now(),
+                                 self.u_next + 1 < self.units_total and (self.u_next + 1) * self.dt <= t))
+        if self.oe is not None and self.first_emit_oe is None and t >= self.oe:
+            self.first_emit_oe = t
         self.h_seq[s] = self.u_next * self.dt
         self.u_next += 1
         self.n_sent += 1
         self.sent_t[s] = t
         self.last_send[s] = t
-        a = t + self.delay.at(t)
-        self.atilde[s] = a
-        self.fifo_note(a)
+        a, dep = self.fwd(t)
+        if a is None:                                # dropped at the bottleneck queue: no arrival, no loss draw
+            self.atilde[s] = t + self.delay.at(t)
+        else:
+            self.atilde[s] = a
+            self.fifo_note(a)
         if self.trace is not None:
             self.trace.append((round(t, 9), s, 0, 0, 0))
         ps = self.ps_ctr
         self.ps_ctr += 1
-        if self.lost(s, 0, t):
+        if a is None or self.lost(s, 0, dep):
             self.orig_lost.append(s)
         else:
             self.push(a, 0, (s, 0, t, ps))
-        if c.sender in ("S2", "S2c"):                # the per-seq verdict timer (at +inf it never fires)
-            self.push(max(t, self.h_seq[s] + c.T - self.rtt / 2), 8, s)
+        if self.s2fam:                               # the per-seq verdict timer (at +inf it never fires)
+            self.push(max(t, self.h_seq[s] + c.T - self.o_hat()), 8, s)
+        if s == 0 and c.tail_elig == "R":            # the probe timer (13.4): exactly one pending event of kind 9
+            self.push(t + self.R_now(), 9, None)
         nxt = t + self.dt
         o = self.O()
         if o > self.g["max_O"]:
@@ -439,8 +536,11 @@ class Sim:
             self.src_next = math.inf
         elif o >= self.B:
             self.paused = True
+            self.pause_t0 = t
             self.g["pause_events"] += 1
             self.src_next = math.inf
+        elif c.src_model == "wc":                    # work-conserving: a waiting backlog is sent at once, else the next unit at its own time
+            self.src_next = max(t, self.u_next * self.dt)
         else:
             self.src_next = nxt
 
@@ -451,11 +551,12 @@ class Sim:
         self.g["repair_sends"] += 1
         if self.trace is not None:
             self.trace.append((round(now, 9), s, k, 0, 1))
-        a = now + self.delay.at(now)
-        self.fifo_note(a)
+        a, dep = self.fwd(now)
+        if a is not None:
+            self.fifo_note(a)
         ps = self.ps_ctr
         self.ps_ctr += 1
-        if not self.lost(s, k, now):
+        if a is not None and not self.lost(s, k, dep):
             self.push(a, 0, (s, k, now, ps))
 
     def send_floor(self, now, f):
@@ -467,11 +568,12 @@ class Sim:
         if self.trace is not None:
             self.trace.append((round(now, 9), f, -1, 0, 2))
         self.last_floor_t = now
-        a = now + self.delay.at(now)
-        self.fifo_note(a)
+        a, dep = self.fwd(now)
+        if a is not None:
+            self.fifo_note(a)
         ps = self.ps_ctr
         self.ps_ctr += 1
-        if not self.lost(f, rep, now, SALT_FLOORLOSS):
+        if a is not None and not self.lost(f, rep, dep, SALT_FLOORLOSS):
             self.push(a, 1, (f, ps))
 
     # ---- receiver -------------------------------------------------------------------------
@@ -528,6 +630,8 @@ class Sim:
 
     def on_data(self, now, s, c, tau, ps=None):
         got = self.got
+        if tau > self.tau_rx_recv:
+            self.tau_rx_recv = tau
         if ps is not None:
             self.eps_trk.record(ps)
         if got[s]:
@@ -579,6 +683,7 @@ class Sim:
         self.advance(now)
 
     def on_floor(self, now, f, ps=None):
+        self.floor_arrivals.append(now)
         if ps is not None:
             self.eps_trk.record(ps)
         h = self.H_now(now)
@@ -752,7 +857,7 @@ class Sim:
             self.dirty = False
             m = self.min_hole()
             A = m if m is not None else self.rhi + 1
-            rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report), self.GF)
+            rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report), self.GF, self.tau_rx_recv)
             self.passed_since_report = []
             self.push(now + self.cfg.owd, 3, rep)
         if now + self.cfg.tick <= self.t_end:
@@ -760,31 +865,53 @@ class Sim:
 
     # ---- sender ---------------------------------------------------------------------------
     def on_report(self, now, rep):
-        gen, A, G, rhi, M, passed, GF = rep
+        gen, A, G, rhi, M, passed, GF, tau = rep
+        if tau > self.tau_rx:
+            self.tau_rx = tau
         if (A, G) > (self.A_known, self.G_known):
-            if A > self.A_known:                       # RTT sample (7.2): the report's arrival minus the send time of
+            if A > self.A_known and self.cfg.rtt_est == "old":   # RTT sample (7.2): the report's arrival minus the send time of
                 smp = now - self.sent_t[A - 1]         # the highest seq it newly acknowledges
                 self.srtt = smp if self.srtt is None else self.srtt + (smp - self.srtt) / 8.0
             self.A_known, self.G_known, self.GF_known = A, G, GF
         if gen > self.last_gen:
             self.last_gen = gen
             if rhi > self.rhi_known:
+                if self.cfg.rtt_est == "rfc" and self.copies[rhi] == 0:      # 13.7.1 item 1: largest newly received seq, Karn's rule
+                    self.rtt_sample(now - self.sent_t[rhi])
                 self.rhi_known = rhi
             self.M_known = set(M)
         Ak, Mk, rk = self.A_known, self.M_known, self.rhi_known
         self.pending = {s for s in self.pending if s >= Ak and (s in Mk or s > rk)}
+        self.R_sum += self.R_now()
+        self.srtt_sum += 0.333 if self.srtt is None else self.srtt
+        self.rep_n += 1
         self.maybe_resume(now)
+        self.trig = "report"
         self.act(now, gen, sorted(Mk), open_tail=False)
 
     def maybe_resume(self, now):
         if self.paused and self.O_ctl() < self.B:
             self.paused = False
-            self.src_next = max(now, self.src_next if self.src_next != math.inf else now)
+            self.pause_log.append((self.pause_t0, now))
+            if self.cfg.src_model == "wc":
+                self.src_next = max(now, self.u_next * self.dt)
+            else:
+                self.src_next = max(now, self.src_next if self.src_next != math.inf else now)
 
     def on_verdict_timer(self, now, s):
         """S2 / S2c: the per-seq verdict at t_h + T - owd (three-knobs.md 2.2).  No floor of its own: the next sweep or
         report-driven act sends it."""
         if s >= self.A_known and (s in self.M_known or s > self.rhi_known) and s not in self.verdicted:
+            c = self.cfg
+            if c.evidence_verdict:                                   # 13.7.1 item 2: judge only what is known lost
+                x = self.o_hat()
+                h = self.h_seq[s]
+                if resend_admissible(c.T, now - h, x):
+                    self.push(max(h + c.T - x, now + 1e-9), 8, s)
+                    return
+                if not self.evidence(s, now):
+                    self.push(max(self.last_send[s] + self.R_now(), now + 1e-9), 8, s)
+                    return
             self.verdicted.add(s)
             self.pending.add(s)
             self.g["verdicts"] += 1
@@ -792,9 +919,28 @@ class Sim:
             if self.cfg.sender == "S2c":
                 self.send_copy(now, s)
                 self.g["verdict_copies"] += 1
-            self.maybe_resume(now)
+            if self.resume_on_verdict:
+                self.maybe_resume(now)
 
-    def can_resend(self, s, gen):
+    def on_probe(self, now):
+        """13.4: the R timer.  One datagram per timeout for the oldest open-tail seq, then re-armed."""
+        lo = max(self.rhi_known + 1, self.A_known)
+        ver = self.verdicted
+        while lo < self.n_sent and lo in ver:
+            lo += 1
+        if lo >= self.n_sent:
+            self.push(now + self.R_now(), 9, None)
+        elif now >= self.last_send[lo] + self.R_now():
+            self.trig = "R"
+            self.act(now, now, [lo], open_tail=True)
+            self.g["probes"] += 1
+            self.push(now + self.R_now(), 9, None)
+        else:
+            self.push(max(self.last_send[lo] + self.R_now(), now + 1e-9), 9, None)
+
+    def can_resend(self, s, gen, now=None):
+        if self.cfg.resend_gate == "evidence":                       # 13.1: the same predicate gates resends
+            return self.copies[s] == 0 or self.evidence(s, now)
         if self.copies[s] == 0:
             return True
         return gen >= self.last_send[s] + self.cfg.owd + self.cfg.J + 1e-9
@@ -819,12 +965,12 @@ class Sim:
             return
         g = self.g
         verdict_seqs, serve_seqs = [], []
-        if c.sender in ("S2", "S2c"):
-            x = self.rtt / 2                                          # the exact owd, as the D_RTprop arm idealises
+        if self.s2fam:
+            x = self.o_hat()                                          # S2: the exact owd, as the D_RTprop arm idealises; S3: srtt/2
             for s in cands_:
                 if resend_admissible(c.T, now - self.h_seq[s], x):
                     serve_seqs.append(s)
-                else:
+                elif not c.evidence_verdict or self.evidence(s, now):
                     verdict_seqs.append(s)
             g["l2_fail"] += len(verdict_seqs)
         elif c.sender != "S0":
@@ -865,13 +1011,14 @@ class Sim:
                 self.send_copy(now, s)
                 g["verdict_copies"] += 1
         for s in serve_seqs:
-            if self.can_resend(s, gen):
+            if self.can_resend(s, gen, now):
                 self.send_copy(now, s)
                 g["serves"] += 1
+                g["resend_by_" + self.trig] += 1
         if need_floor:
             self.last_floor = F
             self.send_floor(now, F)
-        if verdict_seqs:
+        if verdict_seqs and self.resume_on_verdict:
             self.maybe_resume(now)
 
     def floor_repeat(self, now):
@@ -887,7 +1034,10 @@ class Sim:
         P = self.sweep_P
         lo = self.rhi_known + 1
         tail = []
+        elig = P if self.cfg.tail_elig == "P" else self.R_now()
         for s in range(lo, self.n_sent):
+            if self.cfg.tail_elig != "P":                # 13.4: the open tail is the probe timer's job
+                break
             if now - self.sent_t[s] < P:
                 break
             if s not in self.verdicted:
@@ -895,9 +1045,10 @@ class Sim:
         if self.cfg.n_total:
             # object mode: the sweep also re-serves reported holes.  Without it a finished stream sends no new
             # reports, so holes whose copies were lost are never served again (a stall the engine's NACK refresh avoids)
-            known = [x for x in self.M_known if x not in self.verdicted and now - self.last_send[x] >= P]
+            known = [x for x in self.M_known if x not in self.verdicted and now - self.last_send[x] >= elig]
             tail = sorted(set(tail) | set(known))
         if tail:
+            self.trig = "sweep" if self.cfg.tail_elig == "P" else "R"
             self.act(now, now, tail, open_tail=True)
         if self.last_floor_t != now:
             self.floor_repeat(now)
@@ -940,6 +1091,8 @@ class Sim:
                 self.on_r0e_expiry(t, pl)
             elif kind == 8:
                 self.on_verdict_timer(t, pl)
+            elif kind == 9:
+                self.on_probe(t)
         return self.summary()
 
     # ---- readouts -------------------------------------------------------------------------
@@ -1029,6 +1182,7 @@ class Sim:
             w_p99=float(np.percentile(w, 99)) if len(w) else float("nan"),
             l2_fail=g["l2_fail"], rel_by_hold=g["rel_ho"], rel_by_floor=g["rel_by_floor"],
             finish=(self.t_front - (units - 1) * self.dt) if (c.n_total and self.t_front is not None) else None)
+        self.summary3b(out, n, ok, dl, hs_)
         if c.n_total:
             out["tail_time"] = (self.t_front - self.sent_t[n - 1]) if self.t_front is not None else None
             out["stalled"] = self.t_front is None
@@ -1060,6 +1214,48 @@ class Sim:
             out["_h"] = self.h_seq[:n]
             out["_rows"] = rows
         return out
+
+    def summary3b(self, out, n, ok, dl, hs_):
+        """Stage 3b readouts (three-knobs.md 13.7.1): equal-footing delay quantiles over every unit handed over, evidence gauge,
+        link and pause gauges, R, resend triggers, the strict-order stall's parts."""
+        c, g = self.cfg, self.g
+        units = self.units_total
+        m = max(units, n)                                # streaming mode can send one unit more than int(dur * rate)
+        d = np.full(m, np.inf)
+        d[:n][ok] = (dl - hs_)[ok]                       # never-delivered and intake-expired units stay at +inf
+        d.sort()
+        for q in (50, 90, 99):
+            out["dh_p%d" % q] = float(d[max(0, math.ceil(q / 100.0 * m) - 1)])
+        out["verdicts"] = g["verdicts"]
+        out["vta"] = sum(1 for s in self.verdicted if self.got[s])
+        out["intake_expired_deq"] = self.intake_expired_deq
+        for k in ("queue_drop", "queue_drop_in", "queue_drop_out", "probes", "pause_events", "resend_by_R", "resend_by_report", "resend_by_sweep"):
+            out[k] = g[k]
+        out["link_util_w"] = self.busy_w / 9.0
+        plog = list(self.pause_log)
+        if self.paused:
+            plog.append((self.pause_t0, self.t_last))
+        out["pause_time"] = sum(b - a for a, b in plog)
+        pw = sum(max(0.0, min(b, 10.0) - max(a, 1.0)) for a, b in plog)
+        out["pause_time_w"] = pw
+        out["throttle"] = "link" if out["link_util_w"] >= 0.98 else ("pause" if pw > 4.5 else "none")
+        out["R_mean"] = self.R_sum / max(self.rep_n, 1)
+        out["srtt_mean"] = self.srtt_sum / max(self.rep_n, 1)
+        out["resume_delay"] = (self.first_emit_oe - self.oe) if (self.oe is not None and self.first_emit_oe is not None) else None
+        out["stall_max"] = max((e[1] for e in self.episodes), default=0.0)
+        parts = None
+        if self.oe is not None and self.episodes:
+            st, ln, _ = max(self.episodes, key=lambda e: e[1])
+            ep_end = st + ln
+            tf = next((x for x in self.floor_arrivals if x >= self.oe), None)
+            if tf is not None and ep_end >= self.oe:
+                fills = [v for v in self.tfill.values() if tf <= v <= ep_end]
+                p1 = tf - self.oe
+                p2 = (max(fills) - tf) if fills else 0.0
+                parts = (p1, p2, ep_end - self.oe - p1 - p2)
+        out["stall_parts"] = parts
+        if c.want_trace:
+            out["_deq_log"] = self.deq_log
 
     def p4c(self, rows):
         """(observed consumer stall, expected min(H_o, R - t_det, t_pass - t_det)) per isolated hole; the stall is read
