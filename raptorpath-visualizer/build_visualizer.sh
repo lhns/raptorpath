@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the interactive visualizer with embedded WASM.
+# Build the interactive visualizer (and the three-knobs proposal page) with embedded WASM.
 # Produces a single self-contained HTML file that works from file://.
 #
 # Usage: bash raptorpath-visualizer/build_visualizer.sh
@@ -25,7 +25,7 @@ TMPFILE=$(mktemp)
 cat > "$TMPFILE" <<PYEOF
 import re
 
-html = open('raptorpath-visualizer/interactive-visualizer.html', encoding='utf-8').read()
+PAGES = ['interactive-visualizer', 'knobs-visualizer']
 
 # Read glue JS, strip export keywords but keep function names
 glue = open('raptorpath-visualizer/wasm/raptorpath_wasm.js', encoding='utf-8').read()
@@ -82,19 +82,27 @@ const SMOOTH_WINDOW = 6;
 // Resets and topology flips never recompute them.
 const BASELINE_CACHE = new Map();
 
+// The knob values main's page runs at: every knob inert (T = H = lambda =
+// infinity, no outage). IEEE arithmetic makes the three-knob laws inert there
+// (plan 3.1), so new SimWrapper(params) is main's model bit for bit.
+const MAIN_KNOBS = {
+  lifetimeS: Infinity, holdS: Infinity, sourceRate: Infinity,
+  numSource: 2000, outageStartS: Infinity, outageLenS: 0,
+};
+
 class SimWrapper {
-  constructor(params) {
+  // ONE construction path: the second argument defaults to MAIN_KNOBS, and
+  // the knobs page passes its own through SimWrapper.withKnobs. Nothing
+  // here inspects a knob value.
+  constructor(params, knobs = MAIN_KNOBS) {
     const fixedR = params.fixedR;
     // Accept both shapes: params.paths array (new) or flat single-path
     // params (compat shim for any old caller).
     const paths = params.paths && params.paths.length
       ? params.paths
       : [{ eps: params.eps, q: params.q, rttMs: params.rttMs, cap: 4 }];
-    this.inner = Simulation.multipath(
-      paths.map(c => c.eps), paths.map(c => c.q),
-      new Uint32Array(paths.map(c => c.rttMs)),
-      new Uint32Array(paths.map(c => c.cap)),
-      params.W, params.hint, fixedR, params.customDelta, params.customRho);
+    this.knobs = knobs;
+    this.inner = SimWrapper._build(paths, params, fixedR, knobs);
     this.rateHistory = [];
     // Per-path channel-state traces (the strip shows the selected path).
     this.channelStates = paths.map(() => []);
@@ -124,21 +132,34 @@ class SimWrapper {
     this.onBaselineReady = null;
     this._dead = false;
     if (paths.length > 1) {
+      // String(): JSON.stringify would turn Infinity into null.
       const key = JSON.stringify([paths, params.hint, params.W,
-                                  fixedR, params.customDelta, params.customRho]);
+                                  fixedR, params.customDelta, params.customRho])
+        + '|' + Object.values(knobs).map(String).join(',');
       const hit = BASELINE_CACHE.get(key);
       if (hit !== undefined) {
         this.bestSingleMeasured = hit;
         this.baselineReady = true;
       } else {
-        this._measureBaseline(paths, params, fixedR, key);
+        this._measureBaseline(paths, params, fixedR, key, knobs);
       }
     }
   }
-  _measureBaseline(paths, params, fixedR, key) {
-    const sims = paths.map(c => Simulation.multipath(
-      [c.eps], [c.q], new Uint32Array([c.rttMs]), new Uint32Array([c.cap]),
-      params.W, params.hint, fixedR, params.customDelta, params.customRho));
+  // The one wasm constructor call, for the run and for each baseline path.
+  // The outage window applies to every path it builds.
+  static _build(paths, params, fixedR, knobs) {
+    return Simulation.multipath_knobs(
+      paths.map(c => c.eps), paths.map(c => c.q),
+      new Uint32Array(paths.map(c => c.rttMs)),
+      new Uint32Array(paths.map(c => c.cap)),
+      params.W, params.hint, fixedR, params.customDelta, params.customRho,
+      knobs.lifetimeS, knobs.holdS, knobs.sourceRate, knobs.numSource,
+      new Float64Array(paths.map(() => knobs.outageStartS)),
+      new Float64Array(paths.map(() => knobs.outageLenS)));
+  }
+  static withKnobs(params, knobs) { return new SimWrapper(params, knobs); }
+  _measureBaseline(paths, params, fixedR, key, knobs) {
+    const sims = paths.map(c => SimWrapper._build([c], params, fixedR, knobs));
     const wrapper = this;
     let idx = 0, guard = 0, best = 0;
     function slice() {
@@ -225,6 +246,37 @@ class SimWrapper {
   get overheadFloor()         { return this.inner.get_overhead_floor(); }
   get overheadFloorRealized() { return this.inner.get_overhead_floor_realized(); }
   get excessOverhead()        { return this.inner.get_excess_overhead(); }
+  // --- Three-knob readouts (proposal; inert on main's page) ---
+  get lifetimeS()   { return this.inner.get_lifetime_s(); }
+  get holdS()       { return this.inner.get_hold_s(); }
+  get sourceRate()  { return this.inner.get_source_rate(); }
+  get intakeExpired()    { return this.inner.get_intake_expired(); }
+  get intakeExpiredDeq() { return this.inner.get_intake_expired_deq(); }
+  get unitsOut()    { return this.inner.get_units_out(); }
+  get fAnn()        { return this.inner.get_f_ann(); }
+  get aKnown()      { return this.inner.get_a_known(); }
+  get fRx()         { return this.inner.get_f_rx(); }
+  get passedUndelivered() { return this.inner.get_passed_undelivered(); }
+  get commitViol()  { return this.inner.get_commit_viol(); }
+  get l1Viol()      { return this.inner.get_l1_viol(); }
+  get skipBelowFloor() { return this.inner.get_skip_below_floor(); }
+  get floors()      { return this.inner.get_floors(); }
+  get floorCarried() { return this.inner.get_floor_carried(); }
+  get spanCutByT()  { return this.inner.get_span_cut_by_t(); }
+  get shareAny()    { return this.inner.get_share_any(); }
+  get shareT()      { return this.inner.get_share_t(); }
+  get shareByRef()  { return this.inner.get_share_by_ref(); }
+  delayQuantile(p)  { return this.inner.get_delay_quantile(p); }
+  get ooo()         { return this.inner.get_ooo(); }
+  get oooShare()    { return this.inner.get_ooo_share(); }
+  get oooUnits()    { return this.inner.get_ooo_units(); }
+  get unitDelays()  { return this.inner.get_unit_delays(); }
+  get relByHold()   { return this.inner.get_rel_by_hold(); }
+  get relByFloor()  { return this.inner.get_rel_by_floor(); }
+  get releasedHoles() { return this.inner.get_released_holes(); }
+  get recoveryTime() { return this.inner.get_recovery_time(); }
+  get strictStallBeyondOutage() { return this.inner.get_strict_stall_beyond_outage(); }
+  get knobLawRevision() { return this.inner.get_knob_law_revision(); }
   get totalSrc() { return this.inner.get_total_src(); }
   get totalFec() { return this.inner.get_total_fec(); }
   get totalArq() { return this.inner.get_total_arq(); }
@@ -274,18 +326,21 @@ class SimWrapper {
 
 '''
 
-# Change module script to regular script
-html = html.replace('<script type="module">', '<script>')
-
-# Replace everything from "WASM MODULE" to just before "UI" section
-pattern = r'// =+\n// WASM MODULE.*?(?=// =+\n// UI)'
-html = re.sub(pattern, init_block, html, flags=re.DOTALL)
-
-# No wasm.xxx -> xxx replacement needed: the source HTML already uses direct calls.
-# The glue code's internal wasm.xxx references must NOT be touched.
-
-open('raptorpath-visualizer/interactive-visualizer.html', 'w', encoding='utf-8', newline='\n').write(html)
-print(f"HTML size: {len(html)} bytes")
+# Both pages get the SAME init block (plan 3.2): main's page script is
+# untouched, the knobs page is built from its own source.
+for name in PAGES:
+    path = 'raptorpath-visualizer/' + name + '.html'
+    html = open(path, encoding='utf-8').read()
+    # Change module script to regular script
+    html = html.replace('<script type="module">', '<script>')
+    # Replace everything from "WASM MODULE" to just before "UI" section
+    pattern = r'// =+\n// WASM MODULE.*?(?=// =+\n// UI)'
+    # A callable replacement: init_block has backslashes that re.sub would
+    # otherwise read as escapes.
+    html, n = re.subn(pattern, lambda m: init_block, html, flags=re.DOTALL)
+    assert n == 1, name + ': engine block markers not found'
+    open(path, 'w', encoding='utf-8', newline='\n').write(html)
+    print(name + f": HTML size: {len(html)} bytes")
 PYEOF
 
 python3 "$TMPFILE"
@@ -299,5 +354,14 @@ echo "Running UI-layer tests (stub DOM) against the built file..."
 node raptorpath-visualizer/test_visualizer_ui.mjs
 echo "UI tests passed."
 
-echo "Done! Visualizer updated: raptorpath-visualizer/interactive-visualizer.html"
+echo "Running knobs-page engine tests (three-knob laws, plan 5.4 item 10)..."
+node raptorpath-visualizer/test_knobs.mjs
+echo "Knobs engine tests passed."
+
+echo "Running knobs-page UI tests (stub DOM, plan 5.4 item 11)..."
+node raptorpath-visualizer/test_knobs_ui.mjs
+echo "Knobs UI tests passed."
+
+echo "Done! Visualizers updated: raptorpath-visualizer/interactive-visualizer.html"
+echo "  and the three-knobs proposal page raptorpath-visualizer/knobs-visualizer.html"
 echo "Open it directly in a browser (file:// works)."
