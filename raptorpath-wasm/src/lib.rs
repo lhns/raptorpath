@@ -449,6 +449,10 @@ struct PathState {
     lost: u32,
     /// Smooth weighted-round-robin credit for goodput-proportional striping.
     stripe_credit: f64,
+    /// Outage window [start, start + len) in seconds (three-knobs plan §4.1,
+    /// Q-V7): every datagram sent inside it is lost. [∞, ∞) is empty.
+    outage_start_s: f64,
+    outage_len_s: f64,
 }
 
 impl PathState {
@@ -591,6 +595,35 @@ pub struct Simulation {
     phantom_avoided: u32,
 
     rng_state: u64,
+
+    // --- Three knobs (proposal; docs/derivations/visualizer-three-knobs-plan.md
+    // §3.1, §7). Every field below is inert at T = ∞, H = ∞, λ = ∞ by IEEE
+    // arithmetic; the laws live in `knobs.rs`. ---
+    /// Lifetime T, seconds (∞ = never give up).
+    lifetime_s: f64,
+    /// Order hold H, seconds (0 = any order, ∞ = strict).
+    hold_s: f64,
+    /// Application hand-over rate λ, units per second (∞ = the object:
+    /// everything handed over at t = 0). Unit u is handed over at u / λ.
+    source_rate: f64,
+    /// Next unit to leave the intake (sent or expired). Units expired at
+    /// the intake never get a seq, so this runs ahead of `next_seq`.
+    u_next: u32,
+    /// Units dropped at the intake by L1 (age ≥ T) and by the dequeue rule
+    /// (§13.2: age + R ≥ T while a younger unit waits).
+    intake_expired: u32,
+    intake_expired_deq: u32,
+    /// Per-seq sender state (indexed by seq; `symbols` is pruned): the
+    /// hand-over time (s), the last send tick of any copy, the path of the
+    /// last copy, and whether s was ever resent.
+    h_seq: Vec<f64>,
+    last_send_seq: Vec<u32>,
+    path_seq: Vec<usize>,
+    resent_seq: Vec<bool>,
+    /// Test-only staging log of every payload-bearing datagram: (tick,
+    /// kind 0 = source / 1 = resend / 2 = repair-window member, seq, age s).
+    #[cfg(test)]
+    payload_log: Vec<(u32, u8, u64, f64)>,
 }
 
 struct Symbol {
@@ -653,10 +686,64 @@ impl Simulation {
 
     /// Consume the next wire-slot channel outcome on path `pi`. true = lost.
     fn wire_lost(&mut self, pi: usize) -> bool {
+        let now = self.now_s();
         let p = &mut self.paths[pi];
         let lost = p.channel_states.get(p.wire_idx).copied().unwrap_or(false);
         p.wire_idx += 1;
-        lost
+        // The outage still consumes the channel state, so the pattern after
+        // it stays aligned with the run without one.
+        let in_outage = now >= p.outage_start_s && now < p.outage_start_s + p.outage_len_s;
+        lost || in_outage
+    }
+
+    /// The current tick in seconds (the knobs are seconds; ticks convert
+    /// to seconds, never the knobs to ticks).
+    fn now_s(&self) -> f64 {
+        self.tick as f64 * TICK_SECS
+    }
+
+    /// Hand-over time of unit u: u / λ (0 for every unit at λ = ∞).
+    fn handover_s(&self, u: u32) -> f64 {
+        u as f64 / self.source_rate
+    }
+
+    /// The ack timeout R (§13; RFC 6298 with g = ack delay = one tick, as
+    /// in the toy's tick), from the aggregate estimator.
+    fn ack_timeout_s(&self) -> f64 {
+        knobs::ack_timeout(self.agg_srtt(), self.agg_rttvar(), TICK_SECS, TICK_SECS)
+    }
+
+    /// The intake (L1, then the §13.2 dequeue rule, oldest first): drops
+    /// the head while it has outlived T, or while it can no longer arrive
+    /// in time and a younger unit waits. True when the head unit is handed
+    /// over and may be sent now. Ends the source when the intake drains.
+    fn intake_head_ready(&mut self) -> bool {
+        let now = self.now_s();
+        let r = self.ack_timeout_s();
+        loop {
+            if self.u_next >= self.num_source {
+                self.source_done = true;
+                return false;
+            }
+            let h = self.handover_s(self.u_next);
+            if h > now {
+                return false; // not handed over yet
+            }
+            let age = now - h;
+            if knobs::intake_expired(self.lifetime_s, age) {
+                self.intake_expired += 1;
+                self.u_next += 1;
+                continue;
+            }
+            let younger_waiting =
+                self.u_next + 1 < self.num_source && self.handover_s(self.u_next + 1) <= now;
+            if younger_waiting && knobs::dequeue_expired(self.lifetime_s, age, r) {
+                self.intake_expired_deq += 1;
+                self.u_next += 1;
+                continue;
+            }
+            return true;
+        }
     }
 
     // --- Capacity-weighted aggregates over paths (§5.5: the shared
@@ -743,7 +830,7 @@ impl Simulation {
     /// nearly all source). Computed for EVERY hint — mid-stream it is 0, and
     /// over the final ~1.5 SRTT it ramps to 1 (Phi_bar of the RTT tail).
     fn completion_chi_raw(&self) -> f64 {
-        let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
+        let remaining = self.num_source.saturating_sub(self.u_next) as f64;
         let t_rem_secs = remaining / self.total_capacity() as f64 * TICK_SECS;
         math::completion_exposure(t_rem_secs, self.agg_srtt(), self.agg_rttvar())
     }
@@ -792,7 +879,7 @@ impl Simulation {
         if self.fixed_r.is_some() {
             return 0.0;
         }
-        let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
+        let remaining = self.num_source.saturating_sub(self.u_next) as f64;
         let w = self.w as f64;
         let chi_trunc = math::normal_survival((remaining - 0.5 * w) / (0.25 * w));
         let dchi = (chi_trunc - self.prev_completion_chi).max(0.0);
@@ -1119,8 +1206,37 @@ impl Simulation {
         fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
     ) -> Self {
         let n = eps.len().max(1).min(8);
+        // The three knobs at their inert values (plan §3.1): T = H = λ = ∞,
+        // 2 000 units, an empty outage window on every path.
+        let inf = f64::INFINITY;
+        Self::multipath_knobs(
+            eps, q, rtt_ms, capacity, w, hint, fixed_r, custom_delta, custom_rho,
+            inf, inf, inf, 2000, vec![inf; n], vec![0.0; n],
+        )
+        .expect("the inert knobs are in the domain")
+    }
+
+    /// The one constructor (three-knobs plan §3.1). `lifetime_s` = T ∈ (0, ∞],
+    /// `hold_s` = H ∈ [0, ∞], `source_rate` = λ in units/s (∞ = the object),
+    /// `num_source` units, and a per-path outage window [start, start + len)
+    /// in seconds. `multipath` and `new` delegate here with the inert values;
+    /// at those values the run is main's model bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn multipath_knobs(
+        eps: Vec<f64>, q: Vec<f64>, rtt_ms: Vec<u32>, capacity: Vec<u32>,
+        w: u32, hint: String,
+        fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
+        lifetime_s: f64, hold_s: f64, source_rate: f64, num_source: u32,
+        outage_start_s: Vec<f64>, outage_len_s: Vec<f64>,
+    ) -> Result<Simulation, String> {
+        knobs::validate_knobs(lifetime_s, hold_s)?;
+        if !(source_rate > 0.0) {
+            return Err(format!("source rate must be in (0, inf], got {source_rate}"));
+        }
+        let n = eps.len().max(1).min(8);
         assert!(
-            q.len() >= n && rtt_ms.len() >= n && capacity.len() >= n,
+            q.len() >= n && rtt_ms.len() >= n && capacity.len() >= n
+                && outage_start_s.len() >= n && outage_len_s.len() >= n,
             "per-path parameter arrays must have equal length"
         );
 
@@ -1151,7 +1267,6 @@ impl Simulation {
         // ρ = 1).
         let rho = custom_rho.unwrap_or(1.0).clamp(0.9, 1.0);
 
-        let num_source = 2000u32;
         let mut paths = Vec::with_capacity(n);
         for i in 0..n {
             let (e, qq) = (eps[i], q[i]);
@@ -1186,6 +1301,8 @@ impl Simulation {
                 arq: 0,
                 lost: 0,
                 stripe_credit: 0.0,
+                outage_start_s: outage_start_s[i],
+                outage_len_s: outage_len_s[i],
             });
         }
         let tot_cap: f64 = paths.iter().map(|p| p.capacity as f64).sum();
@@ -1197,7 +1314,7 @@ impl Simulation {
             })
             .sum();
 
-        Self {
+        Ok(Self {
             paths,
             sigma2_true,
             tail_target, bulkness, fixed_r,
@@ -1252,7 +1369,19 @@ impl Simulation {
             phantom_held: 0,
             phantom_avoided: 0,
             rng_state: 0xdeadbeef12345678,
-        }
+            lifetime_s,
+            hold_s,
+            source_rate,
+            u_next: 0,
+            intake_expired: 0,
+            intake_expired_deq: 0,
+            h_seq: Vec::new(),
+            last_send_seq: Vec::new(),
+            path_seq: Vec::new(),
+            resent_seq: Vec::new(),
+            #[cfg(test)]
+            payload_log: Vec::new(),
+        })
     }
 
     pub fn step(&mut self) {
@@ -1353,6 +1482,9 @@ impl Simulation {
                     let seq = self.symbols[i].seq;
                     self.symbols[i].last_retx_tick = self.tick as i64;
                     self.symbols[i].path = dest;
+                    self.last_send_seq[seq as usize] = self.tick;
+                    self.path_seq[seq as usize] = dest;
+                    self.resent_seq[seq as usize] = true;
                     let lost = self.wire_lost(dest);
                     free[dest] -= 1;
                     self.total_arq += 1;
@@ -1414,7 +1546,7 @@ impl Simulation {
                 if !ok {
                     lost_n += 1;
                 }
-            } else if !self.source_done {
+            } else if !self.source_done && self.intake_head_ready() {
                 // Path-scaled outstanding pool (wall #7, §6.1): a new
                 // source symbol needs a retention-store slot; the pool is
                 // STORE_PER_PATH × n_paths. When cap·RTT outgrows it the
@@ -1429,6 +1561,15 @@ impl Simulation {
                 let seq = self.encoder.add_source(&data);
                 self.source_store.push(data.clone());
                 self.send_tick.push(self.tick);
+                self.h_seq.push(self.handover_s(self.u_next));
+                self.last_send_seq.push(self.tick);
+                self.path_seq.push(dest);
+                self.resent_seq.push(false);
+                #[cfg(test)]
+                {
+                    let age = self.now_s() - self.handover_s(self.u_next);
+                    self.payload_log.push((self.tick, 0, seq, age));
+                }
                 // Slide the encoder window (paper W).
                 if self.encoder.window_size() > self.w as usize {
                     let oldest = self.encoder.next_seq().saturating_sub(self.w as u64);
@@ -1491,7 +1632,8 @@ impl Simulation {
                         .count() as u32;
                 }
                 self.next_seq += 1;
-                if self.next_seq >= self.num_source {
+                self.u_next += 1;
+                if self.u_next >= self.num_source {
                     self.source_done = true;
                     // One-shot completion-tail burst (the limiting case of
                     // §4.6's ramp): kept only for the test-only ablation arms
@@ -1877,6 +2019,19 @@ impl Simulation {
     }
     /// Configured reliability target rho.
     pub fn get_rho(&self) -> f64 { self.rho }
+    // --- Three knobs (proposal; plan §4.3). Readouts only, none fed back. ---
+    /// The declared lifetime T, seconds (routing witness for the page gate).
+    pub fn get_lifetime_s(&self) -> f64 { self.lifetime_s }
+    /// The declared order hold H, seconds.
+    pub fn get_hold_s(&self) -> f64 { self.hold_s }
+    /// The application hand-over rate λ, units/s.
+    pub fn get_source_rate(&self) -> f64 { self.source_rate }
+    /// Units dropped at the intake by L1 (age ≥ T).
+    pub fn get_intake_expired(&self) -> u32 { self.intake_expired }
+    /// Units dropped at the dequeue (§13.2: age + R ≥ T, a younger unit waits).
+    pub fn get_intake_expired_deq(&self) -> u32 { self.intake_expired_deq }
+    /// Units that have left the intake (sent or expired).
+    pub fn get_units_out(&self) -> u32 { self.u_next }
     /// The residual R after in-window FEC at the live operating point, over
     /// the sim's own window W (`shed_budget_residual`; provisional until the
     /// sliding per-loss P_fec lands, W22).
@@ -1954,6 +2109,9 @@ impl Simulation {
 
 #[cfg(test)]
 mod warm_scan;
+
+#[cfg(test)]
+mod knob_sim_tests;
 
 #[cfg(test)]
 mod tests {
