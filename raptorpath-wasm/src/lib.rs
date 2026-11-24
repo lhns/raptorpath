@@ -436,7 +436,11 @@ pub const CLASS_LATE: u8 = 2;
 pub const CLASS_OUT_OF_ORDER: u8 = 3;
 pub const CLASS_UNDELIVERED: u8 = 4;
 pub const CLASS_EXPIRED: u8 = 5;
-const N_CLASSES: usize = 6;
+/// Decoded at the receiver but still held at the consumer when the run
+/// ended (behind a hole whose floor the receiver never got); never mixed with
+/// `undelivered`. Reachable only with a forward delay.
+pub const CLASS_HELD: u8 = 6;
+const N_CLASSES: usize = 7;
 /// A unit without a seq (not sent yet, or expired at the intake).
 const NO_SEQ: u32 = u32::MAX;
 
@@ -789,6 +793,8 @@ pub struct Simulation {
     lead_max: u32,
     /// Arrivals below a seq that already arrived on another path (A4).
     cross_reorder: u32,
+    /// Ticks the receiver-side drain ran after the sender finished.
+    drain_ticks: u32,
     /// Each path's backlog (ms of queued work) at the end of every tick,
     /// tick-major, since the last `take_queue_samples` (A4; the page's strip).
     queue_pending: Vec<f64>,
@@ -1158,6 +1164,9 @@ impl Simulation {
         let s = s as usize;
         let t = self.consumer.delivered_at(s);
         if t.is_nan() {
+            if self.finished && self.receiver_holds(s as u64) {
+                return (CLASS_HELD, f64::INFINITY);
+            }
             let passed = self.passed_seq[s] || self.given_up_seqs.contains(&(s as u64));
             return ([CLASS_PENDING, CLASS_UNDELIVERED][passed as usize], f64::INFINITY);
         }
@@ -1720,6 +1729,65 @@ impl Simulation {
         }
     }
 
+    /// The receiver-side drain after the sender finishes (the offline
+    /// simulation's end of run: it stops once the receiver holds no hole, plus
+    /// a grace): while the consumer still holds decoded units, the forward leg
+    /// delivers, the acks of set-points 1 and 5 land, the floor repeat runs on
+    /// its sweep clock and the consumer steps. The sender sends no data and
+    /// decides nothing; its finish tick (`get_tick`) and every sender counter
+    /// stay as they were. With the default leg the consumer holds nothing at
+    /// the finish, so the drain does not run (inert). Bounded by the tick cap.
+    /// Units still held when it ends are classed `held`.
+    fn drain(&mut self) {
+        let finish_tick = self.tick;
+        while self.consumer.held() > 0 && self.tick <= 20_000 {
+            let now = self.now_s();
+            self.deliver_due();
+            for pi in 0..self.paths.len() {
+                while let Some(&(due, s)) = self.ack_due[pi].front() {
+                    if due > self.tick {
+                        break;
+                    }
+                    self.ack_due[pi].pop_front();
+                    self.acked_seq[s as usize] = true;
+                }
+                while let Some(&(due, s)) = self.floor_ack_due[pi].front() {
+                    if due > self.tick {
+                        break;
+                    }
+                    self.floor_ack_due[pi].pop_front();
+                    self.ack_seq(s as usize, 5);
+                }
+            }
+            while self.a_known < self.next_seq && self.acked_seq[self.a_known as usize] {
+                self.a_known += 1;
+            }
+            let sweep_ticks = ((2.0 * self.agg_srtt()).clamp(0.025, 0.1) / TICK_SECS).round() as u32;
+            if self.tick.saturating_sub(self.last_sweep_tick) >= sweep_ticks && self.f_ann > self.a_known {
+                self.last_sweep_tick = self.tick;
+                let free: Vec<u32> = self.paths.iter().map(|p| p.capacity).collect();
+                let dest = self.best_correction_path(&free);
+                self.floors += 1;
+                self.send_datagram(DgKind::Floor, 0, dest);
+                self.deliver_due();
+            }
+            let decoded = std::mem::take(&mut self.decoded_this_tick);
+            self.consumer.step(now, &decoded, self.f_rx);
+            for s in std::mem::take(&mut self.consumer.delivered_now) {
+                self.unit_dirty.push(self.seq_unit[s]);
+            }
+            self.tick += 1;
+            self.drain_ticks += 1;
+        }
+        // The class of every unit still held now reads `held`.
+        for s in 0..self.next_seq as usize {
+            if self.receiver_holds(s as u64) && self.consumer.delivered_at(s).is_nan() {
+                self.unit_dirty.push(self.seq_unit[s]);
+            }
+        }
+        self.tick = finish_tick;
+    }
+
     /// Datagrams in flight on every leg.
     fn in_flight(&self) -> usize {
         self.paths.iter().map(|p| p.leg.len()).sum()
@@ -2177,6 +2245,7 @@ impl Simulation {
             lead_sum: 0,
             lead_max: 0,
             cross_reorder: 0,
+            drain_ticks: 0,
             queue_pending: Vec::new(),
             #[cfg(test)]
             backlog_over: 0,
@@ -2653,6 +2722,9 @@ impl Simulation {
             self.queue_pending.push((p.link_free - now).max(0.0) * 1000.0);
         }
         self.tick += 1;
+        if self.finished {
+            self.drain();
+        }
     }
 
     // --- Accessors (superset of the old API; UI-compatible names) ---
@@ -3045,6 +3117,11 @@ impl Simulation {
     }
     /// Arrivals below a seq that already arrived on another path.
     pub fn get_cross_path_reorder(&self) -> u32 { self.cross_reorder }
+    /// Ticks the receiver-side drain ran after the sender finished (0 when
+    /// the consumer held nothing at the finish), and units the consumer still
+    /// holds (the `held` class at the end).
+    pub fn get_drain_ticks(&self) -> u32 { self.drain_ticks }
+    pub fn get_consumer_held(&self) -> u32 { self.consumer.held() as u32 }
     /// Each path's backlog (ms) at the end of every tick since the last call,
     /// tick-major (`get_num_paths` values per tick): the page appends them.
     pub fn take_queue_samples(&mut self) -> Vec<f64> { std::mem::take(&mut self.queue_pending) }

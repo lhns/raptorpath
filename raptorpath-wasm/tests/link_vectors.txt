@@ -1,5 +1,5 @@
 # Forward-leg and resend-budget vectors (raptorpath-wasm/tests/gen_link_vectors.py). Do not edit by hand.
-# toy: toy-stage3-knobs 02eda90b (tools/toy/toy2.py, Sim.fwd and Sim.send_copy)
+# toy: toy-stage3-knobs e17b4c64 (tools/toy/toy2.py, Sim.fwd and Sim.send_copy)
 # brake: 10 boundary attempts (the toy's float window differs from tick / 5)
 leg_cfg 40af400000000000 4079000000000000 3f9999999999999a
 leg 3fb999999999999a -> 3fb9a9fbe76c8b44 3fc0083126e978d5

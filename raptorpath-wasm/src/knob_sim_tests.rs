@@ -706,6 +706,9 @@ fn derive_classes(s: &Simulation) -> Vec<u8> {
                 return if (u as u32) < s.get_units_out() { CLASS_EXPIRED } else { CLASS_PENDING };
             };
             if at[q].is_nan() {
+                if s.is_finished() && !s.lat_by_seq[q].is_nan() {
+                    return CLASS_HELD;
+                }
                 let passed = s.passed_seq[q] || s.given_up_seqs.contains(&(q as u64));
                 return if passed { CLASS_UNDELIVERED } else { CLASS_PENDING };
             }
@@ -1008,7 +1011,7 @@ fn a_late_fill_of_a_committed_seq_moves_the_unit_once() {
                     // Delivered by the consumer, or still held there at the end
                     // (a delayed run's floor never reached it): then undelivered.
                     let delivered = !s.consumer.delivered_at(q as usize).is_nan();
-                    let want: &[u8] = if delivered { &[CLASS_ON_TIME, CLASS_LATE, CLASS_OUT_OF_ORDER] } else { &[CLASS_UNDELIVERED] };
+                    let want: &[u8] = if delivered { &[CLASS_ON_TIME, CLASS_LATE, CLASS_OUT_OF_ORDER] } else { &[CLASS_HELD] };
                     assert!(want.contains(&last), "{label}: unit {u} {ev:?}");
                     assert!(ev.len() == 1 || (ev.len() == 2 && ev[0].2 == CLASS_UNDELIVERED), "{label}: unit {u} {ev:?}");
                     superseded += (ev.len() == 2) as u32;
@@ -1400,8 +1403,9 @@ fn report_units_held_at_the_end_under_a_delay() {
             }
             run(&mut s);
             println!(
-                "held at the end {hint} N={} {k:?} extra {extra}: pending {} f_rx {} f_ann {} a_known {}",
-                paths.len(), s.get_class_counts()[CLASS_PENDING as usize], s.f_rx, s.f_ann, s.a_known
+                "held at the end {hint} N={} {k:?} extra {extra}: held {} (class {}), drain ticks {}, pending {} f_rx {} f_ann {} a_known {}",
+                paths.len(), s.get_consumer_held(), s.get_class_counts()[CLASS_HELD as usize], s.get_drain_ticks(),
+                s.get_class_counts()[CLASS_PENDING as usize], s.f_rx, s.f_ann, s.a_known
             );
         }
     }
@@ -1472,6 +1476,9 @@ fn the_queue_conserves_datagrams_and_stays_fifo() {
             s.get_path_link_use(0), s.get_path_owd_quantile_ms(0, 0.5), s.get_path_owd_quantile_ms(0, 0.99), s.get_share_any(),
             s.get_l2_late_share(), s.resends_arrived, s.get_class_counts()[CLASS_PENDING as usize]
         );
+        println!("drain {label}: {} ticks, held at the end {}", s.get_drain_ticks(), s.get_consumer_held());
+        assert_eq!(s.get_class_counts()[CLASS_PENDING as usize], 0, "{label}: a unit left pending");
+        assert_eq!(s.get_class_counts()[CLASS_HELD as usize], s.get_consumer_held(), "{label}: held class = held units");
         drops += qd;
     }
     assert!(drops > 0, "the queue must drop somewhere");
@@ -1556,4 +1563,70 @@ fn the_object_behind_a_bottleneck_drops_and_feeds_the_estimate() {
     assert!(s.get_path_qdrop(0) > 100, "drops {}", s.get_path_qdrop(0));
     assert!(s.get_path_eps_hat(0) > GOLDEN_CELLS[0].1.eps, "eps_hat {}", s.get_path_eps_hat(0));
     println!("object behind 2000/s: drops {} eps_hat {:.3} ticks {}", s.get_path_qdrop(0), s.get_path_eps_hat(0), s.get_tick());
+}
+
+/// The receiver-side drain is inert where the consumer holds nothing at the
+/// finish: every main golden cell and knob golden cell finishes with an empty
+/// consumer, so the drain never runs (0 ticks) and the finish tick stands.
+#[test]
+fn the_drain_is_inert_on_the_golden_cells() {
+    let stream = Knobs { t: 0.4, load: 0.5, ..OBJECT };
+    let outage = Knobs { outage_start: 0.3, outage_len: 0.3, ..stream };
+    let mut cells: Vec<(&str, Vec<Cell>, Knobs)> =
+        GOLDEN_CELLS.iter().map(|(h, c)| (*h, vec![*c], OBJECT)).collect();
+    for k in [Knobs { h: 0.0, ..stream }, Knobs { h: INF, ..stream }, Knobs { h: 0.0, ..outage },
+              Knobs { h: INF, ..outage }, Knobs { h: 0.0, load: 1.2, units: 6000, ..stream }] {
+        cells.push(("realtime", vec![GOLDEN_CELLS[4].1], k));
+    }
+    for (hint, paths, k) in cells {
+        let mut s = build(&paths, hint, None, k);
+        run(&mut s);
+        assert_eq!((s.get_drain_ticks(), s.get_consumer_held()), (0, 0), "{hint} {k:?}");
+        assert_eq!(s.get_class_counts()[CLASS_HELD as usize], 0);
+    }
+}
+
+/// The drain lets a delayed run's receiver catch up: on a link cell that
+/// finishes with decoded units held at the consumer (two paths behind
+/// 2600/2400 units/s links, T = 0.4, an outage) none is held after it, no
+/// unit is left pending or held, and the finish tick is the sender's.
+#[test]
+fn the_drain_releases_units_held_at_the_finish() {
+    let k = Knobs { t: 0.4, h: INF, load: 0.5, outage_start: 0.3, outage_len: 0.3, ..OBJECT };
+    let sv = [1.0 / 2600.0, 1.0 / 2400.0];
+    let mut s = build_link(&TWO_PATH, "bulk", None, k, &sv, &[0.05, 0.05], &[0.025, 0.02], INF);
+    let mut finish = 0;
+    while !s.is_finished() && s.get_tick() < CAP {
+        finish = s.get_tick() + 1;
+        s.step();
+    }
+    println!("drain: finish tick {}, drain ticks {}, held {}", s.get_tick(), s.get_drain_ticks(), s.get_consumer_held());
+    assert!(s.get_drain_ticks() > 0, "the drain must run here");
+    assert_eq!(s.get_consumer_held(), 0);
+    assert_eq!(s.get_class_counts()[CLASS_PENDING as usize] + s.get_class_counts()[CLASS_HELD as usize], 0);
+    assert_eq!(s.get_tick(), finish, "the finish tick is the sender's, unchanged by the drain");
+}
+
+/// Report (not a gate; `--ignored`): the recovery time at the page's CL-long
+/// preset (stage 3d's CL-long, scaled: RTT 10 ms, 3 % loss, 800 units/s
+/// against 1000 slots/s, 6 400 units, outage 2.0 s + 1.5 s), per arm, to
+/// set beside results-stage3d.md's headline table.
+#[test]
+#[ignore]
+fn report_recovery_time_at_the_cl_long_preset() {
+    let cell = Cell { eps: 0.03, q: 1.0, rtt: 10, cap: 1 };
+    for units in [6400, 12000] {
+        let base = Knobs { t: INF, h: 0.0, load: 800.0 / 970.0, units, outage_start: 2.0, outage_len: 1.5 };
+        for d in [0.005, 50.0] {
+            for (t, h) in [(0.4, 0.0), (0.4, INF), (2.0, 0.0), (2.0, INF), (INF, 0.0), (INF, INF)] {
+                let mut s = build(&[cell], "continuum", Some(d), Knobs { t, h, ..base });
+                run(&mut s);
+                println!(
+                    "CL-long preset units {units} delta {d} T={t} H={h}: recovery {:.2} s, share_any {:.4}, by 0.4 s {:.4}, ticks {}, fec/src {:.3}",
+                    s.get_recovery_time(), s.get_share_any(), s.get_share_by_ref(), s.get_tick(),
+                    s.get_total_fec() as f64 / s.get_total_src().max(1) as f64
+                );
+            }
+        }
+    }
 }

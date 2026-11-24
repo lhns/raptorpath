@@ -182,6 +182,11 @@ impl Consumer {
         self.ooo_seq.get(s).copied().unwrap_or(false)
     }
 
+    /// Seqs decoded but not yet delivered (held behind an unreleased hole).
+    pub fn held(&self) -> usize {
+        (0..self.decoded.len()).filter(|&s| self.decoded[s] && self.delivered_at[s].is_nan()).count()
+    }
+
     /// Holes released so far (by either term of L6).
     pub fn released_holes(&self) -> u32 {
         self.released.iter().filter(|&&r| r).count() as u32

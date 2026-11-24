@@ -531,6 +531,34 @@ const reset = () => { for (const [k, v] of Object.entries(dflt)) set(k, v); };
   reset();
 }
 
+// ---- 4f. the CL-long preset (stage 3d's long capacity cell, scaled) ----------------
+// It writes the path, the load, the units and the outage; at the Bulk δ and
+// T = 0.4 the recovery time reads a number.
+{
+  reset();
+  const knobsBefore = ["sl-t", "sl-h", "sl-dprice", "sl-budget"].map(id => getEl(id).value);
+  listeners["btn-w-cl-long"].click();
+  const s0 = api.sim(), p0 = api.getParams();
+  check("CL-long preset: path, load, units and outage routed, no knob written",
+    s0.inner.get_num_source() === 12000 && relNear(s0.inner.get_source_rate(), 800) &&
+    s0.inner.get_path_rtt_ms(0) === 10 && s0.inner.get_path_capacity(0) === 1 && p0.eps === 0.03 &&
+    p0.outageStartS === 2 && p0.outageLenS === 1.5 &&
+    ["sl-t", "sl-h", "sl-dprice", "sl-budget"].every((id, i) => getEl(id).value === knobsBefore[i]),
+    `units ${s0.inner.get_num_source()} rate ${s0.inner.get_source_rate()} eps ${p0.eps}`);
+  set("sl-dprice", -2.30103); set("sl-t", 0.5); set("sl-h", 0);
+  api.resetSim();
+  const s = api.sim();
+  let n = 0;
+  while (!s.finished && n < 20000) { s.step(); n++; }
+  api.updateReadouts();
+  check("CL-long preset at the Bulk δ, T = 0.4: the recovery time is readable",
+    s.finished && /^\d+\.\d{3} s$/.test(getEl("kr-recovery").textContent), getEl("kr-recovery").textContent);
+  getEl("sl-units").value = "2000";
+  getEl("sl-outlen").value = "0";
+  listeners["btn-w-stream"].click();
+  reset();
+}
+
 // ---- 5. the cartoon: the floor pass through the wasm export -------------------
 {
   function cartoon(u) {

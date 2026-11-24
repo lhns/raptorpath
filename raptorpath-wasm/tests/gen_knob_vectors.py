@@ -10,8 +10,8 @@ Usage (outside the toy directory; the toy imports numpy):
 
 Line format: `<rust_name> <arg>... -> <result> <source>`. An f64 is its 16-hex big-endian bit pattern,
 a bool is 0 or 1. `toy` rows come from the toy's own function; `formula` rows from the derivation's
-formula where the toy has no single function (L6 is event-structured there; Revision 3's d(s) and
-one-way term are not in the toy at its recorded sha). `#` starts a comment.
+formula where the toy has no single function (L6 is event-structured there). Since stage 3d (e17b4c64)
+d(s) and the one-way term come from the toy too (trigger_delay, Sim.o_fwd). `#` starts a comment.
 """
 import argparse
 import difflib
@@ -92,16 +92,18 @@ def main():
             stub = types.SimpleNamespace(srtt=srtt, rttvar=rv, cfg=types.SimpleNamespace(tick=0.001))
             row("ack_timeout", [srtt, rv, 0.001, 0.001], hx(toy2.Sim.R_now(stub)), "toy")
 
-    # Revision 3 (three-knobs.md 17.1): d(s) and the one-way term ô, not in the toy at its recorded sha.
+    # Revision 3 (three-knobs.md 17.1): d(s) is the toy's trigger_delay since stage 3d (e17b4c64); the one-way
+    # term ô is its method Sim.o_fwd (srtt of the resend path - RTprop/2), evaluated on a stub carrying its inputs.
     for resent in (False, True):
         for c in (0.01, 0.05):
             for sp in (0.05, 0.08):
                 for pr in (0.025, 0.1, INF):
-                    v = c if resent else min(sp, pr)
-                    rows.append(f"trigger_delay {b(resent)} {hx(c)} {hx(sp)} {hx(pr)} -> {hx(v)} formula")
+                    v = toy2.trigger_delay(resent, c, sp, pr)
+                    rows.append(f"trigger_delay {b(resent)} {hx(c)} {hx(sp)} {hx(pr)} -> {hx(v)} toy")
     for srtt in (0.05, 0.08, 0.142):
         for rp in (0.05, 0.08, 0.098):
-            row("one_way_fwd", [srtt, rp], hx(srtt - rp / 2.0), "formula")
+            stub = types.SimpleNamespace(srtt_p=lambda p, v=srtt: v, rtt=rp)
+            row("one_way_fwd", [srtt, rp], hx(toy2.Sim.o_fwd(stub)), "toy")
 
     text = "\n".join([
         "# Three-knob law vectors (raptorpath-wasm/tests/gen_knob_vectors.py). Do not edit by hand.",
