@@ -10068,7 +10068,7 @@ nodes:
   evidence:
   - docs/derivations/visualizer-three-knobs-plan.md
   verdict_quote: ''
-  headline: 'Built through P13 on branch viz-three-knobs (d7cb8a2b), with every page gate passing and the old page unchanged. A verification round is running: vectors against stage 3d, a browser render, the end-of-run rule. Awaiting owner confirmation: R stays on a fixed rttvar, and the link controls stay hidden.'
+  headline: 'Built and verified on branch viz-three-knobs (4cd376a6): 99 tests and every page gate pass, the laws match the offline simulation stage 3d bit for bit, the old page is unchanged, and the new panels render in a browser. Awaiting owner confirmation: R stays on a fixed rttvar (the offline simulation measures it), the link controls stay hidden, and a CL-long preset shows recovery 4.9 s against 5.6 to 7.8 s in the offline simulation, which has a link queue.'
   depends_on:
   - model-three-knobs
   replaced_by: []
