@@ -1322,3 +1322,26 @@ Report every reading, the A/A self-check and every deviation, as in stage 3b.
 - strict order at T = 2 s under overload (§15.2 item 4: the frontier waits for holes that are being resent);
 - delay pinned near T − R under overload (Q12);
 - the strict stall through the outage itself (§13.5).
+
+## 16. Findings from the offline simulation, stage 3c (2026-11-24, reviewed with the advisor)
+
+Branch `toy-stage3-knobs` `02eda90b`, `tools/toy/results-stage3c.md`. One path, no proactive repair.
+
+**Confirmed.**
+- T = ∞ equals full delivery exactly in all 12 cells, link cells included (288/288, traces identical), and all 3 646 runs finish (Q3c-1). D2 is gone.
+- No queue drops outside or inside the outage in any link-cell run (Q3c-2, bullets 2–4).
+- The strict-order overload collapse is fixed: OV at T = 0.4, H = ∞ reads 0.801 on time against 0.087 in stage 3b; H = 0 reads 0.831 (band 0.78–0.83, missed by 0.0008; the strict margin passed by 0.0003).
+- The crossover follows the path: +14.9 ms and +29.9 ms, each crossing within 0.7 ms of median resend age + srtt/2.
+
+**What the capacity cell says, and what it does not.** Full delivery reads 19.9 % within 0.4 s in both 3b and 3c, although 3c removed the resend storm. By arithmetic (λ = 10 000/s, C = 12 500/s, a 1.5 s outage at 2 s): the backlog of about 15 000 units drains at C − λ = 2 500/s, so it is not on time again until about 9.5 s, near the end of the 10 s run, and 19.9 % is the 2 s before the outage. The lifetime arm's 84.8 % is 1 minus the outage's share. So the +65 points measure the part of this run after the outage and would shrink in a longer run; the registered readout to use is recovery time after the outage, per arm. Order alone moves 19.9 → 21.4 % (CL) and 6.7 → 13.7 % (OV); the lifetime does the rest. Its cost: 84.8 % ever delivered against 97.2 % within 2 s and 100 % ever for full delivery.
+
+**Failed.**
+- **The floor's commitment (no copy below it) failed:** 143 copies below the floor in 28 of 3 454 runs, all in link cells. Cause: §15 contradicts itself. Item 1's `protected` makes a freshly sent unit unprotected for one cooldown, while item 5's gate lets a seq with no copy go at once, and the floor moves inside the same `act` loop. A spec error the review missed. An unregistered supplement (cooldown on first resends too) reads 0 violations but moves the baselines by up to 4 points, so it is not a result. Check whether the same exemption explains the 598 resends per seed at K-L10b's lowest T.
+- **The feedback-only verdict rule never fired** in any S4 run (candidates below the floor are filtered first). Either delete it or find a case that exercises it. Stage 3b's "D1 fixed" belongs to Revision 1's arm.
+- **The 2 s lifetime under overload** read 0.908 by 2 s, above its band; only 6 % was ever dropped, so that lifetime barely bound in a 10 s run. Unread, not fixed.
+- **Smoothness is still not demonstrated:** the control failed to place a third time (0/12, then 2/12 usable seeds). Use stage 2's planted STEP and KINK arms as the control instead of hunting for a natural step.
+- **Baselines remain qualified:** about half the old arms' copies are duplicates of data still queued in the link (the simulation's 25 ms sweep resends the whole open tail; the engine's resends only the blocker), which costs them capacity. The simulation's sweep therefore likely disfavours the old arms, not favours them.
+
+**Untested risk.** A floor on every data datagram tells the receiver to pass anything still in flight below it. Harmless in order on one path; on two paths it would pass slow-path data that is about to arrive. Two paths must be tested before any engine sketch.
+
+**Register before the next run:** the item-5 fix (cooldown on first resends, re-check of the floor before each copy), with the link cells rerun; an engine-like sweep arm (blocker only); recovery time after the outage per arm; the planted STEP/KINK control; an ablation flipping `floor_law` alone in OV; a two-path cell with skew.
