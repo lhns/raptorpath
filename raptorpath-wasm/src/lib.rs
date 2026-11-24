@@ -5,6 +5,7 @@ mod warm_tail;
 pub mod knobs;
 pub mod consumer;
 pub mod link;
+pub mod budget;
 
 // =========================================================================
 // Three-knob laws (proposal; docs/derivations/visualizer-three-knobs-plan.md
@@ -745,8 +746,14 @@ pub struct Simulation {
     lead_n: u32,
     lead_sum: u64,
     lead_max: u32,
-    /// The resend budget per 5-tick window (addendum 1 A5; ∞ = unlimited).
+    /// The resend budget per 5-tick window (addendum 1 A5; ∞ = unlimited),
+    /// the resends each window carried, the distinct seqs held back at least
+    /// once, and the refusals (a seq refused at several slots counts each).
     resend_limit: f64,
+    budget_used: Vec<u32>,
+    braked_seq: Vec<bool>,
+    braked_units: u32,
+    braked_attempts: u32,
     /// Test-only: every delivered datagram (send tick, deliver tick, path,
     /// kind 0 source / 1 resend / 2 repair / 3 floor, lost), each resend's
     /// lead (seq, path, ticks), every decoder feed in order (seq or window
@@ -986,6 +993,30 @@ impl Simulation {
             return false;
         }
         true
+    }
+
+    /// The resend budget (addendum 1 A5), at the point of sending: a refusal
+    /// leaves the candidate as a failed P_lost draw does (no `last_retx`
+    /// change; the next slot that picks it tries again).
+    fn budget_admits(&mut self, i: usize) -> bool {
+        let w = budget::window(self.tick);
+        if self.budget_used.len() <= w {
+            self.budget_used.resize(w + 1, 0);
+        }
+        if budget::admits(self.budget_used[w], self.resend_limit) {
+            self.budget_used[w] += 1;
+            return true;
+        }
+        self.braked_attempts += 1;
+        let s = self.symbols[i].seq as usize;
+        if self.braked_seq.len() <= s {
+            self.braked_seq.resize(s + 1, false);
+        }
+        if !self.braked_seq[s] {
+            self.braked_seq[s] = true;
+            self.braked_units += 1;
+        }
+        false
     }
 
     /// The L1 age edge of the repair window (plan §7 P3): no window member
@@ -1985,6 +2016,10 @@ impl Simulation {
             lead_sum: 0,
             lead_max: 0,
             resend_limit,
+            budget_used: Vec::new(),
+            braked_seq: Vec::new(),
+            braked_units: 0,
+            braked_attempts: 0,
             #[cfg(test)]
             leg_log: Vec::new(),
             #[cfg(test)]
@@ -2122,7 +2157,7 @@ impl Simulation {
                     self.paths[sp].srtt_secs,
                     self.paths[sp].rttvar_secs,
                 );
-                if self.rng() < pl && self.floor_recheck(i) {
+                if self.rng() < pl && self.floor_recheck(i) && self.budget_admits(i) {
                     // Cross-path recovery: resend the EXACT stored bytes on
                     // the best currently-available path, not necessarily the
                     // one that lost them.
@@ -2813,6 +2848,12 @@ impl Simulation {
     pub fn get_in_flight(&self) -> u32 { self.in_flight() as u32 }
     /// The resend budget per 5 ms window (∞ = unlimited).
     pub fn get_resend_limit(&self) -> f64 { self.resend_limit }
+    /// Resends per 5 ms window, from tick 0 (addendum 1 A5; the page's bars).
+    pub fn get_budget_used(&self) -> Vec<u32> { self.budget_used.clone() }
+    /// Distinct seqs the budget held back at least once (the headline), and
+    /// the refusals (every slot that picked a held-back seq again).
+    pub fn get_resend_braked_units(&self) -> u32 { self.braked_units }
+    pub fn get_resend_braked_attempts(&self) -> u32 { self.braked_attempts }
     /// The knowledge lead (addendum 1 A2 gauge): the reverse-leg delay the
     /// sender skips by learning a resend's arrival at the arrival tick, mean
     /// and maximum over resends, ms (0 before any resend arrived).

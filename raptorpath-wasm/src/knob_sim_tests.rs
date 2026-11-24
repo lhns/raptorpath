@@ -1076,3 +1076,76 @@ fn the_link_constructor_rejects_out_of_domain_values() {
     let got = (s.get_link_service_s(0), s.get_link_queue_s(0), s.get_link_prop_s(0), s.get_resend_limit());
     assert_eq!(got, (0.002, 0.1, 0.01, 10.0));
 }
+
+// --- Addendum 1 A5 (P13): the resend budget ------------------------------------
+
+/// A run with the default leg and resend budget `limit` per 5 ms window.
+fn build_budget(paths: &[Cell], hint: &str, k: Knobs, limit: f64) -> Simulation {
+    let n = paths.len();
+    build_link(paths, hint, None, k, &vec![0.0; n], &vec![INF; n], &vec![0.0; n], limit)
+}
+
+/// A5 absolute: in every 5-tick window the resends sent (counted from the
+/// staging log, independently of the model's counter) never exceed the
+/// limit, and equal the model's per-window bars. The budget executes (some
+/// seqs are held back) and every run still finishes.
+#[test]
+fn resends_per_window_never_exceed_the_limit() {
+    let lossy = vec![GOLDEN_CELLS[1].1];
+    let outage = Knobs { load: 0.5, outage_start: 0.3, outage_len: 0.3, ..OBJECT };
+    let cells: Vec<(&str, Vec<Cell>, Knobs)> = vec![
+        ("bulk", lossy.clone(), OBJECT),
+        ("bulk", lossy.clone(), outage),
+        ("realtime", lossy.clone(), Knobs { t: 0.4, ..outage }),
+        ("bulk", TWO_PATH.to_vec(), outage),
+    ];
+    let mut braked = 0;
+    for (hint, paths, k) in &cells {
+        for limit in [1.0, 2.5, 3.0, 10.0] {
+            let mut s = build_budget(paths, hint, *k, limit);
+            run(&mut s);
+            let label = format!("{hint} {k:?} limit {limit}");
+            assert!(s.is_finished() && s.get_tick() < CAP, "{label}: did not finish");
+            let mut per = vec![0u32; s.get_tick() as usize / 5 + 1];
+            for &(tick, kind, _, _) in &s.payload_log {
+                if kind == 1 {
+                    per[tick as usize / 5] += 1;
+                }
+            }
+            let bars = s.get_budget_used();
+            for (w, &n) in per.iter().enumerate() {
+                assert!(n as f64 <= limit, "{label}: window {w} carried {n} resends");
+                assert_eq!(n, bars.get(w).copied().unwrap_or(0), "{label}: window {w} bar");
+            }
+            assert!(s.get_resend_braked_units() <= s.get_resend_braked_attempts());
+            braked += s.get_resend_braked_units();
+        }
+    }
+    // A zero budget at a finite T: no resend at all, the floor passes the holes.
+    let mut s = build_budget(&lossy, "realtime", Knobs { t: 0.4, ..outage }, 0.0);
+    run(&mut s);
+    assert!(s.is_finished() && s.get_tick() < CAP && s.get_total_arq() == 0);
+    assert!(s.get_resend_braked_units() > 0 && s.get_passed_undelivered() > 0);
+    assert!(braked > 0, "the budget must hold seqs back somewhere");
+}
+
+/// A5 identity: an unlimited budget reproduces every golden cell, and a
+/// finite but never-binding limit (1e9) equals ∞ bit for bit; neither brakes.
+#[test]
+fn an_unlimited_budget_is_the_identity() {
+    let mut cells: Vec<(&str, Vec<Cell>, Knobs)> =
+        GOLDEN_CELLS.iter().map(|(h, c)| (*h, vec![*c], OBJECT)).collect();
+    cells.push(("auto", TWO_PATH.to_vec(), OBJECT));
+    for (paths, k) in stream_cells() {
+        cells.push(("realtime", paths, k));
+    }
+    for (hint, paths, k) in cells {
+        let mut a = build(&paths, hint, None, k);
+        let mut b = build_budget(&paths, hint, k, 1e9);
+        run(&mut a);
+        run(&mut b);
+        assert_eq!(fingerprint(&a), fingerprint(&b), "{hint} {k:?}");
+        assert_eq!(a.get_resend_braked_attempts() + b.get_resend_braked_attempts(), 0);
+        assert_eq!(a.get_budget_used(), b.get_budget_used());
+    }
+}

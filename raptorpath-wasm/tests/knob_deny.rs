@@ -5,8 +5,8 @@
 //! functions of `src/knobs.rs`, pinned here by name.
 //!
 //! Scanned: the non-test code of `src/lib.rs`, `src/knobs.rs`,
-//! `src/consumer.rs` and `src/link.rs` (comments and string literals
-//! removed). Flagged:
+//! `src/consumer.rs`, `src/link.rs` and `src/budget.rs` (comments and
+//! string literals removed). Flagged:
 //! - `is_infinite` / `is_finite` anywhere;
 //! - `INFINITY` on a line that compares;
 //! - a knob identifier on a line that compares or clamps (`<`, `>`, `<=`,
@@ -35,7 +35,7 @@ const KNOB_IDENTS: &[&str] = &[
 /// In `knobs.rs` the law parameters are named `t` and `h`.
 const KNOBS_RS_PARAMS: &[&str] = &["t", "h"];
 
-const FILES: &[&str] = &["src/lib.rs", "src/knobs.rs", "src/consumer.rs", "src/link.rs"];
+const FILES: &[&str] = &["src/lib.rs", "src/knobs.rs", "src/consumer.rs", "src/link.rs", "src/budget.rs"];
 
 /// Remove `//` comments and the contents of string literals (which may span
 /// lines); newlines are kept so line numbers stay meaningful.

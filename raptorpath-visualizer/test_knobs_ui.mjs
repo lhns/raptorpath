@@ -98,7 +98,7 @@ const m = html.match(/<script>([\s\S]*)<\/script>/);
 const fn = new Function(
   "document", "window", "requestAnimationFrame", "cancelAnimationFrame", "performance",
   m[1] +
-    "\n;return { resetSim, updateLabels, updateReadouts, getParams, spanLaw, spanStep, drawSpanViz, updateSpanQuants, spanViz, KN_ROWS, drawUnitStrip, COLORS, sim: () => sim, pinned: () => pinned, drawDelayChart, CLASS_COLORS };"
+    "\n;return { resetSim, updateLabels, updateReadouts, getParams, spanLaw, spanStep, drawSpanViz, updateSpanQuants, spanViz, KN_ROWS, drawUnitStrip, COLORS, sim: () => sim, pinned: () => pinned, drawDelayChart, CLASS_COLORS, drawBudgetBars };"
 );
 const perfStub = { now: () => 0 };
 const api = fn(documentStub, windowStub, cb => { rafQueue.push(cb); return rafQueue.length; }, () => {}, perfStub);
@@ -122,7 +122,7 @@ const near = (a, b) => Math.abs(a - b) <= 1e-12;
 const set = (id, v) => { getEl(id).value = String(v); };
 const get = id => parseFloat(getEl(id).value);
 const SLIDERS = ["sl-t", "sl-h", "sl-dprice", "sl-load", "sl-outstart", "sl-outlen",
-                 "sl-eps", "sl-q", "sl-rtt", "sl-cap", "sl-w"];
+                 "sl-eps", "sl-q", "sl-rtt", "sl-cap", "sl-w", "sl-budget"];
 const snap = () => Object.fromEntries(SLIDERS.map(id => [id, getEl(id).value]));
 
 // ---- 1. init ---------------------------------------------------------------
@@ -404,6 +404,70 @@ const reset = () => { for (const [k, v] of Object.entries(dflt)) set(k, v); };
   const st = s.unitStore, final = Array.from(real.get_unit_classes());
   check("A1: the page's store (events only) equals the model's final classes",
     final.every((c, u) => st.cls[u] === c), `${final.length} units`);
+  reset();
+}
+
+// ---- 4d. addendum 1 A5: the resend budget dial, its bars and headline ----------
+// and A6 option (b): the forward leg stays at its default (no page control).
+{
+  const mapBudget = u => 10 * (u / (1 - u)) ** 2;    // u = 1: Infinity
+  for (const u of [0, 0.2, 0.5, 0.8, 0.99, 1]) {
+    reset(); set("sl-budget", u);
+    let err = "";
+    try {
+      api.resetSim();
+      const s = api.sim(), p = api.getParams();
+      for (let i = 0; i < 60; i++) s.step();
+      api.updateReadouts();
+      if (!(relNear(s.inner.get_resend_limit(), mapBudget(u)) && s.hint === "continuum" && p.customRho === null))
+        err = `limit ${s.inner.get_resend_limit()} want ${mapBudget(u)}`;
+      for (let i = 0; i < s.numPaths; i++)
+        if (!(s.inner.get_link_service_s(i) === 0 && s.inner.get_link_queue_s(i) === Infinity &&
+              s.inner.get_link_prop_s(i) === 0)) err += ` path ${i} link not at the default`;
+    } catch (e) { err = "THROWS " + e; }
+    check(`budget slider u=${u}: limit routed, one hint, rho null, default leg`, err === "", err);
+  }
+  check("budget: the unlimited end renders as an infinity sign",
+    (reset(), set("sl-budget", 1), listeners["sl-budget"].input(), getEl("v-budget").textContent.includes("∞")),
+    getEl("v-budget").textContent);
+  reset(); set("sl-t", 0.3); set("sl-h", 0.3); set("sl-load", 0.7);
+  const before = snap();
+  listeners["btn-budget-engine"].click();
+  const after = snap();
+  check("engine budget button writes 10 per 5 ms and nothing else",
+    SLIDERS.filter(k => k !== "sl-budget").every(k => after[k] === before[k]) &&
+    relNear(api.sim().inner.get_resend_limit(), 10),
+    `limit ${api.sim().inner.get_resend_limit()}`);
+  // a lossy stream with an outage at a small budget: the bars are the model's ring
+  reset(); set("sl-budget", 0.25); set("sl-eps", 0.1); set("sl-load", 1 / 3);
+  set("sl-outstart", 0.3); set("sl-outlen", 0.4);
+  api.resetSim();
+  const s = api.sim();
+  let n = 0;
+  while (!s.finished && n < 20000) { s.step(); n++; }
+  const rects = [];
+  const cv = getEl("budget-canvas"), orig = cv.getContext;
+  cv.getContext = () => new Proxy({}, {
+    get: (_, k) => (k === "fillRect" ? (x, y, w, h) => rects.push(h) : (typeof k === "string" ? () => {} : undefined)),
+    set: () => true,
+  });
+  api.drawBudgetBars();
+  cv.getContext = orig;
+  const ring = Array.from(s.inner.get_budget_used());
+  const scale = rects[ring.indexOf(Math.max(...ring))] / Math.max(...ring);
+  check("budget bars: one bar per window, heights proportional to the model's ring",
+    rects.length === ring.length && ring.length > 10 && ring.every((u, i) => Math.abs(rects[i] - u * scale) < 1e-9),
+    `${rects.length} bars, ${ring.length} windows`);
+  check("budget: no window exceeds the limit (precondition: the budget binds)",
+    ring.every(u => u <= s.inner.get_resend_limit()) && s.inner.get_resend_braked_units() > 0,
+    `limit ${s.inner.get_resend_limit().toFixed(3)}, held back ${s.inner.get_resend_braked_units()}`);
+  const head = getEl("budget-headline").textContent;
+  check("budget headline shows the held-back seqs, not the refusals first",
+    head.startsWith("seqs held back: " + s.inner.get_resend_braked_units() + " "), head);
+  api.updateReadouts();
+  check("budget readouts: held-back seqs and refusals",
+    getEl("kr-braked-units").textContent === String(s.inner.get_resend_braked_units()) &&
+    getEl("kr-braked-attempts").textContent === String(s.inner.get_resend_braked_attempts()));
   reset();
 }
 

@@ -315,6 +315,10 @@ class SimWrapper {
   linkPropS(i)    { return this.inner.get_link_prop_s(i); }
   pathQdrop(i)    { return this.inner.get_path_qdrop(i); }
   get resendLimit() { return this.inner.get_resend_limit(); }
+  // --- The resend budget (addendum 1 A5) ---
+  get budgetUsed()  { return this.inner.get_budget_used(); }
+  get resendBrakedUnits()    { return this.inner.get_resend_braked_units(); }
+  get resendBrakedAttempts() { return this.inner.get_resend_braked_attempts(); }
   get dup()         { return this.inner.get_dup(); }
   get inFlight()    { return this.inner.get_in_flight(); }
   get knowledgeLeadMeanMs() { return this.inner.get_knowledge_lead_mean_ms(); }
