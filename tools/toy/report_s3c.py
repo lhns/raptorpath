@@ -387,5 +387,39 @@ def rep():
     print("  %d readings, %d shown" % (tot, shown))
 
 
+def windows():
+    print("### per-1 s window series, OV and CL (seed means over 12 seeds; window i = [i, i+1) s): first sends, copies sent, copies refused by the")
+    print("### budget, pause time (s), link busy (fraction of the window), hand-over instants blocked by the pause, resends refused by the cooldown")
+    for cell in ("OV", "CL"):
+        for a in ARMS:
+            ss = S.seeds_of(cell, a)
+            if not ss:
+                continue
+            keys = ("win_first", "win_resend", "win_braked", "win_pause", "win_util", "win_blk_pause", "win_blk_cool")
+            nw = max(len(S.R(cell, a, s)["win_first"]) for s in ss)
+            mat = {k: np.array([[(S.R(cell, a, s)[k][i] if i < len(S.R(cell, a, s)[k]) else 0.0) for i in range(nw)] for s in ss]).mean(axis=0) for k in keys}
+            print("\n#### %s %s\n" % (cell, a))
+            print("| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |")
+            print("|---|---|---|---|---|---|---|---|")
+            for i in range(nw):
+                print("| %d | %.0f | %.0f | %.0f | %.3f | %.3f | %.0f | %.0f |" % (i, mat["win_first"][i], mat["win_resend"][i], mat["win_braked"][i], mat["win_pause"][i],
+                                                                                  mat["win_util"][i], mat["win_blk_pause"][i], mat["win_blk_cool"][i]))
+
+
+def dups():
+    print("### copies sent against duplicate arrivals (seed means): gauges repair_sends and dup; registered arms and the unregistered cooldown_all supplement")
+    print("| cell | arm | copies sent | duplicate arrivals | duplicates per copy | refused by the budget |")
+    print("|---|---|---|---|---|---|")
+    for cell in ("OV", "CL"):
+        for arm in ARMS + ["SUP-C3", "SUP-C1", "SUP-G-T0p4-Hinf", "SUP-G-T2-Hinf"]:
+            ss = S.seeds_of(cell, arm)
+            if not ss:
+                continue
+            rs_ = np.mean([S.R(cell, arm, s)["gauges"]["repair_sends"] for s in ss])
+            d = np.mean([S.R(cell, arm, s)["gauges"]["dup"] for s in ss])
+            b = np.mean([S.R(cell, arm, s)["resend_braked"] for s in ss])
+            print("| %s | %s | %.0f | %.0f | %.3f | %.0f |" % (cell, arm, rs_, d, d / rs_ if rs_ else 0.0, b))
+
+
 def main(cmd):
-    {"q1": q1, "q2": q2, "q3": q3, "q4": q4, "q5": q5, "q6": q6, "q7": q7, "q8": q8, "q9": q9, "q10": q10, "tables": tables, "aa": aa, "rep": rep, "sup": sup}[cmd]()
+    {"q1": q1, "q2": q2, "q3": q3, "q4": q4, "q5": q5, "q6": q6, "q7": q7, "q8": q8, "q9": q9, "q10": q10, "tables": tables, "aa": aa, "rep": rep, "sup": sup, "windows": windows, "dups": dups}[cmd]()

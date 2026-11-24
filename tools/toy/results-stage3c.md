@@ -7,7 +7,7 @@ Spec: `docs/derivations/three-knobs.md` section 15 "Revision 2", registration 15
 - **Everything registered as an identity holds, and every run finishes.** With the new fields at their defaults the code reproduces the stage 3b code (and through it stages 1 to 3) on 102 + 963 runs (3 seeds each): 114 585 old keys, traces and per-sequence arrays as digests, 0 differences. The new sender at lifetime T = infinity equals today's receiver at rho = 1 on 37 readouts in all 12 cells, 12 seeds each (288 of 288 comparisons), and on the sender trace (seeds 0 to 2, all cells); at T = 10^6 s it equals T = infinity. The frontier reaches the last unit in all 3 646 stored runs, at every T, including the link cells.
 - **The strict-order collapse under overload is fixed.** In the overload cell (OV) with a lifetime of 0.4 s, the strict receiver now delivers 80.1 % of the units within 0.4 s of hand-over, against 8.7 % for the stage 3b sender (and 83.1 % for the receiver that releases at once). The floor rides on the data; as a datagram of its own (one per 2 ms) it costs 487 link slots per second and 3.4 points (76.7 %), as predicted (5 %). The tell's round trip is gone.
 - **But the registered limit at T = 2 s did not hold, in the good direction.** The registration said the floor cannot help strict order at T = 2 s in OV (stage 3b: 75.1 % within 2 s, predicted 65 to 85 %). It reads 90.8 %. The registered band is missed above.
-- **The commitment is not absolute.** The registered seam, "no copy of a sequence number is ever sent after the floor passed it", read 143 violations in 28 runs (all in the link cells, 13 of 14 arm groups in OV and one in CL). The cause is an inconsistency inside the registration: the resend gate lets a sequence number that has never been resent go again at once (15.6.1 item 5), while the floor law assumes its earliest resend is one cooldown after its last send (item 1). A supplementary run, labelled unregistered, applies the cooldown to first resends too: violations 0 in all 192 runs, shares within 0.01 of the registered arms.
+- **The commitment is not absolute.** The registered seam, "no copy of a sequence number is ever sent after the floor passed it", read 143 violations in 28 runs (all in the link cells, 13 of 14 arm groups in OV and one in CL). The cause is an inconsistency inside the registration: the resend gate lets a sequence number that has never been resent go again at once (15.6.1 item 5), while the floor law assumes its earliest resend is one cooldown after its last send (item 1). A supplementary run, labelled unregistered, applies the cooldown to first resends too: violations 0 in all 192 runs; the S4 arms at T = 0.4 move by at most 0.001, but the baselines that resend more move more (C3 in OV `share_by_2` 0.627 to 0.667, C1 in CL `share_by_0p4` +0.036, S4 at T = 2 H = 0 in CL +0.034).
 - **The design properties that mattered hold elsewhere.** No savable data is lost in the call cells (shares equal stage 3's within 0.001). With the floor the draining gain is kept in the outage-and-drain cell (CL: 84.8 % within 0.4 s against 19.9 % for never giving up and 28.6 % for today's engine), the engine resend budget holds (at most 10 copies in any 5 ms window, in every one of 528 link-cell runs), and no queue drop falls outside the outage for any arm in CL and OV.
 - **Two registered bands for the comparison arms still miss.** Never giving up in CL reads 19.9 % within 0.4 s (band 25 to 47 %), the same as stage 3b: the comparison arm collapses on the link for a reason the band's arithmetic does not model, with or without the resend budget. The positive control for the nudge statistic has no cell: 0 of 12 seeds are usable on the registered placement and 2 of 12 on a corrected one (8 required).
 
@@ -15,15 +15,15 @@ Spec: `docs/derivations/three-knobs.md` section 15 "Revision 2", registration 15
 
 | | reading | key numbers |
 |---|---|---|
-| Q3c-1 | **PASS** | stages 1 to 3b reproduced: `check_ident3c.py` PASS on the final code (1 065 reference runs regenerated from `d0ce4f9d`; 114 585 old keys, traces and per-sequence arrays as digests). S4 at T = inf equals C3 and S4 at T = 1e6 equals T = inf on 37 keys: 288 of 288 (12 cells x 2 identities x 12 seeds), link cells included; sender traces identical in all 12 cells x 3 seeds x 3 arms. `finished` true in 3 646 of 3 646 runs, every arm and every T, every cell and seed |
+| Q3c-1 | **PASS** | stages 1 to 3b reproduced: `check_ident3c.py` PASS on the final code (1 065 reference runs regenerated from `d0ce4f9d`; 114 585 old keys, traces and per-sequence arrays as digests). S4 at T = inf equals C3 and S4 at T = 1e6 equals T = inf on 37 keys: 288 of 288 (12 cells x 2 identities x 12 seeds), link cells included; sender traces identical in all 12 cells x 3 seeds x 3 arms. `finished` true in 3 646 of 3 646 runs (3 166 registered, 288 unregistered A/A replication, 192 supplement), every arm and every T, every cell and seed |
 | Q3c-2 | **FAIL on the commitment seam; the other three bullets PASS** | `commit_viol` = 143 in 28 of 3 454 runs (OV 9 seeds, CL 1 seed; arms `G-T0p4-*`, `G-T2-*` and the T nudges of OV, and `NT-0p98` of CL); expected 0. `late_floor` = 4 in three OV runs, all of them runs with violations (expected 0 in every one-path cell). `queue_drop_out` = 0 and `queue_drop_in` = 0 in all 528 CL and OV runs (44 arm groups, 12 seeds each). Maximum copies in any 5 ms window: 10 over all CL and OV runs. See "Things that looked wrong", item 1 |
-| Q3c-3 | **PASS on 3 of 4 bullets; the H = 0 band is missed by 0.0008** | OV, T = 0.4. S4 H = 0: 0.8308 (band 0.78 to 0.83): FAIL by 0.0008. S4 H = inf: 0.8011 (band 0.75 to 0.83): PASS; at least H = 0 minus 0.03 = 0.8008: PASS by 0.0003 (paired difference -0.0298 [-0.0311, -0.0284]). S4b H = inf: 0.7671, against 0.8011 x 0.95 = 0.7610 +- 0.02: PASS; `queue_drop_out` 0. Floor slots on the link per second: S4 38.6 (sweep repeats only), S4b 487.5 (one per 2 ms window); header-carried floors on S4: 9 257 per second |
+| Q3c-3 | **PASS on 3 of 4 bullets; the H = 0 band is missed by 0.0008** | OV, T = 0.4. S4 H = 0: 0.8308 (band 0.78 to 0.83): FAIL by 0.0008. S4 H = inf: 0.8011 (band 0.75 to 0.83): PASS; at least H = 0 minus 0.03 = 0.8008: PASS by 0.0003 (paired difference -0.0298 [-0.0311, -0.0284]). S4b H = inf: 0.7671, against 0.8011 x 0.95 = 0.7610 +- 0.02 (measured factor 1 - 487.5/10 000 gives 0.7620): PASS; `queue_drop_out` 0. Floor slots on the link per second: S4 38.6 (sweep repeats only), S4b 487.5 (one per 2 ms window); header-carried floors on S4: 9 257 per second |
 | Q3c-4 | **FAIL on H = inf, PASS on H = 0** | OV, T = 2. H = inf `share_by_2` 0.9077 (band 0.65 to 0.85; stage 3b 0.751): FAIL, better than predicted. H = 0 0.9396 (band 0.90 to 0.99): PASS. dh p50 1 634 ms (H = inf) and 1 438 ms (H = 0) |
 | Q3c-5 | **PASS** | OV. C3 and S4 at T = inf, H = inf: `share_by_0p4` 0.0674 (band 0.05 to 0.20). S4 T = inf, H = 0: 0.1374 (band 0.12 to 0.21). C1: 0.1134 (reported). `link_util_w` over [1 s, 10 s]: 1.0000 minimum over seeds, for every arm: the cell is valid for every arm |
 | Q3c-6 | **FAIL: 3 of 5 bullets PASS** | CL. C3 `share_by_0p4` 0.1990 (band 0.25 to 0.47): FAIL; `share_by_2` 0.9716 (>= 0.95): PASS. S4 T = 0.4: 0.8476 (H = 0) and 0.8465 (H = inf), both in [0.78, 0.90], differing by 0.0011 (<= 0.02): PASS. S4 T = 2 against T = inf: equivalent on both shares at H = 0 (+0.0027, +0.0002); at H = inf `share_by_0p4` is equivalent (+0.00002) but `share_by_2` is **shown larger by +0.0194 [0.0170, 0.0220] against a bar of 0.0032**: FAIL. S4 T = 0.4 minus C3 on `share_by_0p4`: +0.6486 (H = 0) and +0.6475 (H = inf), shown larger by more than 0.25: PASS |
 | Q3c-7 | **PASS** | S4 T = 0.4, H = inf against stage 3's S2 at the same point, K cells, `share_by_0p4`: K-I2 0.9815 against 0.9814 (paired +0.00006, m = 0.00095); K-L10 0.9789 against 0.9785 (+0.00044, m = 0.00607). `F_lag` (mean over sends of sent minus floor): 1.505 (K-I2) and 8.320 (K-L10); `floor_hull_bind` 0 |
 | Q3c-8 | **PASS on the shifts and the crossing form; FAIL on the lowest-T bullet at K-L10b** | mid-level crossings: X15 0.0677 s, X20 0.0825, shift **14.9 ms** (band 15 +- 4); K-L10 0.1726, K-L10b 0.2025, shift **29.9 ms** (band 30 +- 5). Each crossing against the run's own median first-resend age (report-driven, T = 0.4, H = 0) plus srtt/2: X15 0.0678 (-0.1 ms), X20 0.0818 (+0.7), K-L10 0.1718 (+0.7), K-L10b 0.2018 (+0.6): all within 5 ms. At each grid's lowest T, resends are 0 in every seed in X15, X20 and K-L10, but **598 or 599 per seed in K-L10b** (T = 0.180 s): FAIL |
-| Q3c-9 | **FAIL on the control (not placed); the nudge statistics read equivalent except 7 of 216 undetermined** | T and H nudges, 10 cells (every cell but X15 and X20), 6 readouts, bar max(T bar, A/A floor): 0 shown, 7 undetermined, 209 equivalent. The undetermined: K-L10 `share_by_2` K; CL `share_by_2` K and P, `ooo_per_delivered` K and P; OV `ooo_per_delivered` K and P (all within about one bar of equivalent, listed below). Control in E-I2n: the registered placement uses 0 of 12 seeds and the corrected one 2 of 12 (at least 8 required): "not placed", a finding. On the 2 usable seeds (descriptive only) mean K = 0.00181 against K-hat 0.00403 (ratio 0.45) and mean P = 0.00091 against 0.00202 (ratio 0.45), both undetermined against m = 0.00008 |
+| Q3c-9 | **the control is a finding (not placed); the nudge statistics read equivalent except 7 of 216 undetermined** | T and H nudges, 10 cells (every cell but X15 and X20), 6 readouts (24 of the 240 statistics are skipped because the quantile is infinite at every nudge point), bar max(T bar, A/A floor): 0 shown, 7 undetermined, 209 equivalent. The undetermined: K-L10 `share_by_2` K; CL `share_by_2` K and P, `ooo_per_delivered` K and P; OV `ooo_per_delivered` K and P (all within about one bar of equivalent, listed below). Control in E-I2n: the registered placement gives 0 of 12 usable seeds and the corrected one 2 of 12 (at least 8 required): "not placed", a finding as registered. On the 2 usable seeds (descriptive only) mean K = 0.00181 against K-hat 0.00403 (ratio 0.45) and mean P = 0.00091 against 0.00202 (ratio 0.45), both undetermined against m = 0.00008 |
 | Q3c-10 | **bullet 1 PASS, bullet 2 FAIL at K-L10** | K cells, S4 T = 0.4, H = inf. (i) at most 0.013 s at K-I2 (bound 0.035; 1 seed with an outage episode) and 0.024 s at K-L10 (bound 0.155; 8 seeds): PASS. (o) where non-zero: K-I2 none; K-L10 five non-zero values 0.019, 0.020, 0.040, 0.080, 0.179 s against the bound 0.072 s: 3 of 5 within, **seeds 4 (0.0796) and 6 (0.1791) exceed it**: FAIL. C3 reported: no floor is sent, so (i) is the rest of the episode after the outage: 0.12 to 0.40 s in K-L10 (8 seeds) |
 
 ## Per-cell tables in plain words
@@ -199,12 +199,12 @@ Cells: E = outage at the end of a 12 147-unit object; M = outage in the middle; 
 8. **The resend gate "cooldown" follows 15.6.1 item 5 literally** (a sequence number with no copy yet is exempt). This is the source of the Q3c-2 misses (see "Things that looked wrong", item 1); the variant without the exemption is the unregistered supplement, `resend_gate = "cooldown_all"`.
 9. **`floor_hull_bind`** is gauged against the lowest unresolved sequence number of the last report (the minimum of the missing set, else highest-received plus one): the update binds when that sequence number lies below the old floor and is still protected. It does not rescan from `A_known`. It read 0.000 to 0.002 in every cell.
 10. **`F_lag`** is the mean over first sends of `n_sent - F_ann` after the update at that send.
-11. **Window series** (per 1 s of event time): first sends, copies sent, copies refused by the budget, copies refused by the cooldown, link busy time (a service interval that crosses a boundary is split), pause time (from the pause log, closed at the end of the run), and "blocked by pause" = the source rate times the paused time, i.e. the hand-over instants that fell inside a pause. `pause_time_w` is still in the output but unused.
+11. **Window series** (per 1 s of event time; printed by `python summarize3c.py windows`, appended below for OV and CL, every arm of the cell tables): first sends, copies sent, copies refused by the budget, copies refused by the cooldown, link busy time (a service interval that crosses a boundary is split), pause time (from the pause log, closed at the end of the run), and "blocked by pause" = the source rate times the paused time, i.e. the hand-over instants that fell inside a pause. `pause_time_w` is still in the output but unused.
 12. **Stall parts (o), (oo), (i), (ii), (iii)**: the episode is the longest strict-order stall episode, including one still open at the end of the run, that overlaps the receiver-side outage `[start + owd, end + owd]` (`owd` = the cell's base one-way delay). (i) is the time from the outage end (or the episode start, if later) to the first floor event (header floor or floor datagram) that arrives after the outage; when no floor arrives (C3 sends none) (i) is the rest of the episode and `floor_seen` is false. (ii) is the span from that floor to the last fill inside the episode; (iii) the remainder; every part is clamped at 0. In the E cells the overlapping episode is often one that ends a few ms after the receiver-side outage began (the registration says "overlaps"); those rows are not used by Q3c-10.
 13. **Q3c-8's "the run's own median report-driven resend age"** is the median over seeds of each run's median hand-over age at first resends triggered by a report, in the same cell's T = 0.4, H = 0 run (the level run used for the mid-level reading). The same median pooled over the sweep runs is printed beside it (equal to the fourth digit in every cell). The lowest-T bullet counts `repair_sends` (every copy).
 14. **Q3c-7's reference** is stage 3's stored S2 K-cell outputs (`out3/ID/K-*.G-T0p4-Hinf-*.json`, 12 seeds), verified by re-running seed 0 of each cell through the stage 3 runner (identical to the stored value). `m` is max(T bar, A/A floor) of the cell.
 15. **Nudge cells**: every cell except X15 and X20, i.e. also K-L10b, E-I2n and OV (stage 3b had them in the six stage cells and CL only). The full arm grid, C1 and S4b (OV, CL, K-L10) also run in K-L10b and E-I2n; X15 and X20 carry the identity arms, A/A, the T grid and the T = 0.4, H = 0 level run only.
-16. **The identity key list** is fixed in `summarize3c.ID_KEYS` (37 keys: the 19 stage 3 keys, the four shares, three delay quantiles, units, `finish`, pause and queue counters) and in the unit test (`ID_EXCL`: config labels, `srtt`, `srtt_mean`, `R_mean` which an off-link C3 estimates the old way, `gauges`, of which 14 counters are compared, and `F_lag` and `floor_hull_bind`, which are defined only for the new sender). The stored 12-seed comparison and the unit test use the same keys otherwise.
+16. **The identity key list** is fixed in `summarize3c.ID_KEYS` (37 keys: the 20 stage 3 keys, the four shares, three delay quantiles, units, `finish`, pause and queue counters) and in the unit test (`ID_EXCL`: config labels, `srtt`, `srtt_mean`, `R_mean` which an off-link C3 estimates the old way, `gauges`, of which 14 counters are compared, and `F_lag` and `floor_hull_bind`, which are defined only for the new sender). The stored 12-seed comparison and the unit test use the same keys otherwise.
 17. **`check_ident3c.py`** compares digests of the trace and the per-sequence arrays (length and SHA-256 of the pickle) instead of storing them, drives the unchanged `batch3.py`/`batch3b.py` builders (checked byte-equal to the reference commit's), and takes the reference from a `git archive` of `d0ce4f9d` run in its own process pool. The stage 3 commit is not run separately: `d0ce4f9d` was itself checked against it by `check_ident3b.py`.
 18. **`finished`** is true when the receiver's frontier reached the last unit (`t_front` set) within `t_limit`.
 19. **Placement** (`pc_place3c.py`): the registered procedure (steps 1 to 6 of 15.5) with `ceil_1ms(max D + 2 ms)`, usable iff `min D > 0.99 p + 2 ms`; K-hat and P-hat from the stored ages above 0.2 s of the same T = inf run. See deviation 1 for the second placement file.
@@ -221,14 +221,14 @@ Cells: E = outage at the end of a 12 147-unit object; M = outage in the middle; 
 
 ## Things that looked wrong or surprising
 
-1. **The commitment seam misses because the registration contradicts itself.** 15.6.1 item 1 puts the earliest resend of a sequence number at `max(now, last_send + c)`, so a unit just sent is unprotected for one cooldown, which is what lets the floor sit at the send frontier under overload. Item 5 lets a sequence number with `copies == 0` go at once. The old tail sweep resends a never-resent unit at a first-send age of 100 ms, when the cooldown (about srtt = 100 ms here) has not elapsed, and the floor has already passed it. 143 such copies in 28 runs (every one in a link cell; 13 OV arm groups in 9 seeds, and CL `NT-0p98` in 1 seed); three runs then show a late fill of a floor-passed hole (`late_floor` 4). The supplement shows the fix: with the cooldown on first resends, 0 violations and 0 late fills in 192 runs, `max copies/5ms` 10, and the shares move by at most +0.0010 (OV T = 0.4, H = 0: 0.8318 against 0.8308; H = inf 0.8020 against 0.8011), +0.0027 for C3 in OV, +0.033 for C1 and +0.034 for `G-T2-H0` in CL (the baselines that resend more). The conclusions of Q3c-3 do not change. Recommended: item 5 reads "now - last_send >= cooldown" with no exemption, in the link cells.
-2. **Q3c-4's limit did not hold.** 15.3 says the floor cannot shorten a strict wait for data that is still being resent, and predicts T = 2 s strict in OV unchanged at about 75 %. It reads 90.8 %, with p50 1.63 s and p90 1.99 s. Two things differ from stage 3b besides the floor: the feedback-only verdict (no timer judgement of data in flight) and the engine resend budget (which cuts the old arms' resends). The effect was not isolated (no arm toggles one of these at a time). The same arm in CL reads `share_by_2` 99.1 % at T = 2, H = inf against 97.2 % at T = inf, which is not equivalent (Q3c-6), so the floor also gives up units that would arrive later than 2 s.
+1. **The commitment seam misses because the registration contradicts itself, and one copy in a decision can move the floor past the candidates queued behind it.** 15.6.1 item 1 puts the earliest resend of a sequence number at `max(now, last_send + c)`, so a unit just sent is unprotected for one cooldown, which is what lets the floor sit at the send frontier under overload. Item 5 lets a sequence number with `copies == 0` go at once. Trace (OV, seed 5, T = 0.4, H = inf, sweep period 25 ms): at a sweep fire `act` filters its candidates against `F_ann` = 14 559, serves the first (a protected hole), and the floor update that follows that copy scans on and moves `F_ann` to 15 499 inside the same loop; the next candidates (14 562 and on, never resent, first sent 98.7 ms earlier, cooldown 103.5 ms, hand-over age 0.345 s so L2 still passes) are then below the floor and still go out. 143 such copies in 28 runs (every one in a link cell; 13 OV arm groups in 9 seeds, and CL `NT-0p98` in 1 seed); three runs then show a late fill of a floor-passed hole (`late_floor` 4). The supplement (the cooldown on first resends, so the gate and the law agree) shows 0 violations and 0 late fills in 192 runs, `max copies/5ms` 10; the S4 arms at T = 0.4 move by at most +0.0010 (OV H = 0: 0.8318 against 0.8308; H = inf 0.8020 against 0.8011), and the baselines that resend more move more: C3 in OV `share_by_2` 0.6273 to 0.6665 (`share_by_0p4` +0.0027), C1 in CL `share_by_0p4` +0.036, S4 at T = 2, H = 0 in CL +0.034. The conclusions of Q3c-3 do not change. Recommended: item 5 reads "now - last_send >= cooldown" with no exemption in the link cells, and `act` re-checks `s >= F_ann` before each copy.
+2. **Q3c-4's limit did not hold.** 15.3 says the floor cannot shorten a strict wait for data that is still being resent, and predicts T = 2 s strict in OV unchanged at about 75 %. It reads 90.8 %, with p50 1.63 s and p90 1.99 s. Four things differ from stage 3b besides the floor: the old sweep instead of the R probe, the engine cooldown instead of the evidence gate, the engine resend budget, and the verdict rule (feedback only, no timer). The effect was not isolated (no arm toggles one of these at a time). The same arm in CL reads `share_by_2` 99.1 % at T = 2, H = inf against 97.2 % at T = inf, which is not equivalent (Q3c-6), so the floor also gives up units that would arrive later than 2 s.
 3. **The old sweep's 100 ms cap lets resends go in K-L10b below the crossing.** At T = 0.180 s (60 ms path), 598 to 599 copies per seed are sent. Consistent with the old sweep's eligibility, which is first-send age P = 100 ms (the cap binds: 2 srtt is 240 ms), against about 0.141 s for the report path's first resend: a sweep resend at age 0.1 to 0.12 s still passes L2 (age + srtt/2 < T) and can arrive in time. The bound "zero resends at the lowest T" holds in the other three crossover cells, whose lowest T lies below the sweep's first possible resend. Not isolated by an arm. This is the cap-bind finding of 13.4, now seen as a failed bullet.
 4. **C3's collapse on the link is unchanged by the resend budget.** In CL it reads 19.9 % within 0.4 s (stage 3b: 19.9 %), in OV 6.7 % (stage 3b 2.5 %). The budget removes the queue floods (queue drops outside the outage 0 for every arm, against 684 000 in CL for C3 in 3b) but not the backlog wait, so the band 25 to 47 % (the 13.6 drain arithmetic) is not what the arm does. In CL the link carries the late units too (utilisation 0.82 in [1 s, 10 s], against 0.70 for S4 at T = 0.4, which gives up 15 % of the units).
 5. **Q3c-10's (o) bound assumed only holes from the last one-way delay before the outage.** (o) reaches 0.179 s at K-L10 (seed 6): a hole opened up to 180 ms before the outage is still protected (the sender means to resend it while age + srtt/2 < 0.4 s), so no floor passes it and the strict receiver holds it through the outage, as in 3b.
 6. **S4 H = 0 in OV sits at 0.8308, above the band's top 0.83.** The band came from `(C/lambda)(1 - p0)` = 0.808 plus intake effects; the measured value is within 0.003 of the offered-load ceiling C/lambda = 0.833 (units not delivered: 17 %, i.e. the 16.7 % that the link cannot carry plus 0.2 %).
 7. **The registered K control has no cell**, now for a second reason besides 3b's serial recovery: the old sweep recovers the 49 dead-tail units in several sweep rounds of up to 100 ms (the ramp is 5 to 50 ms wide, against 0.01 p = 15 ms), so the "step" is a ramp in 10 of 12 seeds. What spreads the recovery (sweep rounds, the 10-copies-per-5-ms budget, the report timing) was not separated.
-8. **`resend_braked` counts refusals per decision instant, not per unit**, so it is large for arms that keep many candidates open (C3 in CL: 393 000 per run). It is a gauge of the budget binding, not a count of delayed units.
+8. **About half the copies the old arms send in OV are duplicates, and `resend_braked` counts refusals per decision instant.** Copies sent against duplicate arrivals (seed means, `python summarize3c.py dups`): OV C3 8 676 sent, 4 228 duplicates (0.49); C1 0.57; S4 at T = 0.4 0.52; S4 at T = 2, H = inf 0.49; CL C3 0.28, S4 at T = 0.4 none. The open tail the 25 ms sweep resends is mostly data still queued in the forward link (reports lag the queue by about 100 ms), and the first-resend exemption lets it go again. `resend_braked` counts a refusal at every decision instant that lists the unit, so it reads 366 504 per run for C3 in OV and drops to 2 031 under the cooldown supplement (OV S4 T = 0.4, H = inf: 38 132 to 717); it is a gauge of the budget binding, not a count of delayed units. This qualifies the "fair baselines" reading for every arm: the old arms' resends in the link cells are largely redundant, so a baseline with the cooldown on first resends (the supplement) is the fairer one, and the C3 and C1 bands above are read on the registered gate.
 
 ## Recommended next steps (not built)
 
@@ -237,7 +237,7 @@ Cells: E = outage at the end of a 12 147-unit object; M = outage in the middle; 
 - Re-place the K control on a cell and sender whose tail recovery is one step, or drop the control and keep the per-seed placement as the diagnostic it is.
 - Register the engine-side guard of 15.7: a tunnel datagram stream at Realtime (T = 0.4 s) with an outage and an overload phase, off-Bulk, with execution witnesses (CLAUDE.md, meas-guard-bulk-blind).
 
-## Reading detail (generated: `python summarize3c.py ident|ident-trace|live|q1..q10|tables|aa|rep|sup`)
+## Reading detail (generated: `python summarize3c.py ident|ident-trace|live|q1..q10|tables|aa|rep|sup|windows|dups`)
 
 ### [ident]
 ### Q3c-1: S4 at T = inf (C3S) against C3, and S4 at T = 1e6 against C3S; float-equal on 37 keys, 12 seeds
@@ -780,3 +780,392 @@ floors (cell: readout = p95 |A - A'|, ms for times):
 | CL | SUP-G-T2-Hinf | 0 | 0 | 0.2029 | 0.9910 | 0.1990 / 0.9910 | 10 | True |
 | CL | SUP-G-Tinf-Hinf | 0 | 0 | 0.2020 | 0.9716 | 0.1990 / 0.9716 | 10 | True |
 | CL | SUP-S4b | 0 | 0 | 0.8465 | 0.8476 | 0.8465 / 0.8476 | 10 | True |
+### [windows]
+### per-1 s window series, OV and CL (seed means over 12 seeds; window i = [i, i+1) s): first sends, copies sent, copies refused by the
+### budget, pause time (s), link busy (fraction of the window), hand-over instants blocked by the pause, resends refused by the cooldown
+
+#### OV C1
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10136 | 596 | 23160 | 0.661 | 1.000 | 7929 | 104 |
+| 1 | 9198 | 590 | 29816 | 1.000 | 1.000 | 12000 | 0 |
+| 2 | 9238 | 571 | 29796 | 1.000 | 1.000 | 12000 | 0 |
+| 3 | 9243 | 568 | 29771 | 1.000 | 1.000 | 12000 | 0 |
+| 4 | 9236 | 569 | 29775 | 1.000 | 1.000 | 12000 | 0 |
+| 5 | 9242 | 572 | 29773 | 1.000 | 1.000 | 12000 | 0 |
+| 6 | 9230 | 572 | 29776 | 1.000 | 1.000 | 12000 | 0 |
+| 7 | 9254 | 565 | 29769 | 1.000 | 1.000 | 12000 | 0 |
+| 8 | 9234 | 574 | 29769 | 1.000 | 1.000 | 12000 | 0 |
+| 9 | 9246 | 569 | 29762 | 1.000 | 1.000 | 12000 | 0 |
+| 10 | 9241 | 566 | 29773 | 1.000 | 1.000 | 12000 | 0 |
+| 11 | 9228 | 575 | 29771 | 1.000 | 1.000 | 12000 | 0 |
+| 12 | 8273 | 561 | 28518 | 0.894 | 0.989 | 10730 | 0 |
+| 13 | 0 | 7 | 52 | 0.000 | 0.009 | 0 | 0 |
+| 14 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV C3
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10214 | 708 | 22641 | 0.661 | 1.000 | 7937 | 12458 |
+| 1 | 9326 | 672 | 29067 | 1.000 | 1.000 | 12000 | 16579 |
+| 2 | 9336 | 666 | 29090 | 1.000 | 1.000 | 12000 | 16097 |
+| 3 | 9326 | 672 | 29056 | 1.000 | 1.000 | 12000 | 16617 |
+| 4 | 9331 | 671 | 29061 | 1.000 | 1.000 | 12000 | 16594 |
+| 5 | 9325 | 673 | 29066 | 1.000 | 1.000 | 12000 | 16583 |
+| 6 | 9326 | 674 | 29054 | 1.000 | 1.000 | 12000 | 16786 |
+| 7 | 9338 | 664 | 29076 | 1.000 | 1.000 | 12000 | 16262 |
+| 8 | 9325 | 674 | 29040 | 1.000 | 1.000 | 12000 | 16922 |
+| 9 | 9328 | 672 | 29045 | 1.000 | 1.000 | 12000 | 16797 |
+| 10 | 9333 | 668 | 29065 | 1.000 | 1.000 | 12000 | 16497 |
+| 11 | 9326 | 674 | 29047 | 1.000 | 1.000 | 12000 | 16878 |
+| 12 | 7166 | 588 | 24195 | 0.768 | 0.868 | 9218 | 14433 |
+| 13 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+| 14 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV C3S
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10214 | 708 | 22641 | 0.661 | 1.000 | 7937 | 12458 |
+| 1 | 9326 | 672 | 29067 | 1.000 | 1.000 | 12000 | 16579 |
+| 2 | 9336 | 666 | 29090 | 1.000 | 1.000 | 12000 | 16097 |
+| 3 | 9326 | 672 | 29056 | 1.000 | 1.000 | 12000 | 16617 |
+| 4 | 9331 | 671 | 29061 | 1.000 | 1.000 | 12000 | 16594 |
+| 5 | 9325 | 673 | 29066 | 1.000 | 1.000 | 12000 | 16583 |
+| 6 | 9326 | 674 | 29054 | 1.000 | 1.000 | 12000 | 16786 |
+| 7 | 9338 | 664 | 29076 | 1.000 | 1.000 | 12000 | 16262 |
+| 8 | 9325 | 674 | 29040 | 1.000 | 1.000 | 12000 | 16922 |
+| 9 | 9328 | 672 | 29045 | 1.000 | 1.000 | 12000 | 16797 |
+| 10 | 9333 | 668 | 29065 | 1.000 | 1.000 | 12000 | 16497 |
+| 11 | 9326 | 674 | 29047 | 1.000 | 1.000 | 12000 | 16878 |
+| 12 | 7166 | 588 | 24195 | 0.768 | 0.868 | 9218 | 14433 |
+| 13 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+| 14 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV G-T0p4-H0
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10217 | 697 | 22526 | 0.657 | 1.000 | 7885 | 11930 |
+| 1 | 9577 | 346 | 15606 | 1.000 | 1.000 | 12000 | 2586 |
+| 2 | 9962 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 3 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 4 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 5 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 6 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 7 | 9961 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 8 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 9 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 10 | 2940 | 0 | 0 | 0.296 | 0.384 | 3548 | 0 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV G-T0p4-Hinf
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10217 | 697 | 22526 | 0.657 | 1.000 | 7885 | 11930 |
+| 1 | 9577 | 346 | 15606 | 1.000 | 1.000 | 12000 | 2586 |
+| 2 | 9962 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 3 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 4 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 5 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 6 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 7 | 9961 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 8 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 9 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 10 | 2940 | 0 | 0 | 0.296 | 0.384 | 3548 | 0 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV G-T2-H0
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10214 | 708 | 22641 | 0.661 | 1.000 | 7937 | 12458 |
+| 1 | 9326 | 672 | 29067 | 1.000 | 1.000 | 12000 | 16579 |
+| 2 | 9336 | 666 | 29090 | 1.000 | 1.000 | 12000 | 16097 |
+| 3 | 9326 | 672 | 29056 | 1.000 | 1.000 | 12000 | 16617 |
+| 4 | 9331 | 671 | 29061 | 1.000 | 1.000 | 12000 | 16594 |
+| 5 | 9325 | 673 | 29066 | 1.000 | 1.000 | 12000 | 16583 |
+| 6 | 9326 | 674 | 29054 | 1.000 | 1.000 | 12000 | 16786 |
+| 7 | 9333 | 664 | 29081 | 1.000 | 1.000 | 12000 | 16117 |
+| 8 | 9451 | 474 | 20970 | 1.000 | 1.000 | 12000 | 5365 |
+| 9 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 10 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 11 | 8916 | 0 | 0 | 0.895 | 0.984 | 10744 | 0 |
+| 12 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV G-T2-Hinf
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10214 | 708 | 22641 | 0.661 | 1.000 | 7937 | 12458 |
+| 1 | 9326 | 672 | 29067 | 1.000 | 1.000 | 12000 | 16579 |
+| 2 | 9336 | 666 | 29090 | 1.000 | 1.000 | 12000 | 16097 |
+| 3 | 9326 | 672 | 29056 | 1.000 | 1.000 | 12000 | 16617 |
+| 4 | 9331 | 671 | 29061 | 1.000 | 1.000 | 12000 | 16594 |
+| 5 | 9325 | 673 | 29066 | 1.000 | 1.000 | 12000 | 16583 |
+| 6 | 9326 | 674 | 29054 | 1.000 | 1.000 | 12000 | 16786 |
+| 7 | 9333 | 664 | 29081 | 1.000 | 1.000 | 12000 | 16117 |
+| 8 | 9451 | 474 | 20970 | 1.000 | 1.000 | 12000 | 5365 |
+| 9 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 10 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 11 | 8916 | 0 | 0 | 0.895 | 0.984 | 10744 | 0 |
+| 12 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV G-Tinf-H0
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10214 | 708 | 22641 | 0.661 | 1.000 | 7937 | 12458 |
+| 1 | 9326 | 672 | 29067 | 1.000 | 1.000 | 12000 | 16579 |
+| 2 | 9336 | 666 | 29090 | 1.000 | 1.000 | 12000 | 16097 |
+| 3 | 9326 | 672 | 29056 | 1.000 | 1.000 | 12000 | 16617 |
+| 4 | 9331 | 671 | 29061 | 1.000 | 1.000 | 12000 | 16594 |
+| 5 | 9325 | 673 | 29066 | 1.000 | 1.000 | 12000 | 16583 |
+| 6 | 9326 | 674 | 29054 | 1.000 | 1.000 | 12000 | 16786 |
+| 7 | 9338 | 664 | 29076 | 1.000 | 1.000 | 12000 | 16262 |
+| 8 | 9325 | 674 | 29040 | 1.000 | 1.000 | 12000 | 16922 |
+| 9 | 9328 | 672 | 29045 | 1.000 | 1.000 | 12000 | 16797 |
+| 10 | 9333 | 668 | 29065 | 1.000 | 1.000 | 12000 | 16497 |
+| 11 | 9326 | 674 | 29047 | 1.000 | 1.000 | 12000 | 16878 |
+| 12 | 7166 | 588 | 24195 | 0.768 | 0.868 | 9218 | 14433 |
+| 13 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+| 14 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV S4b
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10184 | 696 | 22641 | 0.660 | 1.000 | 7920 | 11982 |
+| 1 | 9225 | 290 | 13433 | 1.000 | 1.000 | 12000 | 2218 |
+| 2 | 9480 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 3 | 9478 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 4 | 9478 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 5 | 9478 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 6 | 9479 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 7 | 9480 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 8 | 9477 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 9 | 9478 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 10 | 2750 | 0 | 0 | 0.291 | 0.385 | 3486 | 0 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### OV G-T0p4-H0p02
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10217 | 697 | 22526 | 0.657 | 1.000 | 7885 | 11930 |
+| 1 | 9577 | 346 | 15606 | 1.000 | 1.000 | 12000 | 2586 |
+| 2 | 9962 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 3 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 4 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 5 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 6 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 7 | 9961 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 8 | 9959 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 9 | 9960 | 0 | 0 | 1.000 | 1.000 | 12000 | 0 |
+| 10 | 2940 | 0 | 0 | 0.296 | 0.384 | 3548 | 0 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL C1
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 298 | 0 | 0.000 | 0.844 | 0 | 30 |
+| 1 | 10000 | 294 | 0 | 0.000 | 0.845 | 0 | 0 |
+| 2 | 1000 | 394 | 30934 | 0.900 | 0.115 | 9001 | 0 |
+| 3 | 6523 | 548 | 33260 | 1.000 | 0.496 | 10000 | 3550 |
+| 4 | 11794 | 709 | 27222 | 1.000 | 1.000 | 10000 | 8109 |
+| 5 | 11786 | 710 | 27279 | 1.000 | 1.000 | 10000 | 7489 |
+| 6 | 11790 | 712 | 27265 | 1.000 | 1.000 | 10000 | 7581 |
+| 7 | 11794 | 708 | 27279 | 1.000 | 1.000 | 10000 | 7473 |
+| 8 | 11782 | 716 | 27278 | 1.000 | 1.000 | 10000 | 7594 |
+| 9 | 11787 | 713 | 27271 | 1.000 | 1.000 | 10000 | 7590 |
+| 10 | 1744 | 163 | 5510 | 0.148 | 0.224 | 1477 | 1742 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL C3
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1600 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 395 | 36530 | 0.901 | 0.111 | 9005 | 20 |
+| 3 | 4909 | 1112 | 168482 | 1.000 | 0.439 | 10000 | 9985 |
+| 4 | 11781 | 1074 | 45452 | 1.000 | 1.000 | 10000 | 28399 |
+| 5 | 11751 | 748 | 26652 | 1.000 | 1.000 | 10000 | 16535 |
+| 6 | 11756 | 743 | 26656 | 1.000 | 1.000 | 10000 | 16376 |
+| 7 | 11756 | 747 | 26652 | 1.000 | 1.000 | 10000 | 16395 |
+| 8 | 11750 | 748 | 26646 | 1.000 | 1.000 | 10000 | 16695 |
+| 9 | 11745 | 752 | 26652 | 1.000 | 1.000 | 10000 | 16572 |
+| 10 | 3557 | 284 | 9481 | 0.302 | 0.378 | 3020 | 6262 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL C3S
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1600 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 395 | 36530 | 0.901 | 0.111 | 9005 | 20 |
+| 3 | 4909 | 1112 | 168482 | 1.000 | 0.439 | 10000 | 9985 |
+| 4 | 11781 | 1074 | 45452 | 1.000 | 1.000 | 10000 | 28399 |
+| 5 | 11751 | 748 | 26652 | 1.000 | 1.000 | 10000 | 16535 |
+| 6 | 11756 | 743 | 26656 | 1.000 | 1.000 | 10000 | 16376 |
+| 7 | 11756 | 747 | 26652 | 1.000 | 1.000 | 10000 | 16395 |
+| 8 | 11750 | 748 | 26646 | 1.000 | 1.000 | 10000 | 16695 |
+| 9 | 11745 | 752 | 26652 | 1.000 | 1.000 | 10000 | 16572 |
+| 10 | 3557 | 284 | 9481 | 0.302 | 0.378 | 3020 | 6262 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL G-T0p4-H0
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 317 | 0 | 0.000 | 0.825 | 0 | 1578 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 193 | 14564 | 0.901 | 0.097 | 9005 | 20 |
+| 3 | 4767 | 148 | 0 | 0.523 | 0.395 | 5234 | 738 |
+| 4 | 10000 | 329 | 0 | 0.000 | 0.826 | 0 | 1646 |
+| 5 | 10000 | 334 | 0 | 0.000 | 0.827 | 0 | 1674 |
+| 6 | 10000 | 332 | 0 | 0.000 | 0.827 | 0 | 1658 |
+| 7 | 10000 | 337 | 0 | 0.000 | 0.827 | 0 | 1686 |
+| 8 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1612 |
+| 9 | 10000 | 342 | 0 | 0.000 | 0.827 | 0 | 1709 |
+| 10 | 0 | 4 | 0 | 0.000 | 0.000 | 0 | 22 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL G-T0p4-Hinf
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 317 | 0 | 0.000 | 0.825 | 0 | 1578 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 193 | 14564 | 0.901 | 0.097 | 9005 | 20 |
+| 3 | 4767 | 148 | 0 | 0.523 | 0.395 | 5234 | 738 |
+| 4 | 10000 | 329 | 0 | 0.000 | 0.826 | 0 | 1646 |
+| 5 | 10000 | 334 | 0 | 0.000 | 0.827 | 0 | 1674 |
+| 6 | 10000 | 332 | 0 | 0.000 | 0.827 | 0 | 1658 |
+| 7 | 10000 | 337 | 0 | 0.000 | 0.827 | 0 | 1686 |
+| 8 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1612 |
+| 9 | 10000 | 342 | 0 | 0.000 | 0.827 | 0 | 1709 |
+| 10 | 0 | 4 | 0 | 0.000 | 0.000 | 0 | 22 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL G-T2-H0
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1600 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 395 | 36530 | 0.901 | 0.111 | 9005 | 20 |
+| 3 | 4909 | 1112 | 168482 | 1.000 | 0.439 | 10000 | 9985 |
+| 4 | 11836 | 1008 | 38862 | 1.000 | 1.000 | 10000 | 21252 |
+| 5 | 11753 | 745 | 26653 | 1.000 | 1.000 | 10000 | 16540 |
+| 6 | 11753 | 748 | 26654 | 1.000 | 1.000 | 10000 | 16364 |
+| 7 | 11756 | 745 | 26655 | 1.000 | 1.000 | 10000 | 16403 |
+| 8 | 11747 | 751 | 26647 | 1.000 | 1.000 | 10000 | 16686 |
+| 9 | 11745 | 753 | 26660 | 1.000 | 1.000 | 10000 | 16584 |
+| 10 | 3504 | 282 | 9357 | 0.297 | 0.373 | 2974 | 6173 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL G-T2-Hinf
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1600 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 395 | 36530 | 0.901 | 0.111 | 9005 | 20 |
+| 3 | 4909 | 1112 | 168482 | 1.000 | 0.439 | 10000 | 9985 |
+| 4 | 11836 | 1008 | 38862 | 1.000 | 1.000 | 10000 | 21252 |
+| 5 | 11753 | 745 | 26653 | 1.000 | 1.000 | 10000 | 16540 |
+| 6 | 11753 | 748 | 26654 | 1.000 | 1.000 | 10000 | 16364 |
+| 7 | 11756 | 745 | 26655 | 1.000 | 1.000 | 10000 | 16403 |
+| 8 | 11747 | 751 | 26647 | 1.000 | 1.000 | 10000 | 16686 |
+| 9 | 11745 | 753 | 26660 | 1.000 | 1.000 | 10000 | 16584 |
+| 10 | 3504 | 282 | 9357 | 0.297 | 0.373 | 2974 | 6173 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL G-Tinf-H0
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1600 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 395 | 36530 | 0.901 | 0.111 | 9005 | 20 |
+| 3 | 4909 | 1112 | 168482 | 1.000 | 0.439 | 10000 | 9985 |
+| 4 | 11781 | 1074 | 45452 | 1.000 | 1.000 | 10000 | 28399 |
+| 5 | 11751 | 748 | 26652 | 1.000 | 1.000 | 10000 | 16535 |
+| 6 | 11756 | 743 | 26656 | 1.000 | 1.000 | 10000 | 16376 |
+| 7 | 11756 | 747 | 26652 | 1.000 | 1.000 | 10000 | 16395 |
+| 8 | 11750 | 748 | 26646 | 1.000 | 1.000 | 10000 | 16695 |
+| 9 | 11745 | 752 | 26652 | 1.000 | 1.000 | 10000 | 16572 |
+| 10 | 3557 | 284 | 9481 | 0.302 | 0.378 | 3020 | 6262 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL S4b
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 317 | 0 | 0.000 | 0.826 | 0 | 1578 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 193 | 14564 | 0.901 | 0.097 | 9005 | 20 |
+| 3 | 4767 | 148 | 0 | 0.523 | 0.395 | 5234 | 738 |
+| 4 | 10000 | 329 | 0 | 0.000 | 0.826 | 0 | 1646 |
+| 5 | 10000 | 334 | 0 | 0.000 | 0.827 | 0 | 1674 |
+| 6 | 10000 | 332 | 0 | 0.000 | 0.827 | 0 | 1658 |
+| 7 | 10000 | 337 | 0 | 0.000 | 0.827 | 0 | 1686 |
+| 8 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1612 |
+| 9 | 10000 | 342 | 0 | 0.000 | 0.827 | 0 | 1709 |
+| 10 | 0 | 4 | 0 | 0.000 | 0.000 | 0 | 22 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+
+#### CL G-T0p4-H0p02
+
+| window | first sends | copies sent | refused by budget | pause (s) | link busy | blocked by pause | refused by cooldown |
+|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 317 | 0 | 0.000 | 0.825 | 0 | 1578 |
+| 1 | 10000 | 327 | 0 | 0.000 | 0.826 | 0 | 1635 |
+| 2 | 996 | 193 | 14564 | 0.901 | 0.097 | 9005 | 20 |
+| 3 | 4767 | 148 | 0 | 0.523 | 0.395 | 5234 | 738 |
+| 4 | 10000 | 329 | 0 | 0.000 | 0.826 | 0 | 1646 |
+| 5 | 10000 | 334 | 0 | 0.000 | 0.827 | 0 | 1674 |
+| 6 | 10000 | 332 | 0 | 0.000 | 0.827 | 0 | 1658 |
+| 7 | 10000 | 337 | 0 | 0.000 | 0.827 | 0 | 1686 |
+| 8 | 10000 | 322 | 0 | 0.000 | 0.826 | 0 | 1612 |
+| 9 | 10000 | 342 | 0 | 0.000 | 0.827 | 0 | 1709 |
+| 10 | 0 | 4 | 0 | 0.000 | 0.000 | 0 | 22 |
+| 11 | 0 | 0 | 0 | 0.000 | 0.000 | 0 | 0 |
+### [dups]
+### copies sent against duplicate arrivals (seed means): gauges repair_sends and dup; registered arms and the unregistered cooldown_all supplement
+| cell | arm | copies sent | duplicate arrivals | duplicates per copy | refused by the budget |
+|---|---|---|---|---|---|
+| OV | C1 | 7454 | 4252 | 0.571 | 379280 |
+| OV | C3 | 8676 | 4228 | 0.487 | 366504 |
+| OV | C3S | 8676 | 4228 | 0.487 | 366504 |
+| OV | G-T0p4-H0 | 1043 | 539 | 0.517 | 38132 |
+| OV | G-T0p4-Hinf | 1043 | 539 | 0.517 | 38132 |
+| OV | G-T2-H0 | 5875 | 2893 | 0.492 | 247086 |
+| OV | G-T2-Hinf | 5875 | 2893 | 0.492 | 247086 |
+| OV | G-Tinf-H0 | 8676 | 4228 | 0.487 | 366504 |
+| OV | S4b | 986 | 513 | 0.520 | 36074 |
+| OV | G-T0p4-H0p02 | 1043 | 539 | 0.517 | 38132 |
+| OV | SUP-C3 | 7179 | 2879 | 0.401 | 2031 |
+| OV | SUP-C1 | 7454 | 4247 | 0.570 | 28279 |
+| OV | SUP-G-T0p4-Hinf | 940 | 433 | 0.461 | 717 |
+| OV | SUP-G-T2-Hinf | 5120 | 2071 | 0.405 | 1584 |
+| CL | C1 | 5964 | 2147 | 0.360 | 233298 |
+| CL | C3 | 7252 | 2044 | 0.282 | 393203 |
+| CL | C3S | 7252 | 2044 | 0.282 | 393203 |
+| CL | G-T0p4-H0 | 2986 | 0 | 0.000 | 14564 |
+| CL | G-T0p4-Hinf | 2986 | 0 | 0.000 | 14564 |
+| CL | G-T2-H0 | 7187 | 2086 | 0.290 | 386500 |
+| CL | G-T2-Hinf | 7187 | 2086 | 0.290 | 386500 |
+| CL | G-Tinf-H0 | 7252 | 2044 | 0.282 | 393203 |
+| CL | S4b | 2986 | 0 | 0.000 | 14564 |
+| CL | G-T0p4-H0p02 | 2986 | 0 | 0.000 | 14564 |
+| CL | SUP-C3 | 6560 | 1426 | 0.217 | 227025 |
+| CL | SUP-C1 | 5166 | 1430 | 0.277 | 54697 |
+| CL | SUP-G-T0p4-Hinf | 2986 | 0 | 0.000 | 14564 |
+| CL | SUP-G-T2-Hinf | 6476 | 1440 | 0.222 | 219907 |
