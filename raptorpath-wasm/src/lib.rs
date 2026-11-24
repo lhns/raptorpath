@@ -2405,6 +2405,26 @@ impl Simulation {
     }
     /// Units delivered after a higher seq was delivered (the toy's `ooo_loss`).
     pub fn get_ooo(&self) -> u32 { self.consumer.ooo }
+    /// Out-of-order deliveries over delivered units (0 when none delivered).
+    pub fn get_ooo_share(&self) -> f64 {
+        let delivered = (0..self.seq_unit.len())
+            .filter(|&s| !self.consumer.delivered_at(s).is_nan())
+            .count();
+        self.consumer.ooo as f64 / delivered.max(1) as f64
+    }
+    /// Per-unit out-of-order marker for drawing (the toy's definition: the
+    /// unit reached the consumer after a higher-numbered one), indexed by
+    /// unit; units with no seq (intake expiries) read false.
+    pub fn get_ooo_units(&self) -> Vec<u8> {
+        let mut v = vec![0u8; self.num_source as usize];
+        for (s, &u) in self.seq_unit.iter().enumerate() {
+            v[u as usize] = self.consumer.out_of_order(s) as u8;
+        }
+        v
+    }
+    /// Per-unit consumer delivery time minus hand-over plus ô (s), ∞ when
+    /// not delivered: the drawing's companion to `get_ooo_units`.
+    pub fn get_unit_delays(&self) -> Vec<f64> { self.unit_delays() }
     /// L6's bind gauge: holes released by the hold term and by the floor term.
     pub fn get_rel_by_hold(&self) -> u32 { self.consumer.rel_by_hold }
     pub fn get_rel_by_floor(&self) -> u32 { self.consumer.rel_by_floor }

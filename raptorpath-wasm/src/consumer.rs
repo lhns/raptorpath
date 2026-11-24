@@ -24,6 +24,8 @@ pub struct Consumer {
     /// floor-pass times (∞ until they happen), released (passed) or not.
     decoded: Vec<bool>,
     delivered_at: Vec<f64>,
+    /// Per seq: delivered after a higher seq was delivered (the toy's ooo).
+    ooo_seq: Vec<bool>,
     t_detect: Vec<f64>,
     t_floor: Vec<f64>,
     released: Vec<bool>,
@@ -50,6 +52,7 @@ impl Consumer {
             hold_s,
             decoded: Vec::new(),
             delivered_at: Vec::new(),
+            ooo_seq: Vec::new(),
             t_detect: Vec::new(),
             t_floor: Vec::new(),
             released: Vec::new(),
@@ -69,6 +72,7 @@ impl Consumer {
         if self.decoded.len() < n {
             self.decoded.resize(n, false);
             self.delivered_at.resize(n, f64::NAN);
+            self.ooo_seq.resize(n, false);
             self.t_detect.resize(n, f64::INFINITY);
             self.t_floor.resize(n, f64::INFINITY);
             self.released.resize(n, false);
@@ -91,6 +95,7 @@ impl Consumer {
         self.delivered_at[s] = now;
         if self.max_delivered.is_some_and(|m| m > s) {
             self.ooo += 1;
+            self.ooo_seq[s] = true;
         }
         self.max_delivered = Some(self.max_delivered.map_or(s, |m| m.max(s)));
     }
@@ -153,6 +158,11 @@ impl Consumer {
     /// Delivery time of seq s at the consumer (NaN until delivered).
     pub fn delivered_at(&self, s: usize) -> f64 {
         self.delivered_at.get(s).copied().unwrap_or(f64::NAN)
+    }
+
+    /// Whether seq s was delivered out of order (after a higher seq).
+    pub fn out_of_order(&self, s: usize) -> bool {
+        self.ooo_seq.get(s).copied().unwrap_or(false)
     }
 
     /// Holes released so far (by either term of L6).
@@ -294,6 +304,7 @@ mod tests {
         }
         assert_eq!(c.rel_by_hold, 2); // seqs 1 and 4, each released at detection
         assert_eq!(c.ooo, 1); // seq 4 (decoded at 40) after seq 5
+        assert!(c.out_of_order(4) && (0..6).filter(|&s| c.out_of_order(s)).count() == 1);
     }
 
     #[test]

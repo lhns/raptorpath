@@ -401,6 +401,8 @@ fn delivery_is_monotone_and_continuous_in_the_hold() {
         };
         for (i, s) in runs.iter().enumerate() {
             assert_eq!(fingerprint(s), fingerprint(&runs[0]), "{hint} {k:?}: H moved the sender");
+            let marked = s.get_ooo_units().iter().filter(|&&m| m == 1).count() as u32;
+            assert_eq!(marked, s.get_ooo(), "{hint} {k:?}: per-unit ooo marker = count");
             assert_eq!(
                 s.get_rel_by_hold() + s.get_rel_by_floor(),
                 s.get_released_holes(),
