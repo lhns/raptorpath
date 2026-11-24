@@ -1671,3 +1671,25 @@ Branch `toy-stage3-knobs` `e17b4c64`, `tools/toy/results-stage3d.md`.
 - The CL-long baseline bands missed by 0.2–0.3 s (the drain surplus is about 15 % lower than 3c's estimate).
 
 **Next, registered first:** a two-path cell at the call rate and one with a loss-free fast path; the structural question whether units behind a given-up gap are released at about lifetime + floor hold; the cold-start RTT seed; the S5v timeout gap; and repair (still untested).
+
+## 19. Findings from the interactive simulator and a lifetime sweep (2026-11-24, reviewed with the advisor)
+
+Simulator: branch `viz-three-knobs` `82416cf7` (plan `visualizer-three-knobs-plan.md`). Sweep: the offline simulation at `e17b4c64`, report only, 380 runs.
+
+**The call results of stage 3d stand.** In the simulator, with R on the measured rttvar, the §13.2 dequeue rule stops firing for T between 0.38 and 0.42 s and the delivered share steps. A sweep of T from 0.36 to 0.44 s in steps of 5 ms (S5 sender, CL and OV, H = 0 and ∞, 5 seeds) shows no step in the offline simulation: OV rises smoothly by 0.0003–0.0004 per step against a seed range of 0.0005–0.0006; CL is flat within noise; dequeue expiries are linear in T (CL exactly 10 000·T − 1); end-of-run R is 15 ms (CL) and 104 ms (OV), far below T. The step is the simulator's own. The simulator keeps a fixed rttvar, recorded as a divergence.
+
+**R is in effect a constant (defect finding, needs a ledger verdict).** With the measured rttvar and no queue, rttvar decays to about 0 and R's `max(4·rttvar, g)` binds on g in 77–97 % of ticks; R at RTT 50 ms falls from 76 to 52 ms. The offline simulation agrees (rttvar about 0.5 ms at 104 ms RTT). The timeout law's variance term is idle over the measured range.
+
+**ô undershoots a persistent queue (evidence on Q18).** The bound on ô = srtt − RTprop/2 holds only where the queue drains within a tick (error 0.81 ticks, one path). With a persistent queue it fails: 5.15 ticks on one path, 52.5 ticks of excess on two paths, where ô trails a growing queue. Resends refused as too late at T = 0.4 s (L2): 0 without an outage, 10–43 % on queued cells with one.
+
+**Gauges that never moved (defect findings, need verdicts).** At the six named points (2 000 units, 0.3 s outage): span cut by T = 0, released by the floor = 0. These laws are not exercised there; a cell that binds them is owed before they are claimed.
+
+**End of a run under delay.** The sender can finish while the receiver still holds decoded units. The simulator now mirrors the offline simulation: the receiver runs on after the sender finishes; units still held are classed `held`, never undelivered. Inert (0 ticks) on every golden cell.
+
+**Recovery time is the on-time measure, not the full drain.** CL-long in the simulator (one path, 3 % loss on every send, 800 offered of 1 000/s, 1.5 s outage) reads 4.90 s. Law with the real headroom μ(1−ε) − λ = 170/s: on-time recovery (outage·λ/μ_eff − T)/(1 − λ/μ_eff) = 4.78 s; full drain 7.06 s. "outage × rate ÷ headroom" in §18 is the full drain at ε = 0 and should be read that way; loss on resends lowers the headroom.
+
+**Repair is untested where it matters.** At the Realtime δ the proactive repair (r ≈ 0.36) overloads the CL-long link and recovery is not reached within the run. The offline simulation has no repair, so stage 3d's call point has not been tested with it.
+
+**Budget quantisation.** The engine resend budget is round(10 × m) per 5 ms, with m a loss/RTT-trend state machine that reads no hint, δ or ρ (`net/mod.rs:227`, `:229`, `:3297`). The step at an integer limit is rounding of a count, not a mode switch.
+
+**Next, registered with the advisor first, in this order:** repair in the offline simulation (it changes the call point); the two-path cells at the call rate and with a loss-free fast path; the cold-start RTT seed; the S5v timeout gap. A revised R only if repair shows it matters.
