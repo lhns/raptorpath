@@ -379,6 +379,8 @@ class Sim:
         self.paused = False
         self.srtt = None
         self.rttvar = 0.0
+        self.rtt_unarrived = 0                       # stage 3d amendment gauge: RFC rhi samples skipped because the seq had not arrived
+        self.rtt_unarrived_other = 0                 # counted only, behaviour unchanged: old-estimator (A - 1) and per-path samples on a seq not arrived at report time
         self.tau_rx = -1.0                           # sender: newest send stamp the receiver reported having received (13.1)
         self.tau_rx_recv = -1.0                      # receiver: maximum send stamp over data arrivals
         self.link_free = 0.0
@@ -1154,6 +1156,8 @@ class Sim:
             self.tau_rx = tau
         if (A, G) > (self.A_known, self.G_known):
             if A > self.A_known and self.cfg.rtt_est == "old":   # RTT sample (7.2): the report's arrival minus the send time of
+                if not (self.got[A - 1] and self.arr[A - 1] <= gen):
+                    self.rtt_unarrived_other += 1
                 smp = now - self.sent_t[A - 1]         # the highest seq it newly acknowledges
                 self.srtt = smp if self.srtt is None else self.srtt + (smp - self.srtt) / 8.0
             self.A_known, self.G_known, self.GF_known = A, G, GF
@@ -1164,11 +1168,18 @@ class Sim:
                     r = rep[8][p]
                     if r > self.rhi_pk[p]:
                         if self.copies[r] == 0:
+                            if not (self.got[r] and self.arr[r] <= gen):
+                                self.rtt_unarrived_other += 1
                             self.rtt_sample_p(p, now - self.sent_t[r])
                         self.rhi_pk[p] = r
             if rhi > self.rhi_known:
-                if self.paths is None and self.cfg.rtt_est == "rfc" and self.copies[rhi] == 0:      # 13.7.1 item 1: largest newly received seq, Karn's rule
-                    self.rtt_sample(now - self.sent_t[rhi])
+                # 13.7.1 item 1: largest newly received seq, Karn's rule.  Stage 3d amendment: the seq must have arrived when the report was made
+                # (a floor jump raises rhi without an arrival; sampling it would time a unit that never came)
+                if self.paths is None and self.cfg.rtt_est == "rfc" and self.copies[rhi] == 0:
+                    if self.got[rhi] and self.arr[rhi] <= gen:
+                        self.rtt_sample(now - self.sent_t[rhi])
+                    else:
+                        self.rtt_unarrived += 1
                 self.rhi_known = rhi
             self.M_known = set(M)
         Ak, Mk, rk = self.A_known, self.M_known, self.rhi_known
@@ -1611,6 +1622,8 @@ class Sim:
         out["throttle"] = "link" if out["link_util_w"] >= 0.98 else ("pause" if pw > 4.5 else "none")
         out["R_mean"] = self.R_sum / max(self.rep_n, 1)
         out["srtt_mean"] = self.srtt_sum / max(self.rep_n, 1)
+        out["rtt_unarrived"] = self.rtt_unarrived
+        out["rtt_unarrived_other"] = self.rtt_unarrived_other
         out["resume_delay"] = (self.first_emit_oe - self.oe) if (self.oe is not None and self.first_emit_oe is not None) else None
         out["stall_max"] = max((e[1] for e in self.episodes), default=0.0)
         parts = None

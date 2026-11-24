@@ -1072,6 +1072,31 @@ class Stage3d(unittest.TestCase):
         self.assertFalse(fab("feedback_tail"))
         self.assertTrue(fab("feedback_tail_any"))
 
+    def test_rtt_sample_only_from_arrived_seq(self):
+        """Amendment to stage 3d: a floor jump past a never-arrived seq raises the receiver's rhi without an arrival;
+        the report's RTT sample (rfc, Karn) must not be taken on that seq, while rhi_known still advances."""
+        def fab(arrive_top):
+            sm = toy2.Sim(small_s5("CL", 0, 0.4, 0.0))
+            sm.n_sent = 10
+            for s in range(10):
+                sm.sent_t[s] = sm.last_send[s] = 0.001 * s
+            for s in range(3):
+                sm.on_data(0.01 + 0.001 * s, s, 0, sm.sent_t[s])
+            if arrive_top:
+                sm.on_data(0.02, 9, 0, sm.sent_t[9])
+            else:
+                sm.apply_floor(0.03, 10, 0.03)                         # the floor passes 3..9 with no arrival
+            self.assertEqual(sm.rhi, 9)
+            self.assertEqual(bool(sm.got[9]), arrive_top)
+            sm.on_report(1.0, (0.5, 3, 0, sm.rhi, (), (), 0, 0.0))
+            return sm
+        a = fab(False)
+        self.assertIsNone(a.srtt)                                      # no sample from a seq that never arrived
+        self.assertEqual(a.rhi_known, 9)
+        b = fab(True)                                                  # control: the same report on an arrived seq samples
+        self.assertAlmostEqual(b.srtt, 1.0 - b.sent_t[9])
+        self.assertEqual(b.rhi_known, 9)
+
 
 if __name__ == "__main__":
     unittest.main()
