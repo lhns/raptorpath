@@ -84,6 +84,7 @@ def main():
             for tf in (0.2, 1.01, INF):
                 for hf in (0.0, 0.05):
                     row("release_at", [td, H, tf, hf], hx(min(td + H, tf + hf)), "formula")
+                    row("released_by_hold", [td, H, tf, hf], b(td + H <= tf + hf), "formula")
 
     # The ack timeout is the toy's method Sim.R_now, evaluated on a stub carrying only its inputs.
     for srtt in (0.005, 0.05, 0.08, 0.333):

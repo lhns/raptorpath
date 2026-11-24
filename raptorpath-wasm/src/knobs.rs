@@ -71,6 +71,13 @@ pub fn release_at(t_detect: f64, h: f64, t_floor: f64, h_f: f64) -> f64 {
     (t_detect + h).min(t_floor + h_f)
 }
 
+/// L6's bind gauge (FORMULA-FIRST: every min reports which term binds):
+/// true when the hold term of `release_at` released the hole (ties go to
+/// the hold). A readout, never a branch of the model.
+pub fn released_by_hold(t_detect: f64, h: f64, t_floor: f64, h_f: f64) -> bool {
+    t_detect + h <= t_floor + h_f
+}
+
 /// §13 (RFC 6298 §2, RFC 9002 §6.2.1): the ack timeout R, with `g` the
 /// clock granularity and `ack_delay` the peer's maximum ack delay.
 pub fn ack_timeout(srtt: f64, rttvar: f64, g: f64, ack_delay: f64) -> f64 {

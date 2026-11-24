@@ -44,6 +44,7 @@ fn knob_vectors_match_toy() {
             "release_at" => {
                 release_at(f(a[0]), f(a[1]), f(a[2]), f(a[3])).to_bits() == f(want).to_bits()
             }
+            "released_by_hold" => released_by_hold(f(a[0]), f(a[1]), f(a[2]), f(a[3])) == bit(want),
             "ack_timeout" => {
                 ack_timeout(f(a[0]), f(a[1]), f(a[2]), f(a[3])).to_bits() == f(want).to_bits()
             }
@@ -60,7 +61,7 @@ fn knob_vectors_match_toy() {
     // Every law function is covered, so a dropped generator section fails.
     for name in [
         "intake_expired", "within_lifetime", "resend_admissible", "dequeue_expired",
-        "protected", "release_at", "ack_timeout", "trigger_delay", "one_way_fwd",
+        "protected", "release_at", "released_by_hold", "ack_timeout", "trigger_delay", "one_way_fwd",
     ] {
         assert!(by_name.get(name).copied().unwrap_or(0) > 0, "no vectors for {name}");
     }

@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 
 mod warm_tail;
 pub mod knobs;
+pub mod consumer;
 
 // =========================================================================
 // Three-knob laws (proposal; docs/derivations/visualizer-three-knobs-plan.md
@@ -417,6 +418,9 @@ const TICK_SECS: f64 = 0.001;
 /// c8 preset) and binds only when the BDP is cranked past it (1 path, RTT
 /// ≥ 200 at cap 8). The derived store law is unshipped and NOT modeled.
 const STORE_PER_PATH: u32 = 512;
+/// The reference deadline τ for comparing T = ∞ runs with finite-T ones
+/// (three-knobs §13.6; plan Q-V3 default), seconds.
+const REF_DEADLINE_S: f64 = 0.4;
 
 /// Per-path state (§5.5): an independent GE channel with its own
 /// capacity, RTT (feedback delay), estimator feed and traffic counters.
@@ -656,6 +660,15 @@ pub struct Simulation {
     floor_carried: u32,
     span_cut_pending: bool,
     span_cut_repairs: u32,
+    /// The receiver's consumer stage under the hold H (L6; output only) and
+    /// the seqs the decoder released this tick, its input.
+    consumer: consumer::Consumer,
+    decoded_this_tick: Vec<u64>,
+    /// The unit index of each seq (units expired at the intake have none).
+    seq_unit: Vec<u32>,
+    /// Test-only: the decode tick of every delivered seq.
+    #[cfg(test)]
+    decode_log: Vec<(u64, u32)>,
     /// Test-only: commitments (tick, seq) and committed-slot releases
     /// (tick, seq, 3 = decode | 5 = floor pass + RTT).
     #[cfg(test)]
@@ -888,6 +901,26 @@ impl Simulation {
         }
         #[cfg(test)]
         self.payload_log.push((self.tick, _kind, s as u64, age));
+    }
+
+    /// Per unit: consumer delivery time − hand-over + the one-way accounting
+    /// term ô (s); ∞ for a unit not delivered (expired, passed, or pending).
+    fn unit_delays(&self) -> Vec<f64> {
+        let mut d = vec![f64::INFINITY; self.num_source as usize];
+        let o = self.one_way_s();
+        for (s, &u) in self.seq_unit.iter().enumerate() {
+            let t = self.consumer.delivered_at(s);
+            if !t.is_nan() {
+                d[u as usize] = t - self.h_seq[s] + o;
+            }
+        }
+        d
+    }
+
+    /// The share of all units delivered within `deadline` of hand-over (L3).
+    fn share_within(&self, deadline: f64) -> f64 {
+        let n = self.unit_delays().iter().filter(|&&d| knobs::within_lifetime(deadline, d)).count();
+        n as f64 / self.num_source as f64
     }
 
     /// The intake (L1, then the §13.2 dequeue rule, oldest first): drops
@@ -1335,6 +1368,9 @@ impl Simulation {
             }
             self.prev_lat_ms = lat;
             self.delivered_lat_ms.push(lat);
+            self.decoded_this_tick.push(*q);
+            #[cfg(test)]
+            self.decode_log.push((*q, self.tick));
             if let Some(slot) = self.lat_by_seq.get_mut(*q as usize) {
                 if slot.is_nan() {
                     *slot = lat;
@@ -1590,6 +1626,11 @@ impl Simulation {
             floor_carried: 0,
             span_cut_pending: false,
             span_cut_repairs: 0,
+            consumer: consumer::Consumer::new(hold_s),
+            decoded_this_tick: Vec::new(),
+            seq_unit: Vec::new(),
+            #[cfg(test)]
+            decode_log: Vec::new(),
             #[cfg(test)]
             commit_log: Vec::new(),
             #[cfg(test)]
@@ -1821,6 +1862,7 @@ impl Simulation {
                 self.acked_seq.push(false);
                 self.committed_seq.push(false);
                 self.slot_owed.push(false);
+                self.seq_unit.push(self.u_next);
                 self.check_l1(seq as usize, 0);
                 // Slide the encoder window (paper W).
                 if self.encoder.window_size() > self.w as usize {
@@ -1982,6 +2024,10 @@ impl Simulation {
             }
         }
         self.update_floor();
+        // The consumer stage (L6), output only: this tick's decodes, then
+        // the floor the receiver holds.
+        let decoded = std::mem::take(&mut self.decoded_this_tick);
+        self.consumer.step(self.now_s(), &decoded, self.f_rx);
 
         // Finish conditions (rho = 100%: retransmit until everything is in;
         // rho < 100%: given-up symbols count as resolved, not delivered).
@@ -2335,6 +2381,59 @@ impl Simulation {
     pub fn get_span_cut_by_t(&self) -> f64 {
         self.span_cut_repairs as f64 / self.total_fec.max(1) as f64
     }
+    /// Delivered units over all units (intake expiries in the denominator):
+    /// "delivered at all", the reported ρ.
+    pub fn get_share_any(&self) -> f64 {
+        let n = (0..self.seq_unit.len())
+            .filter(|&s| !self.consumer.delivered_at(s).is_nan())
+            .count();
+        n as f64 / self.num_source as f64
+    }
+    /// Units delivered within T of hand-over (L3), over all units.
+    pub fn get_share_t(&self) -> f64 {
+        self.share_within(self.lifetime_s)
+    }
+    /// The same at the reference deadline τ = 0.4 s (§13.6; Q-V3).
+    pub fn get_share_by_ref(&self) -> f64 {
+        self.share_within(REF_DEADLINE_S)
+    }
+    /// Delay from hand-over at the consumer (s), over all units: an
+    /// undelivered unit's delay is ∞, so a quantile past the delivered
+    /// share reads ∞.
+    pub fn get_delay_quantile(&self, p: f64) -> f64 {
+        consumer::quantile(&self.unit_delays(), p)
+    }
+    /// Units delivered after a higher seq was delivered (the toy's `ooo_loss`).
+    pub fn get_ooo(&self) -> u32 { self.consumer.ooo }
+    /// L6's bind gauge: holes released by the hold term and by the floor term.
+    pub fn get_rel_by_hold(&self) -> u32 { self.consumer.rel_by_hold }
+    pub fn get_rel_by_floor(&self) -> u32 { self.consumer.rel_by_floor }
+    pub fn get_released_holes(&self) -> u32 { self.consumer.released_holes() }
+    /// Recovery time after the outage (§17.4 windows over hand-over time,
+    /// on time = within τ), seconds after the outage end; NaN = not within
+    /// the run (also when the run is too short to read).
+    pub fn get_recovery_time(&self) -> f64 {
+        let delays = self.unit_delays();
+        let h: Vec<f64> = (0..self.num_source).map(|u| self.handover_s(u)).collect();
+        let on: Vec<bool> =
+            delays.iter().map(|&d| knobs::within_lifetime(REF_DEADLINE_S, d)).collect();
+        let p = &self.paths[0];
+        consumer::recovery_time(&h, &on, p.outage_start_s, p.outage_start_s + p.outage_len_s)
+    }
+    /// The longest consumer stall that overlaps the outage, minus the
+    /// outage length (§13.5), seconds; NaN when no stall overlaps it.
+    pub fn get_strict_stall_beyond_outage(&self) -> f64 {
+        let p = &self.paths[0];
+        let (os, oe) = (p.outage_start_s, p.outage_start_s + p.outage_len_s);
+        self.consumer
+            .stall_episodes(self.now_s())
+            .iter()
+            .filter(|(t0, len)| *t0 < oe && t0 + len > os)
+            .map(|(_, len)| len - p.outage_len_s)
+            .fold(f64::NAN, f64::max)
+    }
+    /// The law revision the model implements.
+    pub fn get_knob_law_revision(&self) -> String { knobs::KNOB_LAW_REVISION.to_string() }
     /// The residual R after in-window FEC at the live operating point, over
     /// the sim's own window W (`shed_budget_residual`; provisional until the
     /// sliding per-loss P_fec lands, W22).

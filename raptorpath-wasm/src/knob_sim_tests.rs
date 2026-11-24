@@ -328,3 +328,118 @@ fn the_brake_releases_slots_only_on_feedback() {
     }
     assert!(floor_releases > 0, "set-point 5 must execute");
 }
+
+/// Per-seq decode tick from the test log.
+fn decode_ticks(s: &Simulation) -> Vec<Option<u32>> {
+    let mut v = vec![None; s.next_seq as usize];
+    for &(q, t) in &s.decode_log {
+        v[q as usize] = Some(t);
+    }
+    v
+}
+
+/// The cells for the hold: finite T (the floor passes holes) and T = ∞.
+fn hold_cells() -> Vec<(&'static str, Vec<Cell>, Knobs)> {
+    let mut v = finite_t_cells();
+    v.push(("realtime", vec![GOLDEN_CELLS[0].1], Knobs { load: 0.5, ..OBJECT }));
+    v.push(("bulk", vec![GOLDEN_CELLS[1].1], OBJECT));
+    v
+}
+
+/// §5.4 item 6: H = 0 delivers every unit at its decode tick.
+#[test]
+fn hold_zero_delivers_at_the_decode_tick() {
+    for (hint, paths, k) in hold_cells() {
+        let mut s = build(&paths, hint, None, Knobs { h: 0.0, ..k });
+        run(&mut s);
+        for (q, t) in decode_ticks(&s).iter().enumerate() {
+            if let Some(t) = t {
+                assert_eq!(s.consumer.delivered_at(q), *t as f64 * TICK_SECS, "{hint} {k:?} seq {q}");
+            }
+        }
+    }
+}
+
+/// §5.4 item 6: H = ∞ with T = ∞ is strict order: no out-of-order unit,
+/// and each unit is delivered at the tick the contiguous frontier passes it.
+#[test]
+fn hold_infinite_at_t_infinite_is_strict_order() {
+    for (hint, paths, k) in hold_cells().into_iter().filter(|c| c.2.t == INF) {
+        let mut s = build(&paths, hint, None, k);
+        run(&mut s);
+        assert_eq!(s.get_ooo(), 0);
+        let mut front = 0u32;
+        for (q, t) in decode_ticks(&s).iter().enumerate() {
+            front = front.max(t.expect("T = ∞ decodes every unit"));
+            assert_eq!(s.consumer.delivered_at(q), front as f64 * TICK_SECS, "{hint} seq {q}");
+        }
+        assert_eq!(s.get_rel_by_hold() + s.get_rel_by_floor(), 0);
+    }
+}
+
+/// §5.4 item 6: the consumer is output only (the sender run is the same at
+/// every H); each unit's delivery time is non-decreasing in H; a 1–2 %
+/// nudge of H = 0.02 moves a delivery by at most the nudge plus one tick;
+/// and rel_by_hold + rel_by_floor = released holes.
+#[test]
+fn delivery_is_monotone_and_continuous_in_the_hold() {
+    let grid = [0.0, 0.005, 0.01, 0.02 * 0.98, 0.02, 0.02 * 1.02, 0.05, 0.1, 0.4, INF];
+    let mut released = 0;
+    for (hint, paths, k) in hold_cells() {
+        let runs: Vec<Simulation> = grid
+            .iter()
+            .map(|&h| {
+                let mut s = build(&paths, hint, None, Knobs { h, ..k });
+                run(&mut s);
+                s
+            })
+            .collect();
+        let n = runs[0].next_seq as usize;
+        let at = |s: &Simulation, q: usize| {
+            let t = s.consumer.delivered_at(q);
+            if t.is_nan() { INF } else { t }
+        };
+        for (i, s) in runs.iter().enumerate() {
+            assert_eq!(fingerprint(s), fingerprint(&runs[0]), "{hint} {k:?}: H moved the sender");
+            assert_eq!(
+                s.get_rel_by_hold() + s.get_rel_by_floor(),
+                s.get_released_holes(),
+                "{hint} {k:?} H = {}", grid[i]
+            );
+            released += s.get_released_holes();
+            if i > 0 {
+                for q in 0..n {
+                    assert!(at(&runs[i - 1], q) <= at(s, q), "{hint} {k:?} seq {q}: H {} -> {}", grid[i - 1], grid[i]);
+                }
+            }
+        }
+        for (a, b) in [(3usize, 4usize), (4, 5)] {
+            let dh = grid[b] - grid[a];
+            for q in 0..n {
+                let (ta, tb) = (at(&runs[a], q), at(&runs[b], q));
+                if ta < INF {
+                    assert!(tb - ta <= dh + TICK_SECS + 1e-12, "{hint} {k:?} seq {q}: {ta} -> {tb}");
+                }
+            }
+        }
+    }
+    assert!(released > 0, "holes must be released somewhere");
+}
+
+/// Liveness of the consumer at the end of a finite-T run at H = ∞: the
+/// sender's finish (every unit resolved, the commitment included) does not
+/// leave decoded units held behind a hole the floor never reached.
+#[test]
+fn no_decoded_unit_is_left_at_the_consumer_at_the_end() {
+    for (hint, paths, k) in finite_t_cells() {
+        let mut s = build(&paths, hint, None, k);
+        run(&mut s);
+        let decoded = decode_ticks(&s).iter().filter(|t| t.is_some()).count();
+        let delivered = (0..s.next_seq as usize).filter(|&q| !s.consumer.delivered_at(q).is_nan()).count();
+        println!(
+            "end-of-run {hint} {k:?}: decoded {decoded}, consumer-delivered {delivered}, f_ann {} f_rx {} a_known {} next {} passed {} floors {}",
+            s.get_f_ann(), s.get_f_rx(), s.get_a_known(), s.next_seq, s.get_passed_undelivered(), s.get_floors()
+        );
+        assert_eq!(decoded, delivered, "{hint} {k:?}: decoded units stuck at the consumer");
+    }
+}

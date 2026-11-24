@@ -21,7 +21,7 @@ use std::path::Path;
 /// The law functions of `knobs.rs`: the only bodies allowed to compare T or H.
 const PINNED: &[&str] = &[
     "intake_expired", "resend_admissible", "within_lifetime", "dequeue_expired", "protected",
-    "trigger_delay", "one_way_fwd", "release_at", "ack_timeout", "validate_knobs",
+    "trigger_delay", "one_way_fwd", "release_at", "released_by_hold", "ack_timeout", "validate_knobs",
 ];
 
 /// Identifiers that carry the lifetime or the hold anywhere in the crate.
@@ -32,7 +32,7 @@ const KNOB_IDENTS: &[&str] = &[
 /// In `knobs.rs` the law parameters are named `t` and `h`.
 const KNOBS_RS_PARAMS: &[&str] = &["t", "h"];
 
-const FILES: &[&str] = &["src/lib.rs", "src/knobs.rs"];
+const FILES: &[&str] = &["src/lib.rs", "src/knobs.rs", "src/consumer.rs"];
 
 /// Remove `//` comments and the contents of string literals (which may span
 /// lines); newlines are kept so line numbers stay meaningful.
