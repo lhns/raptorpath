@@ -41,9 +41,11 @@ def tab(cell, arms, keys):
         print("| %s | " % a + " | ".join(f(S.mean(cell, a, k)) for k in keys) + " |")
 
 
-def all_runs():
+def all_runs(sup=False):
     for (n, s), r in sorted(S.load().items()):
         cell, _, arm = n.partition(".")
+        if arm.startswith("SUP") != sup:
+            continue
         yield cell, arm, s, r
 
 
@@ -93,6 +95,22 @@ def q2():
             print("  %-4s %-14s queue_drop_out %6d  queue_drop_in %9.1f  max copies/5ms %2d  resend_braked %9.1f" % (cell, a, qo, qi, mx, br))
     allmax = max(r["max_copies_5ms"] for c, a, s, r in all_runs() if c in ("CL", "OV"))
     print("overall max copies in any 5 ms window over every CL and OV run: %d" % allmax)
+
+
+def sup():
+    print("### unregistered supplement: the cooldown also binds a seq's first resend (resend_gate cooldown_all), link cells, 12 seeds\n")
+    print("| cell | arm | commit_viol (sum) | late_floor (sum) | share_by_0p4 | share_by_2 | registered arm's share_by_0p4 / share_by_2 | max copies/5ms | finished |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    pairs = {"SUP-C3": "C3", "SUP-C1": "C1", "SUP-S4b": "S4b"}
+    for cell in ("OV", "CL"):
+        for arm in sorted({a for c, a, s, r in all_runs(True) if c == cell}):
+            ss = S.seeds_of(cell, arm)
+            ref = pairs.get(arm, arm[4:] if arm != "SUP-G-Tinf-Hinf" else "C3S")
+            rs_ = [S.R(cell, arm, s) for s in ss]
+            print("| %s | %s | %d | %d | %.4f | %.4f | %.4f / %.4f | %d | %s |" % (
+                cell, arm, sum(r["gauges"]["commit_viol"] for r in rs_), sum(r["late_floor"] for r in rs_), np.mean([r["share_by_0p4"] for r in rs_]),
+                np.mean([r["share_by_2"] for r in rs_]), m_(cell, ref, "share_by_0p4"), m_(cell, ref, "share_by_2"), max(r["max_copies_5ms"] for r in rs_),
+                all(r["finished"] for r in rs_)))
 
 
 def q3():
@@ -154,7 +172,7 @@ def q6():
         h0, hi, "PASS" if 0.78 <= h0 <= 0.90 and 0.78 <= hi <= 0.90 else "FAIL", abs(hi - h0), "PASS" if abs(hi - h0) <= 0.02 else "FAIL"))
     for H in (0.0, INF):
         for k in ("share_by_0p4", "share_by_2"):
-            d = S.diffv("CL", G(2.0, H), G(INF, H), k)
+            d = S.diffv("CL", G(2.0, H), "C3S" if H == INF else G(INF, H), k)
             print("  S4 T=2 minus T=inf at H=%s on %s: %s" % (f(H), k, S.fmt(S.read(d, S.bar(k, "CL")))))
     for H in (0.0, INF):
         d = S.diffv("CL", G(0.4, H), "C3", "share_by_0p4")
@@ -249,26 +267,27 @@ def q9():
                         print("  undetermined %s %s-nudge %s %s: %s" % (cell, which, k, st, S.fmt(rd)))
     print("  %d K and P statistics: %d shown, %d undetermined, %d equivalent" % (tot, shown, und, tot - shown - und))
     print("\nper-seed positive control in E-I2n:")
-    pc = json.load(open(os.path.join(S.HERE, "pc_stage3c.json")))
+    lit = json.load(open(os.path.join(S.HERE, "pc_stage3c.json")))
+    print("  literal placement (dead-tail units = every seq >= dead[0]): usable %d of 12; first reason: %s" % (lit["usable"], lit["skipped"][0][1][:70]))
+    pc = json.load(open(os.path.join(S.HERE, "pc_stage3c_dev.json")))
     cell = "E-I2n"
     names = ["PC-%s" % S.TAG(x) for x in S.NUDGE]
     use = sorted(int(x) for x in pc[cell])
-    print("  usable seeds %d of 12: %s; skipped: %s" % (len(use), use, pc["skipped"]))
-    if len(use) < 8 or not all(S.have(cell, n, len(use)) for n in names):
-        print("  control NOT PLACED (fewer than 8 usable seeds or runs incomplete)")
+    print("  deviation placement (dead-tail units = first send inside the outage): usable %d of 12: %s" % (len(use), use))
+    for sk in pc["skipped"]:
+        print("     skipped seed %d: %s" % (sk[0], sk[1]))
+    print("  at least 8 of 12 seeds usable: %s -> %s" % ("yes" if len(use) >= 8 else "NO", "control placed" if len(use) >= 8 else "control NOT PLACED (a finding)"))
+    if not use or not all(len(S.seeds_of(cell, n)) == len(use) for n in names):
         return
-    for sd in use[:12]:
+    for sd in use:
         v = pc[cell][str(sd)]
         print("   seed %2d p = %.3f, ages in [%.4f, %.4f] (%d units), K-hat %.5f P-hat %.5f" % (sd, v["p"], v["dmin"], v["dmax"], v["n"], v["Khat"], v["Phat"]))
     kk = S.kp(cell, names, "share_T")
     m = S.bar("share_T", cell)
     Kh = np.mean([pc[cell][str(s)]["Khat"] for s in use])
     Ph = np.mean([pc[cell][str(s)]["Phat"] for s in use])
-    print("  mean K %.5f vs mean K-hat %.5f (ratio %.2f, band 0.5 to 1.5: %s); read: %s" % (
-        kk["K"].mean(), Kh, kk["K"].mean() / Kh, band(kk["K"].mean() / Kh, 0.5, 1.5), S.fmt(S.read(kk["K"], m))))
-    print("  mean P %.5f vs mean P-hat %.5f (ratio %.2f, band 0.5 to 1.5: %s); read: %s" % (
-        kk["P"].mean(), Ph, kk["P"].mean() / Ph, band(kk["P"].mean() / Ph, 0.5, 1.5), S.fmt(S.read(kk["P"], m))))
-    print("  J(0.02): %s" % S.fmt(S.read(kk["J"], m)))
+    print("  descriptive (n = %d seeds): mean K %.5f vs mean K-hat %.5f (ratio %.2f); read: %s" % (len(use), kk["K"].mean(), Kh, kk["K"].mean() / Kh, S.fmt(S.read(kk["K"], m))))
+    print("  mean P %.5f vs mean P-hat %.5f (ratio %.2f); read: %s" % (kk["P"].mean(), Ph, kk["P"].mean() / Ph, S.fmt(S.read(kk["P"], m))))
     print("  share_T at the five points: %s" % [round(S.mean(cell, n, "share_T"), 5) for n in names])
 
 
@@ -369,4 +388,4 @@ def rep():
 
 
 def main(cmd):
-    {"q1": q1, "q2": q2, "q3": q3, "q4": q4, "q5": q5, "q6": q6, "q7": q7, "q8": q8, "q9": q9, "q10": q10, "tables": tables, "aa": aa, "rep": rep}[cmd]()
+    {"q1": q1, "q2": q2, "q3": q3, "q4": q4, "q5": q5, "q6": q6, "q7": q7, "q8": q8, "q9": q9, "q10": q10, "tables": tables, "aa": aa, "rep": rep, "sup": sup}[cmd]()

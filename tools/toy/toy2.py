@@ -109,7 +109,7 @@ class Cfg:
     src_model: str = "old"         # stage 3b: "wc" = work-conserving source (a waiting backlog is sent at once, limited by the pause and the link)
     link: object = None            # stage 3b: dict(C=units/s, Q=queue in units) turns on the bottleneck
     tail_elig: str = "P"           # stage 3b: "R" = the probe timer (one datagram per R for the oldest open-tail seq)
-    resend_gate: str = "owd"       # stage 3b: "evidence" gates every resend on evidence of loss (link cells); stage 3c: "cooldown" = the engine's per-seq cooldown max(srtt, 10 ms)
+    resend_gate: str = "owd"       # stage 3b: "evidence" gates every resend on evidence of loss (link cells); stage 3c: "cooldown" = the engine's per-seq cooldown max(srtt, 10 ms) (a seq with no copy yet is exempt, 15.6.1 item 5); "cooldown_all" = unregistered: no exemption
     deq_expiry: bool = False       # stage 3b: dequeue expiry (a + R >= T with a younger unit waiting)
     evidence_verdict: bool = False  # stage 3b: verdicts only on evidence of loss newer than the last send
     floor_law: str = "verdict"     # stage 3c: "protect" = the floor is the lowest seq the sender still means to deliver (three-knobs.md 15.3)
@@ -472,7 +472,7 @@ class Sim:
     def cooldown(self):
         """c: the earliest resend after the last send.  Link cells (resend_gate "cooldown"): the engine's per-seq cooldown max(srtt, 10 ms)
         (recovery_laws.rs retx_cooldown_us); elsewhere the toy's own gate owd + J (stages 1 to 3b)."""
-        if self.cfg.resend_gate == "cooldown":
+        if self.cfg.resend_gate in ("cooldown", "cooldown_all"):
             return max(self.srtt_eff(), 0.010)
         return self.cfg.owd + self.cfg.J
 
@@ -1050,6 +1050,8 @@ class Sim:
     def can_resend(self, s, gen, now=None):
         if self.cfg.resend_gate == "cooldown":                       # 15.6.1 item 5: the engine's per-seq cooldown, every arm
             return self.copies[s] == 0 or now - self.last_send[s] >= self.cooldown()
+        if self.cfg.resend_gate == "cooldown_all":                   # unregistered (results-stage3c.md, Q3c-2): the cooldown also binds a seq's first resend
+            return now - self.last_send[s] >= self.cooldown()
         if self.cfg.resend_gate == "evidence":                       # 13.1: the same predicate gates resends
             return self.copies[s] == 0 or self.evidence(s, now)
         if self.copies[s] == 0:

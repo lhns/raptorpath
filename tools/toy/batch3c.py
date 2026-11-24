@@ -118,6 +118,13 @@ def build():
             job(part, "%s.SW-%s" % (cell, tag(T)), lambda s, cell=cell, T=T: s4_cfg(cell, s, T, 0.0))
         if cell not in STAGE_CELLS and cell != "K-L10b":
             job(part, "%s.%s" % (cell, gname(0.4, 0.0)), lambda s, cell=cell: s4_cfg(cell, s, 0.4, 0.0))
+    # SUP (unregistered, reported as such): the cooldown also binds a seq's first resend (resend_gate "cooldown_all"), link cells only, to bound Q3c-2's commitment misses
+    for cell in LINK_CELLS:
+        job("SUP", "%s.SUP-C3" % cell, lambda s, cell=cell: cmp_cfg(cell, "C3", s, resend_gate="cooldown_all"))
+        job("SUP", "%s.SUP-C1" % cell, lambda s, cell=cell: cmp_cfg(cell, "C1", s, resend_gate="cooldown_all"))
+        for T, H in ((INF, INF), (0.4, 0.0), (0.4, INF), (2.0, 0.0), (2.0, INF)):
+            job("SUP", "%s.SUP-%s" % (cell, gname(T, H)), lambda s, cell=cell, T=T, H=H: s4_cfg(cell, s, T, H, resend_gate="cooldown_all"))
+        job("SUP", "%s.SUP-S4b" % cell, lambda s, cell=cell: s4_cfg(cell, s, 0.4, INF, carrier="datagram", resend_gate="cooldown_all"))
     # per-seed positive control in E-I2n: T = p_seed * {0.98 ... 1.02}, H = inf (pc_place3c.py)
     for x in NUDGE:
         job("PC", "E-I2n.PC-%s" % tag(x), lambda s, x=x: s4_cfg("E-I2n", s, pcp["E-I2n"][str(s)]["p"] * x, INF))
