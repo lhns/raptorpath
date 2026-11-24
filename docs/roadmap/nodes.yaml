@@ -10068,7 +10068,7 @@ nodes:
   evidence:
   - docs/derivations/visualizer-three-knobs-plan.md
   verdict_quote: ''
-  headline: 'Built and verified on branch viz-three-knobs (4cd376a6): 99 tests and every page gate pass, the laws match the offline simulation stage 3d bit for bit, the old page is unchanged, and the new panels render in a browser. Awaiting owner confirmation: R stays on a fixed rttvar (the offline simulation measures it), the link controls stay hidden (no preset sets a link). A CL-long preset shows recovery 4.9 s against 5.6 to 7.8 s in the offline simulation, below the 6 s its law predicts; the cause is being checked. Next: a fine lifetime sweep near 0.4 s in the offline simulation, to see whether the call results sit on a step.'
+  headline: 'Built and verified on branch viz-three-knobs (4cd376a6): 99 tests and every page gate pass, the laws match the offline simulation stage 3d bit for bit, the old page is unchanged, and the new panels render in a browser. Awaiting owner confirmation: R stays on a fixed rttvar (the offline simulation measures it), the link controls stay hidden (no preset sets a link). A CL-long preset shows recovery 4.9 s against 5.6 to 7.8 s in the offline simulation, explained: the on-time law with loss on every send predicts 4.78 s (full drain 7.06 s). A fine lifetime sweep near 0.4 s in the offline simulation shows no step, so the stage 3d call results stand; the step is the simulator''s own (derivation section 19). Next: register a stage with repair.'
   depends_on:
   - model-three-knobs
   replaced_by: []
