@@ -458,7 +458,6 @@ enum DgKind {
 struct Datagram {
     kind: DgKind,
     seq: u64,
-    #[cfg_attr(not(test), allow(dead_code))]
     send_tick: u32,
     path: usize,
     /// F_ann at the send (the header carrier, read by the receiver at arrival).
@@ -483,12 +482,12 @@ struct PathState {
     wire_idx: usize,
     estimator: math::LossEstimator,
     /// Wire outcomes awaiting THIS path's ACK round-trip:
-    /// (due tick, arrived, holds_store_slot). The due tick is the arrival
+    /// (due tick, send tick, arrived, holds_store_slot). The due tick is the arrival
     /// (or would-be arrival) plus the reverse leg (addendum 1 A2). The third
     /// flag marks SOURCE sends, whose retention-store slot is released when
     /// this entry pops with arrived = true — the SACK-clocked release (§6.3):
     /// the slot frees on the selective ack, NOT on the cumulative frontier.
-    feedback_queue: std::collections::VecDeque<(u32, bool, bool)>,
+    feedback_queue: std::collections::VecDeque<(u32, u32, bool, bool)>,
     /// The forward leg (addendum 1 A2): datagrams in flight, FIFO.
     leg: std::collections::VecDeque<Datagram>,
     /// The reverse leg in ticks: feedback is due this long after an arrival,
@@ -502,6 +501,14 @@ struct PathState {
     link_free: f64,
     /// Datagrams the leg's queue dropped (no channel state, no loss draw).
     qdrop: u32,
+    /// The RTT the sender believes (addendum 1 A3): RFC 6298 (α = 1/8,
+    /// β = 1/4) in ticks, seeded at the base (srtt = rtt_ticks, rttvar =
+    /// rtt_ticks/8), sampled at each feedback pop of an arrived source symbol
+    /// (never resent: Karn) as pop tick − send tick. Without a queue every
+    /// sample is rtt_ticks and srtt stays bit-equal to it.
+    srtt_meas: f64,
+    rttvar_meas: f64,
+    rtt_samples: u32,
     /// Test-only: extra forward delay added to every arrival on this path,
     /// to drive the duplicate and late-fill rules (addendum 1 A2).
     #[cfg(test)]
@@ -535,6 +542,23 @@ impl PathState {
     /// and the aggregation-factor denominator only, never for decisions.
     fn goodput_true(&self) -> f64 {
         self.capacity as f64 * (1.0 - self.eps)
+    }
+    /// The retry timer, the estimator's flush period and `protected`'s
+    /// cooldown, in ticks (addendum 1 A3): the believed srtt, rounded.
+    fn retry_delay(&self) -> u32 {
+        self.srtt_meas.round() as u32
+    }
+    /// The believed srtt in seconds: the configured base plus the measured
+    /// excess, so exactly `srtt_secs` while srtt_meas = rtt_ticks (also at
+    /// the rtt = 1 ms clamp, where rtt_ticks = 2).
+    fn srtt_belief_s(&self) -> f64 {
+        self.srtt_secs + (self.srtt_meas - self.rtt_ticks as f64) * TICK_SECS
+    }
+    /// One RFC 6298 sample, in ticks.
+    fn rtt_sample(&mut self, r: f64) {
+        self.rttvar_meas = 0.75 * self.rttvar_meas + 0.25 * (self.srtt_meas - r).abs();
+        self.srtt_meas = 0.875 * self.srtt_meas + 0.125 * r;
+        self.rtt_samples += 1;
     }
 }
 
@@ -706,6 +730,10 @@ pub struct Simulation {
     /// Lost holes below F_ann, resolved at the sender by the commitment and
     /// not (yet) decoded. A later decode moves the unit to `cum_decoded`.
     committed_seq: Vec<bool>,
+    /// Per seq: ever committed (never cleared; `committed_seq` clears at a
+    /// later decode). The unit class reads it: a passed unit stays
+    /// `undelivered` until the consumer delivers it.
+    passed_seq: Vec<bool>,
     passed_undelivered: u32,
     /// A committed hole keeps its store slot until feedback (set-point 3 or
     /// 5) releases it: the brake (§15.4).
@@ -746,6 +774,13 @@ pub struct Simulation {
     lead_n: u32,
     lead_sum: u64,
     lead_max: u32,
+    /// Resends that arrived, and those of them later than T (L2's outcome).
+    resends_arrived: u32,
+    l2_late: u32,
+    /// Test-only: every resend at its send (seq, path, send s, arrival s or
+    /// NaN if lost or dropped, ô then, hand-over s, ô of its path then).
+    #[cfg(test)]
+    resend_log: Vec<(u64, usize, f64, f64, f64, f64, f64)>,
     /// The resend budget per 5-tick window (addendum 1 A5; ∞ = unlimited),
     /// the resends each window carried, the distinct seqs held back at least
     /// once, and the refusals (a seq refused at several slots counts each).
@@ -880,17 +915,28 @@ impl Simulation {
     }
 
     /// The ack timeout R (§13; RFC 6298 with g = ack delay = one tick, as
-    /// in the toy's tick), from the aggregate estimator.
+    /// in the toy's tick), from the measured srtt and, for now, the FIXED
+    /// rttvar. Addendum 1 A3 has R read the measured rttvar; that switch is
+    /// held for the coordinator: the measured rttvar decays to 0 without a
+    /// queue, R falls from 76 to 52 ms at RTT 50 ms, the §13.2 dequeue stops
+    /// firing near T = 0.4 and the T-continuity gate fails on its binding
+    /// cell. `ack_timeout_meas_s` is the A3 form, reported.
     fn ack_timeout_s(&self) -> f64 {
         knobs::ack_timeout(self.agg_srtt(), self.agg_rttvar(), TICK_SECS, TICK_SECS)
     }
+    /// R as addendum 1 A3 states it (measured srtt and measured rttvar): a
+    /// readout only while the switch is held.
+    fn ack_timeout_meas_s(&self) -> f64 {
+        knobs::ack_timeout(self.agg_srtt(), self.agg_rttvar_meas(), TICK_SECS, TICK_SECS)
+    }
 
-    /// ô, the one-way term of L2 and `protected` (§17.1: srtt − RTprop/2).
-    /// The model has no queue, so srtt = RTprop and ô is exactly the
-    /// capacity-weighted RTT/2 the latency accounting adds: L2 admits
-    /// exactly the resends that arrive in time in this model.
+    /// ô, the one-way term of L2 and `protected` (§17.1: srtt − RTprop/2):
+    /// the measured aggregate srtt minus the configured aggregate RTprop/2,
+    /// the resend path pinned as the capacity-weighted aggregate (addendum 1
+    /// A3). Without a queue srtt = RTprop and ô is the RTT/2 the delay
+    /// accounting adds. Read only by L2 and `protected`.
     fn one_way_s(&self) -> f64 {
-        knobs::one_way_fwd(self.agg_srtt(), self.agg_srtt())
+        knobs::one_way_fwd(self.agg_srtt(), self.agg_srtt_base())
     }
 
     /// `protected(s)` (§17.1) with the model's bindings: the cooldown c and
@@ -898,7 +944,7 @@ impl Simulation {
     /// path of s's last copy (the model's oracle loss notice arrives then);
     /// no data sweep reaches s (P_reach = ∞).
     fn seq_protected(&self, i: usize, now: f64, o_hat: f64) -> bool {
-        let c = self.paths[self.path_seq[i]].rtt_ticks as f64 * TICK_SECS;
+        let c = self.paths[self.path_seq[i]].retry_delay() as f64 * TICK_SECS;
         let d = knobs::trigger_delay(self.resent_seq[i], c, c, f64::INFINITY);
         let last = self.last_send_seq[i] as f64 * TICK_SECS;
         knobs::protected(self.lifetime_s, now, last, d, self.h_seq[i], o_hat)
@@ -940,6 +986,7 @@ impl Simulation {
                 self.lost_pending = self.lost_pending.saturating_sub(1);
                 self.passed_undelivered += 1;
                 self.committed_seq[sym.seq as usize] = true;
+                self.passed_seq[sym.seq as usize] = true;
                 self.slot_owed[sym.seq as usize] = true;
                 self.unit_dirty.push(self.seq_unit[sym.seq as usize]);
                 #[cfg(test)]
@@ -1050,7 +1097,7 @@ impl Simulation {
     /// term ô (s); ∞ for a unit not delivered (expired, passed, or pending).
     fn unit_delays(&self) -> Vec<f64> {
         let mut d = vec![f64::INFINITY; self.num_source as usize];
-        let o = self.one_way_s();
+        let o = self.acc_s();
         for (s, &u) in self.seq_unit.iter().enumerate() {
             let t = self.consumer.delivered_at(s);
             if !t.is_nan() {
@@ -1064,7 +1111,7 @@ impl Simulation {
     fn share_within(&self, deadline: f64) -> f64 {
         // Delivered units only: an undelivered unit's delay is ∞, and
         // within_lifetime(∞, ∞) is true, so the delay alone cannot say it.
-        let o = self.one_way_s();
+        let o = self.acc_s();
         let n = (0..self.seq_unit.len())
             .filter(|&s| {
                 let t = self.consumer.delivered_at(s);
@@ -1085,10 +1132,10 @@ impl Simulation {
         let s = s as usize;
         let t = self.consumer.delivered_at(s);
         if t.is_nan() {
-            let passed = self.committed_seq[s] || self.given_up_seqs.contains(&(s as u64));
+            let passed = self.passed_seq[s] || self.given_up_seqs.contains(&(s as u64));
             return ([CLASS_PENDING, CLASS_UNDELIVERED][passed as usize], f64::INFINITY);
         }
-        let delay = t - self.h_seq[s] + self.one_way_s();
+        let delay = t - self.h_seq[s] + self.acc_s();
         let class = if self.consumer.out_of_order(s) {
             CLASS_OUT_OF_ORDER
         } else if knobs::within_lifetime(self.lifetime_s, delay) {
@@ -1148,14 +1195,33 @@ impl Simulation {
     fn agg_eps(&self) -> f64 {
         self.agg(|p| p.eps)
     }
+    /// The believed srtt (s), capacity-weighted (addendum 1 A3).
     fn agg_srtt(&self) -> f64 {
+        self.agg(|p| p.srtt_belief_s())
+    }
+    /// The configured base RTT, RTprop (s), capacity-weighted.
+    fn agg_srtt_base(&self) -> f64 {
         self.agg(|p| p.srtt_secs)
     }
+    /// The fixed rttvar main's laws read (P_lost, completion): rtt/8, a
+    /// declared model constant (addendum 1 A3; Q-V10 bounds it).
     fn agg_rttvar(&self) -> f64 {
         self.agg(|p| p.rttvar_secs)
     }
+    /// The measured RFC rttvar (s), which R reads.
+    fn agg_rttvar_meas(&self) -> f64 {
+        self.agg(|p| p.rttvar_meas * TICK_SECS)
+    }
+    /// The believed srtt in ticks, rounded (the aggregate clocks).
     fn agg_rtt_ticks(&self) -> u32 {
-        self.agg(|p| p.rtt_ticks as f64).round() as u32
+        self.agg(|p| p.srtt_meas).round() as u32
+    }
+    /// The delay accounting's one physical term (addendum 1 A2): the part of
+    /// the one-way delay the forward leg does not model, rtt/2 − d per path,
+    /// from the configured values; never the belief (the arrival tick
+    /// already holds any queueing).
+    fn acc_s(&self) -> f64 {
+        self.agg(|p| p.srtt_secs / 2.0 - p.link_d)
     }
     fn agg_loss_est(&self) -> f64 {
         self.agg(|p| p.estimator.loss_rate())
@@ -1401,7 +1467,7 @@ impl Simulation {
             .iter()
             .map(|p| {
                 if p.estimator.ge_estimator().is_valid() {
-                    p.rtt_ticks as f64 * p.capacity as f64
+                    p.srtt_meas * p.capacity as f64
                 } else {
                     0.0
                 }
@@ -1520,7 +1586,7 @@ impl Simulation {
     /// (arrived symbols decode at their send tick, so their latency is the
     /// one-way delay; recovered symbols add the recovery wait).
     fn record_delivery(&mut self, seqs: &[u64]) {
-        let one_way = self.agg_srtt() * 500.0; // ms: RTT/2 (capacity-weighted)
+        let one_way = self.acc_s() * 1000.0; // ms: the physical accounting term (RTT/2 − d)
         for q in seqs {
             if self.given_up_seqs.contains(q) {
                 continue;
@@ -1569,6 +1635,14 @@ impl Simulation {
         };
         #[cfg(test)]
         let arrive_s = arrive_s + self.paths[pi].test_extra_s;
+        #[cfg(test)]
+        if matches!(kind, DgKind::Resend) {
+            let o = self.one_way_s();
+            let p = &self.paths[pi];
+            let o_p = p.srtt_belief_s() - p.srtt_secs / 2.0;
+            let arr = [arrive_s, f64::NAN][lost as usize];
+            self.resend_log.push((seq, pi, t, arr, o, self.h_seq[seq as usize], o_p));
+        }
         let dg = Datagram { kind, seq, send_tick: self.tick, path: pi, floor: self.f_ann, lost, arrive_s };
         self.paths[pi].leg.push_back(dg);
         lost
@@ -1617,7 +1691,7 @@ impl Simulation {
         }, dg.lost));
         let is_source = matches!(dg.kind, DgKind::Source);
         if !matches!(dg.kind, DgKind::Floor) {
-            self.paths[pi].feedback_queue.push_back((due, !dg.lost, is_source));
+            self.paths[pi].feedback_queue.push_back((due, dg.send_tick, !dg.lost, is_source));
         }
         if dg.lost {
             return;
@@ -1660,6 +1734,11 @@ impl Simulation {
                 // one reverse leg before its feedback could land (coordinator
                 // default, addendum 1 A2): the lead it takes.
                 let lead = due - self.tick;
+                // L2's outcome (addendum 1 A3): an admitted resend that
+                // arrives later than T after hand-over.
+                self.resends_arrived += 1;
+                let age_at_arrival = dg.arrive_s - self.h_seq[seq as usize] + self.acc_s();
+                self.l2_late += !knobs::within_lifetime(self.lifetime_s, age_at_arrival) as u32;
                 self.lead_n += 1;
                 self.lead_sum += lead as u64;
                 self.lead_max = self.lead_max.max(lead);
@@ -1898,6 +1977,9 @@ impl Simulation {
                 link_d: prop_s[i],
                 link_free: 0.0,
                 qdrop: 0,
+                srtt_meas: rtt.max(2) as f64,
+                rttvar_meas: rtt.max(2) as f64 / 8.0,
+                rtt_samples: 0,
                 #[cfg(test)]
                 test_extra_s: 0.0,
                 last_flush_tick: 0,
@@ -1993,6 +2075,7 @@ impl Simulation {
             f_ann: 0,
             f_rx: 0,
             committed_seq: Vec::new(),
+            passed_seq: Vec::new(),
             passed_undelivered: 0,
             slot_owed: Vec::new(),
             ack_due: vec![std::collections::VecDeque::new(); n],
@@ -2015,6 +2098,10 @@ impl Simulation {
             lead_n: 0,
             lead_sum: 0,
             lead_max: 0,
+            resends_arrived: 0,
+            l2_late: 0,
+            #[cfg(test)]
+            resend_log: Vec::new(),
             resend_limit,
             budget_used: Vec::new(),
             braked_seq: Vec::new(),
@@ -2058,13 +2145,18 @@ impl Simulation {
         for pi in 0..self.paths.len() {
             let tick = self.tick;
             let p = &mut self.paths[pi];
-            while let Some(&(due, ok, src_slot)) = p.feedback_queue.front() {
+            while let Some(&(due, sent, ok, src_slot)) = p.feedback_queue.front() {
                 if tick < due {
                     break;
                 }
                 p.feedback_queue.pop_front();
                 p.estimator.record_symbol(ok);
                 p.pending_sent += 1;
+                if ok && src_slot {
+                    // An arrived original (a source symbol is never resent
+                    // while its original arrived: Karn holds by construction).
+                    p.rtt_sample((tick - sent) as f64);
+                }
                 if ok {
                     p.pending_ok += 1;
                     // SACK-clocked store release (§6.3, wall #9): the
@@ -2075,7 +2167,7 @@ impl Simulation {
                     }
                 }
             }
-            if tick.saturating_sub(p.last_flush_tick) >= p.rtt_ticks && p.pending_sent > 0 {
+            if tick.saturating_sub(p.last_flush_tick) >= p.retry_delay() && p.pending_sent > 0 {
                 p.estimator.record_counts(p.pending_sent, p.pending_ok, tick as u64);
                 p.pending_sent = 0;
                 p.pending_ok = 0;
@@ -2138,7 +2230,7 @@ impl Simulation {
                 if sym.lost
                     && !sym.recovered
                     && (self.tick as i64 - sym.last_retx_tick)
-                        >= self.paths[sym.path].rtt_ticks as i64
+                        >= self.paths[sym.path].retry_delay() as i64
                     && sym.seq >= self.f_ann as u64
                     && knobs::resend_admissible(
                         self.lifetime_s, now_s - self.h_seq[sym.seq as usize], o_hat,
@@ -2154,7 +2246,7 @@ impl Simulation {
                 let pl = math::p_lost(
                     age_ticks as f64 * TICK_SECS,
                     self.paths[sp].estimator.loss_rate().clamp(1e-4, 0.99),
-                    self.paths[sp].srtt_secs,
+                    self.paths[sp].srtt_belief_s(),
                     self.paths[sp].rttvar_secs,
                 );
                 if self.rng() < pl && self.floor_recheck(i) && self.budget_admits(i) {
@@ -2236,6 +2328,7 @@ impl Simulation {
                 self.resent_seq.push(false);
                 self.acked_seq.push(false);
                 self.committed_seq.push(false);
+                self.passed_seq.push(false);
                 self.slot_owed.push(false);
                 self.seq_unit.push(self.u_next);
                 self.unit_seq[self.u_next as usize] = seq as u32;
@@ -2425,7 +2518,7 @@ impl Simulation {
             let mut crossings = 0u32;
             for sym in &self.symbols {
                 if sym.lost && !sym.recovered {
-                    let own = self.paths[sym.path].rtt_ticks;
+                    let own = self.paths[sym.path].retry_delay();
                     if own > global_clock {
                         let base = if sym.last_retx_tick >= 0 {
                             sym.last_retx_tick as u32
@@ -2501,6 +2594,17 @@ impl Simulation {
     }
     pub fn get_path_rtt_ms(&self, i: usize) -> u32 {
         self.paths.get(i).map_or(0, |p| p.rtt_ticks)
+    }
+    /// The RTT path i's sender believes (addendum 1 A3): measured srtt and
+    /// rttvar, ms; and the number of samples taken.
+    pub fn get_path_srtt_meas_ms(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(f64::NAN, |p| p.srtt_meas * TICK_SECS * 1000.0)
+    }
+    pub fn get_path_rttvar_meas_ms(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(f64::NAN, |p| p.rttvar_meas * TICK_SECS * 1000.0)
+    }
+    pub fn get_path_rtt_samples(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.rtt_samples)
     }
     /// Estimated per-path loss eps_hat_i (the striping input).
     pub fn get_path_eps_hat(&self, i: usize) -> f64 {
@@ -2861,6 +2965,19 @@ impl Simulation {
         self.lead_sum as f64 / self.lead_n.max(1) as f64 * TICK_SECS * 1000.0
     }
     pub fn get_knowledge_lead_max_ms(&self) -> f64 { self.lead_max as f64 * TICK_SECS * 1000.0 }
+    /// ô (s), the one-way term L2 and `protected` read, and the delay
+    /// accounting's physical term (s) every delay readout adds (addendum 1 A3).
+    pub fn get_o_hat_s(&self) -> f64 { self.one_way_s() }
+    /// The ack timeout R the model runs (s), and R with the measured rttvar
+    /// (addendum 1 A3's form, held; see `ack_timeout_s`).
+    pub fn get_ack_timeout_s(&self) -> f64 { self.ack_timeout_s() }
+    pub fn get_ack_timeout_meas_s(&self) -> f64 { self.ack_timeout_meas_s() }
+    pub fn get_acc_s(&self) -> f64 { self.acc_s() }
+    /// L2's outcome: the share of arrived resends that arrived later than T
+    /// after hand-over (0 before any arrived).
+    pub fn get_l2_late_share(&self) -> f64 {
+        self.l2_late as f64 / self.resends_arrived.max(1) as f64
+    }
     /// The units whose class changed since the last call, as flat quadruples
     /// `[unit, hand-over s, delay s (∞ when not delivered), class]`. A unit
     /// appears when it is delivered, expires at the intake, or is passed or
