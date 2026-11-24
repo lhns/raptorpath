@@ -1650,3 +1650,24 @@ Report every reading, the A/A self-check and every deviation, as stage 3c did.
 - the strict-order stall through the outage;
 - the lost tail with no repair under an engine-like sweep (§17.3, an engine repair-plane question);
 - the toy still has no proactive repair.
+
+## 18. Findings from the offline simulation, stage 3d (2026-11-24, reviewed with the advisor)
+
+Branch `toy-stage3-knobs` `e17b4c64`, `tools/toy/results-stage3d.md`.
+
+**One path: established in simulation.**
+- T = ∞ equals full delivery in all 21 cells, both sweep forms and P2 (432/432; traces identical).
+- The floor's commitment held in all 5 628 runs (stage 3c: 143 violations). The re-check before each copy never fired; the trigger-delay law did the work (a control on 3c's law reproduces 7 violations).
+- Recovery after the outage, CL-long (20 s, 1.5 s outage, offered 10 000/s, link 12 500/s), seconds after outage end, tail | engine-like sweep: full delivery, strict 7.79 | 6.73; ADR-0084's sender with today's receiver 5.68 | 4.80; never give up, any order 6.66 | 5.67; lifetime 2 s strict 7.78 | 6.59; lifetime 0.4 s, either order, within the readout's 0.1 s resolution. The never-give-up recovery follows outage × rate ÷ headroom (1.5 × 10 000 ÷ 2 500 ≈ 6 s). Any order alone saves about 1.1 s; a 2 s lifetime saves nothing here (the backlog wait is below 2 s per unit); 0.4 s saves nearly all of it. Cost: delivered at all 92.4 % against 100 %; within 0.4 s 92.4 % against 55.4 % (full delivery) and 64.2 % (ADR-0084's sender).
+- Overload: the floor law is what fixes strict order (82.8 % within 0.4 s with it, 6.8 % in the ablation without it). The 2 s lifetime in OV-long reads 0.805 in the binding windows against 0.808 predicted. Never-give-up reads 0 there by construction (a fixed-rate source above capacity).
+- Under overload delivery sits at about T − 10 ms (p50 390 ms at T = 0.4 s), so on-time delivery rests on the one-way estimate being right to about 10 ms, and on Q18. The planted step is a 2× change in the effective lifetime, so it does not measure that sensitivity.
+- The never-give-up rows move by up to 13 points between sweep forms; the 0.4 s rows by under 1 point. Baselines must be quoted under both forms.
+
+**Two paths (P2): an open design problem.** At T = 75 ms with strict order: with the measured floor hold, 2.0 % is on time (delay p50 121 ms); with no floor hold, 91.5 % is on time but 6.5 % of units are filled late after the floor passed them. So strict order and on-time are traded, not both met. The 6.5 % is probably masked: frequent fast-path losses keep the floor about 65 ms behind, so it rarely overtakes slow-path data; the registered 35–50 % is not refuted. Needed before any claim: a cell at the call rate or with a loss-free fast path. At T = 0.4 s it matches never giving up, except about 105 late fills in the first 0.1 s from the 333 ms RTT seed (new cold-start defect). The reorder window suppressed every resend at 75 ms (3 % lost) and makes about 30 % of the baseline's copies duplicates, so the P2 baseline is qualified.
+
+**Spec errors and misses.**
+- Liveness failed for the ablation S5v in OV-long (8 runs): a hole sent in the same instant as the newest arrival, below the highest received seq, has no timeout. The gap is in the tail timeout Revision 3's review added. The worker did not stop as the run order required; the fix is an unregistered supplement (shares unchanged). The same pattern may exist in the engine's verdict path.
+- Smoothness: the planted control has power only in OV; the A/A itself is 21 % undetermined, so the 24 undetermined nudges are neither passes nor failures. Read OV's own nudge rows before claiming continuity.
+- The CL-long baseline bands missed by 0.2–0.3 s (the drain surplus is about 15 % lower than 3c's estimate).
+
+**Next, registered first:** a two-path cell at the call rate and one with a loss-free fast path; the structural question whether units behind a given-up gap are released at about lifetime + floor hold; the cold-start RTT seed; the S5v timeout gap; and repair (still untested).
