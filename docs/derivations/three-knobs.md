@@ -973,3 +973,25 @@ Report every reading, the A/A self-check and every deviation, as in stage 3.
   - the strict-order stall beyond the outage (it is live holes, §13.5);
   - the open tail's timeout verdicts when an ack is slower than R (bounded by `vta`);
   - the toy still has no proactive repair, so T below a round trip is tested only in its ARQ half.
+
+## 14. Findings from the offline simulation, stage 3b (2026-11-24, reviewed with the advisor)
+
+Branch `toy-stage3-knobs` `d0ce4f9d`, `tools/toy/results-stage3b.md`.
+
+**Confirmed.**
+- Identities (Q3b-1): S3 with the old sweep at T = ∞ and 10⁶ equals full delivery; 432/432, traces identical.
+- **D1 is fixed** (Q3b-2): 0 verdicts on delivered data in 1 326 S3 runs; S2 reproduces D1 (113 200 verdicts, 81 % on delivered data). The pause-time bullet failed; its readout (whole-run pause total) measures run length and is not a valid test.
+- The new design meets its own predicted numbers: overload share within 0.4 s 0.815 (band 0.77–0.83) at H = 0; capacity cell 0.848 within 0.4 s at T = 0.4.
+- The crossover under the R probe follows the path (Q3b-5): +15.1 ms and +30.2 ms, each within 3 ms of R + srtt/2.
+
+**Not valid: every never-give-up comparison in the link cells.** Full delivery in CL read 19.9 % within 0.4 s and 20.9 % within 2 s (predicted 30–47 % and ≥ 97 %), with 684 k queue drops for 100 k units. Cause found in `toy2.py`: only fresh data is paused (`emit`, `o >= self.B`); `send_copy` passes no brake, so resends storm a bottleneck queue. The engine gates every send by `cwnd_full`. The old arms' collapse is therefore a simulation artefact, and the size of the lifetime's gain in CL and OV is not established. The new arm's absolute numbers stand.
+
+**Overload at strict order.** The 0.815 holds only at H = 0; at H = ∞ it is 0.087, the same as never giving up (0.086). Cause not yet read from the results.
+
+**Delay under overload** sits at p50 390 ms against T = 0.4 s: on time by about 10 ms, by construction (Q12).
+
+**New defect D2 (Revision 1 breaks T = ∞).** The "last send + R" probe recovers an outage tail one seq per R. At T = ∞ with a 50 ms path it never finishes in 40 s (12/12 seeds); at 5 ms the tail takes a median 4.3 s against about 1.5 s with the old sweep. T = ∞ is Bulk and Auto, so "T = ∞ equals today" holds only with the old timer. The probe's motivation is also gone: the old sweep shifted +29.9 ms too (the "below 10 ms" bullet failed), so stage 3's reading that the sweep cap pinned the crossover was wrong. The positive-control placements (Q3b-7) are products of D2.
+
+**Other readings.** Smoothness (Q3b-6): 0 shown, 4/148 undetermined; the control read "shown" on J only, so continuity is still not demonstrated on K and P. The stall decomposition's definition changed after the first read (post hoc).
+
+**Register before the next run:** a resend brake on every arm (the engine's cwnd gate); a tail-recovery rule at T = ∞ that is not serial (or keep the old sweep and drop the probe); a valid pause readout; the missing T = ∞, H = 0 and T = 2 rows in both link cells; the cause of the strict-order overload collapse.
