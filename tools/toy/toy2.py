@@ -764,7 +764,7 @@ class Sim:
         else:
             self.push(a, 0, (s, 0, t, ps, pth))
             self.carry_floor(a)
-        if self.s2fam and c.verdict_evidence not in ("feedback", "none", "feedback_tail"):      # the per-seq verdict timer (at +inf it never fires); none under feedback verdicts
+        if self.s2fam and c.verdict_evidence not in ("feedback", "none", "feedback_tail", "feedback_tail_any"):      # the per-seq verdict timer (at +inf it never fires); none under feedback verdicts
             self.push(max(t, self.h_seq[s] + self.Te - self.o_hat()), 8, s)
         self.wadd("first", t)
         self.floor_datagram(t)
@@ -1282,6 +1282,9 @@ class Sim:
                     g["l2_skip"] += 1
                 elif c.verdict_evidence == "feedback_tail":              # 17.6 (S5v): 15.1's feedback verdict, plus 13.7.1's timeout for the open tail only
                     if self.fb_evidence(s) or (s > self.rhi_known and now >= self.last_send[s] + self.R_now()):
+                        verdict_seqs.append(s)
+                elif c.verdict_evidence == "feedback_tail_any":          # UNREGISTERED supplement (results-stage3d.md, Q3d-1): the timeout also for a hole no later send has overtaken
+                    if self.fb_evidence(s) or ((s > self.rhi_known or self.last_send[s] >= self.tau_rx) and now >= self.last_send[s] + self.R_now()):
                         verdict_seqs.append(s)
                 elif c.verdict_evidence == "feedback":                   # 15.1: only on receiver feedback
                     if self.fb_evidence(s):

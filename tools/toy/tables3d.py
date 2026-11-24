@@ -46,7 +46,7 @@ def ms(x):
 def recs(cell, a):
     v = RP.rec(cell, a)
     if all(x is None for x in v):
-        return "not within the run" if any(S.R(cell, a, s).get("recovery_status") == "not within the run" for s in S.seeds_of(cell, a)) else "n/a"
+        return S.R(cell, a, S.seeds_of(cell, a)[0]).get("recovery_status") or "n/a"
     return RP.recfmt(v)
 
 

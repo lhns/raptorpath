@@ -1053,6 +1053,25 @@ class Stage3d(unittest.TestCase):
         self.assertIn("recovery_time", r)
         self.assertEqual(len(r["win_ot04"]), len(toy2.window_shares(np.zeros(30000), 1e-4, 0.4)))
 
+    def test_11_s5v_liveness_gap_and_the_unregistered_supplement(self):
+        # a hole whose send stamp equals the newest arrived stamp (sent in the same burst, nothing sent after): no feedback evidence, and
+        # it lies below rhi_known, so the registered S5v rule never judges it; the supplement's timeout does
+        def fab(ev):
+            sim = toy2.Sim(small_s5("OV", 0, 0.4, 0.0, verdict_evidence=ev, floor_law="verdict"))
+            sim.n_sent = 10
+            for s in range(10):
+                sim.h_seq[s] = 0.0
+                sim.sent_t[s] = sim.last_send[s] = 40.0
+            sim.M_known = {3}
+            sim.rhi_known = 9
+            sim.tau_rx = 40.0
+            sim.last_gen = 41.0
+            sim.srtt = 0.1
+            sim.act(50.0, 41.0, [3], open_tail=True)
+            return 3 in sim.verdicted
+        self.assertFalse(fab("feedback_tail"))
+        self.assertTrue(fab("feedback_tail_any"))
+
 
 if __name__ == "__main__":
     unittest.main()

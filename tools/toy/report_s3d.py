@@ -70,8 +70,7 @@ def q1():
 
 # ---- Q3d-2 ------------------------------------------------------------------------------------
 def q2():
-    print("### Q3d-2 the commitment
-")
+    print("### Q3d-2 the commitment\n")
     viol_runs = []
     n = viol = 0
     agg = {}
@@ -102,8 +101,7 @@ def q2():
         allok &= ok
         print("  %-10s skips %6d of %9d copies = %.6f  %s   worst run %.5f %s" % (cell, sk, cp, sk / cp if cp else 0.0, "PASS" if ok else "FAIL", worst[cell][0], worst[cell][1]))
     print("  every one-path cell within 0.001 x copies: %s" % ("PASS" if allok else "FAIL"))
-    print("
-K-L10b at the lowest T (S5 H = 0, T = 0.180): duplicates against copies (bar dup >= 0.5 copies; not a pass condition of the design)")
+    print("\nK-L10b at the lowest T (S5 H = 0, T = 0.180): duplicates against copies (bar dup >= 0.5 copies; not a pass condition of the design)")
     for arm in ("SW-0p18", G(0.4, 0.0)):
         ss = S.seeds_of("K-L10b", arm)
         if not ss:
@@ -168,9 +166,11 @@ def rec(cell, arm):
     return out
 
 
-def recfmt(v):
+def recfmt(v, why=None):
     fin = [x for x in v if x is not None]
     nn = len(v) - len(fin)
+    if why and not fin:
+        return why
     return "%s s%s" % ("%.2f" % np.mean(fin) if fin else "n/a", (" (not within the run in %d of %d seeds)" % (nn, len(v))) if nn else "")
 
 
@@ -185,7 +185,8 @@ def q5():
             if not S.seeds_of(cell, a):
                 continue
             v = rec(cell, a)
-            print("| %s | %s | %s |" % (a, recfmt(v), " ".join("-" if x is None else "%.1f" % x for x in v)))
+            why = S.R(cell, a, S.seeds_of(cell, a)[0]).get("recovery_status")
+            print("| %s | %s | %s |" % (a, recfmt(v, why if why != "not within the run" else None), " ".join("-" if x is None else "%.1f" % x for x in v)))
         print()
     for cell, lo, hi in (("CL-long", 5.4, 7.6), ("CL-long@b", 4.1, 6.4)):
         v = rec(cell, "C3")
@@ -291,7 +292,7 @@ def q7():
     print("\n### unplanted S5 nudges (T = 0.4 * {0.98..1.02} at H = 0.02, and H = 0.02 * {..} at T = 0.4), every cell but X, P2 and the long cells; m = max(T bar, A/A floor)\n")
     shown = und = tot = 0
     lines = []
-    for cell in D.SHORT + D.BLK:
+    for cell in D.SHORT + D.BLK + D.LONG:
         for which in ("T", "H"):
             names = ["N%s-%s" % (which, TAG(x)) if x != 1.0 else G(0.4, 0.02) for x in S.NUDGE]
             if not all(S.have(cell, n) for n in names):
@@ -336,16 +337,25 @@ def q8():
     for hf in ("0", "est"):
         a = hf_arm(0.075, INF, hf)
         lf = ga(a, "late_floor") / units
-        print("[T=0.075 H=inf H_f=%s] late_floor / units = %.4f; pass_floor %.1f; late_floor after 1 s %.2f; H_f (max over the run) %.4f s; dh_p50 %.4f s; share_T %.4f" % (
-            hf, lf, ga(a, "pass_floor"), ga(a, "late_floor_ge1"), m_(cell, a, "H_max"), m_(cell, a, "dh_p50"), m_(cell, a, "share_T")))
+        print("[T=0.075 H=inf H_f=%s] late_floor / units = %.4f; pass_floor %.1f; late_floor after 1 s %.2f; H_f (max over the run) %.4f s; dh_p50 %.4f s (all units); fast-path units dh p50/p90/p99 %.4f/%.4f/%.4f s; slow-path units %.4f/%.4f/%.4f s; share_T %.4f" % (
+            hf, lf, ga(a, "pass_floor"), ga(a, "late_floor_ge1"), m_(cell, a, "H_max"), m_(cell, a, "dh_p50") / 1e3,
+            *[np.mean([S.R(cell, a, s)["dh%s_p%d" % (p, q)] for s in S.seeds_of(cell, a)]) for p in "A" for q in (50, 90, 99)],
+            *[np.mean([S.R(cell, a, s)["dh%s_p%d" % (p, q)] for s in S.seeds_of(cell, a)]) for p in "B" for q in (50, 90, 99)], m_(cell, a, "share_T")))
     a0, ae = hf_arm(0.075, INF, "0"), hf_arm(0.075, INF, "est")
     lf0, lfe = ga(a0, "late_floor") / units, ga(ae, "late_floor") / units
     print("  H_f = 0: late_floor/units in [0.35, 0.50]: %s" % band(lf0, 0.35, 0.50))
     print("  H_f = est: late_floor/units <= 0.03: %s; late_floor among units handed over after 1 s = %.2f (must be 0): %s; H_f in [0.045, 0.055]: %s; pass_floor > 0: %s" % (
         "PASS" if lfe <= 0.03 else "FAIL", ga(ae, "late_floor_ge1"), "PASS" if ga(ae, "late_floor_ge1") == 0 else "FAIL", band(m_(cell, ae, "H_max"), 0.045, 0.055),
         "PASS" if ga(ae, "pass_floor") > 0 else "FAIL"))
-    print("  dilemma: dh_p50 at H_f = est %.4f in [0.055, 0.070]: %s; at H_f = 0 %.4f in [0.009, 0.020]: %s" % (
-        m_(cell, ae, "dh_p50"), band(m_(cell, ae, "dh_p50"), 0.055, 0.070), m_(cell, a0, "dh_p50"), band(m_(cell, a0, "dh_p50"), 0.009, 0.020)))
+    pe, p0 = m_(cell, ae, "dh_p50") / 1e3, m_(cell, a0, "dh_p50") / 1e3
+    fa0 = np.mean([S.R(cell, a0, s)["dhA_p50"] for s in S.seeds_of(cell, a0)])
+    print("  dilemma: dh_p50 (all units) at H_f = est %.4f s in [0.055, 0.070]: %s; at H_f = 0 the fast-path units' p50 %.4f s in [0.009, 0.020]: %s (all units at H_f = 0: %.4f s)" % (
+        pe, band(pe, 0.055, 0.070), fa0, band(fa0, 0.009, 0.020), p0))
+    for hf in ("0", "est"):                                              # the reordering arms (H = 0): per-path delay
+        a = hf_arm(0.075, 0.0, hf)
+        q = lambda p: [np.mean([S.R(cell, a, s)["dh%s_p%d" % (p, k)] for s in S.seeds_of(cell, a)]) for k in (50, 90, 99)]      # noqa: E731
+        print("  [T=0.075 H=0 H_f=%s] fast-path units p50/p90/p99 %.4f/%.4f/%.4f s; slow-path %.4f/%.4f/%.4f s; out of order per delivered %.4f; late_floor/units %.4f; share_T %.4f" % (
+            (hf,) + tuple(q("A")) + tuple(q("B")) + (m_(cell, a, "ooo_per_delivered"), ga(a, "late_floor") / units, m_(cell, a, "share_T"))))
     dsh = m_(cell, ae, "share_T") - m_(cell, a0, "share_T")
     print("  share_T within 0.02 between the two H_f arms: %.4f vs %.4f (diff %+.4f): %s" % (m_(cell, ae, "share_T"), m_(cell, a0, "share_T"), dsh, "PASS" if abs(dsh) <= 0.02 else "FAIL"))
     for hf in ("est", "0"):
