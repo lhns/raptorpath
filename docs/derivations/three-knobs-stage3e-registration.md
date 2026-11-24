@@ -1,14 +1,15 @@
 # Stage 3e registration: proactive repair in the three-knob model (no runs)
 
-**Status.** Registration only, written before any run. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate; §12). Still no run.
+**Status.** Registration only, written before any run. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate) and its final review of `abe2981c` (built on the RTT-fixed code; §12). Still no run.
 
 **Base.**
 - Derivation `docs/derivations/three-knobs.md` on `three-knobs` at `93e29a22`. The laws are §1–§10 with Revisions 1–3 (§13, §15, §17); the findings are §18 (stage 3d) and §19 (the interactive simulator and the lifetime sweep).
 - The offline simulation on `toy-stage3-knobs` at `e17b4c64`: `tools/toy/toy2.py`, `batch3d.py`, `check_ident3d.py`, `results-stage3d.md`.
+- **Stage 3e builds on the RTT-sample fix and its re-baseline** (branch `toy-stage3d-rttfix`, head per the re-baseline). It does not build on `e17b4c64` as it stands, because the bug of §11 item 9 is confirmed. Every stage 3d baseline quoted here is either the re-baseline's number or marked "per the re-baseline".
 - Repair laws as the engine and the paper define them: paper `docs/fec-arq-model.md` §3.3–§3.7, §4.1–§4.10 and §5.3–§5.4; `raptorpath-math/src/lib.rs` (`controller_rate`, `derive_window`, `r_saturation`, `soft_saturate`, `bulkness_of_delta`, `span_horizon_b`); `raptorpath/src/control/fec_rate.rs` (`rate_snapshot`, `derive_window`, `RepairRateCache`, `compute_repair_rate_capped`); `raptorpath/src/net/emit_source.rs:540–645` and `:780–900` (the cadenced rate, the spare-capacity clamp, A*, Δ, the trailing span).
 - The interactive simulator on `viz-three-knobs`: `raptorpath-wasm/src/lib.rs` (`rate_now`, `rate_inputs_for`, `apply_age_edge`, `send_repair`, the slot loop), and `visualizer-three-knobs-plan.md`.
 
-**What stage 3e adds.** The stage 3d sender S5 gains proactive repair, coded over the engine's trailing span at the rate law's r(δ), and the receiver gains a decoder. Everything else is S5 as stage 3d ran it.
+**What stage 3e adds.** The stage 3d sender S5 gains proactive repair, coded over the engine's trailing span at the rate law's r(δ), and the receiver gains a decoder. Everything else is S5 as the re-baselined stage 3d code runs it.
 
 ## Short answer
 
@@ -22,10 +23,10 @@
   - What changes is the link. Fresh data drains at `μ_eff = C / (1 + r + ρ)`.
 - **Is repair overload self-limiting?** In delay and memory, yes, through L1 and the dequeue rule. In share, no: the worth edge never suspends repair, and under sustained overload any r above `ε/(1 − ε)` lowers the on-time share (§2.6).
   - **The load itself falls only under Q21's true-loss default.** There a queue raises srtt, W grows to its cap, and r falls.
-  - With the engine's estimated loss (arm `RE`), an outage or queue drops raise ε̂, and so r, at the moment the link has a backlog to drain. That is the opposite feedback, and RE measures it.
+  - With an estimated loss (arm `RE`: normal-approximation upper quantile, BOCD not ported), an outage or queue drops raise ε̂, and so r, at the moment the link has a backlog to drain. That is the opposite feedback, and RE measures it.
   - The floor-edge ablation also limits the load.
 - **Cells.**
-  - Primary cells at stage 3d's full rate: CL, CL-long and OV, comparable with stage 3d's stored rows, plus CLw-long, a 3 s outage at a load where every arm has room for repair.
+  - Primary cells at stage 3d's full rate: CL, CL-long and OV, comparable with the re-baselined stage 3d rows, plus CLw-long, a 3 s outage at a load where every arm has room for repair.
   - RT: K-L10 without its outage, at T = 0.12 s, where only repair can recover.
   - One one-tenth cell (CLs-long), labelled clamp-bound: W's floor sets r there.
 - **Arms.**
@@ -99,7 +100,9 @@ New symbols only; §1 of the derivation holds for the rest.
 
 | symbol | provenance |
 |---|---|
-| ε̂ | **declared idealisation:** the cell's first-send loss `p0`. The engine reads the BOCD 95 % predictive upper quantile (`predictive_loss_upper(0.95)`), which is at least the mean. So the law arm's r is a **lower bound** on the engine's r for the same channel (owner question Q21). **Arm `RE` uses an estimate instead:** the engine's 95 % upper-quantile form `LossEstimator::loss_rate_upper(0.95)` = `beta_quantile(b, a, 0.95)` (normal approximation, `estimator.rs:505`), with `a, b` starting at 1 and updated per report as `a ← 0.995·a + received`, `b ← 0.995·b + lost` (`estimator.rs:279`, `:353–357`). A report's batch is the first sends whose fate it newly reveals: newly acknowledged, or newly listed missing, which includes queue drops and outage losses. Dequeue expiries are never sent, so they never enter the estimate. The BOCD predictive quantile that the engine reads after 5 updates is not ported; the Beta form is its own pre-BOCD fallback (declared, Q21) |
+| ε̂ | **declared idealisation:** the cell's first-send loss `p0`. The engine reads the BOCD 95 % predictive upper quantile (`predictive_loss_upper(0.95)`), which is at least the mean. So the law arm's r is a **lower bound** on the engine's r for the same channel (owner question Q21). **Arm `RE` is the estimated-loss arm (normal-approximation upper quantile, BOCD not ported).** It is not the engine's estimator. It takes the form of the engine's pre-BOCD fallback `LossEstimator::loss_rate_upper(0.95)` = `beta_quantile(b, a, 0.95)` (normal approximation, `estimator.rs:505`), with `a, b` starting at 1 and updated per report as `a ← 0.995·a + received`, `b ← 0.995·b + lost` (`estimator.rs:279`, `:353–357`). A report's batch is the first sends whose fate it newly reveals: newly acknowledged, or newly listed missing, which includes queue drops and outage losses. Dequeue expiries are never sent, so they never enter the estimate. The BOCD predictive quantile, which the engine reads after 5 updates, is not ported (declared, Q21).
+
+  **Its time constant.** The decay is 0.995 per report, so the estimate forgets with a time constant of `report interval / (1 − 0.995)` = 200 reports. In this simulation a report goes out at each 2 ms tick that saw an arrival. At full rate that is every tick, so the time constant is 0.4 s; at RT's 50 units/s it is about one report per arrival, so about 4 s. The engine's batch cadence differs, and so would its time constant |
 | σ², B̂ | 1 and 1: every cell is i.i.d. These are the GE values of an i.i.d. channel and also the engine's fallback when the GE estimate is invalid (`rate_snapshot`) |
 | t_symbols, t_sym | `srtt·rate_hat` (at least 1) and `1/rate_hat`, as `rate_snapshot` forms them from throughput |
 | ε_codec | 0.004, RLC (paper §3.6) |
@@ -130,7 +133,7 @@ New symbols only; §1 of the derivation holds for the rest.
 **Where ε̂ sits for `RE`.** In steady state ε̂ ≈ ε + 1.645·√(ε(1 − ε)/n_eff), with `n_eff = (sends per batch)/(1 − 0.995)`.
 - At full rate a 2 ms report batch holds about 20 sends, so n_eff ≈ 4 000 and ε̂ ≈ 0.034.
 - At 50/s a batch holds about 1 send, so n_eff ≈ 200 and ε̂ ≈ 0.135.
-- After an outage the first reports reveal the whole lost store (B = 1 000 seqs) at once. ε̂ then jumps to about 0.2 and decays over about 200 batches (0.4 s).
+- After an outage the first reports reveal the whole lost store (B = 1 000 seqs) at once. ε̂ then jumps to about 0.2 and decays with the 0.4 s time constant.
 
 **Which clamps set r.**
 - At full rate the clamps do not set r while there is no queue. Queued, W's 200 cap binds and the knee binds partly.
@@ -168,7 +171,8 @@ So the edge is:
 - **It is the cut §2.4 of the derivation already stated.** "In effect V cuts the span's lower edge at T − ô." V has been empty since §17.2, so the cut must now be written as its own rule. It adds no symbol and no constant.
 - **It implies L1,** because ô ≥ 0.
 - **It is a per-member state comparison, like L2.** No knob is compared with a constant. At T = ∞ it never binds.
-- **A repair whose span is empty after the edge is not sent.** Its credit is spent and counted (`rep_drop_edge`). Under the dequeue rule a unit is sent only while `a + R < T`, and R > ô, so the newest member nearly always passes and the edge shortens spans rather than emptying them. The prediction is `rep_drop_edge/credits ≤ 0.05` (Q3e-8).
+- **A repair whose span is empty after the edge is not sent, and nothing waits for it.** The credit is spent, not carried to the next first send, and the drop is counted (`rep_drop_edge`). No fallback span is coded either.
+  - The engine instead falls back to `generate_repair()` over the leading window (`emit_source.rs:839–846`; §11 item 5). That fallback is not modelled, because under a lifetime it can code members past T, which L1 forbids. Whether the engine should drop the slot or give it to fresh data is for its build. Here the slot simply goes unused by repair, and the next datagram is whatever the sender sends next. Under the dequeue rule a unit is sent only while `a + R < T`, and R > ô, so the newest member nearly always passes and the edge shortens spans rather than emptying them. The prediction is `rep_drop_edge/credits ≤ 0.05` (Q3e-8).
 
 **The two alternatives** (owner question Q19, both registered as ablation arms):
 - **The age edge `a(s) < T`.** This is plain L1, the interactive simulator's `apply_age_edge`. It carries members that can only be decoded late, so it should deliver at least as much in the end but no more on time.
@@ -268,7 +272,7 @@ The decoder is modelled by its rank, not by GF(256) arithmetic:
 
 ## 3. New code (exact)
 
-Build on `toy-stage3-knobs` at `e17b4c64`, in `tools/toy/`. Extend `toy2.py`; add `batch3e.py`, `summarize3e.py`, `check_ident3e.py` and tests in `test_toy2.py` class `Stage3e`. **With every new field at its default the code reproduces stage 3d bit for bit.**
+Build on the RTT-fixed stage 3d code (`toy-stage3d-rttfix`, at the re-baseline's head), in `tools/toy/`. Extend `toy2.py`; add `batch3e.py`, `summarize3e.py`, `check_ident3e.py` and tests in `test_toy2.py` class `Stage3e`. **With every new field at its default the code reproduces stage 3d bit for bit.**
 
 **New `Cfg` fields:**
 - `repair: object = None`. Either None (stage 3d), or `dict(r=…, edge=…)` with:
@@ -299,9 +303,9 @@ Build on `toy-stage3-knobs` at `e17b4c64`, in `tools/toy/`. Extend `toy2.py`; ad
    - `a, dep = fwd(t)`. Lost iff `a is None` (queue drop, `rep_qdrop`), or the outage covers it (`dead` set, `lo ≥ dead[0]` and `dep` in the window), or `u01(seed, j, 0, 0, SALT_REPAIR) < p0`;
    - if it arrives: `push(a, 11, (j, lo, end, t))`, then `carry_floor(a)`.
    - The repair draws its loss at `p0`, the cell's first-send rate: a repair is a fresh datagram, not a copy. I2's `pc = 0.10` models copies.
-4. **RTT sampling:** the receiver keeps `rhi_smp`, which follows every raise of `rhi` exactly as stage 3d makes them (data arrivals in `on_data`, and floor passes in `apply_floor`, which sets `rhi = f − 1` with no arrival) **except raises by a decode**.
+4. **RTT sampling:** the receiver keeps `rhi_smp`, the seq the **fixed** stage 3d code (`toy-stage3d-rttfix`) samples from, updated by the same events as there **except raises by a decode**.
    - Reports carry `rhi_smp`, appended at the end of the tuple after the per-path field, and the sender takes its RFC 6298 sample from `rhi_smp` where stage 3d took it from `rhi`.
-   - With no decodes `rhi_smp == rhi` at every report, so stage 3d is unchanged, including its sampling of floor-passed seqs (§11 item 9).
+   - With no decodes `rhi_smp` equals the fixed code's sampling seq at every report, so the re-baselined stage 3d is unchanged.
 
 **Receiver:**
 5. **`on_repair(now, j, lo, end, tau)` (event kind 11):**
@@ -312,7 +316,8 @@ Build on `toy-stage3-knobs` at `e17b4c64`, in `tools/toy/`. Extend `toy2.py`; ad
    - take a maximum matching (augmenting paths);
    - the determined set is every unknown not reached by an alternating path (unknown → any equation containing it → that equation's matched unknown) from an unmatched unknown;
    - deliver each determined s in increasing seq order through the data path with copy index −1. That path: no `tau` update, no `est.feed`, no `rhi_smp` change, opens holes up to s and raises `rhi` if `s > rhi`, as `on_data` does;
-   - count `dec_units`, `dec_on_time` (`now − h_seq[s] ≤ T`), `dec_after_release` (s had been released) and `late_floor_dec` (s had been passed by the floor);
+   - count `dec_units`, `dec_on_time` (`now − h_seq[s] ≤ T`), `dec_late` (`now − h_seq[s] > T`: a decode after the lifetime), `dec_after_release` (s had been released) and `late_floor_dec` (s had been passed by the floor);
+   - count every repair whose decodes were all late as `rep_late_only`. Under the worth edge that happens only when ô undershot the true one-way delay;
    - count every equation matched to a decoded unknown as `rep_used`;
    - remove decoded unknowns from every equation and drop empty equations.
 7. **A source or copy arrival of a seq that sits in a pending equation** removes it, and `decode` runs again on that component (the cascade). A source or copy arriving for a decoded seq counts as `dup` and also as `dup_after_dec`.
@@ -325,7 +330,7 @@ Build on `toy-stage3-knobs` at `e17b4c64`, in `tools/toy/`. Extend `toy2.py`; ad
 **The primary cells run at stage 3d's full rate.**
 - A T sweep at that rate took about 3 s per run.
 - At full rate the rate law is not set by W's floor.
-- R0 and S5 can be compared with stage 3d's stored results, because the configurations are stage 3d's own cells under the engine-like sweep.
+- R0 and S5 can be compared with the re-baselined stage 3d results, because the configurations are stage 3d's own cells under the engine-like sweep.
 
 Every link cell uses the engine-like sweep (`sweep_form = "blocker"`, `rx_refresh`). Stage 3d found that the T = 0.4 rows move by under 1 point between sweep forms, and the blocker form is the engine's.
 
@@ -368,14 +373,15 @@ All arms: δ = 50, H = 0. T = 0.4 s unless stated; in RT, T = 0.12 s unless stat
 | arm | sender | r | edge | cells |
 |---|---|---|---|---|
 | `S5` | stage 3d's S5, `repair = None` | — | — | all |
-| `R0` | S5 + repair | 0 | worth | all (identity with `S5`, and with stage 3d's stored rows where they exist, §9) |
+| `R0` | S5 + repair | 0 | worth | all (identity with `S5`, and with the re-baselined stage 3d rows where they exist, §9) |
 | `RL` | S5 + repair | the live law, true loss | worth | all |
-| `RE` | S5 + repair | the live law, estimated loss (Beta 95 % upper quantile, §2.1) | worth | CL-long, OV, CLw-long, RT |
+| `RE` | S5 + repair | the live law, estimated-loss arm (normal-approximation upper quantile, BOCD not ported; §2.1) | worth | CL-long, OV, CLw-long, RT |
 | `RS` | S5 + repair | fixed at the cell's unqueued law value (CL, CL-long 0.107; OV 0.0998; CLs-long 0.2295) | worth | CL, CL-long, OV, CLs-long |
 | `RF3` | S5 + repair | 0.36, the simulator's reading at the Realtime δ (§19) | worth | all |
 | `RF1` | S5 + repair | 0.112, the law at stage 3d's 10 000/s and RTprop (a low dose) | worth | RT, CLs-long |
 | `RL-age` | as RL | live law | age (the simulator's) | OV |
 | `RL-floor` | as RL | live law | floor | OV, CL-long, RT |
+| `RL-Hinf` | as RL, receiver strict order (H = ∞) | live law | worth | OV, CL-long (measures Q20's late fills) |
 | `S5-inf`, `RL-inf`, `RS-inf` | as S5, RL, RS at T = ∞ (never gives up, any order) | | | CL-long, CLs-long |
 | `RF3-inf`, `RE-inf` | as RF3, RE at T = ∞ | | | CLw-long (with `S5-inf`, `RL-inf`, `RS-inf` at r = 0.116) |
 | `S5-T0p4`, `RL-T0p4` | S5 and RL at the call point, T = 0.4 | | | RT |
@@ -386,14 +392,14 @@ Per cell:
 | cell | configurations |
 |---|---|
 | CL | S5, R0, RL, RS, RF3 |
-| CL-long | S5, R0, RL, RE, RS, RF3, RL-floor, S5-inf, RL-inf, RS-inf |
-| OV | S5, R0, RL, RE, RS, RF3, RL-age, RL-floor |
+| CL-long | S5, R0, RL, RE, RS, RF3, RL-floor, RL-Hinf, S5-inf, RL-inf, RS-inf |
+| OV | S5, R0, RL, RE, RS, RF3, RL-age, RL-floor, RL-Hinf |
 | CLw-long | S5, R0, RL, RE, RF3, S5-inf, RL-inf, RS-inf, RF3-inf, RE-inf |
 | RT | S5, R0, RL, RE, RF1, RF3, RL-floor, S5-T0p4, RL-T0p4 |
 | CLs-long | S5, R0, RL, RS, RF1, RF3, S5-inf, RL-inf, RS-inf |
 | A/A | one per cell |
 
-That is 57 configurations, or 684 runs. RS is not run in RT: there r is constant (srtt does not move), so RS would equal RL.
+That is 59 configurations, or 708 runs. RS is not run in RT: there r is constant (srtt does not move), so RS would equal RL.
 
 ## 6. Readouts and gauges
 
@@ -433,6 +439,7 @@ No mean is taken over delivered units alone.
 - `rep_redundant` (arrived holding nothing unknown) and `rep_innov`;
 - `rep_used`: repair symbols that repaired something;
 - `dec_units`, `dec_on_time`, `dec_after_release`, `late_floor_dec`, `dup_after_dec`;
+- **`dec_late` and `rep_late_only`: repairs that decode after T.** The worth edge admits a member if `a + ô < T`, and §19 shows ô undershoots a persistent queue. So members whose repair arrives after their lifetime are expected wherever the link queues (OV, the CL drain). `dec_late / dec_units` is the direct measure of that undershoot;
 - `p_dec_meas = dec_units / lost first sends`, beside `p_fec_law`, the law's own `P_fec(r, W)` (paper §4.2) averaged over readings: the predicted mismatch of §11;
 - `l1_viol_rep` (must be 0), `worth_viol_rep` (must be 0 under the worth edge; positive under the age edge), `dec_comp_max`;
 - `rep_link_share`: repair datagrams over all link datagrams in saturated windows.
@@ -470,7 +477,7 @@ No mean is taken over delivered units alone.
    - at r = 0, no event pushed and `ctr` unchanged.
 8. **The repair loss draw** uses `SALT_REPAIR` and `p0`, and the outage window drops repairs.
 9. **`recovery_time_0p15`** on a synthetic run with a known answer.
-10. **RTT sampling** ignores a decoded seq above `rhi_smp`, and still follows a floor raise exactly as stage 3d does (constructed state: a floor passing a lost tail).
+10. **RTT sampling** ignores a decoded seq, and otherwise samples exactly as the fixed stage 3d code does (constructed state: a floor passing a lost tail, and a decode above the newest arrival).
 11. **The deny test** with the new law functions exempt by name, and a planted positive control.
 12. **The loss estimate for `RE`** (`"est"`), on constructed report sequences:
     - matches `LossEstimator::loss_rate_upper(0.95)` (the Beta update with decay 0.995 and the normal-approximation quantile) to 1e-12;
@@ -486,7 +493,7 @@ Where a band quotes a stage 3d number, it assumes the RTT-sample measurement of 
 **Q3e-1, identity and liveness.**
 - `check_ident3e.py` PASS: stage 3d's code reproduced on every key.
 - R0 equals S5 on every stage 3d key and trace, in every cell old and new.
-- After the RTT gate of §9: S5 and R0 in CL, CL-long and OV equal stage 3d's stored `CL@b`, `CL-long@b` and `OV@b` rows (`G-T0p4-H0`), and S5-inf in CL-long equals `CL-long@b` `G-Tinf-H0`, on every key at seeds 0 to 11.
+- After the RTT gate of §9: S5 and R0 in CL, CL-long and OV equal the **re-baselined** stage 3d `CL@b`, `CL-long@b` and `OV@b` rows (`G-T0p4-H0`), and S5-inf in CL-long equals the re-baselined `CL-long@b` `G-Tinf-H0`, on every key at seeds 0 to 11.
 - Every run of every arm is `finished`.
 - FAIL: any difference or any unfinished run.
 
@@ -530,7 +537,7 @@ Where a band quotes a stage 3d number, it assumes the RTT-sample measurement of 
 | `RF1` | 0.112 | 0.243 | 0.924 | [0.910, 0.940] | ≈ 0.924 |
 | `RF3` | 0.36 | 0.757 | 0.976 | [0.958, 0.988] | ≈ 0.977 |
 | `RL` | 0.3835 | 0.783 | 0.978 | [0.960, 0.990] | ≈ 0.980 |
-| `RE` | about 0.42 | about 0.80 (interpolated) | about 0.980 | [0.960, 0.992] | ≈ 0.982 |
+| `RE` | about 0.425 | 0.812 (Appendix B, r = 0.4247) | 0.981 | [0.963, 0.993] | ≈ 0.984 |
 | `RL-floor` | 0.3835, but every span empty | 0 | 0.900 | identical to S5 on every stage 3d key | 0.900 |
 
 - S5 sends 0 copies in every run (L2 refuses every resend, §4).
@@ -557,7 +564,7 @@ The steady share is `share = [λ·t_r·0.995 + μ_s·(D − t_r)·(1 − ε(1 �
 
 | arm | r | μ_s | `share_by_0p4` from the formula | band | delay p50 | expired at the intake, windows after 3 s |
 |---|---|---|---|---|---|---|
-| `S5` | 0 | 10 000 | 0.841 (stage 3d stored: 0.838) | [0.82, 0.86] | [0.37, 0.40] s | 0.167 ± 0.02 |
+| `S5` | 0 | 10 000 | 0.841 (stage 3d before the fix: 0.838; per the re-baseline) | [0.82, 0.86] | [0.37, 0.40] s | 0.167 ± 0.02 |
 | `RL` | 0.0875 queued | 9 195 | 0.794 | [0.77, 0.82] | [0.37, 0.40] s | 0.234 ± 0.03 |
 | `RE` | 0.093 queued | 9 150 | 0.790 | [0.765, 0.815] | [0.37, 0.40] s | 0.24 ± 0.03 |
 | `RS` | 0.0998 | 9 093 | 0.786 | [0.76, 0.81] | [0.37, 0.40] s | 0.242 ± 0.03 |
@@ -573,6 +580,16 @@ The steady share is `share = [λ·t_r·0.995 + μ_s·(D − t_r)·(1 − ε(1 �
 - `RL-floor`: `rep_drop_edge / rep_credits ≥ 0.85`.
 - The worth-edge arms: `rep_drop_edge / rep_credits ≤ 0.05`.
 - Link busy over [1, 10] s ≥ 0.98 for every arm.
+- **Decodes after T** (`dec_late / dec_units`, a reading on Q18). Under the worth edge with exact ô this would be about 0. Predicted:
+  - OV, RL, RE and RS: [0.02, 0.30]. The worth margin `R − ô` is about 9 ms, and §19 measured an undershoot of about 5 ticks (10 ms) under a persistent queue.
+  - RT: ≤ 0.01 (no queue).
+  - CL and CL-long before the outage: ≤ 0.01.
+  - A value above 0.30 in OV means the worth edge is not doing its job there. It is then a finding on Q18, not a stop.
+- **`RL-Hinf`, strict order with repair (Q20)**, in OV:
+  - every unit is unprotected at birth, so F_ann sits at the send frontier and a lost unit is passed by the floor on the next datagram, before any repair covering it arrives;
+  - so `late_floor_dec / dec_units` ≥ 0.9: almost every decode is an out-of-order late fill;
+  - `share_by_0p4` within ±0.01 of RL's (a late fill is still delivered and still on time);
+  - `ooo` per delivered ≥ RL's `dec_units`/units × 0.9.
 - `dec_on_time / dec_units` in OV and in the CL drain is reported, as a reading on Q18. The worth edge leaves only `R − ô` ≈ 9 ms of margin, and §19 found ô undershooting a persistent queue. If ô were exact the ratio would be ≥ 0.9.
 
 **Q3e-6, CL and CL-long at the call point (full rate).**
@@ -585,7 +602,7 @@ The delay recovery at 0.15 s is computed as `t ≈ ((T − R)·λ/μ_eff − (0.
 
 | arm | CL `share_by_0p4` | CL-long `share_by_0p4` | recovery at 0.4 s | μ_eff in the drain | delay recovery at 0.15 s (CL-long) | delay p50, CL-long |
 |---|---|---|---|---|---|---|
-| `S5` | [0.83, 0.86] (3d: 0.847) | [0.91, 0.94] (3d: 0.923) | [0, 0.3] s | 12 100 | 0.54 to 1.06 → [0.3, 1.6] s | [4, 9] ms |
+| `S5` | per the re-baseline (before the fix: 0.847) | [0.93, 0.955] (re-baseline: 0.9414) | [0, 0.1] s (re-baseline: 0.00 s) | 12 100 | 0.54 to 1.06 → [0.3, 1.6] s | [4, 9] ms |
 | `RL` | S5 ± 0.02 | S5 ± 0.02 | [0, 0.3] s | 11 440 (r 0.0875) | 0.86 to 1.58 → [0.5, 2.3] s | [4, 12] ms |
 | `RE` | — | S5 ± 0.02 | [0, 0.3] s | 8 300 to 9 600 for about 0.4 s, then as RL | [0.5, 3.5] s, and ≥ RL's | [4, 12] ms |
 | `RS` | S5 ± 0.02 | S5 ± 0.02 | [0, 0.3] s | 11 240 (r 0.107) | 1.03 to 1.85 → [0.6, 2.6] s | [4, 12] ms |
@@ -595,6 +612,10 @@ The delay recovery at 0.15 s is computed as `t ≈ ((T − R)·λ/μ_eff − (0.
 - **At full rate the law leaves headroom.** Before the outage the load is `λ(1 + 0.107 + ρ)/C ≈ 0.91`. So RL and RS differ little: RS minus RL on the delay recovery is in [0, +1.0] s.
   - Compare the clamp-bound CLs-long (Q3e-9), where the window floor raises r to 0.23 and RS does not recover within the run. The difference between the two cells is the scale bracket of Q23.
 - **RF3 is overloaded by repair alone** (`λ(1.36 + ρ) > C`). The dequeue rule sheds `1 − 9 158/10 000 = 8.4 %` once the backlog binds, about 3.5 s after the start, so after the outage. Its on-time level never returns to the pre-outage level.
+- **`RL-Hinf` in CL-long (Q20).**
+  - Before the outage the floor trails the span by about `T − ô − d` of data (≈ 0.3 s, against a span of about 6 ms), so a decode below the floor is rare: `late_floor_dec / dec_units` ≤ 0.05 over [0.5, 1.9] s.
+  - In the drain, units go out unprotected, and the ratio rises towards OV's. It is reported per window.
+  - `share_by_0p4` is RL's ± 0.02.
 - **The delivered share.** For every worth-edge and floor-edge arm, `share_any − share_by_0p4` ∈ [0, 0.005]. So `share_any` carries the bands above, widened by 0.005.
 - **Link busy before the outage** ([0.5, 1.9] s):
   - S5 in [0.80, 0.85];
@@ -609,15 +630,20 @@ Each row gives the brief's form `t_rec = (L·λ/μ_eff − τ)/(1 − λ/μ_eff)
 
 | cell | arm | μ_eff | t_rec | t_rec' | band |
 |---|---|---|---|---|---|
-| CL-long (L = 1.5 s, λ = 10 000) | `S5-inf` | 12 100 | 4.83 s | 5.83 s | [4.6, 6.6] s (stored stage 3d: 5.67 s) |
-| | `RL-inf` | 11 140 to 11 440 (r 0.0875) | 7.2 to 9.3 s | 8.8 to 10.9 s | [6.5, 12.5] s |
-| | `RS-inf` | 10 860 to 11 150 (r 0.107) | 8.6 to 11.1 s | 10.5 to 13.0 s | [8.0, 14.5] s or not within the run; RS-inf minus RL-inf in [0, +4] s |
+| CL-long (L = 1.5 s, λ = 10 000) | `S5-inf` | 12 100 | 4.83 s | 5.83 s | [4.6, 6.6] s (unchanged by the fix: 5.67 s) |
+| | `RL-inf` | 11 140 to 11 440 (r 0.0875) | 7.2 to 9.3 s | 8.8 to 10.9 s | **reported only**; the claims are the residual on measured μ_eff, r in the drain in [0.083, 0.092], and the paired difference below |
+| | `RS-inf` | 10 860 to 11 150 (r 0.107) | 8.6 to 11.1 s | 10.5 to 13.0 s | **reported only**; RS-inf minus RL-inf, paired per seed: [+1.0, +3.0] s |
 | CLw-long (L = 3 s, λ = 8 000) | `S5-inf` | 12 100 | 4.67 s | 5.18 s | [4.0, 6.0] s |
 | | `RL-inf` | 11 140 to 11 440 (r 0.0875 in the drain) | 5.6 to 6.2 s | 6.3 to 6.8 s | [5.0, 7.5] s |
 | | `RS-inf` | 10 860 to 11 150 (r 0.116) | 6.2 to 6.9 s | 6.9 to 7.5 s | [5.5, 8.2] s |
 | | `RE-inf` | about 8 300 for about 0.4 s, then as RL | | | RL-inf + [0, 2.0] s |
 | | `RF3-inf` | 8 960 to 9 160 | 17.6 to 21.3 s | | not within the run (readable for 13 s) |
 
+- **Why the CL-long T = ∞ rows are reported only.**
+  - The link is queued for the whole drain, so r sits at the cap value 0.0875 (Q3e-2) and is not uncertain.
+  - What is uncertain is ρ (0.005 to 0.035). It moves the absolute recovery by about 2 s, and a band wide enough to cover it cannot be falsified.
+  - The paired difference is falsifiable, because ρ enters both arms alike. From the §13.6 form, RS-inf minus RL-inf is 1.7 s at ρ = 0.005, 2.0 s at ρ = 0.02 and 2.1 s at ρ = 0.035.
+  - So is the residual against each run's measured μ_eff (below). The absolute claim is carried by CLw-long.
 - **CLw-long is the cell with power.** Every arm there has room (§4), and the predicted ordering is S5-inf < RL-inf ≤ RS-inf < RF3-inf.
   - RL-inf minus S5-inf is shown positive, from 0.5 to 2.5 s: the repair share's cost in drain time.
 - **On each run's own measured `mu_eff_hat`,** the residual `t_meas − t_rec` lies in [−0.3, +2.0] s and `t_meas − t_rec'` in [−1.0, +1.0] s, for every T = ∞ arm with a finite prediction, in every seed. This is §19's law, with μ_eff reduced by the repair share.
@@ -668,11 +694,12 @@ Each step writes a marker in `out3e/` when it passes. `batch3e.py` refuses to st
 3. **Part ID:**
    - R0 against S5 in the stage 3d cells (3 seeds) and in the new cells (12 seeds);
    - every run of the part `finished`.
-   - PASS writes `PASS-r0`. This step compares the new code with itself and with stage 3d's code. It does not compare against stage 3d's stored results.
-4. **The RTT gate.** The floor-raised RTT sample (§11 item 9) is being measured separately.
-   - Q3e-1's comparison against stage 3d's **stored results** waits for that measurement.
-   - If the measurement shows the bug moves no stage 3d reading beyond its A/A floor, write `PASS-rttbug` with the measurement's reference, then run that comparison.
-   - If it does move a reading, write `STOP`. The stage 3d baseline is re-run with the fix first, under its own amendment. Stage 3e is then rebuilt on the fixed code: steps 1 to 3 again, with `check_ident3e.py` against the fixed code. Only then does its comparison against the re-run take this step's place.
+   - PASS writes `PASS-r0`. This step compares the new code with itself and with stage 3d's code. It does not compare against the re-baselined results.
+4. **The RTT gate.** The floor-raised RTT sample (§11 item 9) is confirmed: fixing it moves CL-long at T = 0.4 from 92.38 % to 94.14 % delivered, and its recovery from 0.10 s to 0.00 s. Never-give-up, the 2 s lifetime and P2 are unchanged.
+   - So stage 3e builds on the fixed code (`toy-stage3d-rttfix`). Steps 1 to 3 run against that code, and `check_ident3e.py` reproduces it, not `e17b4c64`.
+   - Q3e-1's comparison with stored results waits until the re-baseline has finished and is committed. Its target is the re-baseline's results, never the pre-fix stage 3d outputs.
+   - When the re-baseline is in, write `PASS-rttbug` with its head and run that comparison. Until then MAIN does not start.
+   - Any band quoted "per the re-baseline" is filled in from it before MAIN starts, with the band's width kept as registered: the band is centred on the re-baselined value. That substitution is recorded in the results.
 5. **Part RATE:** test 3 against `rate_ref3e.json`. PASS writes `PASS-rate`.
 6. **Part SIMREAD (mandatory).** Read the interactive simulator at its CL-long preset (`viz-three-knobs`):
    - the p̂ upper, W, the raw rate, r_sat, r and the saturation pressure, at the end of the run and averaged over its last 5 s;
@@ -704,17 +731,17 @@ Numbering continues from the derivation's Q18.
 - **Q20, should the floor count repair?**
   - **Default: no.** `protected` stays the resend trigger.
   - The alternative would hold the floor at about `T − ô`, and strict order would wait for it.
-  - The default's cost is out-of-order late fills at H = ∞ (`late_floor_dec`).
+  - The default's cost is out-of-order late fills at H = ∞ (`late_floor_dec`). Arm `RL-Hinf` (OV, CL-long) measures it (Q3e-5, Q3e-6).
 - **Q21, ε̂ in the offline simulation's rate law.**
   - **Default: the cell's true first-send loss,** a declared idealisation. The law arm is then a lower bound on the engine's r.
-  - **The self-limiting reading of §2.6 rests on this default.** With an estimate, an outage or queue drops raise ε̂ and so r, which is the opposite feedback. Arm `RE` runs the engine's 95 % upper-quantile form (the Beta quantile with 0.995 decay) to measure it.
+  - **The self-limiting reading of §2.6 rests on this default.** With an estimate, an outage or queue drops raise ε̂ and so r, which is the opposite feedback. Arm `RE`, the estimated-loss arm (normal-approximation upper quantile, BOCD not ported), measures it.
   - The remaining gap is the BOCD predictive quantile, which the engine reads after 5 updates. Default: not ported. A port (`raptorpath-math/src/estimator.rs`) would follow if RE's post-outage reading matters for the verdict.
 - **Q22, the engine's spare-capacity clamp** `min(r, (cwnd − in_flight)/in_flight)`.
   - **Default: not modelled.** The offline simulation has no cwnd, and its B is a store cap, not a congestion window.
   - Direction: the clamp can only lower r, so the results bound the engine's repair load from above.
   - If it is ever modelled, it needs a bind gauge.
 - **Q23, the rate scale.**
-  - **Decided (coordinator's review): full rate** for the primary cells. Runs take about 3 s, the law is not window-floor-bound there, and S5 and R0 can be compared with stage 3d's stored rows.
+  - **Decided (coordinator's review): full rate** for the primary cells. Runs take about 3 s, the law is not window-floor-bound there, and S5 and R0 can be compared with the re-baselined stage 3d rows.
   - One one-tenth cell is kept and labelled clamp-bound (CLs-long). With RF1 and RS there and RS at full rate, it brackets what W's floor does to r (Q3e-9).
 - **Settled here, listed for review:**
   - a repair's loss is drawn at p0;
@@ -749,7 +776,8 @@ Numbering continues from the derivation's Q18.
 9. **Stage 3d's RTT sample can come from a seq that never arrived.**
    - `apply_floor` raises the receiver's `rhi` to `f − 1` without an arrival. The report carries that `rhi`, and `on_report` samples `now − sent_t[rhi]` when that seq was never resent (`toy2.py`, `apply_floor` and `on_report`).
    - So a floor that passes a lost tail yields an RTT sample from a datagram the receiver never got. RFC 9002 §5.1 asks for the largest newly *acknowledged* packet.
-   - Stage 3e keeps the behaviour for the identity (§3 item 4) and does not fix it. It is being measured separately. §9's RTT gate holds back the comparison with stage 3d's stored results until that measurement is in, and if stage 3d is affected, the baseline is re-run with the fix first.
+   - **Confirmed by a separate measurement.** Fixed, CL-long at T = 0.4 delivers 94.14 % against 92.38 %, with recovery 0.00 s against 0.10 s. Never-give-up, the 2 s lifetime and P2 are unchanged.
+   - A re-baseline is running on `toy-stage3d-rttfix`, and stage 3e builds on that fixed code (§9 step 4).
 10. **W's cap of 200 sets r whenever a full-rate link queues.** `W_lat = srtt·rate` reaches 1 000 or more behind the pause. W is then the sender's `MAX_WINDOW_SIZE = 200`, which paper §4.8 already calls "below the multipath lower bound". The queued r (0.0875) is the cap's value, not the window law's.
 
 ## 12. Review
@@ -774,11 +802,18 @@ The second review read the version first pushed (`d500454b`) and changed these:
 
 The coordinator's review of `f50401f8` changed these:
 - **Rates.** The primary cells now run at stage 3d's full rate, with the rate-law values and every prediction recomputed through `raptorpath-math`. One one-tenth cell is kept and labelled clamp-bound.
-- **Self-limiting** is now stated as conditional on Q21's true-loss default. Arm `RE` uses the engine's 95 % upper-quantile form, where outage losses and queue drops raise r.
+- **Self-limiting** is now stated as conditional on Q21's true-loss default. Arm `RE`, an estimated-loss arm (normal-approximation upper quantile, BOCD not ported), is a case where outage losses and queue drops raise r.
 - **The simulator read** is now a mandatory step that gates MAIN.
 - **Power.** The cell CLw-long has room for repair: `(1 + r)·λ < μ(1 − ε)` holds with 10–26 % margin, and the outage is 3 s.
 - **The RT prediction** now states that it uses the span's decode probability, not the law's P_fec, with the arithmetic.
 - **The RTT gate** is now a stop rule (§9 step 4).
+
+The coordinator's final review of `abe2981c` changed these:
+- **The RTT bug is confirmed.** Stage 3e now builds on `toy-stage3d-rttfix`. R0's identity target is the re-baseline, and the S5 baselines are its numbers or "per the re-baseline": CL-long at T = 0.4 is 94.14 % with recovery 0.00 s.
+- **CL-long at T = ∞.** RL-inf and RS-inf are reported only, because the uncertainty in ρ makes an absolute band unfalsifiable. The claims there are the paired RS − RL difference [+1.0, +3.0] s, r in the drain in [0.083, 0.092], and the residual on measured μ_eff. CLw-long carries the absolute claim.
+- **RE** is relabelled as an estimated-loss arm, not the engine's estimator, and its decay is stated as a time constant (0.4 s at full rate, about 4 s at 50/s). Its RT decode probability is now computed (0.812), not interpolated.
+- **A gauge for repairs that decode after T** (`dec_late`, `rep_late_only`), with predicted bands.
+- **The empty span** is stated: no repair, no waiting, no fallback span. And `RL-Hinf`, a strict-order arm with repair, measures Q20's late fills.
 
 ## Appendix A: rate-law reference program
 
@@ -826,6 +861,7 @@ A Monte Carlo of the coding structure alone. It is not the offline simulation. A
 | 0.10 | 3 | 0.3835 | 0.801 | 0.783 |
 | 0.10 | 3 | 0.36 | 0.765 | 0.757 |
 | 0.10 | 3 | 0.11 | 0.243 | 0.243 |
+| 0.10 | 3 | 0.4247 (RE in RT) | 0.840 | 0.812 |
 | 0.03 | 6 | 0.23 | 0.935 | — |
 | 0.03 | 6 | 0.11 | 0.549 | — |
 | 0.03 | 8 | 0.13 | 0.788 | — |
