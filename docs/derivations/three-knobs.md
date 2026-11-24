@@ -612,7 +612,14 @@ This section supersedes earlier sections where it says so. Sections 1 to 12 are 
 - the backlog-drain gain formula (§13.6);
 - the stage 3b traps (§13.7): the source model, selecting the link by a flag, pinning B, the positive control's placement procedure, the noise floors, the cell size against C1's cost, and quantile-only readouts.
 
-The choice of the full ack timeout R as the dequeue margin (instead of R/2) is mine, made after that review. It was checked in the final review of this section.
+The choice of the full ack timeout R as the dequeue margin (instead of R/2) is mine, made after that review.
+
+A final review of the whole section then changed five things:
+- the RTT sample is taken from the highest newly received seq, not the frontier;
+- evidence is stated in sender terms (a datagram sent later has arrived), and the same gate applies to resends of every arm in link cells;
+- the R timer sends one probe per timeout and does not back off;
+- a narrow-tail cell is added for the positive control;
+- queue drops are counted inside and outside the outage window.
 
 One quantity is used throughout. It is the time after which an unacknowledged send is overdue, the ack timeout of RFC 6298 §2 and RFC 9002 §6.2.1:
 
@@ -622,7 +629,7 @@ One quantity is used throughout. It is the time after which an unacknowledged se
 
 | symbol | provenance |
 |---|---|
-| srtt, rttvar | measured, by RFC 6298 §2 (α = 1/8, β = 1/4; first sample: srtt = r, rttvar = r/2), with Karn's rule: no sample from a seq that was ever resent (RFC 6298 §3) |
+| srtt, rttvar | measured, by RFC 6298 §2 (α = 1/8, β = 1/4; first sample: srtt = r, rttvar = r/2). Samples come from the largest newly received seq only (RFC 9002 §5.1), and never from a seq that was resent (Karn's rule, RFC 6298 §3). A sample from the cumulative frontier, as stage 3 took it, is a pre-outage send after a fill, inflated by the fill round |
 | 4 | cited: RFC 6298's K |
 | g | resource bound: timer granularity (RFC 9002 kGranularity = 1 ms; the toy's tick, 2 ms) |
 | ack_delay_max | measured or declared: the receiver's report coalescing (engine `GAP_ACK_MIN_INTERVAL` = 2 ms; the toy's tick) |
@@ -638,19 +645,20 @@ In the engine R is the per-path `srtt_p + 4·σ_p` that `tail-and-hold.md` E0 al
 
 ```text
    verdict(s)  at the first instant where   a(s) + ô  ≥  T   ∧   evidence(s)
-   evidence(s)  ⇔   a gap report generated at  ≥ last_send(s) + ô  lists s missing        (knowledge)
-                 ∨   now  ≥  last_send(s) + R                                         (timeout: overdue)
+   evidence(s)  ⇔   s unresolved  ∧  last_send(s)  <  τ_rx                        (knowledge: a datagram sent later has arrived)
+                 ∨   now  ≥  last_send(s) + R                                    (timeout: overdue)
 ```
 
 | symbol | provenance |
 |---|---|
 | a(s), T, ô | as in §2.1 and §2.2 |
 | last_send(s) | measured, sender state |
-| report generation time | measured; the report carries it (the toy's `gen`; in the engine, the ack's own send stamp) |
+| τ_rx | measured: the newest send stamp among datagrams the receiver has received, echoed in its report. This is RFC 8985's (RACK) time-based loss test, with the reordering window 0 that a FIFO path allows (§6.2 there; a reordering path needs RACK's window, as in the engine's C3 hole law). It is stated entirely in sender time, with no clock comparison across hosts. **Engine source: open.** Either the per-path batch acknowledgements already carry it, or it is one ack field (a wire version). Recorded as Q14 |
 | R | as above |
 
 - **The verdict instant is `max(t_h + T − ô, t_evidence(s))`**, a maximum of two continuous terms, so it is continuous in T. At T = ∞ it is ∞.
-- **The limit of "never".** Only a gap report is knowledge. For the open tail (nothing received above s) the only evidence is the timeout. An ack slower than R gives a verdict on data that did arrive. That is gauged as `vta`, verdicts later acknowledged as received, and it must read ≈ 0 wherever R is honest (prediction Q3b-2).
+- **The limit of "never".** Only a later arrival is knowledge. For the open tail with nothing sent after it, the only evidence is the timeout. An ack slower than R gives a verdict on data that did arrive. That is gauged as `vta`, verdicted seqs the receiver ever received, and it must read ≈ 0 wherever R is honest (prediction Q3b-2).
+- **The same predicate gates resends.** A copy is resent only on evidence that the previous one is lost. That replaces the toy's `gen ≥ last_send + owd + J`, which compares a receiver-side generation time with a sender time plus the base owd, and so ignores queueing: on a link with a 70–90 ms queue it resends every report interval.
 - **At T below about 1.5·RTT,** §2.2's spurious verdicts on in-flight data are gone. A delivered seq's ack returns before R, so the seq never gets evidence. The floor-cost finding P10 no longer applies.
 
 **The brake (supersedes §2.8's `− |V ∩ [A_rx, hi]|` term, answering Q6 "no").** "The outstanding count falls only on receiver feedback":
@@ -721,12 +729,15 @@ A young-first service order would deliver the same share at low delay. It does n
 - At owd 50 and 60 ms, `2·srtt` = 200 and 240 ms, so the 100 ms cap binds in both cells. The early rise of the share sat at age ≈ 0.104 s in both, and the registered +30 ms shift could not appear.
 - That cap is a defect finding in its own right: a bind of 100 % over those cells. It is recorded in §13.8.
 
-**The law.** "An open-tail seq is overdue, and eligible to be resent, R after its last send":
+**The law.** "When the oldest open-tail seq is R overdue, probe with it":
 
 ```text
-   open-tail resend eligibility:   now  ≥  last_send(s) + R          (replaces  now − first_send(s) ≥ P)
-   checked by a per-seq timer at  last_send(s) + R ,  re-armed if R has grown when it fires
+   probe:   at  last_send(s_o) + R ,   s_o = the oldest unresolved, unverdicted seq above every reported one,
+            send one datagram for s_o (serve or verdict by L2 and evidence);   re-arm for the new s_o      (replaces  now − first_send(s) ≥ P)
 ```
+
+- One probe per timeout follows RFC 9002 §6.2.4, which sends one or two probe datagrams per PTO. The probe's arrival raises τ_rx, which gives evidence for every older open-tail seq at once (§13.1). So recovery after an outage is not serial, and the load is bounded at 1/R datagrams per second without a backoff.
+- RFC 6298 §5.5's and RFC 9002 §6.2.1's doubling is not used. It would bound the load a second time, and after a long outage it would delay recovery by up to the last doubled interval. The cost is that a dead path keeps one probe per R in flight. Its rate is gauged as `probes`.
 
 - **The sweep clock keeps only its other jobs:** the floor repeat, and in object mode re-serving reported holes, now with the same R eligibility.
 - **The crossover:** the first resend of a seq lost alone arrives at age about `R + owd ≈ 3·owd + 4·rttvar + 2g`. L2 admits it iff that is below T. So the crossover is `T* ≈ R + ô`, made of measured terms only, and it moves by 3·Δowd when the path moves.
@@ -781,21 +792,24 @@ Build on branch `toy-stage3-knobs` `39efa6a3` in `tools/toy/`: extend `toy2.py`,
 - `rtt_est: str = "old"`: `"rfc"` turns on Karn's rule and RFC 6298 srtt and rttvar, and also defines `R_now()`;
 - `src_model: str = "old"`: `"wc"` is the work-conserving source;
 - `link: object = None`: `dict(C=…, Q=…)` turns on the bottleneck;
-- `tail_elig: str = "P"`: `"R"` turns on the per-seq R timer;
+- `tail_elig: str = "P"`: `"R"` turns on the probe timer;
+- `resend_gate: str = "owd"`: `"evidence"` gates every resend on evidence (link cells only);
 - `deq_expiry: bool = False`;
 - `evidence_verdict: bool = False`;
 - `o_excl_verdict` (exists; S3 sets False, arm S3x sets True).
 
 **Sender `"S3"`** is S2 (stage 3 code) with `evidence_verdict = True`, `deq_expiry = True`, `o_excl_verdict = False` and `rtt_est = "rfc"`. `tail_elig` is set per arm. S3 has no verdict copy.
 
-1. **RTT (`rtt_est = "rfc"`).** In `on_report`, take a sample `r = now − sent_t[A − 1]` only when `copies[A − 1] == 0` (Karn's rule). On the first sample set `srtt = r, rttvar = r/2`; after that `rttvar = 0.75·rttvar + 0.25·|srtt − r|`, then `srtt = 0.875·srtt + 0.125·r` (RFC 6298 §2.3 order). Define `R_now() = srtt + max(4·rttvar, tick) + tick`, with `srtt = 0.333, rttvar = 0.1665` before the first sample. S3's ô in L2 is `srtt/2` (with the same seed), not the exact `rtt/2`. Arms with `rtt_est = "old"` are unchanged.
+1. **RTT (`rtt_est = "rfc"`).** In `on_report`, take a sample `r = now − sent_t[rhi]` only when the report's `rhi` exceeds the previous `rhi_known` and `copies[rhi] == 0` (largest newly received, RFC 9002 §5.1; Karn's rule). The report already carries `rhi`. Add `τ_rx` to the report tuple: the receiver's maximum `tau` over data arrivals, which `on_data` already receives. The sender keeps the maximum it has heard. On the first sample set `srtt = r, rttvar = r/2`; after that `rttvar = 0.75·rttvar + 0.25·|srtt − r|`, then `srtt = 0.875·srtt + 0.125·r` (RFC 6298 §2.3 order). Define `R_now() = srtt + max(4·rttvar, tick) + tick`, with `srtt = 0.333, rttvar = 0.1665` before the first sample. S3's ô in L2 is `srtt/2` (with the same seed), not the exact `rtt/2`. Arms with `rtt_est = "old"` are unchanged.
 2. **Evidence-gated verdicts (`evidence_verdict`).**
-   - In `act`, an S3 candidate that fails L2 takes a verdict only if `can_resend(s, gen)` holds, the existing test "this report was generated after the last copy could have arrived", or if `now ≥ last_send[s] + R_now()`. Otherwise it is left alone: no serve and no verdict.
+   - Define `evidence(s, now) = (last_send[s] < self.tau_rx) or (now >= last_send[s] + R_now())`.
+   - In `act`, an S3 candidate that fails L2 takes a verdict only if `evidence(s, now)` holds. One that passes L2 is served only if `copies[s] == 0` or `evidence(s, now)` holds. Otherwise it is left alone.
    - The per-seq verdict event (kind 8) is pushed at `max(t, h_seq[s] + T − srtt_seed/2)`, where `srtt_seed` is the RFC 9002 seed if no sample exists yet, else the current srtt. On firing, if s is unresolved (the stage 3 condition) and not verdicted:
-     - if `now ≥ last_send[s] + R_now()`, take the verdict (no floor of its own, as in stage 3);
-     - else re-push it at `last_send[s] + R_now()`.
-   - This is the timeout half of evidence. Reported holes are judged by `act` on the report path.
-3. **Brake.** With `o_excl_verdict = False`, `O_ctl = O` (stage 3's selector). `maybe_resume` is called only from `on_report`. Remove the S3 calls after verdicts (stage 3's worker decision 6 added them for S2), leaving S2 and S2c as they were.
+     - if L2 now passes (`a + srtt/2 < T` with the current srtt), re-push at `h_seq[s] + T − srtt/2`;
+     - else if `evidence(s, now)` holds, take the verdict (no floor of its own, as in stage 3);
+     - else re-push at `last_send[s] + R_now()`.
+   - **Resend gate selector `resend_gate: str = "owd"`.** With `"evidence"`, every arm's `can_resend(s, gen)` is replaced by `copies[s] == 0 or evidence(s, now)`. It is set for **every arm** in the link cells (CL, OV) and left at `"owd"` elsewhere, so stage 3 stays identical. The link cells therefore also need `rtt_est = "rfc"` for every arm.
+3. **Brake.** With `o_excl_verdict = False`, `O_ctl = O` (stage 3's selector). For S3, `maybe_resume` is called only from `on_report`. S2, S2c and S3x (`o_excl_verdict = True`) keep stage 3's calls after verdicts, so S3x resumes on a verdict and measures the exclusion as stage 3 built it.
 4. **Dequeue expiry (`deq_expiry`, in `emit`).** Before assigning a seq, loop:
 
    ```python
@@ -814,9 +828,11 @@ Build on branch `toy-stage3-knobs` `39efa6a3` in `tools/toy/`: extend `toy2.py`,
    - else set `d = max(t, link_free) + 1/C`, `link_busy += 1/C`, `link_free = d`, take the arrival as `d + delay.at(d)`, and make the loss draw with `lost(…, t = d)`. The dead window is therefore read at departure, so datagrams queued when the outage starts are lost.
    - Reports and the reverse path are not limited. The FIFO check (`fifo_note`) applies to arrivals as today.
    - With `link = None` none of this runs.
-7. **R timer for the open tail (`tail_elig = "R"`).** At every send of s (first send and copies), push an event of kind 9 at `t + R_now()` with payload `(s, t)`. On firing, if `last_send[s] == t` (no later send), `s ≥ A_known`, `s > rhi_known` (no report covers s) and s is not verdicted:
-   - if `now ≥ t + R_now()`, call `act(now, now, [s], open_tail=True)`, which serves or takes the verdict by L2 and evidence;
-   - else re-push at `t + R_now()`.
+7. **The probe timer (`tail_elig = "R"`).** Keep exactly one pending event of kind 9, first pushed at the first send at `t + R_now()`. On firing:
+   - find `s_o`, the smallest s with `s > rhi_known`, `s ≥ A_known`, `s < n_sent` and s not verdicted;
+   - if none exists, re-push at `now + R_now()`;
+   - else if `now ≥ last_send[s_o] + R_now()`, call `act(now, now, [s_o], open_tail=True)` (L2 and evidence decide serve or verdict; evidence holds by the timeout), count `probes += 1`, and re-push at `now + R_now()`;
+   - else re-push at `last_send[s_o] + R_now()`.
 
    In `on_sweep`, with `tail_elig = "R"`, the open-tail list is not built. The object-mode re-serve uses `now − last_send[x] ≥ R_now()` in place of `≥ P`. `floor_repeat` is unchanged.
 8. **Deny test.** Keep `DIALS ∋ T, Hk`; add `dequeue_expired` to `EXEMPT`.
@@ -824,9 +840,9 @@ Build on branch `toy-stage3-knobs` `39efa6a3` in `tools/toy/`: extend `toy2.py`,
 **New readouts** (every arm; no mean is taken over delivered units alone):
 - `share_by_0p4` and `share_by_2` (stage 3 definitions; denominator: units handed over);
 - delay from hand-over `D_u = dlv − h(u)` over **all units handed over**, with never-delivered and expired units set to `+inf`: p50, p90 and p99 (a percentile is reported as `inf` when it falls on an undelivered unit);
-- `vta` (verdicts on seqs the receiver had received before the verdict instant: `got[s]` with `arr[s] ≤ verdict time`);
-- `intake_expired`, `intake_expired_deq`, `queue_drop`, `link_util` (`link_busy` over the run's active time, from the first send to the last departure), `pause_events`, `pause_time` (total time paused);
-- `throttle`: `"link"` if `link_util ≥ 0.98` over the overload window, else `"pause"` if `pause_time` exceeds half the window, else `"none"`;
+- `vta` (verdicted seqs the receiver ever received: `|{s ∈ verdicted : got[s]}|`; S3 sends no copy at a verdict, so any such arrival came from a send made before it);
+- `intake_expired`, `intake_expired_deq`, `queue_drop_in` and `queue_drop_out` (drops with departure attempt inside or outside the dead window), `probes`, `link_util_w` (link busy time inside [1 s, 10 s], divided by 9 s), `pause_events`, `pause_time` (total time paused);
+- `throttle` (OV only): `"link"` if `link_util_w ≥ 0.98`, else `"pause"` if the pause time inside [1 s, 10 s] exceeds 4.5 s, else `"none"`;
 - `R_mean`;
 - `resend_by_R` and `resend_by_report` (resend counts by trigger);
 - for the longest strict-order stall episode, the parts (i), (ii) and (iii) of §13.5, using the outage end from `dead`, the first floor arrival after it, and the last fill inside the episode.
@@ -835,7 +851,7 @@ Build on branch `toy-stage3-knobs` `39efa6a3` in `tools/toy/`: extend `toy2.py`,
 1. With every new field at its default, stage 3's outputs are reproduced (the identity script).
 2. S3 with `tail_elig = "P"` at T = inf equals C3 on stage 3's 20 keys and on the trace, in the E, M and K cells (3 seeds).
 3. S3 at T = 1e6 equals S3 at T = inf, for both `tail_elig` values.
-4. The brake: a test seam records every change of `O_ctl()` and asserts that each happens inside `on_report` (with `o_excl_verdict = False`).
+4. The brake: a test seam records every **decrease** of `O_ctl()` and asserts that each happens inside `on_report` (with `o_excl_verdict = False`).
 5. `vta == 0` in K-I2 at T = 0.14 for S3, against stage 3's spurious verdicts there.
 6. The dequeue rule: in OV (below), no sent unit has `a + R_now() ≥ T` at its dequeue unless it was the only unit waiting (checked from a trace of dequeue decisions).
 7. The link with `Q = 0` drops everything, and with large C and Q reproduces arrival = `t + 1/C + delay.at(·)`.
@@ -852,6 +868,7 @@ All cells have one path, 12 seeds, phases drawn per seed, and δ = 50.
 | **OV** (overload, valid for every arm) | cell I2 loss; owd 5 ms; `link = dict(C=10000, Q=1250)`; λ = 12 000/s; `n_total = 120000` (10 s); `src_model = "wc"`; `pause_B = 1000`; no outage; `t_limit = 40` | §13.2; the link throttles every arm. A run whose `throttle` is not "link" over [1 s, 10 s] makes the cell invalid for that arm, reported as such |
 | **X15, X20** (crossover, unclamped) | cell L10 loss; rate 50; `n_total = 3000`; no outage; owd 15 ms and 20 ms | §13.4 |
 | K-L10, K-L10b | stage 3's call cells at owd 50 and 60 ms (the clamp binds) | the bind finding, and the shift under the R timer |
+| **E-I2n** (narrow tail) | E-I2 with `tail = 50`: `dead = (n − 50, (n − 50)/10000, 1.5)`, so the dead tail spans 5 ms of hand-over, 0.3 % of its fill age | the positive control on K. Stage 3's 347-unit tail spans 34.7 ms, 2.3 % of 1.5 s, which is a ramp across the ±2 % window in both E cells |
 
 Cost check: CL and OV are 100 000 and 120 000 units, so C1, at about 1.2 ms per unit (stage 3 decision 14), takes about 2 to 2.5 min per run. Every arm finishes.
 
@@ -873,12 +890,12 @@ Cost check: CL and OV are 100 000 and 120 000 units, so C1, at about 1.2 ms per 
   - K-L10b: T = 0.180 to 0.245 in 5 ms steps (14 points);
   - and S2 (stage 3 arm, old sweep) on the same K-L10 and K-L10b grids.
 - **Nudges** (S3 R, every stage 3 cell plus CL): T = 0.4·{0.98, 0.99, 1, 1.01, 1.02} at H = 0.02, and H = 0.02·{…} at T = 0.4.
-- **Positive control (E-I2, E-L10), placed by a fixed procedure** (run after the identity arms, before any decision cell):
+- **Positive control (E-I2n, E-I2, E-L10), placed by a fixed procedure** (run after the identity arms, before any decision cell):
   - from the 12 runs of S3 (R) at T = inf, H = inf, take the delivery ages `dlv − h` of the dead-tail units (seq ≥ `dead[0]`);
   - let p be their median, rounded to 1 ms, and w their interquartile range;
   - run S3 (R) at T = p·{0.98, 0.99, 1, 1.01, 1.02} with H = inf;
   - stage 3 measured these ages at about 1.53 s (E-I2) and 1.80 s (E-L10, range 1.69 to 1.89) under C3. The procedure re-measures them under S3 (R).
-- **A/A** (frozen as `nf_stage3b.json` before any decision cell): S3 (R) at T = inf, H = inf, phase variants 0 and 1, in E-I2, E-L10, CL, OV and X15, on every readout above.
+- **A/A** (frozen as `nf_stage3b.json` before any decision cell): S3 (R) at T = inf, H = inf, phase variants 0 and 1, in every cell that carries a reading: E-I2, E-I2n, E-L10, M-I2, M-L10, K-I2, K-L10, K-L10b, CL, OV, X15 and X20, on every readout above. NF_K = NF_P = the readout's own floor, as stage 3 had it, since there is no five-point A/A.
 
 #### 13.7.4 Readings
 
@@ -908,18 +925,19 @@ Cost check: CL and OV are 100 000 and 120 000 units, so C1, at about 1.2 ms per 
   - S3 T = 0.4: `share_by_0p4` ∈ [0.75, 0.90];
   - S3 T = 0.4 minus C3 on `share_by_0p4` reads "shown larger" by more than 0.25;
   - S3 T = 2 against C3 on `share_by_0p4` and `share_by_2` reads equivalent (T above the backlog wait buys nothing);
-  - `queue_drop = 0` for every arm.
+  - `queue_drop_out = 0` for every arm. `queue_drop_in` is reported: during the outage the old-sweep arms resend about 1 000 outstanding seqs per 25 ms, which is above C, while S3 sends one probe per R.
 - **Q3b-5, the crossover follows the path (S3 R, H = 0).**
   - Mid-level crossings: X15 at 0.047 to 0.055 s, X20 at 0.062 to 0.070 s, shift 15 ms ± 4 ms;
   - K-L10 at 0.150 to 0.165 s, K-L10b at 0.180 to 0.195 s, shift 30 ms ± 5 ms;
   - S2 (old sweep) at K-L10/K-L10b shows a shift below 10 ms (the clamp bind, reproducing stage 3);
-  - below each crossing, `resend_by_R = 0` and `resend_by_report = 0` (no resend can arrive in time).
+  - each crossing also lies within ± 4 ms of the run's own `R_mean + srtt_mean/2`. That is the measured-delay form; the absolute bands above assume a small rttvar, and this one does not;
+  - at each grid's lowest T, `resend_by_R = 0` and `resend_by_report = 0` in every seed (no resend can arrive in time).
 - **Q3b-6, continuity.** K and P read equivalent at the T and H nudges in all stage 3 cells and CL, on `share_by_0p4`, `share_by_2`, delay p50 and p90, `ooo_per_delivered` and `repair_per_delivered`.
 - **Q3b-7, positive control.**
-  - In each E cell, if `w < 0.01·p`, K on `share_T` reads "shown". Stage 3's E-I2 ages suggest this holds there.
-  - If `w ≥ 0.01·p`, the step is a ramp across the nudge window. Then the prediction is that J(0.02) (the five-point outer difference, §7.9) reads "shown larger" and K reads equivalent. Stage 3's E-L10 range suggests this case.
-  - Which case applies is fixed by the measured w before the nudges run, and written into the results first.
-- **Q3b-8, brake cost (S3x against S3, M cells and CL):** `share_by_0p4` equivalent; the post-outage resume delay (outage end → first send after the pause) for S3 at most R + one sweep period + RTT, against S3x's earlier resume. In OV, S3x's `throttle` is not weaker than S3's because S3's evidence rule leaves almost nothing for the exclusion to remove: `pause_time` within 5 %.
+  - In each E cell, if `w < 0.01·p`, K on `share_T` reads "shown". The prediction is that this holds in E-I2n.
+  - If `w ≥ 0.01·p`, the step is a ramp across the nudge window. Then the prediction is that J(0.02) (the five-point outer difference, §7.9) reads "shown larger" and K reads equivalent. The prediction is that this holds in E-I2 and E-L10, whose tails span 2.3 % of the fill age.
+  - Which case applies in each cell is fixed by the measured w before the nudges run, and written into the results first. If E-I2n's w comes out ≥ 0.01·p, the K control has no cell, which is a finding.
+- **Q3b-8, brake cost (S3x against S3, M cells and CL):** `share_by_0p4` equivalent; the post-outage resume delay (outage end → first send after the pause) for S3 at most R + one sweep period + 2·RTT (probe, floor, ack), against S3x's earlier resume. In OV, S3x's `throttle` is not weaker than S3's because S3's evidence rule leaves almost nothing for the exclusion to remove: `pause_time` within 5 %.
 - **Q3b-9, strict stall decomposition (K cells, S3 R, H = inf, T = 0.4):** part (i) ≤ P + owd + 5 ms in every seed; at K-L10, part (ii) ≥ 0.5 × (longest stall − 1.5 s), i.e. most of the excess is live-hole fills, not floor wait.
 
 Run order:
@@ -944,9 +962,10 @@ Report every reading, the A/A self-check and every deviation, as in stage 3.
   - Q6 answered no;
   - Q10 and Q11 answered as above, defaults awaiting the owner;
   - Q12 new: a loss price, default no;
+  - Q14 new: the engine's source for τ_rx, RACK's newest-delivered send time (§13.1): per-path batch acks if they carry it, else one ack field. **Default: find out before the build.** The evidence rule needs it;
   - Q13 new: replace the tail-sweep eligibility `clamp(2·srtt, 25, 100 ms)` with R in the engine too. **Default: yes, as its own guarded change.** It moves Bulk resend timing, and the cap's 100 % bind at 50 and 60 ms owd is a defect finding (MEASUREMENT DISCIPLINE 17 and 18), owed a ledger verdict.
 - **§10, the engine sketch:**
-  - step 5 reads: evidence-gated verdicts; no O exclusion; dequeue expiry with R; the per-path R timer for the open tail (its own commit, Q13);
+  - step 5 reads: evidence-gated verdicts; no O exclusion; dequeue expiry with R; the R probe timer for the open tail (its own commit, Q13); the τ_rx evidence (Q14);
   - the gauges add `vta`, `intake_expired_deq` and the R bind (time at the granularity floor);
   - the guard adds a Realtime datagram-stream cell with an outage, and a capacity-limited cell (§13.3, §13.6).
 - **Not fixed, and why:**
