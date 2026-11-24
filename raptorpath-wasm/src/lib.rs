@@ -919,7 +919,15 @@ impl Simulation {
 
     /// The share of all units delivered within `deadline` of hand-over (L3).
     fn share_within(&self, deadline: f64) -> f64 {
-        let n = self.unit_delays().iter().filter(|&&d| knobs::within_lifetime(deadline, d)).count();
+        // Delivered units only: an undelivered unit's delay is ∞, and
+        // within_lifetime(∞, ∞) is true, so the delay alone cannot say it.
+        let o = self.one_way_s();
+        let n = (0..self.seq_unit.len())
+            .filter(|&s| {
+                let t = self.consumer.delivered_at(s);
+                !t.is_nan() && knobs::within_lifetime(deadline, t - self.h_seq[s] + o)
+            })
+            .count();
         n as f64 / self.num_source as f64
     }
 
@@ -2425,6 +2433,15 @@ impl Simulation {
     /// Per-unit consumer delivery time minus hand-over plus ô (s), ∞ when
     /// not delivered: the drawing's companion to `get_ooo_units`.
     pub fn get_unit_delays(&self) -> Vec<f64> { self.unit_delays() }
+    /// Per-unit delivered marker (1 = the consumer delivered it), so the
+    /// page classifies units without testing for ∞.
+    pub fn get_delivered_units(&self) -> Vec<u8> {
+        let mut v = vec![0u8; self.num_source as usize];
+        for (s, &u) in self.seq_unit.iter().enumerate() {
+            v[u as usize] = (!self.consumer.delivered_at(s).is_nan()) as u8;
+        }
+        v
+    }
     /// L6's bind gauge: holes released by the hold term and by the floor term.
     pub fn get_rel_by_hold(&self) -> u32 { self.consumer.rel_by_hold }
     pub fn get_rel_by_floor(&self) -> u32 { self.consumer.rel_by_floor }

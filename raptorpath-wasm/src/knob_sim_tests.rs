@@ -265,6 +265,18 @@ fn l1_and_the_commitment_are_absolute() {
         }
         assert_eq!(s.get_l1_viol(), 0);
         assert_eq!(s.get_commit_viol(), 0, "{hint} {k:?}: a copy below the floor");
+        // The same invariant from the staging logs: no resend of a seq at or
+        // after its commitment (F_ann passed it then and is a running max).
+        let committed: std::collections::HashMap<u64, u32> =
+            s.commit_log.iter().map(|&(t, q)| (q, t)).collect();
+        for &(tick, kind, seq, _) in &s.payload_log {
+            if kind == 1 {
+                if let Some(&c) = committed.get(&seq) {
+                    assert!(tick <= c, "{hint} {k:?}: seq {seq} resent at {tick} after its commitment at {c}");
+                }
+            }
+        }
+        println!("skip_below_floor {hint} {k:?}: {}", s.get_skip_below_floor());
         resends += s.payload_log.iter().filter(|e| e.1 == 1).count();
         members += s.payload_log.iter().filter(|e| e.1 == 2).count();
         commits += s.commit_log.len();
@@ -624,4 +636,18 @@ fn report_bind_gauges_at_the_named_points() {
             );
         }
     }
+}
+
+/// share_T counts delivered units only: at T = ∞ before any delivery it
+/// reads 0, not 1 (an undelivered unit's delay is ∞ and ∞ ≤ ∞).
+#[test]
+fn share_t_counts_only_delivered_units() {
+    let mut s = build(&[GOLDEN_CELLS[0].1], "realtime", None, OBJECT);
+    assert_eq!(s.get_share_t(), 0.0);
+    for _ in 0..5 {
+        s.step();
+    }
+    assert!(s.get_share_t() <= s.get_share_any());
+    run(&mut s);
+    assert_eq!(s.get_share_t(), s.get_share_any());
 }

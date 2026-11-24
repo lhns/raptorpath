@@ -405,6 +405,22 @@ function stripCode(line) {
     .replace(/\/\*.*?\*\//g, "")                                               // block comment
     .replace(/=>/g, "  ");                                                     // arrow
 }
+// Arguments passed into a knob_* law call are the allowed form (as in the
+// crate's knob_deny.rs): drop each balanced knob_name(...) before the check.
+function lawFree(line) {
+  let out = '', rest = line, at;
+  while ((at = rest.search(/\bknob_\w+\s*\(/)) >= 0) {
+    out += rest.slice(0, at);
+    let i = rest.indexOf('(', at), depth = 0;
+    for (; i < rest.length; i++) {
+      if (rest[i] === '(') depth++;
+      else if (rest[i] === ')' && --depth === 0) { i++; break; }
+    }
+    out += 'law()';
+    rest = rest.slice(i);
+  }
+  return out + rest;
+}
 function denyViolations(src) {
   const out = [];
   let visited = 0;
@@ -412,9 +428,14 @@ function denyViolations(src) {
     const line = stripCode(raw);
     if (/\bisFinite\b|\bNumber\.isFinite\b/.test(line)) out.push(`${i + 1}: isFinite: ${raw.trim()}`);
     if (/(===?|!==?)\s*-?\s*Infinity\b|\bInfinity\s*(===?|!==?)/.test(line)) out.push(`${i + 1}: compare to Infinity: ${raw.trim()}`);
+    // x - x === 0 (or any x - x) is an infinity test under another name.
+    if (/\b([A-Za-z_$][\w$]*)\s*-\s*\1\b/.test(line)) out.push(`${i + 1}: x - x infinity idiom: ${raw.trim()}`);
     if (T_H_NAME.test(line)) {
       visited++;
       if (CMP.test(line)) out.push(`${i + 1}: comparison on a T/H variable: ${raw.trim()}`);
+      // truthiness (H = 0 is falsy, exactly a preset) and clamps on T or H
+      if (/\?|\|\||&&|!\s*[A-Za-z_$]|\bif\s*\(|\bMath\.(min|max)\b/.test(lawFree(line)) && T_H_NAME.test(lawFree(line)))
+        out.push(`${i + 1}: truthiness or clamp on a T/H variable: ${raw.trim()}`);
     }
   });
   return { out, visited };
@@ -436,6 +457,12 @@ function denyViolations(src) {
     "const c = x > holdS;",
     "if (lifetimeS != 0) go();",
     "if (slT.value === '1') go();",
+    "const delivered = (d - d === 0);",
+    "if (holdS) go();",
+    "const x = holdS ? a : b;",
+    "const x = lifetimeS || 1;",
+    "const x = Math.min(lifetimeS, 2);",
+    "const x = !holdS;",
   ];
   const clean = [
     "const a = lifetimeS - oHatS;",
@@ -445,6 +472,7 @@ function denyViolations(src) {
     "const s = 'lifetimeS < 1';",
     "const t = Infinity;",
     "const n = a < b;",
+    "const c = knob_within_lifetime(lifetimeS, d) ? a : b;",
   ];
   const missed = planted.filter(l => denyViolations(l).out.length === 0);
   const falsePos = clean.filter(l => denyViolations(l).out.length > 0);

@@ -271,6 +271,7 @@ class SimWrapper {
   get oooShare()    { return this.inner.get_ooo_share(); }
   get oooUnits()    { return this.inner.get_ooo_units(); }
   get unitDelays()  { return this.inner.get_unit_delays(); }
+  get deliveredUnits() { return this.inner.get_delivered_units(); }
   get relByHold()   { return this.inner.get_rel_by_hold(); }
   get relByFloor()  { return this.inner.get_rel_by_floor(); }
   get releasedHoles() { return this.inner.get_released_holes(); }
