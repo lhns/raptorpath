@@ -1,7 +1,7 @@
 """Stage-3d runner (three-knobs.md 17.9).  One file per run (tmp + rename), existing files are skipped, so a killed run resumes.
 A pool of workers takes (configuration, seed) pairs, the longest runs first.
 
-    python batch3d.py --part ID|AA|SHORT|LONG|P2|PL|REP [--seeds 12] [--seed0 0] [--only PREFIX] [--cells A,B] [--workers N] [--list]
+    python batch3d.py --part ID|AA|SHORT|LONG|P2|PL|REF [--seeds 12] [--seed0 0] [--only PREFIX] [--cells A,B] [--workers N] [--list]
 
 Run order of 17.9: tests; check_ident3d.py; ID (identity and liveness arms); AA (A/A, frozen as nf_stage3d.json by summarize3d.py);
 then everything else.  Output: out3d/<PART>/<cell>.<arm>-<seed>.json.
@@ -138,6 +138,8 @@ def build():
         for kind in ("STEP", "SPIKE", "KINK"):
             for x in NUDGE:
                 job("PL", "%s.PL-%s-%s" % (cell, kind, tag(x)), lambda s, cell=cell, kind=kind, x=x: s5_cfg(cell, s, 0.4 * x, 0.0, plant_T=(kind, 0.4)))
+    for cell in ("K-I2", "K-L10", "K-L10b"):                               # Q3d-9's reference: stage 3c's arm S4 (the 3c code path, bit-identical by check_ident3d.py)
+        job("REF", "%s.S4ref" % cell, lambda s, cell=cell: batch3c.s4_cfg(cell, s, 0.4, INF))
     for cell in LONG:                                                      # CL-long (17.4) and OV-long (17.8): no nudges, no plants
         job("ID", "%s.C3S" % cell, lambda s, cell=cell: s5_cfg(cell, s, INF, INF), 3)
         job("ID", "%s.ID-1e6" % cell, lambda s, cell=cell: s5_cfg(cell, s, 1e6, INF), 3)
