@@ -547,3 +547,47 @@ fn share_is_continuous_in_t_at_the_named_points() {
         }
     }
 }
+// --- §5.5: the knob golden rows (proposal branch) -------------------------
+
+/// Deliberate model change: three-knob rows, proposal branch, law revision
+/// 17 (Revision 3). Re-capture once per law revision, in its own commit,
+/// only after the identity gates pass without capture:
+/// `GOLDEN_CAPTURE=1 cargo test -p raptorpath-wasm test_knobs_golden -- --nocapture`.
+/// The six main goldens never re-capture on this branch.
+#[test]
+fn test_knobs_golden() {
+    let stream = Knobs { t: 0.4, load: 0.5, ..OBJECT };
+    let outage = Knobs { outage_start: 0.3, outage_len: 0.3, ..stream };
+    // knobs -> [ticks, src, fec, arq, lost, decoded, sent, arrived],
+    //          [share_any, share_T] as f64 bits, [ooo, intake_expired + deq]
+    let rows: [(Knobs, [u32; 8], [u64; 2], [u32; 2]); 5] = [
+        (Knobs { h: 0.0, ..stream },
+         [1054, 2000, 686, 0, 104, 2000, 2686, 2548], [0x3ff0000000000000, 0x3ff0000000000000], [84, 0]),
+        (Knobs { h: INF, ..stream },
+         [1054, 2000, 686, 0, 104, 2000, 2686, 2548], [0x3ff0000000000000, 0x3ff0000000000000], [0, 0]),
+        (Knobs { h: 0.0, ..outage },
+         [1146, 2000, 1075, 1051, 296, 2000, 4126, 2850], [0x3ff0000000000000, 0x3ff0000000000000], [245, 0]),
+        (Knobs { h: INF, ..outage },
+         [1146, 2000, 1075, 1051, 296, 2000, 4126, 2850], [0x3ff0000000000000, 0x3ff0000000000000], [0, 0]),
+        (Knobs { h: 0.0, load: 1.2, units: 6000, ..stream },
+         [1641, 5068, 1493, 0, 270, 5068, 6561, 6221], [0x3feb078263ab596e, 0x3feb078263ab596e], [232, 932]),
+    ];
+    let capture = std::env::var("GOLDEN_CAPTURE").is_ok();
+    for (k, g8, gs, g2) in rows {
+        let mut s = build(&[GOLDEN_CELLS[4].1], "realtime", None, k);
+        run(&mut s);
+        let got8 = [
+            s.get_tick(), s.get_total_src(), s.get_total_fec(), s.get_total_arq(),
+            s.get_total_lost(), s.get_cum_decoded(), s.get_cum_sent(), s.get_cum_arrived(),
+        ];
+        let gots = [s.get_share_any().to_bits(), s.get_share_t().to_bits()];
+        let got2 = [s.get_ooo(), s.get_intake_expired() + s.get_intake_expired_deq()];
+        println!(
+            "knob golden {k:?}: {got8:?}, [{:#x}, {:#x}], {got2:?}  (shares {} {})",
+            gots[0], gots[1], s.get_share_any(), s.get_share_t()
+        );
+        if !capture {
+            assert_eq!((got8, gots, got2), (g8, gs, g2), "knob golden diverged: {k:?}");
+        }
+    }
+}
