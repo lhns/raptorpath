@@ -90,6 +90,10 @@ const MAIN_KNOBS = {
   numSource: 2000, outageStartS: Infinity, outageLenS: 0,
 };
 
+// The model's unit class codes (CLASS_* in raptorpath-wasm, addendum 1 A1):
+// 0 pending, 1 on time, 2 late, 3 out of order, 4 undelivered, 5 expired.
+const UNIT_CLASS_DELIVERED = [false, true, true, true, false, false];
+
 class SimWrapper {
   // ONE construction path: the second argument defaults to MAIN_KNOBS, and
   // the knobs page passes its own through SimWrapper.withKnobs. Nothing
@@ -114,6 +118,11 @@ class SimWrapper {
     this.hint = params.hint;
     this.sigma2True = this.inner.get_sigma2();
     this.srcDoneTick = null;  // tick of the last source symbol (tail FEC starts here)
+    // Unit classes (addendum 1 A1): each unit's latest (hand-over s, delay s,
+    // class code), filled only by pullUnitEvents from the model's events.
+    const nu = this.inner.get_num_source();
+    this.unitStore = { n: nu, h: new Float64Array(nu), delay: new Float64Array(nu).fill(Infinity),
+                       cls: new Uint8Array(nu), hMax: 0, dMax: 0 };
     // Single-path baseline (§5.5), measured-vs-measured: run each path alone through
     // the same engine (same hint, same W, that path's own channel) and take
     // the best completion goodput. The aggregation factor compares the
@@ -272,6 +281,24 @@ class SimWrapper {
   get oooUnits()    { return this.inner.get_ooo_units(); }
   get unitDelays()  { return this.inner.get_unit_delays(); }
   get deliveredUnits() { return this.inner.get_delivered_units(); }
+  // The ONE drain of the model's class events (addendum 1 A1): append them to
+  // the store and return it; a superseding event overwrites its unit. dMax
+  // spans the delivered classes only (an undelivered unit has no delay).
+  pullUnitEvents() {
+    const ev = this.inner.take_unit_events(), st = this.unitStore;
+    for (let i = 0; i < ev.length; i += 4) {
+      const u = ev[i], c = ev[i + 3];
+      st.h[u] = ev[i + 1]; st.delay[u] = ev[i + 2]; st.cls[u] = c;
+      st.hMax = Math.max(st.hMax, ev[i + 1]);
+      if (UNIT_CLASS_DELIVERED[c]) st.dMax = Math.max(st.dMax, ev[i + 2]);
+    }
+    return st;
+  }
+  get unitClasses() { return this.inner.get_unit_classes(); }
+  get classCounts() { return this.inner.get_class_counts(); }
+  get lateShare()   { return this.inner.get_late_share(); }
+  get oooLate()     { return this.inner.get_ooo_late(); }
+  get lateFills()   { return this.inner.get_late_fills(); }
   get relByHold()   { return this.inner.get_rel_by_hold(); }
   get relByFloor()  { return this.inner.get_rel_by_floor(); }
   get releasedHoles() { return this.inner.get_released_holes(); }

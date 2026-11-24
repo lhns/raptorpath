@@ -98,7 +98,7 @@ const m = html.match(/<script>([\s\S]*)<\/script>/);
 const fn = new Function(
   "document", "window", "requestAnimationFrame", "cancelAnimationFrame", "performance",
   m[1] +
-    "\n;return { resetSim, updateLabels, updateReadouts, getParams, spanLaw, spanStep, drawSpanViz, updateSpanQuants, spanViz, KN_ROWS, drawUnitStrip, COLORS, sim: () => sim, pinned: () => pinned };"
+    "\n;return { resetSim, updateLabels, updateReadouts, getParams, spanLaw, spanStep, drawSpanViz, updateSpanQuants, spanViz, KN_ROWS, drawUnitStrip, COLORS, sim: () => sim, pinned: () => pinned, drawDelayChart, CLASS_COLORS };"
 );
 const perfStub = { now: () => 0 };
 const api = fn(documentStub, windowStub, cb => { rafQueue.push(cb); return rafQueue.length; }, () => {}, perfStub);
@@ -357,6 +357,56 @@ const reset = () => { for (const [k, v] of Object.entries(dflt)) set(k, v); };
   reset();
 }
 
+// ---- 4c. addendum 1 A1: the delay-dot chart draws the model's classes ---------
+// Routing witness: the dots drawn per colour equal the model's class counts, and
+// while drawing the page calls nothing on the model but take_unit_events.
+{
+  reset(); set("sl-t", 0.5); set("sl-h", 0); set("sl-load", 1 / 3); set("sl-eps", 0.1);
+  set("sl-outstart", 0.3); set("sl-outlen", 0.5);
+  api.resetSim();
+  const s = api.sim(), real = s.inner;
+  const calls = {};
+  const counting = new Proxy(real, {
+    get(t, k) {
+      const v = t[k];
+      return typeof v === "function" ? (...a) => { calls[k] = (calls[k] || 0) + 1; return v.apply(t, a); } : v;
+    },
+  });
+  let n = 0, frames = 0;
+  while (!s.finished && n < 20000) {
+    s.step(); n++;
+    if (n % 50 === 0) { s.inner = counting; api.drawDelayChart(); api.drawUnitStrip(); s.inner = real; frames++; }
+  }
+  const fills = {};
+  let style = null;
+  const cv = getEl("delay-canvas"), orig = cv.getContext;
+  cv.getContext = () => new Proxy({}, {
+    get: (_, k) => (k === "fillRect" ? () => { fills[style] = (fills[style] || 0) + 1; }
+      : k === "measureText" ? () => ({ width: 10 }) : (typeof k === "string" ? () => {} : undefined)),
+    set: (_, k, v) => { if (k === "fillStyle") style = v; return true; },
+  });
+  s.inner = counting;
+  api.drawDelayChart();
+  s.inner = real; cv.getContext = orig;
+  const counts = Array.from(real.get_class_counts());
+  const want = {};
+  for (let c = 1; c < 6; c++) want[api.CLASS_COLORS[c]] = (want[api.CLASS_COLORS[c]] || 0) + counts[c];
+  for (const k of Object.keys(want)) if (want[k] === 0) delete want[k];
+  check("A1 precondition: the run ends with on-time, out-of-order and undelivered units",
+    s.finished && counts[1] > 0 && counts[3] > 0 && counts[4] > 0, `classes ${counts} after ${n} ticks`);
+  check("A1: drawn dots per colour equal the model's class counts (routing witness)",
+    JSON.stringify(Object.entries(fills).sort()) === JSON.stringify(Object.entries(want).sort()),
+    `drawn ${JSON.stringify(fills)} model ${JSON.stringify(want)}`);
+  const names = Object.keys(calls);
+  check("A1: while drawing, the page calls only take_unit_events on the model",
+    names.length === 1 && names[0] === "take_unit_events" && calls.take_unit_events > frames,
+    JSON.stringify(calls));
+  const st = s.unitStore, final = Array.from(real.get_unit_classes());
+  check("A1: the page's store (events only) equals the model's final classes",
+    final.every((c, u) => st.cls[u] === c), `${final.length} units`);
+  reset();
+}
+
 // ---- 5. the cartoon: the floor pass through the wasm export -------------------
 {
   function cartoon(u) {
@@ -491,6 +541,36 @@ function denyViolations(src) {
     !/if\s*\(\s*!?\s*knobs\b/.test(wrapper) && /knobs = MAIN_KNOBS/.test(wrapper) &&
     (wrapper.match(/Simulation\.multipath\b/g) || []).length === 0 &&
     (wrapper.match(/Simulation\.multipath_knobs/g) || []).length === 1);
+}
+
+// ---- 6b. A1: the class drawings compare no delivery tick, delay or seq --------
+{
+  const DT_NAME = /\b(deliver\w*|seq\w*|tick\w*|delay\w*|decod\w*|ooo\w*|late\w*|onTime\w*)/i;
+  const drawDeny = src => src.split("\n").map(stripCode)
+    .filter(l => CMP.test(l) && DT_NAME.test(l));
+  const planted = [
+    "if (st.delay[u] > lim) x();",
+    "const late = deliveredAt[u] > 0.4;",
+    "if (seqA < seqB) y();",
+    "const c = tick >= 5 ? a : b;",
+    "const o = oooUnits[u] === 1;",
+  ];
+  const clean = [
+    "ctx.fillRect(X(st.h[u]) - 1, CLASS_ON_STRIP[c] ? stripY : Y(st.delay[u]) - 1, 2, 2);",
+    "for (let u = 0; u < st.n; u++) {",
+    "// if (st.delay[u] > T) in a comment",
+  ];
+  check("A1 drawing deny self-test: planted forms flagged",
+    planted.every(l => drawDeny(l).length === 1), planted.filter(l => drawDeny(l).length !== 1).join(" | "));
+  check("A1 drawing deny self-test: clean lines pass",
+    clean.every(l => drawDeny(l).length === 0), clean.filter(l => drawDeny(l).length).join(" | "));
+  const ui = html.slice(html.indexOf("// UI"), html.lastIndexOf("</script>"));
+  const a = ui.indexOf("function drawUnitStrip("), b = ui.indexOf("// --- channel strip");
+  const body = ui.slice(a, b);
+  check("A1 drawing deny: the class drawings were found", a > 0 && b > a && /function drawDelayChart\(/.test(body));
+  const bad = drawDeny(body);
+  check("A1 drawing deny: no delivery-tick, delay or seq comparison in the class drawings",
+    bad.length === 0, bad.join(" | "));
 }
 
 if (failures > 0) {

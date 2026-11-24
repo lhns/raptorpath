@@ -651,3 +651,146 @@ fn share_t_counts_only_delivered_units() {
     run(&mut s);
     assert_eq!(s.get_share_t(), s.get_share_any());
 }
+
+// --- Addendum 1 A1 (P9): one class per unit, and the event feed ------------
+
+/// The hold cells at H ∈ {0, 0.02, ∞}.
+fn class_cells() -> Vec<(&'static str, Vec<Cell>, Knobs)> {
+    let mut v = Vec::new();
+    for (hint, paths, k) in hold_cells() {
+        for h in [0.0, 0.02, INF] {
+            v.push((hint, paths.clone(), Knobs { h, ..k }));
+        }
+    }
+    v
+}
+
+/// Run to the end draining `take_unit_events` every `every` ticks, as the
+/// page does per frame; returns the per-unit event history.
+fn run_with_events(s: &mut Simulation, every: u32) -> Vec<Vec<(f64, f64, u8)>> {
+    let mut hist = vec![Vec::new(); s.get_num_source() as usize];
+    let drain = |s: &mut Simulation, hist: &mut Vec<Vec<(f64, f64, u8)>>| {
+        let ev = s.take_unit_events();
+        assert_eq!(ev.len() % 4, 0, "events are quadruples");
+        for e in ev.chunks(4) {
+            hist[e[0] as usize].push((e[1], e[2], e[3] as u8));
+        }
+    };
+    while !s.is_finished() && s.get_tick() < CAP {
+        s.step();
+        if s.get_tick() % every == 0 {
+            drain(s, &mut hist);
+        }
+    }
+    drain(s, &mut hist);
+    hist
+}
+
+/// A1's class re-derived independently from the consumer's delivery log (in
+/// delivery order) and the unit order.
+fn derive_classes(s: &Simulation) -> Vec<u8> {
+    let n_seq = s.next_seq as usize;
+    let mut at = vec![f64::NAN; n_seq];
+    let mut ooo = vec![false; n_seq];
+    let mut max_seen: Option<usize> = None;
+    for &(q, t) in &s.consumer.deliver_log {
+        assert!(at[q].is_nan(), "seq {q} delivered twice");
+        at[q] = t;
+        ooo[q] = max_seen.is_some_and(|m| m > q);
+        max_seen = Some(max_seen.map_or(q, |m| m.max(q)));
+    }
+    let o = s.one_way_s();
+    (0..s.get_num_source() as usize)
+        .map(|u| {
+            let Some(q) = (0..n_seq).find(|&q| s.seq_unit[q] as usize == u) else {
+                return if (u as u32) < s.get_units_out() { CLASS_EXPIRED } else { CLASS_PENDING };
+            };
+            if at[q].is_nan() {
+                let passed = s.committed_seq[q] || s.given_up_seqs.contains(&(q as u64));
+                return if passed { CLASS_UNDELIVERED } else { CLASS_PENDING };
+            }
+            if ooo[q] {
+                CLASS_OUT_OF_ORDER
+            } else if at[q] - s.h_seq[q] + o <= s.get_lifetime_s() {
+                CLASS_ON_TIME
+            } else {
+                CLASS_LATE
+            }
+        })
+        .collect()
+}
+
+/// A1 native gates: the class is a function of the consumer's delivery ticks
+/// (re-derived here); every unit gets exactly one class (none pending at the
+/// end of a finished run); the events, concatenated over a run, equal the
+/// final arrays, with at most one superseding event per unit, and only from
+/// `undelivered`.
+#[test]
+fn unit_classes_follow_the_consumer_and_the_events_add_up() {
+    let mut superseded = 0usize;
+    let mut seen = [0u32; N_CLASSES];
+    for (hint, paths, k) in class_cells() {
+        let mut s = build(&paths, hint, None, k);
+        let hist = run_with_events(&mut s, 37);
+        assert!(s.is_finished() && s.get_tick() < CAP, "{hint} {k:?}");
+        let classes = s.get_unit_classes();
+        assert_eq!(classes, derive_classes(&s), "{hint} {k:?}: class != re-derived");
+        for &(q, t) in &s.consumer.deliver_log {
+            assert_eq!(t.to_bits(), s.consumer.delivered_at(q).to_bits());
+        }
+        let counts = s.get_class_counts();
+        assert_eq!(counts.iter().sum::<u32>(), s.get_num_source());
+        assert_eq!(counts[CLASS_PENDING as usize], 0, "{hint} {k:?}: a finished run leaves no unit pending");
+        let delays = s.get_unit_delays();
+        let marks = s.get_ooo_units();
+        for (u, ev) in hist.iter().enumerate() {
+            let c = classes[u];
+            assert_eq!(marks[u] == 1, c == CLASS_OUT_OF_ORDER, "{hint} {k:?} unit {u}: ooo marker");
+            seen[c as usize] += 1;
+            let Some(&(h, d, last)) = ev.last() else {
+                assert_eq!(c, CLASS_PENDING, "{hint} {k:?} unit {u}: no event for class {c}");
+                continue;
+            };
+            assert_eq!(last, c, "{hint} {k:?} unit {u}: last event != final class");
+            assert_eq!(h.to_bits(), s.handover_s(u as u32).to_bits());
+            assert_eq!(d.to_bits(), delays[u].to_bits(), "{hint} {k:?} unit {u}: event delay");
+            assert!(ev.len() <= 2, "{hint} {k:?} unit {u}: {} events", ev.len());
+            if ev.len() == 2 {
+                assert_eq!(ev[0].2, CLASS_UNDELIVERED, "{hint} {k:?} unit {u}: only undelivered is superseded");
+                superseded += 1;
+            }
+        }
+        // The shares and the overlap count read the same classes.
+        let delivered = counts[1] + counts[2] + counts[3];
+        let ooo_late = s.get_ooo_late();
+        assert!(ooo_late <= counts[CLASS_OUT_OF_ORDER as usize]);
+        let late = counts[CLASS_LATE as usize] + ooo_late;
+        assert_eq!(s.get_late_share(), late as f64 / delivered.max(1) as f64);
+        assert_eq!(counts[CLASS_OUT_OF_ORDER as usize], s.get_ooo());
+        assert!(s.take_unit_events().is_empty(), "nothing left after the final drain");
+    }
+    println!("A1 classes over the cells (pending, on time, late, ooo, undelivered, expired): {seen:?}; superseded {superseded}");
+    for c in [CLASS_ON_TIME, CLASS_LATE, CLASS_OUT_OF_ORDER, CLASS_UNDELIVERED, CLASS_EXPIRED] {
+        assert!(seen[c as usize] > 0, "class {c} never reached: the gate would be vacuous for it");
+    }
+}
+
+/// A1: no out-of-order unit at H = ∞ with T = ∞, and at H = 0 the
+/// out-of-order units are exactly the late fills of released holes.
+#[test]
+fn out_of_order_is_zero_when_strict_and_the_late_fills_when_open() {
+    let mut fills = 0;
+    for (hint, paths, k) in class_cells() {
+        let mut s = build(&paths, hint, None, k);
+        run(&mut s);
+        let ooo = s.get_class_counts()[CLASS_OUT_OF_ORDER as usize];
+        if k.t == INF && k.h == INF {
+            assert_eq!(ooo, 0, "{hint} {k:?}");
+        }
+        if k.h == 0.0 {
+            assert_eq!(ooo, s.get_late_fills(), "{hint} {k:?}");
+            fills += s.get_late_fills();
+        }
+    }
+    assert!(fills > 0, "H = 0 must see late fills somewhere");
+}

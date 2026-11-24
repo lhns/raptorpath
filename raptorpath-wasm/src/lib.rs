@@ -422,6 +422,22 @@ const STORE_PER_PATH: u32 = 512;
 /// (three-knobs §13.6; plan Q-V3 default), seconds.
 const REF_DEADLINE_S: f64 = 0.4;
 
+/// The class of one handed-over unit (addendum 1 A1), decided in the model
+/// by this precedence: expired at the intake (no seq); undelivered (passed by
+/// the floor or given up, never delivered); out of order (delivered after a
+/// higher-numbered unit); late (delivered, delay from hand-over > T); on
+/// time; pending (not yet resolved). The page draws these codes and nothing
+/// else.
+pub const CLASS_PENDING: u8 = 0;
+pub const CLASS_ON_TIME: u8 = 1;
+pub const CLASS_LATE: u8 = 2;
+pub const CLASS_OUT_OF_ORDER: u8 = 3;
+pub const CLASS_UNDELIVERED: u8 = 4;
+pub const CLASS_EXPIRED: u8 = 5;
+const N_CLASSES: usize = 6;
+/// A unit without a seq (not sent yet, or expired at the intake).
+const NO_SEQ: u32 = u32::MAX;
+
 /// Per-path state (§5.5): an independent GE channel with its own
 /// capacity, RTT (feedback delay), estimator feed and traffic counters.
 struct PathState {
@@ -666,6 +682,12 @@ pub struct Simulation {
     decoded_this_tick: Vec<u64>,
     /// The unit index of each seq (units expired at the intake have none).
     seq_unit: Vec<u32>,
+    /// Per unit: its seq (NO_SEQ until sent; forever for an intake expiry),
+    /// the class last handed out by `take_unit_events`, and the units whose
+    /// class may have changed since then (addendum 1 A1).
+    unit_seq: Vec<u32>,
+    unit_emitted: Vec<u8>,
+    unit_dirty: Vec<u32>,
     /// Test-only: the decode tick of every delivered seq.
     #[cfg(test)]
     decode_log: Vec<(u64, u32)>,
@@ -824,6 +846,7 @@ impl Simulation {
                 self.passed_undelivered += 1;
                 self.committed_seq[sym.seq as usize] = true;
                 self.slot_owed[sym.seq as usize] = true;
+                self.unit_dirty.push(self.seq_unit[sym.seq as usize]);
                 #[cfg(test)]
                 self.commit_log.push((self.tick, sym.seq));
             }
@@ -931,6 +954,31 @@ impl Simulation {
         n as f64 / self.num_source as f64
     }
 
+    /// The class of unit u and its delay from hand-over (s; ∞ when not
+    /// delivered), by A1's precedence. Late is L3's readout `within_lifetime`.
+    fn unit_class(&self, u: usize) -> (u8, f64) {
+        let s = self.unit_seq[u];
+        if s == NO_SEQ {
+            let expired = (u as u32) < self.u_next;
+            return ([CLASS_PENDING, CLASS_EXPIRED][expired as usize], f64::INFINITY);
+        }
+        let s = s as usize;
+        let t = self.consumer.delivered_at(s);
+        if t.is_nan() {
+            let passed = self.committed_seq[s] || self.given_up_seqs.contains(&(s as u64));
+            return ([CLASS_PENDING, CLASS_UNDELIVERED][passed as usize], f64::INFINITY);
+        }
+        let delay = t - self.h_seq[s] + self.one_way_s();
+        let class = if self.consumer.out_of_order(s) {
+            CLASS_OUT_OF_ORDER
+        } else if knobs::within_lifetime(self.lifetime_s, delay) {
+            CLASS_ON_TIME
+        } else {
+            CLASS_LATE
+        };
+        (class, delay)
+    }
+
     /// The intake (L1, then the §13.2 dequeue rule, oldest first): drops
     /// the head while it has outlived T, or while it can no longer arrive
     /// in time and a younger unit waits. True when the head unit is handed
@@ -950,6 +998,7 @@ impl Simulation {
             let age = now - h;
             if knobs::intake_expired(self.lifetime_s, age) {
                 self.intake_expired += 1;
+                self.unit_dirty.push(self.u_next);
                 self.u_next += 1;
                 continue;
             }
@@ -957,6 +1006,7 @@ impl Simulation {
                 self.u_next + 1 < self.num_source && self.handover_s(self.u_next + 1) <= now;
             if younger_waiting && knobs::dequeue_expired(self.lifetime_s, age, r) {
                 self.intake_expired_deq += 1;
+                self.unit_dirty.push(self.u_next);
                 self.u_next += 1;
                 continue;
             }
@@ -1637,6 +1687,9 @@ impl Simulation {
             consumer: consumer::Consumer::new(hold_s),
             decoded_this_tick: Vec::new(),
             seq_unit: Vec::new(),
+            unit_seq: vec![NO_SEQ; num_source as usize],
+            unit_emitted: vec![CLASS_PENDING; num_source as usize],
+            unit_dirty: Vec::new(),
             #[cfg(test)]
             decode_log: Vec::new(),
             #[cfg(test)]
@@ -1871,6 +1924,7 @@ impl Simulation {
                 self.committed_seq.push(false);
                 self.slot_owed.push(false);
                 self.seq_unit.push(self.u_next);
+                self.unit_seq[self.u_next as usize] = seq as u32;
                 self.check_l1(seq as usize, 0);
                 // Slide the encoder window (paper W).
                 if self.encoder.window_size() > self.w as usize {
@@ -1990,6 +2044,7 @@ impl Simulation {
                         cap,
                     ));
                     self.given_up_seqs.insert(sym.seq);
+                    self.unit_dirty.push(self.seq_unit[sym.seq as usize]);
                     self.acked_seq[sym.seq as usize] = true; // set-point 4
                     self.lost_pending = self.lost_pending.saturating_sub(1);
                     // Give-up resolves the slot too (§6.3 semantics).
@@ -2036,6 +2091,9 @@ impl Simulation {
         // the floor the receiver holds.
         let decoded = std::mem::take(&mut self.decoded_this_tick);
         self.consumer.step(self.now_s(), &decoded, self.f_rx);
+        for s in std::mem::take(&mut self.consumer.delivered_now) {
+            self.unit_dirty.push(self.seq_unit[s]);
+        }
 
         // Finish conditions (rho = 100%: retransmit until everything is in;
         // rho < 100%: given-up symbols count as resolved, not delivered).
@@ -2441,6 +2499,62 @@ impl Simulation {
             v[u as usize] = (!self.consumer.delivered_at(s).is_nan()) as u8;
         }
         v
+    }
+    /// The class of every unit (CLASS_* codes), the full array for tests.
+    pub fn get_unit_classes(&self) -> Vec<u8> {
+        (0..self.num_source as usize).map(|u| self.unit_class(u).0).collect()
+    }
+    /// Units per class, indexed by the CLASS_* code.
+    pub fn get_class_counts(&self) -> Vec<u32> {
+        let mut n = vec![0u32; N_CLASSES];
+        for u in 0..self.num_source as usize {
+            n[self.unit_class(u).0 as usize] += 1;
+        }
+        n
+    }
+    /// Units both out of order and late: classed out of order (A1's
+    /// precedence), counted here so nothing is hidden.
+    pub fn get_ooo_late(&self) -> u32 {
+        (0..self.num_source as usize)
+            .filter(|&u| {
+                let (c, d) = self.unit_class(u);
+                c == CLASS_OUT_OF_ORDER && !knobs::within_lifetime(self.lifetime_s, d)
+            })
+            .count() as u32
+    }
+    /// Delivered units with delay from hand-over > T (out of order or not),
+    /// over delivered units (0 when none delivered).
+    pub fn get_late_share(&self) -> f64 {
+        let (mut late, mut delivered) = (0u32, 0u32);
+        for u in 0..self.num_source as usize {
+            let (c, d) = self.unit_class(u);
+            if c == CLASS_ON_TIME || c == CLASS_LATE || c == CLASS_OUT_OF_ORDER {
+                delivered += 1;
+                late += !knobs::within_lifetime(self.lifetime_s, d) as u32;
+            }
+        }
+        late as f64 / delivered.max(1) as f64
+    }
+    /// Holes the consumer released and that were filled later (delivered out
+    /// of order at once, O3 = yes).
+    pub fn get_late_fills(&self) -> u32 { self.consumer.late_fills }
+    /// The units whose class changed since the last call, as flat quadruples
+    /// `[unit, hand-over s, delay s (∞ when not delivered), class]`. A unit
+    /// appears when it is delivered, expires at the intake, or is passed or
+    /// given up; an undelivered unit filled later appears once more. The page
+    /// appends these and derives nothing.
+    pub fn take_unit_events(&mut self) -> Vec<f64> {
+        let dirty = std::mem::take(&mut self.unit_dirty);
+        let mut out = Vec::new();
+        for u in dirty {
+            let u = u as usize;
+            let (c, d) = self.unit_class(u);
+            if c != self.unit_emitted[u] {
+                self.unit_emitted[u] = c;
+                out.extend([u as f64, self.handover_s(u as u32), d, c as f64]);
+            }
+        }
+        out
     }
     /// L6's bind gauge: holes released by the hold term and by the floor term.
     pub fn get_rel_by_hold(&self) -> u32 { self.consumer.rel_by_hold }

@@ -44,6 +44,15 @@ pub struct Consumer {
     /// later known seqs at the pointer.
     pub stalls: Vec<(f64, f64)>,
     stall_start: Option<f64>,
+    /// Late fills: decoded seqs delivered at once because their hole had
+    /// already been released (O3 = yes, §2.3).
+    pub late_fills: u32,
+    /// Seqs delivered since the caller last drained this (the unit classes'
+    /// change feed, addendum 1 A1).
+    pub delivered_now: Vec<usize>,
+    /// Test-only: every delivery in order (seq, time).
+    #[cfg(test)]
+    pub deliver_log: Vec<(usize, f64)>,
 }
 
 impl Consumer {
@@ -65,6 +74,10 @@ impl Consumer {
             ooo: 0,
             stalls: Vec::new(),
             stall_start: None,
+            late_fills: 0,
+            delivered_now: Vec::new(),
+            #[cfg(test)]
+            deliver_log: Vec::new(),
         }
     }
 
@@ -98,6 +111,9 @@ impl Consumer {
             self.ooo_seq[s] = true;
         }
         self.max_delivered = Some(self.max_delivered.map_or(s, |m| m.max(s)));
+        self.delivered_now.push(s);
+        #[cfg(test)]
+        self.deliver_log.push((s, now));
     }
 
     /// One tick at time `now` (s): the seqs decoded this tick, then the
@@ -108,6 +124,7 @@ impl Consumer {
             self.grow(s + 1);
             self.decoded[s] = true;
             if s < self.next {
+                self.late_fills += 1;
                 self.deliver(s, now); // a late fill of a released hole
             }
             self.know(s + 1, now);
