@@ -32,31 +32,36 @@ def arms_s3(cell):
 def q2():
     print("### Q3b-2 D1 fixed\n")
     print("vta <= 0.001 x verdicts for S3 in every (cell, arm, seed) with verdicts > 100:")
-    tot = viol = 0
-    worst = 0.0
-    for cell in S.ALL_CELLS:
-        for a in arms_s3(cell):
-            if a.startswith("ID-") or a == "AA-1":
-                continue
-            for s in S.seeds_of(cell, a):
-                r = S.R(cell, a, s)
-                if r["verdicts"] > 100:
-                    tot += 1
-                    ratio = r["vta"] / r["verdicts"]
-                    worst = max(worst, ratio)
-                    if r["vta"] > 0.001 * r["verdicts"]:
-                        viol += 1
-                        print("  VIOLATION", cell, a, s, r["vta"], r["verdicts"])
-    print("  %d (cell, arm, seed) runs with verdicts > 100; %d violate; worst vta/verdicts = %.2e" % (tot, viol, worst))
+    for label, pick in (("S3 (every S3 arm)", lambda a: a != "S3x"), ("S3x (the exclusion arm, not part of the prediction)", lambda a: a == "S3x")):
+        tot = viol = 0
+        worst = 0.0
+        cells_hit = set()
+        for cell in S.ALL_CELLS:
+            for a in arms_s3(cell):
+                if a.startswith("ID-") or a == "AA-1" or not pick(a):
+                    continue
+                for s in S.seeds_of(cell, a):
+                    r = S.R(cell, a, s)
+                    if r["verdicts"] > 100:
+                        tot += 1
+                        cells_hit.add(cell)
+                        ratio = r["vta"] / r["verdicts"]
+                        worst = max(worst, ratio)
+                        if r["vta"] > 0.001 * r["verdicts"]:
+                            viol += 1
+                            print("  VIOLATION", cell, a, s, r["vta"], r["verdicts"])
+        print("  %s: %d (cell, arm, seed) runs with verdicts > 100 in %d cells; %d violate; worst vta/verdicts = %.2e" % (label, tot, len(cells_hit), viol, worst))
     print("\nOV: S3 pause_time against C3's (within 5 %), throttle, S2 against S3 (verdicts > 10x, vta > 0.5 x own verdicts):")
-    c3 = S.mean("OV", "C3", "pause_time") / 1e3
+    c3 = S.mean("OV", "C3", "pause_time")
+    c3w = S.mean("OV", "C3", "pause_time_w")
     for a in ("C3", "C1", "C3R", G(0.4, 0.0), G(0.4, INF), G(2.0, 0.0), G(2.0, INF), G(INF, 0.0), "S3x", "S2-T0p4-H0"):
         if not S.seeds_of("OV", a):
             continue
         thr = [S.R("OV", a, s)["throttle"] for s in S.seeds_of("OV", a)]
-        pt = S.mean("OV", a, "pause_time") / 1e3
-        print("  %-14s pause_time %.3f s (%.3f of C3's), throttle link/pause/none = %d/%d/%d, verdicts %s, vta %s, util_w %.3f, queue_drop %s" % (
-            a, pt, pt / c3 if c3 else float("nan"), thr.count("link"), thr.count("pause"), thr.count("none"),
+        pt = S.mean("OV", a, "pause_time")
+        ptw = S.mean("OV", a, "pause_time_w")
+        print("  %-14s pause_time %.3f s (%.3f of C3's), in [1,10] s %.3f s (%.3f of C3's), throttle link/pause/none = %d/%d/%d, verdicts %s, vta %s, util_w %.3f, queue_drop %s" % (
+            a, pt, pt / c3 if c3 else float("nan"), ptw, ptw / c3w if c3w else float("nan"), thr.count("link"), thr.count("pause"), thr.count("none"),
             f(S.mean("OV", a, "verdicts")), f(S.mean("OV", a, "vta")), S.mean("OV", a, "link_util_w"), f(S.mean("OV", a, "queue_drop"))))
 
 
@@ -158,10 +163,7 @@ def q5():
         if not all(S.seeds_of(cell, "SW2-%s" % S.TAG(T)) for T in grid):
             print(cell, "S2 sweep incomplete")
             continue
-        hi = G(0.4, 0.0) if cell == "K-L10" else "S2-T0p4-H0"
-        if cell == "K-L10":
-            hi_arm = "S2-T0p4-H0"
-        c = crossing(cell, lambda T, cell=cell: "SW2-%s" % S.TAG(T), grid, hi_arm if S.seeds_of(cell, hi_arm) else G(0.4, 0.0))
+        c = crossing(cell, lambda T, cell=cell: "SW2-%s" % S.TAG(T), grid, "S2-T0p4-H0")
         r2[cell] = c
         print("- %s: S2 mid crossing %.4f s; 90%% %s; curve %s" % (cell, c["mid"], f(c["p90"]), " ".join("%.3f:%.4f" % (T, v) for T, v in zip(grid, c["y"]))))
     if len(r2) == 2:
@@ -247,11 +249,14 @@ def q9():
         print("- %s: P = %.3f, owd = %.3f, bound for (i) = P + owd + 5 ms = %.3f s" % (cell, P, owd, P + owd + 0.005))
         for s, (mx, pt) in enumerate(rows):
             print("   seed %2d: longest stall %.3f s; parts (i, ii, iii) = %s" % (s, mx, None if pt is None else tuple(round(x, 3) for x in pt)))
-        ok1 = all(pt is not None and pt[0] <= P + owd + 0.005 for _, pt in rows)
-        print("   (i) <= bound in every seed: %s" % ok1)
+        dfn = [(mx, pt) for mx, pt in rows if pt is not None]
+        ok1 = all(pt[0] <= P + owd + 0.005 for _, pt in dfn)
+        print("   parts defined (an episode open at the first floor after the outage) in %d of 12 seeds; (i) <= bound in all of them: %s (max (i) %.3f s)" % (
+            len(dfn), ok1, max(pt[0] for _, pt in dfn)))
         if cell == "K-L10":
-            ok2 = all(pt is not None and pt[1] >= 0.5 * (mx - 1.5) for mx, pt in rows)
-            print("   (ii) >= 0.5 x (longest stall - 1.5 s) in every seed: %s" % ok2)
+            ok2 = [pt[1] >= 0.5 * (mx - 1.5) for mx, pt in dfn]
+            print("   (ii) >= 0.5 x (longest stall - 1.5 s): %d of %d seeds with parts; failing seeds' (mx, ii): %s" % (
+                sum(ok2), len(ok2), [(round(mx, 3), round(pt[1], 3)) for (mx, pt), o in zip(dfn, ok2) if not o]))
 
 
 def tables():
@@ -264,4 +269,39 @@ def tables():
 
 
 def main(cmd):
-    {"q2": q2, "q3": q3, "q4": q4, "q5": q5, "q6": q6, "q7": q7, "q8": q8, "q9": q9, "tables": tables}[cmd]()
+    {"q2": q2, "q3": q3, "q4": q4, "q5": q5, "q6": q6, "q7": q7, "q8": q8, "q9": q9, "tables": tables, "aa": aa, "rep": rep}[cmd]()
+
+
+def aa():
+    print("### A/A self-check (frozen nf_stage3b.json)\n")
+    nf = S.nf_all()
+    sc = nf["selfcheck"]
+    words = [v["word"] for v in sc.values()]
+    print("%d readings over %d cells: %d equivalent, %d undetermined, %d shown" % (
+        len(words), len(nf["cells"]), words.count("equivalent"), sum(w.startswith("undet") for w in words), sum(w.startswith("shown") for w in words)))
+    for k, v in sc.items():
+        if v["word"].startswith("shown"):
+            print("  shown:", k, S.fmt(v))
+    print("\nundetermined (cell-key: mean [lo, hi] vs m):")
+    for k, v in sc.items():
+        if v["word"].startswith("undet"):
+            print("  %s: %s" % (k, S.fmt(v)))
+    print("\nfloors (cell: readout = p95 |A - A'|, ms for times):")
+    for cell, d in nf["cells"].items():
+        print("  %-7s %s" % (cell, "; ".join("%s=%s" % (k, f(v, 3)) for k, v in d.items() if v not in (0.0,))))
+
+
+def rep():
+    print("### A/A replication, phase variants 2 and 3 (unregistered), read against T_bar only\n")
+    shown = tot = 0
+    for cell in S.ALL_CELLS:
+        if not (S.have(cell, "AA-2") and S.have(cell, "AA-3")):
+            continue
+        for k in S.AA_KEYS:
+            d = S.diffv(cell, "AA-2", "AA-3", k)
+            rd = S.read(d, S.T_bar(k, cell))
+            tot += 1
+            if rd["word"].startswith("shown"):
+                shown += 1
+                print("  SHOWN %s %s: %s" % (cell, k, S.fmt(rd)))
+    print("  %d readings, %d shown" % (tot, shown))

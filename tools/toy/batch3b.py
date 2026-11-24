@@ -106,6 +106,8 @@ def build():
         J("ID", "ID-R-1e6", lambda s, cell=cell: s3_cfg(cell, s, 1e6, INF))
         if cell in READ_CELLS:
             J("AA", "AA-1", lambda s, cell=cell: s3_cfg(cell, s, INF, INF, variant=1))
+            for var in (2, 3):                                          # unregistered replication of the A/A (as stage 3's REP)
+                J("REP", "AA-%d" % var, lambda s, cell=cell, var=var: s3_cfg(cell, s, INF, INF, variant=var))
     for cell in STAGE_CELLS + ("CL",):
         part = "CL" if cell == "CL" else "REST"
         for T, H in GRID:
@@ -134,8 +136,7 @@ def build():
         if cell in ("K-L10", "K-L10b"):
             for T in SW[cell]:
                 job("K", "%s.SW2-%s" % (cell, tag(T)), lambda s, cell=cell, T=T: s2_cfg(cell, s, T, 0.0))
-            if cell == "K-L10b":
-                job("K", "K-L10b.S2-T0p4-H0", lambda s: s2_cfg("K-L10b", s, 0.4, 0.0))
+            job("K", "%s.S2-T0p4-H0" % cell, lambda s, cell=cell: s2_cfg(cell, s, 0.4, 0.0))     # the T = 0.4 level of S2's own crossing
     # positive control: T = p * {0.98 ... 1.02}, H = inf, p from the placement step (pc_place.py)
     for cell in ("E-I2n", "E-I2", "E-L10"):
         if cell in pcp:

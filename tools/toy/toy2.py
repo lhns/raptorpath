@@ -1244,11 +1244,14 @@ class Sim:
         out["resume_delay"] = (self.first_emit_oe - self.oe) if (self.oe is not None and self.first_emit_oe is not None) else None
         out["stall_max"] = max((e[1] for e in self.episodes), default=0.0)
         parts = None
-        if self.oe is not None and self.episodes:
-            st, ln, _ = max(self.episodes, key=lambda e: e[1])
-            ep_end = st + ln
-            tf = next((x for x in self.floor_arrivals if x >= self.oe), None)
-            if tf is not None and ep_end >= self.oe:
+        tf = next((x for x in self.floor_arrivals if x >= self.oe), None) if self.oe is not None else None
+        if tf is not None:
+            # the longest stall episode still open when the first floor after the outage arrives (the outage's own episode);
+            # a longer episode elsewhere in the run says nothing about 13.5's parts
+            eps = [e for e in self.episodes if e[0] - 1e-9 <= tf <= e[0] + e[1] + 1e-9]
+            if eps:
+                st, ln, _ = max(eps, key=lambda e: e[1])
+                ep_end = st + ln
                 fills = [v for v in self.tfill.values() if tf <= v <= ep_end]
                 p1 = tf - self.oe
                 p2 = (max(fills) - tf) if fills else 0.0
