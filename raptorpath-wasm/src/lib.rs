@@ -2931,6 +2931,34 @@ mod tests {
         run_to_end(&mut br);
         assert_eq!(br.get_cum_decoded() + br.get_given_up(), br.get_num_source());
         assert!(br.get_reliability() >= 0.90);
+
+        // Three knobs (plan §5.4 item 7): at the three δ presets the knobs
+        // constructor at T = H = λ = ∞ is the dial's point exactly ...
+        for d in [0.005, 0.5, 50.0] {
+            let mut a = Simulation::new(0.05, 0.5, 50, 64, "continuum".into(), None, Some(d), None);
+            let mut b = Simulation::multipath_knobs(
+                vec![0.05], vec![0.5], vec![50], vec![4], 64, "continuum".into(), None, Some(d),
+                None, f64::INFINITY, f64::INFINITY, f64::INFINITY, 2000,
+                vec![f64::INFINITY], vec![0.0],
+            )
+            .unwrap();
+            run_to_end(&mut a);
+            run_to_end(&mut b);
+            assert_eq!(
+                (a.get_tick(), a.get_total_fec(), a.get_total_arq(), a.get_cum_decoded()),
+                (b.get_tick(), b.get_total_fec(), b.get_total_arq(), b.get_cum_decoded()),
+                "T = ∞ identity at δ = {d}"
+            );
+        }
+        // ... and the Realtime-call point (T = 0.4, δ = 50, H = 0) has no
+        // behaviour step under a ±2 % T nudge (the derived bound of item 5).
+        let call = crate::knob_sim_tests::Knobs {
+            h: 0.0, load: 0.5, ..crate::knob_sim_tests::OBJECT
+        };
+        crate::knob_sim_tests::t_nudge_within_bound(
+            &[crate::knob_sim_tests::Cell { eps: 0.05, q: 0.5, rtt: 50, cap: 4 }],
+            "continuum", Some(50.0), call, 0.4,
+        );
     }
 
     /// F1/F2 (docs/derivations/wasm-modeswitch-audit.md): the classic hint

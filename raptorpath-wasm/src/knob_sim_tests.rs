@@ -443,3 +443,107 @@ fn no_decoded_unit_is_left_at_the_consumer_at_the_end() {
         assert_eq!(decoded, delivered, "{hint} {k:?}: decoded units stuck at the consumer");
     }
 }
+
+// --- §5.4 item 5: continuity in T at the finite named points --------------
+
+const NUDGES: [f64; 5] = [0.98, 0.99, 1.0, 1.01, 1.02];
+const SLOPE_PTS: [f64; 4] = [0.90, 0.95, 1.05, 1.10];
+
+/// (share_T, share_any) of one run.
+fn shares(paths: &[Cell], hint: &str, delta: Option<f64>, k: Knobs) -> (f64, f64) {
+    let mut s = build(paths, hint, delta, k);
+    run(&mut s);
+    assert!(s.is_finished() && s.get_tick() < CAP, "{k:?}: did not finish");
+    (s.get_share_t(), s.get_share_any())
+}
+
+/// The derived per-1 % tolerance (plan §5.4 item 5): 1.5 × the larger
+/// measured side slope × 0.01·T + one unit's quantum.
+fn tolerance(side: [f64; 4], t0: f64, units: u32) -> f64 {
+    let left = (side[1] - side[0]).abs() / (0.05 * t0);
+    let right = (side[3] - side[2]).abs() / (0.05 * t0);
+    1.5 * left.max(right) * 0.01 * t0 + 1.0 / units as f64
+}
+
+/// Neighbouring pairs of the nudge grid within the tolerance.
+fn within_bound(series: &[f64; 5], tol: f64) -> Result<(), String> {
+    for i in 1..5 {
+        let d = (series[i] - series[i - 1]).abs();
+        if d > tol {
+            return Err(format!(
+                "step {d} > tol {tol} between nudges {} and {}",
+                NUDGES[i - 1], NUDGES[i]
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The resend arrival ages t_k = k·RTT + ô + 1 tick (retry timer = path
+/// RTT, ô = the capacity-weighted RTT/2): the nearest to `t0`, for the report.
+fn nearest_tk(paths: &[Cell], t0: f64) -> (f64, f64) {
+    let o = paths.iter().map(|c| c.cap as f64 * c.rtt as f64).sum::<f64>()
+        / paths.iter().map(|c| c.cap as f64).sum::<f64>()
+        / 2000.0;
+    let mut best = (INF, INF);
+    for c in paths {
+        for k in 0..200 {
+            let tk = k as f64 * c.rtt as f64 / 1000.0 + o + TICK_SECS;
+            if (tk - t0).abs() < best.1 {
+                best = (tk, (tk - t0).abs());
+            }
+        }
+    }
+    best
+}
+
+/// Continuity of share_T and share_any through T0·{0.98..1.02} at one
+/// cell; returns the share_T series and its tolerance.
+pub(crate) fn t_nudge_within_bound(
+    paths: &[Cell], hint: &str, delta: Option<f64>, base: Knobs, t0: f64,
+) -> ([f64; 5], f64) {
+    let side: Vec<(f64, f64)> =
+        SLOPE_PTS.iter().map(|m| shares(paths, hint, delta, Knobs { t: t0 * m, ..base })).collect();
+    let grid: Vec<(f64, f64)> =
+        NUDGES.iter().map(|m| shares(paths, hint, delta, Knobs { t: t0 * m, ..base })).collect();
+    let mut out = ([0.0; 5], 0.0);
+    for ri in 0..2usize {
+        let name = ["share_T", "share_any"][ri];
+        let pick = |v: &(f64, f64)| if ri == 0 { v.0 } else { v.1 };
+        let sd = [pick(&side[0]), pick(&side[1]), pick(&side[2]), pick(&side[3])];
+        let series = [pick(&grid[0]), pick(&grid[1]), pick(&grid[2]), pick(&grid[3]), pick(&grid[4])];
+        let tol = tolerance(sd, t0, base.units);
+        let (tk, dist) = nearest_tk(paths, t0);
+        println!(
+            "continuity {hint} N={} T0={t0} {name}: {series:?} tol {tol:.5}; nearest t_k {tk:.4} s ({:.1} ms away)",
+            paths.len(),
+            dist * 1000.0
+        );
+        if let Err(e) = within_bound(&series, tol) {
+            panic!("{hint} N={} T0={t0} {name}: {e}", paths.len());
+        }
+        if ri == 0 {
+            out = (series, tol);
+        }
+    }
+    out
+}
+
+/// §5.4 item 5 at both finite named points, one path and two, with the
+/// injected positive control: a planted step of 5 × tol in share_T at the
+/// centre point must fail the same bound.
+#[test]
+fn share_is_continuous_in_t_at_the_named_points() {
+    let stream = Knobs { h: 0.0, load: 0.5, ..OBJECT };
+    // Without an outage these cells deliver everything within 0.4 s (no
+    // power, reported); a 0.5 s outage makes T bind.
+    let binding = Knobs { outage_start: 0.3, outage_len: 0.5, ..stream };
+    for paths in [vec![GOLDEN_CELLS[0].1], vec![GOLDEN_CELLS[1].1], TWO_PATH.to_vec()] {
+        for (base, t0) in [(stream, 0.4), (stream, 2.0), (binding, 0.4), (binding, 2.0)] {
+            let (series, tol) = t_nudge_within_bound(&paths, "realtime", None, base, t0);
+            let mut planted = series;
+            planted[2] += 5.0 * tol;
+            assert!(within_bound(&planted, tol).is_err(), "the planted step must fail the bound");
+        }
+    }
+}
