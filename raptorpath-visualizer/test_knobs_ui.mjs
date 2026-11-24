@@ -404,6 +404,26 @@ const reset = () => { for (const [k, v] of Object.entries(dflt)) set(k, v); };
   const st = s.unitStore, final = Array.from(real.get_unit_classes());
   check("A1: the page's store (events only) equals the model's final classes",
     final.every((c, u) => st.cls[u] === c), `${final.length} units`);
+  // the late colour's witness: strict order (H = inf) holds units past T
+  reset(); set("sl-t", 0.5); set("sl-h", 1); set("sl-load", 1 / 3); set("sl-eps", 0.1);
+  set("sl-outstart", 0.3); set("sl-outlen", 0.5);
+  api.resetSim();
+  const s2 = api.sim();
+  let m = 0;
+  while (!s2.finished && m < 20000) { s2.step(); m++; }
+  const fills2 = {};
+  let style2 = null;
+  cv.getContext = () => new Proxy({}, {
+    get: (_, k) => (k === "fillRect" ? () => { fills2[style2] = (fills2[style2] || 0) + 1; }
+      : k === "measureText" ? () => ({ width: 10 }) : (typeof k === "string" ? () => {} : undefined)),
+    set: (_, k, v) => { if (k === "fillStyle") style2 = v; return true; },
+  });
+  api.drawDelayChart();
+  cv.getContext = orig;
+  const counts2 = Array.from(s2.inner.get_class_counts());
+  check("A1: at H = inf late units are drawn in the late colour, one dot each (precondition: late > 0)",
+    counts2[2] > 0 && fills2[api.CLASS_COLORS[2]] === counts2[2] && fills2[api.CLASS_COLORS[1]] === counts2[1],
+    `classes ${counts2}, late dots ${fills2[api.CLASS_COLORS[2]]}`);
   reset();
 }
 
@@ -436,7 +456,7 @@ const reset = () => { for (const [k, v] of Object.entries(dflt)) set(k, v); };
   const after = snap();
   check("engine budget button writes 10 per 5 ms and nothing else",
     SLIDERS.filter(k => k !== "sl-budget").every(k => after[k] === before[k]) &&
-    relNear(api.sim().inner.get_resend_limit(), 10),
+    api.sim().inner.get_resend_limit() === 10,
     `limit ${api.sim().inner.get_resend_limit()}`);
   // a lossy stream with an outage at a small budget: the bars are the model's ring
   reset(); set("sl-budget", 0.25); set("sl-eps", 0.1); set("sl-load", 1 / 3);

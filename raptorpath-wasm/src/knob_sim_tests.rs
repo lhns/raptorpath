@@ -1269,6 +1269,15 @@ fn run_link(c: &LinkCell) -> (Simulation, Vec<(f64, f64)>, Vec<f64>) {
     (s, swing, worst)
 }
 
+/// The mean signed ô error (ô − true) over arrived resends, in ticks: a
+/// constant offset (bias) and an estimator lag show differently here.
+fn o_hat_bias(s: &Simulation) -> f64 {
+    let acc = s.acc_s();
+    let v: Vec<f64> = s.resend_log.iter().filter(|e| !e.3.is_nan())
+        .map(|&(_, _, t, arr, o, _, _)| (o - (arr - t + acc)) / TICK_SECS).collect();
+    v.iter().sum::<f64>() / v.len().max(1) as f64
+}
+
 /// |ô − the resend's true one-way delay| per arrived resend, in ticks, with
 /// the true delay in the model's accounting: arrival − send + the physical
 /// term (so ô's error is the estimator's, for any propagation split); and
@@ -1331,6 +1340,7 @@ fn o_hat_at_n2_is_bounded_by_the_path_spread() {
              excess over the spread max {ex:.2}; l2_late {:.4}",
             e.len(), s.get_l2_late_share()
         );
+        println!("o-hat N=2 {label}: mean signed error {:.2} ticks", o_hat_bias(&s));
         assert!(ex <= 2.0 + 1e-9, "{label}: |o - true| exceeded |o - o_p| + 2 ticks by {ex}");
         n += e.len();
     }
@@ -1349,8 +1359,8 @@ fn report_o_hat_with_swinging_queues() {
         let (ex, ex99) = max_p99(&e.iter().map(|x| x.0 - x.1).collect::<Vec<_>>());
         let q: Vec<String> = swing.iter().map(|w| format!("{:.1}", (w.1 - w.0) * 1e3)).collect();
         println!(
-            "o-hat swinging {} N={} mu {:?}: {} resends, |o - true| max {mx:.2} p99 {p99:.2}, excess over the path spread max {ex:.2} p99 {ex99:.2} ticks; queue swing {q:?} ms; l2_late {:.4}",
-            c.0, c.1.len(), c.3, e.len(), s.get_l2_late_share()
+            "o-hat swinging {} N={} mu {:?}: {} resends, |o - true| max {mx:.2} p99 {p99:.2} mean signed {:.2}, excess over the path spread max {ex:.2} p99 {ex99:.2} ticks; queue swing {q:?} ms; l2_late {:.4}",
+            c.0, c.1.len(), c.3, e.len(), o_hat_bias(&s), s.get_l2_late_share()
         );
     }
 }
@@ -1457,9 +1467,10 @@ fn the_queue_conserves_datagrams_and_stays_fifo() {
         }
         let qd: u32 = (0..paths.len()).map(|i| s.get_path_qdrop(i)).sum();
         println!(
-            "queue {label}: ticks {} drops {qd} (in outage {}) reorder {} use {:.2} owd p50 {:.1} p99 {:.1} ms share_any {:.4}",
+            "queue {label}: ticks {} drops {qd} (in outage {}) reorder {} use {:.2} owd p50 {:.1} p99 {:.1} ms share_any {:.4} l2_late {:.4} of {} arrived resends; pending at the end {}",
             s.get_tick(), (0..paths.len()).map(|i| s.get_path_qdrop_in(i)).sum::<u32>(), s.get_cross_path_reorder(),
-            s.get_path_link_use(0), s.get_path_owd_quantile_ms(0, 0.5), s.get_path_owd_quantile_ms(0, 0.99), s.get_share_any()
+            s.get_path_link_use(0), s.get_path_owd_quantile_ms(0, 0.5), s.get_path_owd_quantile_ms(0, 0.99), s.get_share_any(),
+            s.get_l2_late_share(), s.resends_arrived, s.get_class_counts()[CLASS_PENDING as usize]
         );
         drops += qd;
     }
