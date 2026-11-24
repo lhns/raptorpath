@@ -336,7 +336,8 @@ class Receivers(unittest.TestCase):
 DIALS = {"rho", "delta", "hint", "T", "Hk"}
 # HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions (three-knobs.md 9.2) and the share_T readout are the only places T is compared
 EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime",
-          "dequeue_expired"}      # dequeue_expired: three-knobs.md 13.2 (stage 3b)
+          "dequeue_expired",      # dequeue_expired: three-knobs.md 13.2 (stage 3b)
+          "protected"}            # protected: three-knobs.md 15.3 and 15.6.1 item 1 (stage 3c)
 
 
 def _names(node):
@@ -628,6 +629,171 @@ class Stage3b(unittest.TestCase):
         a = toy2.run(batch3b.s3_cfg("K-L10", 0, 0.4, 0.0, resend_gate="owd"))
         b = toy2.run(batch3b.s3_cfg("K-L10", 0, 0.4, 0.0, resend_gate="evidence"))
         self.assertNotEqual(a["gauges"]["repair_sends"], b["gauges"]["repair_sends"])       # the gate executes
+
+
+# ---- stage 3c (three-knobs.md 15.6.1) -----------------------------------------------------------------
+import batch3c  # noqa: E402
+
+# keys the S4-equals-C3 identity compares (15.6.1 test 2): every key of the output except the config labels, the RTT estimator's own
+# readouts (the old-sweep arm in an off-link cell keeps stage 3's estimator), wall time and the gauge dict (a fixed subset of it is compared)
+ID_EXCL = {"sender", "recv", "rho", "delta", "omega", "srtt", "srtt_mean", "R_mean", "wall_s", "gauges", "F_lag", "floor_hull_bind"}
+ID_GAUGES = ("repair_sends", "serves", "floors", "floor_rep", "passes", "dup", "ooo_loss", "late", "pause_events", "queue_drop",
+             "queue_drop_in", "queue_drop_out", "max_O", "fifo_viol")
+SMALL = {"CL": dict(n_total=20000, dead=(0, 0.5, 0.5)), "OV": dict(n_total=24000)}
+
+
+def id_diff(a, b):
+    bad = [k for k in a if k not in ID_EXCL and not k.startswith("_") and json.dumps(a[k]) != json.dumps(b[k])]
+    bad += [("g", k) for k in ID_GAUGES if a["gauges"][k] != b["gauges"][k]]
+    return bad
+
+
+class Stage3c(unittest.TestCase):
+    CELLS3 = ("E-L10", "M-I2", "K-L10", "E-I2n", "CL", "OV")
+
+    def _cfgs(self, cell, seed, T, H, **kw):
+        kw = dict(kw)
+        kw.update(SMALL.get(cell, {}))
+        return batch3c.s4_cfg(cell, seed, T, H, **kw)
+
+    def test_1_defaults_and_protected_law(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.floor_law, c.floor_carrier, c.resend_gate, c.resend_brake, c.verdict_evidence),
+                         ("verdict", "header", "owd", "none", "rev1"))
+        # absolute values of the law at the anchor points: max(now, last_send + c) - h + srtt/2 < T
+        P = toy2.protected
+        self.assertTrue(P(0.4, 0.10, 0.0, 0.01, 0.0, 0.02))               # 0.10 + 0.01 = 0.11 < 0.4
+        self.assertFalse(P(0.4, 0.395, 0.0, 0.01, 0.0, 0.02))             # 0.395 + 0.01 = 0.405
+        self.assertFalse(P(0.4, 0.10, 0.39, 0.05, 0.0, 0.02))             # the cooldown pushes the earliest resend to 0.44
+        self.assertTrue(P(math.inf, 5.0, 0.0, 0.01, 0.0, 0.02))
+        self.assertTrue(P(0.4, 0.2, 0.0, 0.01, 0.0, 0.2))                 # 0.2 + 0.1 = 0.3 < 0.4
+        self.assertFalse(P(0.4, 0.2, 0.0, 0.01, 0.0, 0.5))                # 0.2 + 0.25 = 0.45
+
+    def test_2_s4_t_inf_equals_c3_every_cell_type(self):
+        for cell in self.CELLS3:
+            for seed in range(3):
+                a = batch3c.cmp_cfg(cell, "C3", seed, **SMALL.get(cell, {}))
+                b = self._cfgs(cell, seed, INF, INF)
+                a.want_trace = b.want_trace = True
+                ra, rb = toy2.run(a), toy2.run(b)
+                self.assertEqual(id_diff(ra, rb), [], (cell, seed))
+                self.assertEqual(ra["_trace"], rb["_trace"], (cell, seed))
+                self.assertTrue(rb["finished"] and ra["finished"], (cell, seed))
+
+    def test_3_s4_t_1e6_equals_t_inf(self):
+        for cell in ("M-I2", "K-L10", "CL", "OV"):
+            for seed in range(2):
+                a = self._cfgs(cell, seed, INF, INF)
+                b = self._cfgs(cell, seed, 1e6, INF)
+                a.want_trace = b.want_trace = True
+                ra, rb = toy2.run(a), toy2.run(b)
+                self.assertEqual(id_diff(ra, rb), [], (cell, seed))
+                self.assertEqual(ra["_trace"], rb["_trace"], (cell, seed))
+
+    def test_4_commitment_seam_reads_zero_and_the_floor_executes(self):
+        for cell in ("K-L10", "OV", "CL"):
+            sim = toy2.Sim(self._cfgs(cell, 1, 0.4, INF))
+            r = sim.run()
+            self.assertEqual(sim.g["commit_viol"], 0, cell)
+            self.assertGreater(sim.F_ann, 0, cell)                                   # the floor advanced
+            self.assertGreater(r["pass_floor"], 0, cell)                             # and the receiver passed holes by it
+            self.assertGreater(sim.g["floor_carried"], 0, cell)                      # the header carrier executed
+            self.assertEqual(r["late_floor"], 0, cell)
+            self.assertEqual(r["verdicts"], 0, cell)                                 # 15.1: the verdict is unreachable
+        # positive control: the seam does count a copy staged below an announced floor
+        sim = toy2.Sim(self._cfgs("K-L10", 1, 0.4, INF))
+        sim.F_ann = 10
+        sim.n_sent = 20
+        sim.send_copy(0.0, 5)
+        self.assertEqual(sim.g["commit_viol"], 1)
+
+    def test_5_no_floor_carried_or_sent_at_t_inf(self):
+        for cell in ("K-L10", "M-I2", "OV"):
+            sim = toy2.Sim(self._cfgs(cell, 0, INF, INF))
+            seen = []
+            orig = sim.on_report
+
+            def wrap(now, rep, _o=orig, _s=sim):
+                _o(now, rep)
+                seen.append(_s.F_ann == _s.A_known)
+            sim.on_report = wrap
+            r = sim.run()
+            self.assertTrue(seen and all(seen), cell)
+            self.assertEqual((r["gauges"]["floors"], sim.g["floor_carried"]), (0, 0), cell)
+
+    def test_6_brake_window_and_control(self):
+        kw = dict(n_total=20000, dead=(0, 0.5, 0.5))
+        sim = toy2.Sim(batch3c.cmp_cfg("CL", "C3", 0, **kw))
+        r = sim.run()
+        self.assertLessEqual(max(sim.copy_win.values()), 10)
+        self.assertGreater(r["resend_braked"], 0)                                     # the brake bound
+        sim = toy2.Sim(batch3c.cmp_cfg("CL", "C3", 0, resend_brake="none", **kw))
+        sim.run()
+        self.assertGreater(max(sim.copy_win.values()), 10)                            # control: without it a window exceeds 10
+
+    def test_7_deny_test_with_protected_exempt(self):
+        self.assertFalse(deny_scan("def protected(T, now, last_send, c, h, srtt_eff):\n    return max(now, last_send + c) - h + srtt_eff / 2 < T\n"))
+        self.assertTrue(deny_scan("def protectedish(c, now):\n    return now < c.T\n"))
+        self.assertTrue(deny_scan("def f(self, s):\n    return self.h_seq[s] + self.cfg.T < 3\n"))
+        with open(os.path.join(HERE, "toy2.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertEqual(deny_scan(src), [])
+        self.assertNotIn("isinf", src)                                                # no isinf on a knob anywhere in the model
+
+    def test_8_feedback_verdict_on_fabricated_state(self):
+        def fresh():
+            sim = toy2.Sim(batch3c.s4_cfg("K-L10", 0, 0.1, INF))
+            sim.n_sent = 10
+            for s in range(10):
+                sim.h_seq[s] = 0.0
+                sim.sent_t[s] = 0.0
+                sim.last_send[s] = 0.01
+            sim.M_known = {3}
+            sim.rhi_known = 9
+            sim.tau_rx = 0.05            # a later datagram arrived: last_send 0.01 < 0.05
+            sim.last_gen = 0.06
+            sim.srtt = 0.1
+            return sim
+        sim = fresh()                                                   # age 0.3 + srtt/2 >= T = 0.1: L2 fails
+        sim.act(0.3, 0.06, [3], open_tail=False)
+        self.assertIn(3, sim.verdicted)                                  # missing, report current, newer evidence: verdict
+        sim = fresh()
+        sim.M_known = set()                                              # nobody reported it missing: never judged
+        sim.act(0.3, 0.06, [3], open_tail=True)
+        self.assertEqual(sim.verdicted, set())
+        sim = fresh()
+        sim.tau_rx = 0.005                                               # no datagram sent after the last send has arrived
+        sim.act(0.3, 0.06, [3], open_tail=False)
+        self.assertEqual(sim.verdicted, set())
+        sim = fresh()
+        sim.last_send[3] = 0.2                                           # the report is older than the last send
+        sim.tau_rx = 0.25
+        sim.act(0.3, 0.06, [3], open_tail=False)
+        self.assertEqual(sim.verdicted, set())
+
+    def test_9_carrier_header_vs_datagram(self):
+        a = toy2.Sim(batch3c.s4_cfg("OV", 0, 0.4, INF, n_total=36000))
+        ra = a.run()
+        b = toy2.Sim(batch3c.s4_cfg("OV", 0, 0.4, INF, carrier="datagram", n_total=36000))
+        rb = b.run()
+        self.assertGreater(a.g["floor_carried"], 1000)
+        self.assertEqual(b.g["floor_carried"], 0)
+        self.assertGreater(rb["gauges"]["floors"], 10 * max(ra["gauges"]["floors"], 1))   # the floor datagrams take link slots (option b)
+        self.assertLessEqual(rb["gauges"]["floors"], 500 * 6.0)                             # at most one per 2 ms window (6 s run, with slack)
+
+    def test_10_collapse_fixed_in_ov(self):
+        h0 = toy2.run(batch3c.s4_cfg("OV", 0, 0.4, 0.0))
+        hi = toy2.run(batch3c.s4_cfg("OV", 0, 0.4, INF))
+        old = toy2.run(batch3b.s3_cfg("OV", 0, 0.4, INF))
+        self.assertGreater(h0["share_by_0p4"], 0.75)
+        self.assertGreater(hi["share_by_0p4"], h0["share_by_0p4"] - 0.05)       # one seed; the registered 0.03 is read on 12 seeds
+        self.assertLess(old["share_by_0p4"], 0.3)                                     # the stage 3b collapse reproduces on the same cell
+
+    def test_11_finishes_and_window_series_exist(self):
+        r = toy2.run(self._cfgs("CL", 0, INF, 0.0))
+        self.assertTrue(r["finished"])
+        self.assertTrue(len(r["win_first"]) >= 2 and len(r["win_util"]) == len(r["win_first"]))
+        self.assertEqual(sum(r["win_first"]), r["n_src"])
 
 
 if __name__ == "__main__":

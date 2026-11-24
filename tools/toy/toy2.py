@@ -55,6 +55,13 @@ def dequeue_expired(T, age, m):
     return age + m >= T
 
 
+def protected(T, now, last_send, c, h, srtt_eff):
+    """Stage 3c, three-knobs.md 15.3 and 15.6.1 item 1: L2 evaluated at the earliest resend still possible, max(now, last_send + c),
+    with c the per-seq resend cooldown, h the hand-over time and srtt_eff / 2 the one-way delay estimate.  A seq that is not protected
+    will never be resent, so the floor may pass it.  The fifth place T is compared."""
+    return max(now, last_send + c) - h + srtt_eff / 2.0 < T
+
+
 def delta_at_b(b):
     return DELTA_AUTO * 10.0 ** (-2.0 * math.log2(b))
 
@@ -62,7 +69,7 @@ def delta_at_b(b):
 @dataclass
 class Cfg:
     cell: str = "I1"
-    sender: str = "S1c"            # S0 | S1 (verdict, no copy; test only) | S1c | S2 | S2c (stage 3: L1, L2; S2c adds a copy per verdict) | S3 | S3x (stage 3b: the S2 family on Cfg's stage 3b fields; S3x keeps the O exclusion)
+    sender: str = "S1c"            # S0 | S1 (verdict, no copy; test only) | S1c | S2 | S2c (stage 3: L1, L2; S2c adds a copy per verdict) | S3 | S3x (stage 3b: the S2 family on Cfg's stage 3b fields; S3x keeps the O exclusion) | S4 (stage 3c: S3 on the stage 3c fields)
     recv: str = "R1"               # R1 | U | R0e | HZ | RH (stage 3: hold Hk)
     seed: int = 0
     dur: float = 20.0
@@ -102,9 +109,13 @@ class Cfg:
     src_model: str = "old"         # stage 3b: "wc" = work-conserving source (a waiting backlog is sent at once, limited by the pause and the link)
     link: object = None            # stage 3b: dict(C=units/s, Q=queue in units) turns on the bottleneck
     tail_elig: str = "P"           # stage 3b: "R" = the probe timer (one datagram per R for the oldest open-tail seq)
-    resend_gate: str = "owd"       # stage 3b: "evidence" gates every resend on evidence of loss (link cells)
+    resend_gate: str = "owd"       # stage 3b: "evidence" gates every resend on evidence of loss (link cells); stage 3c: "cooldown" = the engine's per-seq cooldown max(srtt, 10 ms)
     deq_expiry: bool = False       # stage 3b: dequeue expiry (a + R >= T with a younger unit waiting)
     evidence_verdict: bool = False  # stage 3b: verdicts only on evidence of loss newer than the last send
+    floor_law: str = "verdict"     # stage 3c: "protect" = the floor is the lowest seq the sender still means to deliver (three-knobs.md 15.3)
+    floor_carrier: str = "header"  # stage 3c: "header" = the floor rides on every data datagram at zero link cost; "datagram" = at most one floor datagram per 2 ms (S4b)
+    resend_brake: str = "none"     # stage 3c: "engine" = at most 10 copies per 5 ms window (15.4)
+    verdict_evidence: str = "rev1"  # stage 3c: "feedback" = a verdict only for a seq a current report lists missing, with a later send received (15.1)
     recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
 
 
@@ -280,9 +291,9 @@ class Sim:
         self.u_next = 0                              # next application unit (handed over at u * dt)
         self.h_seq = [0.0] * self.nmax               # hand-over time of the unit each seq carries
         self.intake_expired = 0
-        self.s2fam = c.sender in ("S2", "S2c", "S3", "S3x")
-        self.s3 = c.sender in ("S3", "S3x")
-        self.resume_on_verdict = c.sender != "S3"       # S3: the pause is released by receiver feedback only (13.1)
+        self.s2fam = c.sender in ("S2", "S2c", "S3", "S3x", "S4")
+        self.s3 = c.sender in ("S3", "S3x", "S4")
+        self.resume_on_verdict = c.sender not in ("S3", "S4")       # S3, S4: the pause is released by receiver feedback only (13.1)
         self.O_ctl = self.O_eff if self.s2fam else self.O
         self.paused = False
         self.srtt = None
@@ -303,6 +314,15 @@ class Sim:
         self.floor_arrivals = []
         self.deq_log = []
         self.trig = "report"
+        # stage 3c state
+        self.rs_age = {}
+        self.F_ann = 0                               # the announced floor (15.3): no copy of a seq below it is ever staged
+        self.lu = 0                                  # lowest unresolved seq as of the last report (sender state)
+        self.flag_sum = 0.0
+        self.flag_n = 0
+        self.copy_win = {}                           # copies sent per 5 ms window (the brake's counter)
+        self.fl_win = -1                             # 2 ms window of the last floor datagram (carrier "datagram")
+        self.win = {k: {} for k in ("first", "resend", "braked", "cool", "busy")}
         self.oe = (c.dead[1] + c.dead[2]) if c.dead is not None else None
         self.first_emit_oe = None
         # receiver state
@@ -342,7 +362,8 @@ class Sim:
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
                       r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0, late_floor=0, late_r0e=0,
                       l2_fail=0, rel_by_floor=0, probes=0, queue_drop=0, queue_drop_in=0, queue_drop_out=0,
-                      resend_by_R=0, resend_by_report=0, resend_by_sweep=0)
+                      resend_by_R=0, resend_by_report=0, resend_by_sweep=0,
+                      commit_viol=0, commit_skip=0, floor_carried=0, resend_braked=0, hull_upd=0, hull_bind=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -444,6 +465,63 @@ class Sim:
             return (0.333 if self.srtt is None else self.srtt) / 2.0
         return self.rtt / 2
 
+    def srtt_eff(self):
+        """The RFC 6298 smoothed RTT with the 333 ms seed before the first sample, for every arm alike (the cooldown and the floor)."""
+        return 0.333 if self.srtt is None else self.srtt
+
+    def cooldown(self):
+        """c: the earliest resend after the last send.  Link cells (resend_gate "cooldown"): the engine's per-seq cooldown max(srtt, 10 ms)
+        (recovery_laws.rs retx_cooldown_us); elsewhere the toy's own gate owd + J (stages 1 to 3b)."""
+        if self.cfg.resend_gate == "cooldown":
+            return max(self.srtt_eff(), 0.010)
+        return self.cfg.owd + self.cfg.J
+
+    def wadd(self, name, t, v=1):
+        w = self.win[name]
+        k = int(t)
+        w[k] = w.get(k, 0) + v
+
+    def update_floor(self, now):
+        """15.6.1 item 2: F_ann = the lowest seq the sender still means to deliver, a running maximum.  Scan upward from
+        max(F_ann, A_known) past every seq that is known received, verdicted or not protected; stop at the first unresolved,
+        unverdicted, protected seq or at n_sent."""
+        c = self.cfg
+        s = max(self.F_ann, self.A_known)
+        n = self.n_sent
+        Mk, ver, rk, ls, hs = self.M_known, self.verdicted, self.rhi_known, self.last_send, self.h_seq
+        se, cd = self.srtt_eff(), self.cooldown()
+        while s < n:
+            if (s in Mk or s > rk) and s not in ver and protected(c.T, now, ls[s], cd, hs[s], se):
+                break
+            s += 1
+        g = self.g
+        g["hull_upd"] += 1
+        if self.lu < self.F_ann and self.lu < n and protected(c.T, now, ls[self.lu], cd, hs[self.lu], se):
+            g["hull_bind"] += 1                      # the new minimum lies below the old floor: the running maximum absorbed it
+        if s > self.F_ann:
+            self.F_ann = s
+
+    def carry_floor(self, a):
+        """Carrier "header" (15.6.1 item 3): a delivered datagram arriving at a carries F_ann when some unresolved seq lies below it.
+        The floor event follows the data event at the same instant and takes no link slot and no loss draw."""
+        if self.cfg.floor_law == "protect" and self.cfg.floor_carrier == "header" and self.F_ann > self.lu:
+            self.push(a, 1, (self.F_ann, None))
+            self.g["floor_carried"] += 1
+
+    def floor_datagram(self, now):
+        """Carrier "datagram" (S4b): at most one floor datagram per 2 ms window, when F_ann has risen since the last one."""
+        if self.cfg.floor_law == "protect" and self.cfg.floor_carrier == "datagram":
+            w = int(now / 0.002)
+            if w != self.fl_win and self.F_ann > self.A_known and self.F_ann > self.last_floor:
+                self.fl_win = w
+                self.last_floor = self.F_ann
+                self.send_floor(now, self.F_ann)
+
+    def fb_evidence(self, s):
+        """15.1: a verdict only for a seq a current report lists missing and that a later send has overtaken (RACK's time test)."""
+        ls = self.last_send[s]
+        return s in self.M_known and self.last_gen > ls and ls < self.tau_rx
+
     def evidence(self, s, now):
         """13.1: evidence of loss newer than the last send of s: a datagram sent later has arrived, or s is overdue (R)."""
         ls = self.last_send[s]
@@ -466,6 +544,12 @@ class Sim:
         d = max(t, self.link_free) + self.link_sv
         self.link_busy += self.link_sv
         self.busy_w += max(0.0, min(d, 10.0) - max(d - self.link_sv, 1.0))      # link-busy time inside [1 s, 10 s]
+        w0, w1 = int(d - self.link_sv), int(d)
+        if w0 == w1:
+            self.wadd("busy", d, self.link_sv)
+        else:
+            self.wadd("busy", d - self.link_sv, w1 - (d - self.link_sv))
+            self.wadd("busy", d, d - w1)
         self.link_free = d
         return d + self.delay.at(d), d
 
@@ -512,14 +596,21 @@ class Sim:
             self.fifo_note(a)
         if self.trace is not None:
             self.trace.append((round(t, 9), s, 0, 0, 0))
+        if c.floor_law == "protect":
+            self.update_floor(t)
+            self.flag_sum += self.n_sent - self.F_ann
+            self.flag_n += 1
         ps = self.ps_ctr
         self.ps_ctr += 1
         if a is None or self.lost(s, 0, dep):
             self.orig_lost.append(s)
         else:
             self.push(a, 0, (s, 0, t, ps))
-        if self.s2fam:                               # the per-seq verdict timer (at +inf it never fires)
+            self.carry_floor(a)
+        if self.s2fam and c.verdict_evidence != "feedback":      # the per-seq verdict timer (at +inf it never fires); none under feedback verdicts
             self.push(max(t, self.h_seq[s] + c.T - self.o_hat()), 8, s)
+        self.wadd("first", t)
+        self.floor_datagram(t)
         if s == 0 and c.tail_elig == "R":            # the probe timer (13.4): exactly one pending event of kind 9
             self.push(t + self.R_now(), 9, None)
         nxt = t + self.dt
@@ -545,6 +636,17 @@ class Sim:
             self.src_next = nxt
 
     def send_copy(self, now, s):
+        """Stage a copy of s.  Returns False when the resend budget (15.4) refuses it; nothing is mutated then."""
+        c = self.cfg
+        w = int(now / 0.005)
+        if c.resend_brake == "engine" and self.copy_win.get(w, 0) >= 10:
+            self.g["resend_braked"] += 1
+            self.wadd("braked", now)
+            return False
+        self.copy_win[w] = self.copy_win.get(w, 0) + 1
+        self.wadd("resend", now)
+        if c.floor_law == "protect" and s < self.F_ann:
+            self.g["commit_viol"] += 1               # the commitment seam: a copy below an announced floor (15.3)
         k = self.copies[s] + 1
         self.copies[s] = k
         self.last_send[s] = now
@@ -554,10 +656,14 @@ class Sim:
         a, dep = self.fwd(now)
         if a is not None:
             self.fifo_note(a)
+        if c.floor_law == "protect":
+            self.update_floor(now)
         ps = self.ps_ctr
         self.ps_ctr += 1
         if a is not None and not self.lost(s, k, dep):
             self.push(a, 0, (s, k, now, ps))
+            self.carry_floor(a)
+        return True
 
     def send_floor(self, now, f):
         rep = self.floor_rep.get(f, 0)
@@ -882,6 +988,9 @@ class Sim:
             self.M_known = set(M)
         Ak, Mk, rk = self.A_known, self.M_known, self.rhi_known
         self.pending = {s for s in self.pending if s >= Ak and (s in Mk or s > rk)}
+        if self.cfg.floor_law == "protect":
+            self.lu = min(Mk) if Mk else rk + 1          # the lowest unresolved seq (holes are all >= A_known)
+            self.update_floor(now)
         self.R_sum += self.R_now()
         self.srtt_sum += 0.333 if self.srtt is None else self.srtt
         self.rep_n += 1
@@ -917,8 +1026,8 @@ class Sim:
             self.g["verdicts"] += 1
             self.g["l2_fail"] += 1
             if self.cfg.sender == "S2c":
-                self.send_copy(now, s)
-                self.g["verdict_copies"] += 1
+                if self.send_copy(now, s):
+                    self.g["verdict_copies"] += 1
             if self.resume_on_verdict:
                 self.maybe_resume(now)
 
@@ -939,6 +1048,8 @@ class Sim:
             self.push(max(self.last_send[lo] + self.R_now(), now + 1e-9), 9, None)
 
     def can_resend(self, s, gen, now=None):
+        if self.cfg.resend_gate == "cooldown":                       # 15.6.1 item 5: the engine's per-seq cooldown, every arm
+            return self.copies[s] == 0 or now - self.last_send[s] >= self.cooldown()
         if self.cfg.resend_gate == "evidence":                       # 13.1: the same predicate gates resends
             return self.copies[s] == 0 or self.evidence(s, now)
         if self.copies[s] == 0:
@@ -961,7 +1072,12 @@ class Sim:
         c = self.cfg
         ver = self.verdicted
         cands_ = [s for s in holes if s not in ver]
+        if c.floor_law == "protect":                                  # 15.6.1 item 4: the commitment; a seq below F_ann is never judged or resent
+            n0 = len(cands_)
+            cands_ = [s for s in cands_ if s >= self.F_ann]
+            self.g["commit_skip"] += n0 - len(cands_)
         if not cands_:
+            self.floor_datagram(now)
             return
         g = self.g
         verdict_seqs, serve_seqs = [], []
@@ -970,6 +1086,9 @@ class Sim:
             for s in cands_:
                 if resend_admissible(c.T, now - self.h_seq[s], x):
                     serve_seqs.append(s)
+                elif c.verdict_evidence == "feedback":                   # 15.1: only on receiver feedback
+                    if self.fb_evidence(s):
+                        verdict_seqs.append(s)
                 elif not c.evidence_verdict or self.evidence(s, now):
                     verdict_seqs.append(s)
             g["l2_fail"] += len(verdict_seqs)
@@ -1006,23 +1125,36 @@ class Sim:
             g["seed_verdicts"] += len(verdict_seqs)
         F = self.floor_value() if verdict_seqs or self.pending else self.last_floor
         need_floor = bool(self.pending) and any(s < F for s in self.pending) and F > self.last_floor
+        if c.floor_law == "protect":
+            need_floor = False                                           # the protected floor goes on the carrier (below) and on the sweep
         if verdict_seqs and c.sender in ("S1c", "S2c"):
             for s in verdict_seqs:
-                self.send_copy(now, s)
-                g["verdict_copies"] += 1
+                if self.send_copy(now, s):
+                    g["verdict_copies"] += 1
         for s in serve_seqs:
             if self.can_resend(s, gen, now):
-                self.send_copy(now, s)
-                g["serves"] += 1
-                g["resend_by_" + self.trig] += 1
+                first = self.copies[s] == 0
+                if self.send_copy(now, s):
+                    g["serves"] += 1
+                    g["resend_by_" + self.trig] += 1
+                    if first:
+                        self.rs_age.setdefault(self.trig, []).append(now - self.h_seq[s])      # age from hand-over at a seq's first resend (Q3c-8)
+            else:
+                self.wadd("cool", now)
         if need_floor:
             self.last_floor = F
             self.send_floor(now, F)
+        self.floor_datagram(now)
         if verdict_seqs and self.resume_on_verdict:
             self.maybe_resume(now)
 
     def floor_repeat(self, now):
-        """The floor is sent again at each tail-sweep fire while F > A_rx (7.2)."""
+        """The floor is sent again at each tail-sweep fire while F > A_rx (7.2).  Protected floor (15.6.1 item 2): F_ann, no pending test."""
+        if self.cfg.floor_law == "protect":
+            if self.F_ann > self.A_known:
+                self.last_floor = max(self.last_floor, self.F_ann)
+                self.send_floor(now, self.F_ann)
+            return
         if not self.pending:
             return
         F = self.floor_value()
@@ -1031,6 +1163,8 @@ class Sim:
             self.send_floor(now, F)
 
     def on_sweep(self, now):
+        if self.cfg.floor_law == "protect":
+            self.update_floor(now)
         P = self.sweep_P
         lo = self.rhi_known + 1
         tail = []
@@ -1183,6 +1317,7 @@ class Sim:
             l2_fail=g["l2_fail"], rel_by_hold=g["rel_ho"], rel_by_floor=g["rel_by_floor"],
             finish=(self.t_front - (units - 1) * self.dt) if (c.n_total and self.t_front is not None) else None)
         self.summary3b(out, n, ok, dl, hs_)
+        self.summary3c(out)
         if c.n_total:
             out["tail_time"] = (self.t_front - self.sent_t[n - 1]) if self.t_front is not None else None
             out["stalled"] = self.t_front is None
@@ -1259,6 +1394,59 @@ class Sim:
         out["stall_parts"] = parts
         if c.want_trace:
             out["_deq_log"] = self.deq_log
+
+    def summary3c(self, out):
+        """Stage 3c readouts (three-knobs.md 15.5, 15.6.1 item 7): the per-1 s series, the floor's gauges, finished, the stall parts
+        (o), (oo), (i), (ii), (iii).  No mean over delivered units alone is taken."""
+        c, g = self.cfg, self.g
+        out["finished"] = (self.t_front is not None) if c.n_total else None
+        out["pass_floor"] = g["pass_floor"]
+        out["late_floor"] = g["late_floor"]
+        out["resend_braked"] = g["resend_braked"]
+        out["floor_hull_bind"] = g["hull_bind"] / max(g["hull_upd"], 1)
+        out["F_lag"] = (self.flag_sum / self.flag_n) if self.flag_n else None
+        out["max_copies_5ms"] = max(self.copy_win.values(), default=0)
+        for k in ("report", "sweep"):
+            v = self.rs_age.get(k, [])
+            out["rs_age_%s_n" % k] = len(v)
+            out["rs_age_%s_med" % k] = float(np.median(v)) if v else None
+        plog = list(self.pause_log)
+        if self.paused:
+            plog.append((self.pause_t0, self.t_last))
+        nwin = int(self.t_last) + 1
+        for nm in self.win.values():
+            if nm:
+                nwin = max(nwin, max(nm) + 1)
+        for k, nm in (("first", "win_first"), ("resend", "win_resend"), ("braked", "win_braked"), ("cool", "win_blk_cool")):
+            out[nm] = [self.win[k].get(i, 0) for i in range(nwin)]
+        out["win_blk_budget"] = out["win_braked"]
+        out["win_util"] = [self.win["busy"].get(i, 0.0) for i in range(nwin)]
+        pw = [0.0] * nwin
+        for a_, b_ in plog:
+            for i in range(int(a_), min(nwin, int(b_) + 1)):
+                pw[i] += max(0.0, min(b_, i + 1.0) - max(a_, float(i)))
+        out["win_pause"] = pw
+        out["win_blk_pause"] = [x * c.rate for x in pw]              # hand-over instants that fell inside a pause
+        parts = None
+        eps = list(self.episodes)
+        if self.ep_start is not None:
+            eps.append((self.ep_start, self.t_last - self.ep_start, self.ep_pass))
+        if c.dead is not None and c.n_total:
+            rs, re_ = c.dead[1] + c.owd, c.dead[1] + c.dead[2] + c.owd          # the outage at the receiver
+            ov = [e for e in eps if e[0] < re_ and e[0] + e[1] > rs]
+            if ov:
+                st, ln, _ = max(ov, key=lambda e: e[1])
+                en = st + ln
+                tf = next((x for x in self.floor_arrivals if x >= re_), None)      # first floor or F-carrying datagram after the outage
+                tfc = en if tf is None else min(tf, en)
+                fills = [v for v in self.tfill.values() if tfc <= v <= en]
+                p_o = max(0.0, rs - st)
+                p_oo = max(0.0, min(en, re_) - max(st, rs))
+                p_i = max(0.0, tfc - max(re_, st))
+                p_ii = max(0.0, max(fills) - tfc) if fills else 0.0
+                p_iii = max(0.0, (en - st) - p_o - p_oo - p_i - p_ii)
+                parts = dict(start=st, length=ln, o=p_o, oo=p_oo, i=p_i, ii=p_ii, iii=p_iii, floor_seen=tf is not None)
+        out["stall3c"] = parts
 
     def p4c(self, rows):
         """(observed consumer stall, expected min(H_o, R - t_det, t_pass - t_det)) per isolated hole; the stall is read
