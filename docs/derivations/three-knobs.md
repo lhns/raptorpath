@@ -1345,3 +1345,280 @@ Branch `toy-stage3-knobs` `02eda90b`, `tools/toy/results-stage3c.md`. One path, 
 **Untested risk.** A floor on every data datagram tells the receiver to pass anything still in flight below it. Harmless in order on one path; on two paths it would pass slow-path data that is about to arrive. Two paths must be tested before any engine sketch.
 
 **Register before the next run:** the item-5 fix (cooldown on first resends, re-check of the floor before each copy), with the link cells rerun; an engine-like sweep arm (blocker only); recovery time after the outage per arm; the planted STEP/KINK control; an ablation flipping `floor_law` alone in OV; a two-path cell with skew.
+
+## 17. Revision 3 (2026-11-24, after stage 3c; owner: "yes Start the run", with Fable)
+
+This section supersedes earlier sections where it says so. Sections 1 to 16 are kept as the record.
+
+The advisor (Fable) reviewed these, before writing:
+- the seam's cause and its law, including its own miss in reviewing §15;
+- the K-L10b resend count as a separate cause;
+- the engine-like sweep, which needs its period from measured srtt and a receiver refresh, and which recovers a tail with nothing after it one seq per fire;
+- routing the planted control through T;
+- the two-path model and its one-path assumptions;
+- the window readouts for recovery time and for the 2 s lifetime;
+- the verdict rule's fate.
+
+The one-way term ô = srtt − RTprop/2 (§17.1) is my choice after that review. It was checked in the final review of the whole section.
+
+### 17.1 The commitment seam (§16 item 1): one trigger function, the right one-way term, and a re-check
+
+**What §16 proposed is not the engine's gate.** The engine applies its per-seq cooldown only to a seq that already has a retransmit on record (`sender_phases.rs:873`: `if let Some(&(last, _)) = st.nack_retx_at.get(&seq)`). A first resend is exempt. So "cooldown on first resends too" would change the gate that every arm uses, and stage 3c's supplement moved the baselines by up to 4 points. It is not adopted.
+
+**The cause, stated exactly.** §15's `protected` put the earliest resend of every seq at `last_send + cooldown`. For a never-resent seq the delay is not the cooldown but its **trigger**: the first instant the sender's own rules can make it a candidate. That is a report listing it, about one srtt after its send on its path, or the sweep reaching it. The law and the gate disagreed by exactly that difference.
+
+**The law (supersedes §15.3's `protected`).** "A seq is protected while a resend at its earliest trigger could still arrive before T":
+
+```text
+   protected(s, t)  ⇔   max( t ,  last_send(s) + d(s) )  −  t_h(s)  +  ô   <   T
+   d(s)  =  c                                        if s has been resent        (the cooldown: the engine's gate, sender_phases.rs:873)
+         =  min( srtt_{path(s)} ,  P_reach(s) )      otherwise                    (its trigger: a report, or the sweep)
+   ô     =  srtt_{resend path}  −  RTprop_{resend path} / 2
+```
+
+| symbol | provenance |
+|---|---|
+| c = max(srtt, 10 ms) | the engine's cooldown (`recovery_laws.rs::retx_cooldown_us`) |
+| srtt_{path(s)} | measured, per path: the report path's trigger delay |
+| P_reach(s) | the sweep's eligibility for s: the sweep period P under the whole-tail sweep; P for the cumulative blocker and ∞ for every other seq under the blocker-only sweep (§17.3) |
+| RTprop | measured: the windowed minimum RTT (paper §6.1) |
+| ô | the one-way delay of a resend, assuming all queueing is on the data direction (declared; exact when the reverse path is unqueued, which holds for a sender's own bottleneck, since acks are small). It replaces srtt/2 in L2 and in `protected`. With no queue it equals srtt/2, so the call cells are unchanged |
+
+- **Why ô moves.** In OV the forward queue is about 87 ms. The true one-way delay of a resend is then about 0.092 s, against srtt/2 = 0.049 s, so the symmetric split protected a unit whose resend could not arrive in time. `srtt − RTprop/2` reads 0.093 s there.
+- **Why both changes are needed.** With the trigger term alone and the toy's 25 ms sweep, a fresh OV unit would read protected, the floor would leave the send frontier, and the stage 3b strict-order collapse would partly return. With ô corrected, the same unit is unprotected at birth (0.325 + 0.093 ≥ 0.4), whatever the sweep form.
+- **The trigger is computed by the function that picks candidates.** `P_reach` is read from the same code that builds the sweep's list, so the law cannot drift from the gate again.
+- **The re-check makes the commitment absolute.** Immediately before each copy is staged, test `s ≥ F_ann` against the current floor. A candidate that fails is skipped and counted (`skip_below_floor`).
+  - The law makes skips rare: a report earlier than its srtt estimate can still produce one.
+  - The re-check makes copies below the floor impossible. Absolute test: 0 copies below the floor, in every run.
+- **A copy in flight below the floor.** After a copy, `last_send = now` and `d = c`, so a seq can become unprotected while its copy flies. On one FIFO path the floor rides a later datagram and arrives after the copy. On two paths the copy goes on the fast path (§17.7), so the same holds; §17.7 tests it.
+- **Continuity:** d(s) branches on whether s was ever resent. That is a state, not a knob. ô is continuous. At T = ∞ the law is inert.
+
+**K-L10b's 598 resends at its lowest T are a different cause.**
+- About 300 frames are lost there (10 % of 3 000), yet 598 copies are sent, so at least half are copies of frames that arrived.
+- The old sweep's eligibility is a first-send age of 100 ms (`clamp(2·srtt, 25, 100 ms)` with the cap binding), while a frame's ack returns at about 122 ms (2·60 ms + the report tick). So the sweep resends frames still awaiting their ack. Every sweep fire catches the frames whose age falls in [100, 122) ms, about 22 % of them.
+- Some of those copies pass L2 and could arrive before T, which is why the "zero resends at the lowest T" bullet failed.
+- This is the sweep cap's bind (§13.4, recorded), not the seam. It is confirmed by the `dup` gauge (Q3d-2), not fixed here. Q17 asks the owner whether the sweep's eligibility should be at least the ack timeout, `max(P, R)`, with no probe and the whole-tail list kept.
+
+### 17.2 The feedback-only verdict (§16 item 2): deleted from the design, kept as the ablation's give-up
+
+**It cannot fire under the protected floor, by construction.** L2 failing now implies unprotected (the earliest trigger is at or after now), and every older seq is unprotected too, so the seq is already below F. No cell can exercise it there.
+
+So it is **deleted from the design** (S5 below). It survives as the give-up rule of the floor-law ablation (§17.6), the one arm where it is reachable. There it gets tests on real state, a verdict-count witness and `finished`. It has no evidence for a lost tail (nothing arrives after it), so the ablation runs only in OV, which has no tail.
+
+### 17.3 An engine-like sweep for every arm (§16 item 3)
+
+Selector `sweep_form ∈ {"tail", "blocker"}`, applied to every arm in a cell:
+- **`"tail"`:** today's toy sweep. Every open-tail seq older than P is resent at each fire, with the period fixed from the base RTT (`sweep_P = clamp(2·rtt_base, 25, 100 ms)`, set once).
+- **`"blocker"`:** the engine's (`net/mod.rs:2783–2811`, `:3029–3043`).
+  - The deadline is `max(last_send(blocker), last sweep fire) + clamp(2·srtt_pooled, 25 ms, 100 ms)`, recomputed at every event from the **measured** pooled srtt.
+  - On expiry, only the cumulative blocker (`A_known`) goes to the serve path. The cooldown, the resend budget, L2 and the floor re-check all apply.
+  - **The receiver refresh is modelled too:** while the receiver holds holes, it re-sends its report every `clamp(2·srtt_rx, 25 ms, 100 ms)` (`recovery_laws.rs::hole_nack_refresh`, `HOLE_NACK_REFRESH_MIN` and `_MAX` = 25 and 100 ms), so reported holes are re-presented. The toy's receiver otherwise reports only on arrival.
+
+**Where it runs.** The blocker sweep recovers a tail with nothing after it one seq per fire: the blocker's copy arrives, the next seq becomes the blocker, and so on. The engine has that too. There coded repair (absent from the toy) also covers the tail. So `"blocker"` runs only in cells where data follows every hole: OV, CL, CL-long and the K cells. The E cells keep `"tail"`.
+
+**Recorded finding for the engine:** a lost tail with no repair recovers one seq per tail-sweep timeout. This is already implied by ADR-0084's lost-tail precheck, and it is a question for the repair plane, not for this design.
+
+### 17.4 Recovery time after the outage (§16 item 4), and a longer capacity cell
+
+- **Windows** are indexed by hand-over time: width 0.5 s, step 0.1 s. Each window's on-time share counts the units handed over in it and delivered within 0.4 s of hand-over; expired and undelivered units count as late.
+- **Pre-outage level `L0`:** the on-time share over hand-over [0.5 s, outage start − 0.1 s]. `sd0` is the standard deviation of the pre-outage window shares.
+- **Threshold:** `θ = L0 − max(0.02, 3·sd0)`.
+- **Recovery time:** `t_rec − outage_end`, where `t_rec` is the start of the first window at or after the outage end such that every window from it to the readable end has share ≥ θ. The readable end is the hand-over time of the last unit minus 2 s, so the object's tail is never read. If no window qualifies: "not within the run".
+- **CL-long:** CL with `n_total = 200000` (20 s), outage [2.0, 3.5) s, `t_limit = 80`.
+  - The slowest predicted recovery is about 4.8 s (§13.6: `((λL + B)/C − (τ − d_fwd))·C/(C − λ)` ≈ (1.28 − 0.32)·5), so the readable end at 18 s leaves more than 2.5× margin.
+  - C1, at about 1.2 ms per unit and growing faster than linearly, is about 5 min per run.
+
+### 17.5 Smoothness: planted controls through T (§16 item 5)
+
+Stage 2's `plant=` scales design U's hold inside `ho_now`, which S5 never reaches. So the stage 2 shapes are kept but routed through the nudged knob, in one named, deny-exempt function `plant_T(cfg, T) → T_eff`, with p the planted point:
+- **TSTEP:** `T_eff = 2·T` if T < p, else T;
+- **TSPIKE:** `T_eff = 2·T` if T = p, else T;
+- **TKINK:** `T_eff = T·(1 + 25·max(0, 1 − T/p))`.
+
+These are the stage 2 §7.9 factors. `T_eff` enters every sender law (L1, L2, the dequeue rule, `protected`). Readouts use the declared T, so a plant that bites shows up as a share change against the stated lifetime.
+
+**Cells.**
+- **OV at p = 0.4.** The on-time share there is set by the dequeue threshold, so a plant bites: TSTEP doubles the threshold below p, and the units sent arrive after the declared T.
+- **K-L10 at p = 0.4.** The share is flat in T there, so a plant does not bite. The prediction is "no power" (K and P equivalent for the plants too), and that is not counted as a pass.
+
+**Readouts** are those on which S5 is claimed smooth: `share_T` and the hand-over delay p50.
+
+### 17.6 The floor-law ablation in OV (§16 item 6)
+
+Arm **S5v** is S5 with `floor_law = "verdict"` and nothing else changed. Its give-up rule is §15.1's feedback verdict: L2 fails, the report lists s, the report is current, and `last_send(s) < τ_rx`. The floor is ADR-0084's verdict floor, sent at the verdict (as in stage 3b).
+
+Cells: OV and OV-long. Arms: T = 0.4 × H ∈ {0, ∞}.
+
+### 17.7 Two paths with skew (§16 item 7)
+
+**Model.** It extends stage 2's unbuilt Part C (§7 on `toy-sim-stage2`: φ_slow placement, copies on the fast path). It is selected by `paths = [dict(owd=0.010, J=0.001), dict(owd=0.060, J=0.001)]`. With `paths = None` the code is unchanged.
+- **Delay:** one `Delay` per path, its knots drawn with the path index in `u01`'s path slot (`u01(seed, k, 0, p, SALT_KNOT)`; path 0 keeps today's draw). Each path is FIFO; the two are not ordered against each other. `fifo_note` is kept per path.
+- **Loss:** i.i.d. per datagram at the cell's rates, drawn as `u01(seed, seq, copy, p, SALT_LOSS)`.
+- **Placement:**
+  - a first send goes on path B iff `u01(seed, s, 0, 0, SALT_PLACE) < φ`, with φ = 0.5;
+  - every copy goes on A (the fast path);
+  - a floor datagram goes on both paths (ADR-0084: every live path);
+  - a header-carried floor rides whatever data datagram carries it.
+- **Reports** travel on A's reverse direction (owd 10 ms). τ_rx is the maximum send stamp over all arrivals on any path.
+- **RTT:**
+  - each path keeps its own RFC 6298 srtt, rttvar and RTprop, sampled from the report's `rhi` seq when that seq went on that path and was never resent;
+  - `srtt_pooled` is the maximum over paths (the receiver's SRTT and floor-hold read the maximum; ADR-0084 Am. 3 notes);
+  - c, R and P read `srtt_pooled`;
+  - `d(s)` reads `srtt_{path(s)}`;
+  - ô reads path A (the resend path);
+  - `sweep_P = clamp(2·max path rtt_base, 25, 100 ms)`.
+- **Reorder rule, every arm:** a reported hole is a resend candidate only if `last_send(s) + skew_hat < τ_rx`, where `skew_hat = srtt_B − srtt_A` (measured). That is RACK's time test (RFC 8985 §6.2) with the reordering window set to the measured skew.
+  - Without it, every slow-path unit is reported missing for about 50 ms and resent at once, a third baseline artefact.
+  - On one path `skew_hat = 0`, so the rule is the plain RACK test, and it is applied only when `paths` is set.
+- **Receiver floor hold H_f:** two arms. `HEst(strict=False, W = 10 s)`, the floor-hold estimator, non-strict across paths; and `H_force = 0`.
+
+**Cell P2.** Cell I2 loss on both paths, rate 10 000/s, `n_total = 12147`, no outage, no link limit.
+
+**T is chosen so that slow-path units are unprotected at birth and fast-path ones are not:**
+- **T = 0.075 s.**
+  - A B-unit arrives at about 0.061 s, inside T.
+  - Its earliest trigger is about `srtt_B ≈ 0.07` s, and `0.07 + ô_A (0.010) ≥ 0.075`, so it is unprotected.
+  - An A-unit's trigger is about 0.02 s, and `0.02 + 0.01 < 0.075`, so it is protected.
+- **T = 0.4 s** as the vacuous case: everything is protected and the floor trails.
+- **T = ∞** for the identity.
+
+Arms: C3, and S5 at T ∈ {0.075, 0.4, ∞} × H ∈ {0, ∞} × H_f ∈ {est, 0}.
+
+**Witnesses:**
+- `pass_floor > 0`: the floor passed something;
+- `late_floor`: late fills of floor-passed holes, the data in flight that the floor passed;
+- `dup`;
+- `skip_below_floor`.
+
+### 17.8 The 2 s lifetime under overload, read where it binds (§16 item 8)
+
+**OV-long:** OV with `n_total = 480000` (40 s).
+
+The readout is the share delivered within 2 s of hand-over, in 0.5 s hand-over windows, read only in windows that start after the first dequeue expiry and end before the readable end (last hand-over − 2 s). Run length then does not matter. The prediction is the steady state `(C/λ)·(1 − p0)`.
+
+Arms: C1, C3, S5 at T ∈ {0.4, 2} × H ∈ {0, ∞}, S5v at T = 0.4.
+
+### 17.9 Stage 3d registration
+
+**Build.**
+- Base: `toy-stage3-knobs` `02eda90b`, in `tools/toy/`. Extend `toy2.py`, and add `batch3d.py`, `summarize3d.py` and `check_ident3d.py`.
+- **References:** regenerate stage 1 to 3c references from `02eda90b` in a separate worktree, since the output folders are git-ignored. Use every configuration of `check_ident3c.py` plus one per 3c arm and cell, 3 seeds, all keys and traces.
+- **Bit-identity:** with every new field at its default, the new code reproduces them.
+- **Run order:**
+  1. tests;
+  2. identity and liveness (stop if red);
+  3. A/A in every cell, frozen as `nf_stage3d.json`;
+  4. everything else.
+
+**New `Cfg` fields** (defaults reproduce 3c):
+- `trigger_law: "cooldown"`: `"trigger"` = §17.1's d(s);
+- `owd_est: "half"`: `"fwd"` = ô = srtt − RTprop/2;
+- `recheck_floor: False`;
+- `sweep_form: "tail"`;
+- `rx_refresh: False`, set with `"blocker"`;
+- `plant_T: None`;
+- `paths: None`;
+- `phi: 0.5`;
+- `reorder_rack: False`, set with `paths`;
+- `windows: False`, which computes §17.4's and §17.8's window readouts.
+
+**Arm S5** = S4 with:
+- `trigger_law = "trigger"`, `owd_est = "fwd"`, `recheck_floor = True`;
+- the feedback verdict removed (`verdict_evidence = "none"`: a candidate failing L2 is skipped, never judged).
+
+Every comparison arm in a cell shares that cell's `sweep_form`, `resend_gate`, `resend_brake`, `rtt_est`, `src_model`, `link`, `paths`, `reorder_rack` and `rx_refresh`.
+
+**Cells** (12 seeds, phases per seed; I2 is 3 % loss at a 5 ms path, L10 is 10 % at 50 ms):
+- **E-I2, E-L10, M-I2, M-L10, K-I2, K-L10, K-L10b:** as stage 3c, `sweep_form = "tail"`. The K cells also run `"blocker"`.
+- **CL, OV:** as stage 3c, each under both sweep forms.
+- **CL-long** (§17.4) and **OV-long** (§17.8): both sweep forms.
+- **X15, X20:** as 3c (crossover, `"tail"`).
+- **P2** (§17.7).
+
+**Arms:**
+- C1, C3, and S5 at T ∈ {0.4, 2, ∞} × H ∈ {0, ∞}, plus T = 1e6, in every cell except P2 (§17.7's arms) and X15/X20 (3c's grid);
+- S5v in OV and OV-long (§17.6);
+- plants TSTEP, TSPIKE and TKINK on S5 at T = 0.4·{0.98, …, 1.02}, H = 0, in OV and K-L10;
+- the unplanted S5 nudges T = 0.4·{…} at H = 0.02, and H = 0.02·{…} at T = 0.4, in every cell except X and P2.
+
+**Readouts** (all arms, no mean over delivered units alone):
+- `share_by_0p4`, `share_by_2` and `share_T`;
+- delay from hand-over p50, p90 and p99 over all units handed over;
+- the window series (first sends, resends, braked, paused time, link use, blocked attempts by cause, per 1 s window);
+- `recovery_time` (CL, CL-long, M cells) and the windowed by-2 s share (OV-long);
+- `commit_viol` (copies staged below the floor; must be 0), `skip_below_floor`, `late_floor`, `pass_floor`, `dup` (arrivals of already-received seqs), `verdicts`;
+- `finished`, `queue_drop_in` and `queue_drop_out`;
+- the stall parts (§15.5).
+
+**Tests, red first:**
+1. `check_ident3d.py`.
+2. S5 at T = inf equals C3, and T = 1e6 equals T = inf, in every cell type, including P2 and both sweep forms (3 seeds, every key, traces).
+3. `commit_viol == 0` with a planted positive control: the re-check disabled reproduces 3c's violation on OV seed 5.
+4. `d(s)` returns c for a resent seq and `min(srtt_path, P_reach)` otherwise. `P_reach` comes from the candidate builder (one function, tested by calling both).
+5. `owd_est = "fwd"` returns srtt/2 at zero queue, and ≈ owd + queue in OV.
+6. The blocker sweep resends only `A_known`, and the receiver refresh fires at the clamped cadence.
+7. The two-path model: path 0's draws equal the one-path draws; each path is FIFO; copies go on A; reorder_rack suppresses a resend of an in-flight B unit (fabricated state).
+8. `plant_T`: STEP, SPIKE and KINK values at known points; deny-exempt by name only.
+9. S5v takes verdicts on real state in a short OV run (verdicts > 0, floors sent at verdicts, `finished`).
+10. The window readouts on a synthetic run with a known recovery time.
+
+**Predictions (written before any run):**
+
+- **Q3d-1, identity and liveness.**
+  - Stages 1 to 3c are reproduced.
+  - S5 at T = ∞ equals C3, and T = 1e6 equals T = ∞, in every cell, both sweep forms and P2.
+  - Every run of every arm is `finished`. A blocker-form run that does not finish is a FAIL, not a finding.
+- **Q3d-2, the commitment.**
+  - `commit_viol = 0` in every run.
+  - `skip_below_floor ≤ 0.001 × copies` in every one-path cell.
+  - At K-L10b's lowest T, `dup ≥ 0.5 × copies` (the sweep-cap duplicates of §17.1). This confirms the separate cause; it is not a pass condition for the design.
+- **Q3d-3, OV with the consistent law** (T = 0.4):
+  - S5 H = 0 `share_by_0p4` ∈ [0.78, 0.84];
+  - S5 H = ∞ ∈ [0.75, 0.84], at least the H = 0 value − 0.03, under **both** sweep forms (ô makes fresh units unprotected at birth whatever the trigger);
+  - S5v H = ∞ ∈ [0.05, 0.25] (the tell's round trip returns: §15.2), with verdicts > 1 000;
+  - S5v H = 0 within 0.02 of S5 H = 0.
+- **Q3d-4, baselines and the sweep form** (OV and CL):
+  - under `"blocker"`, C3's copies per delivered unit fall below its `"tail"` value, shown;
+  - its `dup` share falls from about 0.5 to below 0.1;
+  - the S5 rows move by less than 0.02 between forms.
+- **Q3d-5, recovery time** (CL-long, both sweep forms; seconds after the outage end):
+  - C3 and C1 in [4, 7];
+  - S5 at T = 2 equivalent to C3 (no expiry: the lifetime is above the backlog wait);
+  - S5 at T = 0.4 in [0, 0.6] at H = 0 and [0, 1.0] at H = ∞.
+  - CL (10 s): C3 "not within the run" or above 4 s; S5 at T = 0.4 ≤ 0.6 s.
+- **Q3d-6, the 2 s lifetime where it binds** (OV-long, windowed by-2 s share):
+  - S5 T = 2, H = 0 ∈ [0.78, 0.83], against (C/λ)·(1 − p0) = 0.808;
+  - C3 and C1 ≤ 0.05 in those windows;
+  - S5 T = 2, H = ∞ ∈ [0.40, 0.83], reported (strict order waits for holes still being resent, §15.2, not fixed).
+- **Q3d-7, planted controls:**
+  - OV: TSTEP reads K "shown" on `share_T`; TSPIKE reads P "shown" and K equivalent; TKINK reads K equivalent, with P allowed "shown" only if the registered two-point curvature follow-up gives an intercept that is not shown;
+  - K-L10: all three read equivalent, reported as "no power";
+  - the unplanted S5 nudges read equivalent on K and P in every cell. In K-L10 that pass has no shown power and is reported as such.
+- **Q3d-8, two paths** (P2):
+  - **T = 0.075, H = ∞:**
+    - H_f = 0: `late_floor / units` ∈ [0.35, 0.50]. A fast-path datagram carrying F passes nearly every slow-path unit still in flight, which then arrives out of order;
+    - H_f = est: `late_floor / units ≤ 0.005`, H_f ≈ the skew (45–55 ms), `pass_floor > 0`, and `share_T` within 0.02 of H_f = 0's.
+  - **T = 0.4:** `late_floor = 0` and `pass_floor ≤ 0.002 × units` under both H_f (vacuous case, reported as such).
+  - `dup / copies ≤ 0.1` for every arm under `reorder_rack`.
+- **Q3d-9, continuity:** the unplanted nudges are equivalent everywhere (above). The stall parts are as in Q3c-10, under both sweep forms in the K cells.
+
+Report every reading, the A/A self-check and every deviation, as stage 3c did.
+
+### 17.10 Effect on the earlier sections, and what stays open
+
+**Superseded or amended:**
+- §15.3's `protected` gains the trigger term and ô = srtt − RTprop/2. ô also replaces srtt/2 in §2.2's L2.
+- §15.1's verdict is deleted from the design and kept as the ablation's rule.
+- §16's "cooldown on first resends" is not adopted (it is not the engine's gate).
+- §13.2's dequeue margin R is unchanged.
+
+**Owner questions:**
+- **Q17:** sweep eligibility `max(P, R)`, so the capped sweep stops resending data whose ack cannot yet have returned. **Default: yes, as its own guarded engine change** with the sweep's 100 % cap bind. It is not part of this design.
+- **Q18:** the declared assumption that queueing is on the data direction (ô). **Default: accept**, with a receiver-timestamp measurement replacing it when ADR-0078's field ships.
+
+**Open:**
+- delay pinned near T − R under overload (Q12);
+- strict order at T = 2 under overload;
+- the strict-order stall through the outage;
+- the lost tail with no repair under an engine-like sweep (§17.3, an engine repair-plane question);
+- the toy still has no proactive repair.
