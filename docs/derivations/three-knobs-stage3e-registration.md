@@ -1,6 +1,6 @@
 # Stage 3e registration: proactive repair in the three-knob model (no runs)
 
-**Status.** Registration only, written before any run. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again before the push (§12).
+**Status.** Registration only, written before any run. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); this version carries the second review's fixes (§12).
 
 **Base.**
 - Derivation `docs/derivations/three-knobs.md` on `three-knobs` at `93e29a22`. The laws are §1–§10 with Revisions 1–3 (§13, §15, §17); the findings are §18 (stage 3d) and §19 (the interactive simulator and the lifetime sweep).
@@ -77,7 +77,7 @@ New symbols only; §1 of the derivation holds for the rest.
 ```text
    D    =  min( b(δ)·srtt , 2·srtt ) ,          b(50) = ½    (the 2·srtt term never binds, §2.4 of the derivation)
    A*   =  clamp( ⌈rate_hat·D⌉ , 1 , W ) ,       Δ = clamp( ⌈rate_hat·J⌉ , 1 , 64 )
-   end  =  n_sent − Δ ,     ws = max( A_known , n_sent − W )
+   end  =  n_sent − Δ ,     ws = max( 0 , A_known − W )
    span =  [ max( ws , end − A* , e ) ,  end )                  e: the lifetime edge, §2.3
 ```
 
@@ -99,6 +99,7 @@ New symbols only; §1 of the derivation holds for the rest.
 | srtt | measured, RFC 6298, with the 333 ms seed before the first sample (stage 3b onwards). The engine's D reads the estimator's smoothed RTT, not RTprop, a divergence the paper already records (§5.3, §11.3). The offline simulation follows the engine |
 | `rate_hat` | first sends in `(now − 8·srtt, now]` divided by `min(8·srtt, now − first send)`. The window length is paper §5.3's ("window ≈ 8 SRTT"). The engine takes a windowed **maximum** of srtt/2 buckets; at 50 units/s a bucket holds 2 or 3 sends, so the maximum reads 60/s and moves A* from 3 to 4. The mean is chosen and declared. Before the first RTT sample A* = 1, as the engine's cold start (`emit_source.rs:607`) |
 | J | the cell's delay-process amplitude, 1 ms (declared). The engine measures jitter |
+| ws | the encoder window's start. Outside generation mode the engine keeps W seqs behind the cumulative ack (`sender_phases.rs:1370–1373`, `advance(ack − clamp(W, 16, win_cap))`; `rlc_window.rs::window_span`). The offline simulation reads the acknowledged frontier as `A_known`, and any capacity bound of the encoder itself is not modelled (declared). Since `A* ≤ W`, ws rarely binds |
 | b(δ), δ = 50 | paper §5.4. b's lower clamp ½ binds for every δ ≥ 50, so the call point sits on its edge |
 | the cadence | `RATE_CADENCE_MAX_US = 5 ms` and srtt/4 (`fec_rate.rs:181`, `:234`). A reading is taken at the first first-send after the period has passed, so it schedules no event of its own |
 
@@ -275,7 +276,9 @@ Build on `toy-stage3-knobs` at `e17b4c64`, in `tools/toy/`. Extend `toy2.py`; ad
    - `a, dep = fwd(t)`. Lost iff `a is None` (queue drop, `rep_qdrop`), or the outage covers it (`dead` set, `lo ≥ dead[0]` and `dep` in the window), or `u01(seed, j, 0, 0, SALT_REPAIR) < p0`;
    - if it arrives: `push(a, 11, (j, lo, end, t))`, then `carry_floor(a)`.
    - The repair draws its loss at `p0`, the cell's first-send rate: a repair is a fresh datagram, not a copy. I2's `pc = 0.10` models copies.
-4. **RTT sampling:** reports gain `rhi_data`, the newest seq that arrived as a datagram rather than by decode, appended at the end of the tuple after the per-path field. The RFC 6298 sample is taken from `rhi_data` where stage 3d took it from `rhi`. With no decodes `rhi_data == rhi`, so stage 3d is unchanged.
+4. **RTT sampling:** the receiver keeps `rhi_smp`, which follows every raise of `rhi` exactly as stage 3d makes them (data arrivals in `on_data`, and floor passes in `apply_floor`, which sets `rhi = f − 1` with no arrival) **except raises by a decode**.
+   - Reports carry `rhi_smp`, appended at the end of the tuple after the per-path field, and the sender takes its RFC 6298 sample from `rhi_smp` where stage 3d took it from `rhi`.
+   - With no decodes `rhi_smp == rhi` at every report, so stage 3d is unchanged, including its sampling of floor-passed seqs (§11 item 9).
 
 **Receiver:**
 5. **`on_repair(now, j, lo, end, tau)` (event kind 11):**
@@ -285,7 +288,7 @@ Build on `toy-stage3-knobs` at `e17b4c64`, in `tools/toy/`. Extend `toy2.py`; ad
 6. **`decode(now)` on a component** (unknowns linked by shared equations):
    - take a maximum matching (augmenting paths);
    - the determined set is every unknown not reached by an alternating path (unknown → any equation containing it → that equation's matched unknown) from an unmatched unknown;
-   - deliver each determined s in increasing seq order through the data path with copy index −1. That path: no `tau` update, no `est.feed`, no `rhi_data` change, opens holes up to s and raises `rhi` if `s > rhi`, as `on_data` does;
+   - deliver each determined s in increasing seq order through the data path with copy index −1. That path: no `tau` update, no `est.feed`, no `rhi_smp` change, opens holes up to s and raises `rhi` if `s > rhi`, as `on_data` does;
    - count `dec_units`, `dec_on_time` (`now − h_seq[s] ≤ T`), `dec_after_release` (s had been released) and `late_floor_dec` (s had been passed by the floor);
    - count every equation matched to a decoded unknown as `rep_used`;
    - remove decoded unknowns from every equation and drop empty equations.
@@ -335,14 +338,14 @@ All arms: δ = 50, H = 0. T = 0.4 s unless stated; in RT, T = 0.12 s unless stat
 | `RL` | S5 + repair | the live law | worth | all |
 | `RS` | S5 + repair | fixed at the unqueued law value, 0.2295 | worth | CLs, CLs-long, OVs |
 | `RF3` | S5 + repair | 0.36, the simulator's reading at the Realtime δ (§19) | worth | all |
-| `RF1` | S5 + repair | 0.112, the law at stage 3d's 10 000/s (a low dose) | worth | RT |
+| `RF1` | S5 + repair | 0.112, the law at stage 3d's 10 000/s (a low dose; in CLs-long, the bracket of Q23) | worth | RT, CLs-long |
 | `RL-age` | as RL | live law | age (the simulator's) | OVs |
 | `RL-floor` | as RL | live law | floor | OVs, CLs-long, RT |
 | `S5-inf`, `RL-inf`, `RS-inf` | as S5, RL, RS at T = ∞ (never gives up, any order) | | | CLs-long |
 | `S5-T0p4`, `RL-T0p4` | S5 and RL at the call point, T = 0.4 | | | RT |
 | `AA` | S5, phase variant 1 | | | all (frozen as `nf_stage3e.json`) |
 
-That is 33 configurations, or 396 runs. RS is not run in RT, because there r is constant (srtt does not move) and RS would equal RL.
+That is 34 configurations, or 408 runs. RS is not run in RT, because there r is constant (srtt does not move) and RS would equal RL.
 
 ## 6. Readouts and gauges
 
@@ -419,7 +422,7 @@ No mean is taken over delivered units alone.
    - at r = 0, no event pushed and `ctr` unchanged.
 8. **The repair loss draw** uses `SALT_REPAIR` and `p0`, and the outage window drops repairs.
 9. **`recovery_time_0p15`** on a synthetic run with a known answer.
-10. **RTT sampling** ignores a decoded seq above `rhi_data`.
+10. **RTT sampling** ignores a decoded seq above `rhi_smp`, and still follows a floor raise exactly as stage 3d does (constructed state: a floor passing a lost tail).
 11. **The deny test** with the new law functions exempt by name, and a planted positive control.
 
 ## 8. Predictions (written before any run)
@@ -493,17 +496,28 @@ Seed means over 12 seeds unless stated. "S5 ± x" is a band around the same cell
 - `RL-floor`: `rep_drop_edge / rep_credits ≥ 0.85` (repair stops once the backlog binds, within about 1 s).
 - The worth-edge arms: `rep_drop_edge / rep_credits ≤ 0.05`.
 - Link busy over [1, 10] s ≥ 0.98 for every arm (validity, as stage 3d).
+- **`dec_on_time / dec_units`,** in OVs (RL, RS, RF3) and in the saturated windows of the CLs and CLs-long drain, is a reported reading on Q18, not a pass condition. The worth edge leaves a margin of only `R − ô` ≈ 9 ms, and §19 found that ô undershoots a persistent queue by about 5 ticks. If ô were exact the ratio would be ≥ 0.9; a lower ratio measures how far ô undershoots.
 
 **Q3e-6, CLs and CLs-long at the call point:**
 
 | | CLs `share_by_0p4` | CLs-long `share_by_0p4` | recovery at 0.4 s | delay recovery at 0.15 s (CLs-long) | delay p50, CLs-long |
 |---|---|---|---|---|---|
 | `S5` | [0.82, 0.87] (3d: 0.847) | [0.90, 0.94] (3d: 0.923) | [0, 0.3] s | [0.3, 1.6] s | [4, 9] ms |
-| `RL` | S5 ± 0.02 | S5 ± 0.02 | [0, 0.3] s | [0.5, 3.0] s | [4, 15] ms |
-| `RS` | S5 ± 0.02 | S5 ± 0.02 | [0, 0.3] s | ≥ 6 s or not within the run | [0.25, 0.40] s |
+| `RL` | S5 ± 0.02 | S5 ± 0.02 | [0, 0.3] s | [0.5, 3.0] s | [4, 25] ms |
+| `RS` | S5 ± 0.02 | S5 ± 0.02 | [0, 0.3] s | ≥ 6 s or not within the run | [0.20, 0.40] s |
+| `RF1` (0.112) | — | S5 ± 0.02 | [0, 0.3] s | [0.8, 3.5] s | [4, 12] ms |
 | `RF3` | S5 − 0.08 to S5 − 0.02 | S5 − 0.10 to S5 − 0.04 | not within the run | not within the run | [0.37, 0.40] s |
-| `RL-floor` | — | S5 ± 0.02 | [0, 0.3] s | [0.5, 3.0] s | [4, 15] ms |
+| `RL-floor` | — | S5 ± 0.02 | [0, 0.3] s | [0.5, 3.0] s | [4, 25] ms |
 
+- **The delivered share.** At T = 0.4 and H = 0, a unit delivered at all is delivered within T unless its fill arrives late. L2 and the worth edge send nothing that should arrive after T, so the late fills come only from errors in ô.
+  - For every worth-edge and floor-edge arm in OVs, CLs and CLs-long: `share_any − share_by_0p4` ∈ [0, 0.005]. So `share_any` carries the bands of `share_by_0p4` above, widened by 0.005. Stage 3d: equal to the shown digits in CL, CL-long and OV.
+  - `RL-age` in OVs: `share_any − share_by_0p4` ≥ RL's (members decoded after T still count as delivered).
+  - Every T = ∞ arm: `share_any` = 1.
+- **How the delay p50 bands were derived.** They are taken over ρ ∈ [0.005, 0.035], the range of resends per first send that covers S5's stage 3d value and the duplicates of the decode race (Q3e-4).
+  - RS in CLs-long: `λ(1 + 0.2295 + ρ)/C` spans 0.988 to 1.013. At the low end the backlog drains by about 200 units over the 16.5 s after the outage, and the pooled p50 falls near 0.29 s. At the high end the backlog never drains and p50 is the pinned 0.388 s.
+  - RL before the outage: the same load sits within about 1 % of C. Where it exceeds C, a queue forms until srtt passes 16 ms, the point where `W_lat` leaves W's floor and r starts to fall. That standing queue, about 5–10 ms, sets p50 at owd plus 5–17 ms.
+  - RF1 loads the link to about 0.91 and keeps no standing queue.
+- **The scale bracket (Q23).** RF1 is the law's value at stage 3d's full rate. If RF1 recovers its delay like S5 (within about 2 s) while RS does not recover within the run, then the slow drain of RS comes from W's floor at one tenth of the rate, not from the rate law as such.
 - **CLs (10 s):** the delay recovery at 0.15 s for RS and RF3 is "not within the run". The readable end is 4.5 s after the outage, against about 15 s predicted for RS.
 - **RF3's on-time recovery is not within the run** because its pre-outage level is about 1.0 while its post-outage level is `μ_s/λ ≈ 0.92`. The link is overloaded by repair alone (`λ(1 + 0.36) = 1.09·C`), and the dequeue rule sheds about 8 % once the backlog binds. That backlog binds about 3.7 s after the start, so after the outage.
 - **Link busy before the outage** ([0.5, 1.9] s):
@@ -586,7 +600,7 @@ Numbering continues from the derivation's Q18.
   - Direction: the clamp can only lower r, so the results bound the engine's repair load from above.
   - If it is ever modelled, it needs a bind gauge.
 - **Q23, the rate scale.**
-  - **Default: one tenth,** with the window floor binding (r = 0.2295 against 0.1123 at 10 000/s). The arms RF1 and RS bracket the difference.
+  - **Default: one tenth,** with the window floor binding (r = 0.2295 against 0.1123 at 10 000/s). In CLs-long, RF1 (0.112) and RS (0.2295) bracket the difference (Q3e-6).
   - The alternative is the call point at full rate, at minutes per run.
 - **Settled here, listed for review:**
   - a repair's loss is drawn at p0;
@@ -617,6 +631,10 @@ Numbering continues from the derivation's Q18.
    - So the simulator's value is probably its BOCD upper quantile driving the raw rate into the knee. Unreconciled; the optional step in §9 reads it.
 7. **The live law responds to a queue by lowering repair,** because the queue's delay enters W through `W_lat = srtt·rate`. That is a latency budget read from a delay that includes queueing. It limits overload here only because the offline simulation's only queue sits behind the store pause. Whether the engine sees it depends on its congestion controller.
 8. **b's clamp at ½ binds for every δ ≥ 50,** so the Realtime point sits on the edge of b's range, and any δ above it sees a flat b. Continuous, but the span's response to δ above Realtime is nil.
+9. **Stage 3d's RTT sample can come from a seq that never arrived.**
+   - `apply_floor` raises the receiver's `rhi` to `f − 1` without an arrival. The report carries that `rhi`, and `on_report` samples `now − sent_t[rhi]` when that seq was never resent (`toy2.py`, `apply_floor` and `on_report`).
+   - So a floor that passes a lost tail yields an RTT sample from a datagram the receiver never got. RFC 9002 §5.1 asks for the largest newly *acknowledged* packet.
+   - Stage 3e keeps the behaviour for the identity (§3 item 4) and does not fix it. Its effect on stages 3b to 3d is unmeasured: probably small where data follows every hole, possibly larger in the E cells. It needs its own amendment.
 
 ## 12. Review
 
@@ -628,6 +646,15 @@ The advisor (Fable) reviewed the approach before writing. That review changed fi
 - the T = ∞ arms were added, because the brief's recovery formula binds only for a sender that never gives up.
 
 It also asked for the reference values from the real `raptorpath-math` functions (Appendix A), the mechanical stop markers (§9) and the queue margin (§2.5).
+
+The second review read the version first pushed (`d500454b`) and changed these:
+- **The RTT sampling field.** Floors raise the receiver's `rhi` without an arrival, so the first version's `rhi_data` would have broken the r = 0 identity. The field now follows stage 3d except for raises by decode (§3 item 4, §11 item 9).
+- **RF1 in CLs-long.** Q23's scale bracket was claimed but not run, so RF1 now runs there with a band.
+- **The delivered share** is now stated for the link cells.
+- **The delay p50 bands** for RS and RL in CLs-long were re-derived over a range of ρ and widened.
+- **`dec_on_time/dec_units`** is now a reported reading on Q18.
+- **ws** has its engine provenance (`A_known − W`, not `n_sent − W`).
+- **The status line** no longer claims a review before the first push.
 
 ## Appendix A: rate-law reference program
 
