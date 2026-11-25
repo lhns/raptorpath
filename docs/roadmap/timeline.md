@@ -350,6 +350,7 @@ gantt
     Owner call - last copy, ack pairs :model_adr84_amend2, 2026-11-21, 2026-11-21
     Owner call - sender side first :model_adr84_sender_first, 2026-11-21, 2026-11-21
     Three application knobs (lifetime T, de… :active, model_three_knobs, 2026-11-23, 2026-11-25
+    Burst estimate explodes after a long ou… :model_defect_ge_after_outage, 2026-11-25, 2026-11-25
     Repair rate sized for a wider window th… :model_defect_rate_vs_span, 2026-11-24, 2026-11-25
     The interactive simulator on the three-… :active, model_viz_three_knobs, 2026-11-24, 2026-11-25
     The ordering hold H_o(δ) for design U :model_ordering_hold, 2026-11-21, 2026-11-25
