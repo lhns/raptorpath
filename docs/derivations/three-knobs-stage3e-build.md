@@ -177,7 +177,7 @@ def decoded_late(T, age):
 
 def rb_hold(sim, now):
     """Amendment 3 (registration 15.3): is `now` inside RB's cap window, [outage start, outage end + A)?  The outage window is the cell's
-    declared `dead` (an oracle: RB is a bracket, not a design).  rb_unit "sym": A counts first sends after the outage end.  Named in EXEMPT."""
+    declared `dead` (an oracle: RB is a bracket, not a design).  Named in EXEMPT."""
     dd = sim.cfg.dead
     if dd is None:
         return False
@@ -186,9 +186,7 @@ def rb_hold(sim, now):
         return False
     if now < t1:
         return True
-    if sim.cfg.rb_unit == "sym":
-        return sim.fs_after_outage < sim.cfg.rb_A
-    return now < t1 + sim.cfg.rb_A
+    return now < t1 + sim.cfg.rb_after_s
 
 def saturation_pressure(raw, r_sat):
     s = 0.1 * r_sat if r_sat else 0.0
@@ -202,8 +200,7 @@ def saturation_pressure(raw, r_sat):
 ## 3. `Cfg` fields (append; the defaults reproduce `proof-s1`)
 
 ```python
-rb_A: float = 3.0              # stage 3e amendment 3: the bracket RB's aftermath after the outage end (registration 15.3)
-rb_unit: str = "s"             # stage 3e amendment 3: "s" = rb_A seconds after the outage end; "sym" = rb_A first sends after it
+rb_after_s: float = 0.25       # stage 3e amendment 3 (registration 15.3, 15.6 item 5): RB's cap lasts this long after the outage end; RB runs at 0.25 and 3.0
 repair: object = None          # stage 3e: None = no repair; dict(r="law" | "est" | "rb" | float, edge="worth" | "age" | "floor" | "none" | "evict")
 repair_seam: object = None     # stage 3e, test only: "no_edge" disables the lifetime edge (the L1 positive control)
 o_bias: float = 0.0            # stage 3e robustness: added to the one-way estimate o_fwd (L2, protected, the worth edge)
@@ -226,7 +223,6 @@ self.t_first = None
 self.beta_a = 1.0; self.beta_b = 1.0    # the estimated-loss arm (estimator.rs: start at 1, 1)
 self.eps_est = beta_upper(1.0, 1.0)
 self.astar_cur = 1
-self.fs_after_outage = 0                # first sends after the outage end (RB with rb_unit "sym"); counted in emit when dead is set and t >= its end
 ```
 
 The shed set for the `"evict"` edge is `self.verdicted`: in `E-rt` (sender S1) a shed is a verdict.
@@ -725,7 +721,7 @@ DOUBLE runs the next block of seeds (6–11 for a 6-seed comparison, 12–23 for
   - computes the total by §14.7's one-pool formula;
   - writes `PASS-time` if the total is at most 24 h, else `STOP` with the table;
   - its runs are not stored as results.
-- **Part RB** (registration §15.3): repair `dict(r="rb", edge=…)` in CL-long, CLw-long and CL-long-v for every design, 12 seeds, after EARLY and before MAIN. In `read_law`, `L` is computed from the true loss (`eps_for_law` as for `"law"`).
+- **Part RB** (registration §15.3, §15.6): repair `dict(r="rb", edge=…)` in CL-long, CLw-long and CL-long-v for every design, at `rb_after_s` ∈ {0.25, 3.0}, 6 seeds, reported only, after EARLY and before MAIN. In `read_law`, `L` is computed from the true loss (`eps_for_law` as for `"law"`).
 - **The part order** is §14.6: TIME, DECIDE, EARLY, MAIN, REST, then, after a PASSES verdict, ROBUST and SMOOTH. ROBUST and SMOOTH refuse to start without a `VERDICT-PASSES` marker, which the reader writes.
 - `batch3e.py --part X` refuses unless every earlier marker of the registration's §9 and §13.6 exists, and refuses everything while `out3e/STOP` exists.
 - `PASS-rttbug` and `PASS-simread` are written by the coordinator, not by the runner.
