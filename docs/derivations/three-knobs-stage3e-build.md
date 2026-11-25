@@ -1,6 +1,11 @@
 # Stage 3e build brief: repair in the offline simulation (implementation, no design choices left)
 
-**What this is.** The exact code that stage 3e of the offline simulation needs: `docs/derivations/three-knobs-stage3e-registration.md` §1–§13 on this branch (`reg-stage3e`). Every choice is made here. Where the brief and the registration disagree, the registration wins, and the worker stops and reports the conflict instead of choosing.
+**What this is.** The exact code that stage 3e of the offline simulation needs: `docs/derivations/three-knobs-stage3e-registration.md` §1–§13 on this branch (`reg-stage3e`). Every choice is made here.
+
+**Precedence.**
+- **This brief is authoritative for code.** The registration's §3 is superseded by it, as the registration says.
+- **The registration is authoritative** for arms, cells, readouts, predictions, the reading rule and the run order.
+- If the two disagree anywhere outside the registration's §3, the worker stops and reports the conflict instead of choosing.
 
 **Rules for the worker.**
 - **Base.** The local branch `proof-s1` at `b2addffb`, which is built on the RTT-sampling fix. Create the branch `toy-stage3e` from it. Work only in `tools/toy/`.
@@ -9,7 +14,7 @@
   - the existing behaviour of any field at its default;
   - `batch3*.py`, `proof_s1.py` and the existing tests, except to add tests;
   - the engine, the derivation and the roadmap.
-- **No runs beyond the tests and the identity checks** of §7 and §8. The batch parts of the registration's §13.6 are started by the coordinator.
+- **No runs beyond the tests, the identity checks and one timing run** (§9 step 5). The batch parts of the registration's §13.6 are started by the coordinator.
 - **Prose** in comments and docs says "the offline simulation", never "toy". File names stay as they are.
 - **Memory:** at most 2 worker processes, and the identity checks alone on the machine.
 
@@ -187,6 +192,7 @@ repair_seam: object = None     # stage 3e, test only: "no_edge" disables the lif
 o_bias: float = 0.0            # stage 3e robustness: added to the one-way estimate o_fwd (L2, protected, the worth edge)
 R_bias: float = 0.0            # stage 3e robustness: added to R in the dequeue rule only
 rev_q: float = 0.0             # stage 3e robustness: a standing reverse queue, seconds added to every report's flight
+tau_extra: tuple = ()          # stage 3e: extra on-time readouts (RT: (0.12,)), reported in out["rep3e"]["share_by"]
 ```
 
 `owd_est` gains the value `"rel"` (§6.3).
@@ -499,7 +505,16 @@ def decode(self, now, e0):
     used = {f: x for f, x in meq.items() if x in decset}      # equation -> the decoded unknown it is matched to
     self.g["rep_used"] += len(used)
     self.g["rep_late_only"] += sum(1 for x in used.values() if decoded_late(self.cfg.T, now - self.h_seq[x]))
-    for s in dec:
+    touched = set()
+    for s in dec:                                             # 1. detach every decoded unknown from every equation first
+        for f in self.eq_of.pop(s, set()):
+            if f in self.eqs:
+                self.eqs[f].discard(s)
+                touched.add(f)
+    for f in list(touched):
+        if f in self.eqs and not self.eqs[f]:
+            del self.eqs[f]; self.eq_meta.pop(f, None)
+    for s in dec:                                             # 2. then count and deliver each decoded unit once
         self.dec_flag[s] = 1
         age = now - self.h_seq[s]
         self.g["dec_units"] += 1
@@ -511,19 +526,20 @@ def decode(self, now, e0):
             self.g["dec_after_release"] += 1
         if s in self.passed and self.passed_by.get(s) == "floor":
             self.g["late_floor_dec"] += 1
-        self.dec_known(now, s, deliver=True)
+        self.on_data(now, s, -1, None, None, 0)
+    for f in sorted(touched):                                 # 3. then the cascade, on equations still live
+        if f in self.eqs:
+            self.decode(now, f)
 
-def dec_known(self, now, s, deliver=False):
-    """s became known (an arrival or a decode): remove it from every equation, drop empty equations, deliver a decode through the data
-    path, and re-run decode on each touched component (the cascade)."""
+def dec_known(self, now, s):
+    """s arrived as data: remove it from every equation, drop empty equations, and re-run decode on each touched equation still live."""
     touched = self.eq_of.pop(s, set())
     for f in touched:
-        self.eqs[f].discard(s)
-        if not self.eqs[f]:
-            del self.eqs[f]; self.eq_meta.pop(f, None)
-    if deliver:
-        self.on_data(now, s, -1, None, None, 0)
-    for f in touched:
+        if f in self.eqs:
+            self.eqs[f].discard(s)
+            if not self.eqs[f]:
+                del self.eqs[f]; self.eq_meta.pop(f, None)
+    for f in sorted(touched):
         if f in self.eqs:
             self.decode(now, f)
 ```
@@ -535,7 +551,7 @@ Notes:
 
 ## 6. Gauges and readouts (`summary`)
 
-Add every key of §4–§5 to the output, plus these derived values:
+The new gauge counters of §4–§5 go into the existing `gauges` dict (`self.g`). Every new derived readout goes into one new top-level block, `out["rep3e"]`, so that the identity function `id3e` (§8.4) can exclude it as a whole. The block holds:
 - `r_mean = r_sum/law_reads`, `W_mean`, `sat_pressure = sat_pressure_sum/law_reads`, `W_floor_bind_frac`, `W_cap_bind_frac`;
 - `eps_est_mean`;
 - `p_dec_meas = dec_units / max(len(orig_lost), 1)`;
@@ -545,7 +561,9 @@ Add every key of §4–§5 to the output, plus these derived values:
 - `recovery_time_0p15`: the existing `recovery_time` at `thr = 0.15`, computed where `recovery_time` is now;
 - `mu_eff_hat` = C × first sends / link datagrams over the saturated windows after `oe` (link cells only).
 
-Every new key is listed in `summary3e`'s docstring with its registration section.
+- `share_by`: a dict `{τ: share}` for every τ in `cfg.tau_extra`, the share of units handed over that were delivered within τ (the existing `share_by_0p4` rule at another τ). RT runs with `tau_extra=(0.12,)`, and the reader reads `rep3e["share_by"][0.12]` as `share_by_0p12`.
+
+Every new key is listed in `summary`'s docstring with its registration section.
 
 ## 7. Tests, red first (`test_toy2.py`, class `Stage3e`)
 
@@ -558,7 +576,7 @@ Write every test first and commit it failing (they fail on the missing names). T
    - The reference grid: ε ∈ {0.01, 0.03, 0.0344, 0.05, 0.1, 0.135, 0.3}, srtt ∈ {0.0115, 0.05, 0.1, 0.3}, rate ∈ {50, 1 000, 8 000, 10 000, 11 250}, δ ∈ {0.005, 0.5, 5, 50}.
    - The scratch crate is the registration's Appendix A program, extended to print r, W, `W_pre` and `r_sat` for the grid as JSON. It lives outside the repository, with `raptorpath-math` as a path dependency. Only its JSON output and its source in a code block of `results-stage3e.md` are committed.
 3. **A&S ports.** `normal_survival_as` and `normal_quantile_as` match the reference JSON's values at z ∈ {−9, −3, −1, 0, 0.5, 2, 4.5, 9} and p ∈ {1e-12, 1e-7, 0.05, 0.5, 0.95, 1 − 1e-7}.
-4. **δ = 0.005 gives r = 0 exactly:** `rate_law(0.03, 0.0115, 10000, 0.005)["r"] == 0.0`. So an RL run at δ = 0.005 equals the OFF run on every key and trace (one short cell, 3 seeds).
+4. **δ = 0.005 gives r = 0 exactly:** `rate_law(0.03, 0.0115, 10000, 0.005)["r"] == 0.0`. So an RL run at δ = 0.005 equals the OFF run under `id3e` (§8.4) and in its trace (one short cell, 3 seeds).
 5. **The span on constructed state** (subclass `Sim`, set `n_sent`, `h_seq`, `A_known`, `F_ann`, `verdicted`, `srtt`, then call `stage_repair` with `fwd` patched to record):
    - no bind;
    - a worth cut;
@@ -597,7 +615,8 @@ Write every test first and commit it failing (they fail on the missing names). T
     - `shed_budget == residual_loss(eps, r_cur, astar_cur, 1)` after a run;
     - with `repair is None` it is p0, as in `proof-s1`.
 13. **RTT sampling** ignores a decoded seq above the newest arrival (constructed).
-14. **T = ∞ identity under repair:** S5 at T = ∞, H = ∞ with `repair = dict(r="law", edge="worth")` equals C3 with `repair = dict(r="law", edge="none")` on every key and trace, in OV and CL (3 000 units each), seeds 0 to 2.
+14. **T = ∞ identity under repair:** S5 at T = ∞, H = ∞ with `repair = dict(r="law", edge="worth")` equals C3 with `repair = dict(r="law", edge="none")` under `id3e` and in the sender trace, in OV and CL (3 000 units each), seeds 0 to 2.
+17. **The decoder counts each unit once:** on the 2 × 2 block `{h1,h2}, {h1,h2}`, `dec_units == 2`, `rep_used == 2` and `dup == 0`; on a cascade, every decoded seq is delivered once (`dlv` set once, no `dup`).
 15. **Robustness hooks.**
     - `o_bias = 0.01` raises `o_hat` by exactly 0.01.
     - `R_bias` changes only the dequeue call.
@@ -623,7 +642,7 @@ Built from `batch3d.CELLS` and `batch3.CELLS` by copying the dicts. Where a key 
 | `RQ` | `CL-long@b` | `rev_q=0.1` |
 | `RT` | `batch3.CELLS["K-L10"]` | `dead=None` |
 | `K-I2`, `K-L10` | `batch3.CELLS` | — |
-| `K-OV` | `batch3.CELLS["K-L10"]` | `dead=None, link=dict(C=40.0, Q=40.0), t_limit=120.0, **LINK_KW` with `pause_B=32`, `sweep_form="blocker"`, `rx_refresh=True` |
+| `K-OV` | `batch3.CELLS["K-L10"]` | `dead=None, link=dict(C=40.0, Q=40.0), t_limit=120.0, **LINK_KW` with `pause_B=8`, `sweep_form="blocker"`, `rx_refresh=True` |
 | `E-I2`, `M-I2` | `batch3.CELLS` | — |
 | `Ec` | `batch3.CELLS["E-I2"]` | `dead=None` |
 
@@ -660,7 +679,7 @@ The parts are MAIN, DECIDE, CROSS, AA (registered A/A), AA2, AMEND, ROBUST, SMOO
 
 **Seeds.** 12 (0 to 11). The δ = 0.005 identity rows take 3. DOUBLE runs seeds 12 to 23 of the fingerprints that the reader names (§8.5).
 
-**Output.** `out3e/<PART>/<fingerprint>-<seed>.json`, written tmp + rename, skipped if present (resumable), as `batch3d.py`.
+**Output.** One store for every part: `out3e/runs/<fingerprint>-<seed>.json`, written tmp + rename, skipped if present (resumable), as `batch3d.py`. A part's job list is `out3e/<PART>.json`, mapping each job name to its fingerprint, so a fingerprint shared by two parts is one file.
 
 **Workers.**
 - `--workers` at most 2;
@@ -678,8 +697,9 @@ The parts are MAIN, DECIDE, CROSS, AA (registered A/A), AA2, AMEND, ROBUST, SMOO
   - `l1_viol_rep == 0`;
   - `commit_viol == 0`;
   - `worth_viol_rep == 0` under the worth or floor edge;
-  - for the T = ∞, H = ∞ new arm and its same-mode today's Bulk arm, both present at the same seed: every key and trace equal;
-  - for a δ = 0.005 RL or RE row and its OFF row: every key and trace equal.
+  - for the T = ∞, H = ∞ new arm and its same-mode today's Bulk arm, both present at the same seed: `id3e` empty and the sender traces equal;
+  - for a δ = 0.005 RL or RE row and its OFF row: `id3e` empty and the traces equal.
+- **`id3e(a, b)`** is `test_toy2.id_diff` with `"rep3e"` added to the excluded keys: every top-level key outside `test_toy2.ID_EXCL` and `rep3e`, plus `test_toy2.ID_GAUGES`. That is the key set of `Stage3d.test_2`. Import `ID_EXCL` and `ID_GAUGES` from `test_toy2`; do not copy them.
 
 ### 8.5 Reader (`summarize3e.py`)
 
@@ -688,8 +708,8 @@ Import from `proof_s1`: `val`, `vec`, `boot`, `read_good`, `t_bar`, `nf_of`, `me
 **Per cell, per repair mode, per y readout:**
 - y is `share_by_0p4` (τ = 0.4) or `share_by_2` (video). In outage cells, `recovery_time` is a second y, with "not within the run" censored at the readable end as `proof_s1` does. In file cells, `finish` and `stall_max` are read for identity only.
 - Build the new curve from the H = 0 sweep and compare every baseline point, then ADR-0084's curve both ways.
-- Scope "verdict": ADR-0084 in every mode; today's Realtime and today's Bulk in RL and RE.
-- Scope "reported": today's Realtime in OFF.
+- Scope "verdict": ADR-0084 in every mode; today's Bulk and the object API in every mode; today's Realtime at δ = 50 in RL and RE.
+- Scope "reported": today's Realtime in OFF, and today's Realtime at δ ≠ 50 in every mode.
 
 **Outputs:**
 - `classify` gives each cell's outcome.
@@ -705,7 +725,8 @@ Import from `proof_s1`: `val`, `vec`, `boot`, `read_good`, `t_bar`, `nf_of`, `me
 3. Write §2–§6 and commit when §7 passes, with the message "stage 3e: repair, decoder, span edges, estimated-loss arm, gauges".
 4. Write `check_ident3e.py`: the registration's §9 steps 2–3 and §13.1, that is, `proof-s1` and `check_ident3d.py` configurations with every new field at its default, and R0 against repair off. Run it alone and commit its result line.
 5. Write `batch3e.py` and `summarize3e.py`, with tests for the reader on synthetic curves as `test_proof_s1.py` has them. Commit them, and add the `--list` count to `results-stage3e.md`.
-6. Push `toy-stage3e` (no force, scan empty) and report:
+6. **One timing run** (the only run besides the tests and the identity): today's Bulk with RL in CL-long, seed 0, alone on the machine. Record its wall time and `dec_comp_max` in `results-stage3e.md`. Edge-`"none"` components after an outage can be large; if the run exceeds 30 min, stop and report before anything else.
+7. Push `toy-stage3e` (no force, scan empty) and report:
    - the head;
    - the test count;
    - the identity result;
