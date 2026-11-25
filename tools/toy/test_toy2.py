@@ -1109,5 +1109,123 @@ class Stage3d(unittest.TestCase):
         self.assertEqual(b.rhi_known, 9)
 
 
+# ---- proof stage 1 (three-knobs-proof-plan.md 2.3): the arm "today's Realtime" ------------------------------------
+ENGINE_LIKE = dict(sweep_form="blocker", rx_refresh=True, rtt_est="rfc", src_model="wc", resend_gate="cooldown", resend_brake="engine", J=0.001)
+
+
+def rt_cfg(**kw):
+    """Today's Realtime on a short object cell with an outage (no link): the sender S1 (a shed sends no copy), the early-skip receiver R0e,
+    the derived budget, the smoothed-RTT deadline, no floor, the 200-symbol window, no source pause."""
+    d = dict(cell="I2", sender="S1", recv="R0e", seed=1, n_total=20000, dead=(0, 0.5, 0.3), delta=50.0, rho=1.0, check_p1=False,
+             d_arm="EWMA", budget="resid", floor_send=False, evict_window=200, pause_B=10 ** 9, **ENGINE_LIKE)
+    d.update(kw)
+    return toy2.Cfg(**d)
+
+
+class ProofS1TodaysRealtime(unittest.TestCase):
+    def test_budget_reads_zero_cold_then_the_cells_loss(self):
+        sm = toy2.Sim(rt_cfg())
+        self.assertEqual(sm.shed_budget, 0.0)                              # no estimate yet: nothing is sheddable
+        r = sm.run()
+        self.assertEqual(r["gauges"]["seed_verdicts"], 0)                  # nothing was shed before the first RTT sample
+        self.assertAlmostEqual(sm.shed_budget, 0.03)                       # eps_hat (1 - P_fec) with r = 0: the cell's first-send loss (Q21)
+
+    def test_p_fec_normal_port_and_its_cut(self):
+        self.assertEqual(toy2.p_fec_normal(0.0, 0.03, 100.0, 1.0), 0.0)           # r <= 0 (W22)
+        self.assertEqual(toy2.p_fec_normal(0.03, 0.03, 100.0, 1.0), 0.0)          # r (1 - eps) <= eps: the 0 -> 1/2 step
+        r, e, w, s2 = 0.2, 0.03, 100.0, 1.0
+        z = math.sqrt(w) * (r * (1 - e) - e) / math.sqrt(e * (1 - e) * (r + s2))
+        self.assertAlmostEqual(toy2.p_fec_normal(r, e, w, s2), 0.5 * math.erfc(-z / math.sqrt(2.0)), places=12)
+        self.assertEqual(toy2.residual_loss(0.03, 0.0, 100.0, 1.0), 0.03)         # repair off: the budget is eps_hat
+        self.assertLess(toy2.residual_loss(0.03, 0.2, 100.0, 1.0), 0.03)
+
+    def test_a_hole_past_the_window_is_never_served(self):
+        def gaps(window):
+            r = toy2.run(rt_cfg(evict_window=window, want_trace=True))
+            n, worst = 0, 0
+            for (t, s, k, _, kind) in r["_trace"]:
+                if kind == 0:
+                    n += 1
+                elif kind == 1:
+                    worst = max(worst, n - s)
+            return r, worst
+        r, worst = gaps(200)
+        self.assertLessEqual(worst, 200)
+        self.assertGreater(r["gauges"]["evict_skip"], 0)                   # the window bound something
+        r2, worst2 = gaps(math.inf)
+        self.assertGreater(worst2, 200)                                    # control: without the window the same cell does serve them
+        self.assertEqual(r2["gauges"]["evict_skip"], 0)
+
+    def test_a_shed_sends_nothing(self):
+        r = toy2.run(rt_cfg(want_trace=True))
+        g = r["gauges"]
+        self.assertGreater(g["verdicts"], 0)                               # it shed
+        self.assertEqual(g["verdict_copies"], 0)
+        self.assertEqual(g["floors"], 0)
+        self.assertFalse([e for e in r["_trace"] if e[4] == 2])
+        c = toy2.run(rt_cfg(sender="S1c", floor_send=True, want_trace=True))   # control: ADR-0084's sender sends both
+        self.assertGreater(c["gauges"]["verdict_copies"], 0)
+        self.assertGreater(c["gauges"]["floors"], 0)
+
+    def test_no_source_pause_equals_the_pause_build_where_the_pause_never_binds(self):
+        a = toy2.run(rt_cfg(dead=None, n_total=10000, pause_B=10 ** 9, want_trace=True))
+        b = toy2.run(rt_cfg(dead=None, n_total=10000, pause_B=2048, want_trace=True))
+        self.assertEqual(a["_trace"], b["_trace"])
+        self.assertEqual(a["gauges"]["pause_events"], 0)
+
+    def test_no_source_pause_lets_the_queue_drop_instead(self):
+        lk = dict(link=dict(C=10000.0, Q=1250.0), rate=12000.0, n_total=36000, dead=None)
+        a = toy2.run(rt_cfg(**lk))
+        b = toy2.run(rt_cfg(pause_B=64, **lk))
+        self.assertEqual(a["pause_events"], 0)
+        self.assertGreater(a["queue_drop"], 0)
+        self.assertGreater(b["pause_events"], 0)                            # control: a small B pauses the source
+
+    def test_two_paths_duplicate_the_first_send(self):
+        lc, d = batch3d.base("P2")
+        d.update(n_total=3000, sender="S1")
+        kw = dict(cell=lc, recv="R0e", seed=1, delta=50.0, rho=1.0, check_p1=False, d_arm="EWMA", budget="resid", floor_send=False,
+                  evict_window=200, pause_B=10 ** 9)
+        kw.update({k: v for k, v in d.items() if k not in kw})
+        dup = toy2.run(toy2.Cfg(place="dup", **kw))
+        self.assertEqual(dup["gauges"]["dup_first"], dup["n_src"])
+        self.assertGreater(dup["gauges"]["dup"], 0.5 * dup["n_src"])      # both copies arrive for most units
+        one = toy2.run(toy2.Cfg(**kw))
+        self.assertEqual(one["gauges"]["dup_first"], 0)
+
+    def test_the_receiver_force_drains_at_its_buffer_cap(self):
+        peak = []
+
+        class Probe(toy2.Sim):
+            def r0e_arrival(self, now, s):
+                super().r0e_arrival(now, s)
+                peak.append(len(self.r0e_buf))
+        sm = Probe(rt_cfg(r0e_max=20, dead=None, n_total=20000))
+        r = sm.run()
+        self.assertGreater(r["gauges"]["force_drains"], 0)
+        self.assertLessEqual(max(peak), 20)
+        sm0 = toy2.Sim(rt_cfg(dead=None, n_total=20000))
+        self.assertEqual(sm0.run()["gauges"]["force_drains"], 0)           # control: no cap, no drain
+
+    def test_taken_apart_it_equals_adr_0084s_sender_at_the_derived_allowance(self):
+        """budget "resid", EWMA deadline, no copy, no floor, no window, no pause == S1 at rho = 1 - eps_hat, no floor.  The receiver is strict
+        (R1) with no floor so that nothing passes and the sender's shed count equals ADR-0084's (passes + pending)."""
+        common = dict(recv="R1", evict_window=math.inf, n_total=12000, dead=(0, 0.3, 0.3))
+        a = toy2.run(rt_cfg(want_trace=True, **common))
+        b = toy2.run(rt_cfg(want_trace=True, budget="rho", rho=1.0 - 0.03, **common))
+        self.assertGreater(a["gauges"]["verdicts"], 0)
+        self.assertEqual(a["_trace"], b["_trace"])
+        for k in ("n_src", "delivered", "share_any", "verdicts", "orig_lost", "stall_total"):
+            self.assertEqual(a[k], b[k], k)
+
+    def test_defaults_are_the_old_arm(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.budget, c.floor_send, c.evict_window, c.place, c.r0e_max), ("rho", True, math.inf, "stripe", math.inf))
+
+    def test_l1_gauge_is_zero_in_the_new_model(self):
+        r = toy2.run(small_s5("CL", 0, 0.4, 0.0))
+        self.assertEqual(r["gauges"]["l1_viol"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
