@@ -1,6 +1,6 @@
 # Stage 3e registration: proactive repair in the three-knob model (no runs)
 
-**Status.** Registration only, written before any run. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate) and its final review of `abe2981c` (built on the RTT-fixed code; §12). Still no run.
+**Status.** Registration only, written before any run. Amendment 1 (§13, 2026-11-25) adds the proof plan's rows; the build is specified in `three-knobs-stage3e-build.md`. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate) and its final review of `abe2981c` (built on the RTT-fixed code; §12). Still no run.
 
 **Base.**
 - Derivation `docs/derivations/three-knobs.md` on `three-knobs` at `93e29a22`. The laws are §1–§10 with Revisions 1–3 (§13, §15, §17); the findings are §18 (stage 3d) and §19 (the interactive simulator and the lifetime sweep).
@@ -13,6 +13,11 @@
 
 ## Short answer
 
+- **Amendment 1 (§13) adds the proof plan's rows.**
+  - The old senders (ADR-0084 at ρ, today's Realtime, today's Bulk) run with repair off, RL and RE, in every one-path cell of the plan. Each design sweeps its own dial.
+  - Old against new is read only on matched-share curves, with a dominance rule below the new curve's range and "undetermined" as its own outcome, with one doubling of seeds.
+  - 989 configurations and 11 382 runs (11 058 with proof stage 1's repair-off rows reused), plus the conditional cross and the doubling.
+  - Order: §13.6.
 - **Repair is already inside L1.** §2.1 lists "coded repair member" among the payload-bearing datagrams, so a repair may not carry any member of age ≥ T. A repair's age is the age of its oldest member, the lower end of its span (§2.2).
 - **The span's lower edge comes from L2, not from the floor.**
   - A repair is a correction symbol (paper §3.4), so L2's worth test applies to each member it carries: a member s rides only if `a(s) + ô < T` (§2.3).
@@ -706,7 +711,7 @@ Each step writes a marker in `out3e/` when it passes. `batch3e.py` refuses to st
    - record them in the results, as Q3e-10 asks. Writes `PASS-simread`.
    - This is a reading, not a pass condition on its values. MAIN does not start without it.
 7. **Part AA:** S5 variant 1 in every cell; freeze `nf_stage3e.json`. Writes `PASS-aa`.
-8. **Part MAIN:** the arms of §5. The long cells run with 1 worker, the others with at most 2.
+8. **Part MAIN:** the arms of §5. The long cells run with 1 worker, the others with at most 2. Amendment 1 puts DECIDE before MAIN, and AMEND, ROBUST and SMOOTH after it (§13.6).
 
 **Stop rules. They are mechanical, and the worker does not continue past one.**
 - In steps 2 to 5, any difference, any unfinished run or any rate mismatch: write `STOP` with the cause and return to the coordinator.
@@ -814,6 +819,244 @@ The coordinator's final review of `abe2981c` changed these:
 - **RE** is relabelled as an estimated-loss arm, not the engine's estimator, and its decay is stated as a time constant (0.4 s at full rate, about 4 s at 50/s). Its RT decode probability is now computed (0.812), not interpolated.
 - **A gauge for repairs that decode after T** (`dec_late`, `rep_late_only`), with predicted bands.
 - **The empty span** is stated: no repair, no waiting, no fallback span. And `RL-Hinf`, a strict-order arm with repair, measures Q20's late fills.
+
+The proof plan (`c2d005f8`) added Amendment 1 (§13). The owner delegated every decision to the defaults and the advisor. The reading rules are proof stage 1's §1.6 (a)–(d), so both stages read the same way.
+
+## 13. Amendment 1: the proof plan's stage 3e rows (2026-11-25, before any run)
+
+**Source.** `docs/derivations/three-knobs-proof-plan.md` on `three-knobs-proof-plan` at `c2d005f8`: §0 (fairness rules F1–F6), §1 (readouts, curves, pass rule, cells), §2.3 (the arm "today's Realtime"), §3 (the deciding row), §4 (amendments A1–A7), §6 (robustness and smoothness) and §9 (order).
+
+**The owner delegated every open decision to the defaults and the advisor.** Every plan owner question OQ1–OQ10 therefore takes its default. That includes signing §1 as written (OQ1) and 12 paired seeds (OQ4).
+
+**What this section adds, and what stays.**
+- Sections 1–12 stay registered as written: the MAIN arms, their point predictions and their stop rules.
+- This section adds:
+  - the old senders, with and without repair;
+  - each design's sweep over its own dial;
+  - the plan's new cells;
+  - robustness and smoothness;
+  - a reading rule that compares curves, not points.
+- **No old-against-new conclusion is read from a point comparison.** MAIN's point predictions remain checks of the mechanism, and the verdict comes only from §13.3.
+
+### 13.1 Base and code
+
+- **The code base** is the local branch `proof-s1` at `b2addffb`, which is built on the RTT-sampling fix `toy-stage3d-rttfix`. It already holds the arm "today's Realtime" (`E-rt`, plan §2.3), the L1 gauge, the matched-share reader and their tests.
+- **Stage 3e's code** (§3, plus §13.2's additions) is built on top of it, as specified in `docs/derivations/three-knobs-stage3e-build.md` on this branch.
+- **Identity, extended** (`check_ident3e.py`):
+  - with every new field at its default, the 3e code reproduces `proof-s1` on every configuration of `check_ident_proof_s1.py` and `check_ident3d.py`, on every key and trace;
+  - R0 (repair at r = 0) equals repair off on the same set;
+  - under §9 step 4, the comparison target for stored results is the re-baseline.
+- **Reuse of proof stage 1's repair-off rows.** Proof stage 1 runs the repair-off half of DECIDE on `proof-s1`.
+  - If `check_ident3e.py` passes on exactly those 27 configurations at seeds 0 to 11, the 3e code computes the same runs bit for bit, and those results are used as-is (F3 is met by identity).
+  - Otherwise they are rerun in DECIDE.
+
+### 13.2 Arms, edges and cells
+
+**Designs**, named by behaviour (plan §0.1, F6):
+
+| row | sender | receiver | code |
+|---|---|---|---|
+| lifetime T, hold H | S5: gives up what cannot arrive by T, announces a floor | releases a hole H after detection, or at the floor | `S5` |
+| ADR-0084 at ρ | gives up a hole older than b(δ)·RTprop while `(1 − ρ)·sent` allows, with a copy and a floor | today's Realtime receiver | `C1` (S1c, R0e) |
+| today's Realtime | silent shed within `ε̂_s·(1 − P_fec(r, A*, ε̂_s))`; resends only inside the 200 window; no store pause | SRTT/2 hold while the budget is open, else 4·SRTT in [60, 300] ms; force drain at 500 | `E-rt` (proof-s1) |
+| today's Bulk | never gives up | strict order | `C3` |
+| today's object API | never gives up | any order | S5 at T = ∞, H = 0 (identity) |
+
+**Repair modes**, the same machinery for every design in a row (F2):
+- **OFF:** no repair.
+- **RL:** the live rate law with true loss (§2.1).
+- **RE:** the live law with the estimated-loss arm (normal-approximation upper quantile, BOCD not ported), only in CL-long, OV, CLw-long and RT, as 3e runs it.
+
+In each mode every design uses the same rate law r(δ) at its own δ, the same span width A*, the same decoder and the same loss draw. In RE, today's Realtime's budget reads the same ε̂.
+
+**The span's lower edge** is part of each design (plan A1):
+- the new model: the worth edge `a + ô < T` (§2.3);
+- ADR-0084 and today's Bulk: edge `"none"`, the engine's span `[max(ws, end − A*), end)` with no lifetime term. That is paper §5.3's oldest unresolved, read through ws;
+- today's Realtime: edge `"evict"`. The span starts at `max(ws, end − A*, n_sent − 200)` and is then raised past any shed seq at its low end, so it never codes a seq that is out of its window or already shed.
+
+At T = ∞ the worth edge never binds, so S5 at T = ∞, H = ∞ with repair must still equal today's Bulk with repair, on every key and trace. That is a gate (§13.6).
+
+**Today's Realtime with repair.** Its budget uses the same r as the row's mode. P_fec is ported as shipped, including its cut, at window A* (`residual_loss_after_fec(ε̂, r, A*, σ²)`, `emit_source.rs:629–642`). Its repair-off rows remain machinery-matched controls, reported but not under the verdict (proof stage 1 §1.6 (a)). Its RL and RE rows are under the verdict.
+
+**Cells** (plan §1.4; one path; 12 paired seeds 0–11, phases per seed):
+
+| cell | definition | δ | τ | new model's T sweep (H = 0) | H = ∞ at |
+|---|---|---|---|---|---|
+| RT | §4 | 50 | 0.4 s | {0.08, 0.10, 0.12, 0.14, 0.16, 0.20, 0.40, ∞} | {0.12, 0.4, ∞} |
+| K-I2, K-L10 | stage 3d's (50/s, 60 s, 1.5 s outage at 20 s) | 50 | 0.4 s | as RT | as RT |
+| K-OV (new) | L10, owd 50 ms, 50/s offered, link 40/s, Q = 40 (1 s of data), B = 32 (B/Q = 0.8 as in CL and OV), 3 000 units, link settings of §4 | 50 | 0.4 s | {0.2, 0.3, 0.4, 0.6, 1.0, ∞} | {0.4, 1.0, ∞} |
+| CLc (new) | CL with no outage | 50 | 0.4 s | {0.4, 1.0, ∞} | {0.4, 1.0, ∞} |
+| CL, CL-long, CLw-long | §4 | 50 | 0.4 s | {0.4, 0.6, 0.8, 1.0, 1.2, 1.25, …, 1.6 (0.05 steps), 2.0, ∞}, 15 points | {0.4, 1.4, ∞} |
+| OV, OV-long | §4, and stage 3d's OV-long (480 000 units) | 50 | 0.4 s | {0.4, 0.6, 1.0, 2.0, ∞} | {0.4, 2.0, ∞} |
+| CLc-v, CL-long-v, OV-long-v (new) | CLc, CL-long and OV-long at the video point | 0.005 | 2 s | {1.0, 1.5, 2.0, 3.0, ∞} | {1.0, 2.0, ∞} |
+| Ec (new), E-I2, M-I2 | E-I2 with no outage; stage 3d's E-I2 and M-I2 | 0.005 | completion time, longest stall | T = ∞ only | T = ∞ |
+
+**Baseline points in every cell except the file cells:**
+- ADR-0084 at ρ ∈ {0.95, 0.98, 0.99, 0.995, 1}, at the cell's δ;
+- today's Realtime at δ ∈ {0.5, 5, 50}, plus the cell's δ where that differs (0.005 in the video cells);
+- today's Bulk at the cell's δ.
+
+**The file cells** run only the identity: S5 at T = ∞ with H ∈ {0, ∞}, against today's Bulk. An object has no deadline, so ADR-0084's and today's Realtime's partial delivery is not a file outcome.
+
+**At δ = 0.005 the rate law gives r = 0 exactly** (β = 1, and the late-is-fine term with χ = 0). So every RL row at δ = 0.005 is the repair-off row by arithmetic. Those rows run at 3 seeds as an identity check against OFF, every key and trace, not at 12. Today's Realtime at δ ∈ {0.5, 5, 50} inside the video cells has r > 0 and runs at 12 seeds.
+
+**New A/A rows** (frozen into `nf_stage3e.json` before any decision part): K-I2, K-L10, K-OV, CLc, OV-long, CLc-v, CL-long-v, OV-long-v, Ec, E-I2, M-I2.
+
+**Robustness** (plan §6), repair RL, no pass rule:
+- the one-way estimate biased by `o_bias` ∈ {−20, −10, −5, +5, +10, +20} ms, for S5 at T = 0.4, H = 0, in OV and CL-long;
+- the dequeue margin biased by `R_bias` over the same six values, in OV;
+- the cell RQ: CL-long with a standing reverse queue of 0.1 s (`rev_q`, the size of the forward queue, Q/C), with S5 at T ∈ {0.4, ∞}, ADR-0084 at its 5 ρ, today's Realtime at its 3 δ and today's Bulk, plus an A/A row;
+- the relative one-way delay `owd_est = "rel"` for S5 at T = 0.4, H = 0, in RQ and OV.
+
+**Smoothness** (plan §6), repair RL, read by `kp_stats` slid over every 5 consecutive points:
+- T ∈ {0.360, 0.365, …, 0.440} (17 points), H = 0, in OV, CL-long and K-L10;
+- T ∈ {1.800, 1.825, …, 2.200} (17 points), H = 0, δ = 0.005, in CL-long-v;
+- T ∈ {5, 10, 20, 40} in OV, CL-long and K-L10, converging to T = ∞;
+- H ∈ {0, 1, …, 10} ms and H ∈ {19.6, 19.7, …, 20.4} ms at T = 0.4 in OV, CL-long and K-L10;
+- δ = p·{0.90, 0.92, …, 1.10} for p ∈ {0.005, 0.5, 50}, for S5 at T = 0.4, H = 0 and for today's Realtime, in RT and CL-long.
+
+### 13.3 The reading rule: matched-share curves (plan §1.2, with proof stage 1 §1.6)
+
+**The axes.**
+- x is delivered at all (`share_any`).
+- y is the on-time share at τ (`share_by_τ`, higher is better) and, in outage cells, the recovery time at τ (lower is better).
+- A recovery that is "not within the run" is censored at the readable end and counted, never dropped.
+- In the file cells, y is the completion time and the longest stall, read for identity only.
+
+**Curves.**
+- Per seed, each design's sweep points are sorted by that seed's x and joined by straight lines.
+- Neighbouring points whose mean x differ by no more than `max(NF on share_any, 1/units)` keep the one with the better mean y.
+
+**A comparison at a baseline point (x_b, y_b).**
+- **Inside the range:** for each seed, interpolate the new curve at that seed's x_b and take the paired difference, signed so that positive favours the new model.
+- **The dominance rule:** if x_b lies below the new curve's lowest delivered share in a seed, the new curve's value in that seed is its own lowest point.
+  - The new model wins there if it is no worse on the on-time share and on recovery, since it already delivers more.
+  - The usual reading applies, and "shown worse" is a loss.
+- **Above the range:** a baseline point above the new curve's highest share reads "outside the swept range" and counts as not passed. This should not occur, because every sweep includes T = ∞.
+
+**Curve against curve.** The new curve is compared with ADR-0084's ρ curve both ways: each ADR-0084 point against the new curve, and each new point inside ADR-0084's range against ADR-0084's curve, on both y readouts.
+
+**The reading.**
+- `summarize2.read` on the bootstrap 95 % interval of the mean paired difference, against `m = max(T_bar, NF)`.
+- For shares, `T_bar = max(1/units, 0.05·(1 − share_ref))`. For recovery and completion, `T_bar = max(5 % of the reference, 0.1 s)`.
+- NF is this stage's frozen A/A floor.
+- The outcomes are "shown better", "equivalent", "shown worse" and "undetermined".
+
+**Undetermined is its own outcome, with one doubling.**
+- A comparison under the verdict that reads undetermined at 12 seeds triggers one registered doubling, of seeds 12 to 23, for only the arms in that comparison: the baseline point and the two new-curve points that bracket it, or the single lowest point under the dominance rule.
+- The comparison is then read on 24 seeds.
+- No second doubling.
+
+**A cell's outcome.**
+- FAILS if any comparison under the verdict reads "shown worse" or "outside the swept range", or if any gate fails.
+- PASSES if every comparison reads "equivalent" or "shown better".
+- UNDETERMINED otherwise.
+
+**The stage verdict** (plan §1.3):
+- **PASSES** if no cell FAILS and at least one comparison outside the identity cells reads "shown better".
+- **FAILS** if any cell fails.
+- **UNDETERMINED** otherwise, listing the cells.
+
+**Under the verdict:**
+- in every mode, the new curve against ADR-0084's curve and points;
+- in RL and RE, the new curve against today's Realtime's points (at its named δ = 50, and at the other δ as reported rows);
+- today's Bulk and the object API as single points, by the same rule.
+
+Repair-off today's Realtime rows are reported only. Rows in different repair modes are never compared with each other.
+
+### 13.4 Predictions (written before any run)
+
+**Per cell, the expected outcome against each baseline family**, at 12 seeds. The derivations are the formulas of §2.6 and plan §3.3. "BETTER" means "shown better", "EQUIV" means "equivalent", "UND" means "undetermined" is expected before the doubling.
+
+| cell | vs ADR-0084's curve | vs today's Realtime (RL, RE) | vs today's Bulk / object API | why |
+|---|---|---|---|---|
+| RT | EQUIV or UND | EQUIV or UND | EQUIV or UND | at τ = 0.4 every design delivers ≥ 0.998 on a 100 ms path, and the share bar `0.05·(1 − share)` ≈ 10⁻⁴ is below the seed spread of 3 000 units, so UND is likely and the doubling is expected |
+| K-I2, K-L10 | EQUIV | EQUIV | EQUIV on time; recovery EQUIV | no link limit, so the outage's units are lost in time by every design, and the drain is immediate |
+| K-OV | BETTER | BETTER | BETTER | the dequeue rule holds on-time near `(C/λ)(1 − ε) ≈ 0.72`; the never-give-up and ADR-0084 rows wait behind a growing intake; today's Realtime fills a 1 s queue, which is past τ |
+| CLc | EQUIV or UND | EQUIV or UND | EQUIV or UND | no outage, load 0.8 (0.91 with repair), so every design is on time |
+| CL-long (DECIDE), CL, CLw-long | two-sided: EQUIV, or worse by up to about 0.4 s on recovery (plan §3.3) | BETTER on recovery (today's Realtime has no source pause, so the outage burst and the drain fill and drop at the link queue) | BETTER on recovery at the lowest point (dominance) | plan §3.2–§3.3 |
+| OV, OV-long | BETTER | BETTER or EQUIV | BETTER | stage 3d: the new model at 0.4 s is about 0.84 on time against 0.07–0.16 for the never-give-up rows. Today's Realtime sends fresh units into a 0.125 s queue that drops the excess, so it is about `(C/λ)(1 − ε) = 0.81`. Under the dominance rule the new lowest point (about 0.84 delivered) is compared against it |
+| CLc-v | EQUIV or UND | EQUIV or UND | EQUIV or UND | clean |
+| CL-long-v | EQUIV | EQUIV | EQUIV | stage 3d: a 2 s lifetime saves nothing when the backlog wait is below 2 s |
+| OV-long-v | BETTER | BETTER or EQUIV | BETTER | stage 3d: 0.805 within 2 s against 0 |
+| Ec, E-I2, M-I2 | — | — | identity on every key and trace | T = ∞ |
+
+**Predicted stage verdict:**
+- PASSES, unless the deciding row reads "shown worse" (plan §3.3's live branch), in which case FAILS and §3.5 of the plan applies.
+- "Shown better" is expected in K-OV, OV, OV-long and OV-long-v.
+
+**DECIDE with repair (RL), derived from the repair-off prediction.**
+- Both designs drain at `μ_eff = C/(1 + r + ρ)` with the same r = 0.0875 while queued.
+- Every recovery time on the law's scale grows by the factor `(1 − λ/μ_eff,off)/(1 − λ/μ_eff,RL)` ≈ 0.175/0.126 ≈ 1.4.
+- So the new-minus-ADR-0084 recovery difference at matched share under RL has the same sign as repair off. Its size is the repair-off difference × [1.2, 1.6].
+- The plateau prediction moves to recovery [6.4, 7.4] s at matched T [1.25, 1.6] s. These are plan §3.3's [4.6, 5.3] s × 1.4, re-centred on the re-baseline with their widths scaled.
+
+**Today's Realtime with repair:**
+- `queue_drop_out > 0` in CL, CL-long, CLw-long and OV (no source pause), against 0 for every paused design;
+- its shed count is at most `ε̂(1 − P_fec)·sent` (gate-like witness, reported);
+- `evict_skip > 0` in the outage cells (the 200 window binds), its execution witness.
+
+**RE against RL inside a design:**
+- r higher after an outage (Q3e-2), so recovery no faster;
+- the outcome class of each cell's comparisons unchanged from RL. A changed class is a finding on Q21.
+
+**Robustness (no pass rule; reported against these formulas):**
+- a bias of +x on ô gives up about x earlier, so `share_by_0p4` falls by about `λ·x/units` per outage in CL-long;
+- −x in OV sends units that arrive about x late, so `share_by_0p4` falls towards the dequeue-margin slack once x exceeds `R − d_fwd` (about 10 ms): predicted collapse between −10 and −20 ms;
+- `R_bias` acts the same way through the dequeue rule;
+- in RQ, ô overestimates by about the reverse queue (0.1 s), so the new model gives up early. `share_by_0p4` at T = 0.4 drops below CL-long's by [0.02, 0.15], and `rel` recovers CL-long's value within ±0.01;
+- with no reverse queue, `owd_est = "rel"` equals `"fwd"` within ±0.005 in OV.
+
+**Smoothness:** no K or P statistic "shown" anywhere, in any slid window of 5 points, with each fine sweep's own A/A spread reported. A "shown" K or P is a step or a kink, a defect finding.
+
+### 13.5 Run count
+
+Counts are configurations × seeds, before the runner removes exact duplicates. The runner fingerprints every Cfg, runs each fingerprint once and reports the final count, which is lower by about 10 configurations where sweeps share a point.
+
+| part | what | configurations | seeds | runs |
+|---|---|---|---|---|
+| MAIN | §5 as registered | 59 | 12 | 708 |
+| DECIDE | CL-long: 18 new and 9 old rows × {OFF, RL} | 54 | 12 | 648 (324 if the repair-off half is reused, §13.1) |
+| CROSS | plan §3.4, run only if DECIDE's comparison against ADR-0084 reads "shown worse"; repair off | 5 | 12 | 60 |
+| AA2 | the new A/A rows | 11 | 12 | 132 |
+| AMEND | the rows of §13.2, beyond DECIDE and MAIN | 507 at full seeds + 54 at δ = 0.005 under RL/RE (identity) | 12 / 3 | 6 084 + 162 = 6 246 |
+| ROBUST | §13.2 robustness | 32 | 12 | 384 |
+| SMOOTH | §13.2 smoothness | 272 | 12 | 3 264 |
+| DOUBLE | seeds 12–23 for the arms of undetermined comparisons, once | as needed | 12 | at most 12 × the arms involved |
+| **total, unconditional** | | **989** | | **11 382**, or **11 058** with the reuse |
+
+AMEND per cell (configurations): CLw-long 75, RT 55, CL 52, OV 47, K-I2 40, K-L10 40, K-OV 36, OV-long 34, CLc 30, CL-long 26 (its RE rows), CLc-v, CL-long-v and OV-long-v 21 each at 12 seeds, Ec, E-I2 and M-I2 3 each.
+
+**Machine time.**
+- S5-family runs in short full-rate cells take about 3 s, and in the 20 s cells tens of seconds.
+- The old senders in the long overload cells take about 2–5 min per run (stage 3c: 37 s per 100 000 units for ADR-0084's sender, growing faster than linearly). OV-long and OV-long-v dominate.
+- Estimate: 5–6 days with 2 workers, the long cells on 1.
+- The worker times the first run of each cell, and reports any cell above twice its estimate before going on.
+
+### 13.6 Run order and stop rules (supersedes §9 step 8)
+
+Steps 0–7 of §9 stay, with these extensions:
+- step 1's tests include the build's tests (`three-knobs-stage3e-build.md` §7);
+- step 3's identity covers `proof-s1`'s configurations;
+- step 7's A/A includes AA2.
+
+Then, one batch at a time:
+8. **DECIDE.** Read it at once by §13.3. If it FAILS, write `STOP`. CROSS runs (if its condition holds) and everything else waits for the plan's §3.5 decision. A design that will change is not run across every cell.
+9. **DOUBLE for DECIDE**, if any comparison reads undetermined.
+10. **MAIN**, as registered.
+11. **AMEND**, in this order: K-I2, K-L10, K-OV, RT, CLc, CL, CLw-long, CL-long (RE), OV, the file cells, CLc-v, CL-long-v, then OV-long and OV-long-v last. Each cell is read when it finishes, and its DOUBLE runs before the next cell.
+12. **ROBUST**, then **SMOOTH**, each with its own marker.
+
+**Stop rules, in addition to §9's.**
+- During any part, write `STOP` and end the batch if:
+  - a run is not `finished`;
+  - `l1_viol > 0` or `l1_viol_rep > 0`;
+  - `commit_viol > 0`;
+  - `worth_viol_rep > 0` under the worth or floor edge;
+  - the T = ∞ identity (S5 at T = ∞, H = ∞ against today's Bulk in the same mode) differs on any key or trace;
+  - an RL row at δ = 0.005 differs from its OFF row.
+- No point, cell, readout or bar is added, dropped or moved after data is seen (F5). A reading-code fix is allowed and reported.
+- A cell that FAILS does not stop later cells. It is reported, and a fix goes through the plan's §8, a derived fix and a rerun of that row only, under a new amendment.
 
 ## Appendix A: rate-law reference program
 
