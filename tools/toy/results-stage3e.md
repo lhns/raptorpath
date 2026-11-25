@@ -88,23 +88,33 @@ The sample of B is the proof-s1 sample (16) plus one configuration per sender fa
 AMEND, ROBUST, SMOOTH that asks for it).  This is the count to report before any decision part runs:
 
 ```text
-AA         12 configurations,   12 after the dedupe,   144 runs
-AA2        22 configurations,   22 after the dedupe,   264 runs
-DECIDE     54 configurations,   53 after the dedupe,   636 runs
+AA         24 configurations,   24 after the dedupe,   288 runs
+AA2        38 configurations,   38 after the dedupe,   456 runs
+DECIDE     54 configurations,   52 after the dedupe,   624 runs
 CROSS       2 configurations,    2 after the dedupe,    24 runs
-MAIN       59 configurations,   46 after the dedupe,   552 runs
-AMEND     561 configurations,  529 after the dedupe,  5880 runs
+MAIN       59 configurations,   41 after the dedupe,   492 runs
+AMEND     561 configurations,  521 after the dedupe,  5784 runs
 ROBUST     32 configurations,   32 after the dedupe,   384 runs
 SMOOTH    272 configurations,  258 after the dedupe,  3096 runs
-total    1014 configurations,  954 after the dedupe, 10980 runs
+total    1042 configurations,  968 after the dedupe, 11148 runs
 ```
 
 Against registration 13.5 (before the dedupe): MAIN 59, DECIDE 54, CROSS 2, ROBUST 32, SMOOTH 272 and AMEND 507 at twelve seeds plus 54 at three seeds
 (561 configurations) match the listed numbers; AMEND matches the per-cell split too (CLw-long 75, RT 55, CL 52, OV 47, K-I2 40, K-L10 40, K-OV 36,
-OV-long 34, CLc 30, CL-long 26, the three video cells 21 each, Ec, E-I2 and M-I2 3 each).  AA and AA2 list each cell's A row (S5 at T=inf, hold 0,
-repair off) beside its A' row (phase variant 1), so they hold 12 and 22 configurations where the registration counts 6 and 11 A/A rows.  DOUBLE
-(seeds 12 to 23 of the fingerprints the reader names) is not in the table.  The registration's unconditional total (989 configurations, 11 382 runs)
-excludes CROSS and the extra A rows; after the dedupe the plan above is 10 980 runs including CROSS and the A rows.
+OV-long 34, CLc 30, CL-long 26, the three video cells 21 each, Ec, E-I2 and M-I2 3 each).  AA and AA2 hold more than the registration's 6 and 11 A/A
+rows because the A/A has two readings (next section): each cell lists its A and A' at T = inf and at its primary lifetime (the file cells have one pair).
+DOUBLE (seeds 12 to 23 of the fingerprints the reader names) is not in the table.  The registration's unconditional total (989 configurations,
+11 382 runs) excludes CROSS and counts 6 + 11 A/A rows; the plan above has 11 148 runs including CROSS and the A rows of both readings.
+
+## Open before AA runs: which A/A, a conflict between the build brief and the registration
+
+- Build brief 8.5: the floor is frozen by `proof_s1.freeze`'s rule, which is the 95th percentile over 12 seeds of |A - A'| with A = S5 at **T = inf, hold 0**
+  (the point every sweep ends at) and A' its phase variant 1.
+- Registration 5: all arms run at T = 0.4 s (RT 0.12 s) and hold 0 "unless stated"; the A/A row says "S5, phase variant 1" and states no T.  Read literally the
+  A/A is the S5 arm at its **primary lifetime**, paired with that S5 arm, and MAIN's 59 rows then need no extra A rows.
+- The build brief's rule for a disagreement outside the registration's section 3 is to stop and report it.  Nothing blocks the build, so both readings
+  are built: AA and AA2 run both pairs, MAIN's own AA arm follows the registration (variant 1 at the primary lifetime), and `summarize3e.py freeze --aa-at tinf|primary`
+  stores both floors in `nf_stage3e.json` and takes the chosen one for `cells` (default tinf, the build brief).  The coordinator should choose before AA runs.
 
 ## Timing run (build brief 9 step 6)
 
@@ -120,9 +130,10 @@ The edge-"none" components after the outage stay small (largest 14 unknowns), fa
 
 ## Tests (build brief 9 step 3)
 
-`python -m unittest test_toy test_toy2 test_proof_s1 test_batch3e`: 193 tests, OK.  Before the change the same command without `test_batch3e` ran 116 tests
-(test_toy, test_toy2, test_proof_s1); `Stage3e` adds 45 tests and `test_batch3e` 32 (116 + 45 + 32 = 193).
-The identity check above was re-run on the final tree (same PASS line).
+`python -m unittest test_toy test_toy2 test_proof_s1 test_batch3e`: 196 tests, OK (547 s on the loaded machine), run on the final tree.  Before the change the same
+command without `test_batch3e` ran 116 tests (test_toy, test_toy2, test_proof_s1); `Stage3e` adds 45 tests and `test_batch3e` 35 (116 + 45 + 35 = 196).
+The identity check above was run on the tree before the last edits (the RATE script, the `--full` mode, the A/A readings and the reader's doubling; of `toy2.py` only a docstring
+changed since); its PASS line stands for the sample.
 
 ## Where the build brief was followed with a change, and what it left open
 
@@ -140,9 +151,20 @@ The identity check above was re-run on the final tree (same PASS line).
 - Today's Bulk, ADR-0084 and today's Realtime arms run with `rtt_est = "rfc"` in every cell (the link cells had it already).  Without it the call cells would give the
   Bulk arm the old estimator, and the T = inf identity could not hold under repair, because srtt feeds r.
 - Reading of 13.3: the stage verdict PASSES when no cell FAILS and one comparison reads shown better, so an UNDETERMINED cell does not block it.
-- A/A: A = S5 at T = inf, hold 0, repair off in the cell, A' the same with phase variant 1 (every cell's sweep includes that point); the AA and AA2 parts hold both rows.
-- `PASS-r0` is written by `check_ident3e.py` from its 23-configuration sample.  The registration's full Part ID (R0 against S5 in the 21 stage 3d cells at 3 seeds)
-  is not run; the runner checks R0 against S5 id3e and trace at the same seed in MAIN instead.
+- The doubling of 13.3 is read through the store: `load_rows` loads seeds 12 to 23 where they exist, a comparison with its 24-seed rows on disk is read once and
+  never listed again, and one without them lists the rows to double (`--write-undet`).
+- `W_pre` (the window before the [16, 512] clamp) is not in `rate_ref3e.json`, because `derive_window` returns only the clamped value; the test and `check_rate3e.py`
+  compare the clamped value, so W_pre is pinned only where the clamp does not bind.
+- The port rounds W with Python's `round` (half to even) where Rust's `.round()` rounds half away from zero.  No point of the reference grid is a tie, so the
+  grid cannot see the difference.
+- The stage 3e keys are listed in `summary3e`'s docstring (the brief says `summary`'s); `summary`'s docstring points to it.
+- `DONE-<PART>` is written only by an unfiltered invocation (no `--cells`, no `--only`), so AMEND run cell by cell needs a final unfiltered pass.  `summarize3e.py read` defaults
+  to the modes OFF and RL; RE is asked for with `--modes OFF,RL,RE`.
+- `check_ident3e.py` (the sample) writes no marker: PASS-ident and PASS-r0 are written only by `check_ident3e.py --full`, which adds `check_ident3d.py` (one worker) and R0
+  against repair off in every batch3d cell (3 seeds) and every batch3e cell (12 seeds).  `--full` is built and its R0 part was exercised on K-I2, P2 and RT only; it was not run in
+  full.  Both markers are owed.  The runner also checks R0 against S5 (id3e and trace) at the same seed in MAIN.
+- `check_rate3e.py` is the RATE part: it checks `rate_ref3e.json` and the registration's 2.1 table and writes `PASS-rate` (or STOP with the cause).  It passes here; its
+  marker was not kept in the worktree.
 - Not built, because the build brief codes none of them: the `rmax_bind` and `burst_bind` gauges, the per-1 s series of r, W, A* and decodes, the `kp_stats` read of
   SMOOTH, and the reader's per-part driver that runs DECIDE-then-DOUBLE automatically.  The constant 0.0875 of the brief's fixed-r list has no arm in registration 5.
 - The `--workers 2` pool path of `batch3e.py` is not exercised by a test or a run (the tests use one worker).

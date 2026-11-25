@@ -106,11 +106,12 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
             rd, kk, nx, bx = run(new_all, nseeds)
             if rd["word"] == "undetermined":
                 arms = {bk} | {new_all[i] for i in bracket(nx.mean(1), kk, float(bx.mean()))}
-                undet.update(a for a in arms if a != ("api",))
                 n2 = [n for n in new_all if have(n, 2 * nseeds)]
-                if have(bk, 2 * nseeds) and len(n2) >= 2:                      # the registered doubling, on these arms only
+                if have(bk, 2 * nseeds) and len(n2) >= 2:                      # the registered doubling, on these arms only; never a second one
                     rd, _, _, _ = run(n2, 2 * nseeds)
                     rd["note"] = "doubled to %d seeds" % (2 * nseeds)
+                else:
+                    undet.update(a for a in arms if a != ("api",))             # still to double
             comps.append(dict(scope=scope_of(bk), kind="point", base=bk, k=k, rd=rd))
         adr = [k2 for k2 in base_keys if k2[0] == "adr"]
         if len(adr) >= 2 and new_all:                                          # curve against curve: the new points inside ADR-0084's range
@@ -129,11 +130,12 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
                     return compare_rev(ax_, ay_, ak_, px, py, k, nf_of(nf, k), units, float(ay_.mean())), ax_, ak_
                 rd, ax_, ak_ = runr(adr, nseeds)
                 if rd["word"] == "undetermined":
-                    undet.update({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)})
                     a2 = [m for m in adr if have(m, 2 * nseeds)]
                     if have(n, 2 * nseeds) and len(a2) >= 2:
                         rd, _, _ = runr(a2, 2 * nseeds)
                         rd["note"] = "doubled to %d seeds" % (2 * nseeds)
+                    else:
+                        undet.update({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)})
                 comps.append(dict(scope="verdict", kind="curve", base=n, k=k, rd=rd))
     out, worse, und, better = classify(comps, gates_bad)
     return dict(outcome=out, comps=comps, undet=undet, worse=worse, undetermined=und, better=better)
@@ -152,18 +154,19 @@ def cell_ys(cell):
 
 
 def load_rows(cell, mode, nseeds):
-    """Row key -> seed -> result for every design row of a cell in a repair mode that has all its seeds on disk."""
+    """Row key -> seed -> result for every design row of a cell in a repair mode that has its first nseeds seeds on disk; seeds nseeds to
+    2 nseeds - 1 are loaded where the registered doubling has run them (read_mode uses them only for the comparisons it doubles)."""
     import batch3e as B
     R = {}
     for key in B.rows_of(cell):
         fp = B.fingerprint(B.row_builder(cell, key, mode)(0))
         rows = {}
-        for s in range(nseeds):
+        for s in range(2 * nseeds):
             r = B.load(fp, s)
             if r is None:
                 break
             rows[s] = r
-        if len(rows) == nseeds:
+        if len(rows) >= nseeds:
             R[key] = rows
     return R
 
@@ -180,18 +183,21 @@ def cell_cap(cell):
     return rec_cap(kw) if kw.get("dead") is not None else 0.0
 
 
-def cmd_freeze(force=False):
+def cmd_freeze(force=False, aa_at="tinf"):
     import batch3e as B
     B.build()
-    nf = dict(notes="p95 over 12 seeds of |A - A'|; A = S5 at T=inf, hold 0, repair off; A' = phase variant 1; shares and seconds", cells={})
+    nf = dict(notes="p95 over 12 seeds of |A - A'|; A' = phase variant 1 of A; A = S5 at T=inf, hold 0 (\"tinf\", build 8.5) or at the cell's primary lifetime "
+                    "(\"primary\", registration 5), repair off; shares and seconds.  \"cells\" is the one chosen by --aa-at.", aa_at=aa_at, tinf={}, primary={}, cells={})
     for cell in B.MAIN_CELLS + B.AA2_CELLS:
         base, d = B.base_of(cell), B.delta_of(cell)
-        A = {s: B.load(B.fingerprint(B.new_cfg(base, 0, INF, 0.0, d, None)), s) for s in range(SEEDS)}
-        Ap = {s: B.load(B.fingerprint(B.new_cfg(base, 0, INF, 0.0, d, None, variant=1)), s) for s in range(SEEDS)}
-        if any(r is None for r in list(A.values()) + list(Ap.values())):
-            raise SystemExit("the A/A needs the %d seeds of both arms in %s" % (SEEDS, cell))
-        keys = ["share_any", "share_T"] + cell_ys(cell)
-        nf["cells"][cell] = nf_from(A, Ap, cell_cap(cell), keys)
+        for at in ("tinf", "primary"):
+            T = INF if at == "tinf" else B.primary_T(cell)
+            A = {s: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None)), s) for s in range(SEEDS)}
+            Ap = {s: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None, variant=1)), s) for s in range(SEEDS)}
+            if any(r is None for r in list(A.values()) + list(Ap.values())):
+                raise SystemExit("the A/A (%s) needs the %d seeds of both arms in %s" % (at, SEEDS, cell))
+            nf[at][cell] = nf_from(A, Ap, cell_cap(cell), ["share_any", "share_T"] + cell_ys(cell))
+        nf["cells"][cell] = nf[aa_at][cell]
     if os.path.exists(NF_PATH) and not force:
         print("nf_stage3e.json exists; not overwriting (frozen)")
         return
@@ -252,9 +258,10 @@ def main():
     ap.add_argument("--write-undet", default="")
     ap.add_argument("--out", default="")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--aa-at", default="tinf", choices=("tinf", "primary"))
     a = ap.parse_args()
     if a.cmd == "freeze":
-        cmd_freeze(a.force)
+        cmd_freeze(a.force, a.aa_at)
     elif a.cmd == "read":
         cmd_read(a.cell, [m if m in ("OFF", "RL", "RE") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
     else:

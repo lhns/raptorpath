@@ -2080,6 +2080,8 @@ class Sim:
         return rows
 
     def summary(self):
+        """Stage 3e adds to the output: out["rep3e"] (the readouts, listed in summary3e's docstring with their registration sections) and, in
+        out["gauges"], the repair gauges (rep_*, dec_*, l1_viol_rep, worth_viol_rep, owed_max, the clamp bind counters, law_reads, eps_est_*)."""
         from ustar import u_costs
         c = self.cfg
         g = dict(self.g)

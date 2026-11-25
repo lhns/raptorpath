@@ -6,7 +6,12 @@
      sender trace and the event counters (no event pushed, no draw taken).
   C. An RL row at delta = 0.005 equals its OFF row (the law gives r = 0 exactly there): two configurations.
 
-    python check_ident3e.py [BASE_REV]      # exit 0 = PASS; the last line is the result line
+    python check_ident3e.py            # the sample: A, B, C.  Exit 0 = PASS.  Writes no marker: the registered gates are the full set below.
+    python check_ident3e.py --full     # A, B, C, then D and E (built, long: run it only when the machine is free), and only then PASS-ident and PASS-r0:
+        D. check_ident3d.py (the registered stage 3d configurations at seeds 0 to 2 against the stage 3c code; IDENT_WORKERS defaults to 1 here)
+        E. R0 equals repair off (S5 at the cell's primary lifetime, hold 0) in every batch3d cell at seeds 0 to 2 and in every batch3e cell at seeds 0 to 11,
+           under id3e, the sender trace and the event counters, every run finished.
+A difference writes out3e/STOP with the cause (registration 9: steps 2 to 5 stop on any difference) and exits 1.
 """
 import os
 import subprocess
@@ -97,21 +102,75 @@ def _delta(cfg, rp):
     return cfg
 
 
+def part_d():
+    env = dict(os.environ)
+    env.setdefault("IDENT_WORKERS", "1")                                    # one worker at a time (memory)
+    return subprocess.run([sys.executable, os.path.join(HERE, "check_ident3d.py")], cwd=HERE, env=env).returncode == 0
+
+
+def part_e():
+    """R0 against repair off over the registered cells.  Returns (runs compared, failures)."""
+    import batch3d
+    import batch3e
+    batch3d.build()
+    bad, n = [], 0
+
+    def pair(nm, off_cfg, r0_cfg):
+        nonlocal n
+        off, c_off = run_sim(off_cfg)
+        r0, c_r0 = run_sim(r0_cfg)
+        compare(nm, (off,), (r0,), c_off, c_r0, bad, "R0")
+        if r0.get("finished") is False or r0["gauges"]["rep_credits"]:
+            bad.append(("R0 liveness", nm))
+        n += 1
+        print("R0 =", "off" if not [b for b in bad if b[1] == nm] else "DIFF", nm, flush=True)
+
+    for cell in batch3d.CELLS:
+        for seed in range(3):
+            mk = (lambda: batch3d.p2_cfg(seed, 0.4, 0.0, "est")) if cell == "P2" else (lambda: batch3d.s5_cfg(cell, seed, 0.4, 0.0))
+            r0 = mk()
+            r0.repair = dict(r=0.0, edge="worth")
+            pair("%s seed %d" % (cell, seed), mk(), r0)
+    for cell in batch3e.CELLS:
+        T = batch3e.T_MAIN.get(cell, 0.4)
+        for seed in range(12):
+            pair("%s seed %d (new cell)" % (cell, seed), batch3e.new_cfg(cell, seed, T, 0.0, 50.0, None), batch3e.new_cfg(cell, seed, T, 0.0, 50.0, batch3e.rp(0.0)))
+    return n, bad
+
+
+def stop(cause):
+    out = os.path.join(HERE, "out3e")
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "STOP"), "w") as f:
+        f.write("check_ident3e: %s" % cause + chr(10))
+
+
 def main():
-    base = sys.argv[1] if len(sys.argv) > 1 else BASE
+    base = BASE
+    full = "--full" in sys.argv
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if args:
+        base = args[0]
     ok_a = part_a(base)
     n, bad_b = part_b()
     bad_c = part_c()
-    ok = ok_a and not bad_b and not bad_c
-    out = os.path.join(HERE, "out3e")
-    os.makedirs(out, exist_ok=True)
-    if ok_a:
+    ok_d = ok_e = None
+    if full and ok_a and not bad_b and not bad_c:
+        ok_d = part_d()
+        n_e, bad_e = part_e()
+        ok_e = not bad_e
+    ok = ok_a and not bad_b and not bad_c and ok_d is not False and ok_e is not False
+    if not ok:
+        stop("A %s; B %d differences; C %d differences; D %s; E %s" % (ok_a, len(bad_b), len(bad_c), ok_d, ok_e))
+    elif full:
+        out = os.path.join(HERE, "out3e")
+        os.makedirs(out, exist_ok=True)
         open(os.path.join(out, "PASS-ident"), "w").close()                  # registration 9 step 2
-    if ok_a and not bad_b and not bad_c:
-        open(os.path.join(out, "PASS-r0"), "w").close()                     # registration 9 step 3, on this sample (see the results file)
-    print("IDENTITY CHECK (stage 3e): %s (A: base %s on the proof-s1 sample %s; B: R0 equals repair off on %d configurations, %d differences; "
-          "C: RL at delta 0.005 equals off, %d differences; id3e keys, sender traces and event counters; one process)" % (
-              "PASS" if ok else "FAIL", base, "reproduced" if ok_a else "DIFFERS", n, len(bad_b), len(bad_c)))
+        open(os.path.join(out, "PASS-r0"), "w").close()                     # registration 9 step 3
+    print("IDENTITY CHECK (stage 3e, %s): %s (A: base %s on the proof-s1 sample %s; B: R0 equals repair off on %d configurations, %d differences; "
+          "C: RL at delta 0.005 equals off, %d differences; D, E: %s; id3e keys, sender traces and event counters; one process)" % (
+              "full" if full else "sample, no marker written", "PASS" if ok else "FAIL", base, "reproduced" if ok_a else "DIFFERS", n, len(bad_b),
+              len(bad_c), "not run" if ok_d is None else ("d %s, e %s" % (ok_d, ok_e))))
     sys.exit(0 if ok else 1)
 
 

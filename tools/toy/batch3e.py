@@ -259,12 +259,24 @@ def add_row(part, cell, key, mode, nseeds=SEEDS, arm=None):
 
 
 # ---- the parts (registration 5, 13; build 8.3) --------------------------------------------------------------------------------------
+def primary_T(cell):
+    """The cell's primary lifetime: 0.4 s, RT 0.12 s, the video cells 2 s, the file cells never give up."""
+    return INF if cell in FILE_CELLS else T_MAIN.get(cell, 2.0 if cell in VIDEO else 0.4)
+
+
 def aa_jobs(part, cells):
+    """The A/A pairs at both registered readings (they conflict, see the results file): "tinf" (build 8.5: proof_s1.freeze's rule, S5 at T = inf, hold 0
+    against its phase variant 1) and "primary" (registration 5: S5 at the cell's primary lifetime, hold 0, against its phase variant 1).  The
+    reader's freeze takes either; the coordinator picks one before AA runs and the other pair's rows just stay unused (the A rows are rows of
+    the sweeps and of MAIN anyway)."""
     for cell in cells:
-        for var in (0, 1):
-            base, d = base_of(cell), delta_of(cell)
-            add(part, "%s | A/A: lifetime T=inf, hold 0%s (S5) | repair off" % (cell, ", phase variant 1" if var else ""), cell, ("aa", var), "OFF",
-                lambda s, base=base, d=d, var=var: new_cfg(base, s, INF, 0.0, d, None, variant=var), arm="AA" if var else "AA-ref")
+        base, d = base_of(cell), delta_of(cell)
+        for at, T in (("tinf", INF), ("primary", primary_T(cell))):
+            if at == "primary" and T == INF:
+                continue                                                         # the file cells' primary lifetime is T = inf: the same pair
+            for var in (0, 1):
+                add(part, "%s | A/A at %s: lifetime T=%s, hold 0%s (S5) | repair off" % (cell, at, TAG(T), ", phase variant 1" if var else ""), cell, ("aa", at, var), "OFF",
+                    lambda s, base=base, d=d, var=var, T=T: new_cfg(base, s, T, 0.0, d, None, variant=var), arm=("AA" if var else "AA-ref") + ("" if at == "tinf" else "-primary"))
 
 
 MAIN_CELLS = ("CL", "CL-long", "OV", "CLw-long", "RT", "CLs-long")
@@ -331,11 +343,10 @@ def main_jobs():
                 tr = True
             add("MAIN", "%s | arm %s: %s | %s" % (cell, arm, n_lt(T, H) + (", edge %s" % edge if edge != "worth" else ""), n_mode(mode)),
                 cell, ("arm", arm), mode, b, SEEDS, arm, trace=tr, partners=pb)
-    aa_jobs_main = [c for c in MAIN_CELLS]
-    for cell in aa_jobs_main:
-        base, d = base_of(cell), delta_of(cell)
-        add("MAIN", "%s | arm AA: A/A, lifetime T=inf, hold 0, phase variant 1 (S5) | repair off" % cell, cell, ("aa", 1), "OFF",
-            lambda s, base=base, d=d: new_cfg(base, s, INF, 0.0, d, None, variant=1), SEEDS, "AA")
+    for cell in MAIN_CELLS:                                                  # registration 5: the A/A arm is S5 with phase variant 1, at the arm's own lifetime
+        base, d, T = base_of(cell), delta_of(cell), primary_T(cell)
+        add("MAIN", "%s | arm AA: A/A, lifetime T=%s, hold 0, phase variant 1 (S5) | repair off" % (cell, TAG(T)), cell, ("aa", "primary", 1), "OFF",
+            lambda s, base=base, d=d, T=T: new_cfg(base, s, T, 0.0, d, None, variant=1), SEEDS, "AA")
 
 
 def decide_jobs():
@@ -386,7 +397,7 @@ def robust_jobs():
     for d in DELTA_SET:
         add_row("ROBUST", "RQ", ("rt", d), "RL")
     add_row("ROBUST", "RQ", ("bulk",), "RL")
-    add("ROBUST", "RQ | A/A: lifetime T=inf, hold 0, phase variant 1 (S5) | %s" % n_mode("RL"), "RQ", ("aa", 1), "RL",
+    add("ROBUST", "RQ | A/A: lifetime T=inf, hold 0, phase variant 1 (S5) | %s" % n_mode("RL"), "RQ", ("aa", "tinf", 1), "RL",
         lambda s: new_cfg("RQ", s, INF, 0.0, 50.0, rp("RL"), variant=1))
     for cell in ("RQ", "OV"):
         add("ROBUST", "%s | relative one-way delay: %s | %s" % (cell, n_lt(0.4, 0.0), n_mode("RL")), cell, ("rel",), "RL",

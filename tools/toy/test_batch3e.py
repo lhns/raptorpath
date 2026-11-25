@@ -71,6 +71,20 @@ class Cells(unittest.TestCase):
             self.assertEqual(ra["_trace"], rb["_trace"])
             self.assertGreater(ra["gauges"]["rep_sent"], 0)
 
+    def test_old_arms_carry_the_rfc_estimator_because_the_identity_needs_it(self):
+        """Witness for build 8.2's departure: with the old RTT estimator the Bulk arm of a call cell differs from S5 at T = inf under repair
+        (srtt feeds r), with the RFC 6298 estimator it does not."""
+        rp = dict(r="law", edge="worth")
+        a = B.new_cfg("RT", 0, INF, INF, 50.0, rp, n_total=500)
+        lit = B.bulk_cfg("RT", 0, 50.0, rp, n_total=500, rtt_est="old")
+        rfc = B.bulk_cfg("RT", 0, 50.0, rp, n_total=500)
+        for c in (a, lit, rfc):
+            c.want_trace = True
+        ra, rl, rr = toy2.run(a), toy2.run(lit), toy2.run(rfc)
+        self.assertNotEqual(B.id3e(ra, rl), [])
+        self.assertEqual(B.id3e(ra, rr), [])
+        self.assertEqual(ra["_trace"], rr["_trace"])
+
     def test_a_delta_005_row_equals_its_off_row(self):
         for mode in (dict(r="law", edge="worth"), dict(r="est", edge="worth")):
             a = B.new_cfg("RT", 0, 0.12, 0.0, 0.005, None, n_total=500)
@@ -91,7 +105,8 @@ class Parts(unittest.TestCase):
         self.assertEqual(len(P["MAIN"]), 59)
         self.assertEqual(len(P["DECIDE"]), 54)
         self.assertEqual(len(P["CROSS"]), 2)
-        self.assertEqual(len(P["AA2"]), 11 * 2)                                    # the cell's A and its A' (phase variant 1)
+        self.assertEqual(len(P["AA"]), 6 * 4)                                      # per cell: A and A' (phase variant 1) at T = inf and at the primary lifetime
+        self.assertEqual(len(P["AA2"]), 8 * 4 + 3 * 2)                             # the file cells' primary lifetime is T = inf: one pair
         self.assertEqual(len(P["ROBUST"]), 32)
         self.assertEqual(len(P["SMOOTH"]), 272)
         am = [j for j in P["AMEND"] if j.nseeds == SEEDS]
@@ -326,6 +341,26 @@ class Runner(unittest.TestCase):
         self.assertEqual(B.main(["--part", "AA", "--seeds", "2"]), 2)                   # nothing runs while STOP exists
 
 
+class RateCheck(unittest.TestCase):
+    def test_a_pass_writes_the_marker_and_a_difference_writes_stop(self):
+        import check_rate3e
+        with tempfile.TemporaryDirectory() as td:
+            old, orig = check_rate3e.OUT, toy2.rate_law
+            check_rate3e.OUT = td
+            try:
+                self.assertEqual(check_rate3e.main(), 0)
+                self.assertTrue(os.path.exists(os.path.join(td, "PASS-rate")))
+                os.remove(os.path.join(td, "PASS-rate"))
+                toy2.rate_law = lambda p, srtt, rate, delta: dict(orig(p, srtt, rate, delta), r=orig(p, srtt, rate, delta)["r"] + 1e-6)
+                self.assertEqual(check_rate3e.main(), 1)
+                self.assertFalse(os.path.exists(os.path.join(td, "PASS-rate")))
+                with open(os.path.join(td, "STOP")) as f:
+                    self.assertIn("part RATE", f.read())
+            finally:
+                toy2.rate_law = orig
+                check_rate3e.OUT = old
+
+
 def toy2_id_gauges():
     import test_toy2
     return test_toy2.ID_GAUGES
@@ -335,10 +370,10 @@ def toy2_id_gauges():
 rng = np.random.default_rng(1)
 
 
-def fake(share_any, y, rec=None, jit=1e-4):
-    """SEEDS results of one row: share_any, the on-time share y, the recovery time."""
+def fake(share_any, y, rec=None, jit=1e-4, ns=SEEDS):
+    """ns results of one row: share_any, the on-time share y, the recovery time."""
     out = {}
-    for s in range(SEEDS):
+    for s in range(ns):
         out[s] = dict(share_any=(1.0 if share_any >= 1.0 else share_any + jit * rng.standard_normal()), share_by_0p4=y + jit * rng.standard_normal(),
                       recovery_time=(rec if rec is None else rec + jit * rng.standard_normal()), units=200000, finished=True,
                       gauges=dict(l1_viol=0, l1_viol_rep=0, commit_viol=0, worth_viol_rep=0))
@@ -348,17 +383,17 @@ def fake(share_any, y, rec=None, jit=1e-4):
 NF = {"share_any": 0.0005, "share_by_0p4": 0.0005, "recovery_time": 0.05}
 
 
-def fake_cell(new_pts, adr_pts, rt_pts=(), bulk=None):
+def fake_cell(new_pts, adr_pts, rt_pts=(), bulk=None, ns=SEEDS):
     """rows keyed as the reader keys them: ("lt", T, 0.0), ("adr", rho), ("rt", delta), ("bulk",)."""
     R = {}
     for T, (x, y, rec) in new_pts.items():
-        R[("lt", T, 0.0)] = fake(x, y, rec)
+        R[("lt", T, 0.0)] = fake(x, y, rec, ns=ns)
     for rho, (x, y, rec) in adr_pts.items():
-        R[("adr", rho)] = fake(x, y, rec)
+        R[("adr", rho)] = fake(x, y, rec, ns=ns)
     for d, (x, y, rec) in rt_pts:
-        R[("rt", d)] = fake(x, y, rec)
+        R[("rt", d)] = fake(x, y, rec, ns=ns)
     if bulk is not None:
-        R[("bulk",)] = fake(*bulk)
+        R[("bulk",)] = fake(*bulk, ns=ns)
     return R
 
 
@@ -396,6 +431,19 @@ class Reader(unittest.TestCase):
         self.assertIn(("adr", 0.95), out["undet"])                                  # the baseline point and the two bracketing new points
         self.assertIn(("lt", 0.4, 0.0), out["undet"])
         self.assertIn(("lt", 2.0, 0.0), out["undet"])
+
+    def test_the_doubling_is_read_once_and_not_asked_for_again(self):
+        new = {0.4: (0.90, 0.60, 0.0), 2.0: (1.0, 0.60, 0.0)}
+        R = fake_cell(new, {0.95: (0.95, 0.60, 0.0), 1.0: (1.0, 0.60, 0.0)}, ns=24)
+        for s in range(24):
+            R[("adr", 0.95)][s]["share_by_0p4"] = 0.60 + (np.linspace(-0.3, 0.3, SEEDS)[s] if s < SEEDS else 0.0)
+        once = S.read_mode(R, NF, units=200000, ys=("share_by_0p4",), nseeds=SEEDS, rec_cap=14.5)
+        self.assertEqual(once["undet"], set())                                       # the 24-seed rows are on disk: read, not asked for again
+        self.assertTrue(any(c["rd"].get("note") == "doubled to 24 seeds" for c in once["comps"]))
+        R12 = {k: {s: v for s, v in rows.items() if s < SEEDS} for k, rows in R.items()}
+        first = S.read_mode(R12, NF, units=200000, ys=("share_by_0p4",), nseeds=SEEDS, rec_cap=14.5)
+        self.assertIn(("adr", 0.95), first["undet"])                                 # with 12 seeds only, it names the rows to double
+        self.assertFalse(any(c["rd"].get("note") for c in first["comps"]))
 
     def test_reported_scope_is_not_under_the_verdict(self):
         adr = {0.95: (0.92, 0.80, 5.0), 1.0: (1.0, 0.86, 7.0)}

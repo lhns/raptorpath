@@ -1340,16 +1340,12 @@ class Stage3e(unittest.TestCase):
             self.assertAlmostEqual(L["r_sat"], e["r_sat"], delta=1e-9, msg=str(e))
 
     def test_2_registration_table(self):
-        tab = [(0.03, 0.0115, 10000.0, 115, 0.10687), (0.03, 0.0115, 12000.0, 138, 0.09982), (0.03, 0.0115, 8000.0, 92, 0.11566),
-               (0.03, 0.010, 10000.0, 100, 0.11234), (0.03, 0.100, 11250.0, 200, 0.08754), (0.03, 0.098, 9000.0, 200, 0.08754),
-               (0.03, 0.0115, 1000.0, 16, 0.22952), (0.10, 0.101, 50.0, 16, 0.38355),
-               (0.0344, 0.0115, 10000.0, 115, 0.11566), (0.05, 0.100, 11250.0, 200, 0.11609), (0.1, 0.100, 11250.0, 200, 0.19542),
-               (0.3, 0.100, 11250.0, 200, 0.50000), (0.0344, 0.098, 9000.0, 200, 0.09313), (0.0344, 0.0115, 8000.0, 92, 0.12543),
-               (0.135, 0.101, 50.0, 16, 0.42470)]
-        for eps, srtt, rate, W, r in tab:
+        import check_rate3e
+        for eps, srtt, rate, W, r in check_rate3e.TABLE:
             L = toy2.rate_law(eps, srtt, rate, 50.0)
             self.assertEqual(L["W"], W, (eps, srtt, rate))
             self.assertAlmostEqual(L["r"], r, delta=1e-5, msg=str((eps, srtt, rate)))
+        self.assertEqual(check_rate3e.check(), [])
         self.assertAlmostEqual(toy2.rate_law(0.03, 0.0115, 10000.0, 50.0)["r_sat"], 0.135, delta=1e-9)
         self.assertAlmostEqual(toy2.rate_law(0.10, 0.101, 50.0, 50.0)["r_sat"], 0.385, delta=1e-9)
 
