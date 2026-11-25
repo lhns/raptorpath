@@ -328,6 +328,22 @@ def decoded_late(T, age):
     return age > T
 
 
+def rb_hold(sim, now):
+    """Amendment 3 (registration 15.3): is `now` inside RB's cap window, [outage start, outage end + A)?  The outage window is the cell's declared
+    `dead` (an oracle: RB is a bracket, not a design).  rb_unit "sym": A counts first sends after the outage end.  Named in EXEMPT."""
+    dd = sim.cfg.dead
+    if dd is None:
+        return False
+    t0, t1 = dd[1], dd[1] + dd[2]
+    if now < t0:
+        return False
+    if now < t1:
+        return True
+    if sim.cfg.rb_unit == "sym":
+        return sim.fs_after_outage < sim.cfg.rb_A
+    return now < t1 + sim.cfg.rb_A
+
+
 def saturation_pressure(raw, r_sat):
     s = 0.1 * r_sat if r_sat else 0.0
     if not (s > 0.0): return 0.0
@@ -407,7 +423,8 @@ class Cfg:
     R_bias: float = 0.0            # stage 3e robustness: added to R in the dequeue rule only
     rev_q: float = 0.0             # stage 3e robustness: a standing reverse queue, seconds added to every report's flight
     tau_extra: tuple = ()          # stage 3e: extra on-time readouts (RT: (0.12,)), reported in out["rep3e"]["share_by"]
-    rb_after_s: float = 3.0        # stage 3e arm RB (repair r = "rb"): r is held at R_MAX from the outage start to this many seconds after its end
+    rb_A: float = 3.0              # stage 3e amendment 3, arm RB (repair r = "rb"): r is held at R_MAX from the outage start until rb_A after its end
+    rb_unit: str = "s"             # "s": rb_A seconds after the outage end; "sym": rb_A first sends after it
 
 
 def ge_cell(cell, seed, slots, dur_slots_unused=None):
@@ -683,6 +700,7 @@ class Sim:
         self.beta_b = 1.0
         self.eps_est = beta_upper(1.0, 1.0)
         self.astar_cur = 1
+        self.fs_after_outage = 0                   # first sends after the outage end (RB with rb_unit "sym")
         self.qf_known = 0.0
         # stage 3e receiver state (build 5.1)
         self.dec_flag = bytearray(self.nmax)
@@ -1059,6 +1077,8 @@ class Sim:
             if self.t_first is None:
                 self.t_first = t
             self.fs_times.append(t)
+            if c.dead is not None and t >= c.dead[1] + c.dead[2]:
+                self.fs_after_outage += 1
             if t - self.t_eval >= min(RATE_CADENCE_MAX, self.srtt_eff() / 4.0):
                 self.read_law(t)
             self.owed += self.r_cur
@@ -1160,7 +1180,7 @@ class Sim:
         L = rate_law(self.eps_for_law(), self.srtt_eff(), rh, self.cfg.delta)
         self.W_cur = L["W"]
         if rp["r"] == "rb":                                                  # the bracket arm: the cap through the outage and its aftermath, the law outside
-            self.r_cur = R_MAX if self.in_rb_window(now) else L["r"]
+            self.r_cur = R_MAX if rb_hold(self, now) else L["r"]
         else:
             self.r_cur = L["r"] if rp["r"] in ("law", "est") else float(rp["r"])
         self.law_last = L
@@ -1179,11 +1199,6 @@ class Sim:
         sr["r"][k] = sr["r"].get(k, 0.0) + self.r_cur
         sr["W"][k] = sr["W"].get(k, 0.0) + L["W"]
         sr["n"][k] = sr["n"].get(k, 0) + 1
-
-    def in_rb_window(self, now):
-        """Arm RB's window [outage start, outage end + rb_after_s); empty when the cell has no outage."""
-        d = self.cfg.dead
-        return d is not None and d[1] <= now < d[1] + d[2] + self.cfg.rb_after_s
 
     def astar(self, now):
         """Paper 5.3: A* = clamp(ceil(rate_hat * min(b*srtt, 2*srtt)), 1, W); 1 before the first RTT sample."""

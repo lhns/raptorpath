@@ -94,6 +94,18 @@ def nf_degenerate(nfall, cell, n):
     return tuple(nfall["by_n"][str(use)].get("degenerate", {}).get(cell, ()))
 
 
+def rb_reported_only(out_dir, cell, key):
+    """Amendment 3 (15.3): RB is read as reported only until ENGINE-CAP says "holds"; in CL-long-v the delta = 0.005 arms (the whole new curve, ADR-0084,
+    today's Bulk and today's Realtime at 0.005) never reach the cap in the engine, so they stay reported whatever the marker says."""
+    if cell in ("CL-long-v",) and not (key[0] == "rt" and key[1] != 0.005):
+        return True
+    path = os.path.join(out_dir, "ENGINE-CAP")
+    if not os.path.exists(path):
+        return True
+    with open(path) as f:
+        return not f.read().lstrip().lower().startswith("holds")
+
+
 def write_verdict_marker(out_dir, verdict):
     """ROBUST and SMOOTH wait for this marker (registration 14.5): present only while the stage verdict reads PASSES."""
     path = os.path.join(out_dir, "VERDICT-PASSES")
@@ -104,7 +116,7 @@ def write_verdict_marker(out_dir, verdict):
         os.remove(path)
 
 
-def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=(), base_n=None):
+def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=(), base_n=None, reported=None):
     """R: row key -> seed -> result, keys ("lt", T, 0.0) (the new curve), ("adr", rho), ("rt", delta), ("bulk",).  The object API is the new
     curve's own T = inf, H = 0 point.  ADR-0084 (curve and points), today's Bulk and the object API are under the verdict in every mode;
     today's Realtime only at the deltas in rt_verdict (50 in RL and RE, none in OFF), elsewhere it is reported.
@@ -132,7 +144,7 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
     comps, undet = [], set()
 
     def scope_of(key, k=None):
-        if k in degenerate:
+        if k in degenerate or (reported is not None and reported(key)):
             return "reported"
         if key[0] == "rt":
             return "verdict" if key[1] in rt_verdict else "reported"
@@ -181,7 +193,7 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
                         rd["note"] = "doubled to %d seeds" % (2 * na)
                     else:
                         undet.update(a for a in ({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)}) if not have(a, 2 * na))
-                comps.append(dict(scope="reported" if k in degenerate else "verdict", kind="curve", base=n, k=k, rd=rd))
+                comps.append(dict(scope="reported" if (k in degenerate or (reported is not None and reported(n))) else "verdict", kind="curve", base=n, k=k, rd=rd))
     out, worse, und, better = classify(comps, gates_bad)
     return dict(outcome=out, comps=comps, undet=undet, worse=worse, undetermined=und, better=better)
 
@@ -295,7 +307,8 @@ def cmd_read(cell, modes, nseeds, write_undet, out_path):
             P_("- mode %s: no complete rows on disk" % mode)
             continue
         rt_verdict = () if mode == "OFF" else (50.0,)
-        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate, base_n=base_n)
+        rep = (lambda key, cell=cell: rb_reported_only(B.OUT, cell, key)) if mode in ("RB", "RB025") else None
+        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate, base_n=base_n, reported=rep)
         outcomes[mode] = res["outcome"]
         better_somewhere = better_somewhere or bool(res["better"])
         for key in res["undet"]:
@@ -387,7 +400,7 @@ def main():
     elif a.cmd == "smooth":
         cmd_smooth(a.nseeds or 3)
     elif a.cmd == "read":
-        cmd_read(a.cell, [m if m in ("OFF", "RL", "RE", "RB") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
+        cmd_read(a.cell, [m if m in ("OFF", "RL", "RE", "RB", "RB025") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
     else:
         import batch3e as B
         outs, better = {}, False

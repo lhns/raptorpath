@@ -463,7 +463,7 @@ class Amendment2(unittest.TestCase):
         n = sum(plan.values())
         pre = sum(c["runs"] for p, c in B.counts().items() if p in ("AA", "AA2", "DECIDE", "EARLY", "RB", "MAIN", "REST"))
         self.assertEqual(n, pre)
-        self.assertTrue(all(k[2] in ("OFF", "RL", "RE", "RB") or isinstance(k[2], float) for k in plan))
+        self.assertTrue(all(k[2] in ("OFF", "RL", "RE", "RB", "RB025") or isinstance(k[2], float) for k in plan))
 
 
 class Bracket(unittest.TestCase):
@@ -473,11 +473,15 @@ class Bracket(unittest.TestCase):
 
     def test_rb_part_runs_every_design_in_the_long_outage_cells_at_12_seeds(self):
         rb = B.PARTS["RB"]
-        self.assertEqual({j.cell for j in rb}, {"CL-long", "CLw-long"})
-        self.assertEqual({j.mode for j in rb}, {"RB"})
-        self.assertEqual({j.nseeds for j in rb}, {12})
+        self.assertEqual({j.cell for j in rb}, {"CL-long", "CLw-long", "CL-long-v"})                  # amendment 3: the video cell too
+        self.assertEqual({j.mode for j in rb}, {"RB", "RB025"})                                       # rb_A = 3 s and 0.25 s
+        self.assertEqual({j.nseeds for j in rb}, {12})                                                # also the delta = 0.005 rows (no identity partner, no 3-seed rule)
+        self.assertTrue(all(len(j.partners) == (1 if j.key == ("lt", INF, INF) else 0) for j in rb))  # only the T = inf, H = inf pair against today's Bulk; no delta = 0.005 identity
         self.assertEqual({j.design for j in rb}, {"new", "adr", "rt", "bulk"})
-        self.assertEqual(len(rb), 2 * len(B.rows_of("CL-long")))
+        self.assertEqual(len(B.rows_of("CL-long-v")), 18)
+        self.assertEqual(len(rb), 2 * (2 * len(B.rows_of("CL-long")) + 18))
+        self.assertEqual({j.mode: j.builder(0).rb_A for j in rb}, {"RB": 3.0, "RB025": 0.25})
+        self.assertEqual({j.builder(0).rb_unit for j in rb}, {"s"})
         self.assertTrue(all(j.builder(0).repair["r"] == "rb" for j in rb))
         self.assertEqual({j.builder(0).repair["edge"] for j in rb if j.design == "new"}, {"worth"})
         self.assertEqual({j.builder(0).repair["edge"] for j in rb if j.design == "rt"}, {"evict"})
@@ -489,8 +493,23 @@ class Bracket(unittest.TestCase):
         self.assertNotIn("DONE-RB", B.missing_markers("RB"))
         self.assertIn("DONE-EARLY", B.missing_markers("RB"))
 
+    def test_rb_is_reported_only_without_the_cap_and_for_the_bulk_end_deltas(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertTrue(S.rb_reported_only(td, "CL-long", ("lt", 0.4, 0.0)))                      # no ENGINE-CAP marker: reported only
+            with open(os.path.join(td, "ENGINE-CAP"), "w") as f:
+                f.write("clamped: engine spare ...")
+            self.assertTrue(S.rb_reported_only(td, "CL-long", ("lt", 0.4, 0.0)))
+            with open(os.path.join(td, "ENGINE-CAP"), "w") as f:
+                f.write("holds: the engine holds r_max")
+            self.assertFalse(S.rb_reported_only(td, "CL-long", ("lt", 0.4, 0.0)))
+            self.assertTrue(S.rb_reported_only(td, "CL-long-v", ("adr", 0.99)))                      # delta = 0.005: never reaches the cap, whatever the marker says
+            self.assertTrue(S.rb_reported_only(td, "CL-long-v", ("rt", 0.005)))
+            self.assertTrue(S.rb_reported_only(td, "CL-long-v", ("lt", 2.0, 0.0)))
+            self.assertFalse(S.rb_reported_only(td, "CL-long-v", ("rt", 50.0)))                       # today's Realtime at delta >= 0.5 follows the marker
+
     def test_the_rb_rows_are_before_the_verdict_and_in_the_plan(self):
         self.assertIn(("CL-long", "new", "RB"), B.plan_classes())
+        self.assertIn(("CL-long-v", "new", "RB025"), B.plan_classes())
 
 
 class Reuse(unittest.TestCase):

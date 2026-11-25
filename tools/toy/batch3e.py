@@ -116,7 +116,7 @@ def cell_seeds(cell):
 
 def row_nseeds(cell, key, mode):
     """The seeds of one design row in one mode: 3 for a delta = 0.005 identity row and for the old senders of the long overload cells (their ends only)."""
-    if mode != "OFF" and row_delta(cell, key) == 0.005:
+    if mode in ("RL", "RE") and row_delta(cell, key) == 0.005:
         return SEEDS_ID
     if cell in OLD_ENDS and key[0] in ("adr", "rt", "bulk"):
         return SEEDS_ID
@@ -184,7 +184,7 @@ def rp(mode, edge="worth"):
     """A repair mode: "OFF", "RL" (live law, true loss), "RE" (live law, estimated loss) or a fixed r."""
     if mode == "OFF":
         return None
-    return dict(r={"RL": "law", "RE": "est", "RB": "rb"}.get(mode, mode), edge=edge)
+    return dict(r={"RL": "law", "RE": "est", "RB": "rb", "RB025": "rb"}.get(mode, mode), edge=edge)
 
 
 # ---- names (F6: every row says what its sender and receiver do; the code name stands in parentheses) -----------------------------------
@@ -205,7 +205,8 @@ N_BULK = "never gives up, strict order = today's Bulk (C3)"
 
 def n_mode(mode):
     return {"OFF": "repair off", "RL": "repair RL (live law, true loss)", "RE": "repair RE (live law, estimated loss)",
-            "RB": "repair RB (r_max through the outage and 3 s after, the law outside)"}.get(mode, "repair fixed r=%g" % (mode,) if not isinstance(mode, str) else mode)
+            "RB": "repair RB (r_max through the outage and 3 s after, the law outside)",
+            "RB025": "repair RB (r_max through the outage and 0.25 s after, the law outside)"}.get(mode, "repair fixed r=%g" % (mode,) if not isinstance(mode, str) else mode)
 
 
 class Job:
@@ -221,9 +222,13 @@ class Job:
                        "rt": "rt", "smrt": "rt", "bulk": "bulk"}[key[0]]
 
 
+MODE_KW = {"RB025": dict(rb_A=0.25, rb_unit="s")}                           # amendment 3: the bracket's aftermath at the engine's forgetting time
+
+
 def row_builder(cell, key, mode, **kw):
     """The builder of one design row of a cell in a repair mode (the new model's edge is worth, the old designs' their own)."""
     base, d = base_of(cell), delta_of(cell)
+    kw = dict(MODE_KW.get(mode, {}), **kw)
     if key[0] == "lt":
         return lambda s: new_cfg(base, s, key[1], key[2], d, rp(mode, "worth"), **kw)
     if key[0] == "adr":
@@ -277,7 +282,7 @@ def partners_of(cell, key, mode):
     out = []
     if key == ("lt", INF, INF):
         out.append(row_builder(cell, ("bulk",), mode))
-    if mode != "OFF" and row_delta(cell, key) == 0.005:
+    if mode in ("RL", "RE") and row_delta(cell, key) == 0.005:                # RB at delta 0.005 differs from OFF by the cap's repairs: no identity
         out.append(row_builder(cell, key, "OFF"))
     return out
 
@@ -416,14 +421,15 @@ def amend_jobs():
     PARTS["REST"] = sorted([j for j in PARTS["AMEND"] if j.part == "REST"], key=cell_order)
 
 
-RB_CELLS = ("CL-long", "CLw-long")                                           # the long-outage cells (amendment 3)
+RB_CELLS = ("CL-long", "CLw-long", "CL-long-v")                              # the long-outage cells (amendment 3)
 
 
 def rb_jobs():
-    """Arm RB, for every design: r at the law's cap from the outage start until rb_after_s after its end, the law outside (amendment 3)."""
+    """Arm RB, for every design: r at the law's cap from the outage start until rb_A after its end, the law outside (amendment 3)."""
     for cell in RB_CELLS:
-        for key in rows_of(cell):
-            add_row("RB", cell, key, "RB", SEEDS)
+        for mode in ("RB", "RB025"):                                         # rb_A = 3 s (the simulator's aftermath) and 0.25 s (about 4 900 symbols: the engine's forgetting time)
+            for key in rows_of(cell):
+                add_row("RB", cell, key, mode, SEEDS)
 
 
 def robust_jobs():

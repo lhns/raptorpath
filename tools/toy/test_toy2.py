@@ -344,7 +344,7 @@ EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expir
           # stage 3e (three-knobs-stage3e-build.md 2): the repair laws as shipped and the two lifetime comparisons of the repair span; by name only
           "normal_survival_as", "normal_quantile_as", "p_fec_normal_as", "z_for_tail_target", "r_star_with_z", "r_saturation", "soft_saturate",
           "controller_rate_parts", "derive_window_parts", "bulkness", "t_tail_of", "rate_law", "beta_upper", "span_edge_ok", "decoded_late",
-          "saturation_pressure"}
+          "saturation_pressure", "rb_hold"}
 
 
 def _names(node):
@@ -1836,10 +1836,11 @@ class Stage3e(unittest.TestCase):
 
 
 class Stage3eBracket(unittest.TestCase):
-    """Arm RB (amendment 3): r held at the law's cap r_max from the outage start until rb_after_s after its end, the law outside."""
+    """Arm RB (amendment 3): r held at the law's cap r_max from the outage start until rb_A after its end, the law outside."""
 
     def test_default_and_the_window(self):
-        self.assertEqual(toy2.Cfg().rb_after_s, 3.0)
+        c = toy2.Cfg()
+        self.assertEqual((c.rb_A, c.rb_unit), (3.0, "s"))
 
     def test_r_is_the_cap_inside_the_window_and_the_law_outside(self):
         seen = []
@@ -1850,7 +1851,7 @@ class Stage3eBracket(unittest.TestCase):
                 super().read_law(now)
                 if self.t_eval == now and self.law_last is not None:
                     seen.append((now, self.r_cur, self.law_last["r"]))
-        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="rb", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rb_after_s=0.5)
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="rb", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rb_A=0.5)
         P(c).run()
         inside = [x for x in seen if 0.5 <= x[0] < 1.5]
         outside = [x for x in seen if x[0] < 0.5 or x[0] >= 1.5]
@@ -1858,6 +1859,23 @@ class Stage3eBracket(unittest.TestCase):
         self.assertTrue(all(r == toy2.R_MAX for _, r, _ in inside))
         self.assertTrue(all(r == law for _, r, law in outside))
         self.assertTrue(any(law < toy2.R_MAX for _, _, law in inside))                      # control: the law itself was below the cap there
+
+    def test_the_symbol_unit_counts_first_sends_after_the_outage(self):
+        seen = []
+
+        class P(toy2.Sim):
+            def read_law(self, now):
+                super().read_law(now)
+                if self.t_eval == now and self.law_last is not None:
+                    seen.append((now, self.r_cur, self.law_last["r"], self.fs_after_outage))
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="rb", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rb_A=2000.0, rb_unit="sym")
+        P(c).run()
+        held = [x for x in seen if x[0] >= 1.0 and x[3] < 2000]
+        free = [x for x in seen if x[0] >= 1.0 and x[3] >= 2000]
+        self.assertTrue(held and free)
+        self.assertTrue(all(r == toy2.R_MAX for _, r, _, _ in held))
+        self.assertTrue(all(r == law for _, r, law, _ in free))
+        self.assertTrue(all(x[3] == 0 for x in seen if x[0] < 1.0))                           # nothing counted before the outage end
 
     def test_an_empty_window_equals_rl(self):
         for seed in range(2):

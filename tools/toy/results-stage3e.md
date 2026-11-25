@@ -198,3 +198,18 @@ changed since); its PASS line stands for the sample.
   cells last), then ROBUST and SMOOTH only with `VERDICT-PASSES`, which `summarize3e.py verdict` writes (and removes when the verdict is not PASSES).
 - Runs before the verdict, after the dedupe and before any reuse: AA 288, AA2 456, DECIDE 624, MAIN 402, EARLY 360, REST 4 512 = 6 642 (registration 14.9: 5 964 with reuse and one A/A pair);
   ROBUST 192 and SMOOTH 774 follow a pass.  AA and AA2 hold both A/A pairs and DECIDE's repair-off half is still listed (it is reused when proof stage 1's store is given).
+
+## Amendment 3 (registration 15, reg-stage3e at 30c77ca9): arm RB and a threat to validity
+
+- Arm RB: `repair=dict(r="rb", edge=...)`; r is held at r_max = 0.5 from the outage start until `rb_A` after its end (`rb_unit` "s": seconds; "sym": first sends), the law fed the true loss
+  outside; no outage, no window, so RB equals RL there.  Part RB runs every design in CL-long, CLw-long and CL-long-v at 12 seeds, at rb_A = 3 s and 0.25 s (about 4 900 symbols: the engine's
+  Gilbert-Elliott estimates forget per symbol), after EARLY and before MAIN.  The reader reads RB as reported only unless `ENGINE-CAP` starts with "holds"; in CL-long-v every arm at
+  delta = 0.005 is reported whatever the marker says (it never reaches the cap), today's Realtime at delta >= 0.5 follows the marker.  `ENGINE-CAP` here says clamped, so RB is reported only.
+- Markers written at the coordinator's instruction: `PASS-simread` (a reading, not a value gate) and `ENGINE-CAP` (clamped).
+
+**Threat to validity: the window.** In the offline simulation the rate law and the span read the computed window W* for every design
+(`rate_law`: `W, W_pre = derive_window_parts(tail, p, 1.0, srtt, rate)`, `W = min(float(round(W)), float(W_CAP))`; `read_law`: `self.W_cur = L["W"]`; `astar` clamps to `self.W_cur`;
+`stage_repair`: `ws = max(0, self.A_known - int(self.W_cur))`), whereas the engine feeds the rate snapshot the encoder's live window size
+(`emit_source.rs`: `cadenced_repair_rate(..., st.encoder.window_size(), ...)` into `rate_snapshot(est, window)`).  Where the encoder's fill is below W*, which is the case at a finite lifetime
+(13.2 against a floor of 16 in the simulator's reading), the engine's r is higher: the simulation's repair is understated there against the engine, mostly in the new model's rows.
+Not changed; recorded as a threat.

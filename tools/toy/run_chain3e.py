@@ -125,7 +125,7 @@ def main():
         time.sleep(60)
     batch("RB", a)
     for cell in B.RB_CELLS:
-        read_cell(cell, ["RB"], "RB", a)
+        read_cell(cell, ["RB", "RB025"], "RB", a)
     batch("MAIN", a)
     verdict_file("MAIN", "MAIN done: every run finished, every gate held (the runner stops on a failure); predictions are read from the stored runs")
     cells = []
