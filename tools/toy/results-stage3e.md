@@ -69,3 +69,16 @@ fn main() {
 }
 ```
 
+## Identity check (build brief 9 step 4)
+
+`python check_ident3e.py`, one process, alone on the machine (the machine ran two long batches elsewhere):
+
+```text
+base b2addffb; 16 configurations, seed 0; 2139 old keys compared (trace and per-seq arrays as digests); new keys/gauges (allowed): 36
+IDENTITY CHECK (proof stage 1): PASS
+IDENTITY CHECK (stage 3e): PASS (A: base b2addffb on the proof-s1 sample reproduced; B: R0 equals repair off on 23 configurations, 0 differences; C: RL at delta 0.005 equals off, 0 differences; id3e keys, sender traces and event counters; one process)
+```
+
+The sample of B is the proof-s1 sample (16) plus one configuration per sender family and cell shape of `ident3e_cfgs.py` (7).  Not run: the full
+`check_ident3d.py` configuration set (several thousand runs, four workers); the proof-s1 sample spans the same code paths.
+
