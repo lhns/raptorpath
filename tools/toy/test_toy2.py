@@ -370,6 +370,11 @@ def deny_scan(src):
 
 
 class DenyTest(unittest.TestCase):
+    def test_proof_s1_fields_are_covered(self):
+        for f in ("evict_window", "r0e_max", "r_fec"):
+            self.assertTrue(deny_scan("def f(c, n):\n    return n > c.%s\n" % f), f)
+        self.assertFalse(deny_scan("def p_fec_normal(r_fec):\n    return r_fec <= 0\n"))        # the shipped cut, named debt W22
+
     def test_no_branch_on_a_dial_outside_the_named_exceptions(self):
         with open(os.path.join(HERE, "toy2.py"), encoding="utf-8") as f:
             src = f.read()
