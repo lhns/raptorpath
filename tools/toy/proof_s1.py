@@ -56,6 +56,7 @@ N_BULK = "never gives up, strict order = today's Bulk (C3)"
 N_X_ADR_ANY = "ADR-0084 sender at rho=0.99, any-order receiver (cross)"
 N_X_ADR_NOCOPY = "ADR-0084 sender at rho=0.99 without its copy, today's receiver (cross, S1)"
 N_AA = "A/A: lifetime T=inf, hold 0, phase variant 1 (S5)"
+N_AA04 = "A/A: lifetime T=0.4, hold 0, phase variant 1 (S5)"
 
 
 def lt_cfg(seed, T, H, variant=0):
@@ -101,6 +102,7 @@ def build():
         job("DECIDE", n_rt(d), lambda s, d=d: rt_cfg(s, d))
     job("DECIDE", N_BULK, lambda s: bulk_cfg(s))
     job("AA", N_AA, lambda s: lt_cfg(s, INF, 0.0, variant=1))
+    job("AA", N_AA04, lambda s: lt_cfg(s, 0.4, 0.0, variant=1))
     # the conditional 2 x 2 (plan 3.4): sender {ADR-0084 at 0.99, never gives up} x receiver {today's Realtime, any order}; two cells exist already
     job("CROSS", N_X_ADR_ANY, lambda s: adr_cfg(s, 0.99, recv="RH", Hk=0.0))
     job("CROSS", N_X_ADR_NOCOPY, lambda s: adr_cfg(s, 0.99, sender="S1"))
@@ -285,22 +287,41 @@ def fmt(rd, nd=3):
                                                     " [%s]" % rd["note"] if rd.get("note") else "")
 
 
+RESOLUTION = {"share_any": None, "share_T": None, "share_by_0p4": None, "recovery_time": 0.1}      # shares: 1/units; recovery: the window step
+
+
+def aa_pairs():
+    """The two registered A/A pairs: variant 0 (a row of the sweep) against variant 1, at T = inf (hold 0) and at the primary lifetime (T = 0.4, hold 0)."""
+    return [(n_lt(INF, 0.0), N_AA), (n_lt(0.4, 0.0), N_AA04)]
+
+
 def freeze(force=False):
+    """NF per readout = the larger of the two pairs' p95 over 12 seeds of |A - A'|.  A floor that is 0 or below the readout's resolution is
+    degenerate: it is listed, and the reading rule's own bar (T_bar >= 1/units for shares, 0.1 s for recovery) then carries the comparison."""
     build()
-    rows = load("DECIDE")
-    aa = load("AA")
-    a_name, aa_name = n_lt(INF, 0.0), N_AA
-    if len(rows.get(a_name, {})) < SEEDS or len(aa.get(aa_name, {})) < SEEDS:
-        raise SystemExit("the A/A needs the %d seeds of both arms" % SEEDS)
-    nf = dict(notes="p95 over 12 seeds of |A - A'|, A = %s, A' = %s (phase variant 1); ms-free: shares and seconds" % (a_name, aa_name), cells={})
+    rows = load("DECIDE", SEEDS)
+    aa = load("AA", SEEDS)
+    units = int(rows[n_lt(INF, 0.0)][0]["units"])
+    nf = dict(notes="per readout the larger of the p95 over 12 seeds of |A - A'| of the two pairs: %s" % "; ".join("A = %s, A' = %s" % x for x in aa_pairs()),
+              cells={}, pairs={}, degenerate=[])
     for k in READ + ("share_any", "share_T"):
-        d = np.abs(vec(rows, a_name, k) - np.asarray([val(aa[aa_name][s], k) for s in sorted(aa[aa_name])]))
-        nf["cells"][k] = float(np.percentile(d, 95))
+        vals = []
+        for a_name, aa_name in aa_pairs():
+            if len(rows.get(a_name, {})) < SEEDS or len(aa.get(aa_name, {})) < SEEDS:
+                raise SystemExit("the A/A needs the %d seeds of both arms of each pair" % SEEDS)
+            d = np.abs(np.asarray([val(rows[a_name][s], k) for s in range(SEEDS)]) - np.asarray([val(aa[aa_name][s], k) for s in range(SEEDS)]))
+            vals.append(float(np.percentile(d, 95)))
+        nf["pairs"][k] = vals
+        nf["cells"][k] = max(vals)
+        res = RESOLUTION[k] if RESOLUTION[k] is not None else 1.0 / units
+        for (a_name, _), v in zip(aa_pairs(), vals):
+            if v <= res:
+                nf["degenerate"].append("%s at the pair of %s: %.3g (resolution %.3g)" % (k, a_name, v, res))
     if os.path.exists(NF_PATH) and not force:
         print("nf_proof_s1.json exists; not overwriting (frozen)")
         return
     json.dump(nf, open(NF_PATH, "w"), indent=1)
-    print("frozen", NF_PATH, nf["cells"])
+    print("frozen", NF_PATH, nf["cells"], "degenerate:", nf["degenerate"])
 
 
 def classify(comps, gates_bad):

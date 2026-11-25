@@ -9,6 +9,15 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import proof_s1 as P  # noqa: E402
+import toy2  # noqa: E402
+
+
+def toy2_sim(c):
+    return toy2.Sim(c)
+
+
+def toy2_b(d):
+    return toy2.b_of_delta(d)
 
 SEEDS = 12
 rng = np.random.default_rng(0)
@@ -140,6 +149,27 @@ class Builders(unittest.TestCase):
             c = fn(3)
             cells.add((c.cell, c.seed, c.n_total, c.dead, tuple(sorted(c.link.items())), c.sweep_form, c.rtt_est, c.resend_brake, c.resend_gate))
         self.assertEqual(len(cells), 1, cells)                         # one cell, one seed, one sweep form for every arm
+
+    def test_every_arm_uses_the_rfc_estimator_and_todays_realtime_keeps_its_deadline_seed(self):
+        P.build()
+        for n, (p, fn) in P.JOBS.items():
+            self.assertEqual(fn(0).rtt_est, "rfc", n)                   # same machinery: S5, ADR-0084, today's Realtime, Bulk, A/A
+        sm = toy2_sim(P.rt_cfg(0, 50.0))
+        self.assertIsNone(sm.srtt)
+        d, _ = sm.D_now()
+        self.assertAlmostEqual(d, min(toy2_b(50.0), 2.0) * 0.050)       # the 50 ms seed on the deadline until the first sample
+        sm.rtt_sample(0.010)
+        self.assertAlmostEqual(sm.D_now()[0], min(toy2_b(50.0), 2.0) * 0.010)
+
+    def test_two_aa_pairs_and_the_floor_is_the_larger(self):
+        P.build()
+        self.assertEqual(len(P.aa_pairs()), 2)
+        for a, b in P.aa_pairs():
+            ca, cb = P.JOBS[a][1](0) if a in P.JOBS else None, P.JOBS[b][1](0)
+            self.assertEqual(cb.variant, 1)
+            self.assertEqual(ca.variant, 0)
+            self.assertEqual((ca.T, ca.Hk), (cb.T, cb.Hk))
+        self.assertEqual({P.JOBS[b][0] for _, b in P.aa_pairs()}, {"AA"})
 
     def test_todays_realtime_row_carries_all_its_differences(self):
         c = P.rt_cfg(0, 50.0)

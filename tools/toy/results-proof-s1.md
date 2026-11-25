@@ -109,6 +109,24 @@ Where this section differs from 1.4 it supersedes it. No data had been generated
 - **Reader:** `proof_s1.py` (`classify`, `curve_at(clamp_low)`, `bracket`, `cmd_read`), with tests on synthetic curves in `test_proof_s1.py`.
 - **Run gating:** the batch starts only on a marker file created by the coordinator after the re-baseline has been checked and pushed.
 
+### 1.7 Amendment of 2026-11-25, committed before any run exists
+
+- **Estimator.** Every arm of the row already runs `rtt_est = "rfc"` (RFC 6298 srtt/rttvar, Karn's rule): the cell CL-long@b sets it, and the
+  S5, ADR-0084, today's Realtime, Bulk and A/A configurations all inherit it. A test pins this for every job
+  (`test_every_arm_uses_the_rfc_estimator_and_todays_realtime_keeps_its_deadline_seed`). No alignment was needed, so the code is unchanged
+  and the 16-configuration identity sample (PASS, base `e53eab45`) still stands. Stage 3e can reuse these runs on this point.
+- **Today's Realtime keeps its 50 ms seed on its deadline.** `D_now` with `d_arm = "EWMA"` reads 50 ms until the first RTT sample and the
+  sample after it, whatever the estimator; the same test pins both values. (The cold 333 ms seed of the rfc estimator feeds the cooldown, the
+  floor and the receiver's R, not this deadline.)
+- **A/A, two pairs.** S5 at T = inf, hold 0 against its phase variant 1, and S5 at T = 0.4, hold 0 against its phase variant 1 (12 more runs).
+  Per readout (`share_any`, `share_T`, `share_by_0p4`, `recovery_time`) the noise floor NF is the larger of the two pairs' p95 over 12 seeds
+  of |A - A'|, frozen to `nf_proof_s1.json` before any row is read.
+- **Degenerate floors.** A floor of 0 or at or below the readout's resolution (1/units for shares, 0.1 s for recovery) is listed in the
+  frozen file and in the report. The reader needs no special case: the bar is `m = max(T_bar, NF)` and T_bar is never below that resolution, and
+  the x-merge noise is `max(NF on share_any, 1/units)`.
+- **Outcome rule, confirmed.** Any comparison under the verdict that is still undetermined after the one registered doubling makes the row
+  UNDETERMINED (unless something reads shown worse or outside the range, which is FAILS).
+
 ## 2. Tests and identity
 
 (filled after the run)
