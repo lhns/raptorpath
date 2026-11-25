@@ -1,5 +1,26 @@
 # Offline simulation, stage 3d: the consistent floor law, the engine-like sweep, recovery time, plants through T, the two-path cell
 
+> **Amendment 2026-11-25: RTT sample from a never-arrived seq (offline simulation, stage 3d).** The original text below is unchanged; the rows in the table at the end of this file are superseded by the amended values.
+>
+> Branch `toy-stage3d-rttfix` (fix commit `383ab316`, tests `e53eab45`). The sender's RTT sample (`on_report`, RFC 6298 estimator, Karn's rule) was keyed on the receiver's highest-received seq `rhi`. A floor jump (`apply_floor`) raises `rhi` without an arrival, so the sample could time a unit that never arrived (the first such sample in CL-long, lifetime 0.4 s, seed 0: 1.418 s on an srtt of 10.9 ms, srtt then 186.8 ms). Fix: the sample is taken only if the seq had arrived when the report was made; `rhi_known` still advances. No other reader of the floor-raised `rhi` treats it as an arrival (they read it as "resolved or given up"). Counters: `rtt_unarrived` (skipped samples) and `rtt_unarrived_other` (old-estimator and per-path samples on a never-arrived seq, counted only, behaviour unchanged). Measurement of the bug: `tools/toy/rttbug-data/rttbug-results.md`.
+>
+> Scope run: every stage 3d configuration (475, nudge variants included) at its registered seeds, 5 628 runs, with the fixed code. 190 of 475 configurations (1 259 of 5 628 runs, 9 438 skipped samples) took at least one skipped sample; 8 runs of 6 C1 configurations (old estimator) had a counted-only unarrived A - 1 sample and are unchanged by the fix. All 1 267 runs with a counter above 0 were re-run with the old code (e17b4c64) for the old to new tables. The other 4 361 runs are unchanged by construction (the changed branch is never taken); verified bit for bit on every key for all 550 counter-0 runs that have an old-code run (seed 0 of every configuration): 0 differences. `check_ident3d.py` (stage 1 to 3c reference runs regenerated from 02eda90b, seeds 0 to 2): PASS on 1 984 runs; 397 runs differ, every one of them a run with `rtt_unarrived` above 0 (stage 3b 311, stage 3c 86; tables in those files), none with counter 0. Tests: 89 pass (88 old, 1 new; two old ones re-founded in `e53eab45`).
+>
+> Headline old to new (seed means over the 12 registered seeds, CL-long at lifetime 0.4 s first). Shares are percent of units, recovery time in seconds, srtt and delay p50 in ms.
+>
+> | configuration | seeds | seeds hit | skipped samples | other unarrived (counted) | share_any (old -> new) % | share_T (old -> new) % | share_by_0p4 (old -> new) % | recovery_time (old -> new) s | srtt (old -> new) ms | dh_p50 (old -> new) ms | commit_viol old / new |
+> |---|---|---|---|---|---|---|---|---|---|---|---|
+> | CL-long.G-T0p4-H0 | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.38 -> 94.14 | 92.38 -> 94.14 | 0.10 -> 0.00 | 10.77 -> 10.75 | 5.63 -> 5.68 | 0 / 0 |
+> | CL-long.G-T0p4-Hinf | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.33 -> 93.27 | 92.33 -> 93.27 | 0.10 -> 0.00 | 10.77 -> 10.75 | 16.63 -> 17.18 | 0 / 0 |
+> | OV.G-T0p4-H0 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+> | OV.G-T0p4-Hinf | 12 | 4 | 5 | 0 | 83.09 (same) | 82.83 (same) | 82.83 (same) | n/a | 99.88 -> 99.88 | 389.62 -> 389.62 | 0 / 0 |
+> | OV-long.G-T0p4-H0 | 12 | 11 | 25 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.88 (same) | 389.66 -> 389.66 | 0 / 0 |
+> | OV-long.G-T0p4-Hinf | 12 | 11 | 25 | 0 | 81.15 (same) | 81.09 (same) | 81.09 (same) | n/a | 99.88 (same) | 389.67 -> 389.67 | 0 / 0 |
+> | OV-long.G-T2-H0 | 12 | 11 | 14 | 0 | 83.87 (same) | 83.87 (same) | 3.44 (same) | n/a | 99.81 (same) | 1989.55 -> 1989.55 | 0 / 0 |
+> | OV-long.G-T2-Hinf | 12 | 11 | 14 | 0 | 83.87 (same) | 83.80 (same) | 1.69 (same) | n/a | 99.81 (same) | 1989.56 -> 1989.56 | 0 / 0 |
+>
+> Read: CL-long at lifetime 0.4 s is the only headline row that moves. The delivered share rises 1.76 points at both receiver orders; the share within T rises 1.76 (H = 0) and 0.94 (H = inf) points; recovery time goes from 0.10 s to 0.00 s (the series resolution is 0.1 s). The CL-long arms with lifetime 2 s or no give-up, and P2 at T = 75 ms (4 arms), have no skipped sample and are bit-identical. In OV and OV-long the skipped samples are 0.100 s on an srtt of 0.0999 s and no readout in the table moves at its precision. Q3d-1 to Q3d-9 were not re-derived; the CL-long rows of Q3d-5 and the 0.4 s CL-long rows elsewhere are the ones to re-read.
+
 Spec: `docs/derivations/three-knobs.md` section 17 "Revision 3", registration 17.9 (branch `github/three-knobs`, head `bd64f394`). Code: `tools/toy/` (`toy2.py` extended; `batch3d.py`, `summarize3d.py`, `report_s3d.py`, `tables3d.py`, `check_ident3d.py`, tests in `test_toy2.py` class `Stage3d`); built on `toy-stage3-knobs` `02eda90b`. With every new field at its default the code reproduces stages 1 to 3c bit for bit (below). The offline simulation fixes no constant of the engine, and none of these numbers is engine provenance. 12 seeds per configuration (seeds 0 to 11, clock phases drawn per seed), one path except P2, all runs deterministic. Data lives in `out3d/` (not tracked); the frozen A/A floor `nf_stage3d.json` is tracked. Tests: `python -m unittest test_toy test_toy2` 88 tests OK on the final code (77 existing, 11 new in class `Stage3d`; the new tests were red on the stage 3c code, 10 of 10 erroring on the missing fields, before they passed). Identity check: `check_ident3d.py` PASS on the final code (1 984 reference runs, 253 075 old keys, 0 differences).
 
 ## In plain words
@@ -419,3 +440,206 @@ The 117 undetermined readings and all 21 cells' floors are in `nf_stage3d.json` 
 ## Data
 
 `out3d/` (not tracked): 5 628 runs. The run log and reading outputs were produced by `batch3d.py` and `summarize3d.py q1 ... q9 aa`; `tables3d.py` prints the per-cell tables above.
+
+## Amendment 2026-11-25: old to new for every configuration with a counter above 0
+
+Seed means over the registered seeds of the configuration (seeds hit = seeds with a skipped sample, skipped samples = their total; the other seeds are unchanged). (same) = equal to the printed precision.
+
+| configuration | seeds | seeds hit | skipped samples | other unarrived (counted) | share_any (old -> new) % | share_T (old -> new) % | share_by_0p4 (old -> new) % | recovery_time (old -> new) s | srtt (old -> new) ms | dh_p50 (old -> new) ms | commit_viol old / new |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| CL.G-T0p4-H0 | 12 | 12 | 12 | 0 | 84.76 -> 88.29 | 84.76 -> 88.29 | 84.76 -> 88.29 | 0.10 -> 0.00 | 10.78 -> 10.78 | 5.67 -> 5.82 | 0 / 0 |
+| CL.G-T0p4-H0p02 | 12 | 12 | 12 | 0 | 84.76 -> 88.29 | 84.76 -> 87.97 | 84.76 -> 87.97 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.86 | 0 / 0 |
+| CL.G-T0p4-Hinf | 12 | 12 | 12 | 0 | 84.76 -> 88.29 | 84.65 -> 86.53 | 84.65 -> 86.53 | 0.10 -> 0.00 | 10.78 -> 10.78 | 17.01 -> 22.01 | 0 / 0 |
+| CL.NH-0p98 | 12 | 12 | 12 | 0 | 84.76 -> 88.29 | 84.76 -> 87.99 | 84.76 -> 87.99 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.36 -> 17.74 | 0 / 0 |
+| CL.NH-0p99 | 12 | 12 | 12 | 0 | 84.76 -> 88.29 | 84.76 -> 87.98 | 84.76 -> 87.98 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.38 -> 17.80 | 0 / 0 |
+| CL.NH-1p01 | 12 | 12 | 12 | 0 | 84.76 -> 88.29 | 84.76 -> 87.96 | 84.76 -> 87.96 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.42 -> 17.93 | 0 / 0 |
+| CL.NH-1p02 | 12 | 12 | 12 | 0 | 84.76 -> 88.29 | 84.76 -> 87.95 | 84.76 -> 87.95 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.44 -> 18.01 | 0 / 0 |
+| CL.NT-0p98 | 12 | 12 | 12 | 0 | 84.76 -> 88.21 | 84.76 -> 87.89 | 84.76 -> 88.18 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.79 | 0 / 0 |
+| CL.NT-0p99 | 12 | 11 | 11 | 0 | 85.05 -> 88.25 | 85.02 -> 87.93 | 85.04 -> 88.11 | 0.09 -> 0.00 | 10.78 -> 10.78 | 16.51 -> 17.83 | 0 / 0 |
+| CL.NT-1p01 | 12 | 12 | 12 | 0 | 84.76 -> 88.33 | 84.76 -> 88.01 | 84.76 -> 87.81 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.91 | 0 / 0 |
+| CL.NT-1p02 | 12 | 12 | 12 | 0 | 84.76 -> 88.37 | 84.76 -> 88.05 | 84.76 -> 87.63 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.95 | 0 / 0 |
+| CL-long.G-T0p4-H0 | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.38 -> 94.14 | 92.38 -> 94.14 | 0.10 -> 0.00 | 10.77 -> 10.75 | 5.63 -> 5.68 | 0 / 0 |
+| CL-long.G-T0p4-H0p02 | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.38 -> 93.99 | 92.38 -> 93.99 | 0.10 -> 0.00 | 10.77 -> 10.75 | 16.10 -> 16.52 | 0 / 0 |
+| CL-long.G-T0p4-Hinf | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.33 -> 93.27 | 92.33 -> 93.27 | 0.10 -> 0.00 | 10.77 -> 10.75 | 16.63 -> 17.18 | 0 / 0 |
+| CL-long.NH-0p98 | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.38 -> 93.99 | 92.38 -> 93.99 | 0.10 -> 0.00 | 10.77 -> 10.75 | 16.06 -> 16.47 | 0 / 0 |
+| CL-long.NH-0p99 | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.38 -> 93.99 | 92.38 -> 93.99 | 0.10 -> 0.00 | 10.77 -> 10.75 | 16.08 -> 16.50 | 0 / 0 |
+| CL-long.NH-1p01 | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.38 -> 93.98 | 92.38 -> 93.98 | 0.10 -> 0.00 | 10.77 -> 10.75 | 16.12 -> 16.54 | 0 / 0 |
+| CL-long.NH-1p02 | 12 | 12 | 12 | 0 | 92.38 -> 94.14 | 92.38 -> 93.98 | 92.38 -> 93.98 | 0.10 -> 0.00 | 10.77 -> 10.75 | 16.14 -> 16.57 | 0 / 0 |
+| CL-long.NT-0p98 | 12 | 12 | 12 | 0 | 92.38 -> 94.10 | 92.38 -> 93.95 | 92.38 -> 94.09 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.10 -> 16.51 | 0 / 0 |
+| CL-long.NT-0p99 | 12 | 11 | 11 | 0 | 92.53 -> 94.12 | 92.51 -> 93.97 | 92.52 -> 94.06 | 0.09 -> 0.00 | 10.77 -> 10.77 | 16.14 -> 16.52 | 0 / 0 |
+| CL-long.NT-1p01 | 12 | 12 | 12 | 0 | 92.38 -> 94.16 | 92.38 -> 94.01 | 92.38 -> 93.90 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.10 -> 16.53 | 0 / 0 |
+| CL-long.NT-1p02 | 12 | 12 | 12 | 0 | 92.38 -> 94.18 | 92.38 -> 94.03 | 92.38 -> 93.82 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.10 -> 16.54 | 0 / 0 |
+| CL-long@b.G-T0p4-H0 | 12 | 12 | 12 | 0 | 92.35 -> 94.12 | 92.35 -> 94.12 | 92.35 -> 94.12 | 0.10 -> 0.00 | 10.77 -> 10.77 | 5.63 -> 5.67 | 0 / 0 |
+| CL-long@b.G-T0p4-H0p02 | 12 | 12 | 12 | 0 | 92.35 -> 94.12 | 92.35 -> 93.96 | 92.35 -> 93.96 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.11 -> 16.44 | 0 / 0 |
+| CL-long@b.G-T0p4-Hinf | 12 | 12 | 12 | 0 | 92.35 -> 94.12 | 92.29 -> 93.47 | 92.29 -> 93.47 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.63 -> 17.07 | 0 / 0 |
+| CL-long@b.NH-0p98 | 12 | 12 | 12 | 0 | 92.35 -> 94.12 | 92.35 -> 93.97 | 92.35 -> 93.97 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.07 -> 16.40 | 0 / 0 |
+| CL-long@b.NH-0p99 | 12 | 12 | 12 | 0 | 92.35 -> 94.12 | 92.35 -> 93.96 | 92.35 -> 93.96 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.09 -> 16.42 | 0 / 0 |
+| CL-long@b.NH-1p01 | 12 | 12 | 12 | 0 | 92.35 -> 94.12 | 92.35 -> 93.96 | 92.35 -> 93.96 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.13 -> 16.46 | 0 / 0 |
+| CL-long@b.NH-1p02 | 12 | 12 | 12 | 0 | 92.35 -> 94.12 | 92.35 -> 93.95 | 92.35 -> 93.95 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.15 -> 16.49 | 0 / 0 |
+| CL-long@b.NT-0p98 | 12 | 12 | 12 | 0 | 92.35 -> 94.08 | 92.35 -> 93.92 | 92.35 -> 94.07 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.11 -> 16.43 | 0 / 0 |
+| CL-long@b.NT-0p99 | 12 | 12 | 12 | 0 | 92.35 -> 94.10 | 92.35 -> 93.94 | 92.35 -> 94.03 | 0.10 -> 0.00 | 10.77 -> 10.76 | 16.11 -> 16.44 | 0 / 0 |
+| CL-long@b.NT-1p01 | 12 | 12 | 12 | 0 | 92.35 -> 94.14 | 92.35 -> 93.99 | 92.35 -> 93.88 | 0.10 -> 0.00 | 10.77 -> 10.77 | 16.11 -> 16.45 | 0 / 0 |
+| CL-long@b.NT-1p02 | 12 | 12 | 12 | 0 | 92.36 -> 94.17 | 92.36 -> 94.02 | 92.36 -> 93.81 | 0.10 -> 0.00 | 10.77 -> 10.76 | 16.10 -> 16.45 | 0 / 0 |
+| CL@b.G-T0p4-H0 | 12 | 12 | 12 | 0 | 84.69 -> 88.23 | 84.69 -> 88.23 | 84.69 -> 88.23 | 0.10 -> 0.00 | 10.78 -> 10.78 | 5.67 -> 5.78 | 0 / 0 |
+| CL@b.G-T0p4-H0p02 | 12 | 12 | 12 | 0 | 84.69 -> 88.23 | 84.69 -> 87.92 | 84.69 -> 87.92 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.43 | 0 / 0 |
+| CL@b.G-T0p4-Hinf | 12 | 12 | 12 | 0 | 84.69 -> 88.23 | 84.58 -> 86.94 | 84.58 -> 86.94 | 0.10 -> 0.00 | 10.78 -> 10.78 | 17.01 -> 20.30 | 0 / 0 |
+| CL@b.NH-0p98 | 12 | 12 | 12 | 0 | 84.69 -> 88.23 | 84.69 -> 87.94 | 84.69 -> 87.94 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.36 -> 17.35 | 0 / 0 |
+| CL@b.NH-0p99 | 12 | 12 | 12 | 0 | 84.69 -> 88.23 | 84.69 -> 87.93 | 84.69 -> 87.93 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.38 -> 17.39 | 0 / 0 |
+| CL@b.NH-1p01 | 12 | 12 | 12 | 0 | 84.69 -> 88.23 | 84.69 -> 87.91 | 84.69 -> 87.91 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.42 -> 17.47 | 0 / 0 |
+| CL@b.NH-1p02 | 12 | 12 | 12 | 0 | 84.69 -> 88.23 | 84.69 -> 87.90 | 84.69 -> 87.90 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.45 -> 17.51 | 0 / 0 |
+| CL@b.NT-0p98 | 12 | 12 | 12 | 0 | 84.69 -> 88.15 | 84.69 -> 87.84 | 84.69 -> 88.13 | 0.10 -> 0.00 | 10.78 -> 10.77 | 16.40 -> 17.39 | 0 / 0 |
+| CL@b.NT-0p99 | 12 | 12 | 12 | 0 | 84.69 -> 88.19 | 84.69 -> 87.88 | 84.69 -> 88.06 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.41 | 0 / 0 |
+| CL@b.NT-1p01 | 12 | 12 | 12 | 0 | 84.70 -> 88.29 | 84.70 -> 87.97 | 84.70 -> 87.76 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.45 | 0 / 0 |
+| CL@b.NT-1p02 | 12 | 12 | 12 | 0 | 84.72 -> 88.35 | 84.72 -> 88.03 | 84.72 -> 87.61 | 0.10 -> 0.00 | 10.78 -> 10.78 | 16.40 -> 17.47 | 0 / 0 |
+| E-I2.C1 | 12 | 0 | 0 | 1 | 99.01 (same) | 99.01 (same) | 96.89 (same) | n/a | 539.67 (same) | 12.19 (same) | 0 / 0 |
+| E-L10.C1 | 12 | 0 | 0 | 1 | 99.01 (same) | 99.01 (same) | 96.91 (same) | n/a | 744.07 (same) | 150.36 (same) | 0 / 0 |
+| K-I2.C1 | 12 | 0 | 0 | 3 | 99.48 (same) | 99.48 (same) | 97.85 (same) | n/a | 11.71 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.G-T0p4-H0 | 12 | 2 | 2 | 0 | 98.10 -> 98.12 | 98.10 -> 98.12 | 98.10 -> 98.12 | n/a | 11.63 (same) | 5.53 (same) | 0 / 0 |
+| K-I2@b.G-T0p4-H0p02 | 12 | 2 | 2 | 0 | 98.10 -> 98.12 | 98.10 -> 98.12 | 98.10 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.G-T0p4-Hinf | 12 | 2 | 2 | 0 | 98.10 -> 98.12 | 98.10 -> 98.12 | 98.10 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NH-0p98 | 12 | 2 | 2 | 0 | 98.10 -> 98.12 | 98.10 -> 98.12 | 98.10 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NH-0p99 | 12 | 2 | 2 | 0 | 98.10 -> 98.12 | 98.10 -> 98.12 | 98.10 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NH-1p01 | 12 | 2 | 2 | 0 | 98.10 -> 98.12 | 98.10 -> 98.12 | 98.10 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NH-1p02 | 12 | 2 | 2 | 0 | 98.10 -> 98.12 | 98.10 -> 98.12 | 98.10 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NT-0p98 | 12 | 2 | 2 | 0 | 98.08 -> 98.09 | 98.08 -> 98.09 | 98.08 -> 98.09 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NT-0p99 | 12 | 2 | 2 | 0 | 98.08 -> 98.09 | 98.08 -> 98.09 | 98.08 -> 98.09 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NT-1p01 | 12 | 2 | 2 | 0 | 98.11 -> 98.12 | 98.11 -> 98.12 | 98.11 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-I2@b.NT-1p02 | 12 | 2 | 2 | 0 | 98.11 -> 98.12 | 98.11 -> 98.12 | 98.11 -> 98.12 | n/a | 11.63 (same) | 5.55 (same) | 0 / 0 |
+| K-L10.C1 | 12 | 0 | 0 | 1 | 99.05 (same) | 99.05 (same) | 97.05 (same) | n/a | 106.12 (same) | 50.92 (same) | 0 / 0 |
+| K-L10.SW-0p15 | 12 | 12 | 598 | 0 | 87.71 (same) | 87.71 (same) | 87.71 (same) | n/a | 101.37 -> 101.35 | 50.57 (same) | 0 / 0 |
+| K-L10@b.G-T0p4-H0 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.57 (same) | 0 / 0 |
+| K-L10@b.G-T0p4-H0p02 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.66 (same) | 0 / 0 |
+| K-L10@b.G-T0p4-Hinf | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.78 -> 97.79 | 97.78 -> 97.79 | n/a | 101.31 (same) | 64.80 (same) | 0 / 0 |
+| K-L10@b.NH-0p98 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.64 (same) | 0 / 0 |
+| K-L10@b.NH-0p99 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.65 (same) | 0 / 0 |
+| K-L10@b.NH-1p01 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.67 (same) | 0 / 0 |
+| K-L10@b.NH-1p02 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.69 (same) | 0 / 0 |
+| K-L10@b.NT-0p98 | 12 | 2 | 2 | 0 | 97.78 -> 97.79 | 97.78 -> 97.79 | 97.78 -> 97.79 | n/a | 101.31 (same) | 50.66 (same) | 0 / 0 |
+| K-L10@b.NT-0p99 | 12 | 2 | 2 | 0 | 97.81 -> 97.83 | 97.81 -> 97.83 | 97.81 -> 97.83 | n/a | 101.31 (same) | 50.66 (same) | 0 / 0 |
+| K-L10@b.NT-1p01 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.66 (same) | 0 / 0 |
+| K-L10@b.NT-1p02 | 12 | 2 | 2 | 0 | 97.82 -> 97.83 | 97.82 -> 97.83 | 97.82 -> 97.83 | n/a | 101.31 (same) | 50.66 (same) | 0 / 0 |
+| K-L10b.C1 | 12 | 0 | 0 | 1 | 99.11 (same) | 99.11 (same) | 97.05 (same) | n/a | 127.49 (same) | 61.54 (same) | 0 / 0 |
+| K-L10b.SW-0p18 | 12 | 1 | 1 | 0 | 89.49 (same) | 89.49 (same) | 89.49 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p185 | 12 | 1 | 1 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p19 | 12 | 1 | 1 | 0 | 90.53 (same) | 90.53 (same) | 90.53 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p195 | 12 | 1 | 1 | 0 | 90.84 (same) | 90.84 (same) | 90.84 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p2 | 12 | 1 | 1 | 0 | 91.25 (same) | 91.25 (same) | 91.25 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p205 | 12 | 1 | 1 | 0 | 96.14 (same) | 96.14 (same) | 96.14 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p21 | 12 | 1 | 1 | 0 | 96.22 (same) | 96.22 (same) | 96.22 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p215 | 12 | 1 | 1 | 0 | 96.26 (same) | 96.26 (same) | 96.26 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p22 | 12 | 1 | 1 | 0 | 96.31 (same) | 96.31 (same) | 96.31 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p225 | 12 | 1 | 1 | 0 | 96.65 (same) | 96.65 (same) | 96.65 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p23 | 12 | 1 | 1 | 0 | 96.67 (same) | 96.67 (same) | 96.67 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p235 | 12 | 1 | 1 | 0 | 96.68 (same) | 96.68 (same) | 96.68 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p24 | 12 | 1 | 1 | 0 | 96.70 (same) | 96.70 (same) | 96.70 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b.SW-0p245 | 12 | 1 | 1 | 0 | 96.73 (same) | 96.73 (same) | 96.73 (same) | n/a | 121.37 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b@b.G-T0p4-H0 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.57 (same) | 0 / 0 |
+| K-L10b@b.G-T0p4-H0p02 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.66 (same) | 0 / 0 |
+| K-L10b@b.G-T0p4-Hinf | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.58 -> 97.60 | 97.58 -> 97.60 | n/a | 121.31 (same) | 93.42 -> 93.42 | 0 / 0 |
+| K-L10b@b.NH-0p98 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.64 (same) | 0 / 0 |
+| K-L10b@b.NH-0p99 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.65 (same) | 0 / 0 |
+| K-L10b@b.NH-1p01 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.67 (same) | 0 / 0 |
+| K-L10b@b.NH-1p02 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.69 (same) | 0 / 0 |
+| K-L10b@b.NT-0p98 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.66 (same) | 0 / 0 |
+| K-L10b@b.NT-0p99 | 12 | 4 | 4 | 0 | 97.65 -> 97.67 | 97.65 -> 97.67 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.66 (same) | 0 / 0 |
+| K-L10b@b.NT-1p01 | 12 | 4 | 4 | 0 | 97.70 -> 97.73 | 97.70 -> 97.73 | 97.65 -> 97.67 | n/a | 121.31 (same) | 60.66 (same) | 0 / 0 |
+| K-L10b@b.NT-1p02 | 12 | 4 | 4 | 0 | 97.73 -> 97.74 | 97.73 -> 97.74 | 97.66 -> 97.67 | n/a | 121.31 (same) | 60.66 (same) | 0 / 0 |
+| M-I2.C1 | 12 | 0 | 0 | 1 | 99.28 (same) | 99.28 (same) | 39.88 (same) | n/a | 15.96 (same) | 1327.24 (same) | 0 / 0 |
+| OV.G-T0p4-H0 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.G-T0p4-H0p02 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.G-T0p4-Hinf | 12 | 4 | 5 | 0 | 83.09 (same) | 82.83 (same) | 82.83 (same) | n/a | 99.88 -> 99.88 | 389.62 -> 389.62 | 0 / 0 |
+| OV.NH-0p98 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.NH-0p99 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.NH-1p01 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.NH-1p02 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.NT-0p98 | 12 | 3 | 4 | 0 | 83.04 (same) | 83.04 (same) | 83.04 (same) | n/a | 99.89 (same) | 381.58 -> 381.58 | 0 / 0 |
+| OV.NT-0p99 | 12 | 3 | 4 | 0 | 83.07 (same) | 83.06 (same) | 83.07 (same) | n/a | 99.88 -> 99.88 | 385.58 -> 385.58 | 0 / 0 |
+| OV.NT-1p01 | 12 | 3 | 4 | 0 | 83.12 (same) | 83.12 (same) | 83.10 (same) | n/a | 99.96 -> 99.96 | 393.57 -> 393.57 | 0 / 0 |
+| OV.NT-1p02 | 12 | 4 | 4 | 0 | 83.15 (same) | 83.15 (same) | 82.99 (same) | n/a | 99.94 -> 99.93 | 397.57 -> 397.57 | 0 / 0 |
+| OV.PL-KINK-0p98 | 12 | 3 | 3 | 0 | 84.37 (same) | 13.42 (same) | 13.70 (same) | n/a | 99.89 -> 99.89 | 577.51 -> 577.51 | 0 / 0 |
+| OV.PL-KINK-0p99 | 12 | 5 | 6 | 0 | 83.74 (same) | 13.54 (same) | 13.68 (same) | n/a | 99.93 (same) | 484.54 -> 484.54 | 0 / 0 |
+| OV.PL-KINK-1 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.PL-KINK-1p01 | 12 | 3 | 4 | 0 | 83.12 (same) | 83.12 (same) | 83.11 (same) | n/a | 99.96 -> 99.96 | 393.57 -> 393.57 | 0 / 0 |
+| OV.PL-KINK-1p02 | 12 | 4 | 4 | 0 | 83.15 (same) | 83.15 (same) | 83.14 (same) | n/a | 99.94 -> 99.93 | 397.57 -> 397.57 | 0 / 0 |
+| OV.PL-SPIKE-0p98 | 12 | 3 | 4 | 0 | 83.04 (same) | 83.04 (same) | 83.04 (same) | n/a | 99.89 (same) | 381.57 -> 381.57 | 0 / 0 |
+| OV.PL-SPIKE-0p99 | 12 | 3 | 4 | 0 | 83.07 (same) | 83.06 (same) | 83.07 (same) | n/a | 99.88 -> 99.88 | 385.57 -> 385.57 | 0 / 0 |
+| OV.PL-SPIKE-1 | 12 | 3 | 5 | 0 | 85.80 (same) | 13.74 (same) | 13.74 (same) | n/a | 99.92 -> 99.90 | 789.42 -> 789.42 | 0 / 0 |
+| OV.PL-SPIKE-1p01 | 12 | 3 | 4 | 0 | 83.12 (same) | 83.12 (same) | 83.11 (same) | n/a | 99.96 -> 99.96 | 393.57 -> 393.57 | 0 / 0 |
+| OV.PL-SPIKE-1p02 | 12 | 4 | 4 | 0 | 83.15 (same) | 83.15 (same) | 83.14 (same) | n/a | 99.94 -> 99.93 | 397.57 -> 397.57 | 0 / 0 |
+| OV.PL-STEP-0p98 | 12 | 2 | 2 | 0 | 85.70 (same) | 13.46 (same) | 13.74 (same) | n/a | 99.84 -> 99.84 | 773.43 -> 773.43 | 0 / 0 |
+| OV.PL-STEP-0p99 | 12 | 4 | 4 | 0 | 85.75 (same) | 13.60 (same) | 13.74 (same) | n/a | 99.88 -> 99.88 | 781.43 -> 781.43 | 0 / 0 |
+| OV.PL-STEP-1 | 12 | 4 | 5 | 0 | 83.09 (same) | 83.09 (same) | 83.09 (same) | n/a | 99.88 -> 99.88 | 389.57 -> 389.57 | 0 / 0 |
+| OV.PL-STEP-1p01 | 12 | 3 | 4 | 0 | 83.12 (same) | 83.12 (same) | 83.11 (same) | n/a | 99.96 -> 99.96 | 393.57 -> 393.57 | 0 / 0 |
+| OV.PL-STEP-1p02 | 12 | 4 | 4 | 0 | 83.15 (same) | 83.15 (same) | 83.14 (same) | n/a | 99.94 -> 99.93 | 397.57 -> 397.57 | 0 / 0 |
+| OV.S5v-H0 | 12 | 1 | 1 | 0 | 80.93 (same) | 80.93 (same) | 80.93 (same) | n/a | 100.17 -> 99.86 | 389.66 (same) | 0 / 0 |
+| OV.S5v-Hinf | 12 | 1 | 1 | 0 | 80.93 (same) | 6.77 (same) | 6.77 (same) | n/a | 100.17 -> 99.86 | 488.39 (same) | 0 / 0 |
+| OV.SUP-S5v-H0 | 12 | 1 | 1 | 0 | 80.93 (same) | 80.93 (same) | 80.93 (same) | n/a | 100.17 -> 99.86 | 389.66 (same) | 0 / 0 |
+| OV.SUP-S5v-Hinf | 12 | 1 | 1 | 0 | 80.93 (same) | 6.77 (same) | 6.77 (same) | n/a | 100.17 -> 99.86 | 488.39 (same) | 0 / 0 |
+| OV-long.G-T0p4-H0 | 12 | 11 | 25 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.88 (same) | 389.66 -> 389.66 | 0 / 0 |
+| OV-long.G-T0p4-H0p02 | 12 | 11 | 25 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.88 (same) | 389.66 -> 389.66 | 0 / 0 |
+| OV-long.G-T0p4-Hinf | 12 | 11 | 25 | 0 | 81.15 (same) | 81.09 (same) | 81.09 (same) | n/a | 99.88 (same) | 389.67 -> 389.67 | 0 / 0 |
+| OV-long.G-T2-H0 | 12 | 11 | 14 | 0 | 83.87 (same) | 83.87 (same) | 3.44 (same) | n/a | 99.81 (same) | 1989.55 -> 1989.55 | 0 / 0 |
+| OV-long.G-T2-Hinf | 12 | 11 | 14 | 0 | 83.87 (same) | 83.80 (same) | 1.69 (same) | n/a | 99.81 (same) | 1989.56 -> 1989.56 | 0 / 0 |
+| OV-long.NH-0p98 | 12 | 11 | 25 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.88 (same) | 389.66 -> 389.66 | 0 / 0 |
+| OV-long.NH-0p99 | 12 | 11 | 25 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.88 (same) | 389.66 -> 389.66 | 0 / 0 |
+| OV-long.NH-1p01 | 12 | 11 | 25 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.88 (same) | 389.66 -> 389.66 | 0 / 0 |
+| OV-long.NH-1p02 | 12 | 11 | 25 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.88 (same) | 389.66 -> 389.66 | 0 / 0 |
+| OV-long.NT-0p98 | 12 | 7 | 17 | 0 | 81.14 (same) | 81.14 (same) | 81.14 (same) | n/a | 99.82 (same) | 381.66 -> 381.66 | 0 / 0 |
+| OV-long.NT-0p99 | 12 | 11 | 23 | 0 | 81.15 (same) | 81.15 (same) | 81.15 (same) | n/a | 99.82 -> 99.82 | 385.66 -> 385.66 | 0 / 0 |
+| OV-long.NT-1p01 | 12 | 9 | 23 | 0 | 81.16 (same) | 81.16 (same) | 81.16 (same) | n/a | 99.83 (same) | 393.66 -> 393.66 | 0 / 0 |
+| OV-long.NT-1p02 | 12 | 9 | 19 | 0 | 81.17 (same) | 81.17 (same) | 81.13 (same) | n/a | 99.85 (same) | 397.66 -> 397.66 | 0 / 0 |
+| OV-long@b.G-T0p4-H0 | 12 | 10 | 25 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.39 (same) | 388.44 -> 388.44 | 0 / 0 |
+| OV-long@b.G-T0p4-H0p02 | 12 | 10 | 25 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.39 (same) | 388.44 -> 388.44 | 0 / 0 |
+| OV-long@b.G-T0p4-Hinf | 12 | 10 | 25 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.39 (same) | 388.44 -> 388.44 | 0 / 0 |
+| OV-long@b.G-T2-H0 | 12 | 10 | 15 | 0 | 84.71 (same) | 84.71 (same) | 4.01 (same) | n/a | 99.38 -> 99.35 | 1988.25 -> 1988.25 | 0 / 0 |
+| OV-long@b.G-T2-Hinf | 12 | 10 | 15 | 0 | 84.71 (same) | 84.71 (same) | 2.05 (same) | n/a | 99.38 -> 99.35 | 1988.26 -> 1988.26 | 0 / 0 |
+| OV-long@b.NH-0p98 | 12 | 10 | 25 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.39 (same) | 388.44 -> 388.44 | 0 / 0 |
+| OV-long@b.NH-0p99 | 12 | 10 | 25 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.39 (same) | 388.44 -> 388.44 | 0 / 0 |
+| OV-long@b.NH-1p01 | 12 | 10 | 25 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.39 (same) | 388.44 -> 388.44 | 0 / 0 |
+| OV-long@b.NH-1p02 | 12 | 10 | 25 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.39 (same) | 388.44 -> 388.44 | 0 / 0 |
+| OV-long@b.NT-0p98 | 12 | 9 | 15 | 0 | 81.49 (same) | 81.49 (same) | 81.49 (same) | n/a | 99.46 (same) | 380.44 -> 380.44 | 0 / 0 |
+| OV-long@b.NT-0p99 | 12 | 7 | 8 | 0 | 81.50 (same) | 81.50 (same) | 81.50 (same) | n/a | 99.46 (same) | 384.44 -> 384.44 | 0 / 0 |
+| OV-long@b.NT-1p01 | 12 | 10 | 18 | 0 | 81.51 (same) | 81.51 (same) | 81.51 (same) | n/a | 99.37 -> 99.37 | 392.44 -> 392.44 | 0 / 0 |
+| OV-long@b.NT-1p02 | 12 | 8 | 12 | 0 | 81.52 (same) | 81.52 (same) | 81.52 (same) | n/a | 99.37 -> 99.36 | 396.44 -> 396.44 | 0 / 0 |
+| OV@b.G-T0p4-H0 | 12 | 4 | 4 | 0 | 83.76 (same) | 83.76 (same) | 83.76 (same) | n/a | 99.23 (same) | 388.31 -> 388.31 | 0 / 0 |
+| OV@b.G-T0p4-H0p02 | 12 | 4 | 4 | 0 | 83.76 (same) | 83.76 (same) | 83.76 (same) | n/a | 99.23 (same) | 388.31 -> 388.31 | 0 / 0 |
+| OV@b.G-T0p4-Hinf | 12 | 4 | 4 | 0 | 83.76 (same) | 83.76 (same) | 83.76 (same) | n/a | 99.23 (same) | 388.32 -> 388.32 | 0 / 0 |
+| OV@b.G-T2-H0 | 12 | 1 | 1 | 0 | 96.58 (same) | 96.58 (same) | 16.04 (same) | n/a | 99.44 (same) | 1213.83 (same) | 0 / 0 |
+| OV@b.G-T2-Hinf | 12 | 1 | 1 | 0 | 96.58 (same) | 96.58 (same) | 8.21 (same) | n/a | 99.44 (same) | 1403.31 (same) | 0 / 0 |
+| OV@b.NH-0p98 | 12 | 4 | 4 | 0 | 83.76 (same) | 83.76 (same) | 83.76 (same) | n/a | 99.23 (same) | 388.31 -> 388.31 | 0 / 0 |
+| OV@b.NH-0p99 | 12 | 4 | 4 | 0 | 83.76 (same) | 83.76 (same) | 83.76 (same) | n/a | 99.23 (same) | 388.31 -> 388.31 | 0 / 0 |
+| OV@b.NH-1p01 | 12 | 4 | 4 | 0 | 83.76 (same) | 83.76 (same) | 83.76 (same) | n/a | 99.23 (same) | 388.31 -> 388.31 | 0 / 0 |
+| OV@b.NH-1p02 | 12 | 4 | 4 | 0 | 83.76 (same) | 83.76 (same) | 83.76 (same) | n/a | 99.23 (same) | 388.31 -> 388.31 | 0 / 0 |
+| OV@b.NT-0p98 | 12 | 3 | 3 | 0 | 83.70 (same) | 83.70 (same) | 83.70 (same) | n/a | 99.34 (same) | 380.31 -> 380.31 | 0 / 0 |
+| OV@b.NT-0p99 | 12 | 2 | 2 | 0 | 83.73 (same) | 83.73 (same) | 83.73 (same) | n/a | 99.37 -> 99.24 | 384.31 -> 384.31 | 0 / 0 |
+| OV@b.NT-1p01 | 12 | 2 | 2 | 0 | 83.79 (same) | 83.79 (same) | 83.79 (same) | n/a | 99.33 (same) | 392.30 -> 392.30 | 0 / 0 |
+| OV@b.NT-1p02 | 12 | 3 | 3 | 0 | 83.82 (same) | 83.82 (same) | 83.82 (same) | n/a | 99.32 -> 99.31 | 396.30 -> 396.30 | 0 / 0 |
+| X15.SW-0p04 | 12 | 12 | 1017 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 32.00 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p042 | 12 | 12 | 1017 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 32.00 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p044 | 12 | 12 | 1017 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 32.00 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p046 | 12 | 12 | 1017 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 32.00 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p048 | 12 | 12 | 715 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.76 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p05 | 12 | 10 | 49 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.65 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p052 | 12 | 9 | 20 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p054 | 12 | 9 | 20 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p056 | 12 | 9 | 19 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p058 | 12 | 8 | 14 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p06 | 12 | 8 | 14 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p062 | 12 | 8 | 14 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p064 | 12 | 7 | 12 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p066 | 12 | 6 | 10 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p068 | 12 | 5 | 7 | 0 | 92.83 -> 92.86 | 92.83 -> 92.86 | 92.83 -> 92.86 | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X15.SW-0p07 | 12 | 5 | 6 | 0 | 98.13 -> 98.16 | 98.13 -> 98.16 | 98.13 -> 98.16 | n/a | 31.63 -> 31.63 | 15.56 (same) | 0 / 0 |
+| X20.SW-0p055 | 12 | 12 | 576 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.49 -> 41.35 | 20.56 (same) | 0 / 0 |
+| X20.SW-0p057 | 12 | 12 | 576 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.49 -> 41.35 | 20.56 (same) | 0 / 0 |
+| X20.SW-0p059 | 12 | 12 | 576 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.49 -> 41.35 | 20.56 (same) | 0 / 0 |
+| X20.SW-0p061 | 12 | 12 | 576 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.49 -> 41.35 | 20.56 (same) | 0 / 0 |
+| X20.SW-0p063 | 12 | 7 | 200 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.41 -> 41.35 | 20.56 (same) | 0 / 0 |
+| X20.SW-0p065 | 12 | 5 | 8 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 -> 41.35 | 20.56 (same) | 0 / 0 |
+| X20.SW-0p067 | 12 | 4 | 7 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 -> 41.35 | 20.56 (same) | 0 / 0 |
+| X20.SW-0p069 | 12 | 3 | 5 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 (same) | 20.56 (same) | 0 / 0 |
+| X20.SW-0p071 | 12 | 3 | 5 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 (same) | 20.56 (same) | 0 / 0 |
+| X20.SW-0p073 | 12 | 3 | 5 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 (same) | 20.56 (same) | 0 / 0 |
+| X20.SW-0p075 | 12 | 3 | 5 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 (same) | 20.56 (same) | 0 / 0 |
+| X20.SW-0p077 | 12 | 2 | 4 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 (same) | 20.56 (same) | 0 / 0 |
+| X20.SW-0p079 | 12 | 1 | 1 | 0 | 89.92 (same) | 89.92 (same) | 89.92 (same) | n/a | 41.35 (same) | 20.56 (same) | 0 / 0 |

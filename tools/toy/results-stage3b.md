@@ -1,5 +1,25 @@
 # Offline simulation, stage 3b: the revised design on a capacity-limited link (RFC 6298 timeout, evidence-gated verdicts, dequeue expiry, R probe)
 
+> **Amendment 2026-11-25 (superseded stage): RTT sample from a never-arrived seq.** The stage 3b code carried the same bug as stage 3d (see the amendment at the top of `results-stage3d.md`). This stage is superseded and was not re-run at its registered seeds. Below: the runs of the identity check (stage 3b configurations, seeds 0 to 2, new code against the code that produced this file) that took a skipped RTT sample, from the `rtt_unarrived` counter. Every run that differs from the old code is such a run; none with counter 0 differs. This file's numbers for those cells are not exact and were not recomputed.
+>
+> | cell | runs checked (3 seeds) | runs with a skipped RTT sample | skipped samples |
+> |---|---|---|---|
+> | CL | 75 | 33 | 33 |
+> | E-I2 | 84 | 54 | 60 |
+> | E-I2n | 39 | 15 | 15 |
+> | E-L10 | 84 | 54 | 56 |
+> | K-I2 | 69 | 11 | 11 |
+> | K-L10 | 156 | 41 | 43 |
+> | K-L10b | 114 | 5 | 5 |
+> | M-I2 | 72 | 36 | 36 |
+> | M-L10 | 72 | 36 | 36 |
+> | OV | 48 | 0 | 0 |
+> | X15 | 75 | 20 | 398 |
+> | X20 | 75 | 6 | 18 |
+> | total | 963 | 311 | 711 |
+>
+> Stage 3b has no commitment seam, so there is no commit_viol to report.
+
 Spec: `docs/derivations/three-knobs.md` Â§13 "Revision 1", registration Â§13.7 (branch `github/three-knobs`, head `b502ca8e`). Code: `tools/toy/` (`toy2.py` extended; `batch3b.py`, `summarize3b.py`, `report_s3b.py`, `tables3b.py`, `pc_place.py`, `check_ident3b.py`, tests in `test_toy2.py`); built on `toy-stage3-knobs` `39efa6a3`. Stage 1, 2 and 3 code paths and stored outputs are bit-identical (below). The offline simulation fixes no constant of the engine, and none of these numbers is engine provenance. 12 seeds per configuration (seeds 0 to 11, clock phases drawn per seed), one path, all runs deterministic. Data lives in `out3b/` (not tracked, like `out3/`); the frozen A/A floor `nf_stage3b.json` and the placement `pc_stage3b.json` are tracked.
 
 ## In plain words

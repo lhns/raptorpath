@@ -1,5 +1,25 @@
 # Offline simulation, stage 3c: the protected floor, feedback-only verdicts and the engine's resend budget
 
+> **Amendment 2026-11-25 (superseded stage): RTT sample from a never-arrived seq.** The stage 3c code carried the same bug as stage 3d (see the amendment at the top of `results-stage3d.md`). This stage is superseded and was not re-run at its registered seeds. Below: the runs of the identity check (stage 3c configurations, seeds 0 to 2, new code against the code that produced this file) that took a skipped RTT sample, from the `rtt_unarrived` counter. Every run that differs from the old code is such a run; none with counter 0 differs. This file's numbers for those cells are not exact and were not recomputed.
+>
+> | cell | runs checked (3 seeds) | runs with a skipped RTT sample | skipped samples |
+> |---|---|---|---|
+> | CL | 90 | 45 | 45 |
+> | E-I2 | 63 | 0 | 0 |
+> | E-I2n | 73 | 0 | 0 |
+> | E-L10 | 63 | 0 | 0 |
+> | K-I2 | 63 | 0 | 0 |
+> | K-L10 | 108 | 1 | 1 |
+> | K-L10b | 105 | 0 | 0 |
+> | M-I2 | 63 | 0 | 0 |
+> | M-L10 | 63 | 0 | 0 |
+> | OV | 90 | 16 | 56 |
+> | X15 | 69 | 23 | 98 |
+> | X20 | 69 | 1 | 7 |
+> | total | 919 | 86 | 207 |
+>
+> S4 commit_viol under the fix, on the configurations at hand: the 3 reference runs of stage 3d (K-I2, K-L10, K-L10b, S4 at T = 0.4, H = inf, 12 seeds each) read 0 old and 0 new (no skipped sample in any of them). The unit-test configuration (CL, small, seed 1, S4 at T = 0.4, H = inf) reads 0 old and 1 new, so Q3c-2's 143 violations in 28 runs is not a ceiling for S4 under a correct srtt in the link cells; S5, which re-checks the floor, reads 0 on the same cell and seed. Stage 3c's CL (45 of 90 identity runs) and OV (16 of 90) rows are affected; Q3c-3, Q3c-4 and Q3c-6 are the readings to re-check.
+
 Spec: `docs/derivations/three-knobs.md` section 15 "Revision 2", registration 15.6 (branch `github/three-knobs`, head `c3616d96`). Code: `tools/toy/` (`toy2.py` extended; `batch3c.py`, `summarize3c.py`, `report_s3c.py`, `tables3c.py`, `pc_place3c.py`, `check_ident3c.py`, tests in `test_toy2.py` class `Stage3c`); built on `toy-stage3-knobs` `d0ce4f9d`. Stage 1, 2, 3 and 3b code paths are bit-identical with every new field at its default (below). The offline simulation fixes no constant of the engine, and none of these numbers is engine provenance. 12 seeds per configuration (seeds 0 to 11, clock phases drawn per seed), one path, all runs deterministic. Data lives in `out3c/` (not tracked, like `out3b/`); the frozen A/A floor `nf_stage3c.json` and the two placement files `pc_stage3c.json`, `pc_stage3c_dev.json` are tracked.
 
 ## In plain words
