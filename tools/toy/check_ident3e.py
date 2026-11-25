@@ -1,6 +1,6 @@
 """Stage 3e identity check (three-knobs-stage3e-build.md 9 step 4; registration 9 steps 2-3 and 13.1).  One process at a time, alone on the machine.
 
-  A. With every stage 3e field at its default, the code reproduces its base (proof-s1, b2addffb) on every key, trace and per-seq array
+  A. With every stage 3e field at its default, the code reproduces its base (proof stage 1, ba3cf31c) on every key, trace and per-seq array
      of the proof-s1 sample (check_ident_proof_s1.py, which is run as a subprocess pair: old tree, new tree).  New keys and gauges are allowed.
   B. R0 (repair at r = 0) equals repair off on that sample plus one configuration per sender family (ident3e_cfgs), under id3e and in the
      sender trace and the event counters (no event pushed, no draw taken).
@@ -20,7 +20,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-BASE = "b2addffb"
+BASE = "ba3cf31c"
 
 
 def edge_of(cfg):
@@ -109,63 +109,93 @@ def part_d():
     return subprocess.run([sys.executable, os.path.join(HERE, "check_ident3d.py")], cwd=HERE, env=env).returncode == 0
 
 
-def part_e():
-    """R0 against repair off over the registered cells.  Returns (runs compared, failures)."""
+_W = {}
+
+
+def _init_e():
     import batch3d
     import batch3e
     batch3d.build()
-    bad, n = [], 0
+    _W["d"], _W["e"] = batch3d, batch3e
 
-    def pair(nm, off_cfg, r0_cfg):
-        nonlocal n
-        off, c_off = run_sim(off_cfg)
-        r0, c_r0 = run_sim(r0_cfg)
-        compare(nm, (off,), (r0,), c_off, c_r0, bad, "R0")
-        if r0.get("finished") is False or r0["gauges"]["rep_credits"]:
-            bad.append(("R0 liveness", nm))
-        n += 1
-        print("R0 =", "off" if not [b for b in bad if b[1] == nm] else "DIFF", nm, flush=True)
 
-    for cell in batch3d.CELLS:
-        for seed in range(3):
-            mk = (lambda: batch3d.p2_cfg(seed, 0.4, 0.0, "est")) if cell == "P2" else (lambda: batch3d.s5_cfg(cell, seed, 0.4, 0.0))
-            r0 = mk()
-            r0.repair = dict(r=0.0, edge="worth")
-            pair("%s seed %d" % (cell, seed), mk(), r0)
-    for cell in batch3e.CELLS:
+def _e_task(task):
+    """One R0-against-off pair of part E; returns (name, failures)."""
+    kind, cell, seed = task
+    batch3d, batch3e = _W["d"], _W["e"]
+    if kind == "3d":
+        mk = (lambda: batch3d.p2_cfg(seed, 0.4, 0.0, "est")) if cell == "P2" else (lambda: batch3d.s5_cfg(cell, seed, 0.4, 0.0))
+        off, r0 = mk(), mk()
+        r0.repair = dict(r=0.0, edge="worth")
+    else:
         T = batch3e.T_MAIN.get(cell, 0.4)
-        for seed in range(12):
-            pair("%s seed %d (new cell)" % (cell, seed), batch3e.new_cfg(cell, seed, T, 0.0, 50.0, None), batch3e.new_cfg(cell, seed, T, 0.0, 50.0, batch3e.rp(0.0)))
-    return n, bad
-
-
-def reuse_check(fps, seeds=(0, 1, 2)):
-    """Registration 14.2: every reused fingerprint is re-run at 3 seeds on this code and compared with its stored result under id3e (the stored
-    stage 3d and proof stage 1 outputs keep no trace, so the comparison is every key id3e compares, the keys of the sender's trace summary included).
-    Returns the differences."""
-    import batch3e
+        off, r0 = batch3e.new_cfg(cell, seed, T, 0.0, 50.0, None), batch3e.new_cfg(cell, seed, T, 0.0, 50.0, batch3e.rp(0.0))
+    nm = "%s seed %d%s" % (cell, seed, "" if kind == "3d" else " (new cell)")
+    a, ca = run_sim(off)
+    b, cb = run_sim(r0)
     bad = []
-    for fp in fps:
-        for seed in seeds:
-            old = batch3e.stored_result(fp, seed)
-            if old is None:
-                continue
-            new = batch3e.run_one(batch3e.FPS[fp]["builder"](seed), False)
-            d = batch3e.id3e(old, new)
-            if d or new.get("finished") != old.get("finished"):
-                bad.append((fp, seed, d))
-                print("DIFF reuse", fp, seed, d, flush=True)
-    return bad
+    compare(nm, (a,), (b,), ca, cb, bad, "R0")
+    if b.get("finished") is False or b["gauges"]["rep_credits"]:
+        bad.append(("R0 liveness", nm))
+    print("R0 =", "off" if not bad else "DIFF", nm, flush=True)
+    return nm, bad
 
 
-def part_reuse(specs):
+def part_e(jobs=1):
+    """R0 against repair off over the registered cells, `jobs` pairs at a time.  Returns (pairs compared, failures)."""
+    import multiprocessing as mp
+    import batch3d
+    import batch3e
+    batch3d.build()
+    tasks = [("3d", c, s) for c in batch3d.CELLS for s in range(3)] + [("3e", c, s) for c in batch3e.CELLS for s in range(12)]
+    tasks.sort(key=lambda t: -(t[1].endswith("long") or "long" in t[1]))
+    bad = []
+    with mp.Pool(jobs, initializer=_init_e) as pool:
+        for nm, b in pool.imap_unordered(_e_task, tasks):
+            bad.extend(b)
+    return len(tasks), bad
+
+
+def _init_reuse(specs):
+    import batch3e
+    batch3e.build()
+    batch3e.set_reuse([x for x in specs.split(",") if x])
+
+
+def _reuse_task(task):
+    import batch3e
+    fp, seed = task
+    old = batch3e.stored_result(fp, seed)
+    if old is None:
+        return None
+    new = batch3e.run_one(batch3e.FPS[fp]["builder"](seed), False)
+    d = batch3e.id3e(old, new)
+    if d or new.get("finished") != old.get("finished"):
+        print("DIFF reuse", fp, seed, d, flush=True)
+        return (fp, seed, d)
+    return None
+
+
+def reuse_check(fps, seeds=(0, 1, 2), jobs=1, specs=None):
+    """Registration 14.2: every reused fingerprint is re-run at 3 seeds on this code and compared with its stored result under id3e (the stored
+    stage 3d and proof stage 1 outputs keep no trace, so the comparison is every key id3e compares).  Returns the differences."""
+    import multiprocessing as mp
+    import batch3e
+    tasks = [(fp, s) for fp in fps for s in seeds]
+    if jobs <= 1:
+        return [r for r in map(_reuse_task, tasks) if r]
+    with mp.Pool(jobs, initializer=_init_reuse, initargs=(specs,)) as pool:
+        return [r for r in pool.imap_unordered(_reuse_task, tasks) if r]
+
+
+def part_reuse(specs, jobs=1):
     """--reuse 3d=PATH,ps1=PATH: reproduce a 3-seed sample of every fingerprint the registry shares with the stored rows; PASS writes PASS-reuse."""
     import batch3e
     batch3e.build()
     batch3e.set_reuse([x for x in specs.split(",") if x])
     fps = [fp for fp in batch3e.FPS if fp in batch3e.REUSE["index"] and batch3e.FPS[fp]["builder"](0).repair is None]
     print("%d fingerprints are shared with the stored rows" % len(fps), flush=True)
-    bad = reuse_check(fps)
+    bad = reuse_check(fps, jobs=jobs, specs=specs)
     if bad:
         stop("reuse: %d runs differ from the stored rows, first %s" % (len(bad), bad[0]))
         print("REUSE CHECK: FAIL")
@@ -186,7 +216,7 @@ def stop(cause):
 
 def main():
     if "--reuse" in sys.argv:
-        sys.exit(part_reuse(sys.argv[sys.argv.index("--reuse") + 1]))
+        sys.exit(part_reuse(sys.argv[sys.argv.index("--reuse") + 1], int(os.environ.get("IDENT3E_JOBS", "1"))))
     base = BASE
     full = "--full" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
@@ -198,7 +228,7 @@ def main():
     ok_d = ok_e = None
     if full and ok_a and not bad_b and not bad_c:
         ok_d = part_d()
-        n_e, bad_e = part_e()
+        n_e, bad_e = part_e(int(os.environ.get("IDENT3E_JOBS", "1")))
         ok_e = not bad_e
     ok = ok_a and not bad_b and not bad_c and ok_d is not False and ok_e is not False
     if not ok:

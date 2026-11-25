@@ -200,8 +200,8 @@ class Runner(unittest.TestCase):
 
     def test_a_part_refuses_without_its_markers(self):
         miss = B.missing_markers("DECIDE")                                          # registration 14.6: AA, AA2, TIME, DECIDE, EARLY, MAIN, REST, then ROBUST and SMOOTH
-        self.assertEqual(miss, ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread", "PASS-aa", "DONE-AA", "DONE-AA2", "PASS-time"])
-        self.mark("PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread")
+        self.assertEqual(miss, ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-aa", "DONE-AA", "DONE-AA2", "PASS-time"])
+        self.mark("PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate")
         self.assertEqual(B.missing_markers("AA"), [])
         self.assertEqual(B.missing_markers("TIME"), ["PASS-aa", "DONE-AA", "DONE-AA2"])
         self.mark("PASS-aa", "DONE-AA", "DONE-AA2")
@@ -214,9 +214,11 @@ class Runner(unittest.TestCase):
         self.mark("DONE-DECIDE")
         self.assertEqual(B.missing_markers("CROSS"), [])
         self.assertEqual(B.missing_markers("EARLY"), [])
-        self.assertEqual(B.missing_markers("MAIN"), ["DONE-EARLY"])
-        self.assertEqual(B.missing_markers("REST"), ["DONE-EARLY", "DONE-MAIN"])
-        self.mark("DONE-EARLY", "DONE-MAIN", "DONE-REST")
+        self.assertEqual(B.missing_markers("MAIN"), ["PASS-simread", "DONE-EARLY", "DONE-RB"])                  # the simulator read gates MAIN only
+        self.assertEqual(B.missing_markers("REST"), ["DONE-EARLY", "DONE-RB", "DONE-MAIN"])
+        self.assertEqual(B.missing_markers("DOUBLE:REST"), ["DONE-EARLY", "DONE-RB", "DONE-MAIN", "DONE-REST"])
+        self.assertEqual(B.missing_markers("DOUBLE:REST", partial=True), ["DONE-EARLY", "DONE-RB", "DONE-MAIN"])
+        self.mark("PASS-simread", "DONE-EARLY", "DONE-RB", "DONE-MAIN", "DONE-REST")
         self.assertEqual(B.missing_markers("ROBUST"), ["VERDICT-PASSES"])                 # blocked until the reader has written a PASSES verdict
         self.assertEqual(B.missing_markers("SMOOTH"), ["DONE-ROBUST", "VERDICT-PASSES"])
         self.mark("VERDICT-PASSES", "DONE-ROBUST")
@@ -459,9 +461,36 @@ class Amendment2(unittest.TestCase):
     def test_the_plan_counts_only_runs_before_the_verdict(self):
         plan = B.plan_classes()
         n = sum(plan.values())
-        pre = sum(c["runs"] for p, c in B.counts().items() if p in ("AA", "AA2", "DECIDE", "EARLY", "MAIN", "REST"))
+        pre = sum(c["runs"] for p, c in B.counts().items() if p in ("AA", "AA2", "DECIDE", "EARLY", "RB", "MAIN", "REST"))
         self.assertEqual(n, pre)
-        self.assertTrue(all(k[2] in ("OFF", "RL", "RE") or isinstance(k[2], float) for k in plan))
+        self.assertTrue(all(k[2] in ("OFF", "RL", "RE", "RB") or isinstance(k[2], float) for k in plan))
+
+
+class Bracket(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        B.build()
+
+    def test_rb_part_runs_every_design_in_the_long_outage_cells_at_12_seeds(self):
+        rb = B.PARTS["RB"]
+        self.assertEqual({j.cell for j in rb}, {"CL-long", "CLw-long"})
+        self.assertEqual({j.mode for j in rb}, {"RB"})
+        self.assertEqual({j.nseeds for j in rb}, {12})
+        self.assertEqual({j.design for j in rb}, {"new", "adr", "rt", "bulk"})
+        self.assertEqual(len(rb), 2 * len(B.rows_of("CL-long")))
+        self.assertTrue(all(j.builder(0).repair["r"] == "rb" for j in rb))
+        self.assertEqual({j.builder(0).repair["edge"] for j in rb if j.design == "new"}, {"worth"})
+        self.assertEqual({j.builder(0).repair["edge"] for j in rb if j.design == "rt"}, {"evict"})
+
+    def test_rb_sits_between_early_and_main(self):
+        self.assertLess(B.CHAIN.index("EARLY"), B.CHAIN.index("RB"))
+        self.assertLess(B.CHAIN.index("RB"), B.CHAIN.index("MAIN"))
+        self.assertIn("DONE-RB", B.missing_markers("MAIN"))
+        self.assertNotIn("DONE-RB", B.missing_markers("RB"))
+        self.assertIn("DONE-EARLY", B.missing_markers("RB"))
+
+    def test_the_rb_rows_are_before_the_verdict_and_in_the_plan(self):
+        self.assertIn(("CL-long", "new", "RB"), B.plan_classes())
 
 
 class Reuse(unittest.TestCase):

@@ -387,12 +387,12 @@ def main():
     elif a.cmd == "smooth":
         cmd_smooth(a.nseeds or 3)
     elif a.cmd == "read":
-        cmd_read(a.cell, [m if m in ("OFF", "RL", "RE") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
+        cmd_read(a.cell, [m if m in ("OFF", "RL", "RE", "RB") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
     else:
         import batch3e as B
         outs, better = {}, False
         for c in a.cell.split(","):
-            o, b = cmd_read(c, ["OFF", "RL"], a.nseeds, "", "")
+            o, b = cmd_read(c, ["OFF", "RL"] + (["RE"] if c in B.RE_CELLS else []), a.nseeds, "", "")
             outs[c] = o
             better = better or b
         v = stage_verdict(outs, better)

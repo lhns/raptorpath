@@ -184,7 +184,7 @@ def rp(mode, edge="worth"):
     """A repair mode: "OFF", "RL" (live law, true loss), "RE" (live law, estimated loss) or a fixed r."""
     if mode == "OFF":
         return None
-    return dict(r={"RL": "law", "RE": "est"}.get(mode, mode), edge=edge)
+    return dict(r={"RL": "law", "RE": "est", "RB": "rb"}.get(mode, mode), edge=edge)
 
 
 # ---- names (F6: every row says what its sender and receiver do; the code name stands in parentheses) -----------------------------------
@@ -204,7 +204,8 @@ N_BULK = "never gives up, strict order = today's Bulk (C3)"
 
 
 def n_mode(mode):
-    return {"OFF": "repair off", "RL": "repair RL (live law, true loss)", "RE": "repair RE (live law, estimated loss)"}.get(mode, "repair fixed r=%g" % (mode,) if not isinstance(mode, str) else mode)
+    return {"OFF": "repair off", "RL": "repair RL (live law, true loss)", "RE": "repair RE (live law, estimated loss)",
+            "RB": "repair RB (r_max through the outage and 3 s after, the law outside)"}.get(mode, "repair fixed r=%g" % (mode,) if not isinstance(mode, str) else mode)
 
 
 class Job:
@@ -254,7 +255,7 @@ def row_delta(cell, key):
 
 
 PARTS = {}
-ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "EARLY", "REST", "ROBUST", "SMOOTH"]       # attribution of a fingerprint; TIME is timing only, AMEND = EARLY + REST
+ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "EARLY", "RB", "REST", "ROBUST", "SMOOTH"]       # attribution of a fingerprint; TIME is timing only, AMEND = EARLY + REST
 EARLY_CELLS = ("Ec", "RT", "OV", "CL-long-v")                                # one cell per use case (registration 14.6)
 FPS = {}
 
@@ -415,6 +416,16 @@ def amend_jobs():
     PARTS["REST"] = sorted([j for j in PARTS["AMEND"] if j.part == "REST"], key=cell_order)
 
 
+RB_CELLS = ("CL-long", "CLw-long")                                           # the long-outage cells (amendment 3)
+
+
+def rb_jobs():
+    """Arm RB, for every design: r at the law's cap from the outage start until rb_after_s after its end, the law outside (amendment 3)."""
+    for cell in RB_CELLS:
+        for key in rows_of(cell):
+            add_row("RB", cell, key, "RB", SEEDS)
+
+
 def robust_jobs():
     for cell in ("OV", "CL-long"):
         for x in (-0.020, -0.010, -0.005, 0.005, 0.010, 0.020):
@@ -484,6 +495,7 @@ def build():
     cross_jobs()
     main_jobs()
     amend_jobs()
+    rb_jobs()
     robust_jobs()
     smooth_jobs()
     time_jobs()
@@ -605,8 +617,8 @@ def load(fp, seed):
         return json.load(f)
 
 
-PRE = ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread"]            # PASS-reuse is optional: without it nothing is reused
-CHAIN = ["AA", "AA2", "TIME", "DECIDE", "EARLY", "MAIN", "REST", "ROBUST", "SMOOTH"]       # registration 14.6
+PRE = ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate"]                              # PASS-reuse is optional: without it nothing is reused; PASS-simread gates MAIN only
+CHAIN = ["AA", "AA2", "TIME", "DECIDE", "EARLY", "RB", "MAIN", "REST", "ROBUST", "SMOOTH"]       # registration 14.6
 DONE_MARK = {"TIME": "PASS-time"}
 
 
@@ -616,23 +628,26 @@ def _need(part):
     else:
         earlier = CHAIN[:CHAIN.index(part)]
     need = PRE + ([] if part in ("AA", "AA2") else ["PASS-aa"]) + [DONE_MARK.get(p, "DONE-" + p) for p in earlier]
+    if part == "MAIN":
+        need.insert(len(PRE), "PASS-simread")                                # the simulator read (registration 9 step 6) gates MAIN
     if part in ("ROBUST", "SMOOTH"):
         need.append("VERDICT-PASSES")                                        # written by the reader when the stage verdict reads PASSES (14.5)
     return need
 
 
-def missing_markers(part):
+def missing_markers(part, partial=False):
+    """partial: a DOUBLE of one cell of a part still running cell by cell (REST) does not need the part's DONE marker."""
     if SMOKE:
         return []
-    need = _need(part.split(":")[1]) + ["DONE-" + part.split(":")[1]] if part.startswith("DOUBLE:") else _need(part)
+    need = _need(part.split(":")[1]) + ([] if partial else ["DONE-" + part.split(":")[1]]) if part.startswith("DOUBLE:") else _need(part)
     return [m for m in need if not os.path.exists(os.path.join(OUT, m))]
 
 
-def refusal(part):
+def refusal(part, partial=False):
     if os.path.exists(os.path.join(OUT, "STOP")):
         with open(os.path.join(OUT, "STOP")) as f:
             return "out3e/STOP exists, nothing runs until the coordinator clears it: %s" % f.read().strip()
-    miss = missing_markers(part)
+    miss = missing_markers(part, partial)
     if miss:
         return "markers missing for part %s: %s" % (part, ", ".join(miss))
     return None
@@ -773,7 +788,7 @@ def plan_classes():
     """Runs to execute before the verdict by class (cell, design, mode): the fingerprints of AA, AA2, DECIDE, EARLY, MAIN and REST, their seeds, less
     the seeds a re-baseline or proof stage 1 row already holds when reuse is on.  Doublings are not included."""
     out = {}
-    for p in ("AA", "AA2", "DECIDE", "EARLY", "MAIN", "REST"):
+    for p in ("AA", "AA2", "DECIDE", "EARLY", "RB", "MAIN", "REST"):
         for fp in attributed(p):
             j = FPS[fp]["job"]
             n = sum(1 for s in range(FPS[fp]["nseeds"]) if not (reuse_on() and _reused_path(fp, s) is not None))
@@ -926,6 +941,7 @@ def main(argv=None):
     ap.add_argument("--reuse-dirs", default="")
     ap.add_argument("--results", default=os.path.join(HERE, "results-stage3e.md"))
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--double-partial", action="store_true", help="DOUBLE of one cell while its part is still running cell by cell")
     a = ap.parse_args(argv)
     if a.workers is not None:
         a.light_workers = a.workers
@@ -957,7 +973,7 @@ def main(argv=None):
     if base not in PARTS:
         print("unknown part", a.part)
         return 2
-    why = refusal(a.part)
+    why = refusal(a.part, a.double_partial)
     if why:
         print("REFUSED:", why)
         return 2

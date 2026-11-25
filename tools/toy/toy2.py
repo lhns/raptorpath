@@ -407,6 +407,7 @@ class Cfg:
     R_bias: float = 0.0            # stage 3e robustness: added to R in the dequeue rule only
     rev_q: float = 0.0             # stage 3e robustness: a standing reverse queue, seconds added to every report's flight
     tau_extra: tuple = ()          # stage 3e: extra on-time readouts (RT: (0.12,)), reported in out["rep3e"]["share_by"]
+    rb_after_s: float = 3.0        # stage 3e arm RB (repair r = "rb"): r is held at R_MAX from the outage start to this many seconds after its end
 
 
 def ge_cell(cell, seed, slots, dur_slots_unused=None):
@@ -1158,7 +1159,10 @@ class Sim:
             return
         L = rate_law(self.eps_for_law(), self.srtt_eff(), rh, self.cfg.delta)
         self.W_cur = L["W"]
-        self.r_cur = L["r"] if rp["r"] in ("law", "est") else float(rp["r"])
+        if rp["r"] == "rb":                                                  # the bracket arm: the cap through the outage and its aftermath, the law outside
+            self.r_cur = R_MAX if self.in_rb_window(now) else L["r"]
+        else:
+            self.r_cur = L["r"] if rp["r"] in ("law", "est") else float(rp["r"])
         self.law_last = L
         self.t_eval = now
         g = self.g
@@ -1175,6 +1179,11 @@ class Sim:
         sr["r"][k] = sr["r"].get(k, 0.0) + self.r_cur
         sr["W"][k] = sr["W"].get(k, 0.0) + L["W"]
         sr["n"][k] = sr["n"].get(k, 0) + 1
+
+    def in_rb_window(self, now):
+        """Arm RB's window [outage start, outage end + rb_after_s); empty when the cell has no outage."""
+        d = self.cfg.dead
+        return d is not None and d[1] <= now < d[1] + d[2] + self.cfg.rb_after_s
 
     def astar(self, now):
         """Paper 5.3: A* = clamp(ceil(rate_hat * min(b*srtt, 2*srtt)), 1, W); 1 before the first RTT sample."""

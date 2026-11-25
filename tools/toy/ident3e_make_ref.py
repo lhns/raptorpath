@@ -1,6 +1,6 @@
 """Make ident3e_ref.json from the base commit's code (git archive), one run per configuration of ident3e_cfgs.cfgs.
 
-    python ident3e_make_ref.py [BASE_REV]        # default b2addffb (proof stage 1's head, the base of stage 3e)
+    python ident3e_make_ref.py [BASE_REV]        # default ba3cf31c (proof stage 1's head, the base of stage 3e)
 """
 import io
 import json
@@ -33,7 +33,7 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--emit":
         emit(sys.argv[2], sys.argv[3])
         return
-    base = sys.argv[1] if len(sys.argv) > 1 else "b2addffb"
+    base = sys.argv[1] if len(sys.argv) > 1 else "ba3cf31c"
     root = os.path.join(HERE, "..", "..")
     tar = subprocess.run(["git", "archive", base + ":tools/toy"], cwd=root, check=True, capture_output=True).stdout
     with tempfile.TemporaryDirectory() as td:

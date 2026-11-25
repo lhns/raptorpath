@@ -1835,5 +1835,40 @@ class Stage3e(unittest.TestCase):
         self.assertAlmostEqual(r15[0], 2.0, delta=0.6)
 
 
+class Stage3eBracket(unittest.TestCase):
+    """Arm RB (amendment 3): r held at the law's cap r_max from the outage start until rb_after_s after its end, the law outside."""
+
+    def test_default_and_the_window(self):
+        self.assertEqual(toy2.Cfg().rb_after_s, 3.0)
+
+    def test_r_is_the_cap_inside_the_window_and_the_law_outside(self):
+        seen = []
+
+        class P(toy2.Sim):
+            def read_law(self, now):
+                before = self.t_eval
+                super().read_law(now)
+                if self.t_eval == now and self.law_last is not None:
+                    seen.append((now, self.r_cur, self.law_last["r"]))
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="rb", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rb_after_s=0.5)
+        P(c).run()
+        inside = [x for x in seen if 0.5 <= x[0] < 1.5]
+        outside = [x for x in seen if x[0] < 0.5 or x[0] >= 1.5]
+        self.assertTrue(inside and outside)
+        self.assertTrue(all(r == toy2.R_MAX for _, r, _ in inside))
+        self.assertTrue(all(r == law for _, r, law in outside))
+        self.assertTrue(any(law < toy2.R_MAX for _, _, law in inside))                      # control: the law itself was below the cap there
+
+    def test_an_empty_window_equals_rl(self):
+        for seed in range(2):
+            a = e_cfg("K-L10", seed, 0.12, 0.0, repair=dict(r="law", edge="worth"), dead=None, n_total=600)
+            b = e_cfg("K-L10", seed, 0.12, 0.0, repair=dict(r="rb", edge="worth"), dead=None, n_total=600)
+            a.want_trace = b.want_trace = True
+            ra, rb = toy2.run(a), toy2.run(b)
+            self.assertEqual(id3e_t(ra, rb), [])
+            self.assertEqual(ra["_trace"], rb["_trace"])
+            self.assertEqual(ra["gauges"]["rep_sent"], rb["gauges"]["rep_sent"])
+
+
 if __name__ == "__main__":
     unittest.main()
