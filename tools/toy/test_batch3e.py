@@ -16,8 +16,8 @@ import summarize3e as S  # noqa: E402
 
 INF = math.inf
 SEEDS = 12
-REG_AMEND = {"CLw-long": 75, "RT": 55, "CL": 52, "OV": 47, "K-I2": 40, "K-L10": 40, "K-OV": 36, "OV-long": 34, "CLc": 30, "CL-long": 26,
-             "CLc-v": 21, "CL-long-v": 21, "OV-long-v": 21, "Ec": 3, "E-I2": 3, "M-I2": 3}
+REG_AMEND = {"CLw-long": 75, "RT": 55, "CL": 52, "OV": 47, "K-I2": 40, "K-L10": 40, "K-OV": 36, "OV-long": 26, "CLc": 30, "CL-long": 26,
+             "CLc-v": 36, "CL-long-v": 36, "OV-long-v": 26, "Ec": 6, "E-I2": 6, "M-I2": 6}          # registration 14.9: 543 configurations (14.4 drops the inner points of the long overload cells)
 
 
 class Cells(unittest.TestCase):
@@ -109,13 +109,13 @@ class Parts(unittest.TestCase):
         self.assertEqual(len(P["AA2"]), 8 * 4 + 3 * 2)                             # the file cells' primary lifetime is T = inf: one pair
         self.assertEqual(len(P["ROBUST"]), 32)
         self.assertEqual(len(P["SMOOTH"]), 272)
-        am = [j for j in P["AMEND"] if j.nseeds == SEEDS]
-        self.assertEqual(len(am), 507)
-        self.assertEqual(len([j for j in P["AMEND"] if j.nseeds == 3]), 54)
+        am = P["AMEND"]
+        self.assertEqual(len(am), 543)
         by = {}
         for j in am:
             by[j.cell] = by.get(j.cell, 0) + 1
         self.assertEqual(by, REG_AMEND)
+        self.assertEqual(sorted(j.name for j in P["EARLY"] + P["REST"]), sorted(j.name for j in am))     # EARLY and REST split AMEND
 
     def test_main_arms_per_cell(self):
         by = {}
@@ -158,7 +158,7 @@ class Parts(unittest.TestCase):
                 self.assertIsNotNone(cf.repair)
         for p, js in B.PARTS.items():
             for j in js:
-                self.assertIn(j.nseeds, (3, SEEDS))
+                self.assertIn(j.nseeds, (3, 6, SEEDS))
 
     def test_fingerprint_ignores_seed_and_trace_and_dedupes_across_parts(self):
         a = B.new_cfg("CL", 0, 0.4, 0.0, 50.0, None)
@@ -199,22 +199,30 @@ class Runner(unittest.TestCase):
             open(os.path.join(B.OUT, n), "w").close()
 
     def test_a_part_refuses_without_its_markers(self):
-        miss = B.missing_markers("DECIDE")
-        self.assertEqual(miss, ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread", "PASS-aa", "DONE-AA", "DONE-AA2"])
+        miss = B.missing_markers("DECIDE")                                          # registration 14.6: AA, AA2, TIME, DECIDE, EARLY, MAIN, REST, then ROBUST and SMOOTH
+        self.assertEqual(miss, ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread", "PASS-aa", "DONE-AA", "DONE-AA2", "PASS-time"])
         self.mark("PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread")
         self.assertEqual(B.missing_markers("AA"), [])
-        self.assertEqual(B.missing_markers("DECIDE"), ["PASS-aa", "DONE-AA", "DONE-AA2"])
+        self.assertEqual(B.missing_markers("TIME"), ["PASS-aa", "DONE-AA", "DONE-AA2"])
         self.mark("PASS-aa", "DONE-AA", "DONE-AA2")
+        self.assertEqual(B.missing_markers("TIME"), [])
+        self.assertEqual(B.missing_markers("DECIDE"), ["PASS-time"])
+        self.mark("PASS-time")
         self.assertEqual(B.missing_markers("DECIDE"), [])
-        self.assertEqual(B.missing_markers("MAIN"), ["DONE-DECIDE"])
-        self.mark("DONE-DECIDE")
-        self.assertEqual(B.missing_markers("MAIN"), [])
         self.assertEqual(B.missing_markers("CROSS"), [])
-        self.assertEqual(B.missing_markers("AMEND"), ["DONE-MAIN"])
-        self.assertEqual(B.missing_markers("ROBUST"), ["DONE-MAIN", "DONE-AMEND"])
-        self.assertEqual(B.missing_markers("SMOOTH"), ["DONE-MAIN", "DONE-AMEND", "DONE-ROBUST"])
+        self.assertEqual(B.missing_markers("EARLY"), ["DONE-DECIDE"])
+        self.mark("DONE-DECIDE")
+        self.assertEqual(B.missing_markers("EARLY"), [])
+        self.assertEqual(B.missing_markers("MAIN"), ["DONE-EARLY"])
+        self.assertEqual(B.missing_markers("REST"), ["DONE-EARLY", "DONE-MAIN"])
+        self.mark("DONE-EARLY", "DONE-MAIN", "DONE-REST")
+        self.assertEqual(B.missing_markers("ROBUST"), ["VERDICT-PASSES"])                 # blocked until the reader has written a PASSES verdict
+        self.assertEqual(B.missing_markers("SMOOTH"), ["DONE-ROBUST", "VERDICT-PASSES"])
+        self.mark("VERDICT-PASSES", "DONE-ROBUST")
+        self.assertEqual(B.missing_markers("ROBUST"), [])
+        self.assertEqual(B.missing_markers("SMOOTH"), [])
         self.assertEqual(B.missing_markers("DOUBLE:DECIDE"), [])
-        self.assertEqual(B.missing_markers("DOUBLE:MAIN"), ["DONE-MAIN"])
+        self.assertEqual(B.missing_markers("DOUBLE:ROBUST"), [])
 
     def test_stop_refuses_everything(self):
         self.mark("PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread")
@@ -223,13 +231,12 @@ class Runner(unittest.TestCase):
         self.assertIn("STOP", B.refusal("AA"))
         self.assertIn("STOP", B.refusal("CROSS"))
 
-    def test_long_cells_run_with_one_worker(self):
-        self.assertIn("worker", B.refusal_workers(["OV-long", "CL"], 2))
-        self.assertIsNone(B.refusal_workers(["OV-long", "CL"], 1))
-        self.assertIsNone(B.refusal_workers(["CL", "OV", "RT"], 2))
-        self.assertIn("worker", B.refusal_workers(["CLw-long"], 2))
-        self.assertIn("worker", B.refusal_workers(["RQ"], 2))
-        self.assertIn("workers", B.refusal_workers(["CL"], 3))
+    def test_two_pools_with_bounded_workers(self):
+        self.assertIsNone(B.refusal_workers(8, 2))
+        self.assertIsNone(B.refusal_workers(6, 1))
+        self.assertIn("light", B.refusal_workers(9, 2))
+        self.assertIn("heavy", B.refusal_workers(8, 3))
+        self.assertIn("at least one", B.refusal_workers(0, 1))
 
     def test_gate_failures(self):
         ok = dict(finished=True, gauges=dict(l1_viol=0, l1_viol_rep=0, commit_viol=0, worth_viol_rep=0))
@@ -339,6 +346,195 @@ class Runner(unittest.TestCase):
         self.assertIn("l1_viol_rep", open(os.path.join(B.OUT, "STOP")).read())
         self.assertFalse(os.path.exists(os.path.join(B.OUT, "DONE-AA")))
         self.assertEqual(B.main(["--part", "AA", "--seeds", "2"]), 2)                   # nothing runs while STOP exists
+
+
+class Amendment2(unittest.TestCase):
+    """Registration 14 (amendment 2) and the build brief's runner section: seeds by cell, reuse, two memory pools, TIME, the order."""
+
+    @classmethod
+    def setUpClass(cls):
+        B.build()
+
+    def seeds(self, part, cell, **filt):
+        return {j.nseeds for j in B.PARTS[part] if j.cell == cell}
+
+    def test_seed_counts_by_cell(self):
+        self.assertEqual({j.nseeds for j in B.PARTS["DECIDE"]}, {12})
+        self.assertEqual({j.nseeds for j in B.PARTS["AA"] + B.PARTS["AA2"]}, {12})                       # the A/A rows run at 12 in every cell
+        main = {}
+        for j in B.PARTS["MAIN"]:
+            main.setdefault(j.cell, set()).add(j.nseeds)
+        self.assertEqual(main, {"CL": {12}, "CL-long": {12}, "CLw-long": {12}, "RT": {12}, "OV": {6, 12}, "CLs-long": {6, 12}})
+        self.assertEqual({j.nseeds for j in B.PARTS["MAIN"] if j.cell in ("OV", "CLs-long") and j.arm != "AA"}, {6})
+        self.assertEqual({j.nseeds for j in B.PARTS["MAIN"] if j.arm == "AA"}, {12})
+        for cell in ("CL", "CLw-long", "RT", "CLc", "CLc-v", "CL-long-v", "K-I2", "K-L10", "CL-long"):
+            self.assertLessEqual(self.seeds("AMEND", cell), {3, 12}, cell)
+            self.assertIn(12, self.seeds("AMEND", cell), cell)
+        for cell in ("K-OV", "OV", "OV-long", "OV-long-v", "Ec", "E-I2", "M-I2"):
+            self.assertLessEqual(self.seeds("AMEND", cell), {3, 6}, cell)
+            self.assertIn(6, self.seeds("AMEND", cell), cell)
+        self.assertEqual({j.nseeds for j in B.PARTS["ROBUST"]}, {6})
+        self.assertEqual({j.nseeds for j in B.PARTS["SMOOTH"]}, {3})
+        for j in B.PARTS["AMEND"]:
+            if j.mode != "OFF" and j.builder(0).delta == 0.005:
+                self.assertEqual(j.nseeds, 3, j.name)                                                # the delta = 0.005 identity rows
+
+    def test_long_overload_cells_run_the_old_senders_at_their_dial_ends_at_three_seeds(self):
+        for cell, ends in (("OV-long", (0.5, 50.0)), ("OV-long-v", (0.005, 50.0))):
+            old = [j for j in B.PARTS["AMEND"] if j.cell == cell and j.key[0] in ("adr", "rt", "bulk")]
+            self.assertEqual({j.nseeds for j in old}, {3})
+            self.assertEqual(sorted({j.key[1] for j in old if j.key[0] == "adr"}), [0.95, 1.0])
+            self.assertEqual(sorted({j.key[1] for j in old if j.key[0] == "rt"}), sorted(ends))
+            self.assertEqual({j.key[0] for j in old}, {"adr", "rt", "bulk"})
+            new = [j for j in B.PARTS["AMEND"] if j.cell == cell and j.key[0] == "lt" and j.mode == "OFF"]
+            self.assertEqual({j.nseeds for j in new}, {6})                                          # the new model's sweep at 6
+
+    def test_early_is_the_four_cells_at_the_call_point_under_rl(self):
+        self.assertEqual({j.cell for j in B.PARTS["EARLY"]}, {"Ec", "RT", "OV", "CL-long-v"})
+        self.assertEqual({j.mode for j in B.PARTS["EARLY"]}, {"RL"})                               # the AMEND rows of those cells under RL
+        self.assertTrue(any(j.mode == "RL" and j.key[0] == "lt" for j in B.PARTS["EARLY"] if j.cell == "RT"))
+        names = [j.cell for j in B.PARTS["REST"]]
+        self.assertLess(names.index("K-I2"), names.index("OV-long"))                                # long overload cells last
+
+    def test_time_part_one_seed_of_each_cell_and_design_under_rl(self):
+        t = B.PARTS["TIME"]
+        self.assertEqual(len(t), 68)
+        self.assertEqual({j.mode for j in t}, {"RL"})
+        self.assertTrue(all(j.builder(0).seed == 0 and j.nseeds == 1 for j in t))
+        designs = {}
+        for j in t:
+            designs.setdefault(j.cell, set()).add(j.design)
+        self.assertEqual(len(designs), 17)
+        self.assertTrue(all(d == {"new", "adr", "rt", "bulk"} for d in designs.values()))
+        rt = {j.cell: j.builder(0).delta for j in t if j.design == "rt"}
+        self.assertEqual((rt["OV"], rt["CL-long-v"], rt["Ec"]), (50.0, 0.005, 0.005))
+        self.assertFalse(any(j.fp in B.FPS and "TIME" in B.FPS[j.fp]["jobs"] for j in t))              # timing only: never a stored result
+
+    def test_heavy_means_an_old_sender_in_a_long_cell(self):
+        self.assertTrue(B.is_heavy(B.adr_cfg("CL-long", 0, 0.99, 50.0, None)))
+        self.assertTrue(B.is_heavy(B.rt_cfg("OV-long", 0, 50.0, None)))
+        self.assertTrue(B.is_heavy(B.bulk_cfg("CLw-long", 0, 50.0, None)))
+        self.assertFalse(B.is_heavy(B.new_cfg("OV-long", 0, 0.4, 0.0, 50.0, None)))
+        self.assertFalse(B.is_heavy(B.adr_cfg("CL", 0, 0.99, 50.0, None)))
+        self.assertFalse(B.is_heavy(B.bulk_cfg("OV", 0, 50.0, None)))
+
+    def test_memory_wait(self):
+        self.assertEqual(B.need_gb(True), 2.5)
+        self.assertAlmostEqual(B.need_gb(False), 1.15)
+        seq = iter([0.5, 1.0, 1.2, 3.0])
+        sleeps = []
+        waited = B.wait_for_memory(1.15, avail=lambda: next(seq), sleep=sleeps.append)
+        self.assertEqual((waited, len(sleeps)), (2, 2))                                            # two readings below the need, then it starts
+        self.assertEqual(B.wait_for_memory(1.15, avail=lambda: 9.0, sleep=sleeps.append), 0)
+
+    def test_time_total_by_the_one_pool_formula_and_its_gate(self):
+        classes = {("RT", "new", "RL"): 100, ("RT", "new", "OFF"): 40, ("CL-long", "adr", "RL"): 12}
+        times = {("RT", "new"): (2.0, 100.0), ("CL-long", "adr"): (60.0, 1500.0)}
+        total_h, table = B.time_total(times, classes)
+        light = (100 * 2.0 + 40 * 1.0) / 8                                                         # the repair-off class at half its RL time; 8 light workers
+        heavy = 12 * 60.0 / 2                                                                       # 4 GB holds two heavy runs
+        self.assertAlmostEqual(total_h, (light + heavy) / 3600.0)
+        self.assertEqual({r["pool"] for r in table}, {"light", "heavy"})
+        wide = {("RT", "new"): (2.0, 3000.0)}                                                       # a 3 GB run: one worker only
+        self.assertAlmostEqual(B.time_total(wide, {("RT", "new", "RL"): 10})[0], 10 * 2.0 / 3600.0)
+
+    def test_the_gate_passes_under_24_hours_and_stops_over(self):
+        with tempfile.TemporaryDirectory() as td:
+            old = B.OUT
+            B.OUT = td
+            try:
+                self.assertTrue(B.time_gate(23.9, [dict(cell="RT", design="new")]))
+                self.assertTrue(os.path.exists(os.path.join(td, "PASS-time")))
+                os.remove(os.path.join(td, "PASS-time"))
+                self.assertFalse(B.time_gate(24.1, [dict(cell="RT", design="new", seconds=1.0)]))
+                self.assertFalse(os.path.exists(os.path.join(td, "PASS-time")))
+                with open(os.path.join(td, "STOP")) as f:
+                    txt = f.read()
+                self.assertIn("24.1", txt)
+                self.assertIn("RT", txt)
+            finally:
+                B.OUT = old
+
+    def test_the_plan_counts_only_runs_before_the_verdict(self):
+        plan = B.plan_classes()
+        n = sum(plan.values())
+        pre = sum(c["runs"] for p, c in B.counts().items() if p in ("AA", "AA2", "DECIDE", "EARLY", "MAIN", "REST"))
+        self.assertEqual(n, pre)
+        self.assertTrue(all(k[2] in ("OFF", "RL", "RE") or isinstance(k[2], float) for k in plan))
+
+
+class Reuse(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        B.build()
+
+    def test_a_repair_off_row_has_the_fingerprint_of_the_rebaselined_stage_3d_row(self):
+        import batch3d
+        batch3d.build()
+        for cell, d3 in (("CL", "CL@b"), ("OV", "OV@b"), ("K-L10", "K-L10")):
+            self.assertEqual(B.fingerprint(B.new_cfg(cell, 0, 0.4, 0.0, 50.0, None)), B.fingerprint(batch3d.s5_cfg(d3, 0, 0.4, 0.0)), cell)
+        self.assertEqual(B.fingerprint(B.bulk_cfg("OV", 0, 50.0, None)), B.fingerprint(batch3d.cmp_cfg("OV@b", "C3", 0)))
+        self.assertEqual(B.fingerprint(B.adr_cfg("CL", 0, 0.99, 50.0, None)), B.fingerprint(batch3d.cmp_cfg("CL@b", "C1", 0)))
+
+    def test_the_index_finds_stored_rows_and_reuse_waits_for_the_marker(self):
+        import batch3d
+        batch3d.build()
+        name = "CL@b.C3"
+        with tempfile.TemporaryDirectory() as d3, tempfile.TemporaryDirectory() as out:
+            part = batch3d.JOBS[name][0]
+            os.makedirs(os.path.join(d3, part))
+            with open(os.path.join(d3, part, "%s-0.json" % name), "w") as f:
+                json.dump(dict(share_any=1.0, stored="3d"), f)
+            old, oldr = B.OUT, dict(B.REUSE)
+            B.OUT = out
+            try:
+                B.set_reuse(["3d=" + d3])
+                fp = B.fingerprint(B.bulk_cfg("CL", 0, 50.0, None))
+                self.assertIn(fp, B.REUSE["index"])
+                self.assertIsNone(B.load(fp, 0))                                                    # no PASS-reuse: nothing is reused
+                open(os.path.join(out, "PASS-reuse"), "w").close()
+                self.assertEqual(B.load(fp, 0)["stored"], "3d")
+                self.assertIsNone(B.load(fp, 1))                                                    # a seed that is not stored runs
+                self.assertTrue(B.have_run(fp, 0))
+                self.assertFalse(B.have_run(fp, 1))
+                rp = B.new_cfg("CL", 0, 0.4, 0.0, 50.0, dict(r="law", edge="worth"))
+                self.assertNotIn(B.fingerprint(rp), B.REUSE["index"])                               # only repair-off configurations
+            finally:
+                B.OUT = old
+                B.REUSE.clear()
+                B.REUSE.update(oldr)
+
+
+class ReaderCounts(unittest.TestCase):
+    def test_nf_is_taken_over_the_first_n_seeds(self):
+        A = {s: dict(share_any=0.9 + 0.01 * s, gauges={}) for s in range(12)}
+        Ap = {s: dict(share_any=0.9, gauges={}) for s in range(12)}
+        n6 = S.nf_from({s: A[s] for s in range(6)}, {s: Ap[s] for s in range(6)}, 1.0, ["share_any"])
+        n12 = S.nf_from(A, Ap, 1.0, ["share_any"])
+        self.assertLess(n6["share_any"], n12["share_any"])
+        self.assertEqual(S.nf_n({"by_n": {"6": {"cells": {"X": {"k": 1}}}, "12": {"cells": {"X": {"k": 2}}}}}, "X", 6), {"k": 1})
+        self.assertEqual(S.nf_n({"by_n": {"6": {"cells": {"X": {"k": 1}}}, "12": {"cells": {"X": {"k": 2}}}}}, "X", 24), {"k": 2})       # the A/A has 12 seeds: 24 reads its floor
+
+    def test_a_three_seed_baseline_against_a_six_seed_curve_doubles_to_six(self):
+        new = {0.4: (0.90, 0.60, 0.0), 2.0: (1.0, 0.60, 0.0)}
+        R = fake_cell(new, {0.95: (0.95, 0.60, 0.0), 1.0: (1.0, 0.60, 0.0)}, ns=6)
+        for k in (("adr", 0.95), ("adr", 1.0)):
+            R[k] = {s: v for s, v in R[k].items() if s < 3}                                         # the old senders have 3 seeds
+        for s in range(3):
+            R[("adr", 0.95)][s]["share_by_0p4"] = 0.60 + np.linspace(-0.3, 0.3, 3)[s]
+        out = S.read_mode(R, NF, units=200000, ys=("share_by_0p4",), nseeds=6, rec_cap=14.5, base_n={("adr", 0.95): 3, ("adr", 1.0): 3})
+        self.assertIn(("adr", 0.95), out["undet"])                                                 # only the 3-seed row is to double
+        self.assertNotIn(("lt", 0.4, 0.0), out["undet"])                                           # the new rows already have 6
+        R[("adr", 0.95)] = fake(0.95, 0.60, 0.0, ns=6)
+        done = S.read_mode(R, NF, units=200000, ys=("share_by_0p4",), nseeds=6, rec_cap=14.5, base_n={("adr", 0.95): 3, ("adr", 1.0): 3})
+        self.assertTrue(any(c["rd"].get("note") == "doubled to 6 seeds" for c in done["comps"]))
+
+    def test_the_verdict_marker(self):
+        with tempfile.TemporaryDirectory() as td:
+            S.write_verdict_marker(td, "PASSES")
+            self.assertTrue(os.path.exists(os.path.join(td, "VERDICT-PASSES")))
+            S.write_verdict_marker(td, "UNDETERMINED")
+            self.assertFalse(os.path.exists(os.path.join(td, "VERDICT-PASSES")))
 
 
 class Floors(unittest.TestCase):
