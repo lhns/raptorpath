@@ -30,10 +30,11 @@ Reviewed with the advisor (Fable) before writing, on the baseline check (§2) an
   - A new arm, "today's Realtime", is specified for both ends. It is what a merge replaces.
 - **The deciding row is not decided by the data yet (§3).** In the capacity-limited outage cell, ADR-0084's sender gains about 0.9 s of recovery over the any-order never-give-up rows in both sweep forms.
   - The stored tables point at one mechanism: the early-skip receiver gives up the roughly 1 000 units in flight when the outage began, and so frees their link slots during the drain. §19's on-time law gives 4.78 s for exactly that give-up, against 4.80 s measured for ADR-0084's sender.
-  - The new model gives up that same set at a lifetime of about 1.35 to 1.6 s, before any intake unit expires. So the 2 s row is not at matched share, and the predicted matched-share recovery is no worse than ADR-0084's.
+  - The new model gives up that same set at a lifetime of about 1.35 to 1.6 s, before any intake unit expires. So the 2 s row is not at matched share.
+  - The same law misses the never-give-up row by 0.42 s, and that miss is unexplained. So the prediction is two-sided: at matched share the new model is 0 to about 0.4 s behind, against a bar of about 0.24 s. The deciding row can fail.
   - A fine T sweep decides it. Revision 4 is drafted only if that sweep lands below beyond noise (§3.5).
 - **Stage 3e compares no old sender** (quoted in §4). Seven amendments add them, with repair on and off at the same rate law, and the sweeps of §1.
-- **A two-path stage 3f after 3e (§5)** leads with the call point. Strict order within T on two paths is bounded by the floor hold. The bound is `share_T ≲ exp(−λ·p_B·H_f)` (§5.4): about 0.80 at 10 000 units/s after the trigger fix, and about 1 at call rates.
+- **A two-path stage 3f after 3e (§5)** leads with the call point. Strict order within T on two paths is limited by the floor hold. The estimate is `share_T ≈ exp(−λ·p_B·H_f)` (§5.4), with a registered check: about 0.47 at 10 000 units/s after the trigger fix, and about 0.996 at call rates.
 - **Robustness is folded into those stages (§6):**
   - the one-way estimate and R biased by ±5, 10 and 20 ms;
   - a reverse-queue cell;
@@ -42,7 +43,7 @@ Reviewed with the advisor (Fable) before writing, on the baseline check (§2) an
 - **Merge (§7):**
   - part (a) now, docs, simulation branches and the proposal page, with main's page behaviour and goldens unchanged;
   - part (b) the engine, only after the table passes: ADR, paper section, then three guarded steps. The off-Bulk guard rows that part (b) needs do not exist yet.
-- **Cost (§9):** about 9 000 runs, about three to four days of machine time, one batch at a time, deciding row first.
+- **Cost (§9):** about 9 600 runs, about three to four days of machine time, one batch at a time, deciding row first.
 - **Owner questions** are in §10, each with a default.
 
 ## 0. Fairness (owner: "but make sure that the comparison is fair")
@@ -174,7 +175,7 @@ The one-path cells run in stage 3e as amended (§4). The two-path cells run in s
 | call | 1 | outage | K-I2, K-L10 (1.5 s outage at 20 s) | 0.4 s | as RT | today's Realtime |
 | call | 1 | overload | K-OV† (50/s offered, link 40/s, queue 1 s of data) | 0.4 s | T ∈ {0.2, 0.3, 0.4, 0.6, 1.0, ∞} | today's Realtime |
 | tunnel datagrams at Realtime | 1 | clean | CLc† (CL with no outage) | 0.4 s | T = 0.4; T ∈ {0.4, 1.0, ∞} | today's Realtime |
-| tunnel datagrams at Realtime | 1 | outage | **CL-long (the deciding row, §3)**, CL, CLw-long | 0.4 s | T ∈ {0.4, 0.6, 0.8, 1.0, 1.2, 1.3, 1.4, 1.5, 1.6, 2.0, ∞} | today's Realtime |
+| tunnel datagrams at Realtime | 1 | outage | **CL-long (the deciding row, §3)**, CL, CLw-long | 0.4 s | T ∈ {0.4, 0.6, 0.8, 1.0, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 2.0, ∞}; H = ∞ at {0.4, 1.4, ∞} | today's Realtime |
 | tunnel datagrams at Realtime | 1 | overload | OV, OV-long | 0.4 s and 2 s | T ∈ {0.4, 0.6, 1.0, 2.0, ∞} | today's Realtime |
 | buffered video | 1 | clean, outage, overload | CLc-v†, CL-long-v†, OV-long-v† (the same cells at δ = 0.005) | 2 s | T = 2, δ = 0.005, H = 0; T ∈ {1.0, 1.5, 2.0, 3.0, ∞} | no shipped point. Compared with today's Auto (never gives up, strict) and with today's Realtime at δ = 0.005 |
 | file, Bulk and Auto tunnel | 1 | clean, outage | Ec† (E-I2 with no outage), E-I2, M-I2, CLw-long at T = ∞ | completion time, longest stall | T = ∞ only (identity) | today's Bulk; today's object API |
@@ -182,7 +183,9 @@ The one-path cells run in stage 3e as amended (§4). The two-path cells run in s
 | call | 2 | clean, outage | P-call, P-call-out, P-lossfree (§5) | 0.4 s | T ∈ {0.2, 0.3, 0.4, 0.6, ∞} × H ∈ {0, ∞} | today's Realtime, which duplicates on the second path |
 | tunnel datagrams at Realtime | 2 | clean, outage, overload | P2, P2-out†, P2-OV† (a per-path link, §5) | 0.4 s | as the one-path tunnel | today's Realtime |
 | stress | 2 | clean | P2 at 75 ms, strict order (§5.4) | 75 ms | T ∈ {0.065, 0.075, 0.085, 0.1, 0.4} | reported against its bound, not by the pass rule |
-| buffered video, file | 2 | outage | P2-out at δ = 0.005, and at T = ∞ | 2 s / completion | as one path | as one path |
+| buffered video | 2 | clean, outage, overload | P2-v, P2-out-v, P2-OV-v (P2, P2-out and P2-OV at δ = 0.005) | 2 s | T = 2, δ = 0.005, H = 0; T ∈ {1.0, 1.5, 2.0, 3.0, ∞} | as one-path video |
+| file | 2 | clean, outage | P2 and P2-out at T = ∞ (identity) | completion time, longest stall | T = ∞ only | today's Bulk; today's object API |
+| file | 2 | overload | none: as one path, an object has no deadline. P2-OV at T = ∞ reports it | — | — | — |
 
 ## 2. The baseline: what a merge replaces
 
@@ -217,7 +220,11 @@ The one-path cells run in stage 3e as amended (§4). The two-path cells run in s
 ### 2.3 The missing arm, "today's Realtime" (new code, registered with stage 3e's amendment)
 
 New `Cfg` fields. Each defaults to the stage 3e behaviour, so the identity of §4 holds. Arm `E-rt` = `S1c` with:
-- `budget = "resid"`: the shed allowance is `ε̂_s·(1 − P_fec(r, A*, ε̂_s))·src_sent`, refreshed on each source emission as the engine does. ε̂_s is the sender's loss estimate. It uses the same estimator as 3e's `RE` arm where repair is on, and the true loss under 3e's Q21 default otherwise; the row says which. It is 0 before the first estimate. The cumulative count is compared as `shed_allowed` does.
+- `budget = "resid"`: the shed allowance is `ε̂_s·(1 − P_fec(r, A*, ε̂_s))·src_sent`, refreshed on each source emission as the engine does.
+  - ε̂_s is the sender's loss estimate. It uses the same estimator as 3e's `RE` arm where repair is on, and the true loss under 3e's Q21 default otherwise; the row says which. It is 0 before the first estimate.
+  - The cumulative count is compared as `shed_allowed` does.
+  - P_fec is ported exactly as shipped: `raptorpath-math` `p_fec_normal`, including its cut (0 when r ≤ 0 or `r·(1 − ε) ≤ ε`; recorded debt W22, the "0 → ½ step"). So with repair off the budget is ε̂.
+  - **Today's Realtime never ships with repair off** (`RWM_UNIFIED` and `RWM_TAPER_R` are on by default). Its repair-off rows are a machinery-matched control for F2, labelled as such, and are never quoted as "today".
 - `d_arm = "EWMA"` (already in `toy2.py`): `D = min(b(δ), 2)·srtt`, with the 50 ms seed until the first sample.
 - `verdict_copy = False`, `floor = None`: the shed sends nothing, and the receiver learns only through its own hold.
 - `evict_window = 200`: a hole more than 200 seqs below the send frontier is neither served nor shed; it is left, as the engine leaves it. This reproduces the stalled-blocker defect. That is intentional, because it is what ships.
@@ -285,9 +292,11 @@ The stored rows agree with this:
 | B_lost ≈ 1 000 | the store pause at B, units in flight at the outage start |
 | the law | §19, checked there against the interactive simulator (4.78 s predicted, 4.90 s read) |
 
-- The B_lost term is 0.47 s.
-- The law underpredicts the never-give-up row by 0.42 s. All of the ~2 000 extra copies, spent in the drain, would cost 2 000/2 125 ≈ 0.94 s. So the 0.42 s fits only if about half of them fall in the drain and the rest in the outage, where the paused link is idle.
-- Most of the gap is accounted for. Two parts remain open: where those extra copies go (into the outage, which costs nothing, or into the drain, which costs headroom), and how the give-up splits between the sender's allowance and the receiver's passes. §3.4 reads them.
+- The B_lost term is 0.47 s, and the law with B_lost given up hits ADR-0084's row (4.78 against 4.80 s).
+- **The law misses the never-give-up row by 0.42 s, and that miss is unexplained.** The lifetime 2 s row behaves like that row (0.0396 copies per delivered), so the miss applies to it too.
+  - The copy difference does not explain it. Of the about 2 000 extra copies, about 1 000 or more are the B_lost resends already counted in the backlog term. About 600 are second resends (0.3 % × 200 000).
+  - Under the engine-like sweep the outage carries only blocker resends, so few copies are spent into the outage.
+- So the mechanism is mostly the receiver's give-up of the in-flight units. The 0.42 s is open, and so is the split of the give-up between the sender's allowance and the receiver's passes. §3.4 reads both.
 
 ### 3.3 The matched point, predicted before the sweep
 
@@ -295,9 +304,12 @@ The stored rows agree with this:
 - **Intake units.** They wait at most the drain wait `(λL + B_lost)/μ_eff ≈ 1.32 s`. So nothing in the intake expires while `T > 1.32 + R ≈ 1.34 s`.
 - **Prediction 1, a plateau.** For T in about (1.34, 1.6) s the new model gives up exactly B_lost plus the lost-resend tail older than T − ô. That gives delivered at all ≈ 99.4–99.5 %, recovery ≈ 4.78 s on the law's scale, and on time ≈ 1 − (L + t_rec)/20 s ≈ 68.6 %. ADR-0084's row reads 68.6 % on time and 4.80 s.
 - **Prediction 2, a straight line below it.** For T below about 1.34 s the intake head expires (dequeue rule, §13.2). Each expired unit frees one slot, so recovery falls by `1/(μ_eff − λ)` s per unit, and delivered share falls in step. The curve is a straight line from the plateau down to the 0.4 s point (94.1 %, 0 s).
-- **Prediction 3, the comparison.** ADR-0084's point (99.2 %) lies just left of the plateau, on that line. So the interpolated new curve there is predicted not above it in recovery and not below it in on-time share, within noise.
+- **Prediction 3, the comparison, two-sided.** ADR-0084's point (99.2 %) lies just left of the plateau, on that line.
+  - If the law's 0.42 s miss belongs only to the never-give-up drain, the new curve there matches ADR-0084's recovery.
+  - If the miss carries over to the plateau, the new curve is up to about 0.4 s behind.
+  - The bar is about 0.24 s (5 % of the reference). So the row can read "shown worse", and §3.5 is a live branch, not a formality.
 - **Registered bands**, to be re-centred on the re-baseline values with their widths kept (as stage 3e does):
-  - recovery at the matched share in [4.5, 5.2] s;
+  - recovery at the matched share in [4.6, 5.3] s;
   - matched T in [1.25, 1.6] s;
   - plateau delivered share in [99.3 %, 99.6 %].
 
@@ -407,21 +419,23 @@ A unit u handed over at t_u is on time iff every hole h before it is released by
 **What stays case B after the fix.** A resent hole whose resend is lost is unprotected after its resend (`d = c`), and is passed at `t_resend + a + H_f`. That is still late by about H_f. So:
 
 ```text
-   share_T(H = ∞)   ≲   exp( − λ · p_B · H_f ) ,      p_B  ≈  ε_A·φ_A · ε_A          (a fast-path loss whose one resend is also lost)
+   share_T(H = ∞)   ≈   exp( − λ · p_B · H_f ) ,      p_B  ≈  φ_A · p0 · pc          (a fast-path loss whose one resend is also lost)
 ```
 
 | symbol | provenance |
 |---|---|
 | λ | the cell's rate |
-| p_B | the per-unit rate of case-B holes: the fast-path share φ_A = 0.5, the loss ε_A = 0.03, the resend loss ε_A |
+| p_B | the per-unit rate of case-B holes: the fast-path share φ_A = 0.5, the first-send loss p0 = 0.03, the resend loss pc = 0.10 (cell I2, `toy.CELLS`) |
 | H_f | measured, the floor hold, about the skew |
-| the form | a Poisson count of case-B holes in the lateness span of about H_f before a unit |
+| the form | a Poisson count of case-B holes in the lateness span of about H_f before a unit, once H_f holds its sample |
 
-- At 10 000/s: `exp(−10 000 × 0.00045 × 0.05) ≈ 0.80`.
-- At 50/s: about 0.999.
-- Before the fix p_B ≈ 0.015 (no fast hole is resent), so the bound is about 6·10⁻⁴; measured 2.0 %.
+- At 10 000/s: `exp(−10 000 × 0.0015 × 0.05) ≈ 0.47`.
+- At 50/s: about 0.996.
+- **It is an estimate, not a proven bound.** Before the fix p_B ≈ 0.015 (no fast hole is resent), so the estimate is about 6·10⁻⁴, but 2.0 % was measured.
+  - The likely reason is that the P2 run is only 1.2 s long. In its first part the floor hold has no sample (H_f starts at 0, so there is no lateness span), and those units are on time.
+  - **Registered check:** the estimate is read only on units handed over after the floor hold's first sample, and that reading is reported beside the whole-run share. If the scoped reading still exceeds the estimate beyond noise, the form is wrong, and that is a finding.
 
-**Stated as a bound:** strict order within T, with T near the path spread, is feasible at call rates and bounded near 0.8 at 10 000/s. It is reported against the bound and is not under the pass rule.
+**Stated as a limit:** strict order within T, with T near the path spread, is feasible at call rates and limited to about one half at 10 000/s by lost resends. It is reported against the estimate and is not under the pass rule.
 
 ### 5.5 Two-path overload and capacity outage
 
@@ -484,7 +498,11 @@ The steps are in this order, each gated on the one before:
    - **R-CL:** the same stream on a capacity-limited link through an outage, the engine analogue of CL-long;
    - **R-OV:** the same stream above link capacity.
 
-   **None of these rows exists yet.** `meas-guard-bulk-blind` is in state `next`: "the guard has off-Bulk stages with witnesses as a reusable plan" is its done criterion, and Stages A and R are only planned in `s06-delete-plan.md`. The rows must be built and baselined on `main` before step 4.1.
+   **What ran and what is missing.**
+   - Evicting-seat rows have run once: `rate-evict-session` (done, status §51 block E, 12 slots, `REPORTED-ONLY`, `DEGENERATE-AS-WIRED`). That was a measurement on a measurement tree with a pacer, not a reusable guard stage.
+   - `meas-guard-bulk-blind` is still in state `next`. Its done criterion is "the guard has off-Bulk stages with witnesses as a reusable plan", and Stages A and R are only planned in `s06-delete-plan.md`.
+   - No row anywhere exercises a finite T (§13.3).
+   - So Stages A and R as reusable guard stages, and R-call, R-CL and R-OV, must be built and baselined on `main` before step 4.1.
 6. **VM rows** decide whether users are better off (§8). The offline simulation only clears the design for the build.
 
 ## 8. Rules
@@ -509,14 +527,14 @@ Stage 3d's first batch died of a `MemoryError` with 15 workers, in a long-cell r
 |---|---|---|---|---|
 | 0 | re-baseline on `toy-stage3d-rttfix` (running) | — | — | — |
 | 1 | 3e steps 0–7 as registered (tests, identity, R0, RTT gate, RATE, SIMREAD, A/A) plus A4's tests | — | as registered | under 1 h |
-| 2 | **DECIDE: CL-long's sweeps and baselines, repair off and `RL`** | 48 | 576 | about 9 h (18 old configurations at about 2 min per run) |
+| 2 | **DECIDE: CL-long's sweeps and baselines, repair off and `RL`** (new: 15 T points at H = 0 and 3 at H = ∞, × 2 repair; old: 18) | 54 | 648 | about 10 h (18 old configurations at about 2 min per run) |
 | 3 | diagnostic cross (only if 2 fails) | 5 | 60 | about 2 h |
 | 4 | 3e MAIN as registered | 59 | 708 | about 3 h |
 | 5 | the amendment rows, one path (A1–A3) | about 330 | about 3 960 | 40–60 h; the old senders in OV-long and OV-long-v are about two thirds of it |
 | 6 | robustness (§6: biases, RQ, relative one-way delay) | about 38 | about 456 | about 6 h |
 | 7 | smoothness (§6) | about 137 | about 1 644 | about 8 h |
-| 8 | 3f, two paths (registered after 3e reads) | about 150 | about 1 800 | about 6 h |
-| | **total** | **about 770** | **about 9 200** | **about 3 to 4 days** |
+| 8 | 3f, two paths (registered after 3e reads; video and file rows included) | about 170 | about 2 040 | about 7 h |
+| | **total** | **about 800** | **about 9 600** | **about 3 to 4 days** |
 
 - The per-run times come from stage 3c and 3d: ADR-0084's sender took 37 s per 100 000 units in 3c, and the S5 family about 3 s per full-rate short run (3e §4).
 - The worker times the first run of each cell, as 3e already requires. Any cell more than twice this estimate is reported before the batch goes on.
@@ -526,7 +544,7 @@ Stage 3d's first batch died of a `MemoryError` with 15 workers, in a long-cell r
 - **OQ1, sign §1:** the cells, readouts, sweeps, matching rule and pass rule. **Default: as written.**
 - **OQ2, today's Realtime modelled with its known defects** (the evict window, no source pause, silent shed) as the baseline a merge replaces, beside ADR-0084's curve as the best-tuned old law. **Default: yes, both.**
 - **OQ3, the engine-like sweep as the only form in link cells.** **Default: yes.** The whole-tail form loads the old arms with duplicates.
-- **OQ4, seeds:** 12 paired seeds everywhere, about 9 200 runs. The alternative is 6 seeds for the non-named ρ and δ points in the 40 s overload cells, saving about one day. **Default: 12.**
+- **OQ4, seeds:** 12 paired seeds everywhere, about 9 600 runs. The alternative is 6 seeds for the non-named ρ and δ points in the 40 s overload cells, saving about one day. **Default: 12.**
 - **OQ5, deadlines:** τ = 0.4 s for calls and Realtime tunnel datagrams, 2 s for buffered video, and completion time for files, with `share_T` reported beside them. **Default: as written.**
 - **OQ6, "beyond seed noise"** means `summarize2.read` reads "shown" against `m = max(T_bar, NF)`, with NF from the stage's frozen A/A. **Default: yes.**
 - **OQ7, Revision 4** is drafted only if DECIDE fails at matched share, and then as §3.5's slot-cost law. **Default: yes.**
