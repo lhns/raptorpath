@@ -99,6 +99,13 @@ class Reader(unittest.TestCase):
         self.assertEqual(P.classify([c("shown worse", "reported"), c("equivalent")], False)[0], "PASSES")   # today's Realtime is reported only
         self.assertEqual(P.classify([c("undetermined", "reported")], False)[0], "PASSES")
 
+    def test_empty_curve_section_says_why(self):
+        note = P.empty_curve_note([0.9921, 0.9921, 0.99211], [0.94, 0.97, 1.0], 0.00126)
+        self.assertIn("0.9921", note)
+        self.assertIn("one point on the share axis", note)
+        self.assertEqual(P.empty_curve_note([0.90, 0.99], [0.94, 0.97], 0.001), "")              # points inside: nothing to explain
+        self.assertIn("no point of the new curve lies in that range", P.empty_curve_note([0.90, 0.92], [0.94, 0.97], 0.001))
+
     def test_bracket(self):
         means = np.array([0.94, 0.97, 1.0])
         self.assertEqual(P.bracket(means, [0, 1, 2], 0.96), [0, 1])

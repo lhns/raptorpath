@@ -349,6 +349,18 @@ def bracket(means, order, x):
     return ([below[-1]] if below else []) + ([above[0]] if above else [])
 
 
+def empty_curve_note(old_means, new_means, noise):
+    """Why the curve-against-curve section is empty, in words: the old curve's range of delivered share and which new points fall inside it."""
+    lo, hi = float(min(old_means)), float(max(old_means))
+    inside = [x for x in new_means if lo - 1e-12 <= x <= hi + 1e-12]
+    if inside:
+        return ""
+    why = ("the old curve's points all lie within the merge noise (%.3g) of each other, so it is one point on the share axis" % noise
+           if hi - lo <= noise else "no point of the new curve lies in that range")
+    return "No curve-against-curve comparison was possible: the old curve's delivered share spans [%.4f, %.4f] (width %.2g); %s. The matched-share comparison above is therefore a comparison at that one share." % (
+        lo, hi, hi - lo, why)
+
+
 def cmd_read(a):
     build()
     rows = load("DECIDE", a.nseeds)
@@ -439,6 +451,8 @@ def cmd_read(a):
                         rd["note"] = "doubled to %d seeds" % (2 * SEEDS)
                 comps.append(dict(scope="verdict", kind="curve", base=n, k=k, rd=rd))
                 P("- new %s against ADR-0084's curve, %s: %s" % (n, k, fmt(rd)))
+    if len(adr) >= 2 and not any(c["kind"] == "curve" for c in comps):
+        P(empty_curve_note([float(arr([n], "share_any", SEEDS).mean()) for n in adr], [float(arr([n], "share_any", SEEDS).mean()) for n in have], xnoise))
     P("\n### Gates and identity\n")
     bad = []
     for n in allnames:

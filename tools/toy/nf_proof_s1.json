@@ -1,0 +1,32 @@
+{
+ "notes": "per readout the larger of the p95 over 12 seeds of |A - A'| of the two pairs: A = lifetime T=inf, hold 0 (S5), A' = A/A: lifetime T=inf, hold 0, phase variant 1 (S5); A = lifetime T=0p4, hold 0 (S5), A' = A/A: lifetime T=0.4, hold 0, phase variant 1 (S5)",
+ "cells": {
+  "share_by_0p4": 0.0051172500000000445,
+  "recovery_time": 0.10000000000000142,
+  "share_any": 0.001255750000000022,
+  "share_T": 0.001255750000000022
+ },
+ "pairs": {
+  "share_by_0p4": [
+   0.0051172500000000445,
+   0.001255750000000022
+  ],
+  "recovery_time": [
+   0.10000000000000142,
+   0.0
+  ],
+  "share_any": [
+   0.0,
+   0.001255750000000022
+  ],
+  "share_T": [
+   0.0,
+   0.001255750000000022
+  ]
+ },
+ "degenerate": [
+  "recovery_time at the pair of lifetime T=0p4, hold 0 (S5): 0 (resolution 0.1)",
+  "share_any at the pair of lifetime T=inf, hold 0 (S5): 0 (resolution 5e-06)",
+  "share_T at the pair of lifetime T=inf, hold 0 (S5): 0 (resolution 5e-06)"
+ ]
+}
