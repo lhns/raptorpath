@@ -1,0 +1,71 @@
+# Stage 3e results (offline simulation)
+
+Registration: `docs/derivations/three-knobs-stage3e-registration.md` on `reg-stage3e` at c7021312 (Amendment 1, section 13).
+Build brief: `docs/derivations/three-knobs-stage3e-build.md`, same commit.  Code base: `proof-s1` at b2addffb, branch `toy-stage3e`.
+Nothing below has been run beyond the unit tests, the identity checks and the one timing run named in the build brief.
+
+## Rate-law reference program
+
+`rate_ref3e.json` holds the values of `raptorpath-math` (Appendix A's composition, extended to the grid eps in {0.01, 0.03, 0.0344, 0.05,
+0.1, 0.135, 0.3} x srtt in {0.0115, 0.05, 0.1, 0.3} x rate in {50, 1000, 8000, 10000, 11250} x delta in {0.005, 0.5, 5, 50}, plus the A&S
+survival and quantile values and a few `p_fec_normal` points).  It was produced by this scratch crate (outside the repository, with
+`raptorpath-math` as a path dependency, base revision of `proof-s1`):
+
+```rust
+use raptorpath_math as m;
+
+fn r(p: f64, srtt: f64, rate: f64, delta: f64) -> (f64, f64, f64, f64) {
+    let t_tail = (1e-5 * m::zeta_of_delta(delta)).clamp(1e-9, 0.1);
+    let w = m::derive_window(t_tail, p, 1.0, srtt, rate, 0.0).round().min(200.0);
+    let mk = |tail: f64, late: bool| m::RateInputs {
+        p_upper: p, sigma2: 1.0, mean_burst: 1.0, mass: m::MassStats::default(), tail_provision: true,
+        window: w, t_symbols: (srtt * rate).max(1.0), srtt, t_sym: 1.0 / rate, codec_overhead: 0.004,
+        tail_target: tail, bulk_late_is_fine: late, completion_exposure: 0.0, inner_feedback: 0.0,
+        saturation_cap: true, max_overhead: 0.5,
+    };
+    let beta = m::bulkness_of_delta(delta);
+    let a = m::controller_rate(&mk(t_tail, false));
+    let l = m::controller_rate(&mk((1e-5f64 * 100.0).clamp(1e-9, 0.1), true));
+    (w, (1.0 - beta) * a + beta * l, m::r_saturation(p, 1.0, w, srtt, 1.0 / rate), beta)
+}
+
+fn main() {
+    let eps = [0.01, 0.03, 0.0344, 0.05, 0.1, 0.135, 0.3];
+    let srtt = [0.0115, 0.05, 0.1, 0.3];
+    let rate = [50.0, 1000.0, 8000.0, 10000.0, 11250.0];
+    let delta = [0.005, 0.5, 5.0, 50.0];
+    println!("{{");
+    println!("\"grid\": [");
+    let mut first = true;
+    for &e in &eps { for &s in &srtt { for &rt in &rate { for &d in &delta {
+        let (w, rr, rsat, beta) = r(e, s, rt, d);
+        let t_tail = (1e-5 * m::zeta_of_delta(d)).clamp(1e-9, 0.1);
+        let wr = m::derive_window(t_tail, e, 1.0, s, rt, 0.0);
+        if !first { println!(","); }
+        first = false;
+        print!("  {{\"eps\": {:e}, \"srtt\": {:e}, \"rate\": {:e}, \"delta\": {:e}, \"W\": {}, \"W_clamped\": {:e}, \"r\": {:e}, \"r_sat\": {:e}, \"beta\": {:e}}}",
+               e, s, rt, d, w, wr, rr, rsat, beta);
+    }}}}
+    println!("\n],");
+    println!("\"survival\": [");
+    let zs = [-9.0, -3.0, -1.0, 0.0, 0.5, 2.0, 4.5, 9.0];
+    for (i, &z) in zs.iter().enumerate() {
+        print!("  [{:e}, {:e}]{}", z, m::normal_survival(z), if i + 1 < zs.len() { ",\n" } else { "\n" });
+    }
+    println!("],");
+    println!("\"quantile\": [");
+    let ps = [1e-12, 1e-7, 0.05, 0.5, 0.95, 1.0 - 1e-7];
+    for (i, &p) in ps.iter().enumerate() {
+        print!("  [{:e}, {:e}]{}", p, m::normal_quantile(p), if i + 1 < ps.len() { ",\n" } else { "\n" });
+    }
+    println!("],");
+    println!("\"p_fec\": [");
+    let pf = [(0.1, 0.03, 100.0, 1.0), (0.3835, 0.1, 16.0, 1.0), (0.2, 0.03, 100.0, 1.0), (0.05, 0.03, 50.0, 1.0), (0.5, 0.135, 200.0, 1.0)];
+    for (i, &(rr, e, w, s2)) in pf.iter().enumerate() {
+        print!("  [{:e}, {:e}, {:e}, {:e}, {:e}]{}", rr, e, w, s2, m::p_fec_normal(rr, e, w, s2), if i + 1 < pf.len() { ",\n" } else { "\n" });
+    }
+    println!("]");
+    println!("}}");
+}
+```
+
