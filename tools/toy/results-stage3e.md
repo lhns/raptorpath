@@ -82,3 +82,27 @@ IDENTITY CHECK (stage 3e): PASS (A: base b2addffb on the proof-s1 sample reprodu
 The sample of B is the proof-s1 sample (16) plus one configuration per sender family and cell shape of `ident3e_cfgs.py` (7).  Not run: the full
 `check_ident3d.py` configuration set (several thousand runs, four workers); the proof-s1 sample spans the same code paths.
 
+## Configurations and runs (build brief 8.3), after the fingerprint dedupe
+
+`python batch3e.py --part CROSS --list` (the first nine lines; a fingerprint belongs to the first part in the order AA, AA2, DECIDE, CROSS, MAIN,
+AMEND, ROBUST, SMOOTH that asks for it).  This is the count to report before any decision part runs:
+
+```text
+AA         12 configurations,   12 after the dedupe,   144 runs
+AA2        22 configurations,   22 after the dedupe,   264 runs
+DECIDE     54 configurations,   53 after the dedupe,   636 runs
+CROSS       2 configurations,    2 after the dedupe,    24 runs
+MAIN       59 configurations,   46 after the dedupe,   552 runs
+AMEND     561 configurations,  529 after the dedupe,  5880 runs
+ROBUST     32 configurations,   32 after the dedupe,   384 runs
+SMOOTH    272 configurations,  258 after the dedupe,  3096 runs
+total    1014 configurations,  954 after the dedupe, 10980 runs
+```
+
+Against registration 13.5 (before the dedupe): MAIN 59, DECIDE 54, CROSS 2, ROBUST 32, SMOOTH 272 and AMEND 507 at twelve seeds plus 54 at three seeds
+(561 configurations) match the listed numbers; AMEND matches the per-cell split too (CLw-long 75, RT 55, CL 52, OV 47, K-I2 40, K-L10 40, K-OV 36,
+OV-long 34, CLc 30, CL-long 26, the three video cells 21 each, Ec, E-I2 and M-I2 3 each).  AA and AA2 list each cell's A row (S5 at T=inf, hold 0,
+repair off) beside its A' row (phase variant 1), so they hold 12 and 22 configurations where the registration counts 6 and 11 A/A rows.  DOUBLE
+(seeds 12 to 23 of the fingerprints the reader names) is not in the table.  The registration's unconditional total (989 configurations, 11 382 runs)
+excludes CROSS and the extra A rows; after the dedupe the plan above is 10 980 runs including CROSS and the A rows.
+

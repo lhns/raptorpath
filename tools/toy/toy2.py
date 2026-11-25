@@ -1228,6 +1228,8 @@ class Sim:
                 g["worth_viol_rep"] += 1
         g["rep_sent"] += 1
         g["rep_members_sum"] += end - lo
+        if self.trace is not None:
+            self.trace.append((round(now, 9), lo, j, end, 3))        # kind 3: a repair over [lo, end) (the identity gates compare traces)
         self.wadd("repair", now)
         a, dep = self.fwd(now)
         if a is not None:

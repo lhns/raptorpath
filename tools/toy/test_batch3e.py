@@ -292,6 +292,40 @@ class Runner(unittest.TestCase):
         self.assertEqual(B.pair_failures("fa", 2, a, ["fb"]), [])                  # the partner has not run at this seed yet
 
 
+    def tiny(self, jobs):
+        def build():
+            B.PARTS.clear()
+            for p in B.ORDER:
+                B.PARTS[p] = []
+            for name, T, mode, kw in jobs:
+                B.add("AA", name, "RT", ("aa", 0), mode, lambda s, T=T, mode=mode, kw=kw: B.new_cfg("RT", s, T, 0.0, 50.0, B.rp(mode), n_total=300, **kw), nseeds=2)
+            B.register()
+        old = B.build
+        B.build = build
+        self.addCleanup(setattr, B, "build", old)
+
+    def test_main_runs_a_tiny_part_resumes_and_writes_done(self):
+        self.mark("PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread")
+        self.tiny([("tiny OFF (S5)", 0.12, "OFF", {}), ("tiny RL (S5)", 0.12, "RL", {})])
+        self.assertEqual(B.main(["--part", "AA", "--seeds", "2"]), 0)
+        self.assertTrue(os.path.exists(os.path.join(B.OUT, "DONE-AA")))
+        self.assertEqual(len(os.listdir(os.path.join(B.OUT, "runs"))), 4)
+        with open(os.path.join(B.OUT, "AA.json")) as f:
+            self.assertEqual(sorted(json.load(f)), ["tiny OFF (S5)", "tiny RL (S5)"])
+        mt = os.path.getmtime(os.path.join(B.OUT, "runs", sorted(os.listdir(os.path.join(B.OUT, "runs")))[0]))
+        self.assertEqual(B.main(["--part", "AA", "--seeds", "2"]), 0)                   # nothing to do: the files are skipped
+        self.assertEqual(mt, os.path.getmtime(os.path.join(B.OUT, "runs", sorted(os.listdir(os.path.join(B.OUT, "runs")))[0])))
+
+    def test_main_stops_on_a_gate_failure_and_then_refuses(self):
+        self.mark("PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread")
+        self.tiny([("tiny broken (S5)", 0.04, "RL", dict(repair_seam="no_edge"))])
+        self.assertEqual(B.main(["--part", "AA", "--seeds", "2"]), 1)
+        self.assertTrue(os.path.exists(os.path.join(B.OUT, "STOP")))
+        self.assertIn("l1_viol_rep", open(os.path.join(B.OUT, "STOP")).read())
+        self.assertFalse(os.path.exists(os.path.join(B.OUT, "DONE-AA")))
+        self.assertEqual(B.main(["--part", "AA", "--seeds", "2"]), 2)                   # nothing runs while STOP exists
+
+
 def toy2_id_gauges():
     import test_toy2
     return test_toy2.ID_GAUGES
@@ -305,7 +339,7 @@ def fake(share_any, y, rec=None, jit=1e-4):
     """SEEDS results of one row: share_any, the on-time share y, the recovery time."""
     out = {}
     for s in range(SEEDS):
-        out[s] = dict(share_any=share_any + jit * rng.standard_normal(), share_by_0p4=y + jit * rng.standard_normal(),
+        out[s] = dict(share_any=(1.0 if share_any >= 1.0 else share_any + jit * rng.standard_normal()), share_by_0p4=y + jit * rng.standard_normal(),
                       recovery_time=(rec if rec is None else rec + jit * rng.standard_normal()), units=200000, finished=True,
                       gauges=dict(l1_viol=0, l1_viol_rep=0, commit_viol=0, worth_viol_rep=0))
     return out
@@ -347,8 +381,8 @@ class Reader(unittest.TestCase):
         self.assertEqual(out["outcome"], "FAILS")
 
     def test_a_baseline_above_the_curve_is_outside_the_range_and_fails(self):
-        adr = {0.99: (1.003, 0.5, 6.0)}
-        out = self.read(fake_cell(self.NEW, adr))
+        adr = {0.99: (1.0, 0.5, 6.0)}
+        out = self.read(fake_cell({0.4: (0.90, 0.88, 0.0), 2.0: (0.99, 0.96, 4.0)}, adr))      # the curve stops at 0.99 delivered
         self.assertEqual(out["outcome"], "FAILS")
         self.assertTrue(any(c["rd"]["word"] == "outside the swept range" for c in out["comps"]))
 
@@ -394,7 +428,7 @@ class Reader(unittest.TestCase):
     def test_the_stage_verdict(self):
         self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "PASSES"}, better_somewhere=True), "PASSES")
         self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "FAILS"}, better_somewhere=True), "FAILS")
-        self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "UNDETERMINED"}, better_somewhere=True), "UNDETERMINED")
+        self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "UNDETERMINED"}, better_somewhere=True), "PASSES")       # 13.3 read literally: only a FAILS blocks it
         self.assertEqual(S.stage_verdict({"a": "PASSES"}, better_somewhere=False), "UNDETERMINED")        # nothing shown better outside the identity cells
 
 

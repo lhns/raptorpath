@@ -103,6 +103,12 @@ def main():
     n, bad_b = part_b()
     bad_c = part_c()
     ok = ok_a and not bad_b and not bad_c
+    out = os.path.join(HERE, "out3e")
+    os.makedirs(out, exist_ok=True)
+    if ok_a:
+        open(os.path.join(out, "PASS-ident"), "w").close()                  # registration 9 step 2
+    if ok_a and not bad_b and not bad_c:
+        open(os.path.join(out, "PASS-r0"), "w").close()                     # registration 9 step 3, on this sample (see the results file)
     print("IDENTITY CHECK (stage 3e): %s (A: base %s on the proof-s1 sample %s; B: R0 equals repair off on %d configurations, %d differences; "
           "C: RL at delta 0.005 equals off, %d differences; id3e keys, sender traces and event counters; one process)" % (
               "PASS" if ok else "FAIL", base, "reproduced" if ok_a else "DIFFERS", n, len(bad_b), len(bad_c)))
