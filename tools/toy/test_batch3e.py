@@ -341,6 +341,71 @@ class Runner(unittest.TestCase):
         self.assertEqual(B.main(["--part", "AA", "--seeds", "2"]), 2)                   # nothing runs while STOP exists
 
 
+class Floors(unittest.TestCase):
+    def test_the_larger_floor_and_the_degenerate_one(self):
+        cells, deg = S.combine_floors(dict(share_by_0p4=0.0, recovery_time=0.1, share_any=0.0), dict(share_by_0p4=0.003, recovery_time=0.0, share_any=0.0))
+        self.assertEqual(cells, dict(share_by_0p4=0.003, recovery_time=0.1, share_any=0.0))       # the other pair's floor where one is zero
+        self.assertEqual(deg, ["share_any"])                                                        # zero in both
+
+    def test_a_comparison_on_a_degenerate_floor_is_reported_only(self):
+        adr = {0.95: (0.92, 0.99, 1.0), 0.99: (0.97, 0.99, 1.0), 1.0: (1.0, 0.99, 1.0)}
+        R = fake_cell(Reader.NEW, adr)
+        nf0 = dict(NF, share_by_0p4=0.0)
+        loud = S.read_mode(R, nf0, units=200000, ys=("share_by_0p4",), nseeds=SEEDS, rec_cap=14.5)
+        self.assertEqual(loud["outcome"], "FAILS")
+        quiet = S.read_mode(R, nf0, units=200000, ys=("share_by_0p4",), nseeds=SEEDS, rec_cap=14.5, degenerate=("share_by_0p4",))
+        self.assertTrue(all(c["scope"] == "reported" for c in quiet["comps"]))
+        self.assertEqual(quiet["outcome"], "PASSES")                                                # nothing under the verdict reads shown worse against a zero floor
+
+
+class Smoothness(unittest.TestCase):
+    def test_kp_reads_a_step_in_k_and_a_kink_in_p_and_nothing_in_a_flat_sweep(self):
+        x = np.arange(9.0)
+        flat = np.stack([np.full(SEEDS, 0.5) + 1e-4 * rng.standard_normal(SEEDS) for _ in x])
+        step = flat + (x[:, None] >= 4.5) * 0.1
+        kink = flat + np.maximum(x[:, None] - 4.0, 0.0) * 0.05
+        words = lambda Y: [(a["word"], b["word"]) for _, a, b in S.slide_kp(Y, 0.005)]
+        self.assertTrue(all(w == ("not shown", "not shown") for w in words(flat)))
+        self.assertTrue(any(w[0] == "shown" for w in words(step)))
+        self.assertTrue(any(w[1] == "shown" for w in words(kink)))
+        self.assertEqual(len(S.slide_kp(flat, 0.005)), 5)                                            # every 5 consecutive points of 9
+
+    def test_the_smooth_groups_are_the_registered_fine_sweeps(self):
+        B.build()
+        g = B.SMOOTH_GROUPS
+        self.assertEqual(len(g["T 0.360-0.440 | OV"]), 17)
+        self.assertEqual(len(g["H 0-10 ms | CL-long"]), 11)
+        self.assertEqual(len(g["H 19.6-20.4 ms | K-L10"]), 9)
+        self.assertEqual(len(g["T 1.800-2.200 | CL-long-v"]), 17)
+        self.assertEqual(len(g["delta around 50, today's Realtime | RT"]), 11)
+
+
+class RepairGauges(unittest.TestCase):
+    def test_clamp_flags_and_the_per_second_series(self):
+        self.assertTrue(toy2.rate_law(0.3, 0.1, 11250.0, 50.0)["rmax_bind"])                       # r = 0.500: the cap binds (registration 2.1)
+        self.assertFalse(toy2.rate_law(0.10, 0.101, 50.0, 50.0)["rmax_bind"])
+        self.assertFalse(toy2.rate_law(0.10, 0.101, 50.0, 50.0)["burst_bind"])
+        r = toy2.run(B.new_cfg("RT", 0, 0.12, 0.0, 50.0, B.rp("RL"), n_total=1500))
+        s = r["rep3e"]["series"]
+        self.assertEqual(sum(s["repairs"]), r["gauges"]["rep_sent"])
+        self.assertEqual(sum(s["decoded"]), r["gauges"]["dec_units"])
+        self.assertAlmostEqual(s["r"][5], 0.3835, delta=0.01)
+        self.assertEqual(s["W"][5], 16.0)
+        self.assertAlmostEqual(s["astar"][5], 3.0, delta=0.6)
+        self.assertEqual((r["rep3e"]["rmax_bind_frac"], r["rep3e"]["burst_bind_frac"]), (0.0, 0.0))
+        json.loads(json.dumps(r["rep3e"]))
+
+
+class TodaysRealtimeSeed(unittest.TestCase):
+    def test_rfc_keeps_the_own_50ms_seed_on_the_deadline(self):
+        sm = toy2.Sim(B.rt_cfg("RT", 0, 50.0, None, n_total=300))
+        self.assertEqual(sm.cfg.rtt_est, "rfc")
+        self.assertIsNone(sm.srtt)
+        self.assertEqual(sm.D_now()[0], min(sm.b, 2.0) * 0.050)                                    # the deadline reads the 50 ms seed until the first sample
+        r = toy2.run(B.rt_cfg("RT", 0, 50.0, None, n_total=300))
+        self.assertEqual(r["gauges"]["seed_verdicts"], 0)                                          # and a shed never happens before that sample
+
+
 class RateCheck(unittest.TestCase):
     def test_a_pass_writes_the_marker_and_a_difference_writes_stop(self):
         import check_rate3e
@@ -476,7 +541,8 @@ class Reader(unittest.TestCase):
     def test_the_stage_verdict(self):
         self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "PASSES"}, better_somewhere=True), "PASSES")
         self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "FAILS"}, better_somewhere=True), "FAILS")
-        self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "UNDETERMINED"}, better_somewhere=True), "PASSES")       # 13.3 read literally: only a FAILS blocks it
+        self.assertEqual(S.stage_verdict({"a": "PASSES", "b": "UNDETERMINED"}, better_somewhere=True), "UNDETERMINED")   # as proof stage 1: any undetermined cell
+        self.assertEqual(S.stage_verdict({"a": "UNDETERMINED", "b": "FAILS"}, better_somewhere=True), "FAILS")
         self.assertEqual(S.stage_verdict({"a": "PASSES"}, better_somewhere=False), "UNDETERMINED")        # nothing shown better outside the identity cells
 
 

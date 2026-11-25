@@ -28,7 +28,8 @@ import batch3c  # noqa: E402
 import batch3d  # noqa: E402
 import test_toy2  # noqa: E402
 
-OUT = os.path.join(HERE, "out3e")
+OUT = os.environ.get("BATCH3E_OUT", os.path.join(HERE, "out3e"))        # BATCH3E_OUT and BATCH3E_SMOKE exist for --smoke-pool only
+SMOKE = bool(os.environ.get("BATCH3E_SMOKE"))
 INF = math.inf
 SEEDS = 12
 SEEDS_ID = 3
@@ -404,33 +405,47 @@ def robust_jobs():
             lambda s, cell=cell: new_cfg(cell, s, 0.4, 0.0, 50.0, rp("RL"), owd_est="rel"))
 
 
+SMOOTH_GROUPS = {}                                                           # fine sweeps read by kp_stats: name -> jobs in the order of their dial
+
+
 def smooth_jobs():
-    def lt(cell, T, H, delta=50.0, tag=""):
+    def lt(cell, T, H, delta=50.0, tag="", group=None):
         add("SMOOTH", "%s | %s%s | %s" % (cell, n_lt(T, H), tag, n_mode("RL")), cell, ("sm", T, H, delta), "RL",
             lambda s, cell=cell, T=T, H=H, delta=delta: new_cfg(base_of(cell), s, T, H, delta, rp("RL")))
+        if group:
+            SMOOTH_GROUPS.setdefault(group, []).append(PARTS["SMOOTH"][-1])
     for cell in ("OV", "CL-long", "K-L10"):
         for k in range(17):
-            lt(cell, round(0.360 + 0.005 * k, 3), 0.0)
+            lt(cell, round(0.360 + 0.005 * k, 3), 0.0, group="T 0.360-0.440 | " + cell)
         for T in (5.0, 10.0, 20.0, 40.0):
             lt(cell, T, 0.0)
-        for H in [round(0.001 * k, 3) for k in range(11)] + [round(0.0196 + 0.0001 * k, 4) for k in range(9)]:
-            lt(cell, 0.4, H)
+        for H in [round(0.001 * k, 3) for k in range(11)]:
+            lt(cell, 0.4, H, group="H 0-10 ms | " + cell)
+        for H in [round(0.0196 + 0.0001 * k, 4) for k in range(9)]:
+            lt(cell, 0.4, H, group="H 19.6-20.4 ms | " + cell)
     for k in range(17):
-        lt("CL-long-v", round(1.8 + 0.025 * k, 3), 0.0, 0.005)
+        lt("CL-long-v", round(1.8 + 0.025 * k, 3), 0.0, 0.005, group="T 1.800-2.200 | CL-long-v")
     for cell in ("RT", "CL-long"):
         for p in (0.005, 0.5, 50.0):
             for k in range(11):
                 dl = round(p * (0.90 + 0.02 * k), 6)
-                lt(cell, 0.4, 0.0, dl, tag=", delta=%g" % dl)
+                lt(cell, 0.4, 0.0, dl, tag=", delta=%g" % dl, group="delta around %g, new model | %s" % (p, cell))
                 add("SMOOTH", "%s | %s | %s" % (cell, n_rt(dl), n_mode("RL")), cell, ("smrt", dl), "RL",
                     lambda s, cell=cell, dl=dl: rt_cfg(base_of(cell), s, dl, rp("RL", "evict")))
+                SMOOTH_GROUPS.setdefault("delta around %g, today's Realtime | %s" % (p, cell), []).append(PARTS["SMOOTH"][-1])
 
 
 def build():
     PARTS.clear()
     FPS.clear()
+    SMOOTH_GROUPS.clear()
     for p in ORDER:
         PARTS[p] = []
+    if SMOKE:                                                                # --smoke-pool: two tiny configurations, nothing else
+        for nm, mode in (("smoke OFF (S5)", "OFF"), ("smoke RL (S5)", "RL")):
+            add("AA", nm, "RT", ("aa", mode), mode, lambda s, mode=mode: new_cfg("RT", s, 0.12, 0.0, 50.0, rp(mode), n_total=300), nseeds=2)
+        register()
+        return
     aa_jobs("AA", MAIN_CELLS)
     aa_jobs("AA2", AA2_CELLS)
     decide_jobs()
@@ -514,6 +529,8 @@ def _need(part):
 
 
 def missing_markers(part):
+    if SMOKE:
+        return []
     need = _need(part.split(":")[1]) + ["DONE-" + part.split(":")[1]] if part.startswith("DOUBLE:") else _need(part)
     return [m for m in need if not os.path.exists(os.path.join(OUT, m))]
 
@@ -624,9 +641,27 @@ def write_joblist(part, jobs):
         json.dump({j.name: j.fp for j in jobs}, f, indent=1)
 
 
+def smoke_pool():
+    """--smoke-pool: the --workers 2 path on two tiny configurations (RT, 300 units, repair off and RL, 2 seeds), in a temporary store, with the
+    markers waived.  Not a part of any registered run; start it only on a quiet machine."""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        env = dict(os.environ, BATCH3E_OUT=td, BATCH3E_SMOKE="1")
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), "--part", "AA", "--workers", "2", "--seeds", "2"], env=env, cwd=HERE,
+                           capture_output=True, text=True)
+        files = sorted(os.listdir(os.path.join(td, "runs"))) if os.path.isdir(os.path.join(td, "runs")) else []
+        ok = r.returncode == 0 and len(files) == 4 and os.path.exists(os.path.join(td, "DONE-AA"))
+        print(r.stdout[-600:], r.stderr[-300:])
+        print("SMOKE POOL:", "PASS" if ok else "FAIL", "(rc %d, %d run files)" % (r.returncode, len(files)))
+        return 0 if ok else 1
+
+
 def main(argv=None):
+    if "--smoke-pool" in (argv if argv is not None else sys.argv[1:]):
+        return smoke_pool()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--part", required=True)
+    ap.add_argument("--part", required=True)                                 # (--smoke-pool needs no part)
     ap.add_argument("--seeds", type=int, default=SEEDS)
     ap.add_argument("--seed0", type=int, default=0)
     ap.add_argument("--only", default="")

@@ -168,3 +168,16 @@ changed since); its PASS line stands for the sample.
 - Not built, because the build brief codes none of them: the `rmax_bind` and `burst_bind` gauges, the per-1 s series of r, W, A* and decodes, the `kp_stats` read of
   SMOOTH, and the reader's per-part driver that runs DECIDE-then-DOUBLE automatically.  The constant 0.0875 of the brief's fixed-r list has no arm in registration 5.
 - The `--workers 2` pool path of `batch3e.py` is not exercised by a test or a run (the tests use one worker).
+
+## Follow-ups after the coordinator's decisions
+
+- A/A: `summarize3e.py freeze` stores both pairs and takes the larger floor per cell and readout (`combine_floors`); a floor that is zero in both pairs is listed as
+  degenerate and the reader marks every comparison on that readout reported only (never under the verdict).  Where one pair is zero the other pair's floor is used and the
+  freeze prints it.  The values themselves are known only after AA runs.
+- Stage verdict: any UNDETERMINED cell makes the stage UNDETERMINED (as proof stage 1); FAILS still wins.
+- Today's Realtime under the RFC estimator: it keeps its own 50 ms seed on its deadline (`srtt` is None until the first sample under both estimators; test
+  `TodaysRealtimeSeed`).  After the first sample the RFC srtt differs from the old estimator's (0.101 against 0.110 in RT, which includes the report tick); no change was made.
+- Gauges `rmax_bind` and `burst_bind` (flags from `controller_rate_parts`, anchor term; fractions in `rep3e`) and `rep3e["series"]`: per 1 s repairs, mean r, mean W, mean A*, decoded units.
+- `summarize3e.py smooth` reads kp_stats (K and P) over every 5 consecutive points of each fine sweep (`batch3e.SMOOTH_GROUPS`) against the cell's A/A floor.
+- `python batch3e.py --smoke-pool` runs the `--workers 2` path on two tiny configurations in a temporary store with the markers waived.  Built, not run: `amend\phase4.done`
+  did not exist and `amend_run.py` was still running.

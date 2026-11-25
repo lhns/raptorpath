@@ -60,21 +60,31 @@ def nf_from(A, Ap, cap, keys):
     return out
 
 
+def combine_floors(tinf, primary):
+    """The larger of the two A/A floors per readout.  A pair whose floor is zero (an on-time share that is 0 by construction under overload at T = inf, a recovery
+    at the readout's resolution) gives way to the other pair's.  Returns (floors, readouts whose floor is zero in both: their comparisons are reported only)."""
+    cells = {k: max(tinf[k], primary[k]) for k in tinf}
+    return cells, [k for k, v in cells.items() if v == 0.0]
+
+
 def stage_verdict(outcomes, better_somewhere):
-    """Registration 13.3 (plan 1.3): PASSES if no cell FAILS and at least one comparison outside the identity cells reads shown better; FAILS if any
-    cell fails; UNDETERMINED otherwise."""
+    """Registration 13.3 (plan 1.3) with the coordinator's reading: FAILS if any cell fails; UNDETERMINED if any cell is undetermined; otherwise PASSES
+    when at least one comparison outside the identity cells reads shown better, else UNDETERMINED."""
     if any(v == "FAILS" for v in outcomes.values()):
         return "FAILS"
+    if any(v == "UNDETERMINED" for v in outcomes.values()):                  # as proof stage 1: an undetermined cell leaves the stage undetermined
+        return "UNDETERMINED"
     if better_somewhere:
         return "PASSES"
     return "UNDETERMINED"
 
 
 # ---- one cell in one repair mode ----------------------------------------------------------------------------------------------------------
-def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False):
+def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=()):
     """R: row key -> seed -> result, keys ("lt", T, 0.0) (the new curve), ("adr", rho), ("rt", delta), ("bulk",).  The object API is the new
     curve's own T = inf, H = 0 point.  ADR-0084 (curve and points), today's Bulk and the object API are under the verdict in every mode;
     today's Realtime only at the deltas in rt_verdict (50 in RL and RE, none in OFF), elsewhere it is reported.
+    A readout in `degenerate` has a zero A/A floor in the cell (both pairs): its comparisons are reported only, never under the verdict.
     Returns dict(outcome, comps, undet (row keys to double), worse, better)."""
     def have(key, ns):
         return key in R and all(s in R[key] for s in range(ns))
@@ -91,7 +101,9 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
     xnoise = max(nf_of(nf, "share_any"), 1.0 / units)
     comps, undet = [], set()
 
-    def scope_of(key):
+    def scope_of(key, k=None):
+        if k in degenerate:
+            return "reported"
         if key[0] == "rt":
             return "verdict" if key[1] in rt_verdict else "reported"
         return "verdict"
@@ -112,7 +124,7 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
                     rd["note"] = "doubled to %d seeds" % (2 * nseeds)
                 else:
                     undet.update(a for a in arms if a != ("api",))             # still to double
-            comps.append(dict(scope=scope_of(bk), kind="point", base=bk, k=k, rd=rd))
+            comps.append(dict(scope=scope_of(bk, k), kind="point", base=bk, k=k, rd=rd))
         adr = [k2 for k2 in base_keys if k2[0] == "adr"]
         if len(adr) >= 2 and new_all:                                          # curve against curve: the new points inside ADR-0084's range
             ax, ay = arr(adr, "share_any", nseeds), arr(adr, k, nseeds)
@@ -136,7 +148,7 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
                         rd["note"] = "doubled to %d seeds" % (2 * nseeds)
                     else:
                         undet.update({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)})
-                comps.append(dict(scope="verdict", kind="curve", base=n, k=k, rd=rd))
+                comps.append(dict(scope="reported" if k in degenerate else "verdict", kind="curve", base=n, k=k, rd=rd))
     out, worse, und, better = classify(comps, gates_bad)
     return dict(outcome=out, comps=comps, undet=undet, worse=worse, undetermined=und, better=better)
 
@@ -187,7 +199,7 @@ def cmd_freeze(force=False, aa_at="tinf"):
     import batch3e as B
     B.build()
     nf = dict(notes="p95 over 12 seeds of |A - A'|; A' = phase variant 1 of A; A = S5 at T=inf, hold 0 (\"tinf\", build 8.5) or at the cell's primary lifetime "
-                    "(\"primary\", registration 5), repair off; shares and seconds.  \"cells\" is the one chosen by --aa-at.", aa_at=aa_at, tinf={}, primary={}, cells={})
+                    "(\"primary\", registration 5), repair off; shares and seconds.  \"cells\" is the larger of the two per readout; \"degenerate\" lists the readouts whose floor is zero in both pairs.", aa_at=aa_at, tinf={}, primary={}, cells={}, degenerate={})
     for cell in B.MAIN_CELLS + B.AA2_CELLS:
         base, d = B.base_of(cell), B.delta_of(cell)
         for at in ("tinf", "primary"):
@@ -197,7 +209,11 @@ def cmd_freeze(force=False, aa_at="tinf"):
             if any(r is None for r in list(A.values()) + list(Ap.values())):
                 raise SystemExit("the A/A (%s) needs the %d seeds of both arms in %s" % (at, SEEDS, cell))
             nf[at][cell] = nf_from(A, Ap, cell_cap(cell), ["share_any", "share_T"] + cell_ys(cell))
-        nf["cells"][cell] = nf[aa_at][cell]
+        nf["cells"][cell], nf["degenerate"][cell] = combine_floors(nf["tinf"][cell], nf["primary"][cell])
+        for at in ("tinf", "primary"):
+            z = [k for k, v in nf[at][cell].items() if v == 0.0]
+            if z:
+                print("degenerate floor (zero) in the %s pair of %s: %s%s" % (at, cell, z, "; zero in both, comparisons on it are reported only" if set(z) & set(nf["degenerate"][cell]) else "; the other pair's floor is used"))
     if os.path.exists(NF_PATH) and not force:
         print("nf_stage3e.json exists; not overwriting (frozen)")
         return
@@ -212,7 +228,8 @@ def cmd_read(cell, modes, nseeds, write_undet, out_path):
     import batch3e as B
     B.build()
     with open(NF_PATH) as f:
-        nf = json.load(f)["cells"][cell]
+        nfall = json.load(f)
+    nf, degenerate = nfall["cells"][cell], tuple(nfall.get("degenerate", {}).get(cell, ()))
     L = []
     P_ = L.append
     outcomes, undet_fp, better_somewhere = {}, set(), False
@@ -224,7 +241,7 @@ def cmd_read(cell, modes, nseeds, write_undet, out_path):
             P_("- mode %s: no complete rows on disk" % mode)
             continue
         rt_verdict = () if mode == "OFF" else (50.0,)
-        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict)
+        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate)
         outcomes[mode] = res["outcome"]
         better_somewhere = better_somewhere or bool(res["better"])
         for key in res["undet"]:
@@ -249,9 +266,60 @@ def cmd_read(cell, modes, nseeds, write_undet, out_path):
     return cell_out, better_somewhere
 
 
+# ---- smoothness: kp_stats over every 5 consecutive points (registration 13.2, plan 6) ------------------------------------------------------------
+def kp_stats(Y):
+    """Per seed K = 2 J1 - J2 and P = 2 D1 - D2 of a readout over five equally spaced points (Y: (5, seeds); the centre is index 2), as
+    summarize2.kp_stats forms them: a step in the dial shows in K, a kink in P."""
+    J1, J2 = Y[3] - Y[1], Y[4] - Y[0]
+    D1 = Y[2] - 0.5 * (Y[1] + Y[3])
+    D2 = Y[2] - 0.5 * (Y[0] + Y[4])
+    return {"K": 2 * J1 - J2, "P": 2 * D1 - D2}
+
+
+def slide_kp(Y, m):
+    """kp_stats on every window of 5 consecutive points of Y ((points, seeds)); each statistic is read against +-m (the A/A floor of the readout,
+    reported with the sweep).  Returns a list of (first point, K reading, P reading); a reading is "shown" when its interval lies outside +-m."""
+    out = []
+    for i in range(Y.shape[0] - 4):
+        st = kp_stats(Y[i:i + 5])
+        row = []
+        for name in ("K", "P"):
+            mu, lo, hi = boot(st[name])
+            shown = lo > m or hi < -m
+            row.append(dict(stat=name, mean=mu, lo=lo, hi=hi, m=m, word="shown" if shown else "not shown"))
+        out.append((i, row[0], row[1]))
+    return out
+
+
+def cmd_smooth(nseeds):
+    import batch3e as B
+    B.build()
+    with open(NF_PATH) as f:
+        nfall = json.load(f)
+    shown = 0
+    for name, jobs in sorted(B.SMOOTH_GROUPS.items()):
+        cell = jobs[0].cell
+        for k in cell_ys(cell):
+            Y = []
+            for j in jobs:
+                rows = [B.load(j.fp, s) for s in range(nseeds)]
+                if any(r is None for r in rows):
+                    break
+                Y.append([value(r, k, cell_cap(cell)) for r in rows])
+            if len(Y) != len(jobs):
+                print("- %s, %s: not complete" % (name, k))
+                continue
+            m = nfall["cells"].get(cell, {}).get(k, 0.0)
+            res = slide_kp(np.asarray(Y), m)
+            bad = [(i, r) for i, a, b in res for r in (a, b) if r["word"] == "shown"]
+            shown += len(bad)
+            print("- %s, %s: %d windows, A/A floor %.3g, K or P shown in %d (%s)" % (name, k, len(res), m, len(bad), ", ".join("window %d %s" % (i, r["stat"]) for i, r in bad) or "none"))
+    print("SMOOTHNESS: %s" % ("a K or P is shown: a step or a kink, a defect finding" if shown else "no K or P shown in any window"))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("freeze", "read", "verdict"))
+    ap.add_argument("cmd", choices=("freeze", "read", "verdict", "smooth"))
     ap.add_argument("cell", nargs="?", default="")
     ap.add_argument("--modes", default="OFF,RL")
     ap.add_argument("--nseeds", type=int, default=SEEDS)
@@ -262,6 +330,8 @@ def main():
     a = ap.parse_args()
     if a.cmd == "freeze":
         cmd_freeze(a.force, a.aa_at)
+    elif a.cmd == "smooth":
+        cmd_smooth(a.nseeds)
     elif a.cmd == "read":
         cmd_read(a.cell, [m if m in ("OFF", "RL", "RE") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
     else:

@@ -249,8 +249,9 @@ def soft_saturate(rate, r_sat):
 
 def controller_rate_parts(p, s2, mean_burst, W, t_symbols, srtt, t_sym, tail, late):
     """raptorpath-math controller_rate with the mass term inert (no mass statistics), inner_feedback 0, the saturation cap on,
-    max_overhead R_MAX, codec CODEC_RLC, completion exposure 0.  Returns (rate, raw before the cap, r_sat or None)."""
-    if p < 1e-10: return 0.0, 0.0, None
+    max_overhead R_MAX, codec CODEC_RLC, completion exposure 0.  Returns (rate, raw before the cap, r_sat or None, (burst_bind, rmax_bind)); the flags say that r_burst exceeded the random-loss term and that the
+    rate before the final clamp exceeded R_MAX (clamp bind gauges, registration 6)."""
+    if p < 1e-10: return 0.0, 0.0, None, (False, False)
     d_eff = p if late else tail                              # late: p + (0.05 - p) * chi with chi = 0
     codec = CODEC_RLC * (1.0 - (1.0 - p) ** int(W)) if W > 0.0 else 0.0
     core = r_star_with_z(p, s2, W, z_for_tail_target(d_eff, p))
@@ -263,7 +264,7 @@ def controller_rate_parts(p, s2, mean_burst, W, t_symbols, srtt, t_sym, tail, la
     if t_sym > 0.0 and srtt > 0.0:
         r_sat = r_saturation(p, s2, W, srtt, t_sym)
         rate = soft_saturate(raw, r_sat)
-    return min(max(rate, 0.0), R_MAX), raw, r_sat
+    return min(max(rate, 0.0), R_MAX), raw, r_sat, (burst > rnd, rate > R_MAX)
 
 
 def derive_window_parts(tail, eps, s2, srtt, rate):
@@ -299,10 +300,10 @@ def rate_law(p, srtt, rate, delta):
     W, W_pre = derive_window_parts(tail, p, 1.0, srtt, rate)
     W = min(float(round(W)), float(W_CAP))
     tsy = max(srtt * rate, 1.0); tsm = 1.0 / rate if rate > 0.0 else 0.0
-    a, raw, r_sat = controller_rate_parts(p, 1.0, 1.0, W, tsy, srtt, tsm, tail, False)
-    l, _, _ = controller_rate_parts(p, 1.0, 1.0, W, tsy, srtt, tsm, min(max(BASE_TAIL * 100.0, 1e-9), 0.1), True)
+    a, raw, r_sat, flags = controller_rate_parts(p, 1.0, 1.0, W, tsy, srtt, tsm, tail, False)
+    l, _, _, _ = controller_rate_parts(p, 1.0, 1.0, W, tsy, srtt, tsm, min(max(BASE_TAIL * 100.0, 1e-9), 0.1), True)
     beta = bulkness(delta)
-    return dict(r=(1.0 - beta) * a + beta * l, W=W, W_pre=W_pre, raw=raw, r_sat=r_sat, beta=beta)
+    return dict(r=(1.0 - beta) * a + beta * l, W=W, W_pre=W_pre, raw=raw, r_sat=r_sat, beta=beta, burst_bind=flags[0], rmax_bind=flags[1])
 
 
 def beta_upper(a, b, conf=0.95):
@@ -704,7 +705,8 @@ class Sim:
                       astar_floor_bind=0, D_cap_bind=0, astar_W_bind=0, delta_bind=0, rep_drop_edge=0, rep_drop_young=0, rep_cut_edge=0,
                       l1_viol_rep=0, worth_viol_rep=0, rep_sent=0, rep_members_sum=0, rep_qdrop=0, rep_lost=0, eps_est_sum=0.0, eps_est_n=0,
                       dup_after_dec=0, rep_redundant=0, rep_innov=0, dec_comp_max=0, rep_used=0, rep_late_only=0, dec_units=0, dec_on_time=0,
-                      dec_late=0, dec_after_release=0, late_floor_dec=0)
+                      dec_late=0, dec_after_release=0, late_floor_dec=0, rmax_bind=0, burst_bind=0)
+        self.ser = {k: {} for k in ("r", "W", "n", "A", "nA", "dec")}          # per-1 s series of stage 3e (registration 6): sums and counts by second
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -1166,6 +1168,13 @@ class Sim:
         g["sat_pressure_sum"] += saturation_pressure(L["raw"], L["r_sat"])
         g["W_sum"] += L["W"]
         g["r_sum"] += self.r_cur
+        g["rmax_bind"] += L["rmax_bind"]
+        g["burst_bind"] += L["burst_bind"]
+        k = int(now)
+        sr = self.ser
+        sr["r"][k] = sr["r"].get(k, 0.0) + self.r_cur
+        sr["W"][k] = sr["W"].get(k, 0.0) + L["W"]
+        sr["n"][k] = sr["n"].get(k, 0) + 1
 
     def astar(self, now):
         """Paper 5.3: A* = clamp(ceil(rate_hat * min(b*srtt, 2*srtt)), 1, W); 1 before the first RTT sample."""
@@ -1195,6 +1204,9 @@ class Sim:
         e = c.repair["edge"]
         A = self.astar(now)
         self.astar_cur = A
+        k = int(now)
+        self.ser["A"][k] = self.ser["A"].get(k, 0) + A
+        self.ser["nA"][k] = self.ser["nA"].get(k, 0) + 1
         D = self.delta_off(now)
         end = self.n_sent - D
         ws = max(0, self.A_known - int(self.W_cur))
@@ -1500,6 +1512,7 @@ class Sim:
                     self.eq_meta.pop(f, None)
             for s in dec:                                             # 2. then count and deliver each decoded unit once
                 self.dec_flag[s] = 1
+                self.ser["dec"][int(now)] = self.ser["dec"].get(int(now), 0) + 1
                 age = now - self.h_seq[s]
                 self.g["dec_units"] += 1
                 if within_lifetime(self.cfg.T, age):
@@ -2297,6 +2310,7 @@ class Sim:
         r_mean, W_mean (6, the law's readings), sat_pressure, W_floor_bind_frac, W_cap_bind_frac (6, the clamp bind gauges),
         eps_est_mean (2.1, the estimated-loss arm), p_dec_meas and p_fec_law (6, 11 item 1), rep_link_share (6, 2.5), rep_members_mean,
         recovery_time_0p15 and its status (6, 2.6; filled in summary3d where recovery_time is), mu_eff_hat (6, Q3e-7),
+        rmax_bind_frac and burst_bind_frac (6, the clamp bind gauges), series (6: per 1 s repairs, r, W, A*, decoded units),
         share_by (13.2: {tau: share delivered within tau} for tau in cfg.tau_extra, the share_by_0p4 rule).
         The gauges (rep_*, dec_*, l1_viol_rep, worth_viol_rep, owed_max, the bind counters) are in out["gauges"]."""
         c, g = self.cfg, self.g
@@ -2324,7 +2338,17 @@ class Sim:
             eps_est_mean=float(g["eps_est_sum"] / max(g["eps_est_n"], 1)),
             p_dec_meas=float(g["dec_units"] / max(len(self.orig_lost), 1)), p_fec_law=float(p_fec),
             rep_link_share=float(rep_share), rep_members_mean=float(g["rep_members_sum"] / max(g["rep_sent"], 1)),
-            recovery_time_0p15=None, recovery_status_0p15=None, mu_eff_hat=mu, share_by=share_by)
+            recovery_time_0p15=None, recovery_status_0p15=None, mu_eff_hat=mu, share_by=share_by,
+            rmax_bind_frac=float(g["rmax_bind"] / nl), burst_bind_frac=float(g["burst_bind"] / nl), series=self.series(nwin))
+
+    def series(self, nwin):
+        """Per 1 s window (by the time of the event): repairs sent, mean r read, mean W read, mean A* of a repair, units decoded."""
+        sr, w = self.ser, self.win["repair"]
+        return dict(repairs=[int(w.get(i, 0)) for i in range(nwin)],
+                    r=[sr["r"][i] / sr["n"][i] if sr["n"].get(i) else None for i in range(nwin)],
+                    W=[sr["W"][i] / sr["n"][i] if sr["n"].get(i) else None for i in range(nwin)],
+                    astar=[sr["A"][i] / sr["nA"][i] if sr["nA"].get(i) else None for i in range(nwin)],
+                    decoded=[int(sr["dec"].get(i, 0)) for i in range(nwin)])
 
     def summary3d(self, out, n, ok, dl, hs_):
         """Stage 3d readouts (three-knobs.md 17.4, 17.7, 17.8): the window series by hand-over time, recovery time, the first dequeue
