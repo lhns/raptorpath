@@ -16,7 +16,7 @@
   - the engine, the derivation and the roadmap.
 - **No runs beyond the tests, the identity checks and one timing run** (§9 step 5). The batch parts of the registration's §13.6 are started by the coordinator.
 - **Prose** in comments and docs says "the offline simulation", never "toy". File names stay as they are.
-- **Memory:** at most 2 worker processes, and the identity checks alone on the machine.
+- **Memory:** at most 2 worker processes while building and testing, and the identity checks alone on the machine. For the batch, workers follow the registration's §14.7.
 
 ## 1. Files
 
@@ -677,18 +677,34 @@ The parts are MAIN, DECIDE, CROSS, AA (registered A/A), AA2, AMEND, ROBUST, SMOO
 
 **Job keys.** Every job is keyed by a fingerprint: the `Cfg`'s `asdict` with `seed` removed, as a sorted JSON string, hashed with sha256. A fingerprint appears once across all parts; a second request reuses the first's files. `--list` prints per part the configurations and runs after this dedupe. **Report that final count** in `results-stage3e.md` before any decision part runs.
 
-**Seeds.** 12 (0 to 11). The δ = 0.005 identity rows take 3. DOUBLE runs seeds 12 to 23 of the fingerprints that the reader names (§8.5).
+**Seeds.** Per the registration's §14.3–§14.5:
+- 12 in CL-long, CL, CLw-long, RT, CLc, CLc-v, CL-long-v, K-I2 and K-L10;
+- 6 elsewhere;
+- 3 for the δ = 0.005 identity rows, for the old senders in OV-long and OV-long-v (only ADR-0084 at ρ ∈ {0.95, 1}, today's Realtime at the two ends of its δ set, and today's Bulk), and for SMOOTH;
+- A/A at 12 everywhere.
+
+DOUBLE runs the next block of seeds (6–11 for a 6-seed comparison, 12–23 for a 12-seed one) of the fingerprints that the reader names (§8.5), once. The reader computes NF over the first n seeds for an n-seed comparison.
+
+**Reuse.** Before a part runs, the runner looks up each repair-off fingerprint in the re-baseline's stored outputs and in proof stage 1's, given by path in `--reuse-dirs`. It uses a stored result only after `check_ident3e.py` has written `PASS-reuse` (the 3-seed sample of §14.2).
 
 **Output.** One store for every part: `out3e/runs/<fingerprint>-<seed>.json`, written tmp + rename, skipped if present (resumable), as `batch3d.py`. A part's job list is `out3e/<PART>.json`, mapping each job name to its fingerprint, so a fingerprint shared by two parts is one file.
 
-**Workers.**
-- `--workers` at most 2;
-- long cells (`*-long*`, `OV-long`) only with `--workers 1`; the runner refuses otherwise;
+**Workers** (registration §14.7):
+- two pools, light and heavy;
+- heavy is any old sender (`S1c`, `S1`) in CL-long, CLw-long, CL-long-v, OV-long or OV-long-v; light is everything else;
+- `--light-workers` at most 8, `--heavy-workers` at most 2;
+- before starting a run, the runner waits until free memory is at least 1 GB plus 1.5 GB for a heavy run or 0.15 GB for a light one (`psutil.virtual_memory().available`; add `psutil` to the requirements if absent);
 - order inside a part: as the registration's §13.6, longest runs last.
 
 ### 8.4 Markers and stops
 
-- Markers live in `out3e/`: `PASS-ident`, `PASS-r0`, `PASS-rttbug`, `PASS-rate`, `PASS-simread`, `PASS-aa`, then `DONE-<PART>` per part.
+- Markers live in `out3e/`: `PASS-ident`, `PASS-r0`, `PASS-reuse`, `PASS-rttbug`, `PASS-rate`, `PASS-simread`, `PASS-aa`, `PASS-time`, then `DONE-<PART>` per part.
+- **Part TIME** (registration §14.8):
+  - runs its rows one at a time, slowest first, recording wall time and peak resident memory (`psutil.Process().memory_info().rss`, sampled every 0.5 s by a watcher thread);
+  - computes the total by §14.7's one-pool formula;
+  - writes `PASS-time` if the total is at most 24 h, else `STOP` with the table;
+  - its runs are not stored as results.
+- **The part order** is §14.6: TIME, DECIDE, EARLY, MAIN, REST, then, after a PASSES verdict, ROBUST and SMOOTH. ROBUST and SMOOTH refuse to start without a `VERDICT-PASSES` marker, which the reader writes.
 - `batch3e.py --part X` refuses unless every earlier marker of the registration's §9 and §13.6 exists, and refuses everything while `out3e/STOP` exists.
 - `PASS-rttbug` and `PASS-simread` are written by the coordinator, not by the runner.
 - **After each run, the runner checks these and, on any failure, writes `STOP` (with the job, the seed and the failing key) and exits non-zero:**

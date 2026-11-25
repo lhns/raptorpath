@@ -1,6 +1,6 @@
 # Stage 3e registration: proactive repair in the three-knob model (no runs)
 
-**Status.** Registration only, written before any run. Amendment 1 (§13, 2026-11-25) adds the proof plan's rows; the build is specified in `three-knobs-stage3e-build.md`. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate) and its final review of `abe2981c` (built on the RTT-fixed code; §12). Still no run.
+**Status.** Registration only, written before any run. Amendment 1 (§13, 2026-11-25) adds the proof plan's rows, and Amendment 2 (§14, the same day, before any stage 3e data) sets seeds, reuse, order and workers from measured rates; the build is specified in `three-knobs-stage3e-build.md`. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate) and its final review of `abe2981c` (built on the RTT-fixed code; §12). Still no run.
 
 **Base.**
 - Derivation `docs/derivations/three-knobs.md` on `three-knobs` at `93e29a22`. The laws are §1–§10 with Revisions 1–3 (§13, §15, §17); the findings are §18 (stage 3d) and §19 (the interactive simulator and the lifetime sweep).
@@ -18,6 +18,12 @@
   - Old against new is read only on matched-share curves, with a dominance rule below the new curve's range and "undetermined" as its own outcome, with one doubling of seeds.
   - 989 configurations and 11 382 runs (11 058 with proof stage 1's repair-off rows reused), plus the conditional cross and the doubling.
   - Order: §13.6.
+- **Amendment 2 (§14) cuts the cost on measured rates.**
+  - It reuses the re-baselined stage 3d repair-off rows.
+  - It keeps 12 seeds on the deciding row and on the near-tie cells, and runs 6 elsewhere with one doubling. The long overload cells' old senders run at 3 seeds and only at their dial ends.
+  - ROBUST and SMOOTH run only after a passing verdict.
+  - The order gives an early answer: TIME, then DECIDE, then one cell per use case.
+  - Before the verdict: 666 configurations and 5 964 runs, about 5–7 h of wall time from the measured rates (up to about 12 h with margin). A measured timing step gates the run at about 24 h.
 - **Repair is already inside L1.** §2.1 lists "coded repair member" among the payload-bearing datagrams, so a repair may not carry any member of age ≥ T. A repair's age is the age of its oldest member, the lower end of its span (§2.2).
 - **The span's lower edge comes from L2, not from the floor.**
   - A repair is a correction symbol (paper §3.4), so L2's worth test applies to each member it carries: a member s rides only if `a(s) + ô < T` (§2.3).
@@ -1072,6 +1078,147 @@ Then, one batch at a time:
   - an RL row at δ = 0.005 differs from its OFF row in the same keys or trace. Stage 3e's own readouts sit in the `rep3e` block and are not compared, because only the arm with repair reads the law.
 - No point, cell, readout or bar is added, dropped or moved after data is seen (F5). A reading-code fix is allowed and reported.
 - A cell that FAILS does not stop later cells. It is reported, and a fix goes through the plan's §8, a derived fix and a rerun of that row only, under a new amendment.
+
+## 14. Amendment 2: cost from measured rates (2026-11-25, before any stage 3e data exists)
+
+**Why.** §13.5's 5–6 day estimate was never measured. The owner judged it unreasonable, and the advisor agreed.
+
+This amendment replaces §13.5's seeds, reuse and timing, and §13.6's order, with rules drawn from measured rates. It changes no arm's law, no cell's physics, no readout and no reading rule. Where it changes a seed count, the reading rule's bars and floor follow the count used. No stage 3e run exists as this is written.
+
+### 14.1 Measured rates (one process, today's re-baseline on the fixed code)
+
+| measurement | value |
+|---|---|
+| 816 runs | 4 056 s, so 5.0 s per run |
+| 1 001 runs | 6 970 s, so 7.0 s per run |
+| long overload cells (OV-long) | about 31 s per run |
+| all 5 628 stage 3d runs | about 8.5 h |
+| one stage 3e run with repair | 11.9 s, 111 MB peak |
+| machine | 16 logical cores, 20 GB, about 5 GB free |
+| earlier memory errors | 15 workers on long-cell old-sender runs, about 1.5 GB each |
+
+### 14.2 Reuse
+
+The re-baseline re-ran every stage 3d repair-off row on the fixed code, which is the same code as `proof-s1` with the new fields at their defaults.
+
+**A stage 3e repair-off configuration that equals a re-baselined stage 3d configuration is not re-run; its stored result is used.** "Equals" means the same `Cfg` fingerprint (§8.3 of the build brief), with every stage 3e field at its default.
+
+The rule is the same bit-identity rule as the `proof-s1` reuse (§13.1). `check_ident3e.py` must reproduce a 3-seed sample of every reused fingerprint on the 3e code, every key under `id3e` and every trace, before any reuse counts. If any sample differs, nothing is reused, and the difference is a STOP.
+
+**Reused, repair off:**
+- S5 at T ∈ {0.4, 2, ∞} × H ∈ {0, ∞}, ADR-0084 at ρ = 0.99 and today's Bulk, in CL, CL-long, OV, OV-long, K-I2 and K-L10, wherever those configurations are sweep points;
+- DECIDE's repair-off half, from proof stage 1 (§13.1).
+
+### 14.3 Seeds
+
+- **12 paired seeds** on the deciding row (CL-long, DECIDE and its AMEND rows), and on the cells predicted as near ties in §13.4: CL, CLw-long, RT, CLc, CLc-v, CL-long-v, K-I2 and K-L10.
+- **6 paired seeds elsewhere:** K-OV, OV, OV-long, OV-long-v, the file cells, and MAIN's OV and CLs-long rows.
+- **The doubling.** An undetermined comparison doubles once:
+  - a 6-seed cell from 6 to 12 (seeds 6–11);
+  - a 12-seed cell from 12 to 24 (seeds 12–23), as before.
+
+  No second doubling.
+- **The A/A floor matches the count.** The A/A rows run at 12 seeds in every cell. NF for a comparison is the p95 of |A − A'| over the first n seeds, where n is that comparison's seed count (6, 12 or 24). It is frozen at each count before any comparison at that count is read. `T_bar`'s `1/units` term is unchanged.
+- **3-seed rows:**
+  - the δ = 0.005 RL and RE rows stay 3-seed identity checks (§13.2);
+  - the long overload cells follow §14.4.
+
+### 14.4 Long overload cells (OV-long, OV-long-v)
+
+- **The old senders read about 0 on time there by construction.** Stage 3d: 0.0000 within 2 s for ADR-0084 at 0.99 and today's Bulk in OV-long, with a fixed-rate source above capacity.
+- **So the old senders run at 3 seeds, and only at the ends of their dials:**
+  - ADR-0084 at ρ ∈ {0.95, 1};
+  - today's Realtime at δ ∈ {0.5, 50} (OV-long) and {0.005, 50} (OV-long-v);
+  - today's Bulk.
+- **The new model's sweep runs at 6 seeds.**
+- **The comparison rule is unchanged.**
+  - A comparison against such a point that reads undetermined gets the one doubling, to 6 seeds.
+  - An old point that does not read about 0 was mispredicted, and is reported as such.
+
+### 14.5 ROBUST and SMOOTH after the verdict
+
+- These parts do not answer "is the new model better than the old". So they run only after the stage verdict, and only if it reads PASSES.
+- SMOOTH runs at 3 paired seeds. Its K and P statistics are read against its own 3-seed A/A spread, and the sliding window of 5 points is unchanged.
+- ROBUST runs at 6 seeds.
+- Neither part enters the verdict.
+
+### 14.6 Order for an early answer (supersedes §13.6's order; its stop rules stay)
+
+0. §9's steps 0–7, with step 7's A/A at 12 seeds in every cell.
+1. **TIME** (§14.8). Gate the whole run on its total.
+2. **DECIDE** (CL-long, RL half; the repair-off half reused), read at once. If it FAILS: `STOP`, run CROSS if its condition holds, then wait for the plan's §3.5 decision.
+3. **EARLY: one cell per use case at the call point, every design, with repair (RL).**
+   - **file:** Ec, the T = ∞ identity against today's Bulk;
+   - **call:** RT at T = 0.4 and τ ∈ {0.4, 0.12}, the new model's sweep and every baseline point;
+   - **tunnel:** OV, the new sweep and every baseline point (the predicted "shown better");
+   - **video:** CL-long-v at T = 2, the new sweep and every baseline point.
+
+   These are the AMEND rows of those four cells under RL, read when they finish.
+4. **MAIN**, as registered.
+5. **REST:** the remaining AMEND rows, in §13.6's cell order (long overload cells last), each cell's doubling before the next cell.
+6. **The stage verdict** (§13.3).
+7. **Only if it PASSES:** ROBUST, then SMOOTH.
+
+### 14.7 Workers by memory, and the time formula
+
+**Workers.**
+- Light runs, every run other than an old sender in a long cell (111 MB): 6–8 workers. Together they use under 1 GB.
+- Old senders (ADR-0084, today's Realtime, today's Bulk) in the long cells (CL-long, CLw-long, CL-long-v, OV-long, OV-long-v): 1–2 workers, at about 1.5 GB each.
+- The two pools may run at once while the machine holds at least 1 GB free. The runner reads free memory before it starts a run and waits otherwise.
+
+**Wall time.** With `t_i` the measured single-process time of configuration class i (cell × design × repair mode, from TIME) and `n_i` its runs:
+
+```text
+   T_wall  ≈  max(  Σ_light n_i·t_i / w_light ,   Σ_heavy n_i·t_i / w_heavy  )          two pools at once
+          ≤   Σ_light n_i·t_i / w_light  +  Σ_heavy n_i·t_i / w_heavy                     one pool at a time
+```
+
+Here `w_light` ∈ [6, 8] and `w_heavy` ∈ [1, 2].
+
+**The estimate before TIME**, from §14.1:
+- **Base times:** 2 s for the 3 000-unit call cells (RT, K-*), 6 s for the 10 s full-rate cells, 12 s for the 20 s cells, 31 s for the long overload cells.
+- **Factors:** ×2 with repair (11.9 s measured, against 5–7 s without), and ×2 again for old senders in the long cells (stage 3c: ADR-0084's sender 37 s per 100 000 units, growing faster than linearly).
+
+| part | runs | CPU hours |
+|---|---|---|
+| MAIN | 528 | |
+| DECIDE (RL half) | 324 | |
+| AMEND | 4 920 | |
+| A/A | 192 | |
+| light total | | ≈ 16.4 |
+| heavy total (long-cell old senders) | | ≈ 9.5 |
+
+- **Wall time:** 16.4/7 + 9.5/2 ≈ 7.1 h with one pool at a time, or about 4.8 h with both at once.
+- **With a 1.7× margin** for the unmeasured classes: up to about 12 h.
+- **The doublings** add up to about 30 % of the runs involved.
+- **ROBUST and SMOOTH, after a pass:** 32 × 6 = 192 and 272 × 3 = 816 runs, about 1–2 h more.
+
+### 14.8 The timing step (TIME, before DECIDE)
+
+- **What runs:** one seed (seed 0) of each cell × design under repair RL. The designs are the new model at the cell's named point, ADR-0084 at ρ = 0.99, today's Realtime at δ = 50 (δ = 0.005 in the video cells), and today's Bulk. About 68 runs, slowest first, one at a time.
+- **What it records per run:** wall time and peak resident memory, in `results-stage3e.md` (the table of `t_i`).
+- **The total:** computed from that table by §14.7's one-pool-at-a-time formula. Each configuration class takes the time of its TIME row (the repair-off classes at half of it, the ratio measured in §14.1), with the registered run counts of §14.3–§14.4 and the worker counts that the measured peak memory allows within 4 GB.
+- **The gate:**
+  - If the total is at most about 24 h, the run proceeds.
+  - Otherwise the runner writes `STOP` with the table and the total, and reports.
+  - Whole cells then move to the VM: every arm and seed of a cell runs on one machine and one commit, so no compared pair is split across machines. The moved cells and the commit are recorded before they run.
+- **TIME runs are timing only.** They do not enter any reading. They are not stored as seed 0 of their configurations; seed 0 runs again in its part.
+
+### 14.9 Run count after this amendment
+
+| part | configurations | runs to execute |
+|---|---|---|
+| TIME | about 68 | about 68 (timing only) |
+| DECIDE | 54 | 324 (the repair-off half reused) |
+| EARLY and REST (AMEND) | 543 | 4 920 (297 more reused from the re-baseline) |
+| MAIN | 53 | 528 |
+| A/A | 16 | 192 |
+| **before the verdict** | **666** | **5 964**, plus TIME |
+| CROSS (conditional) | 2 | 24 |
+| doublings (conditional) | — | up to about 30 % of the runs involved |
+| ROBUST, SMOOTH (after a pass only) | 32 + 272 | 192 + 816 |
+
+This replaces §13.5's 989 configurations and 11 382 runs. The AMEND configuration count falls from 561 to 543, because the long overload cells drop the inner ρ and δ points (§14.4).
 
 ## Appendix A: rate-law reference program
 
