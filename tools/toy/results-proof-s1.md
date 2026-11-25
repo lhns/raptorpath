@@ -1,0 +1,95 @@
+# Proof stage 1: the deciding row (CL-long at matched share), repair off
+
+Plan: `docs/derivations/three-knobs-proof-plan.md` on `three-knobs-proof-plan` (sections 0, 2.3, 3, 8, 9). Code: `tools/toy/` on
+`proof-s1`, built on `toy-stage3d-rttfix` (RTT-sampling fix). Reader and builders: `proof_s1.py`; tests: `test_toy2.py`
+(`ProofS1TodaysRealtime`, `DenyTest`) and `test_proof_s1.py`; identity: `check_ident_proof_s1.py`.
+
+## 1. Fixed before the run (F5)
+
+Everything in this section was committed before the first run of the row.
+
+### 1.1 What runs, and what does not
+
+- **Cell:** CL-long@b (200 000 units at 10 000/s, link 12 500/s with a queue of 1 250, a 1.5 s outage at 2 s, the engine-like blocker
+  sweep, RFC 6298 RTT), repair off, 12 paired seeds 0 to 11 with phases per seed, one commit, one batch.
+- **Repair on (arm `RL`) is not run.** It needs stage 3e's rate law and decoder, which do not exist on this base
+  (`git log --all -- tools/toy/batch3e.py` is empty). The plan's 54 configurations are 27 repair off plus 27 `RL`; only the 27 repair-off
+  configurations (324 runs) and 12 A/A runs are possible here. The `RL` half is owed to stage 3e.
+- **Today's Realtime rows are repair-off controls** (plan 2.3: machinery-matched for F2), never quoted as "today". Today's Realtime never
+  ships with repair off.
+
+### 1.2 Rows (named by what the sender and the receiver do, F6)
+
+| row set | rows | what it is |
+|---|---|---|
+| lifetime T, hold 0 | T in {0.4, 0.6, 0.8, 1.0, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 2.0, inf} | the new model's curve, any order (S5). T = inf is today's object API by identity |
+| lifetime T, hold inf | T in {0.4, 1.4, inf} | the same sender with strict order. T = inf, hold inf must equal today's Bulk on every key |
+| ADR-0084 sender at rho, today's receiver | rho in {0.95, 0.98, 0.99, 0.995, 1} | ADR-0084's curve (C1). rho = 1 never gives up |
+| today's Realtime, repair-off control | delta in {0.5, 5, 50} | arm `E-rt` (plan 2.3), see 1.3 |
+| never gives up, strict order = today's Bulk | one | C3 |
+| A/A | lifetime T = inf, hold 0, phase variant 1 | the noise floor, frozen to `nf_proof_s1.json` before any row is read |
+| conditional 2 x 2 cross | ADR-0084 sender at 0.99 with an any-order receiver; ADR-0084 sender at 0.99 without its copy | run only if the ADR-0084 matched-share comparison reads "shown worse" (plan 3.4). The other cross cells exist already: ADR-0084 at 0.99 (C1), never gives up with today's receiver (ADR rho = 1), never gives up any order (T = inf, hold 0) |
+
+### 1.3 Today's Realtime (`E-rt`): the differences from ADR-0084's sender, each with a red-first test
+
+ADR-0084's sender (`S1c`, C1) becomes today's Realtime by these changes, each pinned in `test_toy2.py` `ProofS1TodaysRealtime`
+(committed failing before the code, `2a3b80a0`):
+
+1. **Budget** `budget = "resid"`: a shed is allowed iff `shed_total + 1 <= eps_hat (1 - P_fec) x source count`, with the sender's own cumulative
+   shed count (shed.rs `shed_allowed`), refreshed at each source emission. `eps_hat` is the cell's first-send loss (0.03, Q21's true-loss
+   default, a declared idealisation) and is 0 until the first RTT sample. Repair is off, so r = 0 and `P_fec = 0` by the shipped cut
+   (`p_fec_normal` ported with its cut, debt W22, named in the deny test).
+2. **Deadline** `d_arm = "EWMA"`: `D = min(b(delta), 2) x srtt` with the 50 ms seed.
+3. **Silent shed:** no verdict copy (sender S1) and no floor, repeated or not (`floor_send = False`).
+4. **Window** `evict_window = 200`: a hole more than 200 seqs behind the send frontier is neither served nor shed.
+5. **No source pause** (`pause_B` infinite): the link queue drops instead.
+6. **Two paths:** `place = "dup"` duplicates every first send on the second path. Built and tested; not exercised in this one-path row.
+7. **Receiver:** R0e with the reorder buffer's force drain at 500 entries (`r0e_max`), draining the oldest to half the cap as `reorder.rs` does.
+
+Taking it apart gives ADR-0084's sender at the derived allowance (test `test_taken_apart_it_equals_adr_0084s_sender_at_the_derived_allowance`,
+on a cell where every resend is lost, so that a shed hole is never filled: where a shed hole is filled later, ADR-0084's outstanding count and
+the shipped cumulative count differ by design).
+
+Pinned shipped behaviour, not patched: with no floor, an object whose last units are shed never completes (the receiver never learns of the
+tail). A stream that continues past its outage is unaffected.
+
+Not modelled, a recorded divergence (plan 2.3): the probabilistic correction-slot retransmit.
+
+### 1.4 Readouts, bars and the reading rule
+
+- **Readouts under the pass rule:** on time at 0.4 s (`share_by_0p4`, higher is better) and recovery time after the outage (`recovery_time`,
+  window rule of 17.4 at tau = 0.4 s, lower is better). A recovery that is "not within the run" is censored at 14.5 s (the readable end) and
+  counted, never dropped. Delivered at all (`share_any`) is the x axis.
+- **Gates, each 0 or true in every run:** `finished`, `commit_viol`, `l1_viol` (new gauge: a payload staged, first send or copy, at age >= T), and
+  the T = inf, hold inf identity with today's Bulk on every key. (The worth-edge gate belongs to stage 3e.)
+- **Curves and matching (plan 1.2):** per seed, each design's points sorted by that seed's x; the new curve is interpolated at that seed's
+  baseline x; no extrapolation. A baseline point outside the new curve's range for any seed reads "outside the swept range" and counts as not
+  passed. Neighbouring points whose mean x differ by no more than max(A/A floor on `share_any`, 1/units) keep the one with the better mean y.
+- **Reading:** `summarize2.read`'s rule on the paired difference (bootstrap 95 % interval of the mean), signed so that positive favours the new
+  model, against `m = max(T_bar, NF)`. `T_bar` for shares: `max(1/units, 0.05 (1 - share_ref))`; for recovery: `max(5 % of the reference, 0.1 s)`.
+  `NF` = p95 over the 12 seeds of |A - A'| per readout, A = lifetime T = inf, hold 0, A' = the same with phase variant 1.
+- **Comparisons:** the new H = 0 curve against every ADR-0084 point and every today's Realtime point, and curve against curve both ways
+  (each ADR-0084 point inside the new range against the new curve; each new point inside the ADR-0084 range against ADR-0084's curve),
+  on both readouts.
+- **Pass rule for this row:** (1) no comparison reads "shown worse" or "outside the swept range"; (2) at least one reads "shown better" (reported;
+  rule 2 is judged over the whole table in the plan); (3) every gate holds; (4) the identity holds.
+- **Stop rule (plan, and the brief):** if the row fails, stop and report. No Revision 4, no extra T point, no moved bar. The cross runs
+  only if the matched-share comparison against ADR-0084 reads "shown worse".
+- **Registered predictions (plan 3.3, quoted, not re-centred: the re-baseline values for these rows do not exist yet):** a plateau for T in
+  about (1.34, 1.6) s with recovery 4.6 to 5.3 s at the matched share, matched T in [1.25, 1.6] s, plateau delivered share in [99.3 %, 99.6 %];
+  a straight line below the plateau down to the 0.4 s point.
+
+### 1.5 Deviations from the plan, stated before the run
+
+- Repair off only (1.1).
+- The A/A arm is the T = inf, hold 0 row (plan 3's identity row), not stage 3d's strict `C3S`; same noise definition.
+- `l1_viol` is a new gauge added for the L1 gate (the plan lists the gate; no gauge existed).
+- Today's Realtime's ε̂ is the cell's declared loss (Q21), since there is no estimator on this base; it is 0 before the first RTT sample.
+
+## 2. Tests and identity
+
+(filled after the run)
+
+## 3. Results
+
+(filled after the run)

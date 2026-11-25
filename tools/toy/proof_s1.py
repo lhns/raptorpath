@@ -64,8 +64,9 @@ def lt_cfg(seed, T, H, variant=0):
 
 def adr_cfg(seed, rho, **kw):
     lc, d = batch3d.base(CELL)
-    d.update(kw)
-    return toy2.Cfg(cell=lc, sender="S1c", recv="R0e", seed=seed, delta=50.0, rho=rho, **d)
+    k = dict(sender="S1c", recv="R0e")
+    k.update(kw)
+    return toy2.Cfg(cell=lc, seed=seed, delta=50.0, rho=rho, **k, **d)
 
 
 def rt_cfg(seed, delta):
