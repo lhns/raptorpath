@@ -106,3 +106,43 @@ repair off) beside its A' row (phase variant 1), so they hold 12 and 22 configur
 (seeds 12 to 23 of the fingerprints the reader names) is not in the table.  The registration's unconditional total (989 configurations, 11 382 runs)
 excludes CROSS and the extra A rows; after the dedupe the plan above is 10 980 runs including CROSS and the A rows.
 
+## Timing run (build brief 9 step 6)
+
+One process, nothing else of mine running (the machine carried two long batches): today's Bulk (never gives up, strict order, edge none) with repair RL
+in CL-long, seed 0, `toy2.run(batch3e.bulk_cfg("CL-long", 0, 50.0, rp("RL")))`, no trace.
+
+| wall time | peak working set | dec_comp_max | repairs sent | decoded units | share on time at 0.4 s | recovery |
+|---|---|---|---|---|---|---|
+| 11.9 s | 110.7 MB (psapi PeakWorkingSetSize) | 14 | 18 825 | 5 928 (rep_used 5 928, redundant 12 228) | 0.4547 | 9.4 s (0.15 s readout: 11.7 s) |
+
+The edge-"none" components after the outage stay small (largest 14 unknowns), far from the 30 minute stop.  r averaged 0.099 (W cap bound in
+0.50 of the readings, saturation pressure 0.20); p_dec_meas 0.855.  These numbers come from one run and are not a reading under any registered rule.
+
+## Tests (build brief 9 step 3)
+
+`python -m unittest test_toy test_toy2 test_proof_s1 test_batch3e`: 193 tests, OK.  Before the change the same command without `test_batch3e` ran 116 tests
+(test_toy, test_toy2, test_proof_s1); `Stage3e` adds 46 tests and `test_batch3e` 32 (116 + 46 + 32 = 194 less the one test replaced during the build).
+The identity check above was re-run on the final tree (same PASS line).
+
+## Where the build brief was followed with a change, and what it left open
+
+- Test 15, "owd_est rel equals fwd within 1e-9 with no queue": not attainable.  srtt carries the wait of the report for the next 2 ms tick, so `fwd` reads
+  up to one tick more than `rel`.  The test asserts `rel` = RTprop/2 to 1e-9 and `fwd` within 2 ms of it.  With rev_q = 0.1 `fwd` reads about 0.1 above
+  `rel` (the whole reverse queue enters srtt), not 0.05; the test asserts more than 0.09.
+- Test 7, the worth gauge in OV with 3 000 units: the backlog cannot reach T - R in 0.25 s, so T = 0.4 cannot fire it.  The test runs T = 0.03, where o_hat
+  passes T once the link queue builds; the assertion is unchanged (age edge > 0, worth edge 0).
+- Test 5, the `ws` case: A* is clamped to W, so `ws` binds only with A_known = n_sent and W = A*; the constructed state says so.
+- RT's `W_floor_bind_frac` is 0.998 and not 1.0: the readings before the first RTT sample see the 333 ms seed.  The test asserts above 0.9.
+- The decoder's matching is the brief's recursion written with an explicit stack in the same visiting order, and the cascade is a work list in the recursion's order
+  (a differential test against the recursive form on random systems, and a 1 500-deep chain that exceeds Python's recursion limit).
+- A repair is written to the sender trace as `(t, lo, j, end, 3)` when tracing, so that the identity gates (T = inf and H = inf against today's Bulk, delta 0.005 against OFF,
+  R0 against S5) see it.  Old runs have no such entries.
+- Today's Bulk, ADR-0084 and today's Realtime arms run with `rtt_est = "rfc"` in every cell (the link cells had it already).  Without it the call cells would give the
+  Bulk arm the old estimator, and the T = inf identity could not hold under repair, because srtt feeds r.
+- Reading of 13.3: the stage verdict PASSES when no cell FAILS and one comparison reads shown better, so an UNDETERMINED cell does not block it.
+- A/A: A = S5 at T = inf, hold 0, repair off in the cell, A' the same with phase variant 1 (every cell's sweep includes that point); the AA and AA2 parts hold both rows.
+- `PASS-r0` is written by `check_ident3e.py` from its 23-configuration sample.  The registration's full Part ID (R0 against S5 in the 21 stage 3d cells at 3 seeds)
+  is not run; the runner checks R0 against S5 id3e and trace at the same seed in MAIN instead.
+- Not built, because the build brief codes none of them: the `rmax_bind` and `burst_bind` gauges, the per-1 s series of r, W, A* and decodes, the `kp_stats` read of
+  SMOOTH, and the reader's per-part driver that runs DECIDE-then-DOUBLE automatically.  The constant 0.0875 of the brief's fixed-r list has no arm in registration 5.
+- The `--workers 2` pool path of `batch3e.py` is not exercised by a test or a run (the tests use one worker).
