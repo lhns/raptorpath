@@ -1693,3 +1693,83 @@ fn the_recovery_time_follows_the_drain_law() {
     println!("recovery law: readout {got:.2} s, law {want:.2} s, full drain {:.2} s", outage * rho / (1.0 - rho));
     assert!((got - want).abs() <= 2.0 * consumer::RECOVERY_STEP_S + 1e-9, "readout {got} vs law {want}");
 }
+
+/// Report (not a gate; `--ignored`): stage 3e's SIMREAD (reg-stage3e §9 step 6,
+/// Q3e-10). The page's CL-long preset at the Realtime δ (50) with the page's
+/// Auto window W* and its default T = H = ∞ (and T = 0.4), read per tick: the
+/// BOCD p̂ upper (95 %) the rate law reads, the EWMA and BOCD means, the live
+/// window the law reads (the encoder's fill, ≤ W), the raw rate (the anchor
+/// term before the knee: max(core + codec, burst)), its two terms, the knee
+/// r_sat, r and the saturation pressure. At the end and averaged over the last
+/// 5 s, plus a timeline.
+#[test]
+#[ignore]
+fn report_simread_cl_long_realtime() {
+    let (eps, q, rtt, cap) = (0.03, 1.0, 10u32, 1u32);
+    let pp = eps * q / (1.0 - eps);
+    let sigma2 = math::burst_variance_factor(pp, q);
+    let tail = sim_tail_target_of_delta(50.0);
+    // The page's Auto window (getParams: derive_window(tailBase, aggEps, aggSigma2, aggSrtt, cap/0.001, 0)).
+    let w = math::derive_window(tail, eps, sigma2, rtt as f64 / 1000.0, cap as f64 / 0.001, 0.0).round().max(1.0) as u32;
+    println!("SIMREAD: page Auto W* = {w} (derive_window at the true eps {eps}, sigma2 {sigma2:.3}, tail target {tail:.1e})");
+    for t in [INF, 0.4] {
+        let k = Knobs { t, h: INF, load: 800.0 / 970.0, units: 12000, outage_start: 2.0, outage_len: 1.5 };
+        let n = 1;
+        let mut s = Simulation::multipath_knobs(
+            vec![eps], vec![q], vec![rtt], vec![cap], w, "continuum".into(), None, Some(50.0), None,
+            k.t, k.h, k.load * goodput(&[Cell { eps, q, rtt, cap }]), k.units, vec![k.outage_start; n], vec![k.outage_len; n],
+        ).expect("valid");
+        // per tick: (t, p_upper, ewma, bocd mean, window, core, burst, raw, r_sat, r, pressure)
+        let mut rows: Vec<[f64; 11]> = Vec::new();
+        let mut sig = Vec::new();
+        while !s.is_finished() && s.get_tick() < CAP {
+            s.step();
+            let inp = s.rate_inputs_for(false, s.tail_target, false, 0.0);
+            let p = inp.p_upper;
+            let z = math::z_for_tail_target(inp.tail_target, p);
+            let core = math::compute_r_star_with_z(p, inp.sigma2, inp.window, z);
+            let codec = inp.codec_overhead * (1.0 - (1.0 - p).powi(inp.window as i32));
+            let core = if core > 0.0 { core + codec } else { 0.0 };
+            let frac = (1.0 - inp.tail_target / p).clamp(0.0, 1.0);
+            let burst = if inp.t_symbols > 0.0 { inp.mean_burst.max(1.0) / inp.t_symbols * frac } else { 0.0 };
+            let raw = s.rate_now(false);
+            sig.push((inp.sigma2, inp.mean_burst));
+            let est = &s.paths[0].estimator;
+            rows.push([
+                s.get_tick() as f64 * TICK_SECS, p, est.loss_rate(), est.bocd().predictive_mean(), inp.window,
+                core, burst, raw, s.get_r_sat(), s.get_r_star(), s.get_saturation_pressure(),
+            ]);
+        }
+        let end = *rows.last().unwrap();
+        let t_end = end[0];
+        let last5: Vec<&[f64; 11]> = rows.iter().filter(|r| r[0] > t_end - 5.0).collect();
+        let mean = |i: usize| last5.iter().map(|r| r[i]).sum::<f64>() / last5.len() as f64;
+        let names = ["t", "p_upper", "ewma", "bocd_mean", "window", "core", "burst", "raw", "r_sat", "r", "pressure"];
+        let fmt = |v: &dyn Fn(usize) -> f64| (1..11).map(|i| format!("{} {:.4}", names[i], v(i))).collect::<Vec<_>>().join(", ");
+        println!("SIMREAD T={t}: ticks {} (run to {t_end:.2} s)", s.get_tick());
+        println!("SIMREAD T={t} end:      {}", fmt(&|i| end[i]));
+        println!("SIMREAD T={t} last 5 s: {}", fmt(&mean));
+        let pre: Vec<&[f64; 11]> = rows.iter().filter(|r| r[0] > 1.0 && r[0] < 2.0).collect();
+        let pmean = |i: usize| pre.iter().map(|r| r[i]).sum::<f64>() / pre.len() as f64;
+        println!("SIMREAD T={t} 1-2 s (before the outage): {}", fmt(&pmean));
+        let binds_core = last5.iter().filter(|r| r[5] >= r[6]).count() as f64 / last5.len() as f64;
+        let over_knee = last5.iter().filter(|r| r[7] >= r[8]).count() as f64 / last5.len() as f64;
+        println!("SIMREAD T={t} last 5 s: core >= burst at {:.1} % of ticks; raw >= r_sat at {:.1} %", binds_core * 100.0, over_knee * 100.0);
+        let fec_src = (s.get_total_fec(), s.get_total_src());
+        let rmax_all = rows.iter().filter(|r| r[9] >= 0.5 - 1e-12).count() as f64 / rows.len() as f64;
+        let rmax_win = rows.iter().filter(|r| r[9] >= 0.5 - 1e-12).map(|r| r[0]).fold((INF, -INF), |a, t| (a.0.min(t), a.1.max(t)));
+        let r_mean = rows.iter().map(|r| r[9]).sum::<f64>() / rows.len() as f64;
+        println!("SIMREAD T={t}: repairs per source over the run {:.3}; mean r over ticks {r_mean:.3}; r at r_max = 0.5 at {:.1} % of ticks, from {:.2} to {:.2} s",
+            fec_src.0 as f64 / fec_src.1 as f64, rmax_all * 100.0, rmax_win.0, rmax_win.1);
+        let mut sline = String::new();
+        for (r, g) in rows.iter().zip(&sig).filter(|(r, _)| ((r[0] * 1000.0).round() as u64) % 500 == 0) {
+            sline += &format!(" {:.1}s:s2 {:.2}/B {:.2}", r[0], g.0, g.1);
+        }
+        println!("SIMREAD T={t} sigma2 and mean burst:{sline}");
+        let mut line = String::new();
+        for r in rows.iter().filter(|r| ((r[0] * 1000.0).round() as u64) % 500 == 0) {
+            line += &format!(" {:.1}s:p{:.3}/w{:.0}/raw{:.3}/k{:.3}/r{:.3}", r[0], r[1], r[4], r[7], r[8], r[9]);
+        }
+        println!("SIMREAD T={t} timeline:{line}");
+    }
+}
