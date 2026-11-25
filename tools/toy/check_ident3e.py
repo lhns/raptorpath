@@ -7,6 +7,7 @@
   C. An RL row at delta = 0.005 equals its OFF row (the law gives r = 0 exactly there): two configurations.
 
     python check_ident3e.py            # the sample: A, B, C.  Exit 0 = PASS.  Writes no marker: the registered gates are the full set below.
+    python check_ident3e.py --reuse 3d=PATH,ps1=PATH   # registration 14.2: 3-seed sample of every reused fingerprint against its stored row; writes PASS-reuse
     python check_ident3e.py --full     # A, B, C, then D and E (built, long: run it only when the machine is free), and only then PASS-ident and PASS-r0:
         D. check_ident3d.py (the registered stage 3d configurations at seeds 0 to 2 against the stage 3c code; IDENT_WORKERS defaults to 1 here)
         E. R0 equals repair off (S5 at the cell's primary lifetime, hold 0) in every batch3d cell at seeds 0 to 2 and in every batch3e cell at seeds 0 to 11,
@@ -138,6 +139,44 @@ def part_e():
     return n, bad
 
 
+def reuse_check(fps, seeds=(0, 1, 2)):
+    """Registration 14.2: every reused fingerprint is re-run at 3 seeds on this code and compared with its stored result under id3e (the stored
+    stage 3d and proof stage 1 outputs keep no trace, so the comparison is every key id3e compares, the keys of the sender's trace summary included).
+    Returns the differences."""
+    import batch3e
+    bad = []
+    for fp in fps:
+        for seed in seeds:
+            old = batch3e.stored_result(fp, seed)
+            if old is None:
+                continue
+            new = batch3e.run_one(batch3e.FPS[fp]["builder"](seed), False)
+            d = batch3e.id3e(old, new)
+            if d or new.get("finished") != old.get("finished"):
+                bad.append((fp, seed, d))
+                print("DIFF reuse", fp, seed, d, flush=True)
+    return bad
+
+
+def part_reuse(specs):
+    """--reuse 3d=PATH,ps1=PATH: reproduce a 3-seed sample of every fingerprint the registry shares with the stored rows; PASS writes PASS-reuse."""
+    import batch3e
+    batch3e.build()
+    batch3e.set_reuse([x for x in specs.split(",") if x])
+    fps = [fp for fp in batch3e.FPS if fp in batch3e.REUSE["index"] and batch3e.FPS[fp]["builder"](0).repair is None]
+    print("%d fingerprints are shared with the stored rows" % len(fps), flush=True)
+    bad = reuse_check(fps)
+    if bad:
+        stop("reuse: %d runs differ from the stored rows, first %s" % (len(bad), bad[0]))
+        print("REUSE CHECK: FAIL")
+        return 1
+    out = os.path.join(HERE, "out3e")
+    os.makedirs(out, exist_ok=True)
+    open(os.path.join(out, "PASS-reuse"), "w").close()
+    print("REUSE CHECK: PASS (%d fingerprints x seeds 0 to 2 reproduced, every key under id3e)" % len(fps))
+    return 0
+
+
 def stop(cause):
     out = os.path.join(HERE, "out3e")
     os.makedirs(out, exist_ok=True)
@@ -146,6 +185,8 @@ def stop(cause):
 
 
 def main():
+    if "--reuse" in sys.argv:
+        sys.exit(part_reuse(sys.argv[sys.argv.index("--reuse") + 1]))
     base = BASE
     full = "--full" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]

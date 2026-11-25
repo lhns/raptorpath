@@ -1,8 +1,15 @@
 """Stage-3e runner (three-knobs-stage3e-build.md 8; registration 5, 9 and 13).  One file per run, keyed by a fingerprint of the configuration
 (tmp + rename, existing files skipped, so a killed run resumes):
 
-    python batch3e.py --part AA|AA2|DECIDE|CROSS|MAIN|AMEND|ROBUST|SMOOTH|DOUBLE:<PART> [--seeds 12] [--seed0 0] [--only PREFIX]
-                      [--cells A,B] [--workers N] [--list]
+    python batch3e.py --part AA|AA2|TIME|DECIDE|CROSS|EARLY|MAIN|REST|ROBUST|SMOOTH|DOUBLE:<PART> [--seeds 12] [--seed0 0] [--only PREFIX]
+                      [--cells A,B] [--light-workers N] [--heavy-workers N] [--reuse-dirs 3d=PATH,ps1=PATH] [--list]
+    python batch3e.py --smoke-pool
+
+Order of registration 14.6: AA, AA2, TIME (its total gates the run), DECIDE, EARLY (RL rows of Ec, RT, OV and CL-long-v), MAIN, REST (the other AMEND
+rows, long overload cells last); ROBUST and SMOOTH only after the reader has written VERDICT-PASSES.  Seeds (14.3, 14.4): 12 on DECIDE and the near-tie
+cells, 6 elsewhere, 3 for the delta = 0.005 identity rows, the old senders of OV-long and OV-long-v (dial ends only) and SMOOTH; A/A 12 everywhere.
+Two pools (14.7): light (up to 8 workers) and heavy (old senders in the long cells, up to 2), each run waiting for free memory.
+Reuse (14.2): a repair-off fingerprint stored by the re-baseline or proof stage 1 (--reuse-dirs) is used only once check_ident3e.py --reuse wrote PASS-reuse.
 
 Store: out3e/runs/<fingerprint>-<seed>.json; a part's job list is out3e/<PART>.json (job name -> fingerprint).  A fingerprint is requested once
 across all parts (the first part in ORDER that asks for it runs it); --list prints per part the configurations and the runs after that dedupe.
@@ -19,6 +26,8 @@ import os
 import sys
 import time
 
+import psutil
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import toy2  # noqa: E402
@@ -33,6 +42,10 @@ SMOKE = bool(os.environ.get("BATCH3E_SMOKE"))
 INF = math.inf
 SEEDS = 12
 SEEDS_ID = 3
+SEEDS_LIGHT = 6
+SEEDS12 = ("CL-long", "CL", "CLw-long", "RT", "CLc", "CLc-v", "CL-long-v", "K-I2", "K-L10")      # registration 14.3: the deciding row and the near-tie cells
+HEAVY_CELLS = ("CL-long", "CLw-long", "CL-long-v", "OV-long", "OV-long-v", "RQ")                 # the long cells (RQ is CL-long with a reverse queue)
+OLD_ENDS = {"OV-long": dict(adr=(0.95, 1.0), rt=(0.5, 50.0)), "OV-long-v": dict(adr=(0.95, 1.0), rt=(0.005, 50.0))}        # 14.4: the dial ends
 LINK_KW = batch3c.LINK_KW
 
 
@@ -94,6 +107,20 @@ RHO_SET = [0.95, 0.98, 0.99, 0.995, 1.0]
 DELTA_SET = [0.5, 5.0, 50.0]
 T_MAIN = {"RT": 0.12}                                                        # the primary lifetime of a cell (0.4 s elsewhere)
 TAG = batch3.tag
+
+
+def cell_seeds(cell):
+    """12 paired seeds in CL-long and the near-tie cells, 6 elsewhere (registration 14.3)."""
+    return SEEDS if cell in SEEDS12 else SEEDS_LIGHT
+
+
+def row_nseeds(cell, key, mode):
+    """The seeds of one design row in one mode: 3 for a delta = 0.005 identity row and for the old senders of the long overload cells (their ends only)."""
+    if mode != "OFF" and row_delta(cell, key) == 0.005:
+        return SEEDS_ID
+    if cell in OLD_ENDS and key[0] in ("adr", "rt", "bulk"):
+        return SEEDS_ID
+    return cell_seeds(cell)
 
 
 def base_of(cell):
@@ -181,7 +208,7 @@ def n_mode(mode):
 
 
 class Job:
-    __slots__ = ("name", "part", "cell", "key", "mode", "arm", "builder", "nseeds", "trace", "edge", "partners", "fp")
+    __slots__ = ("name", "part", "cell", "key", "mode", "arm", "builder", "nseeds", "trace", "edge", "partners", "fp", "design")
 
     def __init__(self, name, part, cell, key, mode, builder, nseeds, arm, trace, partners):
         self.name, self.part, self.cell, self.key, self.mode, self.arm = name, part, cell, key, mode, arm
@@ -189,6 +216,8 @@ class Job:
         cfg = builder(0)
         self.fp = fingerprint(cfg)
         self.edge = None if cfg.repair is None else cfg.repair["edge"]
+        self.design = {"lt": "new", "arm": "new", "aa": "new", "sm": "new", "o_bias": "new", "R_bias": "new", "rel": "new", "adr": "adr", "cross": "adr",
+                       "rt": "rt", "smrt": "rt", "bulk": "bulk"}[key[0]]
 
 
 def row_builder(cell, key, mode, **kw):
@@ -209,6 +238,8 @@ def rows_of(cell):
     keys = [("lt", t, 0.0) for t in T] + [("lt", t, INF) for t in Hs]
     if cell in FILE_CELLS:
         return [("lt", INF, 0.0), ("lt", INF, INF), ("bulk",)]
+    if cell in OLD_ENDS:                                                     # 14.4: the old senders read about 0 on time there; only the ends of their dials
+        return keys + [("adr", r) for r in OLD_ENDS[cell]["adr"]] + [("rt", x) for x in OLD_ENDS[cell]["rt"]] + [("bulk",)]
     keys += [("adr", r) for r in RHO_SET] + [("rt", x) for x in DELTA_SET + ([0.005] if cell in VIDEO else [])] + [("bulk",)]
     return keys
 
@@ -223,7 +254,8 @@ def row_delta(cell, key):
 
 
 PARTS = {}
-ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "AMEND", "ROBUST", "SMOOTH"]
+ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "EARLY", "REST", "ROBUST", "SMOOTH"]       # attribution of a fingerprint; TIME is timing only, AMEND = EARLY + REST
+EARLY_CELLS = ("Ec", "RT", "OV", "CL-long-v")                                # one cell per use case (registration 14.6)
 FPS = {}
 
 
@@ -253,8 +285,9 @@ def job_name(cell, design, mode):
     return "%s | %s | %s" % (cell, design, n_mode(mode))
 
 
-def add_row(part, cell, key, mode, nseeds=SEEDS, arm=None):
+def add_row(part, cell, key, mode, nseeds=None, arm=None):
     """One design row in one mode.  Identity partners run with a trace digest (registration 13.6 stop rules)."""
+    nseeds = row_nseeds(cell, key, mode) if nseeds is None else nseeds
     pb = partners_of(cell, key, mode)
     add(part, job_name(cell, row_name(key), mode), cell, key, mode, row_builder(cell, key, mode), nseeds, arm, trace=bool(pb), partners=pb)
 
@@ -265,7 +298,7 @@ def primary_T(cell):
     return INF if cell in FILE_CELLS else T_MAIN.get(cell, 2.0 if cell in VIDEO else 0.4)
 
 
-def aa_jobs(part, cells):
+def aa_jobs(part, cells):                                                    # (the A/A rows run at 12 seeds in every cell: registration 14.3)
     """The A/A pairs at both registered readings (they conflict, see the results file): "tinf" (build 8.5: proof_s1.freeze's rule, S5 at T = inf, hold 0
     against its phase variant 1) and "primary" (registration 5: S5 at the cell's primary lifetime, hold 0, against its phase variant 1).  The
     reader's freeze takes either; the coordinator picks one before AA runs and the other pair's rows just stay unused (the A rows are rows of
@@ -343,7 +376,7 @@ def main_jobs():
             elif arm == "S5":
                 tr = True
             add("MAIN", "%s | arm %s: %s | %s" % (cell, arm, n_lt(T, H) + (", edge %s" % edge if edge != "worth" else ""), n_mode(mode)),
-                cell, ("arm", arm), mode, b, SEEDS, arm, trace=tr, partners=pb)
+                cell, ("arm", arm), mode, b, cell_seeds(cell) if cell in ("OV", "CLs-long") else SEEDS, arm, trace=tr, partners=pb)
     for cell in MAIN_CELLS:                                                  # registration 5: the A/A arm is S5 with phase variant 1, at the arm's own lifetime
         base, d, T = base_of(cell), delta_of(cell), primary_T(cell)
         add("MAIN", "%s | arm AA: A/A, lifetime T=%s, hold 0, phase variant 1 (S5) | repair off" % (cell, TAG(T)), cell, ("aa", "primary", 1), "OFF",
@@ -373,36 +406,35 @@ def amend_jobs():
         modes = ["OFF", "RL"] + (["RE"] if cell in RE_CELLS else [])
         for mode in modes:
             for key in rows_of(cell):
-                video_rt = delta_of(cell) == 0.005 and key[0] == "rt" and key[1] != 0.005
-                if delta_of(cell) == 0.005 and mode != "OFF" and not video_rt:
-                    nseeds = SEEDS_ID                                        # r = 0 exactly at delta 0.005: an identity row against OFF, 3 seeds
-                else:
-                    nseeds = SEEDS
                 if fingerprint(row_builder(cell, key, mode)(0)) in exclude.get(cell, ()):
                     continue
-                add_row("AMEND", cell, key, mode, nseeds)
+                add_row("AMEND", cell, key, mode)                            # seeds by row_nseeds: r = 0 exactly at delta 0.005 is a 3-seed identity row
+    for j in PARTS["AMEND"]:                                                 # EARLY: the RL rows of the four use-case cells (14.6); REST: everything else
+        j.part = "EARLY" if (j.cell in EARLY_CELLS and j.mode == "RL") else "REST"
+    PARTS["EARLY"] = [j for j in PARTS["AMEND"] if j.part == "EARLY"]
+    PARTS["REST"] = sorted([j for j in PARTS["AMEND"] if j.part == "REST"], key=cell_order)
 
 
 def robust_jobs():
     for cell in ("OV", "CL-long"):
         for x in (-0.020, -0.010, -0.005, 0.005, 0.010, 0.020):
             add("ROBUST", "%s | one-way estimate biased by %+g s: %s | %s" % (cell, x, n_lt(0.4, 0.0), n_mode("RL")), cell, ("o_bias", x), "RL",
-                lambda s, cell=cell, x=x: new_cfg(cell, s, 0.4, 0.0, 50.0, rp("RL"), o_bias=x))
+                lambda s, cell=cell, x=x: new_cfg(cell, s, 0.4, 0.0, 50.0, rp("RL"), o_bias=x), SEEDS_LIGHT)
     for x in (-0.020, -0.010, -0.005, 0.005, 0.010, 0.020):
         add("ROBUST", "OV | dequeue margin biased by %+g s: %s | %s" % (x, n_lt(0.4, 0.0), n_mode("RL")), "OV", ("R_bias", x), "RL",
-            lambda s, x=x: new_cfg("OV", s, 0.4, 0.0, 50.0, rp("RL"), R_bias=x))
+            lambda s, x=x: new_cfg("OV", s, 0.4, 0.0, 50.0, rp("RL"), R_bias=x), SEEDS_LIGHT)
     for T in (0.4, INF):
-        add_row("ROBUST", "RQ", ("lt", T, 0.0), "RL")
+        add_row("ROBUST", "RQ", ("lt", T, 0.0), "RL", SEEDS_LIGHT)
     for rho in RHO_SET:
-        add_row("ROBUST", "RQ", ("adr", rho), "RL")
+        add_row("ROBUST", "RQ", ("adr", rho), "RL", SEEDS_LIGHT)
     for d in DELTA_SET:
-        add_row("ROBUST", "RQ", ("rt", d), "RL")
-    add_row("ROBUST", "RQ", ("bulk",), "RL")
+        add_row("ROBUST", "RQ", ("rt", d), "RL", SEEDS_LIGHT)
+    add_row("ROBUST", "RQ", ("bulk",), "RL", SEEDS_LIGHT)
     add("ROBUST", "RQ | A/A: lifetime T=inf, hold 0, phase variant 1 (S5) | %s" % n_mode("RL"), "RQ", ("aa", "tinf", 1), "RL",
-        lambda s: new_cfg("RQ", s, INF, 0.0, 50.0, rp("RL"), variant=1))
+        lambda s: new_cfg("RQ", s, INF, 0.0, 50.0, rp("RL"), variant=1), SEEDS_LIGHT)
     for cell in ("RQ", "OV"):
         add("ROBUST", "%s | relative one-way delay: %s | %s" % (cell, n_lt(0.4, 0.0), n_mode("RL")), cell, ("rel",), "RL",
-            lambda s, cell=cell: new_cfg(cell, s, 0.4, 0.0, 50.0, rp("RL"), owd_est="rel"))
+            lambda s, cell=cell: new_cfg(cell, s, 0.4, 0.0, 50.0, rp("RL"), owd_est="rel"), SEEDS_LIGHT)
 
 
 SMOOTH_GROUPS = {}                                                           # fine sweeps read by kp_stats: name -> jobs in the order of their dial
@@ -411,7 +443,7 @@ SMOOTH_GROUPS = {}                                                           # f
 def smooth_jobs():
     def lt(cell, T, H, delta=50.0, tag="", group=None):
         add("SMOOTH", "%s | %s%s | %s" % (cell, n_lt(T, H), tag, n_mode("RL")), cell, ("sm", T, H, delta), "RL",
-            lambda s, cell=cell, T=T, H=H, delta=delta: new_cfg(base_of(cell), s, T, H, delta, rp("RL")))
+            lambda s, cell=cell, T=T, H=H, delta=delta: new_cfg(base_of(cell), s, T, H, delta, rp("RL")), SEEDS_ID)       # SMOOTH: 3 paired seeds (14.5)
         if group:
             SMOOTH_GROUPS.setdefault(group, []).append(PARTS["SMOOTH"][-1])
     for cell in ("OV", "CL-long", "K-L10"):
@@ -431,7 +463,7 @@ def smooth_jobs():
                 dl = round(p * (0.90 + 0.02 * k), 6)
                 lt(cell, 0.4, 0.0, dl, tag=", delta=%g" % dl, group="delta around %g, new model | %s" % (p, cell))
                 add("SMOOTH", "%s | %s | %s" % (cell, n_rt(dl), n_mode("RL")), cell, ("smrt", dl), "RL",
-                    lambda s, cell=cell, dl=dl: rt_cfg(base_of(cell), s, dl, rp("RL", "evict")))
+                    lambda s, cell=cell, dl=dl: rt_cfg(base_of(cell), s, dl, rp("RL", "evict")), SEEDS_ID)
                 SMOOTH_GROUPS.setdefault("delta around %g, today's Realtime | %s" % (p, cell), []).append(PARTS["SMOOTH"][-1])
 
 
@@ -439,7 +471,7 @@ def build():
     PARTS.clear()
     FPS.clear()
     SMOOTH_GROUPS.clear()
-    for p in ORDER:
+    for p in ORDER + ["AMEND", "TIME"]:
         PARTS[p] = []
     if SMOKE:                                                                # --smoke-pool: two tiny configurations, nothing else
         for nm, mode in (("smoke OFF (S5)", "OFF"), ("smoke RL (S5)", "RL")):
@@ -454,6 +486,7 @@ def build():
     amend_jobs()
     robust_jobs()
     smooth_jobs()
+    time_jobs()
     register()
 
 
@@ -462,7 +495,7 @@ def register():
     FPS.clear()
     for p in ORDER:
         for j in PARTS[p]:
-            e = FPS.setdefault(j.fp, dict(builder=j.builder, nseeds=0, trace=False, partners=set(), first=p, jobs=[], edge=j.edge))
+            e = FPS.setdefault(j.fp, dict(builder=j.builder, nseeds=0, trace=False, partners=set(), first=p, jobs=[], edge=j.edge, job=j))
             e["nseeds"] = max(e["nseeds"], j.nseeds)
             e["trace"] = e["trace"] or j.trace
             e["jobs"].append(j.name)
@@ -470,7 +503,7 @@ def register():
                 c2 = pb(0)
                 fp2 = fingerprint(c2)
                 e["partners"].add(fp2)
-                e2 = FPS.setdefault(fp2, dict(builder=pb, nseeds=0, trace=False, partners=set(), first=p, jobs=[], edge=None if c2.repair is None else c2.repair["edge"]))
+                e2 = FPS.setdefault(fp2, dict(builder=pb, nseeds=0, trace=False, partners=set(), first=p, jobs=[], edge=None if c2.repair is None else c2.repair["edge"], job=j))
                 e2["partners"].add(j.fp)
                 e2["trace"] = True
                 e2["nseeds"] = max(e2["nseeds"], j.nseeds)
@@ -508,16 +541,73 @@ def store(fp, seed, obj):
     os.replace(tmp, path)
 
 
-def load(fp, seed):
-    path = fname(fp, seed)
+REUSE = {"index": {}}                                                        # fingerprint -> (kind, dir, part, job name, seeds stored)
+
+
+def _safe(name):
+    return "".join(ch if ch.isalnum() or ch in "=.-" else "_" for ch in name)
+
+
+def set_reuse(specs):
+    """Index the re-baseline's stage 3d outputs ("3d=PATH", layout PATH/<part>/<name>-<seed>.json) and proof stage 1's ("ps1=PATH") by fingerprint
+    (registration 14.2).  Only repair-off configurations are indexed; they are used only once out3e/PASS-reuse exists."""
+    REUSE["index"] = {}
+    for spec in specs:
+        kind, path = spec.split("=", 1)
+        if kind == "3d":
+            batch3d.build()
+            for name, (part, fn, ns) in batch3d.JOBS.items():
+                REUSE["index"].setdefault(fingerprint(fn(0)), (kind, path, part, name, ns))
+        elif kind == "ps1":
+            import proof_s1
+            proof_s1.build()
+            for name, (part, fn) in proof_s1.JOBS.items():
+                REUSE["index"].setdefault(fingerprint(fn(0)), (kind, path, part, _safe(name), 12))
+        else:
+            raise ValueError(spec)
+
+
+def reuse_on():
+    return os.path.exists(os.path.join(OUT, "PASS-reuse"))
+
+
+def _reused_path(fp, seed):
+    e = REUSE["index"].get(fp)
+    if e is None or not reuse_on() or seed >= e[4]:
+        return None
+    path = os.path.join(e[1], e[2], "%s-%d.json" % (e[3], seed))
+    return path if os.path.exists(path) else None
+
+
+def stored_result(fp, seed):
+    """The re-baselined or proof stage 1 result of a fingerprint, whether or not PASS-reuse exists (check_ident3e --reuse compares against it)."""
+    e = REUSE["index"].get(fp)
+    if e is None or seed >= e[4]:
+        return None
+    path = os.path.join(e[1], e[2], "%s-%d.json" % (e[3], seed))
     if not os.path.exists(path):
         return None
     with open(path) as f:
         return json.load(f)
 
 
-PRE = ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread"]
-CHAIN = ["AA", "AA2", "DECIDE", "MAIN", "AMEND", "ROBUST", "SMOOTH"]
+def have_run(fp, seed):
+    return os.path.exists(fname(fp, seed)) or _reused_path(fp, seed) is not None
+
+
+def load(fp, seed):
+    path = fname(fp, seed)
+    if not os.path.exists(path):
+        path = _reused_path(fp, seed)
+        if path is None:
+            return None
+    with open(path) as f:
+        return json.load(f)
+
+
+PRE = ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate", "PASS-simread"]            # PASS-reuse is optional: without it nothing is reused
+CHAIN = ["AA", "AA2", "TIME", "DECIDE", "EARLY", "MAIN", "REST", "ROBUST", "SMOOTH"]       # registration 14.6
+DONE_MARK = {"TIME": "PASS-time"}
 
 
 def _need(part):
@@ -525,7 +615,10 @@ def _need(part):
         earlier = ["AA", "AA2", "DECIDE"]
     else:
         earlier = CHAIN[:CHAIN.index(part)]
-    return PRE + ([] if part in ("AA", "AA2") else ["PASS-aa"]) + ["DONE-" + p for p in earlier]
+    need = PRE + ([] if part in ("AA", "AA2") else ["PASS-aa"]) + [DONE_MARK.get(p, "DONE-" + p) for p in earlier]
+    if part in ("ROBUST", "SMOOTH"):
+        need.append("VERDICT-PASSES")                                        # written by the reader when the stage verdict reads PASSES (14.5)
+    return need
 
 
 def missing_markers(part):
@@ -545,12 +638,39 @@ def refusal(part):
     return None
 
 
-def refusal_workers(cells, workers):
-    if workers > 2:
-        return "at most 2 workers (memory)"
-    if workers != 1 and any(c in LONG for c in cells):
-        return "the long cells (%s) run with one worker" % ", ".join(sorted({c for c in cells if c in LONG}))
+def refusal_workers(light, heavy):
+    """Registration 14.7: light 6 to 8 workers in practice (at most 8), heavy 1 to 2."""
+    if light < 1 or heavy < 1:
+        return "at least one light and one heavy worker"
+    if light > 8:
+        return "at most 8 light workers"
+    if heavy > 2:
+        return "at most 2 heavy workers (about 1.5 GB each)"
     return None
+
+
+def is_heavy(cfg):
+    """An old sender (ADR-0084 S1c, today's Realtime S1, today's Bulk S1c) in a long cell, recognised by its size (rate, units)."""
+    sig = {(CELLS[base_of(c)][1]["rate"], CELLS[base_of(c)][1]["n_total"]) for c in HEAVY_CELLS}
+    return cfg.sender in ("S1c", "S1") and (cfg.rate, cfg.n_total) in sig
+
+
+def need_gb(heavy):
+    """Free memory a run needs before it starts: 1 GB of headroom plus 1.5 GB (heavy) or 0.15 GB (light)."""
+    return 1.0 + (1.5 if heavy else 0.15)
+
+
+def free_gb():
+    return psutil.virtual_memory().available / 2.0 ** 30
+
+
+def wait_for_memory(need, avail=free_gb, sleep=time.sleep, poll=5.0):
+    """Block until `avail()` (GB) is at least `need`; returns the number of waits."""
+    n = 0
+    while avail() < need:
+        sleep(poll)
+        n += 1
+    return n
 
 
 def gate_failures(r, edge):
@@ -623,6 +743,7 @@ def run_one(cfg, trace=False):
 def work(task):
     fp, seed = task
     e = FPS[fp]
+    wait_for_memory(need_gb(is_heavy(e["builder"](seed))))                  # each run waits for free memory (14.7)
     t = time.time()
     r = run_one(e["builder"](seed), e["trace"])
     r["wall_s"] = time.time() - t
@@ -635,10 +756,143 @@ def cell_order(job):
     return order.index(job.cell) if job.cell in order else -1
 
 
+# ---- TIME (registration 14.8) --------------------------------------------------------------------------------------------------------
+TIME_CELLS = ("CL", "CL-long", "OV", "OV-long", "CLw-long", "CLc", "CLs-long", "RT", "K-I2", "K-L10", "K-OV", "Ec", "E-I2", "M-I2", "CLc-v", "CL-long-v", "OV-long-v")
+
+
+def time_jobs():
+    """One seed of each cell x design under repair RL: the new model at the cell's named point, ADR-0084 at 0.99, today's Realtime at delta 50
+    (0.005 in the video and file cells) and today's Bulk.  Timing only: not registered, never stored."""
+    for cell in TIME_CELLS:
+        keys = [("lt", primary_T(cell), 0.0), ("adr", 0.99), ("rt", 0.005 if delta_of(cell) == 0.005 else 50.0), ("bulk",)]
+        for key in keys:
+            add("TIME", "TIME " + job_name(cell, row_name(key), "RL"), cell, key, "RL", row_builder(cell, key, "RL"), 1)
+
+
+def plan_classes():
+    """Runs to execute before the verdict by class (cell, design, mode): the fingerprints of AA, AA2, DECIDE, EARLY, MAIN and REST, their seeds, less
+    the seeds a re-baseline or proof stage 1 row already holds when reuse is on.  Doublings are not included."""
+    out = {}
+    for p in ("AA", "AA2", "DECIDE", "EARLY", "MAIN", "REST"):
+        for fp in attributed(p):
+            j = FPS[fp]["job"]
+            n = sum(1 for s in range(FPS[fp]["nseeds"]) if not (reuse_on() and _reused_path(fp, s) is not None))
+            mode = j.mode if isinstance(j.mode, str) else "RL"
+            k = (j.cell, j.design, mode)
+            out[k] = out.get(k, 0) + n
+    return out
+
+
+def time_total(times, classes, mem_mb=4096.0):
+    """Registration 14.7's one-pool-at-a-time sum.  times: (cell, design) -> (seconds of the RL run, peak MB); classes: (cell, design, mode) -> runs.
+    A repair-off class takes half its RL time (the ratio of 14.1).  Workers: at most 8 light and 2 heavy, as many as 4 GB holds at the peak.
+    Returns (hours, table)."""
+    rows, total = [], 0.0
+    for (cell, design, mode), n in sorted(classes.items()):
+        if n == 0 or (cell, design) not in times:
+            continue
+        sec, peak = times[(cell, design)]
+        t = sec * (0.5 if mode == "OFF" else 1.0)
+        heavy = design != "new" and cell in HEAVY_CELLS
+        w = max(1, min(2 if heavy else 8, int(mem_mb // max(peak, 1.0))))
+        hours = n * t / w / 3600.0
+        total += hours
+        rows.append(dict(cell=cell, design=design, mode=mode, runs=n, seconds_each=t, peak_mb=peak, pool="heavy" if heavy else "light", workers=w, hours=hours))
+    return total, rows
+
+
+def time_gate(total_h, table, limit_h=24.0):
+    """PASS-time if the total is at most about 24 h; else STOP with the table and the total (the cells then move to the VM, whole)."""
+    os.makedirs(OUT, exist_ok=True)
+    if total_h <= limit_h:
+        open(os.path.join(OUT, "PASS-time"), "w").close()
+        return True
+    write_stop("TIME gate: total %.1f h over %.0f h; whole cells move to the VM (every arm and seed of a cell on one machine and one commit). Table: %s"
+               % (total_h, limit_h, json.dumps(table)[:4000]))
+    return False
+
+
+def run_time(results_path):
+    """Runs the TIME rows one at a time, slowest first, recording wall time and peak resident memory (sampled every 0.5 s); writes the table, the
+    total and PASS-time or STOP."""
+    import threading
+    jobs = sorted(PARTS["TIME"], key=lambda j: -(CELLS[base_of(j.cell)][1]["n_total"] * (3 if is_heavy(j.builder(0)) else 1)))
+    times, rows = {}, []
+    proc = psutil.Process()
+    for j in jobs:
+        peak, stop = [0.0], threading.Event()
+
+        def watch():
+            while not stop.is_set():
+                peak[0] = max(peak[0], proc.memory_info().rss / 2.0 ** 20)
+                stop.wait(0.5)
+        th = threading.Thread(target=watch, daemon=True)
+        th.start()
+        wait_for_memory(need_gb(is_heavy(j.builder(0))))
+        t0 = time.time()
+        run_one(j.builder(0), False)
+        sec = time.time() - t0
+        stop.set()
+        th.join()
+        peak[0] = max(peak[0], proc.memory_info().rss / 2.0 ** 20)
+        times[(j.cell, j.design)] = (sec, peak[0])
+        rows.append((j.cell, j.design, sec, peak[0]))
+        print("TIME %-10s %-5s %7.1f s %7.0f MB" % (j.cell, j.design, sec, peak[0]), flush=True)
+    total_h, table = time_total(times, plan_classes())
+    os.makedirs(OUT, exist_ok=True)
+    with open(os.path.join(OUT, "time.json"), "w") as f:
+        json.dump(dict(rows=rows, total_hours=total_h, table=table), f)
+    md = ["", "## TIME (registration 14.8): one seed of each cell x design under repair RL, one process", "",
+          "| cell | design | wall (s) | peak RSS (MB) |", "|---|---|---|---|"] + ["| %s | %s | %.1f | %.0f |" % r for r in rows]
+    md += ["", "Total by 14.7's one-pool-at-a-time formula over the registered run counts: **%.1f h** (gate: 24 h) -> %s" % (total_h, "PASS-time" if total_h <= 24 else "STOP"), ""]
+    with open(results_path, "a", newline="\n") as f:
+        f.write("\n".join(md))
+    return time_gate(total_h, table)
+
+
 def write_joblist(part, jobs):
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "%s.json" % part.replace(":", "-")), "w") as f:
         json.dump({j.name: j.fp for j in jobs}, f, indent=1)
+
+
+class run_tasks:
+    """Runs the tasks in two pools at once (light and heavy, registration 14.7) and yields (fingerprint, seed, wall) as they finish; with one worker
+    in each pool the tasks run in this process, one at a time."""
+
+    def __init__(self, tasks, n_light, n_heavy):
+        import queue
+        self.q, self.n, self.pools = queue.Queue(), len(tasks), []
+        self.inline = n_light <= 1 and n_heavy <= 1
+        self.tasks = tasks
+        if self.inline:
+            return
+        heavy = [t for t in tasks if is_heavy(FPS[t[0]]["builder"](0))]
+        light = [t for t in tasks if t not in set(heavy)]
+        for ts, nw in ((light, n_light), (heavy, n_heavy)):
+            if not ts:
+                continue
+            pool = mp.Pool(nw, initializer=build)
+            self.pools.append(pool)
+            for t in ts:
+                pool.apply_async(work, (t,), callback=self.q.put, error_callback=self.q.put)
+
+    def __iter__(self):
+        if self.inline:
+            for t in self.tasks:
+                yield work(t)
+            return
+        for _ in range(self.n):
+            r = self.q.get()
+            if isinstance(r, BaseException):
+                self.close()
+                raise r
+            yield r
+        self.close()
+
+    def close(self):
+        for p in self.pools:
+            p.terminate()
 
 
 def smoke_pool():
@@ -648,7 +902,7 @@ def smoke_pool():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         env = dict(os.environ, BATCH3E_OUT=td, BATCH3E_SMOKE="1")
-        r = subprocess.run([sys.executable, os.path.abspath(__file__), "--part", "AA", "--workers", "2", "--seeds", "2"], env=env, cwd=HERE,
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), "--part", "AA", "--light-workers", "2", "--heavy-workers", "1", "--seeds", "2"], env=env, cwd=HERE,
                            capture_output=True, text=True)
         files = sorted(os.listdir(os.path.join(td, "runs"))) if os.path.isdir(os.path.join(td, "runs")) else []
         ok = r.returncode == 0 and len(files) == 4 and os.path.exists(os.path.join(td, "DONE-AA"))
@@ -666,10 +920,18 @@ def main(argv=None):
     ap.add_argument("--seed0", type=int, default=0)
     ap.add_argument("--only", default="")
     ap.add_argument("--cells", default="")
-    ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument("--workers", type=int, default=None, help="alias of --light-workers")
+    ap.add_argument("--light-workers", type=int, default=1)
+    ap.add_argument("--heavy-workers", type=int, default=1)
+    ap.add_argument("--reuse-dirs", default="")
+    ap.add_argument("--results", default=os.path.join(HERE, "results-stage3e.md"))
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args(argv)
+    if a.workers is not None:
+        a.light_workers = a.workers
     build()
+    if a.reuse_dirs:
+        set_reuse([x for x in a.reuse_dirs.split(",") if x])
     if a.list:
         tot = dict(configs=0, new=0, runs=0)
         for p, c in counts().items():
@@ -677,10 +939,19 @@ def main(argv=None):
             for k in tot:
                 tot[k] += c[k]
         print("%-8s %4d configurations, %4d after the dedupe, %5d runs" % ("total", tot["configs"], tot["new"], tot["runs"]))
+        if REUSE["index"]:
+            n = sum(1 for fp in FPS for s_ in range(FPS[fp]["nseeds"]) if stored_result(fp, s_) is not None)
+            print("reusable from the stored rows (used only after PASS-reuse): %d runs" % n)
         if a.part != "ALL":
             for j in PARTS.get(a.part, []):
                 print("%s  %s" % (j.fp, j.name))
         return 0
+    if a.part == "TIME":
+        why = refusal("TIME")
+        if why:
+            print("REFUSED:", why)
+            return 2
+        return 0 if run_time(a.results) else 1
     double = a.part.startswith("DOUBLE:")
     base = a.part.split(":")[1] if double else a.part
     if base not in PARTS:
@@ -696,41 +967,39 @@ def main(argv=None):
         with open(os.path.join(OUT, "double-%s.json" % base)) as f:
             keep = set(json.load(f))
         fps = [fp for fp in dict.fromkeys(j.fp for j in jobs) if fp in keep]
-        seeds = range(12, 24)
-        limit = 24
+        seeds = None                                                         # each fingerprint doubles from its own count n to 2n (3 to 6, 6 to 12, 12 to 24)
+        limit = None
     else:
         write_joblist(base, PARTS[base])
         fps = list(dict.fromkeys(j.fp for j in jobs))
         seeds = range(a.seed0, a.seed0 + a.seeds)
         limit = None
     cellname = {j.fp: j for j in jobs}
-    why = refusal_workers([cellname[fp].cell for fp in fps], a.workers)
+    why = refusal_workers(a.light_workers, a.heavy_workers)
     if why:
         print("REFUSED:", why)
         return 2
-    tasks = [(fp, s) for fp in fps for s in seeds if s < (limit or FPS[fp]["nseeds"]) and not os.path.exists(fname(fp, s))]
-    tasks.sort(key=lambda t: (cell_order(cellname[t[0]]) if base == "AMEND" else 0, LONG.count(cellname[t[0]].cell), t[1]))
+
+    def seeds_of(fp):
+        n = FPS[fp]["nseeds"]
+        return range(n, 2 * n) if double else [s for s in range(a.seed0, a.seed0 + a.seeds) if s < n]
+    tasks = [(fp, s) for fp in fps for s in seeds_of(fp) if not have_run(fp, s)]
+    tasks.sort(key=lambda t: (cell_order(cellname[t[0]]) if base == "REST" else 0, FPS[t[0]]["job"].cell in HEAVY_CELLS, t[1]))
     print("%d runs to do (%d configurations)" % (len(tasks), len(fps)), flush=True)
     t0 = time.time()
     rc = 0
-    if a.workers <= 1:
-        it = (work(t) for t in tasks)
-        pool = None
-    else:
-        pool = mp.Pool(a.workers, initializer=build)
-        it = pool.imap_unordered(work, tasks, chunksize=1)
-    for i, (fp, s, w) in enumerate(it, 1):
+    results = run_tasks(tasks, a.light_workers, a.heavy_workers)
+    for i, (fp, s, w) in enumerate(results, 1):
         r = load(fp, s)
         fails = after_run(cellname[fp].name, fp, s, r, FPS[fp]["edge"], FPS[fp]["partners"])
         print("[%6.0fs] %d/%d %s %d %.1fs%s" % (time.time() - t0, i, len(tasks), cellname[fp].name, s, w, "  STOP: " + "; ".join(fails) if fails else ""), flush=True)
         if fails:
             rc = 1
+            results.close()
             break
-    if pool is not None:
-        pool.terminate()
     if rc == 0:
-        want = [(fp, s) for fp in fps for s in seeds if s < (limit or FPS[fp]["nseeds"])]
-        if not cells and not a.only and all(os.path.exists(fname(fp, s)) for fp, s in want):
+        want = [(fp, s) for fp in fps for s in seeds_of(fp)]
+        if not cells and not a.only and all(have_run(fp, s) for fp, s in want):
             open(os.path.join(OUT, "DONE-%s" % a.part.replace(":", "-")), "w").close()
             print("DONE-%s" % a.part.replace(":", "-"))
     print("[%6.0fs] done" % (time.time() - t0), flush=True)

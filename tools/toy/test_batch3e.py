@@ -1,5 +1,6 @@
 """Tests for stage 3e's runner (batch3e.py) and reader (summarize3e.py), on synthetic data and short runs (three-knobs-stage3e-build.md 8, 9 step 5).
 Run from tools/toy:  python -m unittest test_batch3e"""
+import dataclasses
 import json
 import math
 import os
@@ -154,11 +155,10 @@ class Parts(unittest.TestCase):
         for j in B.PARTS["AMEND"]:
             if j.nseeds == 3:
                 cf = j.builder(0)
-                self.assertEqual(cf.delta, 0.005)
-                self.assertIsNotNone(cf.repair)
+                self.assertTrue(cf.delta == 0.005 or j.cell in B.OLD_ENDS, j.name)                  # an identity row, or an old sender of a long overload cell
         for p, js in B.PARTS.items():
             for j in js:
-                self.assertIn(j.nseeds, (3, 6, SEEDS))
+                self.assertIn(j.nseeds, (1, 3, 6, SEEDS))
 
     def test_fingerprint_ignores_seed_and_trace_and_dedupes_across_parts(self):
         a = B.new_cfg("CL", 0, 0.4, 0.0, 50.0, None)
@@ -209,9 +209,10 @@ class Runner(unittest.TestCase):
         self.assertEqual(B.missing_markers("DECIDE"), ["PASS-time"])
         self.mark("PASS-time")
         self.assertEqual(B.missing_markers("DECIDE"), [])
-        self.assertEqual(B.missing_markers("CROSS"), [])
+        self.assertEqual(B.missing_markers("CROSS"), ["DONE-DECIDE"])
         self.assertEqual(B.missing_markers("EARLY"), ["DONE-DECIDE"])
         self.mark("DONE-DECIDE")
+        self.assertEqual(B.missing_markers("CROSS"), [])
         self.assertEqual(B.missing_markers("EARLY"), [])
         self.assertEqual(B.missing_markers("MAIN"), ["DONE-EARLY"])
         self.assertEqual(B.missing_markers("REST"), ["DONE-EARLY", "DONE-MAIN"])
@@ -471,8 +472,10 @@ class Reuse(unittest.TestCase):
     def test_a_repair_off_row_has_the_fingerprint_of_the_rebaselined_stage_3d_row(self):
         import batch3d
         batch3d.build()
-        for cell, d3 in (("CL", "CL@b"), ("OV", "OV@b"), ("K-L10", "K-L10")):
+        for cell, d3 in (("CL", "CL@b"), ("OV", "OV@b")):
             self.assertEqual(B.fingerprint(B.new_cfg(cell, 0, 0.4, 0.0, 50.0, None)), B.fingerprint(batch3d.s5_cfg(d3, 0, 0.4, 0.0)), cell)
+        a, b = dataclasses.asdict(B.new_cfg("K-L10", 0, 0.4, 0.0, 50.0, None)), dataclasses.asdict(batch3d.s5_cfg("K-L10", 0, 0.4, 0.0))
+        self.assertEqual({k for k in a if a[k] != b[k]}, {"windows"})                                  # the outage cells read recovery, which stage 3d's call cells did not: not reused
         self.assertEqual(B.fingerprint(B.bulk_cfg("OV", 0, 50.0, None)), B.fingerprint(batch3d.cmp_cfg("OV@b", "C3", 0)))
         self.assertEqual(B.fingerprint(B.adr_cfg("CL", 0, 0.99, 50.0, None)), B.fingerprint(batch3d.cmp_cfg("CL@b", "C1", 0)))
 
@@ -505,6 +508,34 @@ class Reuse(unittest.TestCase):
                 B.REUSE.update(oldr)
 
 
+class ReuseCheck(unittest.TestCase):
+    def test_a_reused_row_is_reproduced_or_the_check_names_the_difference(self):
+        import check_ident3e
+        B.build()
+        cfg = B.new_cfg("RT", 0, 0.12, 0.0, 50.0, None, n_total=300)
+        fp = B.fingerprint(cfg)
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, "SHORT"))
+            stored = B.run_one(cfg, False)
+            oldfps, oldidx = dict(B.FPS), dict(B.REUSE["index"])
+            try:
+                B.FPS[fp] = dict(builder=lambda s: B.new_cfg("RT", s, 0.12, 0.0, 50.0, None, n_total=300), nseeds=3)
+                B.REUSE["index"] = {fp: ("3d", td, "SHORT", "x", 3)}
+                for s_ in range(3):
+                    json.dump(B.run_one(B.FPS[fp]["builder"](s_), False), open(os.path.join(td, "SHORT", "x-%d.json" % s_), "w"))
+                self.assertEqual(check_ident3e.reuse_check([fp]), [])
+                bad = json.load(open(os.path.join(td, "SHORT", "x-1.json")))
+                bad["share_any"] = 0.5
+                json.dump(bad, open(os.path.join(td, "SHORT", "x-1.json"), "w"))
+                res = check_ident3e.reuse_check([fp])
+                self.assertEqual([(r[0], r[1]) for r in res], [(fp, 1)])
+                self.assertIn("share_any", res[0][2])
+            finally:
+                B.FPS.clear()
+                B.FPS.update(oldfps)
+                B.REUSE["index"] = oldidx
+
+
 class ReaderCounts(unittest.TestCase):
     def test_nf_is_taken_over_the_first_n_seeds(self):
         A = {s: dict(share_any=0.9 + 0.01 * s, gauges={}) for s in range(12)}
@@ -525,7 +556,8 @@ class ReaderCounts(unittest.TestCase):
         out = S.read_mode(R, NF, units=200000, ys=("share_by_0p4",), nseeds=6, rec_cap=14.5, base_n={("adr", 0.95): 3, ("adr", 1.0): 3})
         self.assertIn(("adr", 0.95), out["undet"])                                                 # only the 3-seed row is to double
         self.assertNotIn(("lt", 0.4, 0.0), out["undet"])                                           # the new rows already have 6
-        R[("adr", 0.95)] = fake(0.95, 0.60, 0.0, ns=6)
+        extra = fake(0.95, 0.60, 0.0, ns=6)
+        R[("adr", 0.95)].update({k: v for k, v in extra.items() if k >= 3})                         # the doubling has run seeds 3 to 5 of the 3-seed row
         done = S.read_mode(R, NF, units=200000, ys=("share_by_0p4",), nseeds=6, rec_cap=14.5, base_n={("adr", 0.95): 3, ("adr", 1.0): 3})
         self.assertTrue(any(c["rd"].get("note") == "doubled to 6 seeds" for c in done["comps"]))
 

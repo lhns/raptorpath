@@ -181,3 +181,20 @@ changed since); its PASS line stands for the sample.
 - `summarize3e.py smooth` reads kp_stats (K and P) over every 5 consecutive points of each fine sweep (`batch3e.SMOOTH_GROUPS`) against the cell's A/A floor.
 - `python batch3e.py --smoke-pool` runs the `--workers 2` path on two tiny configurations in a temporary store with the markers waived.  Built, not run: `amend\phase4.done`
   did not exist and `amend_run.py` was still running.
+
+## Amendment 2 (registration 14, reg-stage3e at dd0a941f): what the runner and reader do now
+
+- Seeds: 12 on DECIDE, MAIN's CL, CL-long, CLw-long and RT rows and the cells CL-long, CL, CLw-long, RT, CLc, CLc-v, CL-long-v, K-I2, K-L10; 6 on K-OV, OV, OV-long, OV-long-v,
+  the file cells and MAIN's OV and CLs-long rows; 3 on the delta = 0.005 identity rows, SMOOTH, and the old senders of OV-long and OV-long-v (ADR-0084 at rho 0.95 and 1, today's
+  Realtime at delta 0.5 and 50, or 0.005 and 50 in OV-long-v, and today's Bulk); the A/A rows 12 everywhere; ROBUST 6.  AMEND is 543 configurations.
+- The doubling goes from n to 2n seeds (3 to 6, 6 to 12, 12 to 24) and is read once; a comparison against a 3-seed old point runs on 3 seeds of the new curve and doubles to 6.
+  The A/A floor is frozen at n = 3, 6, 12 and 24 over the first n seeds (the A/A rows have 12, so 24 reads the 12-seed floor) and each comparison uses the floor of its own count.
+- Reuse: `--reuse-dirs 3d=PATH,ps1=PATH` indexes the re-baseline's and proof stage 1's stored rows by fingerprint; they are used only after `check_ident3e.py --reuse ...` wrote `PASS-reuse`
+  (a 3-seed rerun of every shared fingerprint against its stored row under id3e; the stored rows keep no trace).  K-I2 and K-L10 are not shared with stage 3d because the outage cells read
+  `windows` (recovery), which stage 3d's call cells did not, and their old arms use the old RTT estimator there; CL, CL-long, OV and OV-long are.
+- Two pools: `--light-workers` (up to 8) and `--heavy-workers` (up to 2; an old sender in CL-long, CLw-long, CL-long-v, OV-long, OV-long-v, and RQ); each run waits until free memory is at
+  least 1 GB plus 1.5 GB (heavy) or 0.15 GB (light).
+- Order: AA, AA2, TIME (`PASS-time` if the total is at most 24 h, else STOP with the table), DECIDE, EARLY (the RL rows of Ec, RT, OV, CL-long-v), MAIN, REST (the other AMEND rows, long overload
+  cells last), then ROBUST and SMOOTH only with `VERDICT-PASSES`, which `summarize3e.py verdict` writes (and removes when the verdict is not PASSES).
+- Runs before the verdict, after the dedupe and before any reuse: AA 288, AA2 456, DECIDE 624, MAIN 402, EARLY 360, REST 4 512 = 6 642 (registration 14.9: 5 964 with reuse and one A/A pair);
+  ROBUST 192 and SMOOTH 774 follow a pass.  AA and AA2 hold both A/A pairs and DECIDE's repair-off half is still listed (it is reused when proof stage 1's store is given).

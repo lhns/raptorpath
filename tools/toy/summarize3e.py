@@ -80,12 +80,41 @@ def stage_verdict(outcomes, better_somewhere):
 
 
 # ---- one cell in one repair mode ----------------------------------------------------------------------------------------------------------
-def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=()):
+def nf_n(nfall, cell, n):
+    """The frozen A/A floor of a cell for a comparison of n seeds (registration 14.3): the freeze at the largest count not above n (the A/A rows
+    run at 12 seeds, so 24 reads the 12-seed floor), else the smallest count."""
+    keys = sorted(int(k) for k in nfall["by_n"])
+    use = max([k for k in keys if k <= n], default=keys[0])
+    return nfall["by_n"][str(use)]["cells"][cell]
+
+
+def nf_degenerate(nfall, cell, n):
+    keys = sorted(int(k) for k in nfall["by_n"])
+    use = max([k for k in keys if k <= n], default=keys[0])
+    return tuple(nfall["by_n"][str(use)].get("degenerate", {}).get(cell, ()))
+
+
+def write_verdict_marker(out_dir, verdict):
+    """ROBUST and SMOOTH wait for this marker (registration 14.5): present only while the stage verdict reads PASSES."""
+    path = os.path.join(out_dir, "VERDICT-PASSES")
+    if verdict == "PASSES":
+        os.makedirs(out_dir, exist_ok=True)
+        open(path, "w").close()
+    elif os.path.exists(path):
+        os.remove(path)
+
+
+def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=(), base_n=None):
     """R: row key -> seed -> result, keys ("lt", T, 0.0) (the new curve), ("adr", rho), ("rt", delta), ("bulk",).  The object API is the new
     curve's own T = inf, H = 0 point.  ADR-0084 (curve and points), today's Bulk and the object API are under the verdict in every mode;
     today's Realtime only at the deltas in rt_verdict (50 in RL and RE, none in OFF), elsewhere it is reported.
+    nf is the floor dict, or a function of the comparison's seed count n (the floor is taken over the first n seeds).  base_n: baseline row key -> its
+    seed count where that is below nseeds (the old senders of the long overload cells have 3 against the new curve's 6): the comparison runs on that
+    count, and its one doubling goes to twice that count.
     A readout in `degenerate` has a zero A/A floor in the cell (both pairs): its comparisons are reported only, never under the verdict.
     Returns dict(outcome, comps, undet (row keys to double), worse, better)."""
+    base_n = base_n or {}
+
     def have(key, ns):
         return key in R and all(s in R[key] for s in range(ns))
 
@@ -93,12 +122,13 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
         return np.stack([[value(R[key][s], k, rec_cap) for s in range(ns)] for key in keys])
 
     new_all = sorted([k for k in R if k[0] == "lt" and k[2] == 0.0 and have(k, nseeds)], key=lambda k: k[1])
-    base_keys = [k for k in R if k[0] in ("adr", "rt", "bulk") and have(k, nseeds)]
+    base_keys = [k for k in R if k[0] in ("adr", "rt", "bulk") and have(k, base_n.get(k, nseeds))]
     if new_all and ("lt", INF, 0.0) in new_all:
         base_keys.append(("api",))
         R = dict(R)
         R[("api",)] = R[("lt", INF, 0.0)]
-    xnoise = max(nf_of(nf, "share_any"), 1.0 / units)
+    nfn = nf if callable(nf) else (lambda n: nf)
+    xn = lambda n: max(nf_of(nfn(n), "share_any"), 1.0 / units)              # noqa: E731
     comps, undet = [], set()
 
     def scope_of(key, k=None):
@@ -110,44 +140,47 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
 
     for k in ys:
         for bk in base_keys:
+            nb = base_n.get(bk, nseeds)
+
             def run(newk, ns):
                 nx, ny = arr(newk, "share_any", ns), arr(newk, k, ns)
-                kk = merge_points(nx, ny, P.BETTER[k], xnoise)
+                kk = merge_points(nx, ny, P.BETTER[k], xn(ns))
                 bx, by = arr([bk], "share_any", ns)[0], arr([bk], k, ns)[0]
-                return compare(nx, ny, kk, bx, by, k, nf_of(nf, k), xnoise, units, float(by.mean()), True), kk, nx, bx
-            rd, kk, nx, bx = run(new_all, nseeds)
+                return compare(nx, ny, kk, bx, by, k, nf_of(nfn(ns), k), xn(ns), units, float(by.mean()), True), kk, nx, bx
+            rd, kk, nx, bx = run(new_all, nb)
             if rd["word"] == "undetermined":
                 arms = {bk} | {new_all[i] for i in bracket(nx.mean(1), kk, float(bx.mean()))}
-                n2 = [n for n in new_all if have(n, 2 * nseeds)]
-                if have(bk, 2 * nseeds) and len(n2) >= 2:                      # the registered doubling, on these arms only; never a second one
-                    rd, _, _, _ = run(n2, 2 * nseeds)
-                    rd["note"] = "doubled to %d seeds" % (2 * nseeds)
+                n2 = [n for n in new_all if have(n, 2 * nb)]
+                if have(bk, 2 * nb) and len(n2) >= 2:                          # the registered doubling, on these arms only; never a second one
+                    rd, _, _, _ = run(n2, 2 * nb)
+                    rd["note"] = "doubled to %d seeds" % (2 * nb)
                 else:
-                    undet.update(a for a in arms if a != ("api",))             # still to double
+                    undet.update(a for a in arms if a != ("api",) and not have(a, 2 * nb))             # still to double
             comps.append(dict(scope=scope_of(bk, k), kind="point", base=bk, k=k, rd=rd))
         adr = [k2 for k2 in base_keys if k2[0] == "adr"]
         if len(adr) >= 2 and new_all:                                          # curve against curve: the new points inside ADR-0084's range
-            ax, ay = arr(adr, "share_any", nseeds), arr(adr, k, nseeds)
-            ak = merge_points(ax, ay, P.BETTER[k], xnoise)
+            na = min(base_n.get(k2, nseeds) for k2 in adr)
+            ax, ay = arr(adr, "share_any", na), arr(adr, k, na)
+            ak = merge_points(ax, ay, P.BETTER[k], xn(na))
             lo, hi = ax[ak].mean(1).min(), ax[ak].mean(1).max()
             for n in new_all:
-                x = float(arr([n], "share_any", nseeds).mean())
+                x = float(arr([n], "share_any", na).mean())
                 if not (lo - 1e-12 <= x <= hi + 1e-12):
                     continue
 
                 def runr(adrk, ns):
                     ax_, ay_ = arr(adrk, "share_any", ns), arr(adrk, k, ns)
-                    ak_ = merge_points(ax_, ay_, P.BETTER[k], xnoise)
+                    ak_ = merge_points(ax_, ay_, P.BETTER[k], xn(ns))
                     px, py = arr([n], "share_any", ns)[0], arr([n], k, ns)[0]
-                    return compare_rev(ax_, ay_, ak_, px, py, k, nf_of(nf, k), units, float(ay_.mean())), ax_, ak_
-                rd, ax_, ak_ = runr(adr, nseeds)
+                    return compare_rev(ax_, ay_, ak_, px, py, k, nf_of(nfn(ns), k), units, float(ay_.mean())), ax_, ak_
+                rd, ax_, ak_ = runr(adr, na)
                 if rd["word"] == "undetermined":
-                    a2 = [m for m in adr if have(m, 2 * nseeds)]
-                    if have(n, 2 * nseeds) and len(a2) >= 2:
-                        rd, _, _ = runr(a2, 2 * nseeds)
-                        rd["note"] = "doubled to %d seeds" % (2 * nseeds)
+                    a2 = [m for m in adr if have(m, 2 * na)]
+                    if have(n, 2 * na) and len(a2) >= 2:
+                        rd, _, _ = runr(a2, 2 * na)
+                        rd["note"] = "doubled to %d seeds" % (2 * na)
                     else:
-                        undet.update({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)})
+                        undet.update(a for a in ({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)}) if not have(a, 2 * na))
                 comps.append(dict(scope="reported" if k in degenerate else "verdict", kind="curve", base=n, k=k, rd=rd))
     out, worse, und, better = classify(comps, gates_bad)
     return dict(outcome=out, comps=comps, undet=undet, worse=worse, undetermined=und, better=better)
@@ -166,21 +199,25 @@ def cell_ys(cell):
 
 
 def load_rows(cell, mode, nseeds):
-    """Row key -> seed -> result for every design row of a cell in a repair mode that has its first nseeds seeds on disk; seeds nseeds to
-    2 nseeds - 1 are loaded where the registered doubling has run them (read_mode uses them only for the comparisons it doubles)."""
+    """(R, base_n): row key -> seed -> result for every design row of a cell in a repair mode that has its own first seeds on disk (3 for a delta = 0.005 identity
+    row or an old sender of a long overload cell, else nseeds); seeds up to twice that count are loaded where the registered doubling has run them.
+    base_n holds the rows with fewer seeds than nseeds.  Reused stage 3d rows come through batch3e.load."""
     import batch3e as B
-    R = {}
+    R, base_n = {}, {}
     for key in B.rows_of(cell):
         fp = B.fingerprint(B.row_builder(cell, key, mode)(0))
+        own = min(nseeds, B.row_nseeds(cell, key, mode))
         rows = {}
-        for s in range(2 * nseeds):
-            r = B.load(fp, s)
+        for s_ in range(2 * own):
+            r = B.load(fp, s_)
             if r is None:
                 break
-            rows[s] = r
-        if len(rows) >= nseeds:
+            rows[s_] = r
+        if len(rows) >= own:
             R[key] = rows
-    return R
+            if own < nseeds:
+                base_n[key] = own
+    return R, base_n
 
 
 def cell_units(cell):
@@ -196,24 +233,40 @@ def cell_cap(cell):
 
 
 def cmd_freeze(force=False, aa_at="tinf"):
+    """The A/A floors, frozen at each count n in (3, 6, 12, 24) over the first n seeds (the A/A rows have 12, so 24 reads the 12-seed floor):
+    both pairs (T = inf, and the primary lifetime), the larger per readout, and the readouts that are zero in both (reported only)."""
     import batch3e as B
     B.build()
-    nf = dict(notes="p95 over 12 seeds of |A - A'|; A' = phase variant 1 of A; A = S5 at T=inf, hold 0 (\"tinf\", build 8.5) or at the cell's primary lifetime "
-                    "(\"primary\", registration 5), repair off; shares and seconds.  \"cells\" is the larger of the two per readout; \"degenerate\" lists the readouts whose floor is zero in both pairs.", aa_at=aa_at, tinf={}, primary={}, cells={}, degenerate={})
+    nf = dict(notes="p95 over the first n seeds of |A - A'|; A' = phase variant 1 of A; A = S5 at T=inf, hold 0 (tinf, build 8.5) or at the cell's primary lifetime "
+                    "(primary, registration 5), repair off; the larger of the two per readout; degenerate = zero in both, comparisons on it are reported only",
+              by_n={})
+    rows = {}
     for cell in B.MAIN_CELLS + B.AA2_CELLS:
         base, d = B.base_of(cell), B.delta_of(cell)
         for at in ("tinf", "primary"):
             T = INF if at == "tinf" else B.primary_T(cell)
-            A = {s: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None)), s) for s in range(SEEDS)}
-            Ap = {s: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None, variant=1)), s) for s in range(SEEDS)}
-            if any(r is None for r in list(A.values()) + list(Ap.values())):
+            A = {s_: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None)), s_) for s_ in range(2 * SEEDS)}
+            Ap = {s_: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None, variant=1)), s_) for s_ in range(2 * SEEDS)}
+            A, Ap = {k: v for k, v in A.items() if v is not None}, {k: v for k, v in Ap.items() if v is not None}
+            if len(A) < SEEDS or len(Ap) < SEEDS:
                 raise SystemExit("the A/A (%s) needs the %d seeds of both arms in %s" % (at, SEEDS, cell))
-            nf[at][cell] = nf_from(A, Ap, cell_cap(cell), ["share_any", "share_T"] + cell_ys(cell))
-        nf["cells"][cell], nf["degenerate"][cell] = combine_floors(nf["tinf"][cell], nf["primary"][cell])
-        for at in ("tinf", "primary"):
-            z = [k for k, v in nf[at][cell].items() if v == 0.0]
-            if z:
-                print("degenerate floor (zero) in the %s pair of %s: %s%s" % (at, cell, z, "; zero in both, comparisons on it are reported only" if set(z) & set(nf["degenerate"][cell]) else "; the other pair's floor is used"))
+            rows[(cell, at)] = (A, Ap)
+    for n in (3, 6, 12, 24):
+        nf["by_n"][str(n)] = dict(cells={}, degenerate={}, tinf={}, primary={})
+        for cell in B.MAIN_CELLS + B.AA2_CELLS:
+            for at in ("tinf", "primary"):
+                A, Ap = rows[(cell, at)]
+                m = min(n, len(A), len(Ap))
+                nf["by_n"][str(n)][at][cell] = nf_from({k: A[k] for k in range(m)}, {k: Ap[k] for k in range(m)}, cell_cap(cell), ["share_any", "share_T"] + cell_ys(cell))
+            c, dg = combine_floors(nf["by_n"][str(n)]["tinf"][cell], nf["by_n"][str(n)]["primary"][cell])
+            nf["by_n"][str(n)]["cells"][cell], nf["by_n"][str(n)]["degenerate"][cell] = c, dg
+            if n == 12:
+                for at in ("tinf", "primary"):
+                    z = [k for k, v in nf["by_n"]["12"][at][cell].items() if v == 0.0]
+                    if z:
+                        print("degenerate floor (zero) in the %s pair of %s at 12 seeds: %s%s" % (at, cell, z, "; zero in both, comparisons on it are reported only" if set(z) & set(dg) else "; the other pair's floor is used"))
+    nf["cells"] = nf["by_n"]["12"]["cells"]
+    nf["degenerate"] = nf["by_n"]["12"]["degenerate"]
     if os.path.exists(NF_PATH) and not force:
         print("nf_stage3e.json exists; not overwriting (frozen)")
         return
@@ -229,19 +282,20 @@ def cmd_read(cell, modes, nseeds, write_undet, out_path):
     B.build()
     with open(NF_PATH) as f:
         nfall = json.load(f)
-    nf, degenerate = nfall["cells"][cell], tuple(nfall.get("degenerate", {}).get(cell, ()))
+    nseeds = nseeds or B.cell_seeds(cell)
+    nf, degenerate = (lambda n: nf_n(nfall, cell, n)), nf_degenerate(nfall, cell, nseeds)
     L = []
     P_ = L.append
     outcomes, undet_fp, better_somewhere = {}, set(), False
     units = cell_units(cell)
     P_("### %s (readouts %s; paired seeds, the first %d)\n" % (cell, ", ".join(cell_ys(cell)), nseeds))
     for mode in modes:
-        R = load_rows(cell, mode, nseeds)
+        R, base_n = load_rows(cell, mode, nseeds)
         if not R:
             P_("- mode %s: no complete rows on disk" % mode)
             continue
         rt_verdict = () if mode == "OFF" else (50.0,)
-        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate)
+        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate, base_n=base_n)
         outcomes[mode] = res["outcome"]
         better_somewhere = better_somewhere or bool(res["better"])
         for key in res["undet"]:
@@ -291,7 +345,7 @@ def slide_kp(Y, m):
     return out
 
 
-def cmd_smooth(nseeds):
+def cmd_smooth(nseeds=3):                                                   # SMOOTH runs 3 paired seeds (registration 14.5)
     import batch3e as B
     B.build()
     with open(NF_PATH) as f:
@@ -309,7 +363,7 @@ def cmd_smooth(nseeds):
             if len(Y) != len(jobs):
                 print("- %s, %s: not complete" % (name, k))
                 continue
-            m = nfall["cells"].get(cell, {}).get(k, 0.0)
+            m = nf_n(nfall, cell, nseeds).get(k, 0.0)
             res = slide_kp(np.asarray(Y), m)
             bad = [(i, r) for i, a, b in res for r in (a, b) if r["word"] == "shown"]
             shown += len(bad)
@@ -322,7 +376,7 @@ def main():
     ap.add_argument("cmd", choices=("freeze", "read", "verdict", "smooth"))
     ap.add_argument("cell", nargs="?", default="")
     ap.add_argument("--modes", default="OFF,RL")
-    ap.add_argument("--nseeds", type=int, default=SEEDS)
+    ap.add_argument("--nseeds", type=int, default=None, help="default: the cell's seed count (12 or 6)")
     ap.add_argument("--write-undet", default="")
     ap.add_argument("--out", default="")
     ap.add_argument("--force", action="store_true")
@@ -331,16 +385,19 @@ def main():
     if a.cmd == "freeze":
         cmd_freeze(a.force, a.aa_at)
     elif a.cmd == "smooth":
-        cmd_smooth(a.nseeds)
+        cmd_smooth(a.nseeds or 3)
     elif a.cmd == "read":
         cmd_read(a.cell, [m if m in ("OFF", "RL", "RE") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
     else:
+        import batch3e as B
         outs, better = {}, False
         for c in a.cell.split(","):
             o, b = cmd_read(c, ["OFF", "RL"], a.nseeds, "", "")
             outs[c] = o
             better = better or b
-        print("STAGE VERDICT:", stage_verdict(outs, better), outs)
+        v = stage_verdict(outs, better)
+        write_verdict_marker(B.OUT, v)                                         # ROBUST and SMOOTH wait for VERDICT-PASSES
+        print("STAGE VERDICT:", v, outs)
 
 
 if __name__ == "__main__":
