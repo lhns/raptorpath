@@ -86,6 +86,29 @@ Not modelled, a recorded divergence (plan 2.3): the probabilistic correction-slo
 - `l1_viol` is a new gauge added for the L1 gate (the plan lists the gate; no gauge existed).
 - Today's Realtime's ε̂ is the cell's declared loss (Q21), since there is no estimator on this base; it is 0 before the first RTT sample.
 
+### 1.6 Amendment of 2026-11-25, committed before any run exists (owner's delegated decisions, advisor review)
+
+Where this section differs from 1.4 it supersedes it. No data had been generated when it was written.
+
+- **(a) Today's Realtime rows are reported only, not under the verdict.** Repair is off, so the arm is not today's sender; its rows count
+  once stage 3e's repair exists. The check asked for: with no repair sent, `p_fec_normal(r = 0, ...)` returns 0 by the shipped function's own
+  first guard (`r <= 0`, the engine's formula at r = 0), so the give-up budget is `eps_hat`. That assumes no repair that is not there. The
+  engine's budget with its shipped repair is smaller (`eps_hat (1 - P_fec)`), so the repair-off arm is allowed more give-ups than the shipped
+  one, not fewer. It is not handicapped by the P_fec term and nothing is changed. It is a control and is labelled so.
+- **(b) The verdict rests on ADR-0084's rho curve only**, repair off on both sides: the five point comparisons and the curve-against-curve
+  comparisons in both directions, on both readouts. Today's Realtime points and Bulk are reported in the table.
+- **(c) Out of range.** A baseline point below the new curve's lowest delivered share is compared against that lowest point (per seed, the
+  lowest point's own value). The new model wins if it is no worse on on-time share and on recovery, since it already delivers more; the usual
+  reading rule applies and "shown worse" is a loss. A baseline above the new curve's highest share still reads "outside the swept range" and
+  counts as not passed. No lifetime point is added after data is seen.
+- **(d) "Undetermined" is its own outcome**, neither pass nor fail. Any comparison under the verdict that reads undetermined at 12 seeds
+  triggers one registered doubling: seeds 12 to 23 of the arms in that comparison only (the baseline and the two points bracketing it on the
+  other curve), then the comparison is read again on 24 seeds with those arms. If it is still undetermined, the row's outcome is
+  UNDETERMINED (shown worse anywhere is FAILS; all comparisons equivalent or shown better is PASSES). No second doubling.
+- **Outcome labels:** PASSES, FAILS, UNDETERMINED. A gate failure or an identity difference is FAILS.
+- **Reader:** `proof_s1.py` (`classify`, `curve_at(clamp_low)`, `bracket`, `cmd_read`), with tests on synthetic curves in `test_proof_s1.py`.
+- **Run gating:** the batch starts only on a marker file created by the coordinator after the re-baseline has been checked and pushed.
+
 ## 2. Tests and identity
 
 (filled after the run)

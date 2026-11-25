@@ -52,18 +52,49 @@ class Reader(unittest.TestCase):
         rd = P.compare(nx, ny, kk, np.full(SEEDS, 0.95), np.full(SEEDS, 0.601), "share_by_0p4", 0.0, 0.0, 200000, 0.6)
         self.assertEqual(rd["word"], "equivalent")
 
-    def test_no_extrapolation_outside_the_curves_range(self):
+    def test_above_the_range_is_outside_and_below_it_reads_the_lowest_point(self):
         nx, ny = pts([0.94, 0.97, 1.00], [0.9, 0.95, 1.0])
         kk = P.merge_points(nx, ny, +1.0, 0.0)
-        rd = P.compare(nx, ny, kk, np.full(SEEDS, 0.90), np.full(SEEDS, 0.5), "share_by_0p4", 0.0, 0.0, 200000, 0.5)
-        self.assertEqual(rd["word"], "outside the swept range")
         rd = P.compare(nx, ny, kk, np.full(SEEDS, 1.005), np.full(SEEDS, 0.5), "share_by_0p4", 0.0, 0.0, 200000, 0.5)
-        self.assertEqual(rd["word"], "outside the swept range")
-        # a baseline outside the range for some seeds only is still outside (not passed), with the count
+        self.assertEqual(rd["word"], "outside the swept range")       # above the curve: no extrapolation
+        # amendment 1.6c: below the lowest delivered share the baseline is compared against the lowest point
+        low_ok = P.compare(nx, ny, kk, np.full(SEEDS, 0.90), np.full(SEEDS, 0.5), "share_by_0p4", 0.0, 0.0, 200000, 0.5)
+        self.assertEqual((low_ok["word"], low_ok["n_clamped"]), ("shown better", SEEDS))
+        low_bad = P.compare(nx, ny, kk, np.full(SEEDS, 0.90), np.full(SEEDS, 0.99), "share_by_0p4", 0.0, 0.0, 200000, 0.99)
+        self.assertEqual(low_bad["word"], "shown worse")               # the lowest point is worse on on-time share: a loss, not a pass
+        rx, ry = pts([0.94, 0.97, 1.00], [0.0, 2.0, 4.0])              # recovery: the lowest point recovers in 0 s
+        rk = P.merge_points(rx, ry, -1.0, 0.0)
+        r = P.compare(rx, ry, rk, np.full(SEEDS, 0.90), np.full(SEEDS, 4.0), "recovery_time", 0.0, 0.0, 200000, 4.0)
+        self.assertEqual(r["word"], "shown better")
+        # a mix: some seeds below, the rest inside: still read, and the clamped count is reported
         bx = np.full(SEEDS, 0.96)
         bx[:3] = 0.90
         rd = P.compare(nx, ny, kk, bx, np.full(SEEDS, 0.5), "share_by_0p4", 0.0, 0.0, 200000, 0.5)
-        self.assertEqual((rd["word"], rd["n_out"]), ("outside the swept range", 3))
+        self.assertEqual(rd["n_clamped"], 3)
+
+    def test_undetermined_is_its_own_outcome(self):
+        nx, ny = pts([0.90, 1.00], [0.60, 0.60], jit=0.0)
+        kk = P.merge_points(nx, ny, +1.0, 0.0)
+        by = np.full(SEEDS, 0.60) + np.linspace(-0.3, 0.3, SEEDS)      # wide spread around no difference, wider than the bar
+        rd = P.compare(nx, ny, kk, np.full(SEEDS, 0.95), by, "share_by_0p4", 0.0, 0.0, 200000, 0.6)
+        self.assertEqual(rd["word"], "undetermined")
+
+    def test_classify(self):
+        def c(word, scope="verdict"):
+            return dict(scope=scope, rd=dict(word=word))
+        self.assertEqual(P.classify([c("shown better"), c("equivalent")], False)[0], "PASSES")
+        self.assertEqual(P.classify([c("shown better"), c("undetermined")], False)[0], "UNDETERMINED")
+        self.assertEqual(P.classify([c("undetermined"), c("shown worse")], False)[0], "FAILS")
+        self.assertEqual(P.classify([c("outside the swept range")], False)[0], "FAILS")
+        self.assertEqual(P.classify([c("equivalent")], True)[0], "FAILS")                      # a gate
+        self.assertEqual(P.classify([c("shown worse", "reported"), c("equivalent")], False)[0], "PASSES")   # today's Realtime is reported only
+        self.assertEqual(P.classify([c("undetermined", "reported")], False)[0], "PASSES")
+
+    def test_bracket(self):
+        means = np.array([0.94, 0.97, 1.0])
+        self.assertEqual(P.bracket(means, [0, 1, 2], 0.96), [0, 1])
+        self.assertEqual(P.bracket(means, [0, 1, 2], 0.90), [0])
+        self.assertEqual(P.bracket(means, [0, 1, 2], 0.985), [1, 2])
 
     def test_points_within_noise_keep_the_better_y(self):
         xs, ys = pts([0.900, 0.9004, 0.95, 1.0], [0.50, 0.58, 0.70, 0.80], jit=0.0)

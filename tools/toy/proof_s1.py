@@ -127,13 +127,15 @@ def weight(n):
 def cmd_run(a):
     build()
     names = [n for n, (p, _) in JOBS.items() if p in a.part.split(",")]
-    tasks = [(n, s) for n in names for s in range(a.seeds) if not os.path.exists(fname(n, s))]
+    if a.arms_file:                                    # the registered doubling: only the arms of the undetermined comparisons
+        keep = set(json.load(open(a.arms_file)))
+        names = [n for n in names if n in keep]
+    tasks = [(n, s) for n in names for s in range(a.seed0, a.seed0 + a.seeds) if not os.path.exists(fname(n, s))]
     tasks.sort(key=lambda t: weight(t[0]))
     t0 = time.time()
     print("%d runs to do (%d configurations)" % (len(tasks), len(names)), flush=True)
     if a.workers <= 1:
         it = (work(t) for t in tasks)
-        pool = None
     else:
         pool = mp.Pool(a.workers, initializer=build)
         it = pool.imap_unordered(work, tasks, chunksize=1)
@@ -149,13 +151,13 @@ REC_CAP = 14.5                                            # recovery "not within
 GATE_KEYS = ("finished", "commit_viol", "l1_viol")
 
 
-def load(part):
+def load(part, nseeds=2 * SEEDS):
     d = {}
     for n in JOBS:
         if JOBS[n][0] != part:
             continue
         d[n] = {}
-        for s in range(SEEDS):
+        for s in range(nseeds):
             f = fname(n, s)
             if os.path.exists(f):
                 d[n][s] = json.load(open(f))
@@ -230,9 +232,10 @@ def merge_points(xs, ys, better, noise):
     return kept
 
 
-def curve_at(xs, ys, kept, xq):
+def curve_at(xs, ys, kept, xq, clamp_low=False):
     """Per seed, the straight-line interpolation of the curve (kept points, that seed's x and y) at that seed's xq; NaN outside its x range
-    (no extrapolation, plan 1.2).  xs, ys: (points, seeds); xq: (seeds,)."""
+    (no extrapolation, plan 1.2).  clamp_low (amendment 1.6c): a query below the curve's lowest delivered share reads the lowest point.
+    xs, ys: (points, seeds); xq: (seeds,)."""
     out = np.full(xq.shape, np.nan)
     for j in range(xq.shape[0]):
         px, py = xs[kept, j], ys[kept, j]
@@ -240,19 +243,23 @@ def curve_at(xs, ys, kept, xq):
         px, py = px[o], py[o]
         if px[0] - 1e-12 <= xq[j] <= px[-1] + 1e-12:
             out[j] = np.interp(xq[j], px, py)
+        elif clamp_low and xq[j] < px[0]:
+            out[j] = py[0]
     return out
 
 
-def compare(new_x, new_y, kept, base_x, base_y, k, nfk, nfx, units, ref_mean):
+def compare(new_x, new_y, kept, base_x, base_y, k, nfk, nfx, units, ref_mean, clamp_low=True):
     """New curve against a baseline point (base_x, base_y: (seeds,)): the paired difference, signed so that larger = better for the new model."""
-    yi = curve_at(new_x, new_y, kept, base_x)
+    yi = curve_at(new_x, new_y, kept, base_x, clamp_low)
     if np.any(np.isnan(yi)):
         return dict(word="outside the swept range", mean=float("nan"), lo=float("nan"), hi=float("nan"), m=float("nan"),
-                    n_out=int(np.isnan(yi).sum()))
+                    n_out=int(np.isnan(yi).sum()), n_clamped=0)
     g = BETTER[k] * (yi - base_y)
     m = max(t_bar(k, ref_mean, units), nfk)
     rd = read_good(g, m)
     rd["n_out"] = 0
+    lows = [new_x[kept, j].min() for j in range(base_x.shape[0])]
+    rd["n_clamped"] = int(sum(1 for j in range(base_x.shape[0]) if base_x[j] < lows[j] - 1e-12))
     return rd
 
 
@@ -266,13 +273,16 @@ def compare_rev(base_x, base_y, kept, pt_x, pt_y, k, nfk, units, ref_mean):
     m = max(t_bar(k, ref_mean, units), nfk)
     rd = read_good(g, m)
     rd["n_out"] = 0
+    rd["n_clamped"] = 0
     return rd
 
 
 def fmt(rd, nd=3):
     if rd["word"].startswith("outside"):
         return "outside the swept range (%d seeds)" % rd["n_out"]
-    return "%.*g [%.*g, %.*g] vs m=%.3g: %s" % (nd, rd["mean"], nd, rd["lo"], nd, rd["hi"], rd["m"], rd["word"])
+    return "%.*g [%.*g, %.*g] vs m=%.3g: %s%s%s" % (nd, rd["mean"], nd, rd["lo"], nd, rd["hi"], rd["m"], rd["word"],
+                                                    (" (against the curve's lowest point, %d seeds)" % rd["n_clamped"]) if rd.get("n_clamped") else "",
+                                                    " [%s]" % rd["note"] if rd.get("note") else "")
 
 
 def freeze(force=False):
@@ -293,82 +303,127 @@ def freeze(force=False):
     print("frozen", NF_PATH, nf["cells"])
 
 
+def classify(comps, gates_bad):
+    """Amendment 1.6: the row's outcome.  Only comparisons with scope "verdict" count (ADR-0084's rho curve); today's Realtime rows are
+    reported only.  FAILS: any shown worse or outside the swept range (above the curve), or a gate.  UNDETERMINED: none worse but some
+    comparison undetermined: neither pass nor fail.  PASSES: every comparison equivalent or shown better."""
+    v = [c for c in comps if c["scope"] == "verdict"]
+    worse = [c for c in v if c["rd"]["word"] in ("shown worse", "outside the swept range")]
+    undet = [c for c in v if c["rd"]["word"] in ("undetermined", "n/a")]
+    better = [c for c in v if c["rd"]["word"] == "shown better"]
+    if worse or gates_bad:
+        out = "FAILS"
+    elif undet:
+        out = "UNDETERMINED"
+    else:
+        out = "PASSES"
+    return out, worse, undet, better
+
+
+def bracket(means, order, x):
+    """Indices of the (up to two) kept points whose mean x brackets x; the lowest point when x lies below the curve."""
+    o = sorted(order, key=lambda i: means[i])
+    below = [i for i in o if means[i] <= x]
+    above = [i for i in o if means[i] > x]
+    return ([below[-1]] if below else []) + ([above[0]] if above else [])
+
+
 def cmd_read(a):
     build()
-    rows = load("DECIDE")
+    rows = load("DECIDE", a.nseeds)
     nf = json.load(open(NF_PATH))["cells"]
     L = []
     P = L.append
+
+    def full(n, ns):
+        return len(rows.get(n, {})) >= ns and all(s in rows[n] for s in range(ns))
+
+    def arr(names, k, ns):
+        return np.stack([[val(rows[n][s], k) for s in range(ns)] for n in names])
+
     names_new = [n_lt(T, 0.0) for T in T_SET]
-    have = [n for n in names_new if len(rows.get(n, {})) == SEEDS]
-    units = int(next(iter(rows[have[0]].values()))["units"])
-    P("### The new model's curve and every row (repair off, CL-long@b, 12 paired seeds, means)\n")
-    P("| row | share_any | on time at 0.4 s | on time at T | recovery (s) | intake expired (dequeue) | floor passes | gates: unfinished / commit / L1 | evict-window skips | sheds | budget refusals | queue drops | p1 viol |")
+    have = [n for n in names_new if full(n, SEEDS)]
+    units = int(rows[have[0]][0]["units"])
+    xnoise = max(nf_of(nf, "share_any"), 1.0 / units)
+    P("### Every row (repair off, CL-long@b, paired seeds, means over the first %d seeds)\n" % SEEDS)
+    P("| row | share_any | on time at 0.4 s | on time at T | recovery (s) | intake expired (dequeue) | floor passes | unfinished / commit / L1 | evict-window skips | sheds | budget refusals | queue drops | p1 viol |")
     P("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     allnames = [n for n in JOBS if JOBS[n][0] == "DECIDE"]
     for n in allnames:
-        if len(rows.get(n, {})) < SEEDS:
+        if not full(n, SEEDS):
             P("| %s | not run |" % n)
             continue
-        f = lambda k: float(vec(rows, n, k).mean())
-        rr = [rows[n][s].get("recovery_time") for s in sorted(rows[n])]
+        f = lambda k: float(np.mean([val(rows[n][s], k) for s in range(SEEDS)]))
+        rr = [rows[n][s].get("recovery_time") for s in range(SEEDS)]
         cens = sum(1 for x in rr if x is None)
-        unf = sum(1 for s in rows[n] if rows[n][s].get("finished") is False)
+        unf = sum(1 for s in range(SEEDS) if rows[n][s].get("finished") is False)
         P("| %s | %.4f | %.4f | %.4f | %.2f%s | %.0f | %.0f | %d / %.0f / %.0f | %.0f | %.0f | %.0f | %.0f | %.0f |" % (
             n, f("share_any"), f("share_by_0p4"), f("share_T"), f("recovery_time"), (" (%d censored)" % cens) if cens else "",
             f("intake_expired_deq"), f("pass_floor"), unf, f("commit_viol"), f("l1_viol"), f("evict_skip"), f("verdicts"),
             f("refusals"), f("queue_drop"), f("p1_viol")))
-    # comparisons
-    kept = {}
-    X = {n: vec(rows, n, "share_any") for n in have}
-    new_x = np.stack([vec(rows, n, "share_any") for n in have])
-    comps = []
+    comps, undet_arms = [], set()
 
-    def newcurve(k):
-        y = np.stack([vec(rows, n, k) for n in have])
-        kk = merge_points(new_x, y, BETTER[k], max(nf_of(nf, "share_any"), 1.0 / units))
-        return y, kk
-    P("\n### Matched-share comparisons (the new model's H = 0 curve, T sweep, against each baseline)\n")
-    P("Reading rule: paired difference of the new curve (per seed, interpolated at that seed's baseline share) minus the baseline, signed so that positive favours the new model, against m = max(T_bar, A/A floor). No extrapolation.\n")
-    P("| baseline | readout | new curve at the baseline's share minus the baseline | verdict |")
-    P("|---|---|---|---|")
-    base_pts = [n_adr(r) for r in RHO_SET] + [n_rt(d) for d in DELTA_SET]
-    for bn in base_pts:
-        if len(rows.get(bn, {})) < SEEDS:
+    def point_comparison(bn, k, scope):
+        def run(newn, ns):
+            nx, ny = arr(newn, "share_any", ns), arr(newn, k, ns)
+            kk = merge_points(nx, ny, BETTER[k], xnoise)
+            bx, by = arr([bn], "share_any", ns)[0], arr([bn], k, ns)[0]
+            rd = compare(nx, ny, kk, bx, by, k, nf_of(nf, k), xnoise, units, float(by.mean()), True)
+            return rd, kk, nx, bx
+        rd, kk, nx, bx = run(have, SEEDS)
+        arms = {bn} | {have[i] for i in bracket(nx.mean(1), kk, float(bx.mean()))}
+        note = ""
+        if rd["word"] == "undetermined":
+            undet_arms.update(arms)
+            n24 = [n for n in have if full(n, 2 * SEEDS)]
+            if full(bn, 2 * SEEDS) and len(n24) >= 2:                  # the registered doubling, on these arms only
+                rd, _, _, _ = run(n24, 2 * SEEDS)
+                rd["note"] = "doubled to %d seeds" % (2 * SEEDS)
+        comps.append(dict(scope=scope, kind="point", base=bn, k=k, rd=rd))
+        return rd
+
+    P("\n### New model's H = 0 curve (T sweep) against each baseline point\n")
+    P("Paired difference (the new curve interpolated per seed at that seed's baseline share, minus the baseline), signed so that positive favours the new model, against m = max(T_bar, A/A floor). A baseline below the curve's lowest delivered share is compared against the lowest point (amendment 1.6c). Today's Realtime rows are reported only, not under the verdict (1.6a).\n")
+    P("| baseline | readout | difference | outcome | under the verdict |")
+    P("|---|---|---|---|---|")
+    for bn, scope in [(n_adr(r), "verdict") for r in RHO_SET] + [(n_rt(d), "reported") for d in DELTA_SET]:
+        if not full(bn, SEEDS):
             continue
-        bx = vec(rows, bn, "share_any")
         for k in READ:
-            ny, kk = newcurve(k)
-            by = vec(rows, bn, k)
-            rd = compare(new_x, ny, kk, bx, by, k, nf_of(nf, k), nf_of(nf, "share_any"), units, float(by.mean()))
-            comps.append(("point", bn, k, rd))
-            P("| %s | %s | %s | %s |" % (bn, k, fmt(rd), rd["word"]))
-    P("\n### Curve against curve: the new model against ADR-0084's rho sweep, both directions\n")
-    adr = [n_adr(r) for r in RHO_SET]
-    adr = [n for n in adr if len(rows.get(n, {})) == SEEDS]
-    if adr:
-        ax = np.stack([vec(rows, n, "share_any") for n in adr])
+            rd = point_comparison(bn, k, scope)
+            P("| %s | %s | %s | %s | %s |" % (bn, k, fmt(rd), rd["word"], "yes" if scope == "verdict" else "no, reported only"))
+    P("\n### Curve against curve: the new model's points inside ADR-0084's range, against ADR-0084's interpolated rho curve\n")
+    adr = [n for n in (n_adr(r) for r in RHO_SET) if full(n, SEEDS)]
+    if len(adr) >= 2:
         for k in READ:
-            ny, kk = newcurve(k)
-            ay = np.stack([vec(rows, n, k) for n in adr])
-            ak = merge_points(ax, ay, BETTER[k], max(nf_of(nf, "share_any"), 1.0 / units))
-            lo, hi = new_x[kk].mean(1).min(), new_x[kk].mean(1).max()
-            for i in ak:      # ADR-0084's points inside the new curve's x range: that is the table above; the points outside are reported here
-                if not (lo - 1e-12 <= ax[i].mean() <= hi + 1e-12):
-                    P("- %s on %s: x = %.4f lies outside the new curve's range [%.4f, %.4f]: counts as not passed" % (adr[i], k, ax[i].mean(), lo, hi))
-                    comps.append(("range", adr[i], k, dict(word="outside the swept range")))
-            alo, ahi = ax[ak].mean(1).min(), ax[ak].mean(1).max()
-            for j in kk:      # the new model's points inside ADR-0084's x range, read against ADR-0084's interpolated curve
-                if alo - 1e-12 <= new_x[j].mean() <= ahi + 1e-12:
-                    by = ny[j]
-                    rd = compare_rev(ax, ay, ak, new_x[j], by, k, nf_of(nf, k), units, float(ay.mean()))
-                    comps.append(("curve", have[j], k, rd))
-                    P("- new %s against ADR-0084's curve, %s: %s" % (have[j], k, fmt(rd)))
-    # gates and identity
+            def run(newn, adrn, ns, j):
+                ax, ay = arr(adrn, "share_any", ns), arr(adrn, k, ns)
+                ak = merge_points(ax, ay, BETTER[k], xnoise)
+                px, py = arr([newn], "share_any", ns)[0], arr([newn], k, ns)[0]
+                return compare_rev(ax, ay, ak, px, py, k, nf_of(nf, k), units, float(ay.mean())), ax, ak
+            ax, ay = arr(adr, "share_any", SEEDS), arr(adr, k, SEEDS)
+            ak = merge_points(ax, ay, BETTER[k], xnoise)
+            lo, hi = ax[ak].mean(1).min(), ax[ak].mean(1).max()
+            for n in have:
+                x = float(arr([n], "share_any", SEEDS).mean())
+                if not (lo - 1e-12 <= x <= hi + 1e-12):
+                    continue
+                rd, ax_, ak_ = run(n, adr, SEEDS, 0)
+                arms = {n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)}
+                if rd["word"] == "undetermined":
+                    undet_arms.update(arms)
+                    a24 = [m for m in adr if full(m, 2 * SEEDS)]
+                    if full(n, 2 * SEEDS) and len(a24) >= 2:
+                        rd, _, _ = run(n, a24, 2 * SEEDS, 0)
+                        rd["note"] = "doubled to %d seeds" % (2 * SEEDS)
+                comps.append(dict(scope="verdict", kind="curve", base=n, k=k, rd=rd))
+                P("- new %s against ADR-0084's curve, %s: %s" % (n, k, fmt(rd)))
     P("\n### Gates and identity\n")
     bad = []
     for n in allnames:
-        for s in rows.get(n, {}):
+        for s in range(SEEDS):
+            if s not in rows.get(n, {}):
+                continue
             r = rows[n][s]
             if r.get("finished") is False or r["gauges"]["commit_viol"] or r["gauges"]["l1_viol"]:
                 bad.append((n, s))
@@ -377,25 +432,28 @@ def cmd_read(a):
         P("  - %s seed %d" % x)
     import summarize3c as S3
     idn = n_lt(INF, INF)
-    if len(rows.get(idn, {})) == SEEDS and len(rows.get(N_BULK, {})) == SEEDS:
+    gates_bad = bool(bad)
+    if full(idn, SEEDS) and full(N_BULK, SEEDS):
         nd = 0
         for s in range(SEEDS):
             for k in S3.ID_KEYS:
-                a, b = rows[idn][s].get(k), rows[N_BULK][s].get(k)
-                if a != b and not (isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b)):
+                x, y = rows[idn][s].get(k), rows[N_BULK][s].get(k)
+                if x != y and not (isinstance(x, float) and isinstance(y, float) and math.isnan(x) and math.isnan(y)):
                     nd += 1
         P("- identity, lifetime T=inf with hold inf against today's Bulk (C3), %d keys x %d seeds: %d differences" % (len(S3.ID_KEYS), SEEDS, nd))
-        bad.append(("identity", nd)) if nd else None
-    worse = [c for c in comps if c[3]["word"] in ("shown worse", "outside the swept range")]
-    better = [c for c in comps if c[3]["word"] == "shown better"]
-    P("\n### Verdict against the plan's pass rule (this row)\n")
-    P("- comparisons read: %d; shown worse or outside the swept range: %d; shown better: %d" % (len(comps), len(worse), len(better)))
+        gates_bad = gates_bad or nd > 0
+    out, worse, undet, better = classify(comps, gates_bad)
+    P("\n### Outcome against the pass rule (this row, ADR-0084's rho curve only)\n")
+    P("- comparisons under the verdict: %d; shown worse or outside the swept range: %d; undetermined: %d; shown better: %d" % (
+        sum(1 for c in comps if c["scope"] == "verdict"), len(worse), len(undet), len(better)))
     for c in worse:
-        P("  - WORSE/OUTSIDE: %s | %s | %s" % (c[1], c[2], c[3]["word"]))
-    ok = not worse and not bad
-    P("- rule 1 (nowhere below): %s; rule 3 (gates) and rule 4 (identity): %s; rule 2 (above somewhere): %s" % (
-        "holds" if not worse else "FAILS", "hold" if not bad else "FAIL", "yes" if better else "no, in this row"))
-    P("- **ROW %s**" % ("PASSES" if ok else "FAILS"))
+        P("  - WORSE/OUTSIDE: %s | %s | %s" % (c["base"], c["k"], c["rd"]["word"]))
+    for c in undet:
+        P("  - UNDETERMINED: %s | %s%s" % (c["base"], c["k"], " (after doubling)" if c["rd"].get("note") else " (12 seeds)"))
+    P("- rule 2 (above somewhere): %s" % ("yes" if better else "no, in this row"))
+    P("- **ROW %s**" % out)
+    if a.write_undet:
+        json.dump(sorted(undet_arms), open(a.write_undet, "w"))
     print("\n".join(L))
 
 
@@ -406,6 +464,10 @@ def main():
     ap.add_argument("--seeds", type=int, default=SEEDS)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--seed0", type=int, default=0)
+    ap.add_argument("--arms-file", default="")
+    ap.add_argument("--nseeds", type=int, default=SEEDS)
+    ap.add_argument("--write-undet", default="")
     a = ap.parse_args()
     if a.cmd == "run":
         cmd_run(a)
