@@ -340,7 +340,11 @@ EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expir
           "protected",            # protected: three-knobs.md 15.3 and 15.6.1 item 1 (stage 3c)
           "plant_T",              # plant_T: three-knobs.md 17.5 (stage 3d), the planted controls routed through T
           "p_fec_normal",         # proof stage 1: the shipped p_fec cut (W22, recorded debt), bounded by test_p_fec_normal_port_and_its_cut
-          "evict_unservable", "force_drain_due", "force_drain_keep"}   # proof stage 1: today's Realtime branches, modelled as shipped (plan 2.3 and 8)
+          "evict_unservable", "force_drain_due", "force_drain_keep",       # proof stage 1: today's Realtime branches, modelled as shipped (plan 2.3 and 8)
+          # stage 3e (three-knobs-stage3e-build.md 2): the repair laws as shipped and the two lifetime comparisons of the repair span; by name only
+          "normal_survival_as", "normal_quantile_as", "p_fec_normal_as", "z_for_tail_target", "r_star_with_z", "r_saturation", "soft_saturate",
+          "controller_rate_parts", "derive_window_parts", "bulkness", "t_tail_of", "rate_law", "beta_upper", "span_edge_ok", "decoded_late",
+          "saturation_pressure"}
 
 
 def _names(node):
@@ -1246,6 +1250,552 @@ class ProofS1TodaysRealtime(unittest.TestCase):
     def test_l1_gauge_is_zero_in_the_new_model(self):
         r = toy2.run(small_s5("CL", 0, 0.4, 0.0))
         self.assertEqual(r["gauges"]["l1_viol"], 0)
+
+
+# ---- stage 3e (three-knobs-stage3e-build.md 7): repair, the decoder, the span edges, the estimated-loss arm -------------
+import ident3e_cfgs  # noqa: E402
+
+RATE_REF = os.path.join(HERE, "rate_ref3e.json")
+
+
+def e_cfg(cell="K-L10", seed=0, T=0.12, H=0.0, repair=None, **kw):
+    """The new model (S5) on one of the batch cells, with the stage 3e fields."""
+    return batch3d.s5_cfg(cell, seed, T, H, repair=repair, **kw)
+
+
+def rt_e(seed=0, T=0.12, repair=None, **kw):
+    """RT: K-L10 without its outage, short."""
+    kw.setdefault("dead", None)
+    kw.setdefault("n_total", 600)
+    return e_cfg("K-L10", seed, T, 0.0, repair, **kw)
+
+
+def id3e_t(a, b):
+    import batch3e
+    return batch3e.id3e(a, b)
+
+
+class SpanSim(toy2.Sim):
+    """A sender with a pinned rate_hat and a recording forward path, to call stage_repair on constructed state."""
+
+    def __init__(self, cfg, rh=1000.0):
+        super().__init__(cfg)
+        self._rh = rh
+        self.fwd_calls = []
+
+    def rate_hat(self, now):
+        return self._rh
+
+    def fwd(self, t, path=0):
+        self.fwd_calls.append(t)
+        return t + 0.005, t
+
+
+def span_sim(edge="worth", T=0.4, n_sent=500, srtt=0.05, **kw):
+    """S5 with a repair arm, n_sent first sends at 1 ms spacing (h(s) = s ms), srtt as given: o_hat = srtt - RTprop/2 = srtt - 0.005,
+    D = srtt/2 so A* = ceil(1000 srtt / 2), Delta = 1."""
+    rep = kw.pop("repair", dict(r=0.3, edge=edge))
+    c = toy2.Cfg(cell="I2", sender="S5", recv="RH", seed=1, rate=1000.0, n_total=3000, delta=50.0, rho=1.0, check_p1=False, T=T, Hk=0.0,
+                 rtt_est="rfc", trigger_law="trigger", owd_est="fwd", floor_law="protect", repair=rep, **kw)
+    sm = SpanSim(c)
+    sm.n_sent = n_sent
+    for s in range(n_sent):
+        sm.h_seq[s] = s * 0.001
+    sm.srtt = srtt
+    sm.W_cur = 200.0
+    return sm
+
+
+class Stage3e(unittest.TestCase):
+    # -- 1 defaults ---------------------------------------------------------------------------------------------
+    def test_1_defaults_and_old_senders_reproduce_the_base(self):
+        c = toy2.Cfg()
+        self.assertIsNone(c.repair)
+        self.assertIsNone(c.repair_seam)
+        self.assertEqual((c.o_bias, c.R_bias, c.rev_q, c.tau_extra), (0.0, 0.0, 0.0, ()))
+        with open(os.path.join(HERE, "ident3e_ref.json")) as f:
+            ref = json.load(f)
+        built = ident3e_cfgs.cfgs(toy2, batch3d, batch3c)
+        self.assertEqual(sorted(built), sorted(ref))
+        for nm, cf in built.items():
+            d = ident3e_cfgs.digest(toy2.run(cf))
+            for k, v in ref[nm].items():
+                if k == "gauges":
+                    for g, x in v.items():
+                        self.assertEqual(d["gauges"][g], x, (nm, "gauge", g))
+                else:
+                    self.assertEqual(d[k], v, (nm, k))
+
+    # -- 2 the rate law against raptorpath-math ---------------------------------------------------------------
+    def test_2_rate_law_matches_raptorpath_math(self):
+        with open(RATE_REF) as f:
+            ref = json.load(f)
+        self.assertGreaterEqual(len(ref["grid"]), 500)
+        for e in ref["grid"]:
+            L = toy2.rate_law(e["eps"], e["srtt"], e["rate"], e["delta"])
+            self.assertEqual(L["W"], e["W"], e)
+            self.assertAlmostEqual(L["r"], e["r"], delta=1e-9, msg=str(e))
+            self.assertAlmostEqual(L["beta"], e["beta"], delta=1e-12)
+            self.assertAlmostEqual(min(max(L["W_pre"], 16.0), 512.0), e["W_clamped"], delta=1e-9, msg=str(e))
+            self.assertAlmostEqual(L["r_sat"], e["r_sat"], delta=1e-9, msg=str(e))
+
+    def test_2_registration_table(self):
+        tab = [(0.03, 0.0115, 10000.0, 115, 0.10687), (0.03, 0.0115, 12000.0, 138, 0.09982), (0.03, 0.0115, 8000.0, 92, 0.11566),
+               (0.03, 0.010, 10000.0, 100, 0.11234), (0.03, 0.100, 11250.0, 200, 0.08754), (0.03, 0.098, 9000.0, 200, 0.08754),
+               (0.03, 0.0115, 1000.0, 16, 0.22952), (0.10, 0.101, 50.0, 16, 0.38355),
+               (0.0344, 0.0115, 10000.0, 115, 0.11566), (0.05, 0.100, 11250.0, 200, 0.11609), (0.1, 0.100, 11250.0, 200, 0.19542),
+               (0.3, 0.100, 11250.0, 200, 0.50000), (0.0344, 0.098, 9000.0, 200, 0.09313), (0.0344, 0.0115, 8000.0, 92, 0.12543),
+               (0.135, 0.101, 50.0, 16, 0.42470)]
+        for eps, srtt, rate, W, r in tab:
+            L = toy2.rate_law(eps, srtt, rate, 50.0)
+            self.assertEqual(L["W"], W, (eps, srtt, rate))
+            self.assertAlmostEqual(L["r"], r, delta=1e-5, msg=str((eps, srtt, rate)))
+        self.assertAlmostEqual(toy2.rate_law(0.03, 0.0115, 10000.0, 50.0)["r_sat"], 0.135, delta=1e-9)
+        self.assertAlmostEqual(toy2.rate_law(0.10, 0.101, 50.0, 50.0)["r_sat"], 0.385, delta=1e-9)
+
+    def test_2_delta_continuity_at_the_call_point(self):
+        r0 = toy2.rate_law(0.10, 0.101, 50.0, 50.0)["r"]
+        for x in (0.98, 0.99, 1.01, 1.02):
+            self.assertAlmostEqual(toy2.rate_law(0.10, 0.101, 50.0, 50.0 * x)["r"], r0, delta=3e-5)
+
+    # -- 3 the A&S ports ------------------------------------------------------------------------------------------
+    def test_3_as_ports_match_the_reference(self):
+        with open(RATE_REF) as f:
+            ref = json.load(f)
+        self.assertEqual(len(ref["survival"]), 8)
+        for z, v in ref["survival"]:
+            self.assertAlmostEqual(toy2.normal_survival_as(z), v, delta=1e-12, msg=str(z))
+        self.assertEqual(len(ref["quantile"]), 6)
+        for p, v in ref["quantile"]:
+            self.assertAlmostEqual(toy2.normal_quantile_as(p), v, delta=1e-9, msg=str(p))
+        for r, e, w, s2, v in ref["p_fec"]:
+            self.assertAlmostEqual(toy2.p_fec_normal_as(r, e, w, s2), v, delta=1e-12, msg=str((r, e, w)))
+        self.assertAlmostEqual(toy2.p_fec_normal_as(0.2, 0.03, 100.0, 1.0), toy2.p_fec_normal(0.2, 0.03, 100.0, 1.0), delta=2e-7)   # the declared erfc difference
+
+    # -- 4 delta = 0.005 gives r = 0 exactly ----------------------------------------------------------------------
+    def test_4_bulk_delta_gives_r_zero_and_rl_equals_off(self):
+        self.assertEqual(toy2.rate_law(0.03, 0.0115, 10000.0, 0.005)["r"], 0.0)
+        for seed in range(3):
+            def mk(rp):
+                c = e_cfg("CL@b", seed, 0.4, 0.0, repair=rp, n_total=3000, dead=(0, 0.1, 0.1))
+                c.delta = 0.005
+                c.want_trace = True
+                return c
+            a = toy2.run(mk(None))
+            b = toy2.run(mk(dict(r="law", edge="worth")))
+            self.assertEqual(id3e_t(a, b), [], seed)
+            self.assertEqual(a["_trace"], b["_trace"], seed)
+            self.assertEqual(b["gauges"]["rep_credits"], 0)
+            self.assertGreater(b["gauges"]["law_reads"], 0)                         # control: the law was read
+
+    # -- 5 the span on constructed state -----------------------------------------------------------------------
+    def test_5_span_no_bind(self):
+        sm = span_sim("worth")
+        sm.stage_repair(0.5005)
+        self.assertEqual(sm.astar_cur, 25)
+        self.assertEqual(sm.g["rep_members_sum"], 25)                              # [474, 499)
+        self.assertEqual((sm.g["rep_sent"], sm.g["rep_cut_edge"], sm.g["l1_viol_rep"], sm.g["worth_viol_rep"]), (1, 0, 0, 0))
+
+    def test_5_span_worth_cut(self):
+        sm = span_sim("worth", T=0.07)                                             # age + 0.045 < 0.07: age < 0.025, h > 0.4755: s >= 476
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 476, 1))
+        self.assertEqual(sm.g["worth_viol_rep"], 0)
+
+    def test_5_span_age_cut(self):
+        sm = span_sim("age", T=0.02)                                               # age < 0.02: h > 0.4805: s >= 481
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 481, 1))
+        self.assertGreater(sm.g["worth_viol_rep"], 0)                               # the age edge carries members the worth test refuses
+
+    def test_5_span_floor_cut(self):
+        sm = span_sim("floor")
+        sm.F_ann = 490
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 490, 1))
+
+    def test_5_span_evict_cut(self):
+        sm = span_sim("evict", evict_window=20)
+        sm.verdicted = {480, 481}
+        sm.stage_repair(0.5005)                                                    # n_sent - lo = 26 > 20: lo = 480, then past the sheds: 482
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 482, 1))
+        sm2 = span_sim("evict", evict_window=math.inf)
+        sm2.verdicted = {474}
+        sm2.stage_repair(0.5005)
+        self.assertEqual(sm2.g["rep_members_sum"], 499 - 475)                      # an infinite window never binds; the shed seq at the low end does
+
+    def test_5_empty_span_counted_by_cause(self):
+        young = span_sim("worth", n_sent=1)
+        young.stage_repair(0.0005)
+        self.assertEqual((young.g["rep_drop_young"], young.g["rep_drop_edge"], young.g["rep_sent"]), (1, 0, 0))
+        edge = span_sim("worth", T=0.001)
+        edge.stage_repair(0.5005)
+        self.assertEqual((edge.g["rep_drop_edge"], edge.g["rep_drop_young"], edge.g["rep_sent"]), (1, 0, 0))
+        self.assertEqual(edge.fwd_calls, [])                                       # nothing was staged, no draw taken
+
+    def test_5_astar_is_one_before_the_first_rtt_sample(self):
+        sm = span_sim("worth")
+        sm.srtt = None
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.astar_cur, sm.g["rep_members_sum"]), (1, 1))
+        self.assertGreaterEqual(sm.g["astar_floor_bind"], 1)
+
+    def test_5_span_never_starts_below_the_encoder_window(self):
+        sm = span_sim("worth")
+        sm.A_known = 495
+        sm.W_cur = 10.0                                                            # ws = 485 > end - A* = 474
+        sm.stage_repair(0.5005)
+        self.assertEqual(sm.g["rep_members_sum"], 499 - 485)
+
+    # -- 6 the L1 control ----------------------------------------------------------------------------------------
+    def test_6_l1_control(self):
+        rp = dict(r=0.3835, edge="worth")
+        broken = toy2.run(rt_e(T=0.04, repair=rp, repair_seam="no_edge"))
+        self.assertGreater(broken["gauges"]["l1_viol_rep"], 0)
+        fixed = toy2.run(rt_e(T=0.04, repair=rp))
+        self.assertEqual(fixed["gauges"]["l1_viol_rep"], 0)
+
+    # -- 7 the worth gauge --------------------------------------------------------------------------------------
+    def test_7_worth_gauge(self):
+        def run_ov(edge):
+            c = e_cfg("OV", 0, 0.03, 0.0, repair=dict(r=0.3, edge=edge), n_total=3000)
+            return toy2.run(c)
+        self.assertGreater(run_ov("age")["gauges"]["worth_viol_rep"], 0)           # the age edge carries members that cannot arrive in time
+        self.assertEqual(run_ov("worth")["gauges"]["worth_viol_rep"], 0)
+
+    # -- 8 the decoder on constructed systems ---------------------------------------------------------------
+    @staticmethod
+    def rx(missing, n=12, T=0.4, **kw):
+        """A receiver that has seen every seq below n except `missing`, with the holes open and nothing released."""
+        c = toy2.Cfg(cell="I2", sender="S5", recv="RH", seed=1, n_total=100, delta=50.0, rho=1.0, check_p1=False, T=T, Hk=math.inf,
+                     repair=dict(r=0.3, edge="worth"), **kw)
+        sm = toy2.Sim(c)
+        sm.n_sent = n
+        for s in range(n):
+            sm.h_seq[s] = s * 0.01
+        for s in range(n):
+            if s not in missing:
+                sm.on_data(s * 0.01 + 0.005, s, 0, s * 0.01)
+        return sm
+
+    def test_8_peeling(self):
+        sm = self.rx({5})
+        sm.on_repair(0.2, (0, 5, 6, 0.19))
+        g = sm.g
+        self.assertEqual((g["dec_units"], g["rep_used"], g["rep_innov"], g["dup"]), (1, 1, 1, 0))
+        self.assertTrue(sm.got[5])
+        self.assertGreaterEqual(sm.dlv[5], 0)
+        self.assertEqual(sm.dec_flag[5], 1)
+
+    def test_8_two_by_two_block(self):
+        sm = self.rx({3, 4})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))
+        self.assertEqual(sm.g["dec_units"], 0)                                     # one equation, two unknowns
+        sm.on_repair(0.21, (1, 3, 5, 0.2))
+        self.assertEqual((sm.g["dec_units"], sm.g["rep_used"], sm.g["dup"]), (2, 2, 0))        # test 17 as well
+        self.assertTrue(sm.got[3] and sm.got[4])
+
+    def test_8_over_determined_block_decodes_only_what_it_determines(self):
+        sm = self.rx({3, 4, 5, 6})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {h1,h2}
+        sm.on_repair(0.21, (1, 3, 7, 0.2))                                         # {h1,h2,h3,h4}
+        self.assertEqual(sm.g["dec_units"], 0)
+        sm.on_repair(0.22, (2, 3, 5, 0.21))                                        # {h1,h2} again
+        self.assertEqual(sm.g["dec_units"], 2)
+        self.assertTrue(sm.got[3] and sm.got[4] and not sm.got[5] and not sm.got[6])
+
+    def test_8_chain_decodes_nothing(self):
+        sm = self.rx({3, 4, 5})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {h1,h2}
+        sm.on_repair(0.21, (1, 4, 6, 0.2))                                         # {h2,h3}
+        self.assertEqual(sm.g["dec_units"], 0)
+        self.assertFalse(sm.got[3] or sm.got[4] or sm.got[5])
+
+    def test_8_redundant_equation(self):
+        sm = self.rx({5})
+        sm.on_repair(0.2, (0, 0, 3, 0.19))                                         # every member already held
+        self.assertEqual((sm.g["rep_redundant"], sm.g["rep_innov"], sm.g["dec_units"]), (1, 0, 0))
+
+    def test_8_cascade_through_an_older_equation_on_a_later_arrival(self):
+        sm = self.rx({3, 4})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {h3,h4}: undetermined
+        self.assertEqual(sm.g["dec_units"], 0)
+        sm.on_data(0.25, 3, 0, 0.03)                                               # h3 arrives as data: the equation now determines h4
+        self.assertEqual(sm.g["dec_units"], 1)
+        self.assertTrue(sm.got[4])
+        self.assertEqual(sm.dec_flag[4], 1)
+        self.assertEqual(sm.g["dup"], 0)
+
+    def test_8_decode_after_a_release(self):
+        sm = self.rx({5})
+        sm.on_release(0.2, 5)
+        self.assertIn(5, sm.released)
+        sm.on_repair(0.21, (0, 5, 6, 0.2))
+        self.assertEqual((sm.g["dec_units"], sm.g["dec_after_release"]), (1, 1))
+
+    def test_8_decode_after_a_floor_pass(self):
+        sm = self.rx({5})
+        sm.apply_floor(0.2, 6, 0.2)
+        self.assertIn(5, sm.passed)
+        sm.on_repair(0.21, (0, 5, 6, 0.2))
+        self.assertEqual((sm.g["dec_units"], sm.g["late_floor_dec"], sm.g["late_floor"]), (1, 1, 1))
+
+    def test_8_decode_after_the_lifetime(self):
+        sm = self.rx({5}, T=0.4)
+        sm.on_repair(1.0, (0, 5, 6, 0.99))                                         # age 0.95 > T
+        self.assertEqual((sm.g["dec_late"], sm.g["rep_late_only"], sm.g["dec_on_time"]), (1, 1, 0))
+        ok = self.rx({5}, T=0.4)
+        ok.on_repair(0.2, (0, 5, 6, 0.19))                                         # age 0.15 <= T
+        self.assertEqual((ok.g["dec_late"], ok.g["rep_late_only"], ok.g["dec_on_time"]), (0, 0, 1))
+
+    def test_8_a_large_component_does_not_overflow_the_stack(self):
+        n = 3000
+        sm = self.rx(set(range(100, n - 100)), n=n)
+        for j in range(0, 2000):                                                   # overlapping spans of 20: one component of ~2000 unknowns
+            sm.on_repair(5.0, (j, 100 + j, min(120 + j, n - 100), 4.99))
+        self.assertGreater(sm.g["dec_comp_max"], 1000)
+
+    # -- 9 emission ------------------------------------------------------------------------------------------------
+    def test_9_emission_accounting(self):
+        r = 0.2
+        sm = toy2.Sim(rt_e(T=0.4, repair=dict(r=r, edge="worth")))
+        out = sm.run()
+        g = out["gauges"]
+        n = out["n_src"]
+        self.assertIn(g["rep_credits"], (math.floor(n * r), math.floor(n * r) - 1))
+        self.assertEqual(g["rep_sent"] + g["rep_drop_edge"] + g["rep_drop_young"], g["rep_credits"])
+        self.assertLess(g["owed_max"], 1.0 + r)
+        self.assertGreater(g["rep_sent"], 0)
+
+    def test_9_none_while_paused(self):
+        calls = []
+
+        class P(toy2.Sim):
+            def stage_repair(self, now):
+                calls.append(self.paused)
+                super().stage_repair(now)
+        c = e_cfg("OV", 0, 0.4, 0.0, repair=dict(r=0.2, edge="worth"), n_total=6000, pause_B=60)
+        out = P(c).run()
+        self.assertGreater(out["pause_events"], 0)
+        self.assertGreater(len(calls), 0)
+        self.assertFalse(any(calls))
+
+    def test_9_r_zero_pushes_nothing(self):
+        a = toy2.Sim(rt_e(repair=None))
+        b = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth")))
+        a.run()
+        ob = b.run()
+        self.assertEqual((a.ctr, a.ps_ctr), (b.ctr, b.ps_ctr))
+        self.assertEqual(ob["gauges"]["rep_credits"], 0)
+        self.assertEqual(ob["gauges"]["owed_max"], 0.0)
+
+    # -- 10 the loss draw ---------------------------------------------------------------------------------------
+    def test_10_loss_draw_uses_salt_repair_and_p0(self):
+        self.assertEqual(toy2.SALT_REPAIR, 7)
+        sm = span_sim("worth")
+        n = 200
+        for i in range(n):
+            sm.stage_repair(0.5005 + 1e-6 * i)
+        kept = sorted(pl[0] for (_, _, k, pl) in sm.heap if k == 11)
+        want = [j for j in range(n) if not toy2.u01(sm.cfg.seed, j, 0, 0, toy2.SALT_REPAIR) < sm.p0]
+        self.assertEqual(kept, want)
+        self.assertEqual(sm.g["rep_lost"], n - len(want))
+        self.assertGreater(sm.g["rep_lost"], 0)
+
+    def test_10_the_outage_drops_repairs(self):
+        sm = span_sim("worth", dead=(0, 0.4, 0.2))                                 # the window [0.4, 0.6) covers dep
+        for i in range(20):
+            sm.stage_repair(0.5005 + 1e-6 * i)
+        self.assertEqual(sm.g["rep_lost"], 20)
+        self.assertEqual([1 for (_, _, k, _) in sm.heap if k == 11], [])
+
+    # -- 11 the estimated loss -----------------------------------------------------------------------------------
+    def test_11_beta_upper_matches_estimator_rs(self):
+        def beta_quantile(a, b, p):                                                # raptorpath-math/src/estimator.rs, transcribed
+            mean = a / (a + b)
+            var = (a * b) / ((a + b) ** 2 * (a + b + 1.0))
+            return min(max(mean + toy2.normal_quantile_as(p) * math.sqrt(var), 0.0), 1.0)
+        rnd = random.Random(7)
+        for _ in range(20):
+            a, b = rnd.uniform(0.5, 5000.0), rnd.uniform(0.5, 800.0)               # a received, b lost
+            self.assertAlmostEqual(toy2.beta_upper(a, b), beta_quantile(b, a, 0.95), delta=1e-12)
+
+    def test_11_cold_value_and_a_burst_of_new_holes(self):
+        sm = toy2.Sim(rt_e(repair=dict(r="est", edge="worth")))
+        self.assertEqual(sm.eps_est, toy2.beta_upper(1.0, 1.0))
+        rep = (0.1, 0, 0, -1, (), (), 0, 0.0, None, None, 4000, 1000, 0.0)
+        sm.on_report(0.2, rep)
+        self.assertGreater(sm.eps_est, 0.15)
+        self.assertAlmostEqual(sm.beta_a, 0.995 + 4000)
+        self.assertAlmostEqual(sm.beta_b, 0.995 + 1000)
+
+    def test_11_a_dequeue_expiry_is_not_a_fate(self):
+        tot = [0, 0]
+
+        class P(toy2.Sim):
+            def on_report(self, now, rep):
+                tot[0] += rep[10]
+                tot[1] += rep[11]
+                super().on_report(now, rep)
+        c = e_cfg("OV", 0, 0.1, 0.0, repair=dict(r="est", edge="worth"), n_total=24000)
+        sm = P(c)
+        out = sm.run()
+        self.assertGreater(out["intake_expired_deq"] + out["intake_expired"], 0)
+        self.assertLess(out["n_src"], out["units"])
+        self.assertLessEqual(tot[0] + tot[1] + sm.raw_rcv + sm.raw_lost, out["n_src"])    # expired units get no seq, so they are in no batch
+
+    # -- 12 today's Realtime with repair ------------------------------------------------------------------------
+    def test_12_budget_with_repair(self):
+        seen = []
+
+        class P(toy2.Sim):
+            def refresh_shed_budget(self):
+                super().refresh_shed_budget()
+                if self.srtt is not None:
+                    rp = self.cfg.repair
+                    eps = self.eps_est if rp["r"] == "est" else self.p0
+                    seen.append((self.shed_budget, toy2.residual_loss(eps, self.r_cur, float(self.astar_cur), 1.0), self.p0))
+        sm = P(rt_cfg(repair=dict(r="law", edge="evict"), dead=(0, 0.5, 0.3)))
+        sm.run()
+        self.assertTrue(seen)
+        self.assertTrue(all(a == b for a, b, _ in seen))
+        self.assertLess(min(a for a, _, _ in seen), seen[0][2])                    # repair lowers the budget below p0
+        off = toy2.Sim(rt_cfg())
+        off.run()
+        self.assertAlmostEqual(off.shed_budget, 0.03)                              # repair off: eps_hat, as proof-s1
+
+    # -- 13 RTT sampling -------------------------------------------------------------------------------------------
+    def test_13_rtt_sampling_ignores_a_decoded_seq(self):
+        def sample(dec):
+            sm = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth")))
+            sm.n_sent = 10
+            for s in range(10):
+                sm.sent_t[s] = s * 0.02
+            sm.got[7] = 1
+            sm.arr[7] = 0.2
+            sm.dec_flag[7] = 1 if dec else 0
+            sm.on_report(0.3, (0.25, 0, 0, 7, (), (), 0, 0.0, None, None, 0, 0, 0.0))
+            return sm.srtt
+        self.assertIsNone(sample(True))
+        self.assertAlmostEqual(sample(False), 0.3 - 7 * 0.02)
+
+    # -- 14 T = inf identity under repair -----------------------------------------------------------------------
+    def test_14_t_inf_identity_under_repair(self):
+        for cell, kw in (("OV", dict(n_total=3000)), ("CL", dict(n_total=3000, dead=(0, 0.1, 0.1)))):
+            for seed in range(3):
+                a = e_cfg(cell, seed, INF, INF, repair=dict(r="law", edge="worth"), **kw)
+                lc, d = batch3d.base(cell, **kw)
+                b = toy2.Cfg(cell=lc, sender="S1c", recv="R1", seed=seed, delta=50.0, rho=1.0, repair=dict(r="law", edge="none"), **d)
+                a.want_trace = b.want_trace = True
+                ra, rb = toy2.run(a), toy2.run(b)
+                self.assertEqual(id3e_t(rb, ra), [], (cell, seed))
+                self.assertEqual(ra["_trace"], rb["_trace"], (cell, seed))
+                self.assertGreater(ra["gauges"]["rep_sent"], 0)
+
+    # -- 15 robustness hooks --------------------------------------------------------------------------------------
+    def test_15_o_bias_and_r_bias(self):
+        a = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth")))
+        b = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth"), o_bias=0.01))
+        for sm in (a, b):
+            sm.srtt = 0.1
+        self.assertAlmostEqual(b.o_hat() - a.o_hat(), 0.01, delta=1e-12)
+        self.assertEqual(a.R_now(), b.R_now())
+
+        def deq_m(rb):
+            seen = []
+            orig = toy2.dequeue_expired
+            toy2.dequeue_expired = lambda T, age, m: (seen.append(m), False)[1]
+            try:
+                c = e_cfg("OV", 0, 0.4, 0.0, repair=dict(r=0.0, edge="worth"), n_total=3000, R_bias=rb)
+                sm = toy2.Sim(c)
+                sm.emit(0.5)                                                       # a backlog: unit 1 is already due at t = 0.5
+            finally:
+                toy2.dequeue_expired = orig
+            return seen[0], sm.R_now()
+        m0, R0 = deq_m(0.0)
+        m1, R1 = deq_m(0.01)
+        self.assertAlmostEqual(m1 - m0, 0.01, delta=1e-12)
+        self.assertEqual(R0, R1)
+
+    def test_15_rev_q_raises_the_mean_srtt(self):
+        def srtt_mean(rq):
+            c = e_cfg("CL", 0, 0.4, 0.0, n_total=10000, dead=None, rev_q=rq)
+            return toy2.run(c)["srtt_mean"]
+        self.assertAlmostEqual(srtt_mean(0.1) - srtt_mean(0.0), 0.1, delta=0.01)
+
+    def test_15_rel_owd(self):
+        def o_value(rq, mode):
+            c = e_cfg("K-I2", 0, 0.4, 0.0, repair=dict(r=0.0, edge="worth"), dead=None, n_total=600, J=0.0, rev_q=rq, owd_est=mode)
+            sm = toy2.Sim(c)
+            sm.run()
+            return sm.o_hat()
+        fwd0, rel0 = o_value(0.0, "fwd"), o_value(0.0, "rel")
+        self.assertAlmostEqual(rel0, 0.005, delta=1e-9)                            # the one-way delay: no queue anywhere
+        self.assertAlmostEqual(fwd0, rel0, delta=0.002)                            # srtt carries up to one report tick of waiting (reported: not 1e-9)
+        fwd1, rel1 = o_value(0.1, "fwd"), o_value(0.1, "rel")
+        self.assertAlmostEqual(rel1, 0.005, delta=0.001)
+        self.assertGreater(fwd1 - rel1, 0.09)                                      # the reverse queue reads as forward delay
+
+    # -- 16 the deny test ---------------------------------------------------------------------------------------------
+    def test_16_deny_test_with_the_new_names(self):
+        for nm in ("rate_law", "span_edge_ok", "decoded_late", "beta_upper", "p_fec_normal_as", "bulkness", "controller_rate_parts"):
+            self.assertIn(nm, EXEMPT)
+        with open(os.path.join(HERE, "toy2.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertEqual(deny_scan(src), [])
+        self.assertIn("def span_edge_ok", src)
+        self.assertFalse(deny_scan("def span_edge_ok(edge, T, age, o):\n    return age + o < T\n"))
+        self.assertFalse(deny_scan("def decoded_late(T, age):\n    return age > T\n"))
+        self.assertTrue(deny_scan("def stage(c, age):\n    return age > c.T\n"))                     # control: the same comparison elsewhere is flagged
+        self.assertTrue(deny_scan("def decode(T, age):\n    return age > T\n"))
+        self.assertTrue(deny_scan("def stage(c):\n    return c.delta < 1\n"))
+
+    # -- 17 the decoder counts each unit once ---------------------------------------------------------------------------
+    def test_17_each_unit_once(self):
+        sm = self.rx({3, 4, 5})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {3,4}
+        sm.on_repair(0.21, (1, 4, 6, 0.2))                                         # {4,5}
+        sm.on_repair(0.22, (2, 5, 6, 0.21))                                        # {5}: decodes 5, then 4 through (1), then 3 through (0)
+        self.assertEqual(sm.g["dec_units"], 3)
+        self.assertEqual(sm.g["dup"], 0)
+        self.assertTrue(all(sm.dlv[s] >= 0 for s in (3, 4, 5)))
+        self.assertEqual(sm.g["rep_used"], 3)
+        self.assertEqual(len(sm.eqs), 0)
+
+    # -- readouts ----------------------------------------------------------------------------------------------------
+    def test_rep3e_block_exists_with_repair_off_and_survives_json(self):
+        out = toy2.run(rt_e(repair=None, tau_extra=(0.12,), want_trace=True))
+        self.assertIn("rep3e", out)
+        r3 = out["rep3e"]
+        for k in ("r_mean", "W_mean", "sat_pressure", "W_floor_bind_frac", "W_cap_bind_frac", "eps_est_mean", "p_dec_meas", "p_fec_law",
+                  "rep_link_share", "rep_members_mean", "recovery_time_0p15", "mu_eff_hat", "share_by"):
+            self.assertIn(k, r3)
+        self.assertEqual(r3["r_mean"], 0.0)
+        back = json.loads(json.dumps(r3))
+        self.assertAlmostEqual(back["share_by"]["0.12"], r3["share_by"][0.12])
+        n = out["n_src"]
+        dl = np.asarray(out["_dlv"][:n])
+        age = dl - np.asarray(out["_h"][:n])
+        self.assertAlmostEqual(r3["share_by"][0.12], float(((dl >= 0) & (age <= 0.12)).sum()) / out["units"], places=12)
+
+    def test_rep3e_with_repair_reads_the_law(self):
+        out = toy2.run(rt_e(repair=dict(r="law", edge="worth")))
+        r3 = out["rep3e"]
+        self.assertAlmostEqual(r3["r_mean"], 0.3835, delta=0.01)
+        self.assertEqual(r3["W_floor_bind_frac"], 1.0)
+        self.assertGreater(r3["sat_pressure"], 0.5)
+        self.assertGreater(r3["p_dec_meas"], 0.3)
+
+    def test_recovery_time_at_0p15_on_a_synthetic_run(self):
+        dt = 0.001
+        ages = np.full(20000, 0.01)
+        ages[3000:5000] = 0.2                                                      # late for 0.15 s but within 0.4 s, from 3.0 s to 5.0 s
+        r4 = toy2.recovery_time(ages, dt, 0.4, 2.0, 3.0)
+        r15 = toy2.recovery_time(ages, dt, 0.15, 2.0, 3.0)
+        self.assertEqual(r4[1], "ok")
+        self.assertAlmostEqual(r4[0], 0.0, delta=0.11)
+        self.assertEqual(r15[1], "ok")
+        self.assertAlmostEqual(r15[0], 2.0, delta=0.6)
 
 
 if __name__ == "__main__":
