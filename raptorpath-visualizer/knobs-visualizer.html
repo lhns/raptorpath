@@ -498,6 +498,9 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
       <tr><td>the ack timeout R (&sect;13, the dequeue rule &sect;13.2)</td>
           <td style="text-align:left; font-weight:normal">none (proposal; engine has none). The offline simulation (stage 3d, e17b4c64) reads its measured RFC 6298 rttvar</td>
           <td style="text-align:left; font-weight:normal"><b>recorded divergence:</b> R = srtt + max(4&middot;rttvar, g) + g with the FIXED rttvar = rtt/8, not the measured one (addendum 1 A3 held): without a queue the measured rttvar decays to 0, R falls from 76 to 52 ms at RTT 50 ms and the T-continuity gate fails on its binding cell</td></tr>
+      <tr><td>loss estimate during a total outage</td>
+          <td style="text-align:left; font-weight:normal">no input: loss reaches the estimator only through acks, so a total outage feeds it nothing until the first ack after it, which carries the whole gap as one lump (<code>net/control_msg.rs:339</code>, the gap charge of <code>net/mod.rs:3716</code>)</td>
+          <td style="text-align:left; font-weight:normal"><b>recorded divergence:</b> the oracle feedback reports every lost send one RTT later, so p̂ reads 1 through the outage, and the Gilbert-Elliott &sigma;&sup2; and mean burst carry the loss run afterwards (per symbol, decay 0.999); at the CL-long preset r sits at r_max = 0.5 until about 3 s after the outage</td></tr>
       <tr><td>L3 delivered-within-T (&sect;2.3)</td>
           <td style="text-align:left; font-weight:normal">none (proposal; engine has none)</td>
           <td style="text-align:left; font-weight:normal">a readout, never a branch: <code>share_T</code>, <code>share_by_ref</code> (&tau; = 0.4 s); exact here because the model has one clock</td></tr>

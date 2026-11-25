@@ -1773,3 +1773,72 @@ fn report_simread_cl_long_realtime() {
         println!("SIMREAD T={t} timeline:{line}");
     }
 }
+
+/// Report (not a gate; `--ignored`): the outage aftermath of the rate law
+/// against the send rate. The CL-long preset at δ = 50, T = H = ∞, with the
+/// page's Auto window, at 1 slot per tick (1 000/s, λ 800/s) and at 10 slots per
+/// tick (10 000/s, λ 8 000/s), the same 1.5 s outage from 2.0 s. After the
+/// outage end: when the BOCD p̂ upper falls back under 0.1, the knee r_sat
+/// under 1, r under r_max = 0.5, and the GE σ² under 2; with the counts of
+/// wire symbols the GE estimator saw and of BOCD reports (flushes) by then.
+#[test]
+#[ignore]
+fn report_outage_aftermath_against_the_send_rate() {
+    let (eps, q, rtt) = (0.03, 1.0, 10u32);
+    let pp = eps * q / (1.0 - eps);
+    let sigma2 = math::burst_variance_factor(pp, q);
+    let tail = sim_tail_target_of_delta(50.0);
+    for (cap, lambda, units) in [(1u32, 800.0, 12000u32), (10, 8000.0, 80000)] {
+        let w = math::derive_window(tail, eps, sigma2, rtt as f64 / 1000.0, cap as f64 / 0.001, 0.0).round().max(1.0) as u32;
+        let mut s = Simulation::multipath_knobs(
+            vec![eps], vec![q], vec![rtt], vec![cap], w, "continuum".into(), None, Some(50.0), None,
+            INF, INF, lambda, units, vec![2.0], vec![1.5],
+        ).expect("valid");
+        let end = 3.5;
+        let mut first = [f64::NAN; 4]; // p_upper < 0.1, r_sat < 1, r < 0.5, sigma2 < 2
+        let mut counts = [(0u64, 0u64); 4];
+        // settled: the last tick (within 6 s of the end) the condition was false
+        let mut settled = [0.0f64; 4];
+        let mut settled_counts = [(0u64, 0u64); 4];
+        let mut peak = (0.0f64, 0.0f64);
+        let (mut symbols, mut reports) = (0u64, 0u64);
+        while !s.is_finished() && s.get_tick() < CAP {
+            let flush_before = s.paths[0].last_flush_tick;
+            let fb_before = s.paths[0].feedback_queue.len() as i64;
+            let sent_before = s.paths[0].sent as i64;
+            s.step();
+            let now = s.get_tick() as f64 * TICK_SECS;
+            if now <= end {
+                continue;
+            }
+            // feedback pops this tick = queued before + pushed − queued after
+            let pushed = s.paths[0].sent as i64 - sent_before;
+            symbols += (fb_before + pushed - s.paths[0].feedback_queue.len() as i64).max(0) as u64;
+            reports += (s.paths[0].last_flush_tick != flush_before) as u64;
+            let inp = s.rate_inputs_for(false, s.tail_target, false, 0.0);
+            let vals = [inp.p_upper < 0.1, s.get_r_sat() < 1.0, s.get_r_star() < 0.5 - 1e-12, inp.sigma2 < 2.0];
+            peak = (peak.0.max(inp.sigma2), peak.1.max(inp.mean_burst));
+            for i in 0..4 {
+                if first[i].is_nan() && vals[i] {
+                    first[i] = now - end;
+                    counts[i] = (symbols, reports);
+                }
+                if !vals[i] && now - end < 6.0 {
+                    settled[i] = now - end;
+                    settled_counts[i] = (symbols, reports);
+                }
+            }
+        }
+        println!(
+            "aftermath cap {cap} ({} /s wire, lambda {lambda}), W {w}: after the outage end, p_upper < 0.1 at {:.3} s ({} symbols, {} reports); \
+             r_sat < 1 at {:.3} s ({} symbols, {} reports); r < r_max at {:.3} s ({} symbols, {} reports); sigma2 < 2 at {:.3} s ({} symbols, {} reports)",
+            cap * 1000, first[0], counts[0].0, counts[0].1, first[1], counts[1].0, counts[1].1,
+            first[2], counts[2].0, counts[2].1, first[3], counts[3].0, counts[3].1
+        );
+        println!(
+            "aftermath cap {cap}: settled (last tick false within 6 s): p_upper {:.3} s ({} sym, {} rep); r_sat {:.3} s ({} sym, {} rep);              r {:.3} s ({} sym, {} rep); sigma2 {:.3} s ({} sym, {} rep); peak sigma2 {:.1}, peak mean burst {:.1} after the end",
+            settled[0], settled_counts[0].0, settled_counts[0].1, settled[1], settled_counts[1].0, settled_counts[1].1,
+            settled[2], settled_counts[2].0, settled_counts[2].1, settled[3], settled_counts[3].0, settled_counts[3].1, peak.0, peak.1
+        );
+    }
+}
