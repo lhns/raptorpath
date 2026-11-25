@@ -333,12 +333,14 @@ class Receivers(unittest.TestCase):
                 self.assertGreaterEqual(r["tail_verdicts"] + r["gauges"]["refusals"] // 100000, 0)
 
 
-DIALS = {"rho", "delta", "hint", "T", "Hk", "Te"}        # Te: stage 3d, T_eff = plant_T(cfg, T), the knob under another name
+DIALS = {"rho", "delta", "hint", "T", "Hk", "Te", "r_fec", "evict_window", "r0e_max"}        # Te: stage 3d, T_eff = plant_T(cfg, T), the knob under another name
 # HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions (three-knobs.md 9.2) and the share_T readout are the only places T is compared
-EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime",
+EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime", "staged_past_lifetime",
           "dequeue_expired",      # dequeue_expired: three-knobs.md 13.2 (stage 3b)
           "protected",            # protected: three-knobs.md 15.3 and 15.6.1 item 1 (stage 3c)
-          "plant_T"}              # plant_T: three-knobs.md 17.5 (stage 3d), the planted controls routed through T
+          "plant_T",              # plant_T: three-knobs.md 17.5 (stage 3d), the planted controls routed through T
+          "p_fec_normal",         # proof stage 1: the shipped p_fec cut (W22, recorded debt), bounded by test_p_fec_normal_port_and_its_cut
+          "evict_unservable", "force_drain_due", "force_drain_keep"}   # proof stage 1: today's Realtime branches, modelled as shipped (plan 2.3 and 8)
 
 
 def _names(node):
@@ -1174,7 +1176,7 @@ class ProofS1TodaysRealtime(unittest.TestCase):
         self.assertEqual(a["gauges"]["pause_events"], 0)
 
     def test_no_source_pause_lets_the_queue_drop_instead(self):
-        lk = dict(link=dict(C=10000.0, Q=1250.0), rate=12000.0, n_total=36000, dead=None)
+        lk = dict(link=dict(C=10000.0, Q=1250.0), rate=12000.0, n_total=12000, dead=None, t_limit=6.0)
         a = toy2.run(rt_cfg(**lk))
         b = toy2.run(rt_cfg(pause_B=64, **lk))
         self.assertEqual(a["pause_events"], 0)
@@ -1209,14 +1211,28 @@ class ProofS1TodaysRealtime(unittest.TestCase):
 
     def test_taken_apart_it_equals_adr_0084s_sender_at_the_derived_allowance(self):
         """budget "resid", EWMA deadline, no copy, no floor, no window, no pause == S1 at rho = 1 - eps_hat, no floor.  The receiver is strict
-        (R1) with no floor so that nothing passes and the sender's shed count equals ADR-0084's (passes + pending)."""
-        common = dict(recv="R1", evict_window=math.inf, n_total=12000, dead=(0, 0.3, 0.3))
+        (R1) with no floor so that nothing passes.  Every resend is lost (pc = 1), so no shed hole is ever filled: then ADR-0084's
+        outstanding count (passes + pending) equals the shipped cumulative shed count.  Where a shed hole is filled later the two differ by design."""
+        toy2.CELLS["T-pc1"] = dict(kind="iid", p0=0.03, pc=1.0)
+        self.addCleanup(toy2.CELLS.pop, "T-pc1")
+        common = dict(cell="T-pc1", recv="R1", evict_window=math.inf, n_total=5000, dead=(0, 0.15, 0.05), t_limit=3.0)
         a = toy2.run(rt_cfg(want_trace=True, **common))
         b = toy2.run(rt_cfg(want_trace=True, budget="rho", rho=1.0 - 0.03, **common))
         self.assertGreater(a["gauges"]["verdicts"], 0)
         self.assertEqual(a["_trace"], b["_trace"])
         for k in ("n_src", "delivered", "share_any", "verdicts", "orig_lost", "stall_total"):
             self.assertEqual(a[k], b[k], k)
+
+    def test_a_silent_shed_of_the_open_tail_leaves_the_object_unfinished(self):
+        """Shipped behaviour, pinned and not patched (plan 2.3): with no floor the receiver never learns of a lost tail, so an object
+        whose last units are shed does not complete.  A datagram stream that continues past its outage is unaffected."""
+        n = 12147
+        tail = dict(n_total=n, dead=(n - 347, (n - 347) / 10000.0, 1.5), t_limit=20.0, evict_window=math.inf)
+        silent = toy2.run(rt_cfg(**tail))
+        self.assertFalse(silent["finished"])
+        self.assertGreater(silent["gauges"]["verdicts"], 0)
+        loud = toy2.run(rt_cfg(sender="S1c", floor_send=True, **tail))          # control: with ADR-0084's floor the object completes
+        self.assertTrue(loud["finished"])
 
     def test_defaults_are_the_old_arm(self):
         c = toy2.Cfg()

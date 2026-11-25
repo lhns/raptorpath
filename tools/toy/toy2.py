@@ -49,6 +49,12 @@ def within_lifetime(T, age):
     return age <= T
 
 
+def staged_past_lifetime(T, age):
+    """Proof stage 1, plan 1.1 gate: L1 violations, a payload staged (first send or copy) at age >= T.  A measurement, never a branch;
+    named here so that the deny test keeps T out of every other comparison."""
+    return age >= T
+
+
 def dequeue_expired(T, age, m):
     """Stage 3b, three-knobs.md 13.2: at the dequeue a unit gives its slot to a younger one when it can no longer arrive in
     time.  m is the ack timeout R, an upper bound on the one-way delay.  The fourth place T is compared."""
@@ -124,6 +130,41 @@ def recovery_time(ages, dt, thr, out_start, out_end, step=0.1, width=0.5, pre_fr
     return ks[j] * step - out_end, "ok"
 
 
+def p_fec_normal(r_fec, eps, W, sigma2):
+    """Proof stage 1, three-knobs-proof-plan.md 2.3: raptorpath-math p_fec_normal ported as shipped, including its cut (0 when r <= 0 or
+    r (1 - eps) <= eps: recorded debt W22, the 0 -> 1/2 step).  Named in the deny test.  P_fec = Phi(sqrt(W) (r (1 - eps) - eps) / sqrt(eps (1 - eps) (r + sigma2)))."""
+    if W <= 0.0 or eps <= 0.0 or eps >= 1.0 or r_fec <= 0.0:
+        return 0.0
+    num = r_fec * (1.0 - eps) - eps
+    if num <= 0.0:
+        return 0.0
+    den = math.sqrt(eps * (1.0 - eps) * (r_fec + sigma2))
+    if den < 1e-300:
+        return 1.0
+    return 1.0 - 0.5 * math.erfc(math.sqrt(W) * num / den / math.sqrt(2.0))
+
+
+def residual_loss(eps, r_fec, W, sigma2):
+    """The shed budget's fraction of the source count (shed.rs shed_allowed's budget_frac, residual_loss_after_fec): eps (1 - P_fec)."""
+    return eps * (1.0 - p_fec_normal(r_fec, eps, W, sigma2))
+
+
+def evict_unservable(window, n_sent, s):
+    """Proof stage 1, plan 2.3: the engine's encoder window (MAX_WINDOW_SIZE = 200 symbols) holds the newest `window` sent seqs; a hole
+    further behind can be neither served nor shed (rec-evict-blocker-unresolved, modelled as shipped).  Named in the deny test."""
+    return n_sent - s > window
+
+
+def force_drain_due(n_buffered, cap):
+    """reorder.rs: the evict-policy buffer force-drains when it holds more than max_buffered entries.  Named in the deny test."""
+    return n_buffered > cap
+
+
+def force_drain_keep(cap):
+    """reorder.rs force_drain_oldest drains until pending.len() <= max_buffered / 2."""
+    return cap // 2
+
+
 def delta_at_b(b):
     return DELTA_AUTO * 10.0 ** (-2.0 * math.log2(b))
 
@@ -188,6 +229,11 @@ class Cfg:
     phi: float = 0.5               # stage 3d: share of first sends placed on path B
     reorder_rack: bool = False     # stage 3d: a report-driven hole is a candidate only if last_send + skew_hat < tau_rx (17.7)
     windows: bool = False          # stage 3d: the window readouts of 17.4 and 17.8
+    budget: str = "rho"            # proof stage 1: "resid" = today's Realtime: the sender's own shed count may not exceed eps_hat (1 - P_fec) x the source count (shed.rs shed_allowed)
+    floor_send: bool = True        # proof stage 1: False = a shed is silent: no floor datagram, repeated or not (today's Realtime)
+    evict_window: float = math.inf  # proof stage 1: a hole more than this many seqs behind the send frontier is neither served nor shed (200 = the engine's encoder window)
+    place: str = "stripe"          # proof stage 1: "dup" = every first send on path A plus a duplicate on path B (today's Realtime, emit_source.rs:508)
+    r0e_max: float = math.inf      # proof stage 1: R0e's buffer cap: force-drain the oldest entries to half the cap when it holds more (reorder.rs)
     recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
 
 
@@ -457,6 +503,7 @@ class Sim:
                       r0e_budget_open=0, r0e_fallback=0, r0e_expiries=0, fh_late=0, fifo_viol=0, seed_verdicts=0, n_dec_seed=0, r0e_fallback_open=0, pass_r0e_fb=0, r0e_entries_lengthened=0, pass_r0e_lengthened=0, late_floor=0, late_r0e=0,
                       l2_fail=0, rel_by_floor=0, probes=0, queue_drop=0, queue_drop_in=0, queue_drop_out=0,
                       resend_by_R=0, resend_by_report=0, resend_by_sweep=0,
+                      evict_skip=0, force_drains=0, dup_first=0, l1_viol=0,
                       commit_viol=0, commit_skip=0, skip_below_floor=0, late_floor_ge1=0, l2_skip=0, bl_fires=0, refresh_reports=0, floor_carried=0, resend_braked=0, hull_upd=0, hull_bind=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
@@ -470,6 +517,7 @@ class Sim:
         self.r0e_buf = []
         self.r0e_timer_t = math.inf
         self.ps_ctr = 0
+        self.shed_budget = 0.0                      # proof stage 1: budget_frac, refreshed at each source emission (0 before the first estimate)
 
     # ---- helpers --------------------------------------------------------------------------
     def push(self, t, kind, payload):
@@ -489,6 +537,23 @@ class Sim:
                 i = len(self.ge) - 1
             return bool(self.ge[i]) and u < self.pbad
         return False
+
+    def refresh_shed_budget(self):
+        """Today's Realtime refreshes the budget at each source emission.  eps_hat is the sender's loss estimate: the cell's first-send
+        loss (Q21's true-loss default, a declared idealisation), and 0 until the first RTT sample.  Repair is not modelled on this base, so r = 0
+        and the budget is eps_hat."""
+        if self.cfg.budget != "resid":
+            return
+        if self.srtt is None:
+            self.shed_budget = 0.0
+        elif self.loss_kind == "iid":
+            self.shed_budget = residual_loss(self.p0, 0.0, 0.0, 1.0)
+        else:
+            raise NotImplementedError("budget resid needs the cell's loss as eps_hat; only iid cells")
+
+    def shed_left(self):
+        """shed.rs shed_allowed: shed_total + 1 <= budget_frac x src_total, as the number of further sheds allowed."""
+        return int(self.shed_budget * self.n_sent + 1e-9) - len(self.verdicted)
 
     def true_allow(self):
         return int((1 - self.cfg.rho) * self.n_sent + 1e-9)
@@ -743,8 +808,12 @@ class Sim:
         self.n_sent += 1
         self.sent_t[s] = t
         self.last_send[s] = t
+        if staged_past_lifetime(self.Te, t - self.h_seq[s]):
+            self.g["l1_viol"] += 1                   # gate: no payload is staged at age >= T
+        self.refresh_shed_budget()
+        dup = c.place == "dup" and self.paths is not None
         pth = 0
-        if self.paths is not None and u01(c.seed, s, 0, 0, SALT_PLACE) < c.phi:      # 17.7: first sends go on B with probability phi
+        if self.paths is not None and not dup and u01(c.seed, s, 0, 0, SALT_PLACE) < c.phi:      # 17.7: first sends go on B with probability phi
             pth = 1
             self.path_of[s] = 1
         a, dep = self.fwd(t, pth)
@@ -761,11 +830,23 @@ class Sim:
             self.flag_n += 1
         ps = self.ps_ctr
         self.ps_ctr += 1
-        if a is None or self.lost(s, 0, dep, SALT_LOSS, pth):
-            self.orig_lost.append(s)
-        else:
+        first_lost = a is None or self.lost(s, 0, dep, SALT_LOSS, pth)
+        if not first_lost:
             self.push(a, 0, (s, 0, t, ps, pth))
             self.carry_floor(a)
+        dup_ok = False
+        if dup:                                      # today's Realtime: a duplicate first send on the second path (a recorded hint debt)
+            a2, dep2 = self.fwd(t, 1)
+            if a2 is not None:
+                self.fifo_note(a2, 1)
+            ps2 = self.ps_ctr
+            self.ps_ctr += 1
+            self.g["dup_first"] += 1
+            if a2 is not None and not self.lost(s, 0, dep2, SALT_LOSS, 1):
+                self.push(a2, 0, (s, 0, t, ps2, 1))
+                dup_ok = True
+        if first_lost and not dup_ok:
+            self.orig_lost.append(s)
         if self.s2fam and c.verdict_evidence not in ("feedback", "none", "feedback_tail", "feedback_tail_any"):      # the per-seq verdict timer (at +inf it never fires); none under feedback verdicts
             self.push(max(t, self.h_seq[s] + self.Te - self.o_hat()), 8, s)
         self.wadd("first", t)
@@ -811,6 +892,8 @@ class Sim:
             return False
         self.copy_win[w] = self.copy_win.get(w, 0) + 1
         self.wadd("resend", now)
+        if staged_past_lifetime(self.Te, now - self.h_seq[s]):
+            self.g["l1_viol"] += 1                   # gate: no payload is staged at age >= T
         if c.floor_law == "protect" and s < self.F_ann:
             self.g["commit_viol"] += 1               # the commitment seam: a copy below an announced floor (15.3)
         k = self.copies[s] + 1
@@ -834,6 +917,8 @@ class Sim:
         return True
 
     def send_floor(self, now, f):
+        if not self.cfg.floor_send:                  # today's Realtime: a shed is silent
+            return
         rep = self.floor_rep.get(f, 0)
         self.floor_rep[f] = rep + 1
         self.g["floors"] += 1
@@ -1076,7 +1161,20 @@ class Sim:
         m = self.min_hole()
         if m is not None and s > m:
             self.r0e_buf.append([now, s, False])
+            if force_drain_due(len(self.r0e_buf), self.cfg.r0e_max):
+                self.r0e_force_drain(now)
         self.r0e_drain(now)
+
+    def r0e_force_drain(self, now):
+        """reorder.rs force_drain_oldest: the oldest (lowest seq) entries are delivered until the buffer holds no more than half its cap; the
+        holes below the largest delivered entry are passed."""
+        buf = sorted(self.r0e_buf, key=lambda e: e[1])
+        k = len(buf) - force_drain_keep(self.cfg.r0e_max)
+        drained, self.r0e_buf = buf[:k], buf[k:]
+        self.g["force_drains"] += 1
+        before = self.g["passes"]
+        self.pass_below(now, max(e[1] for e in drained), "r0e")
+        self.r0e_given_up += self.g["passes"] - before
 
     def r0e_drain(self, now):
         """reorder.rs drain_expired: an entry expires when now - buffered_at >= the current hold; the expiry passes every hole
@@ -1279,6 +1377,9 @@ class Sim:
             n0 = len(cands_)
             cands_ = [s for s in cands_ if s >= self.F_ann]
             self.g["commit_skip"] += n0 - len(cands_)
+        n1 = len(cands_)
+        cands_ = [s for s in cands_ if not evict_unservable(c.evict_window, self.n_sent, s)]
+        self.g["evict_skip"] += n1 - len(cands_)
         if not cands_:
             self.floor_datagram(now)
             return
@@ -1305,7 +1406,7 @@ class Sim:
             g["l2_fail"] += len(verdict_seqs)
         elif c.sender != "S0":
             held = self.GF_known if c.recv == "R0c" else self.G_known     # R0c: only the floor pass's passes admit nothing else
-            A_avail = self.allow() - (held + len(self.pending))
+            A_avail = self.shed_left() if c.budget == "resid" else self.allow() - (held + len(self.pending))
             D, en = self.D_now()
             for s in cands_:
                 age = now - self.sent_t[s]
