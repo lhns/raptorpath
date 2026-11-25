@@ -644,7 +644,7 @@ flowchart TB
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated on 2026-11-24.
+Generated on 2026-11-25.
 <!-- END GENERATED: timeline -->
 
 History before November 2026 is reconstructed from commits, status sections and ADRs, plus a few items from the session record (each says so in its notes); dates marked as placeholders in a node's notes are approximate. May and June 2026 have no commits, so no node starts or ends in them.
