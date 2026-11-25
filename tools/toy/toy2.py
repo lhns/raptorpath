@@ -169,6 +169,171 @@ def delta_at_b(b):
     return DELTA_AUTO * 10.0 ** (-2.0 * math.log2(b))
 
 
+# ---- stage 3e (three-knobs-stage3e-build.md 2): the repair laws as raptorpath-math and the engine ship them ----------------------
+SALT_REPAIR = 7            # loss draw of a repair datagram (salts 0-6 are taken)
+CODEC_RLC = 0.004          # paper 3.6: RLC codec overhead
+R_MAX = 0.5                # engine max_overhead
+W_CAP = 200                # sender MAX_WINDOW_SIZE
+RATE_CADENCE_MAX = 0.005   # fec_rate.rs RATE_CADENCE_MAX_US
+BASE_TAIL = 1e-5           # FecRateController target_tail_loss (paper 4.1)
+BETA_DECAY = 0.995         # estimator.rs beta_decay
+DELTA_BULK = 0.005
+
+
+def normal_survival_as(z):
+    """raptorpath-math normal_survival (Abramowitz & Stegun), ported exactly."""
+    if z > 8.0: return 0.0
+    if z < -8.0: return 1.0
+    x = z / math.sqrt(2.0); ax = abs(x)
+    t = 1.0 / (1.0 + 0.3275911 * ax)
+    poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))))
+    e = poly * math.exp(-ax * ax)
+    return 0.5 * e if x >= 0.0 else 1.0 - 0.5 * e
+
+
+def normal_quantile_as(p):
+    """raptorpath-math normal_quantile (A&S 26.2.23), ported exactly."""
+    if p <= 0.0: return -math.inf
+    if p >= 1.0: return math.inf
+    if abs(p - 0.5) < 1e-12: return 0.0
+    sign, q = (-1.0, p) if p < 0.5 else (1.0, 1.0 - p)
+    t = math.sqrt(-2.0 * math.log(q))
+    num = 2.515517 + 0.802853 * t + 0.010328 * t * t
+    den = 1.0 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t
+    return sign * (t - num / den)
+
+
+def p_fec_normal_as(r, eps, W, s2):
+    """raptorpath-math p_fec_normal with the A&S survival (the existing p_fec_normal, which uses erfc, stays for today's Realtime)."""
+    if W <= 0.0 or eps <= 0.0 or eps >= 1.0 or r <= 0.0: return 0.0
+    num = r * (1.0 - eps) - eps
+    if num <= 0.0: return 0.0
+    den = math.sqrt(eps * (1.0 - eps) * (r + s2))
+    if den < 1e-300: return 1.0
+    return 1.0 - normal_survival_as(math.sqrt(W) * num / den)
+
+
+def z_for_tail_target(delta, eps):
+    if eps <= 0.0: return -math.inf
+    ratio = delta / eps
+    if ratio >= 1.0: return -math.inf
+    return normal_quantile_as(1.0 - max(ratio, 1e-15))
+
+
+def r_star_with_z(eps, s2, W, z):
+    if eps <= 0.0 or eps >= 1.0: return 0.0
+    base = eps / (1.0 - eps)
+    margin = z * math.sqrt(eps * s2 / (W * (1.0 - eps))) if W > 0.0 else 0.0
+    return max(base + margin, 0.0)
+
+
+def r_saturation(eps, s2, W, srtt, t_sym):
+    ok = all(math.isfinite(v) for v in (eps, s2, W, srtt, t_sym)) and 0.0 < eps < 1.0 and s2 > 0 and W > 0 and srtt > 0 and t_sym > 0
+    if not ok: return 1.0
+    l_arq = 1.5 * srtt; b_hat = (s2 + 1.0) / 2.0
+    best_r, best = 1.0, math.inf
+    for i in range(199):
+        r = 0.01 + 0.005 * i
+        cost = (1.0 - p_fec_normal_as(r, eps, W, s2)) * l_arq + b_hat * t_sym * (1.0 + r) / (r * (1.0 - eps)) + 0.5 * (1.0 + r) * W * t_sym
+        if cost < best: best, best_r = cost, r
+    return best_r
+
+
+def soft_saturate(rate, r_sat):
+    s = 0.1 * r_sat
+    if not (s > 0.0): return min(rate, r_sat)
+    x = (r_sat - rate) / s
+    sp = max(x, 0.0) + math.log1p(math.exp(-abs(x)))
+    return max(r_sat - s * sp, 0.0)
+
+
+def controller_rate_parts(p, s2, mean_burst, W, t_symbols, srtt, t_sym, tail, late):
+    """raptorpath-math controller_rate with the mass term inert (no mass statistics), inner_feedback 0, the saturation cap on,
+    max_overhead R_MAX, codec CODEC_RLC, completion exposure 0.  Returns (rate, raw before the cap, r_sat or None)."""
+    if p < 1e-10: return 0.0, 0.0, None
+    d_eff = p if late else tail                              # late: p + (0.05 - p) * chi with chi = 0
+    codec = CODEC_RLC * (1.0 - (1.0 - p) ** int(W)) if W > 0.0 else 0.0
+    core = r_star_with_z(p, s2, W, z_for_tail_target(d_eff, p))
+    rnd = core + codec if core > 0.0 else 0.0
+    frac = min(max(1.0 - d_eff / p, 0.0), 1.0)
+    burst = (max(mean_burst, 1.0) / t_symbols) * frac if t_symbols > 0.0 else 0.0
+    raw = max(rnd, burst)
+    r_sat = None
+    rate = raw
+    if t_sym > 0.0 and srtt > 0.0:
+        r_sat = r_saturation(p, s2, W, srtt, t_sym)
+        rate = soft_saturate(raw, r_sat)
+    return min(max(rate, 0.0), R_MAX), raw, r_sat
+
+
+def derive_window_parts(tail, eps, s2, srtt, rate):
+    """raptorpath-math derive_window with latency_budget 0 (fec_rate.rs).  Returns (W after [16, 512], the value before that clamp)."""
+    s2 = s2 if (math.isfinite(s2) and s2 >= 1.0) else 1.0
+    budget = srtt if (math.isfinite(srtt) and srtt > 0.0) else 0.0
+    w_lat = budget * rate if (math.isfinite(rate) and rate > 0.0 and budget > 0.0) else 512.0
+    if math.isfinite(eps) and 0.0 < eps < 1.0:
+        z = z_for_tail_target(tail, eps)
+        w_over = z * z * s2 * (1.0 - eps) / (eps * 0.0625) if (math.isfinite(z) and z > 0.0) else 0.0
+        w_bur = ((s2 + 1.0) / 2.0) / (eps * (1.0 - eps))
+    else:
+        w_over = w_bur = 0.0
+    lo = min(w_bur, w_lat)
+    w = min(max(w_over, lo), w_lat)
+    return min(max(w, 16.0), 512.0), w
+
+
+def bulkness(delta):
+    a, b = math.log10(DELTA_AUTO), math.log10(DELTA_BULK)
+    return min(max((a - math.log10(max(delta, 1e-12))) / (a - b), 0.0), 1.0)
+
+
+def t_tail_of(delta):
+    return min(max(BASE_TAIL * DELTA_AUTO / max(delta, 1e-12), 1e-9), 0.1)
+
+
+def rate_law(p, srtt, rate, delta):
+    """The rate law as the engine evaluates it at one operating point (registration 2.1, Appendix A): sigma2 = 1, mean burst 1,
+    t_symbols = max(srtt * rate, 1), t_sym = 1 / rate, both terms of the beta mix always computed.
+    Returns dict(r, W, W_pre, raw, r_sat, beta)."""
+    tail = t_tail_of(delta)
+    W, W_pre = derive_window_parts(tail, p, 1.0, srtt, rate)
+    W = min(float(round(W)), float(W_CAP))
+    tsy = max(srtt * rate, 1.0); tsm = 1.0 / rate if rate > 0.0 else 0.0
+    a, raw, r_sat = controller_rate_parts(p, 1.0, 1.0, W, tsy, srtt, tsm, tail, False)
+    l, _, _ = controller_rate_parts(p, 1.0, 1.0, W, tsy, srtt, tsm, min(max(BASE_TAIL * 100.0, 1e-9), 0.1), True)
+    beta = bulkness(delta)
+    return dict(r=(1.0 - beta) * a + beta * l, W=W, W_pre=W_pre, raw=raw, r_sat=r_sat, beta=beta)
+
+
+def beta_upper(a, b, conf=0.95):
+    """estimator.rs loss_rate_upper = beta_quantile(b, a, conf): the normal approximation of the Beta quantile, clamped to [0, 1].
+    a = decayed received count, b = decayed lost count."""
+    aa, bb = b, a                                            # beta_quantile(a=failures b, b=successes a)
+    mean = aa / (aa + bb)
+    var = (aa * bb) / ((aa + bb) ** 2 * (aa + bb + 1.0))
+    return min(max(mean + normal_quantile_as(conf) * math.sqrt(var), 0.0), 1.0)
+
+
+def span_edge_ok(edge, T, age, o):
+    """Registration 2.3: does a member of age `age` pass the span's lifetime edge?  worth: a + o < T; age: a < T; none and evict: no lifetime
+    term.  (floor and evict are applied as seq bounds in stage_repair.)"""
+    if edge == "worth": return age + o < T
+    if edge == "age": return age < T
+    return True
+
+
+def decoded_late(T, age):
+    """Gauge: a decode after the lifetime.  A measurement, never a branch."""
+    return age > T
+
+
+def saturation_pressure(raw, r_sat):
+    s = 0.1 * r_sat if r_sat else 0.0
+    if not (s > 0.0): return 0.0
+    x = (raw - r_sat) / s
+    return 1.0 / (1.0 + math.exp(-x)) if x > -700 else 0.0
+
+
 @dataclass
 class Cfg:
     cell: str = "I1"
@@ -220,7 +385,7 @@ class Cfg:
     resend_brake: str = "none"     # stage 3c: "engine" = at most 10 copies per 5 ms window (15.4)
     verdict_evidence: str = "rev1"  # stage 3c: "feedback" = a verdict only for a seq a current report lists missing, with a later send received (15.1)
     trigger_law: str = "cooldown"  # stage 3d: "trigger" = protected() uses d(s): the cooldown for a resent seq, min(srtt of its path, P_reach) for a never-resent one (17.1)
-    owd_est: str = "half"          # stage 3d: "fwd" = o_hat = srtt - RTprop/2 in L2 and protected() (17.1); "half" = srtt/2
+    owd_est: str = "half"          # stage 3d: "fwd" = o_hat = srtt - RTprop/2 in L2 and protected() (17.1); "half" = srtt/2; stage 3e: "rel" = RTprop/2 + the relative forward queue the receiver measures (build 6.3)
     recheck_floor: bool = False    # stage 3d: before each copy is staged, test s >= F_ann against the current floor (17.1)
     sweep_form: str = "tail"       # stage 3d: "tail" = the whole-tail sweep; "blocker" = the engine's (only the cumulative blocker, measured srtt deadline) (17.3)
     rx_refresh: bool = False       # stage 3d: the receiver re-sends its report every clamp(2 srtt, 25, 100 ms) while it holds holes (17.3)
@@ -235,6 +400,12 @@ class Cfg:
     place: str = "stripe"          # proof stage 1: "dup" = every first send on path A plus a duplicate on path B (today's Realtime, emit_source.rs:508)
     r0e_max: float = math.inf      # proof stage 1: R0e's buffer cap: force-drain the oldest entries to half the cap when it holds more (reorder.rs)
     recv_eps: str = "engine"       # R0e's eps_hat: engine (per-batch EWMA, alpha 0.1, estimator.rs:92,103-110) | cum (cumulative missing fraction) | ewma (per-seq, alpha 1/256)
+    repair: object = None          # stage 3e: None = no repair; dict(r="law" | "est" | float, edge="worth" | "age" | "floor" | "none" | "evict")
+    repair_seam: object = None     # stage 3e, test only: "no_edge" disables the lifetime edge (the L1 positive control)
+    o_bias: float = 0.0            # stage 3e robustness: added to the one-way estimate o_fwd (L2, protected, the worth edge)
+    R_bias: float = 0.0            # stage 3e robustness: added to R in the dequeue rule only
+    rev_q: float = 0.0             # stage 3e robustness: a standing reverse queue, seconds added to every report's flight
+    tau_extra: tuple = ()          # stage 3e: extra on-time readouts (RT: (0.12,)), reported in out["rep3e"]["share_by"]
 
 
 def ge_cell(cell, seed, slots, dur_slots_unused=None):
@@ -462,7 +633,7 @@ class Sim:
         self.flag_n = 0
         self.copy_win = {}                           # copies sent per 5 ms window (the brake's counter)
         self.fl_win = -1                             # 2 ms window of the last floor datagram (carrier "datagram")
-        self.win = {k: {} for k in ("first", "resend", "braked", "cool", "busy")}
+        self.win = {k: {} for k in ("first", "resend", "braked", "cool", "busy", "repair")}
         self.oe = (c.dead[1] + c.dead[2]) if c.dead is not None else None
         self.first_emit_oe = None
         # receiver state
@@ -497,6 +668,30 @@ class Sim:
         self.r0e_given_up = 0
         self.t_front = None
         self.stop_at = None
+        # stage 3e sender state (build 4.1); nothing reads it when repair is None
+        self.owed = 0.0
+        self.n_rep = 0
+        self.t_eval = -math.inf
+        self.r_cur = 0.0
+        self.W_cur = float(W_CAP)
+        self.law_last = None
+        self.fs_times = deque()                    # first-send times, for rate_hat
+        self.t_first = None
+        self.beta_a = 1.0                          # the estimated-loss arm (estimator.rs: start at 1, 1)
+        self.beta_b = 1.0
+        self.eps_est = beta_upper(1.0, 1.0)
+        self.astar_cur = 1
+        self.qf_known = 0.0
+        # stage 3e receiver state (build 5.1)
+        self.dec_flag = bytearray(self.nmax)
+        self.eqs = {}                              # eq id -> set of unknown seqs
+        self.eq_of = {}                            # unknown seq -> set of eq ids
+        self.eq_meta = {}                          # eq id -> (repair index j, send time)
+        self.raw_rcv = 0                           # first-send fates since the last report (the estimated-loss arm)
+        self.raw_lost = 0
+        self.drel = deque()                        # (t, d_rel) monotone minimum for owd_est "rel", a 10 s window (the RTprop window, 17.1)
+        self.qf = 0.0
+        self.n_eq = 0
         self.g = dict(verdicts=0, verdict_copies=0, floors=0, floor_rep=0, repair_sends=0, serves=0, refusals=0,
                       age_gate_fail=0, n_dec=0, gate_cold=0, passes=0, pass_floor=0, pass_r0e=0, late=0, ooo_loss=0,
                       dup=0, p1_viol=0, p1_worst=0, p1_checks=0, pause_events=0, max_O=0, rel_ho=0,
@@ -504,7 +699,12 @@ class Sim:
                       l2_fail=0, rel_by_floor=0, probes=0, queue_drop=0, queue_drop_in=0, queue_drop_out=0,
                       resend_by_R=0, resend_by_report=0, resend_by_sweep=0,
                       evict_skip=0, force_drains=0, dup_first=0, l1_viol=0,
-                      commit_viol=0, commit_skip=0, skip_below_floor=0, late_floor_ge1=0, l2_skip=0, bl_fires=0, refresh_reports=0, floor_carried=0, resend_braked=0, hull_upd=0, hull_bind=0)
+                      commit_viol=0, commit_skip=0, skip_below_floor=0, late_floor_ge1=0, l2_skip=0, bl_fires=0, refresh_reports=0, floor_carried=0, resend_braked=0, hull_upd=0, hull_bind=0,
+                      law_reads=0, W_floor_bind=0, W_cap_bind=0, sat_pressure_sum=0.0, W_sum=0.0, r_sum=0.0, rep_credits=0, owed_max=0.0,
+                      astar_floor_bind=0, D_cap_bind=0, astar_W_bind=0, delta_bind=0, rep_drop_edge=0, rep_drop_young=0, rep_cut_edge=0,
+                      l1_viol_rep=0, worth_viol_rep=0, rep_sent=0, rep_members_sum=0, rep_qdrop=0, rep_lost=0, eps_est_sum=0.0, eps_est_n=0,
+                      dup_after_dec=0, rep_redundant=0, rep_innov=0, dec_comp_max=0, rep_used=0, rep_late_only=0, dec_units=0, dec_on_time=0,
+                      dec_late=0, dec_after_release=0, late_floor_dec=0)
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
         self.heap = []
@@ -540,14 +740,17 @@ class Sim:
 
     def refresh_shed_budget(self):
         """Today's Realtime refreshes the budget at each source emission.  eps_hat is the sender's loss estimate: the cell's first-send
-        loss (Q21's true-loss default, a declared idealisation), and 0 until the first RTT sample.  Repair is not modelled on this base, so r = 0
-        and the budget is eps_hat."""
+        loss (Q21's true-loss default, a declared idealisation; the estimated-loss arm reads eps_est), and 0 until the first RTT sample.
+        With repair the budget is eps_hat (1 - P_fec(r, A*)) as the engine forms it (emit_source.rs:629-642); with repair off, eps_hat."""
         if self.cfg.budget != "resid":
             return
         if self.srtt is None:
             self.shed_budget = 0.0
         elif self.loss_kind == "iid":
-            self.shed_budget = residual_loss(self.p0, 0.0, 0.0, 1.0)
+            rp = self.cfg.repair
+            eps = self.eps_est if (rp is not None and rp["r"] == "est") else self.p0
+            r = self.r_cur if rp is not None else 0.0
+            self.shed_budget = residual_loss(eps, r, float(self.astar_cur) if rp is not None else 0.0, 1.0)
         else:
             raise NotImplementedError("budget resid needs the cell's loss as eps_hat; only iid cells")
 
@@ -626,12 +829,14 @@ class Sim:
 
     def o_fwd(self):
         """17.1: the one-way delay of a resend, srtt - RTprop/2 on the resend path (path A), assuming the queueing is on the data direction."""
-        return self.srtt_p(0) - self.rtt / 2.0
+        if self.cfg.owd_est == "rel":                # stage 3e: the one-way delay as RTprop/2 plus the forward queue the receiver measured
+            return self.rtt / 2.0 + self.qf_known + self.cfg.o_bias
+        return self.srtt_p(0) - self.rtt / 2.0 + self.cfg.o_bias
 
     def o_hat(self):
         """One-way delay estimate used by L2: the exact owd for S2 (stage 3); srtt/2 with the RFC seed for S3; srtt - RTprop/2 (17.1) with owd_est "fwd"."""
         if self.s3 and self.cfg.rtt_est == "rfc":
-            if self.cfg.owd_est == "fwd":
+            if self.cfg.owd_est in ("fwd", "rel"):
                 return self.o_fwd()
             return (0.333 if self.srtt is None else self.srtt) / 2.0
         return self.rtt / 2
@@ -787,7 +992,7 @@ class Sim:
         if c.deq_expiry:                                         # 13.2: expire the head at the dequeue when a younger unit waits (after L1)
             while (self.u_next + 1 < self.units_total
                    and (self.u_next + 1) * self.dt <= t
-                   and dequeue_expired(self.Te, t - self.u_next * self.dt, self.R_now())):
+                   and dequeue_expired(self.Te, t - self.u_next * self.dt, self.R_now() + c.R_bias)):
                 if self.first_deq_exp is None:
                     self.first_deq_exp = t
                 self.intake_expired_deq += 1
@@ -847,6 +1052,19 @@ class Sim:
                 dup_ok = True
         if first_lost and not dup_ok:
             self.orig_lost.append(s)
+        if c.repair is not None:                     # stage 3e (build 4.3): repair credit accrues at each first send; at r = 0 nothing is pushed or drawn
+            if self.t_first is None:
+                self.t_first = t
+            self.fs_times.append(t)
+            if t - self.t_eval >= min(RATE_CADENCE_MAX, self.srtt_eff() / 4.0):
+                self.read_law(t)
+            self.owed += self.r_cur
+            if self.owed >= 1.0:
+                self.owed -= 1.0
+                self.g["rep_credits"] += 1
+                self.stage_repair(t)
+            if self.owed > self.g["owed_max"]:
+                self.g["owed_max"] = self.owed
         if self.s2fam and c.verdict_evidence not in ("feedback", "none", "feedback_tail", "feedback_tail_any"):      # the per-seq verdict timer (at +inf it never fires); none under feedback verdicts
             self.push(max(t, self.h_seq[s] + self.Te - self.o_hat()), 8, s)
         self.wadd("first", t)
@@ -916,6 +1134,115 @@ class Sim:
             self.arm_blocker(now)
         return True
 
+    # ---- stage 3e: repair (build 4.2 - 4.4) ---------------------------------------------------------------
+    def rate_hat(self, now):
+        """First sends in (now - 8 srtt, now] over min(8 srtt, now - first send): the offline simulation's form of paper 5.3's anchor."""
+        w = 8.0 * self.srtt_eff()
+        q = self.fs_times
+        while q and q[0] <= now - w:
+            q.popleft()
+        span = min(w, now - self.t_first) if self.t_first is not None else 0.0
+        return len(q) / span if span > 0.0 else 0.0
+
+    def eps_for_law(self):
+        rp = self.cfg.repair
+        return self.eps_est if rp["r"] == "est" else self.p0
+
+    def read_law(self, now):
+        """Re-read r and W (registration 2.1's cadence).  A fixed-r arm keeps r and still reads W."""
+        rp = self.cfg.repair
+        rh = self.rate_hat(now)
+        if rh <= 0.0:
+            return
+        L = rate_law(self.eps_for_law(), self.srtt_eff(), rh, self.cfg.delta)
+        self.W_cur = L["W"]
+        self.r_cur = L["r"] if rp["r"] in ("law", "est") else float(rp["r"])
+        self.law_last = L
+        self.t_eval = now
+        g = self.g
+        g["law_reads"] += 1
+        g["W_floor_bind"] += L["W_pre"] < 16.0
+        g["W_cap_bind"] += round(min(max(L["W_pre"], 16.0), 512.0)) > W_CAP
+        g["sat_pressure_sum"] += saturation_pressure(L["raw"], L["r_sat"])
+        g["W_sum"] += L["W"]
+        g["r_sum"] += self.r_cur
+
+    def astar(self, now):
+        """Paper 5.3: A* = clamp(ceil(rate_hat * min(b*srtt, 2*srtt)), 1, W); 1 before the first RTT sample."""
+        if self.srtt is None:
+            self.g["astar_floor_bind"] += 1
+            return 1
+        se = self.srtt_eff()
+        D = min(self.b * se, 2.0 * se)
+        if self.b * se > 2.0 * se:
+            self.g["D_cap_bind"] += 1
+        raw = math.ceil(self.rate_hat(now) * D)
+        if raw > self.W_cur:
+            self.g["astar_W_bind"] += 1
+        if raw < 1:
+            self.g["astar_floor_bind"] += 1
+        return int(min(max(raw, 1), self.W_cur))
+
+    def delta_off(self, now):
+        raw = math.ceil(self.rate_hat(now) * self.cfg.J)
+        if raw < 1 or raw > 64:
+            self.g["delta_bind"] += 1
+        return int(min(max(raw, 1), 64))
+
+    def stage_repair(self, now):
+        c = self.cfg
+        g = self.g
+        e = c.repair["edge"]
+        A = self.astar(now)
+        self.astar_cur = A
+        D = self.delta_off(now)
+        end = self.n_sent - D
+        ws = max(0, self.A_known - int(self.W_cur))
+        lo = max(ws, end - A)
+        lo0 = lo
+        if c.repair_seam != "no_edge":
+            if e in ("worth", "age"):
+                o = self.o_hat()
+                while lo < end and not span_edge_ok(e, self.Te, now - self.h_seq[lo], o):
+                    lo += 1
+            elif e == "floor":
+                lo = max(lo, self.F_ann)
+            elif e == "evict":
+                if evict_unservable(c.evict_window, self.n_sent, lo):
+                    lo = self.n_sent - int(c.evict_window)
+                while lo < end and lo in self.verdicted:
+                    lo += 1
+        if end <= lo:
+            g["rep_drop_edge" if lo > lo0 else "rep_drop_young"] += 1
+            return
+        if lo > lo0:
+            g["rep_cut_edge"] += 1
+        j = self.n_rep
+        self.n_rep += 1
+        o = self.o_hat()
+        for s in range(lo, end):
+            age = now - self.h_seq[s]
+            if staged_past_lifetime(self.Te, age):
+                g["l1_viol_rep"] += 1
+            if not resend_admissible(self.Te, age, o):
+                g["worth_viol_rep"] += 1
+        g["rep_sent"] += 1
+        g["rep_members_sum"] += end - lo
+        self.wadd("repair", now)
+        a, dep = self.fwd(now)
+        if a is not None:
+            self.fifo_note(a)
+        dd = c.dead
+        lost = (a is None) or (dd is not None and lo >= dd[0] and dd[1] <= dep < dd[1] + dd[2]) \
+            or (u01(c.seed, j, 0, 0, SALT_REPAIR) < self.p0)
+        if a is None:
+            g["rep_qdrop"] += 1
+        elif lost:
+            g["rep_lost"] += 1
+        if not lost:
+            self.push(a, 11, (j, lo, end, now))
+            self.carry_floor(a)
+
     def send_floor(self, now, f):
         if not self.cfg.floor_send:                  # today's Realtime: a shed is silent
             return
@@ -982,6 +1309,7 @@ class Sim:
             self.fl_created.add(q)
             return
         self.n_missing += 1
+        self.raw_lost += 1
         ho = self.ho_now()
         if self.cfg.want_p4:
             self.hoq[q] = ho
@@ -989,21 +1317,30 @@ class Sim:
             self.push(now + ho, 6, q)
 
     def on_data(self, now, s, c, tau, ps=None, path=0):
+        """tau is None for a decoded unit (stage 3e): it carries no send stamp, no path and no delay sample."""
         got = self.got
-        if tau > self.tau_rx_recv:
-            self.tau_rx_recv = tau
-        if s > self.rhi_path[path]:
-            self.rhi_path[path] = s
+        if tau is not None:
+            if tau > self.tau_rx_recv:
+                self.tau_rx_recv = tau
+            if s > self.rhi_path[path]:
+                self.rhi_path[path] = s
         if ps is not None:
             self.eps_trk.record(ps)
+        if self.cfg.owd_est == "rel" and c >= 0:
+            self.rel_sample(now, now - tau)
         if got[s]:
             self.g["dup"] += 1
+            if self.dec_flag[s]:
+                self.g["dup_after_dec"] += 1
         else:
             got[s] = 1
             self.arr[s] = now
-            ell = self.est.feed(now, tau)
-            if ell > 0:
-                self.g["fh_late"] += 1
+            if c == 0:
+                self.raw_rcv += 1
+            if tau is not None:
+                ell = self.est.feed(now, tau)
+                if ell > 0:
+                    self.g["fh_late"] += 1
             if s in self.holes:
                 t0 = self.holes.pop(s)
                 self.tfill[s] = now
@@ -1044,7 +1381,148 @@ class Sim:
                     self.r0e_buffer(now, s)
                 else:
                     self.r0e_arrival(now, s)
+            if s in self.eq_of:                      # stage 3e: s is an unknown of some equation; the equations shrink and may now decode
+                self.dec_known(now, s)
         self.advance(now)
+
+    def rel_sample(self, now, d):
+        """owd_est "rel": the forward delay of an arrival minus its minimum over the last 10 s (a monotone deque gives the window minimum)."""
+        dq = self.drel
+        while dq and dq[-1][1] >= d:
+            dq.pop()
+        dq.append((now, d))
+        while dq[0][0] < now - 10.0:
+            dq.popleft()
+        self.qf = d - dq[0][1]
+
+    # ---- stage 3e: the decoder (build 5.5, 5.6) -----------------------------------------------------------
+    def on_repair(self, now, pl):
+        j, lo, end, ts = pl
+        g = self.g
+        if ts > self.tau_rx_recv:
+            self.tau_rx_recv = ts                    # RACK counts every datagram
+        U = {s for s in range(lo, end) if not self.got[s]}
+        if not U:
+            g["rep_redundant"] += 1
+            return
+        g["rep_innov"] += 1
+        self.n_eq += 1
+        e = self.n_eq
+        self.eqs[e] = U
+        self.eq_meta[e] = (j, ts)
+        for s in U:
+            self.eq_of.setdefault(s, set()).add(e)
+        self.decode(now, e)
+
+    def component(self, e0):
+        E, X, stack = {e0}, set(), [e0]
+        while stack:
+            e = stack.pop()
+            for s in self.eqs[e]:
+                if s not in X:
+                    X.add(s)
+                    for f in self.eq_of.get(s, ()):
+                        if f not in E:
+                            E.add(f)
+                            stack.append(f)
+        return E, X
+
+    def determined(self, E, X):
+        """Max matching unknown -> equation (augmenting paths), then the unknowns not reached by an alternating path from an unmatched
+        unknown (Dulmage-Mendelsohn: outside the under-determined part).  The augmenting search is the brief's recursion, written with an
+        explicit stack in the same visiting order (a component of a few hundred unknowns exceeds Python's recursion limit)."""
+        adj = {x: sorted(f for f in self.eq_of[x] if f in E) for x in X}
+        meq, mx = {}, {}
+
+        def aug(x0, seen):
+            stack = [(x0, iter(adj[x0]), None)]              # (unknown, its equations still to try, the equation under trial)
+            while stack:
+                x, it, _ = stack[-1]
+                for f in it:
+                    if f in seen:
+                        continue
+                    seen.add(f)
+                    if f not in meq:                         # a free equation: augment along the whole stack
+                        meq[f] = x
+                        mx[x] = f
+                        for xp, _, fp in stack[:-1]:
+                            meq[fp] = xp
+                            mx[xp] = fp
+                        return True
+                    stack[-1] = (x, it, f)
+                    stack.append((meq[f], iter(adj[meq[f]]), None))
+                    break
+                else:
+                    stack.pop()
+            return False
+
+        for x in sorted(X):
+            aug(x, set())
+        bad = {x for x in X if x not in mx}
+        st = list(bad)
+        while st:
+            x = st.pop()
+            for f in adj[x]:
+                y = meq.get(f)
+                if y is not None and y not in bad:
+                    bad.add(y)
+                    st.append(y)
+        return sorted(X - bad), meq
+
+    def decode(self, now, e0):
+        """The generic-rank rule on one component; the cascade over the touched equations is a work list in the recursion's order."""
+        work = [e0]
+        while work:
+            e0 = work.pop()
+            if e0 not in self.eqs:
+                continue
+            E, X = self.component(e0)
+            if len(X) > self.g["dec_comp_max"]:
+                self.g["dec_comp_max"] = len(X)
+            dec, meq = self.determined(E, X)
+            if not dec:
+                continue
+            decset = set(dec)
+            used = {f: x for f, x in meq.items() if x in decset}      # equation -> the decoded unknown it is matched to
+            self.g["rep_used"] += len(used)
+            self.g["rep_late_only"] += sum(1 for x in used.values() if decoded_late(self.cfg.T, now - self.h_seq[x]))
+            touched = set()
+            for s in dec:                                             # 1. detach every decoded unknown from every equation first
+                for f in self.eq_of.pop(s, set()):
+                    if f in self.eqs:
+                        self.eqs[f].discard(s)
+                        touched.add(f)
+            for f in list(touched):
+                if f in self.eqs and not self.eqs[f]:
+                    del self.eqs[f]
+                    self.eq_meta.pop(f, None)
+            for s in dec:                                             # 2. then count and deliver each decoded unit once
+                self.dec_flag[s] = 1
+                age = now - self.h_seq[s]
+                self.g["dec_units"] += 1
+                if within_lifetime(self.cfg.T, age):
+                    self.g["dec_on_time"] += 1
+                if decoded_late(self.cfg.T, age):
+                    self.g["dec_late"] += 1
+                if s in self.released:
+                    self.g["dec_after_release"] += 1
+                if s in self.passed and self.passed_by.get(s) == "floor":
+                    self.g["late_floor_dec"] += 1
+                self.on_data(now, s, -1, None, None, 0)
+            work.extend(reversed(sorted(touched)))                    # 3. then the cascade, on equations still live (popped in increasing order)
+
+    def dec_known(self, now, s):
+        """s arrived as data: remove it from every equation, drop empty equations, and re-run decode on each touched equation still live."""
+        touched = self.eq_of.pop(s, set())
+        for f in touched:
+            if f in self.eqs:
+                self.eqs[f].discard(s)
+                if not self.eqs[f]:
+                    del self.eqs[f]
+                    self.eq_meta.pop(f, None)
+        for f in sorted(touched):
+            if f in self.eqs:
+                self.decode(now, f)
 
     def on_floor(self, now, f, ps=None):
         self.floor_arrivals.append(now)
@@ -1240,10 +1718,11 @@ class Sim:
             m = self.min_hole()
             A = m if m is not None else self.rhi + 1
             rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report), self.GF, self.tau_rx_recv)
-            if self.paths is not None:
-                rep = rep + (tuple(self.rhi_path),)
+            rep = rep + ((tuple(self.rhi_path),) if self.paths is not None else (None,)) + (None, self.raw_rcv, self.raw_lost, self.qf)
+            self.raw_rcv = 0
+            self.raw_lost = 0
             self.passed_since_report = []
-            self.push(now + self.cfg.owd, 3, rep)
+            self.push(now + self.cfg.owd + self.cfg.rev_q, 3, rep)
         if now + self.cfg.tick <= self.t_end:
             self.push(now + self.cfg.tick, 4, None)
 
@@ -1274,11 +1753,20 @@ class Sim:
                 # 13.7.1 item 1: largest newly received seq, Karn's rule.  Stage 3d amendment: the seq must have arrived when the report was made
                 # (a floor jump raises rhi without an arrival; sampling it would time a unit that never came)
                 if self.paths is None and self.cfg.rtt_est == "rfc" and self.copies[rhi] == 0:
-                    if self.got[rhi] and self.arr[rhi] <= gen:
+                    if self.got[rhi] and self.arr[rhi] <= gen and not self.dec_flag[rhi]:
                         self.rtt_sample(now - self.sent_t[rhi])
                     else:
                         self.rtt_unarrived += 1
                 self.rhi_known = rhi
+            if self.cfg.repair is not None:                              # stage 3e: the estimated-loss arm (build 4.6)
+                rcv, lst = rep[10], rep[11]
+                self.beta_a = BETA_DECAY * self.beta_a + rcv
+                self.beta_b = BETA_DECAY * self.beta_b + lst
+                self.eps_est = beta_upper(self.beta_a, self.beta_b)
+                self.g["eps_est_sum"] += self.eps_est
+                self.g["eps_est_n"] += 1
+            if self.cfg.owd_est == "rel":
+                self.qf_known = rep[12]
             self.M_known = set(M)
         Ak, Mk, rk = self.A_known, self.M_known, self.rhi_known
         self.pending = {s for s in self.pending if s >= Ak and (s in Mk or s > rk)}
@@ -1573,6 +2061,8 @@ class Sim:
                 self.on_probe(t)
             elif kind == 10:
                 self.on_blocker(t, pl)
+            elif kind == 11:
+                self.on_repair(t, pl)
         return self.summary()
 
     # ---- readouts -------------------------------------------------------------------------
@@ -1664,6 +2154,7 @@ class Sim:
             finish=(self.t_front - (units - 1) * self.dt) if (c.n_total and self.t_front is not None) else None)
         self.summary3b(out, n, ok, dl, hs_)
         self.summary3c(out)
+        self.summary3e(out, n, ok, dl, hs_)
         self.summary3d(out, n, ok, dl, hs_)
         if c.n_total:
             out["tail_time"] = (self.t_front - self.sent_t[n - 1]) if self.t_front is not None else None
@@ -1797,6 +2288,40 @@ class Sim:
                 parts = dict(start=st, length=ln, o=p_o, oo=p_oo, i=p_i, ii=p_ii, iii=p_iii, floor_seen=tf is not None)
         out["stall3c"] = parts
 
+    def summary3e(self, out, n, ok, dl, hs_):
+        """Stage 3e readouts (registration 6, Amendment 1; build 6), all in one block so that id3e can exclude it as a whole:
+        r_mean, W_mean (6, the law's readings), sat_pressure, W_floor_bind_frac, W_cap_bind_frac (6, the clamp bind gauges),
+        eps_est_mean (2.1, the estimated-loss arm), p_dec_meas and p_fec_law (6, 11 item 1), rep_link_share (6, 2.5), rep_members_mean,
+        recovery_time_0p15 and its status (6, 2.6; filled in summary3d where recovery_time is), mu_eff_hat (6, Q3e-7),
+        share_by (13.2: {tau: share delivered within tau} for tau in cfg.tau_extra, the share_by_0p4 rule).
+        The gauges (rep_*, dec_*, l1_viol_rep, worth_viol_rep, owed_max, the bind counters) are in out["gauges"]."""
+        c, g = self.cfg, self.g
+        nl = max(g["law_reads"], 1)
+        p_fec = 0.0
+        if c.repair is not None and self.law_last is not None:
+            p_fec = p_fec_normal_as(self.r_cur, self.eps_for_law(), self.W_cur, 1.0)
+        # link shares over the saturated windows (link busy >= 0.98); repair, first sends and resends are the link datagrams
+        w = self.win
+        nwin = max([int(self.t_last) + 1] + [max(x) + 1 for x in w.values() if x])
+        sat = [i for i in range(nwin) if w["busy"].get(i, 0.0) >= 0.98]
+        tot = sum(w["repair"].get(i, 0) + w["first"].get(i, 0) + w["resend"].get(i, 0) for i in sat)
+        rep_share = sum(w["repair"].get(i, 0) for i in sat) / tot if tot else 0.0
+        start = int(math.ceil(self.oe)) if self.oe is not None else 1
+        sat2 = [i for i in sat if i >= start]
+        tot2 = sum(w["repair"].get(i, 0) + w["first"].get(i, 0) + w["resend"].get(i, 0) for i in sat2)
+        mu = (c.link["C"] * sum(w["first"].get(i, 0) for i in sat2) / tot2) if (c.link is not None and tot2) else None
+        share_by = {}
+        for tau in c.tau_extra:
+            age = (np.asarray(dl) - np.asarray(hs_))[ok]
+            share_by[tau] = int((age <= tau).sum()) / max(self.units_total, 1)
+        out["rep3e"] = dict(
+            r_mean=float(g["r_sum"] / nl), W_mean=float(g["W_sum"] / nl), sat_pressure=float(g["sat_pressure_sum"] / nl),
+            W_floor_bind_frac=float(g["W_floor_bind"] / nl), W_cap_bind_frac=float(g["W_cap_bind"] / nl),
+            eps_est_mean=float(g["eps_est_sum"] / max(g["eps_est_n"], 1)),
+            p_dec_meas=float(g["dec_units"] / max(len(self.orig_lost), 1)), p_fec_law=float(p_fec),
+            rep_link_share=float(rep_share), rep_members_mean=float(g["rep_members_sum"] / max(g["rep_sent"], 1)),
+            recovery_time_0p15=None, recovery_status_0p15=None, mu_eff_hat=mu, share_by=share_by)
+
     def summary3d(self, out, n, ok, dl, hs_):
         """Stage 3d readouts (three-knobs.md 17.4, 17.7, 17.8): the window series by hand-over time, recovery time, the first dequeue
         expiry, the floor hold estimate at the end."""
@@ -1821,6 +2346,7 @@ class Sim:
         out["win_ot2"] = [round(x, 6) for x in window_shares(ages, self.dt, 2.0)]
         if c.dead is not None and c.n_total:
             out["recovery_time"], out["recovery_status"] = recovery_time(ages, self.dt, 0.4, c.dead[1], c.dead[1] + c.dead[2])
+            out["rep3e"]["recovery_time_0p15"], out["rep3e"]["recovery_status_0p15"] = recovery_time(ages, self.dt, 0.15, c.dead[1], c.dead[1] + c.dead[2])
 
     def p4c(self, rows):
         """(observed consumer stall, expected min(H_o, R - t_det, t_pass - t_det)) per isolated hole; the stall is read

@@ -1442,10 +1442,10 @@ class Stage3e(unittest.TestCase):
 
     def test_5_span_never_starts_below_the_encoder_window(self):
         sm = span_sim("worth")
-        sm.A_known = 495
-        sm.W_cur = 10.0                                                            # ws = 485 > end - A* = 474
+        sm.A_known = 500
+        sm.W_cur = 25.0                                                            # A* = 25 = W, ws = 475 > end - A* = 474
         sm.stage_repair(0.5005)
-        self.assertEqual(sm.g["rep_members_sum"], 499 - 485)
+        self.assertEqual(sm.g["rep_members_sum"], 499 - 475)
 
     # -- 6 the L1 control ----------------------------------------------------------------------------------------
     def test_6_l1_control(self):
@@ -1467,7 +1467,7 @@ class Stage3e(unittest.TestCase):
     @staticmethod
     def rx(missing, n=12, T=0.4, **kw):
         """A receiver that has seen every seq below n except `missing`, with the holes open and nothing released."""
-        c = toy2.Cfg(cell="I2", sender="S5", recv="RH", seed=1, n_total=100, delta=50.0, rho=1.0, check_p1=False, T=T, Hk=math.inf,
+        c = toy2.Cfg(cell="I2", sender="S5", recv="RH", seed=1, n_total=max(100, n), delta=50.0, rho=1.0, check_p1=False, T=T, Hk=math.inf,
                      repair=dict(r=0.3, edge="worth"), **kw)
         sm = toy2.Sim(c)
         sm.n_sent = n
@@ -1548,12 +1548,53 @@ class Stage3e(unittest.TestCase):
         ok.on_repair(0.2, (0, 5, 6, 0.19))                                         # age 0.15 <= T
         self.assertEqual((ok.g["dec_late"], ok.g["rep_late_only"], ok.g["dec_on_time"]), (0, 0, 1))
 
-    def test_8_a_large_component_does_not_overflow_the_stack(self):
-        n = 3000
-        sm = self.rx(set(range(100, n - 100)), n=n)
-        for j in range(0, 2000):                                                   # overlapping spans of 20: one component of ~2000 unknowns
-            sm.on_repair(5.0, (j, 100 + j, min(120 + j, n - 100), 4.99))
-        self.assertGreater(sm.g["dec_comp_max"], 1000)
+    @staticmethod
+    def determined_ref(adj_of, X, E):
+        """The brief's recursive form of the matching, for the differential test."""
+        adj = {x: sorted(f for f in adj_of[x] if f in E) for x in X}
+        meq, mx = {}, {}
+
+        def aug(x, seen):
+            for f in adj[x]:
+                if f in seen:
+                    continue
+                seen.add(f)
+                if f not in meq or aug(meq[f], seen):
+                    meq[f] = x
+                    mx[x] = f
+                    return True
+            return False
+        for x in sorted(X):
+            aug(x, set())
+        bad = {x for x in X if x not in mx}
+        st = list(bad)
+        while st:
+            x = st.pop()
+            for f in adj[x]:
+                y = meq.get(f)
+                if y is not None and y not in bad:
+                    bad.add(y)
+                    st.append(y)
+        return sorted(X - bad), meq
+
+    def test_8_the_matching_matches_the_recursive_form_and_survives_a_deep_chain(self):
+        rnd = random.Random(3)
+        sm = self.rx(set(), n=20)
+        for _ in range(300):
+            nx, ne = rnd.randint(1, 9), rnd.randint(1, 9)
+            X = set(range(nx))
+            eq_of = {x: set() for x in X}
+            for e in range(ne):
+                for x in rnd.sample(sorted(X), rnd.randint(1, nx)):
+                    eq_of[x].add(e)
+            E = set(range(ne))
+            sm.eq_of = {x: v for x, v in eq_of.items() if v}
+            X2 = set(sm.eq_of)
+            self.assertEqual(sm.determined(E, X2), self.determined_ref(eq_of, X2, E))
+        n = 1500                                                                   # unknown k in equations k - 1 and k: augmenting paths of length k
+        sm.eq_of = {k: {e for e in (k - 1, k) if 0 <= e < n} for k in range(n + 1)}
+        dec, _ = sm.determined(set(range(n)), set(range(n + 1)))                   # beyond Python's recursion limit
+        self.assertEqual(dec, [])
 
     # -- 9 emission ------------------------------------------------------------------------------------------------
     def test_9_emission_accounting(self):
@@ -1782,7 +1823,7 @@ class Stage3e(unittest.TestCase):
         out = toy2.run(rt_e(repair=dict(r="law", edge="worth")))
         r3 = out["rep3e"]
         self.assertAlmostEqual(r3["r_mean"], 0.3835, delta=0.01)
-        self.assertEqual(r3["W_floor_bind_frac"], 1.0)
+        self.assertGreater(r3["W_floor_bind_frac"], 0.9)                           # all but the readings before the first RTT sample
         self.assertGreater(r3["sat_pressure"], 0.5)
         self.assertGreater(r3["p_dec_meas"], 0.3)
 
