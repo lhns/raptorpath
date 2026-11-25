@@ -121,7 +121,7 @@ The edge-"none" components after the outage stay small (largest 14 unknowns), fa
 ## Tests (build brief 9 step 3)
 
 `python -m unittest test_toy test_toy2 test_proof_s1 test_batch3e`: 193 tests, OK.  Before the change the same command without `test_batch3e` ran 116 tests
-(test_toy, test_toy2, test_proof_s1); `Stage3e` adds 46 tests and `test_batch3e` 32 (116 + 46 + 32 = 194 less the one test replaced during the build).
+(test_toy, test_toy2, test_proof_s1); `Stage3e` adds 45 tests and `test_batch3e` 32 (116 + 45 + 32 = 193).
 The identity check above was re-run on the final tree (same PASS line).
 
 ## Where the build brief was followed with a change, and what it left open
