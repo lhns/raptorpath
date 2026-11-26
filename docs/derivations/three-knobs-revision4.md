@@ -1923,3 +1923,154 @@ Names and semantics only. All default off, so every stored row reproduces.
 - **CL-long-v's live seed 11 lies outside the identity seeds 0–2.** So the 3-seed check executes no live tick there. §13.6 adds seed 11 at T = 2 as a traced pair.
 - **CL at T = 2 is in the B′ identity set,** with 3 seeds including seed 2 (§13.6).
 - **Q34 stays open, and blocks the engine step together with Q24.** This check bounds the edge only on the seeds seen.
+
+### 13.9 The B′ confirmation, as registered, and the OV-long-m law finding read on stored gauges (2026-11-26; post-data, no new runs)
+
+**Source.** `tools/toy/results-confirm13.md` and the runs under `out3e/confirm/runs` (branch `toy-stage3e` at `cf22cb43`), read through `confirm13.py`'s jobs.
+- The B′ rows ran on a Linux Docker host. Three stored Windows rows were rerun there and matched key for key, including one B′ row.
+- The reads below use only the stored gauges: `cap_series`, the per-window series and the per-run counts. Scratch scripts: `ana13.py`, `ana13b.py` and `fresh.py` in the session scratchpad.
+
+#### 13.9.1 The outcome as registered
+
+| cell | registered prediction | outcome |
+|---|---|---|
+| headroom identity (every pair, including CL and CL-long at T = 2 seed 2, and CL-long-v at seed 11) | identical | identical in every pair |
+| OV-long-v | equivalent to both Realtime arms; the bill A − B′ ≤ 1 900 units | equivalent to both; bill ≈ 700 units |
+| OV-long | dominates both Realtime arms | dominates both |
+| K-OV (reported only) | A 0.70–0.73 at p50 0.30–0.34 s; B′ 0.70–0.73 at 0.15–0.19 s | A 0.714 at 0.322 s; B′ 0.719 at 0.166 s. Both in band |
+| OV-long-m, best point T = 0.4, against the stored arm | equivalent or worse | **worse**: share −0.0090 (bar ≈ 0.0096), p50 +0.026 s (bar ≈ 0.0086) |
+| OV-long-m, against the engine-queue arm | dominates | **a trade**: share −0.0099, on time +0.80, p50 −0.54 s |
+
+- **The engine-queue row is a prediction slip.** §13.5 predicted "dominates", but the share band (−0.008 to −0.010) already lay at that arm's bar.
+- **§13.8's interpretation of "worse":**
+  - condition 1 fails (p50 +0.026 s against ≤ +0.02 s);
+  - condition 2 holds (−0.0034, −0.0055 and −0.0043 against −0.0035, −0.0055 and −0.004);
+  - condition 3 fails: shape item 4 at T = 0.4 and 0.6 (19.1 % and 15.4 % against a 15 % bar), and item 2 at T = 2 (a pre-onset deficit of 0.0052 against a 0.003 bar).
+- **By the locked rule this is a law finding.** The three reads below settle what it is a finding of. They do not change the registered word, which stays "worse".
+
+#### 13.9.2 Read 1: the tail. The law executes as written; the 15 % bar was the error
+
+- **The cap equals the law per window.** In every `cap_series` window with t ≥ 3 s, at every T and seed, the mean w equals `wait_limit_w(T, R = T − c⁺, ô = 0.095, δ, x̂, t_ov)` on that window's mean inputs: median relative error ≤ 10⁻⁴, and |error| ≤ 2·10⁻⁴ at p95.
+- **The head sits at the cap.** The head's age at the dequeue is w within −1.0 % at T = 0.4 and within −0.07 % at T = 2, medians. It is just under the cap, as a head sent before reaching it should be.
+- **§13.5's item 4 tested the wrong shape.** It assumed `w·t_ov` constant. The law gives
+  ```text
+     w·t_ov  =  2·(c/x̄)·s_b · y/(1 + y)
+  ```
+  which rises by y/(1 + y) over the tail windows (y from 2 to about 9.3 at T = 0.4).
+  - Measured and law spreads are equal to three digits on the same windows: 0.140 / 0.121 / 0.084 against 0.140 / 0.121 / 0.084 at T = 0.4 / 0.6 / 1, as half-range over mean. The coordinator's metric gives 19.1 / 15.4 / 9.4 % measured against 19.7 / 15.9 / 9.7 % law.
+- **So item 4's failure is a bar error, not a law failure.** Its corrected form is in §13.9.5.
+
+#### 13.9.3 Read 2: the deficits. Duplicate resends on protected units explain most, but not all
+
+**The counts, build B′ minus A, 6-seed means:**
+
+| T | resends | duplicates | repairs | first sends | link slots (first + resends + repairs) | delivered |
+|---|---|---|---|---|---|---|
+| 0.4 | +10 317 | +1 171 | −203 | −12 555 | −2 441 | −2 998 |
+| 0.6 | +11 761 | +1 356 | −267 | −15 157 | −3 663 | −4 217 |
+| 1 | +11 251 | +1 302 | −269 | −16 168 | −5 186 | −5 674 |
+| 2 | +10 134 | +1 238 | −273 | −15 730 | −5 869 | −6 308 |
+
+**The slot account closes.**
+- B′'s link-slot shortfall is the shorter end drain: μ̂·(c − x̂·w_end) = 2 322 / 3 509 / 5 109 / 5 824 units.
+- The rest of the delivered deficit is the resend economy.
+  - Each non-duplicate resend replaces a first send: −0.97 + 1 = +0.03 units.
+  - Each duplicate wastes one: −0.97.
+  - That gives ≈ −850 units at T = 0.4 and about the same at every T, against a measured residual of −630 to −670 units, constant over T.
+- **So the bill's excess** (observed over predicted 1.29 / 1.20 / 1.11 / 1.08; 484–708 units) is duplicate waste on the units the cap protects. That also accounts for the unexplained 2–6 % of §13.1's bill on build B.
+- Duplicates are 11–13 % of the extra resends.
+
+**Per window.**
+- The protected-resend cost, read as rates over the protected part of the run, is
+  ```text
+     dup rate · (1 − ε)/λ  −  0.03 · (useful resend rate)/λ   ≈   0.0026
+  ```
+  At T = 1 and T = 2 the units are protected throughout. At T = 0.4 they are protected only after the cap falls below about 0.2 s (t_ov ≈ 5.8 s).
+- **Explained:**
+  - the post-onset excess, the "≈ 0.002 above the law" of item 3's fall;
+  - the pre-onset deficit at T = 1 (0.0025 measured, 0.0026 model);
+  - the pre-onset T = 0.6 row (0.0008, at the protection edge).
+- **Not explained:**
+  - **T = 2, before the onset:** 0.0049 measured against 0.0026 by the resend model. The cap has no trend there (x̂ 1.2373 → 1.2381, w 1.5324 → 1.5310 over [11, 21.4] s), so the excess of ≈ 0.0023 is not descent.
+  - **T = 0.4, before the onset:** 0.0013 measured against 0. The units are unprotected (0.24 + 0.104 + 0.095 > 0.4), so they are not resent.
+  - Both are ≤ 0.0024 in share.
+- **Verdict on the read: it holds in part.**
+  - "The free band costs nothing" is **off by the protected-resend cost**, about 0.25 points per window (0.13 points whole-run), wherever the free band makes units protected. That is a cost the fluid bill of §13.1 leaves out.
+  - An unexplained pre-onset residual of up to 0.24 points at T = 2 (and 0.13 at T = 0.4) remains.
+
+#### 13.9.4 Read 3: the delay. The failing condition was a prediction-convention error
+
+- **The readings:** B′'s own steady p50 at T = 0.4 is **0.198 s**, inside §13.5's band of 0.16–0.20 s at its top edge. The stored arm's is **0.172 s**, against the 0.17 s assumed.
+- **Why §13.8's condition 1 (≤ +0.02 s) missed.** It came from a central value of 0.176 s, which was the median of w + ô over *delivered* units.
+- **The reader computes something else.** Its p50 is the median over *handed-over* units, with undelivered ones at +∞ (§12.2's per-run series).
+  - With 20 % of units undelivered, that is the 62.5th percentile of the delivered delays.
+  - Since B′'s delay falls over the window, that percentile sits at t_ov ≈ start + 0.375·L ≈ 15 s, not at mid-window. There w ≈ 0.103 s, so p50 ≈ 0.197 s.
+  - Recomputed with the reader's convention, the model gives 0.197 s, and the difference +0.025 s, against +0.026 s measured.
+- **So condition 1 fails on the prediction, not on the law.** The stored arm's delay is flat, so the convention does not move its p50.
+
+#### 13.9.5 What the finding is, the limit, and the corrected tests
+
+**Reading.** The law executes as written (read 1), and the delay readout is what the law implies (read 3). The OV-long-m "worse" has two parts:
+1. **The limit of R1, a Q33 matter.** R1's p50 stays above the stored arm's flat 0.172 s until the instantaneous cap falls below 0.078 s.
+   ```text
+      w + ô  <  0.172 s   ⇔   2·(c/x̄)/(1 + y) < 0.078 s   ⇔   y > 5.2   ⇔   t_ov  >  5.2·s_b  ≈  21.4 s  (≈ 22.7 s into the run)
+   ```
+   - With the reader's p50 convention, the window p50 crosses 0.172 s only in a run of ≳ 55 s.
+   - **Another rerun of the same cell does not change this; only Q33 does.**
+   - The share part of the limit is unchanged from §13.8: 0.009 behind at the bar.
+2. **A model gap that goes back to derivation:** the free band's cost on the units it protects (read 2).
+   - **§13.1's bill becomes**
+     ```text
+        A − B′  =  μ̂·(c − x̂·w_end)⁺  +  (duplicate waste on protected units)
+     ```
+     where the second term is ≈ 600–700 units in OV-long-m and is not yet derived as a law.
+   - **What is owed:**
+     - a derivation of the duplicate fraction of resends under §11.2's eligibility, at the overload's srtt;
+     - a per-window gauge of resends and duplicates (`resend_series`, `dup_series`), to read the unexplained pre-onset residual at T = 2 (≈ 0.0023) and T = 0.4 (0.0013).
+   - Until then, the residual is a recorded defect finding (MEASUREMENT DISCIPLINE 18), with no ledger verdict proposed.
+
+**Corrected tests** (post-data on these rows; the fresh row below confirms them):
+- **Item 4 (tail):** per tail window, `w·t_ov` equals `2·(c/x̄)·s_b·y/(1 + y)` on the window's own inputs, within ±3 %. This replaces "constant within ±15 %".
+- **Item 2 (before the onset):**
+  - cap·x̂/c within 3 % of 1 (unchanged);
+  - deficit against A within ±0.0015 of `0.0026·[w + R + ô < T]`, the protected-resend cost, which is 0 where units are unprotected.
+  - Registered knowing it fails at T = 2 by ≈ 0.0008 beyond that bar, which is the open residual.
+- **Item 3 (after the onset):** the peak equals `(μ/λ)·(c/x)/(2·s_b) + 0.0026·[protected]` within ±30 %. The fall is reported against the same model plus the offset.
+- **Delay (condition 1):** every p50 prediction uses the reader's convention (median over handed units, undelivered at +∞). The p50 difference against the stored arm is then checked against the convention's own central value, within ±0.015 s.
+- **The bill:** A − B′ is μ̂·(c − x̂·w_end) + 650 ± 300 units.
+
+#### 13.9.6 The fresh middle-price row: OV-long-h at δ = 0.3 (written before any run)
+
+**The cell.** OV-long's link, load, units and τ = 0.4 s, at δ = 0.3.
+- **The rate law there:** β = 0.111 and r(0.3) = 0.066. The clamp takes r to ≈ 0 under overload, so x̂ ≈ 1.235, μ̂ ≈ 9 695, R ≈ 0.104 s, ô ≈ 0.095 s and t₀ ≈ 1.28 s, as in OV-long-m.
+- **Why δ = 0.3:** s_b = (c + x̂ô)/0.3 places the onset early and gives tail windows (t_ov ≥ 2·s_b) at every finite T, including T = 2. OV-long-m had none at T = 2. So the corrected item 4 is read at all four lifetimes.
+- **Sweep and seeds:** A and B′ at T ∈ {0.4, 0.6, 1, 2, ∞}, H = 0, 6 seeds.
+- **Baselines:** today's Realtime at δ = 0.3, both arms, 3 seeds, fresh. They are predicted equal to the δ = 0.1 rows (0.808 / 0.172 s; the engine-queue arm 0.809 / 0.729 s), since δ moves only their clamped repair.
+- **ADR-0084 and Bulk** are reused by fingerprint, as in §13.6.
+- **The A/A floor** is OV-long-m's, if its configuration matches at T = 0.4 apart from δ; otherwise 2 × 12.
+
+**B′ predictions** (from the corrected model, which reproduces OV-long-m's T = 0.4 row: share 0.7986 against 0.799, p50 0.197 s against 0.198 s). The bands are ±0.002 on shares, ±0.015 s on p50, ±8 % on s_b and ±30 % on the peak.
+
+| T | s_b | `onset_t` | steady share | on time (0.4 s) | p50 (reader's convention) | onset peak (0.5 s windows) | tail windows; law spread | A − B′ whole-run (units) |
+|---|---|---|---|---|---|---|---|---|
+| 0.4 | 1.38 s | 2.66 s | 0.798 | = share | 0.135 s | 0.070 | 71; 0.164 | 3 300 ± 300 |
+| 0.6 | 2.04 s | 3.32 s | 0.795 | 0.755 | 0.190 s | 0.079 | 68; 0.159 | 4 950 ± 300 |
+| 1 | 3.38 s | 4.66 s | 0.790 | 0.553 | 0.359 s | 0.089 (+0.0026 protected) | 63; 0.149 | 7 950 ± 300 |
+| 2 | 6.71 s | 7.99 s | 0.780 | ≈ 0 | 1.05 s | 0.095 (+0.0026) | 49; 0.118 | 13 550 ± 400 |
+| ∞ | — | — | = A | | | | | 0 |
+
+- **Item 1:** s_b(T = 2)/s_b(T = 0.4) = 4.87 ± 10 %.
+- **Item 2 before the onset:** at T = 0.4 the window starts after the onset (no windows), so n/a. At T = 0.6 the deficit is ≤ 0.0015 (unprotected). At T = 1 and T = 2 it is 0.0026 ± 0.0015, which is the open residual's test at a second δ.
+- **Item 4:** per window, within ±3 % of the law at every T.
+- **The bill:** as in §13.9.5.
+
+**Reading (registered before any run).**
+- **The best point is T = 0.4.**
+- **Against the stored arm:** share −0.010 ± 0.002, at or beyond the ≈ 0.0096 bar; p50 −0.037 ± 0.015 s, better beyond the ≈ 0.0086 bar. **Predicted: "a trade"** (or "dominates" if the share falls inside the bar).
+  - The onset lands within the window here, so R1's delay gain arrives inside 40 s. At δ = 0.1 it did not, because 5.2·s_b = 21.4 s.
+- **Against the engine-queue arm:** share −0.011, p50 −0.59 s, on time +0.80. **Predicted: "a trade."**
+- **The cell confirms the corrected tests if** items 1, 2 (at T = 0.6), 3 and 4 hold at every T, and the bill and p50 lie in their bands.
+- **Item 2 at T = 1 and T = 2 is the residual's test.**
+  - If it reads 0.0026 ± 0.0015, OV-long-m's T = 2 excess was cell-specific.
+  - If it reads ≈ 0.005, the excess grows with c/x and goes into the derivation owed in §13.9.5.
+- **Q33 and Q34 stay open.** Q24 also stays open.
