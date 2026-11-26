@@ -33,23 +33,29 @@ def cfg_of(spec, seed):
     rp = B.rp(spec["mode"])
     kw = dict(spec.get("kw", {}))
     if spec["design"] == "new":
-        cfg = B.new_cfg(base, seed, spec["T"], 0.0, spec["delta"], rp, **kw)
+        cfg = B.new_cfg(base, seed, spec["T"], spec.get("H", 0.0), spec["delta"], rp, **kw)
     elif spec["design"] == "rt":
         cfg = B.rt_cfg(base, seed, spec["delta"], rp, **kw)
     else:
         raise ValueError(spec["design"])
     return dataclasses.replace(cfg, rev4_gauge=spec["design"] == "new", clamp=spec.get("clamp", False), wait_limit=spec.get("wait", False),
-                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0))
+                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0), send_gate=spec.get("gate", False), inflight_to=spec.get("to", 0.0))
 
 
 def specs():
     out = []
 
-    def add(group, cell, base, design, mode, T=None, delta=50.0, clamp=False, wait=False, eq=False, cwnd=0.0, **kw):
+    def add(group, cell, base, design, mode, T=None, delta=50.0, clamp=False, wait=False, eq=False, cwnd=0.0, H=0.0, gate=False, to=0.0, **kw):
         if design == "rt" and clamp and not cwnd:                    # today's Realtime has no store pause (pause_B 1e9): cwnd_sim is the cell's configured B (3.3)
             cwnd = float(B.CELLS[base][1]["pause_B"])
         lab = "%s | %s | %s %s T=%s d=%g clamp=%d wait=%d eq=%d cwnd=%s" % (group, cell, design, mode, "-" if T is None else B.TAG(T), delta, clamp, wait, eq, cwnd or "cell")
-        out.append(dict(label=lab, group=group, cell=cell, base=base, design=design, mode=mode, T=T, delta=delta, clamp=clamp, wait=wait, eq=eq, cwnd=cwnd, kw=kw))
+        if H:
+            lab += " H=%s" % ("inf" if H == INF else H)
+        if gate:
+            lab += " gate=1"                                           # the send gate: appended only when on, so the earlier labels stay valid
+        if to:
+            lab += " to=%g" % to                                      # in_flight with RFC 9002's time-threshold loss declaration (to x R)
+        out.append(dict(label=lab, group=group, cell=cell, base=base, design=design, mode=mode, T=T, delta=delta, clamp=clamp, wait=wait, eq=eq, cwnd=cwnd, kw=kw, H=H, gate=gate, to=to))
 
     # 1. OV, the 2x2 (RL arm: wait limit x clamp, T x delta) plus the repair-off arm with and without the wait limit
     for T in (0.4, 2.0, INF):
@@ -89,6 +95,23 @@ def specs():
         add("CL-long", "CL-long", "CL-long", "new", "RL", T, 50.0, True, cwnd=2048.0)
     for T in (0.4, 2.0):
         add("CL-long", "CL-long", "CL-long", "new", "RL", T, 50.0, True, True)                    # the wait limit is inert here (x <= 1)
+    # 7. K-OV diagnosis (review item 4): clamp off and on, and repair off
+    for cl in (False, True):
+        add("K-OV-diag", "K-OV", "K-OV", "new", "RL", 0.4, 50.0, cl, False)
+    add("K-OV-diag", "K-OV", "K-OV", "new", "OFF", 0.4, 50.0)
+    # 8. OV-end, T = 2, a delta sweep with both parts (review item 6): a step in delta would be a mode switch
+    for d in (0.25, 0.3, 0.35, 0.4, 0.45, 0.49, 0.5, 0.51):
+        add("OV-end-d", "OV-end", "OV", "new", "RL", 2.0, d, True, True, **ovend)
+    # 9. strict order (H = inf) in OV, T = 0.4, delta = 50, with both parts (review item 8)
+    add("OV-strict", "OV", "OV", "new", "RL", 0.4, 50.0, True, True, H=INF)
+    add("OV-strict", "OV", "OV", "new", "RL", 0.4, 50.0, True, False, H=INF)
+    # 10. the send gate on every new-model row the clamp touches, and on the repair-off new-model rows of the link cells (review item 3)
+    base = [dict(x) for x in out if x["design"] == "new" and x["group"] in ("OV-2x2", "OV-end", "OV-crit", "K-OV", "CL-long") and (x["clamp"] or x["mode"] == "OFF")]
+    for x in base:
+        add(x["group"], x["cell"], x["base"], x["design"], x["mode"], x["T"], x["delta"], x["clamp"], x["wait"], x["eq"], x["cwnd"], x["H"], True, **x["kw"])
+        add(x["group"], x["cell"], x["base"], x["design"], x["mode"], x["T"], x["delta"], x["clamp"], x["wait"], x["eq"], x["cwnd"], x["H"], True, 1.125, **x["kw"])   # with the time threshold
+        if x["group"] == "CL-long" and x["clamp"] and not x["cwnd"]:
+            add(x["group"], x["cell"], x["base"], x["design"], x["mode"], x["T"], x["delta"], x["clamp"], x["wait"], x["eq"], x["cwnd"], x["H"], False, 1.125, **x["kw"])  # clamp only, in_flight with the threshold
     return out
 
 
@@ -125,6 +148,9 @@ def one(task):
     if row["rev4"]:
         row["rev4"] = {k: v for k, v in row["rev4"].items() if k not in ("spare_bins",)}
     row["cwnd_sim"] = sm.B_sim
+    row["link_busy_frac"] = sm.link_busy / max(sm.t_last, 1e-9)
+    row["pause_time"] = r.get("pause_time")
+    row["rep_link_share"] = (r.get("rep3e") or {}).get("rep_link_share")
     row["r_mean"] = r.get("r_mean")
     row["rep3e"] = {k: v for k, v in (r.get("rep3e") or {}).items() if isinstance(v, (int, float, str, type(None)))}
     return row

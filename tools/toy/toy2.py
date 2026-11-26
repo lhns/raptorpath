@@ -466,6 +466,7 @@ class Cfg:
     dhat_bias: float = 0.0         # revision 4, step 1: D_hat is read as D_hat * (1 - dhat_bias) in the gauges (the bias rows of 5.3)
     clamp: bool = False            # revision 4 step 2 (3.3): repair accrues min(r, max(spare, 0)), spare = (cwnd_sim - in_flight) / in_flight
     wait_limit: bool = False       # revision 4 step 2 (3.1): the dequeue expiry reads tau = T - K / (T - R + o_hat) in place of T
+    inflight_to: float = 0.0       # revision 4 step 2: a datagram unreported for inflight_to x R is declared lost and leaves in_flight (RFC 9002's time threshold is 9/8); 0 = reports only
     send_gate: bool = False        # revision 4 step 2 (3.3): no payload is staged while in_flight >= cwnd_sim (the engine's available() = cwnd - in_flight > 0)
     eq: bool = False               # revision 4 step 2 (3.3): today's Realtime behind the engine's front queue (eq_cap symbols, evicts the oldest, drains at the link rate)
     eq_cap: int = 8192             # 4 MiB of 512 B symbols
@@ -759,6 +760,7 @@ class Sim:
         self.sends_n = 0                           # every datagram sent (first sends, copies, repairs), in send order (gauge only)
         self.sends_cov = 0                         # the first sends_cov of them are covered by a report
         self.send_idx = []                         # send_idx[s] = position of seq s's first send in that order
+        self.send_times = []                       # send time of each, in send order (the time threshold's bisect)
         self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = 0.0, 0, 0, False, 0.0
         self.t_ov0 = 0.0
         self.r4 = dict(ticks=0, ov=0, tau_lt_T=0, den_bind=0, floor_n=0, deq_early=0, dhat_inf=0, collapse_t=None, in_flight_max=0, spare_n=0, spare_bind=0,
@@ -1149,6 +1151,7 @@ class Sim:
         self.last_send[s] = t
         if self.cnt_on:
             self.send_idx.append(self.sends_n)
+            self.send_times.append(t)
             self.sends_n += 1
         if staged_past_lifetime(self.Te, t - self.h_seq[s]):
             self.g["l1_viol"] += 1                   # gate: no payload is staged at age >= T
@@ -1209,7 +1212,7 @@ class Sim:
                 self.t_first = t
             self.fs_times.append(t)
             if c.rev4_gauge:
-                fl = self.in_flight_now()
+                fl = self.in_flight_now(t)
                 sp = (self.B_sim - fl) / fl if fl > 0 else math.inf
                 self.r4["spare_n"] += 1
                 self.r4["spare_bind"] += sp < self.r_cur
@@ -1221,7 +1224,7 @@ class Sim:
             if t - self.t_eval >= min(RATE_CADENCE_MAX, self.srtt_eff() / 4.0):
                 self.read_law(t)
             if c.clamp:                              # the engine's clamp: r_eff = min(r, max(spare, 0)); nothing changes at r = 0
-                fl = self.in_flight_now()
+                fl = self.in_flight_now(t)
                 sp = (self.B_sim - fl) / fl if fl > 0 else math.inf
                 r_eff = min(self.r_cur, max(sp, 0.0))
                 self.g["clamp_n"] += r_eff < self.r_cur
@@ -1255,7 +1258,7 @@ class Sim:
         if done:
             self.src_done = True
             self.src_next = math.inf
-        elif o >= self.B or self.gate_block():
+        elif o >= self.B or self.gate_block(t):
             self.paused = True
             self.pause_t0 = t
             self.g["pause_events"] += 1
@@ -1288,6 +1291,7 @@ class Sim:
         self.copies[s] = k
         self.last_send[s] = now
         if self.cnt_on:
+            self.send_times.append(now)
             self.sends_n += 1
         self.g["repair_sends"] += 1
         if self.trace is not None:
@@ -1379,10 +1383,13 @@ class Sim:
         if rhi >= self.rd_n0:                       # the report covers a datagram sent after the round began
             self.dhat_close_round(now)
 
-    def in_flight_now(self):
+    def in_flight_now(self, now):
         """Every datagram sent (first sends, copies, repairs) and not yet covered by a report, as the engine's in_flight counts: a report covering first-send
         seq rhi covers everything sent up to that first send's time."""
-        return self.sends_n - self.sends_cov
+        cov = self.sends_cov
+        if self.cfg.inflight_to:
+            cov = max(cov, bisect.bisect_right(self.send_times, now - self.cfg.inflight_to * self.R_now()))
+        return self.sends_n - cov
 
     def lam_hat(self, t):
         """Units handed over per second over the rate law's window (8 srtt)."""
@@ -1423,7 +1430,7 @@ class Sim:
                 r4["collapse_t"] = t
         if self.u_next + 1 < self.units_total and self.ht(self.u_next + 1) <= t and dequeue_expired(tau, t - self.ht(self.u_next), R):
             r4["deq_early"] += 1                    # the head the law would expire and section 13.2 holds
-        fl = self.in_flight_now()
+        fl = self.in_flight_now(t)
         r4["in_flight_max"] = max(r4["in_flight_max"], fl)
         r4["over_B"] += fl >= self.B_sim
         if raw < math.inf:
@@ -1510,6 +1517,7 @@ class Sim:
                 g["worth_viol_rep"] += 1
         g["rep_sent"] += 1
         if self.cnt_on:
+            self.send_times.append(now)
             self.sends_n += 1
         g["rep_members_sum"] += end - lo
         if self.trace is not None:
@@ -2085,12 +2093,12 @@ class Sim:
         self.act(now, gen, holes, open_tail=False)
         self.arm_blocker(now)
 
-    def gate_block(self):
+    def gate_block(self, now):
         """The engine's send gate: a path takes data only while cwnd - in_flight > 0."""
-        return self.cfg.send_gate and self.in_flight_now() >= self.B_sim
+        return self.cfg.send_gate and self.in_flight_now(now) >= self.B_sim
 
     def maybe_resume(self, now):
-        if self.paused and self.O_ctl() < self.B and not self.gate_block():
+        if self.paused and self.O_ctl() < self.B and not self.gate_block(now):
             self.paused = False
             self.pause_log.append((self.pause_t0, now))
             if self.cnt_on:

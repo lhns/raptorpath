@@ -2003,7 +2003,7 @@ class Rev4Gauge(unittest.TestCase):
         sim = toy2.Sim(cfg)
         seen = []
         orig = sim.in_flight_now
-        sim.in_flight_now = lambda: seen.append((orig(), max(0, sim.n_sent - 1 - sim.rhi_known))) or seen[-1][0]
+        sim.in_flight_now = lambda now: seen.append((orig(now), max(0, sim.n_sent - 1 - sim.rhi_known))) or seen[-1][0]
         sim.run()
         self.assertTrue(seen)
         self.assertTrue(all(a >= b for a, b in seen))                    # never below the unreported first-send tail
@@ -2095,6 +2095,17 @@ class Rev4Step2(unittest.TestCase):
         c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=20000, dead=(0, 0.5, 0.5), want_trace=True)
         on = dataclasses.replace(c, send_gate=True, cwnd_sim=1e6)
         self.assertEqual(batch3e.id3e(toy2.run(c), toy2.run(on)), [])
+
+    def test_send_gate_needs_loss_declaration_to_survive_an_outage(self):
+        """Reports alone never declare the datagrams lost into a dead link (no data arrives, so no report): the gate then holds the sender for good.
+        RFC 9002's time threshold (a send unreported for 9/8 of the round trip is lost) is the engine's loss detection, and frees it."""
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=None, n_total=20000, dead=(0, 0.3, 0.5), send_gate=True, rev4_gauge=True)
+        self.assertEqual(toy2.Cfg().inflight_to, 0.0)
+        stall = toy2.run(c)
+        free = toy2.run(dataclasses.replace(c, inflight_to=1.125))
+        self.assertLess(stall["share_any"], 0.5)
+        self.assertGreater(free["share_any"], 0.9)
+        self.assertEqual(free["rev4"]["emit_over_B"], 0)
 
     def test_engine_queue_evicts_the_oldest_and_is_inert_without_overload(self):
         import batch3e
