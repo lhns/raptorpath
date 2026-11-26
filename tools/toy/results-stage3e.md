@@ -699,3 +699,9 @@ Link-queue drops in today's Realtime: 29 263 per run (delta 50), of which 10 077
 Proof of no behaviour change: `check_ident3e.py` (the identity sample) passes with the gauges in place, and the tests `Stage3eDecodedByCause`.
 
 **BASE's repair-on rows are provisional.**  Revision 4 may add the engine's spare-capacity clamp on repair (Q22, `min(r, (cwnd - in_flight)/in_flight)`) to every design; that would change every repair-on baseline row, which BASE is running now.  The repair-off rows stay valid.
+
+## 2026-11-26: liveness stop and today's Realtime (amendment, dated; written after BASE's first K-OV and OV-long-v data)
+
+`--part BASE` stopped on "OV-long-v | today's Realtime, delta 0.5 | repair off, seed 2, failing: finished".  Today's Realtime sends no floor, so an object whose tail is shed never finishes; proof stage 1 pinned this as a property of the arm
+(`test_a_silent_shed_of_the_open_tail_leaves_the_object_unfinished`).  The stop rule "every run finished" is meant for the new model and the designs that are meant to finish, not for a recorded property of a baseline.
+For today's Realtime, "unfinished at t_limit" is now recorded per run (`unfinished`: 0 or 1, and `delivered_by_t_limit`: the share delivered by t_limit) and read as it is, not as a stop.  Every other design keeps the stop (and K-OV's held rows are unchanged by this).

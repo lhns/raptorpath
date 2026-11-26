@@ -328,6 +328,45 @@ def decoded_late(T, age):
     return age > T
 
 
+# ---- Revision 4, step 1 (three-knobs-revision4.md 3.1, 3.2): the wait limit's inputs, as readouts only ---------------------------------
+def wait_limit_K(delta, x, t_ov):
+    """K = delta * (x - 1)+ * t_ov^2 [s^2]: the price of the bet, x = lambda_hat / mu_hat.  Zero at x <= 1."""
+    return delta * max(x - 1.0, 0.0) * t_ov * t_ov
+
+
+def wait_limit_tau(T, K, den):
+    """tau = T - K / (T - R + o_hat) [s].  K finite, den positive: at T = inf, K / inf = 0.0 and the result is inf; at K = 0.0 the result is T exactly."""
+    return T - K / den
+
+
+def wait_limit_Kc(T, R, o):
+    """The collapse threshold: K_c = (T - R)(T - R + o_hat); at K_c the effective margin T - R - K / (T - R + o_hat) is 0."""
+    return (T - R) * (T - R + o)
+
+
+def tau_below_t(tau, T):
+    """Gauge: a tick at which the law would hold less than the lifetime.  A measurement, never a branch.  Named in EXEMPT."""
+    return tau < T
+
+
+class DHat:
+    """The sender's delivery-rate estimate for source datagrams (paper 8.3's BtlBw anchor, BBR's delivery-rate sample restricted to source datagrams): the
+    maximum over the last `window` rounds of (datagrams newly reported received / the round's duration), +inf unless all of those rounds qualified.  A round
+    qualifies when the sender was flow-limited in it and no single pause in it lasted longer than R: a longer pause means overdue acks, no evidence."""
+
+    def __init__(self, window=10):
+        self.window = window
+        self.rounds = deque(maxlen=window)
+
+    def add_round(self, count, duration, flow_limited, max_pause, R):
+        self.rounds.append((count / duration, flow_limited and not (max_pause > R)))
+
+    def value(self):
+        if len(self.rounds) < self.window or not all(ok for _, ok in self.rounds):
+            return math.inf
+        return max(max(s for s, _ in self.rounds), 1e-9)
+
+
 def rb_hold(sim, now):
     """Amendment 3 (registration 15.3): is `now` inside RB's cap window, [outage start, outage end + A)?  The outage window is the cell's declared
     `dead` (an oracle: RB is a bracket, not a design).  rb_unit "sym": A counts first sends after the outage end.  Named in EXEMPT."""
@@ -423,6 +462,8 @@ class Cfg:
     R_bias: float = 0.0            # stage 3e robustness: added to R in the dequeue rule only
     rev_q: float = 0.0             # stage 3e robustness: a standing reverse queue, seconds added to every report's flight
     tau_extra: tuple = ()          # stage 3e: extra on-time readouts (RT: (0.12,)), reported in out["rep3e"]["share_by"]
+    rev4_gauge: bool = False       # revision 4, step 1: read lambda_hat, D_hat, t_ov, K, tau, spare as outputs (out["rev4"]); no decision reads them
+    dhat_bias: float = 0.0         # revision 4, step 1: D_hat is read as D_hat * (1 - dhat_bias) in the gauges (the bias rows of 5.3)
     rb_A: float = 3.0              # stage 3e amendment 3, arm RB (repair r = "rb"): r is held at R_MAX from the outage start until rb_A after its end
     rb_unit: str = "s"             # "s": rb_A seconds after the outage end; "sym": rb_A first sends after it
 
@@ -700,11 +741,17 @@ class Sim:
         self.beta_b = 1.0
         self.eps_est = beta_upper(1.0, 1.0)
         self.astar_cur = 1
+        self.dh = DHat()                           # revision 4 step 1 (gauge only)
+        self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = 0.0, 0, 0, False, 0.0
+        self.t_ov0 = 0.0
+        self.r4 = dict(ticks=0, ov=0, tau_lt_T=0, den_bind=0, floor_n=0, deq_early=0, dhat_inf=0, collapse_t=None, in_flight_max=0, spare_n=0, spare_bind=0,
+                       dhat_sum=0.0, dhat_n=0, ratios=[], tau_min=math.inf, rounds=0)
         self.fs_after_outage = 0                   # first sends after the outage end (RB with rb_unit "sym")
         self.qf_known = 0.0
         # stage 3e receiver state (build 5.1)
         self.dec_flag = bytearray(self.nmax)
         self.qd_first = bytearray(self.nmax)       # first send dropped at the link queue (gauge only: splits the decoded units by cause)
+        self.raw_new = 0                           # source datagrams newly received since the last report (first sends and copies, once; the sender's D_hat counts them)
         self.eqs = {}                              # eq id -> set of unknown seqs
         self.eq_of = {}                            # unknown seq -> set of eq ids
         self.eq_meta = {}                          # eq id -> (repair index j, send time)
@@ -1019,6 +1066,8 @@ class Sim:
                     self.first_deq_exp = t
                 self.intake_expired_deq += 1
                 self.u_next += 1
+        if c.rev4_gauge and c.deq_expiry:
+            self.rev4_tick(t)
         if c.n_total and self.u_next >= self.units_total:        # streaming mode ends on nxt >= dur (float edge: stage 1 sends one more)
             self.src_done = True
             self.src_next = math.inf
@@ -1080,6 +1129,11 @@ class Sim:
             if self.t_first is None:
                 self.t_first = t
             self.fs_times.append(t)
+            if c.rev4_gauge:
+                fl = self.in_flight_now()
+                sp = (c.pause_B - fl) / fl if fl > 0 else math.inf
+                self.r4["spare_n"] += 1
+                self.r4["spare_bind"] += sp < self.r_cur
             if c.dead is not None and t >= c.dead[1] + c.dead[2]:
                 self.fs_after_outage += 1
             if t - self.t_eval >= min(RATE_CADENCE_MAX, self.srtt_eff() / 4.0):
@@ -1202,6 +1256,86 @@ class Sim:
         sr["r"][k] = sr["r"].get(k, 0.0) + self.r_cur
         sr["W"][k] = sr["W"].get(k, 0.0) + L["W"]
         sr["n"][k] = sr["n"].get(k, 0) + 1
+
+    # ---- revision 4, step 1: readouts only ------------------------------------------------------------
+    def dhat_note_pause(self, dur):
+        self.rd_flow = True
+        self.rd_maxpause = max(self.rd_maxpause, dur)
+
+    def dhat_close_round(self, now):
+        dur = now - self.rd_t0
+        if dur > 0.0:
+            flow, mp = self.rd_flow, self.rd_maxpause
+            if self.paused:
+                flow, mp = True, max(mp, now - self.pause_t0)
+            self.dh.add_round(self.rd_new, dur, flow, mp, self.R_now())
+            self.r4["rounds"] += 1
+        self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = now, self.n_sent, 0, self.paused, 0.0
+
+    def dhat_on_report(self, now, rep, rhi):
+        self.rd_new += rep[13] if len(rep) > 13 else 0
+        if rhi >= self.rd_n0:                       # the report covers a datagram sent after the round began
+            self.dhat_close_round(now)
+
+    def in_flight_now(self):
+        """Source datagrams sent and neither acknowledged nor declared lost by a report (at report granularity): the unreported tail."""
+        return max(0, self.n_sent - 1 - self.rhi_known)
+
+    def lam_hat(self, t):
+        """Units handed over per second over the rate law's window (8 srtt)."""
+        w = min(8.0 * self.srtt_eff(), t)
+        if w <= 0.0:
+            return 0.0
+        hand = lambda x: min(self.units_total, int(x / self.dt) + 1) if x >= 0.0 else 0      # noqa: E731
+        return (hand(t) - hand(t - w)) / w
+
+    def rev4_tick(self, t):
+        """At each dequeue: lambda_hat, mu_hat = D_hat, t_ov, K, tau and the counts the revision's step 1 reads.  No decision reads them."""
+        c, r4 = self.cfg, self.r4
+        lam = self.lam_hat(t)
+        raw = self.dh.value()
+        mu = raw * (1.0 - c.dhat_bias)
+        x = lam / mu
+        if not x > 1.0:
+            self.t_ov0 = t
+        t_ov = t - self.t_ov0
+        K = wait_limit_K(c.delta, x, t_ov)
+        R, o = self.R_now(), self.o_hat()
+        den0 = self.Te - R + o
+        den = max(den0, o)
+        tau = wait_limit_tau(self.Te, K, den)
+        r4["ticks"] += 1
+        r4["ov"] += x > 1.0
+        r4["tau_lt_T"] += tau_below_t(tau, self.Te)
+        r4["den_bind"] += den0 < o
+        r4["tau_min"] = min(r4["tau_min"], tau)
+        Kc = wait_limit_Kc(self.Te, R, o)
+        if K > 0.0 and K >= Kc:
+            r4["floor_n"] += 1
+            if r4["collapse_t"] is None:
+                r4["collapse_t"] = t
+        if self.u_next + 1 < self.units_total and (self.u_next + 1) * self.dt <= t and dequeue_expired(tau, t - self.u_next * self.dt, R):
+            r4["deq_early"] += 1                    # the head the law would expire and section 13.2 holds
+        fl = self.in_flight_now()
+        r4["in_flight_max"] = max(r4["in_flight_max"], fl)
+        if raw < math.inf:
+            r4["dhat_sum"] += mu
+            r4["dhat_n"] += 1
+            if r4["dhat_n"] % 200 == 1 and c.link is not None and len(r4["ratios"]) < 4000:     # the readout against the oracle: C / (1/(1 - eps) + r), a readout only
+                oracle = c.link["C"] / (1.0 / (1.0 - self.p0) + self.r_cur)
+                r4["ratios"].append(raw / oracle)
+        else:
+            r4["dhat_inf"] += 1
+
+    def summary_rev4(self):
+        r4 = self.r4
+        n = max(r4["ticks"], 1)
+        rs = sorted(r4["ratios"])
+        q = lambda p: rs[min(len(rs) - 1, int(p * len(rs)))] if rs else None        # noqa: E731
+        return dict(n_ticks=r4["ticks"], n_tau_lt_T=int(r4["tau_lt_T"]), ov_frac=r4["ov"] / n, floor_bind=r4["floor_n"] / n, collapse_t=r4["collapse_t"],
+                    den_bind=int(r4["den_bind"]), deq_early_would=r4["deq_early"], dhat_inf_frac=r4["dhat_inf"] / n, dhat_mean=(r4["dhat_sum"] / r4["dhat_n"]) if r4["dhat_n"] else None,
+                    dhat_ratio_q05=q(0.05), dhat_ratio_q50=q(0.5), dhat_ratio_q95=q(0.95), dhat_ratio_n=len(rs), in_flight_max=r4["in_flight_max"],
+                    spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
 
     def astar(self, now):
         """Paper 5.3: A* = clamp(ceil(rate_hat * min(b*srtt, 2*srtt)), 1, W); 1 before the first RTT sample."""
@@ -1378,6 +1512,8 @@ class Sim:
             self.arr[s] = now
             if c == 0:
                 self.raw_rcv += 1
+            if tau is not None:
+                self.raw_new += 1
             if tau is not None:
                 ell = self.est.feed(now, tau)
                 if ell > 0:
@@ -1762,7 +1898,8 @@ class Sim:
             m = self.min_hole()
             A = m if m is not None else self.rhi + 1
             rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report), self.GF, self.tau_rx_recv)
-            rep = rep + ((tuple(self.rhi_path),) if self.paths is not None else (None,)) + (None, self.raw_rcv, self.raw_lost, self.qf)
+            rep = rep + ((tuple(self.rhi_path),) if self.paths is not None else (None,)) + (None, self.raw_rcv, self.raw_lost, self.qf, self.raw_new)
+            self.raw_new = 0
             self.raw_rcv = 0
             self.raw_lost = 0
             self.passed_since_report = []
@@ -1821,6 +1958,8 @@ class Sim:
         self.srtt_sum += 0.333 if self.srtt is None else self.srtt
         self.rep_n += 1
         self.maybe_resume(now)
+        if self.cfg.rev4_gauge:
+            self.dhat_on_report(now, rep, rhi)
         self.trig = "report"
         holes = sorted(Mk)
         if self.cfg.reorder_rack and self.paths is not None:      # 17.7: RACK's time test with the reordering window = the measured skew
@@ -1833,6 +1972,8 @@ class Sim:
         if self.paused and self.O_ctl() < self.B:
             self.paused = False
             self.pause_log.append((self.pause_t0, now))
+            if self.cfg.rev4_gauge:
+                self.dhat_note_pause(now - self.pause_t0)
             if self.cfg.src_model == "wc":
                 self.src_next = max(now, self.u_next * self.dt)
             else:
@@ -2201,6 +2342,8 @@ class Sim:
         self.summary3b(out, n, ok, dl, hs_)
         self.summary3c(out)
         self.summary3e(out, n, ok, dl, hs_)
+        if c.rev4_gauge:
+            out["rev4"] = self.summary_rev4()
         self.summary3d(out, n, ok, dl, hs_)
         if c.n_total:
             out["tail_time"] = (self.t_front - self.sent_t[n - 1]) if self.t_front is not None else None

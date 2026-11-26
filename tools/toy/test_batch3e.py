@@ -243,6 +243,22 @@ class Runner(unittest.TestCase):
         self.assertIn("at most 9", B.refusal_workers(10))
         self.assertIn("at least one", B.refusal_workers(0))
 
+    def test_todays_realtime_may_end_unfinished_and_it_is_recorded_not_stopped(self):
+        """Amendment of 2026-11-26: today's Realtime sends no floor, so an object whose tail is shed never finishes (a property pinned in proof stage 1).  For that
+        design "unfinished at t_limit" is recorded per run and read as it is; every other design keeps the liveness stop."""
+        bad = dict(finished=False, gauges=dict(l1_viol=0, l1_viol_rep=0, commit_viol=0, worth_viol_rep=0))
+        self.assertEqual(B.gate_failures(bad, None, design="rt"), [])
+        for design in ("new", "adr", "bulk", None):
+            self.assertEqual(B.gate_failures(bad, None, design=design), ["finished"])
+        worse = dict(bad, gauges=dict(bad["gauges"], l1_viol=2))
+        self.assertEqual(B.gate_failures(worse, None, design="rt"), ["l1_viol"])                   # the other gates still bind it
+        r = B.run_one(B.rt_cfg("RT", 0, 50.0, None, n_total=300))
+        self.assertIn("unfinished", r)
+        self.assertEqual(r["unfinished"], int(r["finished"] is False))
+        self.assertEqual(r["delivered_by_t_limit"], r["share_any"])
+        a, b = dict(r), {k: v for k, v in r.items() if k not in ("unfinished", "delivered_by_t_limit")}
+        self.assertEqual(B.id3e(a, b), [])                                                          # an older stored row without the keys still compares
+
     def test_gate_failures(self):
         ok = dict(finished=True, gauges=dict(l1_viol=0, l1_viol_rep=0, commit_viol=0, worth_viol_rep=0))
         self.assertEqual(B.gate_failures(ok, "worth"), [])

@@ -86,6 +86,19 @@ def part_b():
     return n, bad
 
 
+def part_g():
+    """Revision 4 step 1: the gauges (rev4_gauge) change nothing: the sample with the gauge on equals the sample with it off under id3e, trace and counters."""
+    bad = []
+    for nm in sample_cfgs():
+        off, c_off = run_sim(sample_cfgs()[nm])
+        cfg = sample_cfgs()[nm]
+        cfg.rev4_gauge = True
+        on, c_on = run_sim(cfg)
+        compare(nm, (off,), (on,), c_off, c_on, bad, "gauge")
+        print("gauge on = off", "yes" if not [b for b in bad if b[1] == nm] else "DIFF", nm, flush=True)
+    return bad
+
+
 def part_c():
     bad = []
     for nm in ("i3e.S5.CL@b", "i3e.S5.K-L10"):
@@ -225,12 +238,13 @@ def main():
     ok_a = part_a(base)
     n, bad_b = part_b()
     bad_c = part_c()
+    bad_g = part_g()
     ok_d = ok_e = None
     if full and ok_a and not bad_b and not bad_c:
         ok_d = part_d()
         n_e, bad_e = part_e(int(os.environ.get("IDENT3E_JOBS", "1")))
         ok_e = not bad_e
-    ok = ok_a and not bad_b and not bad_c and ok_d is not False and ok_e is not False
+    ok = ok_a and not bad_b and not bad_c and not bad_g and ok_d is not False and ok_e is not False
     if not ok:
         stop("A %s; B %d differences; C %d differences; D %s; E %s" % (ok_a, len(bad_b), len(bad_c), ok_d, ok_e))
     elif full:
@@ -239,9 +253,9 @@ def main():
         open(os.path.join(out, "PASS-ident"), "w").close()                  # registration 9 step 2
         open(os.path.join(out, "PASS-r0"), "w").close()                     # registration 9 step 3
     print("IDENTITY CHECK (stage 3e, %s): %s (A: base %s on the proof-s1 sample %s; B: R0 equals repair off on %d configurations, %d differences; "
-          "C: RL at delta 0.005 equals off, %d differences; D, E: %s; id3e keys, sender traces and event counters; one process)" % (
+          "C: RL at delta 0.005 equals off, %d differences; G: the revision 4 gauges change nothing, %d differences; D, E: %s; id3e keys, sender traces and event counters; one process)" % (
               "full" if full else "sample, no marker written", "PASS" if ok else "FAIL", base, "reproduced" if ok_a else "DIFFERS", n, len(bad_b),
-              len(bad_c), "not run" if ok_d is None else ("d %s, e %s" % (ok_d, ok_e))))
+              len(bad_c), len(bad_g), "not run" if ok_d is None else ("d %s, e %s" % (ok_d, ok_e))))
     sys.exit(0 if ok else 1)
 
 

@@ -267,11 +267,17 @@ EARLY_CELLS = ("Ec", "RT", "OV", "CL-long-v")                                # o
 FPS = {}
 
 
+REV4_FIELDS = ("rev4_gauge", "dhat_bias")                                    # fields added after the first runs were stored: left out of the hash at their default, so stored fingerprints stay valid
+
+
 def fingerprint(cfg):
     """sha256 of the configuration without its seed (and without the trace switch, which changes no output): one run per fingerprint."""
     d = dataclasses.asdict(cfg)
     d.pop("seed")
     d.pop("want_trace")
+    for f in dataclasses.fields(cfg):
+        if f.name in REV4_FIELDS and d[f.name] == f.default:
+            d.pop(f.name)
     return hashlib.sha256(json.dumps(d, sort_keys=True, default=repr).encode()).hexdigest()[:20]
 
 
@@ -729,11 +735,13 @@ def wait_for_memory(need, avail=free_gb, sleep=time.sleep, poll=5.0):
     return n
 
 
-def gate_failures(r, edge):
-    """The per-run gates (registration 9 and 13.6): finished, l1_viol, l1_viol_rep, commit_viol, and worth_viol_rep under the worth or floor edge."""
+def gate_failures(r, edge, design=None):
+    """The per-run gates (registration 9 and 13.6): finished, l1_viol, l1_viol_rep, commit_viol, and worth_viol_rep under the worth or floor edge.
+    Today's Realtime (design "rt") sends no floor, so an object whose tail is shed never finishes: for it `finished` is recorded (`unfinished`,
+    `delivered_by_t_limit`), not a stop (amendment of 2026-11-26)."""
     g = r["gauges"]
     bad = []
-    if r.get("finished") is False:
+    if r.get("finished") is False and design != "rt":
         bad.append("finished")
     for k in ("l1_viol", "l1_viol_rep", "commit_viol"):
         if g.get(k, 0):
@@ -745,7 +753,7 @@ def gate_failures(r, edge):
 
 def id3e(a, b):
     """test_toy2.id_diff with the stage 3e readouts excluded as a block: every top-level key outside ID_EXCL and rep3e, plus ID_GAUGES."""
-    excl = test_toy2.ID_EXCL | {"rep3e", "trace_sha", "trace_n"}          # a stored run also carries its trace digest, compared separately
+    excl = test_toy2.ID_EXCL | {"rep3e", "trace_sha", "trace_n", "unfinished", "delivered_by_t_limit"}          # a stored run also carries its trace digest, compared separately
     bad = [k for k in a if k not in excl and not k.startswith("_") and json.dumps(a[k]) != json.dumps(b[k])]
     bad += [("g", k) for k in test_toy2.ID_GAUGES if a["gauges"][k] != b["gauges"][k]]
     return bad
@@ -773,8 +781,8 @@ def write_stop(text):
         f.write(text + "\n")
 
 
-def after_run(name, fp, seed, r, edge, partners):
-    fails = gate_failures(r, edge) + pair_failures(fp, seed, r, partners)
+def after_run(name, fp, seed, r, edge, partners, design=None):
+    fails = gate_failures(r, edge, design) + pair_failures(fp, seed, r, partners)
     if fails:
         write_stop("job %s | fingerprint %s | seed %d | failing: %s" % (name, fp, seed, "; ".join(fails)))
     return fails
@@ -793,6 +801,8 @@ def run_one(cfg, trace=False):
         extra = dict(trace_sha=h.hexdigest(), trace_n=len(r["_trace"]))
     r = batch3b.clean(r)
     r.update(extra)
+    r["unfinished"] = int(r.get("finished") is False)                        # recorded per run: a stop for every design but today's Realtime
+    r["delivered_by_t_limit"] = r["share_any"]
     return r
 
 
@@ -1084,7 +1094,7 @@ def main(argv=None):
     results = run_tasks(tasks, a.workers)
     for i, (fp, s, w) in enumerate(results, 1):
         r = load(fp, s)
-        fails = after_run(cellname[fp].name, fp, s, r, FPS[fp]["edge"], FPS[fp]["partners"])
+        fails = after_run(cellname[fp].name, fp, s, r, FPS[fp]["edge"], FPS[fp]["partners"], cellname[fp].design)
         print("[%6.0fs] %d/%d %s %d %.1fs%s" % (time.time() - t0, i, len(tasks), cellname[fp].name, s, w, "  STOP: " + "; ".join(fails) if fails else ""), flush=True)
         if fails:
             rc = 1
