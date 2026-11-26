@@ -215,12 +215,12 @@ def best_point(points):
 
 
 def dominance_word(rds):
-    """rds: {readout: reading}.  Dominates = not worse beyond the bar on any readout and better beyond it on at least one."""
+    """rds: {readout: reading}.  Dominates = not worse beyond the bar on any readout and better beyond it on at least one; worse = worse on one or more, better on none; a trade = both."""
     words = [r["word"] for r in rds.values()]
     if any(w in ("undetermined", "n/a") for w in words):
         return "undetermined"
-    if any(w == "shown worse" for w in words):
-        return "not dominated (a trade)"
+    if any(w == "shown worse" for w in words):                          # dated 2026-11-26: worse on some readout and better on none is "worse", not a trade
+        return "not dominated (a trade)" if any(w == "shown better" for w in words) else "worse"
     if any(w == "shown better" for w in words):
         return "dominates"
     return "equivalent"

@@ -35,9 +35,9 @@ Dominance (12.3): each baseline against the build's best finite-T point per seed
 |---|---|---|---|---|---|---|
 | A | adr; ADR-0084 sender at rho=0p95, today's receiver (C1) | T=0p4 | -0.193 [-0.193, -0.192] | 0.805 [0.805, 0.805] | 5.33 [5.33, 5.33] | not dominated (a trade) |
 | A | adr; ADR-0084 sender at rho=1, today's receiver (C1) | T=0p4 | -0.193 [-0.193, -0.192] | 0.805 [0.805, 0.805] | 4.74 [4.74, 4.74] | not dominated (a trade) |
-| A | rt; today's Realtime, delta=0p5 (E-rt) | T=0p4 | -0.00345 [-0.00358, -0.00326] | -0.00346 [-0.00359, -0.00326] | -0.217 [-0.217, -0.217] | not dominated (a trade) |
+| A | rt; today's Realtime, delta=0p5 (E-rt) | T=0p4 | -0.00345 [-0.00358, -0.00326] | -0.00346 [-0.00359, -0.00326] | -0.217 [-0.217, -0.217] | worse |
 | A | rteq; today's Realtime, delta=0p5 (E-rt) (engine queue) | T=0p4 | -0.0043 [-0.00442, -0.00414] | 0.805 [0.805, 0.805] | 0.34 [0.34, 0.34] | dominates |
-| A | rt; today's Realtime, delta=50 (E-rt) | T=0p4 | -0.00345 [-0.00358, -0.00326] | -0.00346 [-0.00359, -0.00326] | -0.217 [-0.217, -0.217] | not dominated (a trade) |
+| A | rt; today's Realtime, delta=50 (E-rt) | T=0p4 | -0.00345 [-0.00358, -0.00326] | -0.00346 [-0.00359, -0.00326] | -0.217 [-0.217, -0.217] | worse |
 | A | rteq; today's Realtime, delta=50 (E-rt) (engine queue) | T=0p4 | -0.00423 [-0.00431, -0.00416] | 0.805 [0.805, 0.805] | 0.34 [0.34, 0.34] | dominates |
 | A | bulk; never gives up, strict order = today's Bulk (C3) | T=0p4 | -0.195 [-0.195, -0.195] | 0.805 [0.805, 0.805] | 4.98 [4.95, 5] | not dominated (a trade) |
 | B | adr; ADR-0084 sender at rho=0p95, today's receiver (C1) | T=0p4 | -0.194 [-0.195, -0.194] | 0.803 [0.803, 0.803] | 5.57 [5.57, 5.57] | not dominated (a trade) |
@@ -92,9 +92,9 @@ Dominance (12.3): each baseline against the build's best finite-T point per seed
 | A | bulk; never gives up, strict order = today's Bulk (C3) | T=1 | -0.192 [-0.192, -0.192] | 0.776 [0.775, 0.776] | 4.49 [4.45, 4.5] | not dominated (a trade) (p50 reported only) |
 | B | adr; ADR-0084 sender at rho=0p95, today's receiver (C1) | T=1 | -0.212 [-0.213, -0.212] | 0.74 [0.74, 0.74] | 5.14 [5.11, 5.16] | not dominated (a trade) (p50 reported only) |
 | B | adr; ADR-0084 sender at rho=1, today's receiver (C1) | T=1 | -0.212 [-0.213, -0.212] | 0.713 [0.712, 0.713] | 4.52 [4.51, 4.54] | not dominated (a trade) (p50 reported only) |
-| B | rt; today's Realtime, delta=0p005 (E-rt) | T=1 | -0.0235 [-0.0237, -0.0234] | -0.0235 [-0.0237, -0.0234] | -0.503 [-0.515, -0.495] | not dominated (a trade) (p50 reported only) |
-| B | rteq; today's Realtime, delta=0p005 (E-rt) (engine queue) | T=1 | -0.0235 [-0.0236, -0.0235] | -0.0235 [-0.0236, -0.0235] | 0.0584 [0.0496, 0.0631] | not dominated (a trade) (p50 reported only) |
-| B | rt; today's Realtime, delta=50 (E-rt) | T=1 | -0.0235 [-0.0237, -0.0234] | -0.0235 [-0.0237, -0.0234] | -0.503 [-0.515, -0.495] | not dominated (a trade) (p50 reported only) |
-| B | rteq; today's Realtime, delta=50 (E-rt) (engine queue) | T=1 | -0.0235 [-0.0235, -0.0234] | -0.0235 [-0.0235, -0.0234] | 0.0535 [0.0423, 0.0625] | not dominated (a trade) (p50 reported only) |
+| B | rt; today's Realtime, delta=0p005 (E-rt) | T=1 | -0.0235 [-0.0237, -0.0234] | -0.0235 [-0.0237, -0.0234] | -0.503 [-0.515, -0.495] | worse (p50 reported only) |
+| B | rteq; today's Realtime, delta=0p005 (E-rt) (engine queue) | T=1 | -0.0235 [-0.0236, -0.0235] | -0.0235 [-0.0236, -0.0235] | 0.0584 [0.0496, 0.0631] | worse (p50 reported only) |
+| B | rt; today's Realtime, delta=50 (E-rt) | T=1 | -0.0235 [-0.0237, -0.0234] | -0.0235 [-0.0237, -0.0234] | -0.503 [-0.515, -0.495] | worse (p50 reported only) |
+| B | rteq; today's Realtime, delta=50 (E-rt) (engine queue) | T=1 | -0.0235 [-0.0235, -0.0234] | -0.0235 [-0.0235, -0.0234] | 0.0535 [0.0423, 0.0625] | worse (p50 reported only) |
 | B | bulk; never gives up, strict order = today's Bulk (C3) | T=1 | -0.215 [-0.215, -0.215] | 0.737 [0.736, 0.737] | 4.75 [4.72, 4.78] | not dominated (a trade) (p50 reported only) |
 undetermined arms (a doubling would run them): []

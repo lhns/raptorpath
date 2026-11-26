@@ -170,6 +170,7 @@ class Reader(unittest.TestCase):
         self.assertEqual(CR.dominance_word({"a": mk("equivalent"), "b": mk("shown better")}), "dominates")
         self.assertEqual(CR.dominance_word({"a": mk("shown worse"), "b": mk("shown better")}), "not dominated (a trade)")
         self.assertEqual(CR.dominance_word({"a": mk("equivalent"), "b": mk("equivalent")}), "equivalent")
+        self.assertEqual(CR.dominance_word({"a": mk("shown worse"), "b": mk("equivalent")}), "worse")
         self.assertEqual(CR.dominance_word({"a": mk("undetermined"), "b": mk("shown better")}), "undetermined")
 
     def test_best_point_is_the_highest_on_time_with_ties_broken_by_p50_then_t(self):
