@@ -274,3 +274,11 @@ Per-second series of OV-long-m at T=2, A and B' side by side, seed means over 1 
 | 37 | 0 | 316 | 0 | 40 | 53 | 45 |
 | 38 | 0 | 331 | 0 | 38 | 53 | 44 |
 | 39 | 0 | 305 | 0 | 38 | 53 | 45 |
+
+## Reading (2026-11-26, after the run; corrects commit b9dddec9's message)
+
+- By the registered rule the cell does NOT confirm: item 2 is outside its floor at every T.
+- Item 2 is refuted at T = 1 and 2 (excess +0.0031 and +0.0060, 15-60x the floor; registered 0.0018). At T = 0.4 and 0.6 the readings are +-0.001 with a sign flip: undetermined (the per-window resend term may be mis-timed against the deficit).
+- Steady share at T = 2 is outside its band (0.7891 vs 0.787 +- 0.002). The bill's miss drifts with T (-18, -56, -152, -190; bar +-250). With item 2 this says the loss sits earlier than 13 puts it: more before the onset, less after. That is the derivation owed in 13.9.5.
+- Against the old design at the middle price: B' is worse than the stored Realtime arm (share -0.0092, p50 +12 ms, as registered) and a trade against the engine-queue arm.
+- Resend gauge: the class split is measured; the excess is NOT located. The commit message's "the excess is duplicate resends" is withdrawn: delivered per extra resend is 0.93 in both OV-long-v (no duplicates) and OV-long-m (12 % duplicates), and at T = 0.4 A and B' are identical in resends, duplicates and repairs through t = 5 s, so the pre-onset excess there is not in resends.
