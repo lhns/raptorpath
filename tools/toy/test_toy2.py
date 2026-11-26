@@ -2079,6 +2079,23 @@ class Rev4Step2(unittest.TestCase):
         self.assertGreater(b["rev4"]["deq_early_would"] + b["rev4"]["n_tau_lt_T"], 0)
         self.assertLess(b["dh_p50"], a["dh_p50"])                                   # the wait cap lowers the delay in overload
 
+    def test_send_gate_default_off_and_never_stages_while_in_flight_is_at_cwnd(self):
+        import batch3e
+        self.assertFalse(toy2.Cfg().send_gate)
+        a = toy2.run(dataclasses.replace(self.ov("new", n=36000), rev4_gauge=True))
+        b = toy2.run(dataclasses.replace(self.ov("new", n=36000), rev4_gauge=True, send_gate=True))
+        self.assertGreater(a["rev4"]["emit_over_B"], 0)                       # in_flight passes B without the gate (the store pause counts outstanding seqs)
+        self.assertEqual(b["rev4"]["emit_over_B"], 0)                         # no payload staged while in_flight >= cwnd_sim
+        self.assertGreaterEqual(b["gauges"]["pause_events"], a["gauges"]["pause_events"])
+        self.assertEqual(batch3e.fingerprint(self.ov("new")), batch3e.fingerprint(dataclasses.replace(self.ov("new"), send_gate=False)))
+        self.assertNotEqual(batch3e.fingerprint(self.ov("new")), batch3e.fingerprint(dataclasses.replace(self.ov("new"), send_gate=True)))
+
+    def test_send_gate_is_identity_where_in_flight_stays_below_cwnd(self):
+        import batch3e
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=20000, dead=(0, 0.5, 0.5), want_trace=True)
+        on = dataclasses.replace(c, send_gate=True, cwnd_sim=1e6)
+        self.assertEqual(batch3e.id3e(toy2.run(c), toy2.run(on)), [])
+
     def test_engine_queue_evicts_the_oldest_and_is_inert_without_overload(self):
         import batch3e
         base = self.ov("rt", n=4000, dead=None)
