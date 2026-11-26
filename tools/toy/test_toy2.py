@@ -1997,6 +1997,17 @@ class Rev4Gauge(unittest.TestCase):
         self.assertIsNotNone(ov["collapse_t"])
         self.assertGreater(ov["in_flight_max"], 0)
 
+    def test_in_flight_counts_copies_and_repairs(self):
+        cfg = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=20000, dead=(0, 0.5, 0.5), rev4_gauge=True)
+        sim = toy2.Sim(cfg)
+        seen = []
+        orig = sim.in_flight_now
+        sim.in_flight_now = lambda: seen.append((orig(), max(0, sim.n_sent - 1 - sim.rhi_known))) or seen[-1][0]
+        sim.run()
+        self.assertTrue(seen)
+        self.assertTrue(all(a >= b for a, b in seen))                    # never below the unreported first-send tail
+        self.assertTrue(any(a > b for a, b in seen))                     # copies or repairs in flight raise it somewhere
+
     def test_a_biased_dhat_reads_lower(self):
         r0 = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True))["rev4"]
         r1 = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True, dhat_bias=0.10))["rev4"]

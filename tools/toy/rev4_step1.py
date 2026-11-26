@@ -56,28 +56,38 @@ def one(i):
 TASKS = []
 
 
-def init(reuse):
-    global TASKS
+CELLS = ""
+OUTNAME = "step1.json"
+
+
+def init(reuse, cells="", outname="step1.json"):
+    global TASKS, CELLS, OUTNAME
+    CELLS, OUTNAME = cells, outname
     if reuse:
         B.set_reuse([x for x in reuse.split(",") if x])
     TASKS = tasks()
+    if cells:                                                                # --cells: only these cells, no bias rows
+        keep = set(cells.split(","))
+        TASKS = [t for t in TASKS if t[1] in keep and t[0] != "bias"]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reuse-dirs", default="")
     ap.add_argument("--workers", type=int, default=9)
+    ap.add_argument("--cells", default="", help="comma list: run only these cells (no bias rows)")
+    ap.add_argument("--out", default="step1.json")
     a = ap.parse_args()
-    init(a.reuse_dirs)
+    init(a.reuse_dirs, a.cells, a.out)
     os.makedirs(OUT, exist_ok=True)
     n = len(TASKS)
     print("%d configurations" % n, flush=True)
     res = []
-    with mp.Pool(a.workers, initializer=init, initargs=(a.reuse_dirs,)) as pool:
+    with mp.Pool(a.workers, initializer=init, initargs=(a.reuse_dirs, a.cells, a.out)) as pool:
         for k, r in enumerate(pool.imap_unordered(one, range(n)), 1):
             res.append(r)
-            print("[%d/%d] %s | %s | n_tau_lt_T %d" % (k, n, r["cell"], r["arm"], r["rev4"]["n_tau_lt_T"]), flush=True)
-    with open(os.path.join(OUT, "step1.json"), "w") as f:
+            print("[%d/%d] %s | %s | n_tau_lt_T %d | spare_bind %s" % (k, n, r["cell"], r["arm"], r["rev4"]["n_tau_lt_T"], r["rev4"]["spare_bind"]), flush=True)
+    with open(os.path.join(OUT, a.out), "w") as f:
         json.dump(res, f)
     cells = {}
     for r in res:

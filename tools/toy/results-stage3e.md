@@ -705,3 +705,9 @@ Proof of no behaviour change: `check_ident3e.py` (the identity sample) passes wi
 `--part BASE` stopped on "OV-long-v | today's Realtime, delta 0.5 | repair off, seed 2, failing: finished".  Today's Realtime sends no floor, so an object whose tail is shed never finishes; proof stage 1 pinned this as a property of the arm
 (`test_a_silent_shed_of_the_open_tail_leaves_the_object_unfinished`).  The stop rule "every run finished" is meant for the new model and the designs that are meant to finish, not for a recorded property of a baseline.
 For today's Realtime, "unfinished at t_limit" is now recorded per run (`unfinished`: 0 or 1, and `delivered_by_t_limit`: the share delivered by t_limit) and read as it is, not as a stop.  Every other design keeps the stop (and K-OV's held rows are unchanged by this).
+
+## 2026-11-26 Revision 4 step 1: in_flight counts every datagram; spare_bind in headroom cells
+
+- D-hat is +inf on a median 64 % of ticks (min 0.025, max 1.0), so tau is inert most of the time. The 0.889 and 1.111 extremes of the D-hat to oracle ratio look like rate-step artefacts (1/1.125 and 1/0.9), not estimator error; not chased.
+- in_flight now counts every datagram sent (first sends, copies, repairs) and not yet covered by a report (a report covering first-send seq rhi covers everything sent up to that first send). Gauge only; identity unchanged.
+- spare_bind (share of first sends at which min(r, spare) < r, spare = (2048 - in_flight)/in_flight), seed 0, headroom cells: CL-long RL arms 0.12 (T = 0.4) to 0.67 (T = inf), RS 0.15, RS-inf 0.77, RE 0.13, RF3 0.97, R0 0; CL-long-v 0 to 0.01; Ec, RT 0. The doc expects about 0: not met in CL-long. The clamp would change those cells.

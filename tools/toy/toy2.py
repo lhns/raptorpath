@@ -742,6 +742,9 @@ class Sim:
         self.eps_est = beta_upper(1.0, 1.0)
         self.astar_cur = 1
         self.dh = DHat()                           # revision 4 step 1 (gauge only)
+        self.sends_n = 0                           # every datagram sent (first sends, copies, repairs), in send order (gauge only)
+        self.sends_cov = 0                         # the first sends_cov of them are covered by a report
+        self.send_idx = []                         # send_idx[s] = position of seq s's first send in that order
         self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = 0.0, 0, 0, False, 0.0
         self.t_ov0 = 0.0
         self.r4 = dict(ticks=0, ov=0, tau_lt_T=0, den_bind=0, floor_n=0, deq_early=0, dhat_inf=0, collapse_t=None, in_flight_max=0, spare_n=0, spare_bind=0,
@@ -1084,6 +1087,9 @@ class Sim:
         self.n_sent += 1
         self.sent_t[s] = t
         self.last_send[s] = t
+        if c.rev4_gauge:
+            self.send_idx.append(self.sends_n)
+            self.sends_n += 1
         if staged_past_lifetime(self.Te, t - self.h_seq[s]):
             self.g["l1_viol"] += 1                   # gate: no payload is staged at age >= T
         self.refresh_shed_budget()
@@ -1197,6 +1203,8 @@ class Sim:
         k = self.copies[s] + 1
         self.copies[s] = k
         self.last_send[s] = now
+        if c.rev4_gauge:
+            self.sends_n += 1
         self.g["repair_sends"] += 1
         if self.trace is not None:
             self.trace.append((round(now, 9), s, k, 0, 1))
@@ -1273,13 +1281,16 @@ class Sim:
         self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = now, self.n_sent, 0, self.paused, 0.0
 
     def dhat_on_report(self, now, rep, rhi):
+        if self.rhi_known >= 0:
+            self.sends_cov = max(self.sends_cov, self.send_idx[self.rhi_known] + 1)
         self.rd_new += rep[13] if len(rep) > 13 else 0
         if rhi >= self.rd_n0:                       # the report covers a datagram sent after the round began
             self.dhat_close_round(now)
 
     def in_flight_now(self):
-        """Source datagrams sent and neither acknowledged nor declared lost by a report (at report granularity): the unreported tail."""
-        return max(0, self.n_sent - 1 - self.rhi_known)
+        """Every datagram sent (first sends, copies, repairs) and not yet covered by a report, as the engine's in_flight counts: a report covering first-send
+        seq rhi covers everything sent up to that first send's time."""
+        return self.sends_n - self.sends_cov
 
     def lam_hat(self, t):
         """Units handed over per second over the rate law's window (8 srtt)."""
@@ -1400,6 +1411,8 @@ class Sim:
             if not resend_admissible(self.Te, age, o):
                 g["worth_viol_rep"] += 1
         g["rep_sent"] += 1
+        if c.rev4_gauge:
+            self.sends_n += 1
         g["rep_members_sum"] += end - lo
         if self.trace is not None:
             self.trace.append((round(now, 9), lo, j, end, 3))        # kind 3: a repair over [lo, end) (the identity gates compare traces)
