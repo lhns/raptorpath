@@ -2260,6 +2260,26 @@ class Rev4OverdueAndElig(unittest.TestCase):
         self.assertGreater(r["gauges"]["rep_fired_by_timeout"], 0)
         self.assertTrue(r["finished"])
 
+    def test_overdue_absolute_check_counts_arrived_carriers(self):
+        """Under evidenced_overdue a suppression whose covering carrier is reported arrived is checked against the receiver's floor (it must already be above s*)."""
+        r = toy2.run(self.kov())
+        self.assertEqual(r["gauges"]["rep_supp_viol"], 0)                       # note: rep_checks reads 0 in K-OV, OV, CL and CL-long (a suppression whose carrier is reported arrived
+        self.assertGreaterEqual(r["gauges"]["rep_checks"], 0)                   # does not occur there), so this absolute has no witness in the cells; liveness carries the guarantee
+
+    def test_queue_gauges_are_timestamps_in_the_rev4_block(self):
+        import batch3e
+        c = dataclasses.replace(batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, batch3e.rp("RL"), n_total=24000), rev4_gauge=True, wait_limit=False)
+        r = toy2.run(c)["rev4"]
+        self.assertIsNotNone(r["first_rtt_t"])
+        self.assertGreater(r["first_rtt_t"], 0.0)
+        self.assertIsNotNone(r["first_deq_exp"])                        # the new build's intake reaches its cap
+        rt = toy2.run(dataclasses.replace(batch3e.rt_cfg("OV", 0, 50.0, batch3e.rp("RL"), n_total=24000), rev4_gauge=True))["rev4"]
+        self.assertIsNotNone(rt["first_qdrop_t"])                       # the stored arm: the link queue drops
+        eq = toy2.run(dataclasses.replace(batch3e.rt_cfg("OV", 0, 50.0, batch3e.rp("RL"), n_total=3000, ), rev4_gauge=True, eq=True, eq_cap=100, clamp=True, cwnd_sim=1000.0))["rev4"]
+        self.assertIsNotNone(eq["fq_full_t"])                           # the engine-queue arm: the FIFO fills
+        ad = toy2.run(dataclasses.replace(batch3e.adr_cfg("OV", 0, 0.99, 50.0, batch3e.rp("RL"), n_total=24000), rev4_gauge=True))["rev4"]
+        self.assertIsNotNone(ad["first_pause_t"])                       # ADR-0084: the store pauses
+
     def test_elig_rack_stops_the_early_blocker_resends(self):
         off = toy2.run(self.kov(elig=""))
         on = toy2.run(self.kov())

@@ -733,6 +733,10 @@ class Sim:
         self.bl_fire = -math.inf                       # blocker sweep: the last fire
         self.last_rep_t = -math.inf                    # receiver: the last report sent (refresh)
         self.first_deq_exp = None
+        self.first_rtt_t = None                    # readouts for the steady window of the confirmation (12.2): when the first RTT sample, the first store pause, the first
+        self.first_pause_t = None                  # link-queue drop and the instant the engine-queue FIFO first filled (timestamps only; no decision reads them)
+        self.first_qdrop_t = None
+        self.fq_full_t = None
         # stage 3c state
         self.rs_age = {}
         self.F_ann = 0                               # the announced floor (15.3): no copy of a seq below it is ever staged
@@ -975,6 +979,8 @@ class Sim:
         """RFC 6298 2.2 and 2.3 (stage 3b): first sample srtt = r, rttvar = r/2; then rttvar first, srtt second."""
         if self.srtt is None:
             self.srtt, self.rttvar = r, r / 2.0
+            if self.first_rtt_t is None:
+                self.first_rtt_t = self.t_last
         else:
             self.rttvar = 0.75 * self.rttvar + 0.25 * abs(self.srtt - r)
             self.srtt = 0.875 * self.srtt + 0.125 * r
@@ -1014,6 +1020,8 @@ class Sim:
             self.psrtt[p] = 0.875 * self.psrtt[p] + 0.125 * r
         self.srtt = max(self.srtt_p(i) for i in range(self.npath))
         self.rttvar = max(self.prttvar)
+        if self.first_rtt_t is None:
+            self.first_rtt_t = self.t_last
 
     def blocker_period(self):
         """17.3: clamp(2 srtt_pooled, 25 ms, 100 ms), recomputed from the measured srtt."""
@@ -1123,6 +1131,8 @@ class Sim:
             self.g["fq_evict"] += 1
             q.popleft()(None, now)
         q.append(fin)
+        if self.fq_full_t is None and len(q) >= self.cfg.eq_cap:
+            self.fq_full_t = now
         if len(q) > self.g["fq_max"]:
             self.g["fq_max"] = len(q)
         if not self.fq_busy:
@@ -1145,6 +1155,8 @@ class Sim:
         if lk is None:
             return t + self.delays[path].at(t), t
         if max(0.0, self.link_free - t) >= self.link_qs:
+            if self.first_qdrop_t is None:
+                self.first_qdrop_t = t
             self.g["queue_drop"] += 1
             dd = self.cfg.dead
             if dd is not None and dd[1] <= t < dd[1] + dd[2]:
@@ -1326,6 +1338,8 @@ class Sim:
         elif o >= self.B or self.gate_block(t):
             self.paused = True
             self.pause_t0 = t
+            if self.first_pause_t is None:
+                self.first_pause_t = t
             self.g["pause_events"] += 1
             self.src_next = math.inf
         elif c.src_model == "wc":                    # work-conserving: a waiting backlog is sent at once, else the next unit at its own time
@@ -1544,7 +1558,8 @@ class Sim:
         return dict(n_ticks=r4["ticks"], n_tau_lt_T=int(r4["tau_lt_T"]), ov_frac=r4["ov"] / n, floor_bind=r4["floor_n"] / n, collapse_t=r4["collapse_t"],
                     den_bind=int(r4["den_bind"]), deq_early_would=r4["deq_early"], dhat_inf_frac=r4["dhat_inf"] / n, dhat_mean=(r4["dhat_sum"] / r4["dhat_n"]) if r4["dhat_n"] else None,
                     dhat_ratio_q05=q(0.05), dhat_ratio_q50=q(0.5), dhat_ratio_q95=q(0.95), dhat_ratio_n=len(rs), in_flight_max=r4["in_flight_max"],
-                    emit_over_B=r4["over_B"], elig_n=r4["elig_n"], elig_R_bind=r4["elig_R_bind"], elig_viol=r4["elig_viol"], send_gate=self.cfg.send_gate, cwnd_sim=self.B_sim, clamp=self.cfg.clamp, wait_limit=self.cfg.wait_limit, eq=self.cfg.eq,
+                    emit_over_B=r4["over_B"], first_rtt_t=self.first_rtt_t, first_pause_t=self.first_pause_t, first_qdrop_t=self.first_qdrop_t, fq_full_t=self.fq_full_t,
+                    first_deq_exp=self.first_deq_exp, elig_n=r4["elig_n"], elig_R_bind=r4["elig_R_bind"], elig_viol=r4["elig_viol"], send_gate=self.cfg.send_gate, cwnd_sim=self.B_sim, clamp=self.cfg.clamp, wait_limit=self.cfg.wait_limit, eq=self.cfg.eq,
                     spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], spare_bins=sorted((k, v[0], v[1]) for k, v in r4["spare_bins"].items()), tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
 
     def astar(self, now):
@@ -2159,6 +2174,8 @@ class Sim:
                 if not (self.got[A - 1] and self.arr[A - 1] <= gen):
                     self.rtt_unarrived_other += 1
                 smp = now - self.sent_t[A - 1]         # the highest seq it newly acknowledges
+                if self.srtt is None and self.first_rtt_t is None:
+                    self.first_rtt_t = self.t_last
                 self.srtt = smp if self.srtt is None else self.srtt + (smp - self.srtt) / 8.0
             self.A_known, self.G_known, self.GF_known = A, G, GF
         if gen > self.last_gen:
@@ -2422,7 +2439,11 @@ class Sim:
                 g["rep_fire_carrier_overdue"] += 1
         else:
             g["rep_suppressed"] += 1                 # today's rule would send; either nothing is evidenced yet or the carrier has arrived
-            if star is not None and not self.fr_od:
+            arrived = False
+            if star is not None:
+                i = bisect.bisect_right(self.carry_vals, star)
+                arrived = i < len(self.carry_ords) and self.rx_ord >= self.carry_ords[i]
+            if star is not None and (arrived or not self.fr_od):
                 g["rep_checks"] += 1
                 if not self.F_rx > star:             # the absolute check: the receiver already holds a floor above the highest evidenced hole
                     g["rep_supp_viol"] += 1
