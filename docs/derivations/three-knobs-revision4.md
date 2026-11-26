@@ -2116,3 +2116,214 @@ Names and semantics only. All default off, so every stored row reproduces.
   - item 2 within its floor at every T (the residual's test);
   - the bill and p50 in their bands.
 - **Q33, Q34 and Q24 stay open.**
+
+### 13.10 The pre-onset deficit, derived: the onset read in hand-over time, and the hole account (2026-11-26; post-data, no change to the law)
+
+**Source.** `tools/toy/results-confirm13q.md` (branch `toy-stage3e` at `a3a83c13`) and the runs under `out3e/confirm/runs`:
+- OV-long-q's rows (6 seeds, resend gauge on);
+- OV-long-m's stored rows (6 seeds) and their RESEND-GAUGE reruns (3 seeds, identical to the stored runs);
+- two seed-0 pairs of OV-long-q (T = 0.4 and T = 2), rerun on the host to keep per-seq arrays and to log repair spans. They read only.
+
+Scratch scripts, in the session scratchpad:
+- `item2_account.py`: the eight item 2 rows below, from one script;
+- `p7.py`: the steady share and the bill;
+- `c1.py`–`c4.py`: the seq-space and fine-grid checks;
+- `r2.py`: the repair spans.
+
+**The finding of §13.9.6, restated.**
+- Item 2 read 0.0047 and 0.0077 at T = 1 and 2, against 0.0018 registered. At T = 0.4 and 0.6 it read ±0.001 around the resend term.
+- The T = 2 steady share read 0.7891, against 0.787 ± 0.002.
+- The bill's miss drifted with T: −18, −56, −152, −190 units.
+
+#### 13.10.1 The mechanism
+
+**1. The onset is a dequeue-time event, but the reader bins by hand-over time.**
+- `confirm_read.make_series` puts each unit in the 0.5 s window of its hand-over time h. The cap acts at the dequeue, at time τ = h + w(τ), with the head at the cap (§13.9.2).
+- So the unit at the head at the onset instant t_on was handed over at t_on − c/x̄. Every unit handed over in [t_on − c/x̄, t_on] is dequeued after the onset and meets the descending cap.
+- **So the first c/x̄ seconds of the descent's shedding land in hand-over windows before the onset.** That is 1.53 s of windows at T = 2, 0.72 s at T = 1, 0.40 s at T = 0.6 and 0.24 s at T = 0.4.
+- **Witnesses:**
+  - **By send time, A and B′ are identical before the onset.** In seed 0 at T = 0.4, their send times agree seq by seq up to the first resend at 5.99 s.
+  - **On a 0.05 s grid of hand-over time** (seed 0), B′'s sent fraction steps down where the band starts, and A has no step:
+
+    | T | step in B′'s sent fraction | at | predicted t_on − c/x̂ |
+    |---|---|---|---|
+    | 2 | 0.80 → 0.77 | 16.80 s | 18.316 − 1.531 = 16.785 s |
+    | 0.4 | 0.83 → 0.80 | 4.50 s | 4.736 − 0.241 = 4.495 s |
+
+  - **Per seed, the pre-onset deficit sits in the windows inside the band** (≈ 0.03 each). Outside the band it is ≈ 0.001 at every T (table in §13.10.3, "clear of the band").
+- **Nothing is lost before the onset.** The shed is the descent's own, and the whole-run bill does not change. Item 2, as registered, tested a quantity that the binning moves.
+
+**2. The steady part is a hole account, and it is not one constant per resend.**
+- **Premises:**
+  - loss is iid: first sends are lost at p₀ and copies at p_c;
+  - every arriving copy that is not a duplicate fills a hole (the resend gauge's `late` and `other` classes are 0, and so is `qdrop`).
+- Under these, a build's delivered rate is, exactly in expectation,
+
+```text
+   delivered/s  =  F·(1 − p₀)  +  S·(1 − p_c)  −  dup  +  dec ,       F = C − S − P
+```
+
+- Differencing the two builds at equal link capacity C gives the steady deficit:
+
+```text
+   d_ss  =  [ ΔS·(p_c − p₀)  +  ΔP·(1 − p₀)  +  Δdup  −  Δdec ] / λ          Δ = B′ − A, rates per second
+```
+
+- **It explains §13.9.5's κ_r.**
+  - Cell I2 (`toy.CELLS`) declares p₀ = 0.03 and p_c = 0.10. So a resend displaces a first send worth 0.97, and fills a hole with probability 0.90.
+  - At r = 0 (OV-long-v, where ΔP = Δdup = Δdec = 0) that gives κ_r = p_c − p₀ = 0.07 exactly, against a measured fill of 0.931–0.935.
+- **It corrects §13.9.3's split** ("ε ≈ 0.03 is the resend itself being lost; the other ≈ 0.04 is not separated").
+  - The copies are lost at p_c = 0.10, and the gauge reads lost/n = 0.096. There is no accounting hole.
+  - Where repair runs, κ_r = d_ss·λ/ΔS is 0.040–0.064 per row. Fewer repairs (ΔP < 0) and the decode–duplicate pair (Δdec ≈ +32/s, Δdup ≈ +27–39/s) move it. The constant 0.065 fits only at T = 2.
+- **Where neither build resends** (T = 0.4, before the onset), **d_ss is a repair-span effect.** This is the 0.001 that §13.9.3 called "unprotected".
+  - `stage_repair` cuts a span at the worth edge, a + ô < T (`span_edge_ok`). A's units are sent at age c = T − R, so only seqs sent within R − ô ≈ 9 ms of the staging survive the cut.
+  - So A's spans hold ≈ 83 members (logged). B′'s younger units leave the full A* = 200.
+  - With no resends, an equation decodes alone only if it holds exactly one unknown: P₁(n) = n·p₀·(1 − p₀)^(n−1). That is 0.22 at n ≈ 80 and 0.014 at n = 200 (logged: 0.22 and 0.009).
+  - So A decodes 10.7/s from its 52.7 repairs/s, and B′ decodes 0.5/s. The difference is 0.0009 of λ.
+  - **This is a second amendment to "the free band costs nothing"** (§13.1).
+  - It is a property of the repair span, not of w: A* ≫ 1/p₀ = 33, so a full span decodes poorly on its own.
+
+#### 13.10.2 The formula
+
+```text
+   d₂  =  d_ss  +  (F_B/λ) · ( w(τ₁) − w(τ₂) ) / L ,        τᵢ = hᵢ + w(τᵢ) ,   L = h₂ − h₁
+```
+
+- **[h₁, h₂] is item 2's set of hand-over windows** (§13.9.5). It runs from the start of the A-paired window to the end of the last window that ends at or before the seed-mean onset.
+- **w is the law of §13.3.** The second term is exact for a head held at the cap. Units handed over in [h₁, h₂] are dequeued over [τ₁, τ₂], and F_B of them are sent per second during that time.
+- **Before the onset the second term is 0 in expectation.** The cap c/x̂ only fluctuates with x̂, and that fluctuation is item 2's per-seed noise. Evaluated on each run's own cap, the term correlates 0.67–0.88 with the per-seed deficit at T ≥ 1 in OV-long-q.
+
+**The closed form when h₂ ≤ t_on.** Over the band the descent is near y = 1, so
+
+```text
+   d₂  ≈  d_ss  +  D₀ · ℓ / L ,     D₀ = (F_B/λ) · g/(1 + g) ,   g = c/(2·x̄·s_b) = δ·c / (2·x̄·(c + x̄·ô)) ,   ℓ = [ h₂ − max(h₁, t_on − c/x̄) ]⁺
+```
+
+- D₀ is §13.5's post-onset deficit at the onset, (μ/λ)·|w′|/(1 + |w′|) with |w′| = (c/x̄)/(2·s_b).
+- ℓ is the overlap of the item 2 windows with the band [t_on − c/x̄, t_on].
+
+**Shape (read before any number).**
+- **Units:** g is [1] (δ [1] · c [s] / [s]), and so is ℓ/L.
+- **Direction:** D₀ rises with δ and with c.
+- **Size:** ℓ ≤ c/x̄. It is 0 whenever c/x̄ < t_on − h₂, and t_on − h₂ is always less than one window (0.5 s).
+  - That is why T = 0.4 and 0.6 read ≈ d_ss, with noise of either sign.
+  - At T = 1 and 2, item 2 reads several times d_ss.
+
+**The closed form of d_ss.**
+- **At r = 0:** d_ss = (p_c − p₀)·S/λ.
+- **Where neither build resends:** d_ss = r_P·(1 − p₀)·[P₁(n_A) − P₁(n_B)]/λ, with
+  - n_A = F_A·(R − ô) − D,
+  - n_B = min(A*, F_B·(R − ô + c·(1 − 1/x̄)) − D).
+  - On OV-long-q's inputs that is 0.00087, against 0.00089 from the measured rates.
+- **In between,** ΔP, Δdup and Δdec are measured per row.
+
+| symbol | provenance |
+|---|---|
+| p₀ = 0.03, p_c = 0.10 | declared: cell I2 (`toy.CELLS`), the loss of first sends and of copies |
+| C = 10 000/s, λ = 12 000/s | declared: OV-long's link capacity and hand-over rate |
+| T, δ | declared dials |
+| c, x̄, ô, R, t₀, s_b, t_on = t₀ + s_b | the law's measured inputs (§13.3); registered values in §13.9.6 |
+| w(τ) | the law of §13.3; equal to `cap_series` to 10⁻⁴ (§13.9.2) |
+| h₁, h₂, L | declared by the test: the item 2 reader's window rule (§13.9.5) |
+| F_B = C − S_B − P_B, F_A = C − P_A | derived from C and the measured rates |
+| S, P, dup (per 0.5 s), dec (per 1 s) | measured: the resend gauge's series and `rep3e.series.decoded`, over the whole seconds inside [h₁, t_on) |
+| r_P = 52.7/s, A* = 200, D = 10 | measured: the repair rate, the `astar` series, and `delta_off` = ⌈rate·J⌉ with J = 1 ms declared |
+| P₁(n) | derived: the binomial probability of exactly one unknown under iid loss (cell I2 is iid) |
+| D₀, g, ℓ | derived from the law (above) |
+
+#### 13.10.3 Predicted against measured
+
+**Item 2 as the reader computes it:**
+- "Registered inputs" puts §13.9.6's x̂, R, ô and t₀ into w. "Seeds" uses each seed's own t₀ and s_b.
+- d_ss comes from each row's own rates. OV-long-m's come from its RESEND-GAUGE reruns.
+- ± is the seed standard error of the measured mean.
+
+| cell | T | c/x̄ (s) | band ℓ (s) | d_ss | predicted d₂, registered inputs | predicted d₂, seeds | measured | clear of the band (measured) |
+|---|---|---|---|---|---|---|---|---|
+| OV-long-q | 0.4 | 0.239 | 0 | 0.0009 (decode term) | 0.0009 | 0.0009 | 0.0010 ± 0.0003 | 0.0009 ± 0.0005 |
+| | 0.6 | 0.401 | 0 | 0.0011 | 0.0011 | 0.0011 | 0.0008 ± 0.0005 | 0.0008 ± 0.0005 |
+| | 1 | 0.724 | 0.38 | 0.0011 | 0.0044 | **0.0047** | **0.0047 ± 0.0004** | 0.0011 ± 0.0005 |
+| | 2 | 1.532 | 1.22 | 0.0017 | 0.0079 | **0.0080** | **0.0077 ± 0.0005** | 0.0012 ± 0.0010 |
+| OV-long-m | 0.4 | 0.239 | 0 | 0.0009 (decode term) | 0.0009 | 0.0009 | 0.0012 ± 0.0003 | 0.0012 ± 0.0003 |
+| | 0.6 | 0.401 | 0.01 | 0.0011 | 0.0011 | 0.0012 | 0.0011 ± 0.0003 | 0.0013 ± 0.0004 |
+| | 1 | 0.724 | 0.32 | 0.0010 | 0.0027 | 0.0027 | 0.0025 ± 0.0002 | 0.0006 ± 0.0002 |
+| | 2 | 1.532 | 1.12 | 0.0016 | 0.0050 | 0.0050 | 0.0052 ± 0.0002 | 0.0018 ± 0.0005 |
+
+- **Every row is within 1.2 seed standard errors.** That covers OV-long-q's total deficits at T = 1 and 2, the small values at T = 0.4 and 0.6, and OV-long-m's 0.0013 at T = 0.4 from §13.9.3 (0.0012 on this reader's windows).
+- **OV-long-q at T = 2** reads 0.0077 against 0.0080. That is inside one seed standard error, but outside the registered A/A floor of 0.0001.
+  - That floor does not bound the B′ − A noise. B′'s cap carries x̂'s noise, scaled by c/x̄, and A's cap does not (corrected test in §13.10.4).
+- **The worst row is OV-long-m at T = 1, clear of the band:** 0.0006 ± 0.0002 against d_ss = 0.0010. It is not tuned; it is listed as open.
+- **Item 3, read in hand-over time** (τ(h) as above), moves the measured/law ratio:
+  - in OV-long-q at T ≥ 0.6: from 0.95–0.96 to 0.96–0.98;
+  - in OV-long-m: from 0.87–0.99 to 0.91–1.01.
+
+**The steady share and the bill, closed on the same account** (OV-long-q; `p7.py`).
+
+**The paired-window share** is
+
+```text
+   B′ − A  =  −[ d_ss  +  (F_B/λ)·(w(τ₁) − w(τ₂))/L  −  (1 − F_B/λ)·(h₂ − (t_L − w_end))⁺/L ]
+```
+
+- d_ss is taken from the pre-onset rates before the band, and from the post-onset rates after it.
+- **The last term is the end flush.** The units handed over in the last w_end are all sent (§13.1). At T = 2 that covers the window's last 0.54 s, since w_end = 0.94 s is longer than τ = 0.4 s.
+
+| T | 0.4 | 0.6 | 1 | 2 |
+|---|---|---|---|---|
+| B′ − A predicted | −0.0059 | −0.0085 | −0.0126 | −0.0157 |
+| B′ − A measured | −0.0058 | −0.0084 | −0.0126 | −0.0156 |
+
+- **So the T = 2 share is 0.7890 predicted, against 0.7891 measured.**
+- The registered 0.787 left out the flush (+0.0031), and used μ̂/λ where F_B/λ belongs.
+
+**The bill** is
+
+```text
+   A − B′  =  F_B·(c − c/x̄)  +  F_B·(c/x̄ − w_end)  −  (λ − F_B)·w_end  +  λ·Σ d_ss·span
+```
+
+- **Its terms,** in order: the free band at the start, the descent, the end flush, and the hole account per phase.
+- The first three sum to F_B·(c − x̄·w_end), which is §13.1's fluid bill at B′'s first-send rate.
+
+| T | 0.4 | 0.6 | 1 | 2 |
+|---|---|---|---|---|
+| miss, this form (units) | +41 | +58 | −1 | +21 |
+| miss, §13.9.5's form (units) | −18 | −56 | −152 | −190 |
+
+- **The drift is gone.** It came from two places: the constant κ_r = 0.065, and μ̂ in place of F_B.
+- After the onset, B′ resends at 313–319/s at every T, so d_ss there rises to 0.0015–0.0017. Before the onset, at T ≤ 1, it is 0.0009–0.0012.
+- So the constant κ_r charged the wrong amount per resend at each T.
+
+#### 13.10.4 What it changes
+
+**The law (B′, §13.3): unchanged.**
+- The mechanism moves the descent's shed in hand-over time. It leaves the total as §13.1 and §13.5 give it.
+- The steady part is the accounting of build A's resend and repair machinery, not a term of w.
+- **No registered rerun is required.** The confirmation rows already measure every quantity the formula reads.
+
+**The tests change: item 2 and its bar, item 3, the steady share and the bill.** These are post-data on OV-long-q and OV-long-m. They apply to the next row that reads them.
+- **Item 2:**
+  - Read d₂ with §13.10.2's formula, on registered inputs, with d_ss from the row's own rates.
+  - Or read it on the windows clear of the band (h + 0.5 ≤ t_on − c/x̄), where it equals d_ss.
+  - **The bar is two seed standard errors of the per-seed B′ − A mean, not the A/A floor.**
+    - The floor is the p95 of |A − A′| in a row with no resends and no x̂-dependent cap.
+    - It read 0.0001–0.0004, against B′ − A seed errors of 0.0002–0.0010.
+- **Item 3:** the law's statistic is evaluated at τ(h), not at the window's own time.
+- **The steady share:** the flush term is included, and F_B/λ replaces μ̂/λ.
+- **The bill:** A − B′ = F_B·(c − x̄·w_end) + λ·Σ d_ss·span, with d_ss from the hole account per phase.
+  - κ_r is withdrawn as a constant. It is p_c − p₀ at r = 0, and a per-row quantity where repair runs.
+
+**Recommended, not done here: size the repair span against the loss rate.**
+- **The span is too long for this cell.** The repair law's span, A* = ⌈rate·min(b·srtt, 2·srtt)⌉ = 200, is six times 1/p₀ here.
+- In build A, the worth edge cuts it to ≈ 80 only because A's units are old.
+- **A span law that reads p₀ would remove B′'s 0.0009 decode deficit at T = 0.4.** It would probably raise every design's decode rate there too.
+- That belongs to the repair law (§3.3 and the paper's §5.3), with its own derivation and test.
+
+#### 13.10.5 Still open
+
+- **OV-long-m at T = 1, clear of the band:** 0.0006 ± 0.0002 against d_ss = 0.0010 from its own rates. That is 2 standard errors.
+- **The pre-onset resend rate at T ≤ 1** reads 288–291/s, against 320/s at T = 2 and after the onset at every T.
+  - The two rates match p₀·F (one resend per hole) and p₀·F/(1 − p_c) (resent until delivered).
+  - That suggests a second resend fits before T only when the margin T − (c/x̄ + R + ô) exceeds the cooldown. This is consistent with the numbers, but it was not read from `protected()`.
+  - d_ss takes the rate as measured either way.
+- **Q33, Q34 and Q24 are unchanged.** The R1 limit of §13.9.5 stands: its share part is unchanged, and this section does not touch its delay part.
