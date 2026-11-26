@@ -724,3 +724,36 @@ Registered before the clamp-on CL-long rows run (RL at T = 0.4, 2 and inf, clamp
 - T = 2 and T = inf: the clamp removes the drain-time repair, so recovery_time moves from RL's 9.2 s (T = 2) and 9.4 s (T = inf) toward the repair-off value; predicted to close more than half the gap. Delivered and on-time shares: between RL and repair off, no worse than RL beyond the A/A floor.
 
 - Correction, same day: the spare_bind gauge reads the cell's own store pause B (cfg.pause_B: 1 000 in CL-long, OV and the other link cells, 8 in K-OV, the default 2 048 where none is configured), as the doc's cwnd_sim = B. The spare formulas written above with 2 048 were my text, not what ran: every spare_bind number in the notes is at B = 1 000 in the link cells. New field cwnd_sim (0 = the cell's pause_B) lets a row state and vary it; every step-2 row carries its cwnd_sim.
+
+## 2026-11-26 Revision 4 step 2: the sizing run (reported only, no verdict; 3 seeds; `rev4_step2.py`, rows in out3e/rev4/step2.jsonl)
+
+Built behind config fields that default off (clamp, wait_limit, eq, eq_cap, cwnd_sim, rate2, rate2_t): the identity sample reproduces ba3cf31c with the fields off (check_ident3e, parts A, B, C, G). Not built: the doc's "no payload staged while in_flight >= B" gate (the store pause on outstanding seqs already gates; in_flight can pass B, 1 230 to 1 460 against B = 1 000 in CL-long) and the clamp on each taper grant (only the cadenced accrual is clamped). Every row states its cwnd_sim; today's Realtime has no store pause, so its clamp rows use the cell's B (1 000 in OV, OV-end, OV-crit; 8 in K-OV).
+
+CL-long, clamp on (delivered / on time within 0.4 s / recovery_time s), 3 seeds:
+
+| T | repair off | RL, clamp off | RL, clamp on, B = 1 000 | RL, clamp on, B = 2 048 |
+|---|---|---|---|---|
+| 0.4 | 0.9406 / 0.9406 / 0 | 0.9392 / 0.9392 / 0 | 0.9399 / 0.9399 / 0 | = clamp off (never binds) |
+| 2 | 0.9993 / 0.655 / 5.6 | 0.9990 / 0.463 / 9.27 | 0.9990 / 0.638 / 5.87 | = clamp off |
+| inf | 1.000 / 0.652 / 5.6 | 1.000 / 0.453 / 9.47 | 1.000 / 0.633 / 6.00 | = clamp off |
+
+Against the registered prediction: recovery moved toward repair off and closed 93 % of the gap at T = 2 (3.40 of 3.67 s) and 90 % at T = inf (3.47 of 3.87 s); more than half, as predicted. The doc's 1.15 to 1.25 times repair off is not met: 1.05 and 1.07 times. Its on time 0.58 to 0.61 is exceeded (0.638 and 0.633, repair off 0.655 and 0.652). At B = 2 048 the clamp never binds (in_flight max 1 460 < 2 048 / (1 + r)), so the rows equal clamp off. The wait limit on top is inert in CL-long (identical rows, 0 ticks).
+
+OV, 2x2 at T = 0.4, delta = 50, RL (delivered / on time / delay p50; doc prediction in brackets):
+- clamp off, wait off: 0.793 / 0.793 / 0.390 (0.7929 stored).
+- clamp on, wait off: 0.833 / 0.833 / 0.390 (0.837 / 0.837 / 0.39).
+- clamp off, wait on: 0.756 / 0.756 / 0.105 (0.770 / 0.770 / 0.095): lower by 0.014.
+- both: 0.809 / 0.809 / 0.094 (0.79 to 0.81 / 0.79 to 0.80 / 0.095 to 0.10); steady window [3, 9] 0.803 / 0.803 (0.808 / 0.80).
+- T = 2, delta = 50, both: 0.809 / 0.808 / 0.094 (0.80 / 0.79 / 0.10). delta = 0.5 at T = 0.4: 0.809 / 0.809 / 0.094 (0.80 / 0.80 / 0.10); at T = 2: 0.809 / 0.439 / 0.512 (0.81 / 0.40 / 0.7): delay lower than predicted.
+- T = inf: the wait limit is inert (identical rows, as designed).
+
+Today's Realtime, clamp on (B = 1 000): stored arm in OV 0.817 / 0.815 / 0.171, steady 0.808 (doc: share stays about 0.81); engine-queue arm in OV 0.873 / 0.160 / 0.724, steady window 0.815 / 0 (doc: 0.84 to 0.88 / 0.20 to 0.25 / 0.65 to 0.70; steady 0.808 / 0): delivered inside, on time and p50 slightly outside.
+
+OV-end (delivered / on time / p50, windows [3, 5.5] and [9, 15]): Revision 3 with the clamp at T = 0.4, 0.929 / 0.929 / 0.156, windows 0.804 / 0.804 and 1.000 / 1.000; Revision 4 at delta 50 and 25, 0.911 / 0.911 / 0.028, windows 0.803 and 1.000: the two deltas are indistinguishable and the cost against Revision 3 is 0.018 (doc 0.019). At T = 2: Revision 3 1.000 / 0.308 / 0.701; Revision 4 delta = 0.25, 1.000 / 0.310 / 0.697 (doc: nearly equal to Revision 3, gain <= 0.01: met); delta = 0.5, 0.956 / 0.522 / 0.365 with window [9, 15] on time 0.999 against 0.426: the doc predicted a loss of 0.074 in delivered and a gain <= 0.01 in on time; measured loss 0.044 and gain 0.21. Misprediction recorded: the cap at delta = 0.5 clears the backlog before the overload ends (no collapse_t, tau < T on 50 030 ticks).
+Today's Realtime in OV-end with the clamp: stored arm 0.916 / 0.916, windows 0.808 and 1.000 (doc 0.81, 0.97 to 0.99); engine-queue arm 0.955 / 0.529 / 0.355, windows 0.837 / 0 and 0.997 / 0.997 (doc 0.97 / 0.57; 0 on time in [3, 5.5] met; share 0.837 against 0.808).
+
+OV-crit (lambda = 9 600): Revision 3 and Revision 4, both with the clamp, are identical, 1.000 / 1.000 / 0.093 with 0 ticks of tau < T (doc: equal within the A/A floor met). Today's Realtime: stored arm unclamped 0.999 / 0.999 / 0.131 (doc 0.91 to 0.95 on time: higher); with the clamp 0.999 / 0.999 / 0.091 for both arms (engine-queue arm doc p50 <= 0.1, on time 0.95 to 0.97: met, on time higher).
+
+K-OV (B = 8, T = 0.4, delta = 50, clamp on): Revision 3 0.539 / 0.539 / 0.307; Revision 4 0.540 / 0.539 / 0.239 (doc 0.72 delivered, on time 0.66 to 0.72, p50 0.16: missed, both). Today's Realtime stored arm 0.740 / 0.007 / 1.52 (doc <= 0.1 on time: met); engine-queue arm 0.917 / 0.007 / 10.3 (doc p50 about 7, on time about 0.03, delivered 0.9 to 0.99: delivered met).
+
+Not run or incomplete: the strict-order (H = infinity) row of 4.1; the engine-queue arm with the clamp off. Without the clamp the arm sends about 10 000 repairs that all arrive; the generic-rank decoder re-runs its matching over one component of thousands of unknowns at each arrival (n = 1 500 units took 6 s and the growth is steeper than linear), so those rows take hours: limited to one seed and left running (rows `RT-arms ... clamp=0 eq=1`). The clamp rows of the same arm are fast (r_eff is about 0). Other gauges: spare_bind in OV 0.97 to 0.98 (drain window), 0.4 to 0.9 in OV-end, 0.88 in OV-crit for the new model; collapse_t in OV 1.34 to 1.41 s at T = 0.4, 1.76 s at T = 2 (delta 50), 6.0 s at T = 2 (delta 0.5).

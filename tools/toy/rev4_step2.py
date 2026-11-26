@@ -46,6 +46,8 @@ def specs():
     out = []
 
     def add(group, cell, base, design, mode, T=None, delta=50.0, clamp=False, wait=False, eq=False, cwnd=0.0, **kw):
+        if design == "rt" and clamp and not cwnd:                    # today's Realtime has no store pause (pause_B 1e9): cwnd_sim is the cell's configured B (3.3)
+            cwnd = float(B.CELLS[base][1]["pause_B"])
         lab = "%s | %s | %s %s T=%s d=%g clamp=%d wait=%d eq=%d cwnd=%s" % (group, cell, design, mode, "-" if T is None else B.TAG(T), delta, clamp, wait, eq, cwnd or "cell")
         out.append(dict(label=lab, group=group, cell=cell, base=base, design=design, mode=mode, T=T, delta=delta, clamp=clamp, wait=wait, eq=eq, cwnd=cwnd, kw=kw))
 
@@ -106,7 +108,7 @@ def windows(sm, cell):
 def one(task):
     spec, seed = task
     t0 = time.time()
-    B.wait_for_memory(3.0)
+    B.wait_for_memory(1.0)
     sm = toy2.Sim(cfg_of(spec, seed))
     r = sm.run()
     row = dict(label=spec["label"], group=spec["group"], cell=spec["cell"], seed=seed, wall_s=time.time() - t0)
@@ -142,6 +144,7 @@ def main():
     ap.add_argument("--workers", type=int, default=9)
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--only", default="")
+    ap.add_argument("--slow-seeds", type=int, default=1, help="seeds for the engine-queue rows with the clamp off (decoder-bound)")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
     B.build()
@@ -154,8 +157,11 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     have = done_keys()
     tasks = [(s, k) for k in range(a.seeds) for s in allspecs if (s["label"], k) not in have]
-    heavy = lambda t: -(120 if t[0]["cell"].startswith("CL-long") else 40)       # noqa: E731
-    tasks.sort(key=heavy)
+    # the engine-queue arm with the clamp off sends ~10 000 repairs that all arrive: the decoder's component grows to thousands of unknowns and each arrival
+    # re-runs the matching over it (hours per run).  Those rows go last, and are limited to the seeds in --slow-seeds.
+    slow = lambda t: bool(t[0]["eq"] and not t[0]["clamp"])                       # noqa: E731
+    tasks = [t for t in tasks if not slow(t) or t[1] < a.slow_seeds]
+    tasks.sort(key=lambda t: (slow(t), -(120 if t[0]["cell"].startswith("CL-long") else 40)))
     print("%d configurations, %d runs to do" % (len(allspecs), len(tasks)), flush=True)
     with mp.Pool(a.workers) as pool, open(FILE, "a", encoding="utf-8") as f:
         for i, row in enumerate(pool.imap_unordered(one, tasks), 1):
