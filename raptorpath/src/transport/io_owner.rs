@@ -1221,7 +1221,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     break; // every producer handle is gone
                 }
                 ctr.drains.fetch_add(1, Relaxed);
-                t_work = view.hoff.on.then(Instant::now);
+                t_work = view.hoff.on.then(crate::clock::now);
                 if a.deep {
                     ctr.cmdq.record((n + a.cmd_rx.len()) as u64);
                 }
@@ -1401,7 +1401,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     // The hand-off gate's republish timer (paper §6.8) fired: publish below.
                     let (t0, _) = republish.take().expect("checked");
                     view.hoff.timer_wakes.fetch_add(1, Relaxed);
-                    view.hoff.timer_wait.record(t0.elapsed().as_nanos() as u64);
+                    view.hoff.timer_wait.record(t0.clock_elapsed().as_nanos() as u64);
                 }
                 sleep_for_republish = None;
                 if let Some(shim) = a.shim.as_ref() {
@@ -1439,7 +1439,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
             deep_end(&ctr.k_pub, dsec);
         }
         if let Some(t) = t_work {
-            view.hoff.work.record(t.elapsed().as_nanos() as u64);
+            view.hoff.work.record(t.clock_elapsed().as_nanos() as u64);
         }
         if full {
             last_full = now;
@@ -1454,7 +1454,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 view.frame_tx_dgram.load(Relaxed),
             )
         {
-            republish = Some((Instant::now(), tokio::time::Instant::from_std(last_full + VIEW_REFRESH)));
+            republish = Some((crate::clock::now(), tokio::time::Instant::from_std(last_full + VIEW_REFRESH)));
         }
         if close {
             break;
