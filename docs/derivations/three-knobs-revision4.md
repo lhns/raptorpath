@@ -1,6 +1,6 @@
 # Three knobs, Revision 4: a sender-side wait limit under sustained overload, and the engine's repair clamp (derivation, no runs)
 
-**Status.** Design and derivation. §1–§8 were written before any run. §9 (2026-11-26) reports the step 2 sizing run, reported only, and amends §3.3. §10 (2026-11-26, derivation) adds the floor-repeat addendum.
+**Status.** Design and derivation. §1–§8 were written before any run. §9 (2026-11-26) reports the step 2 sizing run, reported only, and amends §3.3. §10 (2026-11-26, derivation) adds the floor-repeat addendum. §11 (2026-11-26, derivation) adds resend eligibility and the new model's gate.
 - **What it amends.** `three-knobs.md` §13.2 (the dequeue rule). It withdraws that section's paragraph "What cannot be fixed: delay pinned near T − R", and Q12's default ("no loss price").
 - **What it adds to the model of every design** (§3.3): the engine's spare-capacity clamp on repair. It also adds the engine's send gate to the designs that pause in the engine, and a second arm for today's Realtime that models the engine's real send queue, settled by an engine read (Q30).
 - **What is unchanged:** L1, L2 (§2.1, and §2.2 as revised in §17.1), the protected floor (§17.1), the brake and the store pause.
@@ -1049,3 +1049,148 @@ The registered steady window [3, 9] s for today's Realtime, engine-queue arm, re
 So the steady window as registered includes a filling transient, and the arm's true steady share is 0.809.
 - Against that, Revision 4's 0.803 is −0.006, inside the 0.009 bar. The −0.012 of §9.4 is mostly the transient.
 - **The dominance reading is not re-run here.** It stays as registered ("not dominated"). The transient is recorded so the next registration can start the window after the queue is full: from `fill time + 1 s`, computed from the arm's own queue-length gauge, not from a declared second.
+
+### 10.7 Amendment: the repeat waits until the newest covering carrier is overdue (2026-11-26)
+
+**Measured** (K-OV, Revision 4 with no gate): 94 of 95 repeats fired while a datagram carrying the covering floor was still in flight and not yet overdue, that is, before its send + R. §10.3's rule repeats as soon as the *first* carrier has not been reported. But a later carrier that is still in flight will tell the receiver the same thing.
+
+**The law (replaces the predicate of §10.3; the ordinals are kept):**
+
+```text
+   send the floor   ⇔   ∃ s ∈ [A_known, F_ann) :   s unresolved   ∧   loss_ev(s, now)   ∧   rx_ord < carry_ord(s)   ∧   now  ≥  t_newest_carrier(s) + R
+   t_newest_carrier(s)  =  the send instant of the newest datagram that carried a floor value > s        (−∞ if none has; then the clause holds)
+```
+
+| symbol | provenance |
+|---|---|
+| R | the ack timeout already defined (§13; RFC 6298 §2 and RFC 9002 §6.2.1): the time after which an unacknowledged send is overdue. No new constant |
+| t_newest_carrier(s) | sender state. It is the send instant of the newest datagram whose carried floor exceeded s. Under flow it is the newest send, because the floor is a running maximum |
+
+- **Why R, and not RFC 9002's 9/8 time threshold.** The 9/8 constant (RFC 9002 §6.1.2) is a reordering allowance for declaring a packet lost. Here the question is whether its report is overdue, which is R's job everywhere else in this design. It also adds no constant.
+- **Under flow:** the newest carrier is always younger than R, so no repeat fires. That is the 94 suppressed in K-OV.
+- **Silence** (an outage, or a lost tail): nothing is sent. After R the newest carrier is overdue, so the floor repeats on the same clock as today. **Liveness is kept.**
+  - The clause also subsumes the silence branch of loss_ev, because the newest send is at least as new as the newest carrier. loss_ev keeps it for the case where nothing above s carried a floor.
+  - With no carrier at all, t_newest_carrier is −∞ and the clause holds, so the floor is sent.
+- **R's honesty (§19)** decides the residual. A carrier whose rtt exceeds R through queue jitter lets one repeat through: at most one per fire, and gauged as `rep_fired_carrier_overdue`.
+- **Two paths (P2, 36 runs, Revision 3, measured with §10.3's rule):** every run finishes and the readouts are identical. The rule saves nothing there and breaks nothing. The amendment only removes repeats, never the silence case, so it is predicted the same there.
+- **Predicted:**
+
+  | cell | repeats | readouts |
+  |---|---|---|
+  | K-OV, Revision 4 | 95 → ≤ 10 in 60 s | +about 85 slots for first sends (§11.3) |
+  | K-OV, Revision 3 | ≤ 10 | ≈ 0.715–0.72 |
+  | OV, CL-long | fall further | within the A/A floor |
+
+  CL-long's outage repeats are unchanged (silence).
+- **Tests added:**
+  - an absolute same-run check: every repeat fires at least R after the newest covering carrier was sent;
+  - the planted lost-tail burst of §10.5 test 2 still finishes;
+  - `rep_fired_by_timeout` > 0 through CL-long's outage.
+
+## 11. Addendum: resend eligibility, and the gate the new model should use (2026-11-26; derivation, no runs)
+
+### 11.1 The measured cause: resends of copies whose original can still arrive
+
+**K-OV link slots per run** (measured; with the clamp and §10's rule, no gate):
+
+| | first sends | resends | repairs | floors | delivered |
+|---|---|---|---|---|---|
+| Revision 4 | 2 077 | 188 (126 arrive twice: the original lands after the resend) | 46 | 95 | 0.644 |
+| Revision 3 | 2 371 | 4 | — | — | 0.715 |
+
+- **Under Revision 4 the units are young, so they are protected and resendable.** The engine-like blocker sweep resends the cumulative blocker after `max(last_send, last fire) + P`, with `P = clamp(2·srtt, 25 ms, 100 ms)`.
+- Under K-OV's 200 ms RTT the 100 ms cap binds. **So P is below the round trip, and the sweep resends a seq whose original is still in flight.** That is Q17's defect ("sweep eligibility should be max(P, R)", §17.10), now measured as 126 wasted slots of 2 400.
+- Revision 3 does not see it: its units are unprotected at birth, so they are never resent.
+
+### 11.2 The law
+
+"A timer may resend a seq only once its last send is overdue" (RACK's rule, RFC 8985 §6.2: a packet is lost only after the time threshold since its send; here the threshold is R, as in §13.1):
+
+```text
+   blocker deadline   =   max(  last_send(b) + max(P, R) ,   last_fire + P  )          b = A_known, the cumulative blocker
+   P_reach(b)         =   max(P, R)                                                    (the same function feeds §17.1's trigger delay d(s) and the floor's protected())
+```
+
+| symbol | provenance |
+|---|---|
+| P | the engine's sweep period `clamp(2·srtt_pooled, 25 ms, 100 ms)` (`recovery_laws.rs::tail_sweep_timeout_us`). It is unchanged, and it stays the repeat clock for the floor |
+| R | the ack timeout (§13). No new constant |
+| last_send(b) | sender state |
+
+**Report-driven resends are unchanged.** A report that lists s as missing carries knowledge that a later datagram arrived (§13.1's evidence). On one FIFO path the original is then lost, so the resend is never a duplicate. At N ≥ 2 the reorder window of §17.7 applies.
+
+**Inert where resends are already late enough.**
+- max(P, R) = P exactly when P ≥ R, that is, `clamp(2·srtt, 25 ms, 100 ms) ≥ srtt + max(4·rttvar, g) + ack_delay_max`.
+- Below the cap that holds once srtt ≥ max(4·rttvar, g) + ack_delay_max, about 4–6 ms in the offline simulation.
+- With the cap binding it holds only while srtt ≤ 100 ms − (R − srtt).
+- **So the law is bit-identical wherever srtt stays below about 95 ms** and above a few ms. Gauge `elig_R_bind`: the fraction of blocker deadlines at which R > P.
+- **In the engine** the same change also touches Bulk's resend timing. It is therefore its own guarded engine change, with off-Bulk stages (CLAUDE.md, `meas-guard-bulk-blind`). That is Q17's default.
+
+### 11.3 Predictions (written before any run)
+
+**K-OV, Revision 4 with the clamp and §10.7.**
+- **Repeats:** srtt ≈ 0.2 s, so R ≈ 0.21 s > P = 0.1 s, and every sweep resend now waits R. The original's report arrives within an RTT, which is below R whenever R is honest, so the duplicates fall from 126 to ≤ 15 (the jitter residual, gauged).
+- **Freed slots:** about 110 from resends and about 85 from floors.
+- **The arithmetic:** first sends ≈ 2 077 + 195 ≈ 2 270. Delivered ≈ (2 270 × 0.9, plus about 62 needed resends × 0.9, plus repair decodes)/3 000.
+- **Predicted:**
+
+  | | delivered | on time | p50 |
+  |---|---|---|---|
+  | Revision 4 | **0.69–0.72** | 0.66–0.71 | ≈ 0.24 s, unchanged |
+  | Revision 3 | 0.715–0.72 | the same | unchanged |
+
+  - On time can sit a little below delivered: a resend sent R after its original arrives near age 0.36–0.39 s, at the edge of 0.4 s.
+  - **Revision 3 is unchanged by §11.2:** it never resends.
+- **Shortfall:** if delivered stays below 0.69, the remaining waste is read from `dup_arrivals` and the slot table, before any further law.
+
+**OV** (srtt ≈ 98 ms, P = 100 ms, R ≈ 102 ms):
+- R exceeds P by about 2 ms, so `elig_R_bind` is ≈ 1 under overload and the sweep fires 2 ms later.
+- Predicted within the A/A floor on every readout. Duplicates in OV are already rare, because the original's report arrives within srtt < R.
+
+**CL-long:**
+- Normal srtt is ≈ 11 ms, so P = 25 ms (the floor) > R ≈ 15 ms.
+- In the drain, srtt ≈ B/C + RTprop ≈ 0.09 s, so P = 0.1 s (the cap) > R ≈ 0.094 s.
+- **So `elig_R_bind` = 0, and the rows are predicted bit-identical** to the rows before §11.2. A trace-identity test checks it. If any blocker deadline in CL-long has R > P, for example from an srtt spike above 95 ms, the identity is not claimed, and the rows are compared within the A/A floor instead.
+
+**Tests (red first):**
+1. **No duplicate from the timer.** No timer-driven copy of s is staged before `last_send(s) + R`. This is absolute, from the trace.
+2. **Identity where P ≥ R.** CL, CL-long and the call cells are trace-identical with and without §11.2, with `elig_R_bind` = 0 as the execution witness.
+3. **K-OV executes.** `elig_R_bind` > 0, and the duplicates fall below 15.
+
+### 11.4 The gate the new model should use
+
+**Engine read** (coordinator, 2026-11-26):
+- The engine's send gate on in-flight exists only when `reliable` (`net/mod.rs:2473`) and in generation mode.
+- Its cap is `1.5 × Σ_p BtlBw_p·RTprop_p` (`RWM_INFL_BDP`, default 1.5; `sender_policy.rs:756–766`).
+- At Realtime there is no gate.
+- For K-OV the engine window would be about 12 datagrams, not the cell's B = 8.
+
+**NO-MODE-SWITCH debt, recorded.** The gate is selected by `reliable`, a bit derived from ρ, so it is ρ-selected. It goes on the law ledger with `tx_paused` (§3.3), as engine sites to retire or bound with a test.
+
+**What the new model's gate should use.** The new model has no ρ, so its gate cannot be selected by one. It applies at every T, as the store pause does.
+
+```text
+   in_flight  <  W_gate ,      W_gate  =  (1 + q(δ)) · Σ_p BtlBw_p · RTprop_p ,      q(δ) = (b(δ) + 1)/30          (paper §6.1, the pooled cap B's own law)
+```
+
+**Why one bound, and not the engine's 1.5.**
+- The engine's 1.5 is a default (`RWM_INFL_BDP`) with no derivation in the paper. Under FORMULA-FIRST it cannot be adopted as a new law's constant.
+- Paper §6.1 already derives the pooled outstanding cap B from the same product, `(1 + q(δ))·Σ bwᵢ·RTpropᵢ`, with q(δ) from b(δ).
+- Using that law for the datagram gate gives one in-flight bound, with one provenance, for both the store pause (on seqs) and the gate (on datagrams), instead of two constants.
+
+**Its two known defects, carried and not hidden:**
+- B is PINNED at N·2 048 on real links (ledger F01), and its knee has no provenance.
+- b(δ) is clamped at ½ for δ ≥ 50, so q(δ) = 0.05 at the Realtime point and the window is about 1.05 × BDP. The clamp binds there; its bind gauge already exists (§2.4 of the derivation).
+
+**The offline simulation:**
+- A cell's `pause_B` stays the seq bound.
+- The datagram gate takes W_gate from the measured D̂ (§3.2) and RTprop. This replaces §3.3's cwnd_sim = B, and it uses the engine's in-flight expiry of §9.3, max(4·SRTT, 250 ms), so it cannot deadlock.
+- **K-OV:** W_gate ≈ 1.05 × (36/s × 0.1 s) ≈ 4 datagrams, which is below the cell's B = 8. That would make K-OV gate-bound at the Realtime point.
+  - **Predicted:** the link underfills unless 1.05 × BDP covers the 0.1 s pause queue. It does not.
+  - So **at δ = 50 the gate costs share in K-OV.** That is a real consequence of b(δ)'s clamp at the Realtime point. It is reported, not tuned away.
+  - The engine's 1.5 × BDP is about 12 on the coordinator's BDP. That implies RTprop ≈ 0.2 s, the queued RTT: a windowed minimum under a standing queue reads the queue (the RTprop limit recorded under Q18).
+  - On the propagation RTprop of 0.1 s (2·owd) the engine's window would be about 6, which binds too.
+  - Owner question **Q31:** whether the gate's window is the §6.1 law (one bound, derived) or the engine's 1.5 × BDP (an undocumented constant). **Default: §6.1's law, with K-OV's share cost reported.** If the owner prefers 1.5, it needs a derivation first.
+- **CL-long and OV:** W_gate ≈ 1.05 × 12 500 × 0.01 ≈ 130 and ≈ 1.05 × 10 000 × 0.01 ≈ 105 datagrams.
+  - That is far below the in-flight levels of 880–1 460 measured with B = 1 000. The gate would hold the link queue near the BDP: a large model change, with srtt near RTprop, and R, ô, D̂ and the clamp's spare all moving.
+  - **Not predicted here.** It needs its own registration before any run, which is the reason to decide Q31 first.
