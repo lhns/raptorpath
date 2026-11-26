@@ -1,0 +1,6 @@
+c1s-400 BASE: ticks 2913  ms per paused wake p50 1.97 p90 2.56 p99 3.21
+c1s-400 CAND: ticks 2189  ms per paused wake p50 2.36 p90 2.96 p99 3.71
+c2-100 BASE: ticks 2534  ms per paused wake p50 1.82 p90 1.90 p99 1.97
+c2-100 CAND: ticks 2568  ms per paused wake p50 1.84 p90 1.95 p99 2.06
+c8-100 BASE: ticks 2125  ms per paused wake p50 1.75 p90 1.85 p99 2.02
+c8-100 CAND: ticks 2163  ms per paused wake p50 1.75 p90 1.86 p99 2.07

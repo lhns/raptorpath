@@ -18,14 +18,14 @@
 **The law, on one line** (per leg i; the derivation is §2):
 
 ```text
-   hand a unit (first send + owed repair) to leg i  ⇔  B_i < β_i ,   β_i = R_i·L_i/s_i ,  R_i = 1.25·cwnd_i/srtt_i ,  L_i = VIEW_REFRESH + ℓ̂_o + P_poll + ℓ̂_p ;   else it waits in the intake, whose head expires  ⇔  a ≥ min( T − R , w(δ, x̄, t_ov) )
+   hand a first send to leg i  ⇔  B_i < β_i ,   β_i = R_i·L_i/s_i ,  R_i = 1.25·cwnd_i/srtt_i ,  L_i = τ̂_o + ℓ̂_o + τ̂_p + ℓ̂_p ;   else it waits in the intake, whose head expires  ⇔  a ≥ min( T − R , w(δ, x̄, t_ov) )
 ```
 
-- B_i is what the producer has staged for leg i and quinn has not yet transmitted (the producer's own staged count minus quinn's `tx`, so datagrams still in the owner's channel count), R_i quinn's pacer refill rate (RFC 9002 §7.7, N = 1.25; the controller's rate under `RWM_BBR_PACE`), g_i the interval between hand-offs, Δ_v,i the bound on the `tx` snapshot's lag, derived from the owner's publish rule (one `VIEW_REFRESH` plus one measured owner poll interval p̂_i), s_i the datagram size. Revised 2026-11-26 (§2.3a): this replaces the first form 1.25·ν̂_i·(g_i + Δ_v), whose ν̂ filter would throttle Startup and whose Δ_v was an unmeasured code constant. Resends and control datagrams are staged first and are exempt from the bound, though they count in B_i (§2.3b).
+- B_i is what the producer has staged for leg i and quinn has not yet transmitted. R_i is quinn's pacer refill (RFC 9002 §7.7, N = 1.25). L_i is the worst-case reopen latency: the realized waits of the owner's republish timer and the producer's 1 ms backpressure poll, plus one owner poll and one producer iteration of work. s_i is the datagram size. **This is revision 4; paper §6.8 is the authority** (the revision history is in §0).
 - w is Revision 4's wait limit (§13.3), taken by reference.
 - The `bbr_rs` window is unchanged and δ-free: W_i = 2·b̂_i·m̂_i + A_i.
-- The repair clamp reads the same quantity: spare_i = (β_i − B_i)⁺ / β_i.
-- The store cap is a resource bound, n ≤ N·P (P = 2 048 per path), and holds no δ.
+- Control, resends and repair are exempt from the bound but count in B_i. Repair is clamped by a state predicate: spare_i = +∞ if the producer's last turn for leg i ended with no first send waiting, 0 if it ended with the gate closed.
+- The store law is unchanged in the first build: the δ seat (Q-S4, Q-S5) is open.
 
 **The δ seat.** W1.2's store seat and the three-knob intake are not the same seat. W1.2's seat prices what the sender keeps *downstream* of its hand-off. It sits where three knobs' gate window would sit under Q31's alternative. The three-knob intake prices how long a unit waits *upstream*, and only under overload. **Recommended: δ on the intake, the store and gate δ-free** (§4). This is a recommendation for the owner, not a proof:
 - **Quinn's queue has nothing to price.** Above the pacer's next release it buys no throughput at any δ (§2.2). That removes the downstream seat's FIFO part only.
@@ -53,21 +53,20 @@ If the owner accepts, W1.2's "δ on the store law" step is withdrawn. Its other 
 
 ## 0. The formula first
 
-**Revision 3 (2026-11-26, after the coordinator's check of `e0561809`).** Paper §6.8 is now the authority for the law. It supersedes the forms in this section, §2.3 and §2.6 wherever they differ.
+**Revision history (2026-11-26).** Paper §6.8 is the authority for the law. Where the forms in this section, §2.3 and §2.6 differ from it, §6.8 supersedes them.
 
-- **g_i is replaced by a bounded reopen latency.** The measured hand-off interval grew without bound in an outage or with the gate closed, so β opened to the backlog: the same fault as the snapshot age. β_i = R_i·L_i/s_i, with L_i = VIEW_REFRESH + ℓ̂_o + P_poll + ℓ̂_p:
-  - two cited loop periods: the owner's republish, 1 ms, and the producer's backpressure poll `poll_1ms`, 1 ms;
-  - two measured per-iteration work times, as p99 values: owner ≈ 10–20 µs (0.12 ms at c1s), producer 96 µs at c2, 557 µs at c8, 504 µs at c1s.
-  - Silence cannot raise any of the four terms.
-- **The reopen event is new.** While its last published queue was non-empty, the owner republishes every VIEW_REFRESH. Today it publishes only on a poll that did I/O, so with the gate closed, no inbound traffic and an idle owner, B could read high until the next inbound datagram: at best one RTT per batch, at worst never.
-  - With the rule, a closed gate reopens within L_i: ≈ 2.1 ms at c2, ≈ 2.6 ms at c8 and c1s.
-  - β is exactly the pacer's release in that time.
-- **The clamp reads the window.** spare_i = (cwnd_i − F_i − s·B_i)⁺/(F_i + s·B_i). This is the engine's `spare_capacity` form fed with quinn's window and in-flight, from atomics the `RouteProbe` wrapper publishes.
-  - The B/β form clamped repair to 0 at call rates (β < 1), where one staged datagram read the path as full.
-  - Repair is decided at a unit's admission and rides with its source.
-- **Sizes.** β ≈ 27 at c2, 34 and 6.8 on c8's legs, 380 at c1s, and ≈ 0.2–0.3 at a 36/s call. That is only 1.2–1.3× today's batch at c2 and c8, so the finer-I/O risk is read in the session's diagnostic step.
-- **§8.4 is amended in §6.8.** Its sentence that the substrate window "is not a store-law input" because laws that read it inherit its steps in time applies. §6.8 allows the read for the hand-off reserve and the clamp only, through the atomics, and gauges the inherited steps. Until the amendment is accepted, the read runs behind a default-off diagnostic environment arm.
-- **ρ < 1 stays blocked.** Its missing shedding law is the three-knob lifetime T. No interim law is added.
+| rev | β | clamp | why it changed |
+|---|---|---|---|
+| 1 (`40d2fafb`) | 1.25·ν̂·(g + Δ_v) | (β − B)⁺/β | — |
+| 2 (`e0561809`) | R·(g + a)/s, with R the pacer rate | (β − B)⁺/β | ν̂ throttled Startup; Δ_v had no provenance |
+| 3 (`64aca2e0`) | R·L/s, L = VIEW_REFRESH + ℓ̂_o + P_poll + ℓ̂_p | window form (cwnd − F − sB)⁺/(F + sB) | g and a grew without bound in silence; nothing reopened a closed gate on a stale view; B/β read 0 at β < 1 |
+| 4 (this) | R·L/s, L = τ̂_o + ℓ̂_o + τ̂_p + ℓ̂_p (realized timer waits, floored at the cited periods) | last-turn predicate, +∞ or 0 | **L doubled:** the 1 ms poll realizes at 1.75–2.4 ms p50 and 2.0–3.7 ms p99 (`handoff/q8_out.txt`). **The window form is withdrawn:** it reads ≈ 0 in loss recovery (w_rec ≥ T(1) ≈ F) and the probing margin in ProbeBw. **B/β** averages ≈ batch/(2β) under saturation. Only the predicate reads 0 exactly when a first send waits, at any β |
+
+**Revision 4 in numbers.** β is ≈ 54 at c2, ≈ 61 and ≈ 12 on c8's legs, and ≈ 920 at c1s. That is ≥ 2.3× today's batch everywhere. At c1s it is above today's queue of 715, so the gate rarely binds there. At a 36/s call β ≈ 0.4–0.6 in ProbeBw, and ≈ 10 in Startup at W_init.
+- **The owner's republish timer is assumed at τ̂_o ≈ 2 ms** until built and measured.
+- **It reverses the owner's "no timer" rule** only while the owner holds unsent data, and is gauged as `owner_timer_wakes`.
+- **The producer's 1 ms poll** must be armed on the gate's own pause at every ρ. Today it is armed by `tx_paused`, which carries `reliable &&`.
+- **The §8.4 amendment narrows to R_i:** the predicate reads no window.
 
 **The sentence.** Hand quinn no more than its pacer will send before the next hand-off. Everything else waits in the engine's intake, where it can be shed by age at a δ price, overtaken by resends, and seen by placement and the repair clamp.
 
@@ -488,9 +487,19 @@ The original order follows for the record.
 
 ## 7. Tests the law carries (red first, absolute; for the build in §5 step 3)
 
-1. **Gate decision, absolute** (paper §6.8 form; s = 1 233 B). At cwnd = 280 000 B, srtt = 22 ms, VIEW_REFRESH = P_poll = 1 ms, ℓ̂_o = 16 µs and ℓ̂_p = 96 µs, L = 2.112 ms, R = 15 909 091 B/s and β = 27.25: hand at B = 27, not at 28. The second leg (cwnd = 230 000 B, srtt = 88 ms, ℓ̂_o = 10 µs, ℓ̂_p = 557 µs; L = 2.567 ms; R = 3 267 045 B/s) has β = 6.80 and hands at 6, not at 7. At B ≥ β a resend is still staged (it is exempt), and a first send is not.
+1. **Gate decision, absolute** (paper §6.8 revision 4; s = 1 233 B).
+   - At cwnd = 280 000 B, srtt = 22 ms, τ̂_o = 2.00 ms, ℓ̂_o = 16 µs, τ̂_p = 2.06 ms and ℓ̂_p = 96 µs: L = 4.172 ms, R = 15 909 091 B/s and β = 53.83, so hand at B = 53 and not at 54.
+   - The second leg (cwnd = 230 000 B, srtt = 88 ms, τ̂_o = 2.00 ms, ℓ̂_o = 10 µs, τ̂_p = 2.07 ms, ℓ̂_p = 557 µs: L = 4.637 ms, R = 3 267 045 B/s) has β = 12.29 and hands at 12, not at 13. Each leg is decided on its own inputs.
+   - A cold start with every timer term at its 1 ms floor gives L = 2.112 ms and β = 27.25.
+   - At B ≥ β a resend, a repair or a control datagram is still staged (they are exempt); a first send is not.
 2. **No dial is read.** Decision traces are byte-identical across Bulk, Auto and Realtime, across ±2 % δ nudges at each preset, and at ρ < 1. This is the NO-MODE-SWITCH routing witness, extending the `test_visualizer_ui` pattern to the engine.
-3. **Clamp (window form), absolute.** At cwnd = 13 563 B (11 datagrams), F = 4 932 B (4), B = 0: spare = 1.75. With r_law = 0.25, a steady 36/s stretch of 1 000 sources sends exactly 250 repairs. With r_law = 2.0, it sends exactly 1 750. At F = cwnd, spare = 0 and no repair is sent. At F + s·B = 0, spare = +∞. Repair-off traces are identical.
+3. **Clamp (last-turn predicate), absolute.**
+   - A 36/s call with r_law = 0.25 over 1 000 sources, each turn ending dry, sends exactly 250 repairs, each staged in its source's turn.
+   - The same call under overload (turns ending with the gate closed) sends 0 repairs.
+   - A turn that admits sources and then closes the gate sets spare = 0 for that path until a turn ends dry.
+   - At N = 2, with leg 0 saturated (every turn closed) and leg 1 dry, r_law = 0.25 over 1 000 sources sends exactly 250 repairs, all placed on leg 1, and the scheduler-wide spare reads +∞.
+   - With both legs closed, it sends 0.
+   - Repair-off traces are identical.
 4. **The leg-1 burst, red first.** In `cc_sim` or the engine sim: two legs at 100 and 20 Mbit, a store-cap step of +2 000 seqs, `bbr_rs`.
    - Without the gate, B1 > 400 for ≥ 2 s. This reproduces §1.2, and it is the red.
    - With the gate, B1 ≤ β1 + one batch on ≥ 99 % of polls, and `starve_1` ≤ 1 %.
@@ -498,10 +507,15 @@ The original order follows for the record.
 5. **The resend's wait.** In the same sim, a resend handed to leg 1 waits ≤ β1/x1 + g in quinn. Red without the gate (≈ 0.5 s).
 6. **T = ∞ is inert.** Intake decisions at T = ∞ expire nothing at δ ∈ {Bulk, Auto, Realtime, 50}, and the T = ∞ trace equals the ρ = 1 trace of the same build at the same δ.
 7. **The store image.** With the gate on, `store_pin` = 0 in the c2-like sim.
-8. **Bounded β across silence, red first.** At c2's inputs (item 1), a 1.5 s silence (no hand-off, no ack, no inbound) is followed by β within ±10 % of its steady 27.25, so in [24.5, 30.0]. Red on the measured-interval form, where β ≈ 12 900/s × 1.5 s ≈ 19 000.
-9. **Reopen without inbound traffic, red first.** On a host loopback with paused time: the gate closes on a view published 0.5 ms before the owner's last I/O; the owner then idles, with no inbound datagram, while quinn drains. The producer must hand again within VIEW_REFRESH + P_poll + one owner poll + one producer iteration, ≤ 2.2 ms of virtual time. Red on today's owner, whose view stays stale for ≥ 100 ms.
-10. **Repair at β < 1.** A 36/s call (cwnd 11 datagrams, srtt 100 ms, L = 2.1 ms, so β = 1.25·13 563/0.1·0.0021/1 233 ≈ 0.29) over 1 000 sources with r_law = 0.25 sends exactly 250 repairs, each in its source's hand-off. A second source staged before quinn has sent the first waits no longer than L.
-11. **Post-outage drain witness (three-knob verdict).** In the L0 netem loopback (`RWM_L0_NETEM`, as `gate_c9_outage_recovery` uses): one path, Auto (repair on), a 1.5 s full outage, GATE. Over the drain after the outage, `spare_bind` ≥ 0.5 of admitted units, and the coded share in the drain ≤ 0.2 × its pre-outage value. This is the §12.4 bracket's binding side, asserted on the host because the VM harness cannot cut a link.
+8. **Bounded β across silence, red first.** At item 1's c2 inputs, a 1.5 s silence (no hand-off, no ack, no inbound) is followed by β within ±10 % of its steady 53.83, so in [48.4, 59.2]. Red on the measured-interval form, where β ≈ 19 000.
+9. **Reopen without inbound traffic, red first (a logic test).** On a host loopback with paused time, the gate closes on a view published 0.5 ms before the owner's last I/O. The owner then idles with no inbound datagram while quinn drains.
+   - The producer must hand again within one republish period plus one poll period plus one owner poll and one producer iteration: ≤ 2.2 ms of virtual time.
+   - Red on today's owner, whose view stays stale for ≥ 100 ms.
+   - Virtual time cannot show timer latency. The realized bound L (≈ 4–6 ms) is read on the VM by `reopen_i`.
+10. **Repair at β < 1.** A 36/s call with cwnd 11 datagrams, srtt 100 ms and L = 4.2 ms has β = 1.25·13 563/0.1·0.0042/1 233 ≈ 0.58. Over 1 000 sources with r_law = 0.25 it sends exactly 250 repairs, each staged in its source's turn. A second source staged before quinn has sent the first waits no longer than L.
+11. **Post-outage drain witness (three-knob verdict).** In the L0 netem loopback (`RWM_L0_NETEM`, as `gate_c9_outage_recovery` uses): one path, Auto (repair on), a 1.5 s full outage, GATE.
+    - Over the drain after the outage, `spare_bind` ≥ 0.5 of first sends, and the coded share in the drain is ≤ 0.2 × its pre-outage value.
+    - This is the §12.4 bracket's binding side. It is asserted on the host because the VM harness cannot cut a link.
 
 ## 8. Open questions for the owner
 
