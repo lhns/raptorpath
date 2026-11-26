@@ -748,7 +748,7 @@ class Sim:
         self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = 0.0, 0, 0, False, 0.0
         self.t_ov0 = 0.0
         self.r4 = dict(ticks=0, ov=0, tau_lt_T=0, den_bind=0, floor_n=0, deq_early=0, dhat_inf=0, collapse_t=None, in_flight_max=0, spare_n=0, spare_bind=0,
-                       dhat_sum=0.0, dhat_n=0, ratios=[], tau_min=math.inf, rounds=0)
+                       dhat_sum=0.0, dhat_n=0, ratios=[], tau_min=math.inf, rounds=0, spare_bins={})
         self.fs_after_outage = 0                   # first sends after the outage end (RB with rb_unit "sym")
         self.qf_known = 0.0
         # stage 3e receiver state (build 5.1)
@@ -1140,6 +1140,9 @@ class Sim:
                 sp = (c.pause_B - fl) / fl if fl > 0 else math.inf
                 self.r4["spare_n"] += 1
                 self.r4["spare_bind"] += sp < self.r_cur
+                bn = self.r4["spare_bins"].setdefault(int(t), [0, 0])      # per 1 s: first sends, first sends at which spare < r
+                bn[0] += 1
+                bn[1] += sp < self.r_cur
             if c.dead is not None and t >= c.dead[1] + c.dead[2]:
                 self.fs_after_outage += 1
             if t - self.t_eval >= min(RATE_CADENCE_MAX, self.srtt_eff() / 4.0):
@@ -1346,7 +1349,7 @@ class Sim:
         return dict(n_ticks=r4["ticks"], n_tau_lt_T=int(r4["tau_lt_T"]), ov_frac=r4["ov"] / n, floor_bind=r4["floor_n"] / n, collapse_t=r4["collapse_t"],
                     den_bind=int(r4["den_bind"]), deq_early_would=r4["deq_early"], dhat_inf_frac=r4["dhat_inf"] / n, dhat_mean=(r4["dhat_sum"] / r4["dhat_n"]) if r4["dhat_n"] else None,
                     dhat_ratio_q05=q(0.05), dhat_ratio_q50=q(0.5), dhat_ratio_q95=q(0.95), dhat_ratio_n=len(rs), in_flight_max=r4["in_flight_max"],
-                    spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
+                    spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], spare_bins=sorted((k, v[0], v[1]) for k, v in r4["spare_bins"].items()), tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
 
     def astar(self, now):
         """Paper 5.3: A* = clamp(ceil(rate_hat * min(b*srtt, 2*srtt)), 1, W); 1 before the first RTT sample."""

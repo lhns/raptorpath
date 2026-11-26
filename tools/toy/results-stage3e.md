@@ -711,3 +711,14 @@ For today's Realtime, "unfinished at t_limit" is now recorded per run (`unfinish
 - D-hat is +inf on a median 64 % of ticks (min 0.025, max 1.0), so tau is inert most of the time. The 0.889 and 1.111 extremes of the D-hat to oracle ratio look like rate-step artefacts (1/1.125 and 1/0.9), not estimator error; not chased.
 - in_flight now counts every datagram sent (first sends, copies, repairs) and not yet covered by a report (a report covering first-send seq rhi covers everything sent up to that first send). Gauge only; identity unchanged.
 - spare_bind (share of first sends at which min(r, spare) < r, spare = (2048 - in_flight)/in_flight), seed 0, headroom cells: CL-long RL arms 0.12 (T = 0.4) to 0.67 (T = inf), RS 0.15, RS-inf 0.77, RE 0.13, RF3 0.97, R0 0; CL-long-v 0 to 0.01; Ec, RT 0. The doc expects about 0: not met in CL-long. The clamp would change those cells.
+
+## 2026-11-26 Revision 4 step 2: spare_bind binds in the drain window only; CL-long clamp-on predictions (registered before the sizing run)
+
+spare_bind per arm (seed 0, headroom cells): see the previous note; it binds in the drain window only. Per 1 s on CL-long RL, seed 0 (outage [2.0, 3.5] s), first sends at which spare < r, out of first sends:
+- T = 0.4: s2 192/996 (the outage start), s3 5 571/6 095, s4 11 254/11 254, s5 6 211/10 514, none from s6 on (drain over by about 5.5 s).
+- T = 2: s2 192/996, s3 1/4 436, s4 10 327/11 458, s5 to s14 every first send, s15 7 899/10 701. Nothing before 2.0 s; the drain at T = 2 lasts to about the end of the run.
+So it is confined to [outage start, drain end]; before the outage it is 0. This is the engine behaviour of ENGINE-CAP (the engine sends almost no repair while a backlog drains), expected, not a defect.
+
+Registered before the clamp-on CL-long rows run (RL at T = 0.4, 2 and inf, clamp on, against clamp off and repair off, 3 seeds):
+- T = 0.4: delivered 0.939 to 0.942 (stored RL 0.939, repair off 0.9414), on time and recovery within 0.1 s as stored: no visible change (the drain is short, repair there was small).
+- T = 2 and T = inf: the clamp removes the drain-time repair, so recovery_time moves from RL's 9.2 s (T = 2) and 9.4 s (T = inf) toward the repair-off value; predicted to close more than half the gap. Delivered and on-time shares: between RL and repair off, no worse than RL beyond the A/A floor.
