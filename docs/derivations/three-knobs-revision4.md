@@ -1798,6 +1798,7 @@ Names and semantics only. All default off, so every stored row reproduces.
 - **`cap_series`:** per 0.5 s window, the mean of w, of the head age at the dequeue, of x̂ and of t_ov, over dequeues with x > 1. Shape readouts 1–4 read from it.
 - **`reserve_end`:** the head age at the last hand-over, and the delivered share of the units handed over after `last_hand − reserve_end`.
 - **`tov_resets`:** the transitions from x > 1 to x ≤ 1 after the first dequeue with x > 1.
+- **`y_max`, `w_min_over_c`:** the largest y, and the smallest w/c⁺, over the run. They are the x̂ = 1 edge's readouts (§13.3, Q34), reported in every identity cell.
 - **Kept:** `den_bind`, which now counts dequeues with T < R; `ov_frac`; `floor_bind`; `deq_early_would`, counted against the §13.3 predicate.
 
 **Cell and reader (in the confirmation driver, not in `toy2.py`):**
