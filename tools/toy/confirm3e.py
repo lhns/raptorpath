@@ -326,8 +326,8 @@ def run_gates(cell, jobs):
                 if ra is None or rb is None:
                     continue
                 d = ident_diff(ra, rb)
-                if d or rb["rev4"]["n_tau_lt_T"]:
-                    bad.append("B != A in %s at %s seed %d: %s, n_tau_lt_T = %s" % (cell, j.name, s, d, rb["rev4"]["n_tau_lt_T"]))
+                if d:                                                                   # n_tau_lt_T and deq_early_would are reported per row, not a stop (2026-11-26, pre-data)
+                    bad.append("B != A in %s at %s seed %d: %s" % (cell, j.name, s, d))
     sa = [j for j in jobs if j.design == "A" and j.key == ("lt", INF, INF)]
     bu = [j for j in jobs if j.design == "bulk"]
     for a, b in zip(sa, bu):
@@ -425,8 +425,8 @@ def _read_cell(cell, jobs, nf, double=frozenset()):
         "Delay p50 is reported only here (delta = 0.005, 12.3)." if video else ""))
     if cell == "CL-long":
         P("Labelled post-data: build A's CL-long rows (and the clamp rows of the new model there) were sized in step 2 (three-knobs-revision4.md 9.1) before this registration; they confirm nothing. What is new here is the baselines under the clamp and elig = rack.")
-    P("| row | seeds | whole-run delivered | on time within %gs | recovery (s) | elig_R_bind | floors | repeats | resends (dup) | unfinished |" % tau_of_cell(cell))
-    P("|---|---|---|---|---|---|---|---|---|---|")
+    P("| row | seeds | whole-run delivered | on time within %gs | recovery (s) | elig_R_bind | floors | repeats | resends (dup) | unfinished | n_tau_lt_T (ticks, mean) | deq_early_would (mean) |" % tau_of_cell(cell))
+    P("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for j in jobs:
         rs = recs(j)
         if not rs:
@@ -434,11 +434,12 @@ def _read_cell(cell, jobs, nf, double=frozenset()):
         m = lambda f: float(np.mean([f(r) for r in rs]))                                     # noqa: E731
         ot = m(lambda r: sum(r["series"]["ot"][CR.tkey(r["tau"])]) / max(sum(r["series"]["handed"]), 1))
         rec = [r.get("recovery_time") for r in rs]
-        P("| %s | %d | %.4f | %.4f | %s | %.3f | %.0f | %.0f | %.0f (%.0f) | %d |" % (
+        P("| %s | %d | %.4f | %.4f | %s | %.3f | %.0f | %.0f | %.0f (%.0f) | %d | %.0f | %.0f |" % (
             cell_label(j), len(rs), m(lambda r: r["share_any"]), ot, ("%.2f" % np.mean([REC if x is None else x for x in rec for REC in (CR.REC_CAP,)])) if dead_of(cell) else "-",
             m(lambda r: r["rev4"]["elig_R_bind"] / max(r["rev4"]["elig_n"], 1)), m(lambda r: r["gauges"].get("floors", 0)),
             m(lambda r: (r["gauges"].get("rep_fired_by_knowledge") or 0) + (r["gauges"].get("rep_fired_by_timeout") or 0)),
-            m(lambda r: r["gauges"].get("repair_sends", 0)), m(lambda r: r["gauges"].get("dup", 0)), sum(r["unfinished"] for r in rs)))
+            m(lambda r: r["gauges"].get("repair_sends", 0)), m(lambda r: r["gauges"].get("dup", 0)), sum(r["unfinished"] for r in rs),
+            m(lambda r: r["rev4"]["n_tau_lt_T"]), m(lambda r: r["rev4"]["deq_early_would"])))
     if cell not in OVER:
         outage = dead_of(cell) is not None
         P("\nMatched share. %s The new curve is build A's H = 0 sweep, interpolated per seed at the baseline's share, against the baseline; a baseline below the curve's "

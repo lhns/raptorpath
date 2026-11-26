@@ -225,7 +225,7 @@ class Gates(unittest.TestCase):
         self._fake(lambda fp, s, r: r.update(share_any=0.8) if fp == b.fp else None)
         self.assertTrue(any("B != A" in x for x in C.run_gates("CL", self.jobs)))
         self._fake(lambda fp, s, r: r["rev4"].update(n_tau_lt_T=3) if fp == b.fp else None)
-        self.assertTrue(any("n_tau_lt_T = 3" in x for x in C.run_gates("CL", self.jobs)))
+        self.assertEqual(C.run_gates("CL", self.jobs), [])                                  # a live wait limit with identical traces is reported, not a stop
         self._fake(lambda fp, s, r: r.update(trace_sha="other") if fp == b.fp else None)
         self.assertTrue(any("B != A" in x for x in C.run_gates("CL", self.jobs)))
 
