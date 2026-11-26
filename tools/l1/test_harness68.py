@@ -99,5 +99,8 @@ check("the row parser registers every plan-68 arm: B* on the BASE family, R* / G
 check("the new files are LF only and in both crlf_guard lists, and lib.sh forwards the pacer knob for the day a paced cell is built", all(b"\r" not in open(os.path.join(HERE, f), "rb").read() for f in ("plan68.py", "s68_report.py", "test_s68.py", "test_harness68.py"))
       and "crlf_guard plan68.py s68_report.py test_harness68.py test_s68.py" in ra and "crlf_guard plan68.py s68_report.py test_harness68.py test_s68.py" in bt and "RWM_PERF_RATE_MBIT" in rd("lib.sh"))
 check("HARNESS_PATHS carries plan 68 with its rehearsal and its launch", {"rehearse", "full"} <= set(hp.HARNESS_PATHS.get("68", ())), hp.HARNESS_PATHS.get("68"))
+os.environ["LD_PLAN"] = "68"; os.environ.pop("LD_BASE_SHA", None)
+import place38_parse as _pp68
+check("plan 68's BASE seat (main + the gauge commit) is a promoted BASE: its wire gauges are not a WITNESS-FAIL (the rehearsal's BK2 row)", _pp68.base_promoted() is True)
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

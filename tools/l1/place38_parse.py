@@ -828,7 +828,8 @@ def idle_decay(diag):
 def base_promoted():
     """BASE is main's binary. Main before `85c2295` (the historical pin 4926822) has no wire gauges; any later main
     (LD_BASE_SHA set to another sha, status 49 / 48b) carries the ADR-0073 promotion and prints them, like CAND."""
-    if os.environ.get("LD_PLAN") in ("64", "65"):
+    if os.environ.get("LD_PLAN") in ("64", "65", "68"):
+        # Status 68: BASE is main plus the [HOFF] gauge commit (4b245251), after the promotion; its seat is pinned by binary sha (LD_BIN_SHA_CONTROL), so the plan-68 rehearsal's BASE smoke row read WITNESS-FAIL (wire-gauges-on-BK2) without this.
         # Status 64 / 65 stage R: BASE is main before F2, i.e. AFTER the ADR-0073 promotion, by construction (their seats are pinned by binary sha, not by LD_BASE_SHA). Plan 64's launch happened to carry LD_BASE_SHA (main at launch);
         # plan 65 has none (a stage-R-only launch on prebuilt binaries), so without this line the historical-pin default read the promoted BASE's wire gauges as a violation (WITNESS-FAIL on every RB row).
         return True
