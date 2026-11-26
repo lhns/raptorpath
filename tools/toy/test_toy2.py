@@ -1,6 +1,7 @@
 """Unit tests for the stage-2 toy (docs/derivations/skip-rule-efficiency.md 7.8).
 Run from tools/toy:  python -m unittest test_toy2   (stage 1's test_toy.py must still pass as well)."""
 import ast
+import dataclasses
 import math
 import os
 import random
@@ -2013,6 +2014,88 @@ class Rev4Gauge(unittest.TestCase):
         r1 = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True, dhat_bias=0.10))["rev4"]
         self.assertGreaterEqual(r1["n_tau_lt_T"], r0["n_tau_lt_T"])
         self.assertAlmostEqual(r1["dhat_mean"] / r0["dhat_mean"], 0.9, delta=0.02)
+
+
+class Rev4Step2(unittest.TestCase):
+    """Revision 4 step 2 (three-knobs-revision4.md 3.1, 3.3, 5.2): the wait limit, the spare-capacity clamp and today's Realtime behind an engine queue.  All off by default."""
+
+    @staticmethod
+    def ov(design, n=24000, **kw):
+        import batch3e
+        rp = batch3e.rp("RL")
+        if design == "new":
+            return batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, rp, n_total=n, **kw)
+        return batch3e.rt_cfg("OV", 0, 50.0, rp, n_total=n, **kw)
+
+    def test_defaults_off_and_fingerprint_stable(self):
+        import batch3e
+        c = toy2.Cfg()
+        self.assertEqual((c.clamp, c.wait_limit, c.eq, c.cwnd_sim, c.rate2, c.rate2_t, c.eq_cap), (False, False, False, 0.0, 0.0, 0.0, 8192))
+        a = self.ov("new")
+        self.assertEqual(batch3e.fingerprint(a), batch3e.fingerprint(dataclasses.replace(a, clamp=False, wait_limit=False)))
+        self.assertNotEqual(batch3e.fingerprint(a), batch3e.fingerprint(dataclasses.replace(a, clamp=True)))
+        self.assertNotEqual(batch3e.fingerprint(a), batch3e.fingerprint(dataclasses.replace(a, cwnd_sim=2048.0)))
+
+    def test_hand_over_clock_is_piecewise(self):
+        sim = toy2.Sim(self.ov("new", rate2=8000.0, rate2_t=0.5, n_total=12000))
+        self.assertAlmostEqual(sim.ht(0), 0.0, delta=1e-12)
+        self.assertAlmostEqual(sim.ht(6000), 0.5, delta=1e-9)
+        self.assertAlmostEqual(sim.ht(6000 + 8000), 1.5, delta=1e-9)
+        for u in (0, 1, 5999, 6000, 6001, 11999):
+            self.assertEqual(sim.hand_count(sim.ht(u)) - 1, u)                # the inverse hands over unit u at ht(u)
+
+    def test_clamp_bounds_r_eff_and_changes_only_where_it_binds(self):
+        import batch3e
+        a = toy2.run(dataclasses.replace(self.ov("new"), rev4_gauge=True))
+        b = toy2.run(dataclasses.replace(self.ov("new"), rev4_gauge=True, clamp=True))
+        self.assertGreater(a["rev4"]["spare_bind"], 0.5)                       # OV: in_flight near B
+        self.assertGreater(b["gauges"]["clamp_n"], 0)
+        self.assertLessEqual(b["gauges"]["r_eff_over_spare"], 0)                # r_eff <= max(spare, 0) at every accrual
+        self.assertLess(b["gauges"]["repair_sends"] + b["gauges"]["rep_sent"], a["gauges"]["repair_sends"] + a["gauges"]["rep_sent"] + 1)
+        self.assertEqual(b["rev4"]["cwnd_sim"], 1000.0)
+
+    def test_clamp_is_identity_without_repair_and_where_there_is_headroom(self):
+        import batch3e
+        for kw in (dict(), ):
+            off = dataclasses.replace(batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, None, n_total=12000), want_trace=True)
+            on = dataclasses.replace(off, clamp=True)
+            self.assertEqual(batch3e.id3e(toy2.run(off), toy2.run(on)), [])        # r = 0: nothing changes
+        c = rt_e(repair=dict(r="law", edge="worth"), n_total=3000, want_trace=True)
+        on = dataclasses.replace(c, clamp=True)
+        ra, rb = toy2.run(c), toy2.run(on)
+        self.assertEqual(ra["_trace"], rb["_trace"])                               # RT-like cell: in_flight is tens, spare >> r
+        self.assertEqual(batch3e.id3e(ra, rb), [])
+
+    def test_wait_limit_is_inert_at_headroom_and_at_t_inf_and_acts_in_overload(self):
+        import batch3e
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), want_trace=True)
+        on = dataclasses.replace(c, wait_limit=True)
+        self.assertEqual(batch3e.id3e(toy2.run(c), toy2.run(on)), [])
+        inf = dataclasses.replace(self.ov("new", n=24000), T=math.inf, want_trace=True)
+        self.assertEqual(batch3e.id3e(toy2.run(inf), toy2.run(dataclasses.replace(inf, wait_limit=True))), [])
+        a = toy2.run(dataclasses.replace(self.ov("new", n=60000), rev4_gauge=True))
+        b = toy2.run(dataclasses.replace(self.ov("new", n=60000), rev4_gauge=True, wait_limit=True))
+        self.assertGreater(b["rev4"]["deq_early_would"] + b["rev4"]["n_tau_lt_T"], 0)
+        self.assertLess(b["dh_p50"], a["dh_p50"])                                   # the wait cap lowers the delay in overload
+
+    def test_engine_queue_evicts_the_oldest_and_is_inert_without_overload(self):
+        import batch3e
+        base = self.ov("rt", n=4000, dead=None)
+        calm = dataclasses.replace(base, rate=5000.0, eq=True, want_trace=True)       # below C = 10 000: the queue stays empty
+        ref = dataclasses.replace(calm, eq=False)
+        ra, rb = toy2.run(ref), toy2.run(calm)
+        self.assertEqual(rb["gauges"]["fq_evict"], 0)
+        self.assertEqual(ra["delivered"], rb["delivered"])
+        over = dataclasses.replace(self.ov("rt", n=24000, dead=None), eq=True, eq_cap=200)
+        r = toy2.run(over)
+        self.assertGreater(r["gauges"]["fq_evict"], 0)
+        self.assertLessEqual(r["gauges"]["fq_max"], 200)
+        self.assertEqual(r["gauges"]["queue_drop"], 0)                                 # drained at the link rate: the link buffer stays empty
+
+    def test_engine_queue_adds_residence_under_sustained_overload(self):
+        eq = toy2.run(dataclasses.replace(self.ov("rt", n=36000, dead=None), eq=True, eq_cap=2000))
+        st = toy2.run(self.ov("rt", n=36000, dead=None))
+        self.assertGreater(eq["dh_p50"], st["dh_p50"])
 
 
 if __name__ == "__main__":
