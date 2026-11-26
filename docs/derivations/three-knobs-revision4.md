@@ -134,6 +134,8 @@ Requirement 1, read with "τ small at zero headroom", restricts τ's form before
 
 ## 2. The derivation, from the paper's δ
 
+> **Superseded in part by §13 (2026-11-26).** Under the policy the refund premise below fails, so the odds t_ov/t_r do not apply. §13 re-derives the bet for the policy.
+
 **What δ is.** The paper's dial table (§1) and §8.2 define δ as "the marginal cost of delay, in Copa's utility `U = log(throughput) − δ·log(delay)`", on (0, ∞).
 - δ is **dimensionless**.
 - It prices a **relative** change of delay against a relative change of throughput.
@@ -181,6 +183,8 @@ The first draft used δ as a raw odds bar (take the bet at odds ≥ 1/δ). That 
 ## 3. The law
 
 ### 3.1 The wait limit, its floor, and how a collapsed sweep is read
+
+> **Superseded by §13.3 (2026-11-26)** for build B′. The law below stays as build B's record.
 
 ```text
    at each dequeue (toy2.py emit, after L1):
@@ -1404,3 +1408,378 @@ So the steady window as registered includes a filling transient, and the arm's t
   4. then OV-long and OV-long-v.
   - Each cell is read when it finishes, and its doubling runs before the next cell.
 - **Stop rules:** as §12.1's gates. A failed identity check of B against A in a headroom cell is a STOP, and sends the wait limit back to derivation.
+
+## 13. Addendum: the wait limit's bet, re-derived for the policy (2026-11-26)
+
+**Status.** Derivation. It uses the §12 confirmation's stored runs of OV-long and OV-long-v (6 seeds each), and one instrumented rerun of stored configurations (it logs readouts only and changes no decision). §13.5 and §13.6 are written before any run of build B′.
+
+**Inputs.**
+- `toy-stage3e` scratch build: `tools/toy/results-confirm3e.md` (OV-long, OV-long-v, CL-long), and the stored runs under `out3e/confirm/runs`, read with `confirm3e.py`'s registry.
+- The per-window series below were recomputed from those runs. `reread-confirm-ov.md` is empty, so the coordinator's figures were checked against the recomputation, and they agree.
+- **Instrumented reruns** (seed 0 of build A at T = 1; seeds 0–2 of build B in CL-long at T = 2). They log x̂, t_ov, R, ô, μ̂ and the head's age at each dequeue where x̂ > 1.
+  - OV-long-v: x̂ = 1.226, μ̂ = 9 786/s, R = 0.105 s, ô = 0.094 s.
+  - OV-long: x̂ = 1.232, μ̂ = 9 740/s, R = 0.104 s, ô = 0.095 s.
+  - These are medians over 5–39 s. t_ov starts at t₀ ≈ 1.21–1.27 s, the first instant at which μ̂ is finite.
+
+### 13.1 The refund premise, checked against the policy: refuted as stated
+
+**§2's premise.** If the overload persists, the queue reaches §13.2's margin c = T − R and drops a unit anyway, so the head dropped now is refunded with odds t_ov/t_r.
+
+**Under the policy that premise cannot hold.**
+- The cap c_B = τ − R is non-increasing in t_ov at fixed x, so the queue never regrows to c while the overload lasts.
+- The refund event of §2 ("the queue reaches c") is exactly what the policy forbids. The bet was priced against a future run by §13.2, but the future is run by the policy, so the bet is time-inconsistent.
+
+**The measured mechanism: the bill is set by the cap when hand-over ends.** It is not set by what was shed on the way down. In a fluid model, with the link kept busy by the store pause (§1):
+
+```text
+   delivered  =  μ · (busy time) ,      busy time  =  hand-over span  +  the end drain  min( x·w_end , c )
+   A − B      =  μ · ( c − x·w_end )⁺                                        w_end = B's queue-wait cap when the overload ends
+```
+
+**Why the end drain is `min(x·w_end, c)`.**
+- When the overload ends, x̂ ≤ 1 resets t_ov, so B's cap returns to c.
+- B's queue holds λ·w_end units at hand-over density λ. They drain at μ, so the last one is sent at age x·w_end. If x·w_end ≤ c, every one of them is delivered.
+- A's queue holds λ·c units, and its head expires at age c. So A delivers only μ·c = λ·(c/x) of them; the rest expire.
+- Every shed unit that the queue regains before the end is refunded: while the queue regrows, it drops nothing.
+
+**Check against all four finite-T rows of OV-long-v** (δ = 0.005; μ̂ = 9 786, x̂ = 1.226, R = 0.105; w_end = B's `tau_min` − R, since the cap only falls):
+
+| T | c (s) | w_end (s) | measured A − B (units) | §2's bill μ̂·(c − w_end) | the policy's bill μ̂·(c − x̂·w_end)⁺ |
+|---|---|---|---|---|---|
+| 1 | 0.895 | ≤ 0 (collapsed at 29.6 s) | 9 320 | 8 760 | 8 760 |
+| 1.5 | 1.395 | 0.223 | 11 111 | 11 470 | 10 980 |
+| 2 | 1.895 | 1.033 | 6 296 | 8 440 | 6 160 |
+| 3 | 2.895 | 2.315 | 798 | 5 680 | 560 |
+
+- The policy's bill fits every row to within 240–560 units. The bill implied by §2 fails at T = 2 and T = 3.
+- **The residual, about +2–6 %, is the young units' resend cost** (§9.1): B's units are protected and resent. After the collapse at T = 1, B's 4 s windows read 0.806 against A's 0.808.
+- **The end flush can be seen directly.** At T = 3, B delivers 1.000 of the units handed over in its last ≈ 2 s, against A's 0.808. That is λ·w_end units drained whole.
+
+**The descent, read per window (T = 1).** B's delivered share per 4 s hand-over window, from [4, 8] s to [24, 28] s:
+
+| | [4, 8] | [8, 12] | [12, 16] | [16, 20] | [20, 24] | [24, 28] |
+|---|---|---|---|---|---|---|
+| B | 0.801 | 0.790 | 0.782 | 0.777 | 0.768 | 0.763 |
+| deficit against A's 0.808, measured | 0.007 | 0.018 | 0.026 | 0.031 | 0.040 | 0.045 |
+| deficit predicted, `(μ̂/λ)·\|w′\|/(1 + \|w′\|)` with `\|w′\| = 2δ(x̂ − 1)·t_ov/(c + ô)` | 0.009 | 0.016 | 0.023 | 0.030 | 0.037 | 0.044 |
+
+- After that, [28, 32] s reads 0.792 and the later windows 0.806. B never goes above A, because its cap never rises during the overload.
+- The predicted collapse is at t₀ + √(c(c + ô)/(δ(x̂ − 1))) = 1.27 + 28.0 = 29.3 s, against 29.6 s measured.
+- **So build B implements §3.1 as derived. The defect is in the derivation's premise, not in the code.**
+
+**What survives of the refund, and what does not.**
+1. **The free band.** The band of wait [c/x, c] is refunded for sure.
+   - A cap at c/x leaves `x·w_end = c`, so the bill is 0.
+   - The units A holds above c/x all expire at the end anyway: A's λc-unit reserve delivers only λ·(c/x).
+   - **Shedding that band costs nothing at any δ and under any forecast.** It saves (c − c/x) of delay for every unit sent during the overload.
+2. **The priced band.** Below c/x, each second of cap costs λ units, paid once and only if the overload ends while the cap is there: `bill = λ·(c/x − w)⁺`.
+   - The odds t_ov/t_r of §2 describe neither band.
+   - The factor in t_ov² that came from those odds has no counterpart in the policy (§13.4).
+
+**Premises of the bill, each with a gauge:**
+- **The link stays busy.** The store pause holds about 880 datagrams in the link buffer (§1). Gauge: `link_util_w`.
+- **The cap is restored when the overload ends.**
+  - When hand-over stops or falls, λ̂ decays over its 8·srtt window, so x̂ falls continuously and the free-band cap c/x̂ rises faster than the head ages. With W = 0.8 s, x = 1.23 and c = 1.9, the cap is `1.55/(1 − t/W)` against a head age of `1.55 + 0.19·t`.
+  - Then x̂ ≤ 1 resets t_ov, which removes the priced band.
+  - Gauge: `reserve_end`, the queue wait at the last hand-over, and the delivered share of the units in it.
+- **μ̂ is unbiased.** In OV-long-v, D̂ against the oracle reads 1.003–1.014 (q05–q95). Reading high is the safe side: the cap stays above c/x.
+
+### 13.2 The bet for the policy
+
+**The bet's objects.**
+- **The cap's decision variable** is the queue wait w. Within [c/x, c] it is free (§13.1), so U prefers the lowest value, c/x, for every δ > 0.
+- **Below c/x the stake is `λ·(c/x − w)`,** forfeited only if the overload ends while the cap is at w. Lowering the cap and raising it again before the end costs nothing, because the queue regrows without dropping. So the decision has no commitment and is taken afresh at each instant.
+
+**The forecast (cited, not a choice).** Gott's scale-free prior (§2) gives, at overload age t_ov:
+
+```text
+   P(persist ≥ s | t_ov)  =  t_ov / (t_ov + s)      ⇒      hazard of ending now   h  =  1 / t_ov
+```
+
+**The flow form of U.** Per second of overload, compare the expected loss with the delay gain, both in U = log(throughput) − δ·log(delay).
+
+```text
+   expected throughput cost per second   =  h · λ·(c/x − w) / μ   =   x·(c/x − w) / t_ov          (the stake as a fraction of one second's units)
+   delay gain per second                 =  δ · (c/x − w) / d₁ ,     d₁ = c/x + ô                     (relative delay, linearised at the status quo d₁, as §2 charges against d₀)
+   shed below c/x   ⇔   δ/d₁  ≥  x/t_ov   ⇔   t_ov  ≥  s_b  =  (c + x·ô) / δ
+```
+
+- **Units.** Both rates are per second. s_b is in seconds.
+- **The scale check** (the brief's rough scale was d₀/δ; here it is (c + x·ô)/δ, the same order):
+
+  | cell | s_b | reading |
+  |---|---|---|
+  | OV-long-v, δ = 0.005, T = 1 | (0.895 + 0.115)/0.005 = 202 s | inert in a 40 s run |
+  | OV-long-v, δ = 0.005, T = 3 | 603 s | inert in a 40 s run |
+  | OV-long, δ = 50, T = 0.4 | 8.3 ms | at once |
+  | OV-long, δ = 50, T = 2 | 40 ms | at once |
+
+- **The median-horizon reading of §2 gives the same break-even.** Its throughput term is read over t_h = t_ov: δ/d₁ ≥ x/t_ov. So the hazard form and the median form agree on s_b.
+- **The expected value over the horizon is ill-posed under Gott's prior.** The prior's remaining duration has infinite mean, so the answer depends on how the expectation is normalised:
+  - normalised per horizon, E[1/S] = ∞ and the bet never pays;
+  - added up per unit, E[S] = ∞ and it always pays.
+  - The flow form above needs neither moment. **Reading U as a flow charged at the hazard rate** is the one step that is a choice (Q24, narrowed in §13.4).
+
+**The optimum is a jump, so it cannot ship.**
+- Linearised, the net per second is `(c/x − w)·(δ/d₁ − x/t_ov)`. That is linear in w, so the optimum is bang-bang: hold c/x until t_ov = s_b, then shed to the floor.
+- Unlinearised, the gain `δ·log((c/x + ô)/(w + ô))` is convex in w, so the optimum is bang-bang too, and earlier: shed fully once t_ov ≥ t₁ = c/(δ·ln(1 + c/(x·ô))) ≤ s_b. For example t₁ = 82 s against s_b = 202 s at δ = 0.005 and T = 1.
+- **The structural reason:** a cap removes the queue from the top, but the delay gain per second of wait is largest at the bottom. So once the first slice pays, every lower slice pays more.
+- At fixed t_ov the jump is a step in δ at δ = (c + x·ô)/t_ov, which is a mode switch (CLAUDE.md). **So it cannot ship.**
+
+**The continuous relaxation (a second choice, Q33).** Shed the priced band in proportion to the edge of the median bet.
+- The median bet is "the overload outlasts s_b more", whose probability under Gott is P = t_ov/(t_ov + s_b).
+- The shed fraction is `φ = (2P − 1)⁺ = ((t_ov − s_b)/(t_ov + s_b))⁺`.
+- **Properties:**
+  - it is exactly 0 until the bang-bang onset (P ≥ ½);
+  - it is continuous in δ, t_ov, T and x;
+  - it tends to 1 as t_ov → ∞;
+  - it holds more than the U-optimum at every t_ov, so it is conservative in share.
+- **Its form is the even-money Kelly fraction p − q** (J. L. Kelly, *Bell Syst. Tech. J.* 35, 917, 1956). Kelly's premise is a log-utility bet, which U's log(throughput) term shares. The mapping of our bet onto even money is not derived. So the citation gives the form, not a derivation, and it is recorded as a choice.
+
+### 13.3 The law
+
+**The sentence it implements.** Never hold a wait that the overload's end cannot drain (the free band). Below that, give the wait up as the δ-priced bet on the overload's persistence gains its edge (the priced band).
+
+```text
+   at each dequeue (toy2.py emit, after L1), with a younger unit waiting:
+      expire the head u   ⇔   a(u) + R  ≥  T      ∨      a(u)  ≥  w
+      w   =  ( c⁺ / x̄ ) · min( 1 ,  2 / (1 + y) )
+      y   =  δ · t_ov / ( c⁺ + x̄·ô ) ,        c⁺ = max(T − R, 0) ,     x̄ = max(λ̂/μ̂, 1)
+```
+
+- **The first clause is §13.2 unchanged.** The second is the cap.
+- In exact arithmetic the pair is one threshold, `a ≥ min(T − R, w)`. Both are always evaluated, and neither selects the other.
+- For t_ov ≥ s_b, `min(1, 2/(1 + y))` equals 1 − φ, since y = t_ov/s_b.
+
+| symbol | provenance |
+|---|---|
+| T, a(u), R | §2.1 and §13 of the derivation |
+| ô | §17.1: `srtt − RTprop/2`. It is > 0 always (the RFC seed before a sample), so the denominator of y is > 0 |
+| δ | declared, on (0, ∞); +∞ is a config error (§3.1) |
+| λ̂, μ̂ = D̂, t_ov | measured, as in §3.1 and §3.2 (unchanged) |
+| c/x̄ (the free band) | derived from the fluid bill, §13.1, with no choice |
+| s_b = (c + x̄ô)/δ, so y = t_ov/s_b | derived: Gott's hazard (cited) and U read as a flow, linearised at d₁ (the choice of Q24) |
+| `min(1, 2/(1 + y))` | the ramp (2P − 1)⁺ (the choice of Q33). It is a clamp, gauged as `onset_bind` |
+| x̄ = max(x, 1) | the free band exists only under overload. It is a clamp, gauged as `ov_frac` (existing) |
+| c⁺ = max(T − R, 0) | where T ≤ R, §13.2 already expires every head; w = 0 agrees. It is a clamp, gauged as `den_bind` (predicted 0 wherever T > R) |
+
+**Shape (read before any number).**
+- **Units:** w [s] = c⁺ [s] / x̄ [1] · [1]. y = δ [1] · t_ov [s] / [s].
+- **In age:** w does not depend on a, so expiry is a threshold in age, and the oldest goes first.
+- **In δ:** y is increasing, so w is non-increasing and continuous. dw/dδ = 0 before the onset, and there is a kink, not a step, at y = 1.
+  - At ±2 % of any δ preset, |Δw|/w ≤ 2 %·y/(1 + y) < 2 %.
+- **In t_ov:** non-increasing and continuous. The tail is `w ≈ 2·(c/x̄)·s_b/t_ov`, so ∝ 1/t_ov.
+- **In T:** c rises, and y falls, so w rises.
+- **In x:** non-increasing.
+  - Before the onset, w = c/x̄.
+  - After it, w = 2c/(x̄ + δ·t_ov·x̄/(c + x̄ô)), and both terms of the denominator rise with x̄.
+  - At x → 1⁺, w → c·min(1, 2/(1 + y)), continuous in x.
+- **T = ∞:** c⁺ = ∞ and y = δt_ov/∞ = 0.0, so min(1, 2) = 1 and w = ∞/x̄ = ∞. `a ≥ ∞` and `a + R ≥ ∞` are both false: **inert by arithmetic**, with no NaN, because x̄ is finite and ≥ 1.
+- **Headroom, x̂ ≤ 1:** t_ov = 0 and x̄ = 1.0, so y = 0.0, the min is 1.0 and w = c⁺ = fl(T − R) exactly.
+  - The second clause `a ≥ fl(T − R)` then differs from §13.2's `fl(a + R) ≥ T` only when a lies within one rounding of T − R.
+  - So "identity" here means "identical except at one-ulp ties". The B′ ≡ A trace check is its witness. The form that is exact at ulps, `a + R ≥ T − (c − w)`, is ∞ − ∞ at T = ∞ and is rejected.
+- **The t_ov reset.**
+  - A tick with x̂ ≤ 1 resets t_ov, so the cap jumps up to c/x̄.
+  - The old law had the same reset (§5.1). A rise in the cap sheds nothing, and the queue regrows at (x − 1) s/s, so the behaviour is continuous in x even where τ is not continuous in time.
+  - Gauge: `tov_resets`, the resets after the first overload dequeue. D̂ = +∞ outside the start (`dhat_inf_frac` 0.034 ≈ t₀/40 s) suggests 0.
+- **NO-MODE-SWITCH.** One expression. Three clamps, each continuous and each gauged. No dial is compared with a constant. The OR is a minimum of two thresholds, and both are always computed.
+- **The floor.** w > 0 at every finite t_ov, so the old collapse threshold K_c has no counterpart. `floor_bind` is reported, and `collapse_t` is replaced by `onset_t`, the first instant with y ≥ 1, that is, t₀ + s_b.
+
+**What it changes against build B.**
+- The t_ov² is gone. w depends on t_ov linearly through y, and on x through c/x̄ and s_b.
+- At δ = 0.005 only the free band acts within 40 s.
+- At δ = 50 the cap reaches a few ms within a second and stays above the floor. The old law sat at the floor.
+
+### 13.4 What this implies for Q24 and Q32 (and a new Q33)
+
+**Q24, narrowed.**
+- Of the two t_ov factors in t_ov², the **odds factor is refuted:** the policy has no refund at odds t_ov/t_r (§13.1).
+- The **horizon factor** is replaced by Gott's hazard 1/t_ov. That is cited, and needs no median.
+- What remains a choice is **reading U as a per-second flow,** charged at the expected loss rate and linearised at the status-quo delay d₁.
+  - Its two alternatives, the expected value over the horizon normalised per horizon or per unit, are ill-posed under the prior (never, or always).
+  - The median-horizon reading of §2 gives the same s_b.
+- **Proposed for the owner:** the flow reading, with Gott's calibration gauged (Q25). No default is set.
+- The free band takes no part in Q24: it ships on its derivation alone.
+
+**Q32, answered in part.**
+- "Whether a standing queue that buys nothing should be shed at every δ" now has a derived part: **the band [c/x, c] buys nothing at any δ, and is shed at every δ > 0.**
+- The rest, c/x, buys exactly the reserve that the overload's end delivers. At δ = 0.005 U keeps it for s_b ≈ 200–600 s.
+- So at video δ the new law still holds a standing queue of c/x (≈ 1.55 s at T = 2, p50 ≈ 1.64 s), against the 0.17 s of today's Realtime.
+- **What Q32 still asks:** whether a reserve that U values should be held at δ ≈ 0, where the verdict cannot see delay (§12.3).
+
+**Q33 (new; it blocks shipping, with Q24).** The ramp `min(1, 2/(1 + y))`, the even-money Kelly form, relaxes the U-optimal jump.
+- Alternatives: any continuous φ(t_ov/s_b) that is 0 below 1 and tends to 1.
+- §13.5's OV-long-m rows read its shape: the onset instant, the post-onset deficit and the 1/t_ov tail.
+- **No default is proposed.**
+
+### 13.5 Predictions (written before any run of B′)
+
+**Build B′** = A + the law of §13.3 (no send gate), everything else as §12.1's A.
+
+**Common numbers:**
+- OV-long and OV-long-m (δ = 50, and 0.1): x̂ ≈ 1.24 (B's young units read μ̂ ≈ 9 690), R ≈ 0.104 s, ô ≈ 0.095 s, t₀ ≈ 1.2 s.
+- OV-long-v: x̂ ≈ 1.226, μ̂ ≈ 9 786, R ≈ 0.105 s, ô ≈ 0.094 s.
+- **The steady window:** start = the later arm's fill + 1 s, which is ≈ 2.5–3 s here (B′'s first expiry comes within ≈ 0.3 s of t₀); end = 39.6 s.
+
+**OV-long (δ = 50, τ = 0.4 s; T ∈ {0.4, 0.6, 1, 2, ∞}, H = ∞ at {0.4, 2, ∞}):**
+- s_b = 8.3 / 12.3 / 20.3 / 40.3 ms at T = 0.4 / 0.6 / 1 / 2, so `onset_bind` ≈ 0 after the first 40 ms of overload.
+- The cap is `2·(c/x)·s_b/t_ov`: 3 ms → 0.1 ms over the window at T = 0.4, and 92 ms → 3 ms at T = 2.
+
+| T | steady share | steady on time (0.4 s) | steady p50 | whole-run delivered |
+|---|---|---|---|---|
+| 0.4 | 0.801–0.805 | share − ≤ 0.003 | 0.090–0.105 s | 0.803–0.807 |
+| 0.6, 1 | 0.800–0.805 | share − ≤ 0.003 | 0.092–0.108 s | 0.803–0.807 |
+| 2 | 0.799–0.804 (descent ≈ −0.002 in the window) | share − ≤ 0.005 | 0.095–0.110 s | 0.803–0.807 |
+| ∞ | = A (inert) | | | 1.000 |
+
+- **The best point is T = 0.4.**
+- **Dominance:**
+  - against today's Realtime, stored arm, at δ ∈ {0.5, 50}: share −0.004 to −0.007 and on time the same, both within the ≈ 0.0096 bar; p50 better by 0.06–0.08 s, beyond the 0.0085 bar. **Dominates**, as B did.
+  - against the engine-queue arm: **dominates** (on time +0.80, p50 −0.6 s).
+  - against ADR-0084 and Bulk: **a trade** (share −0.19, on time +0.8).
+- **Reported:** B′ against B. It should be equal within the A/A floor on every readout, except p50, which is higher by ≤ 0.01 s.
+
+**OV-long-v (δ = 0.005, τ = 2 s; T ∈ {1, 1.5, 2, 3, ∞}, H = ∞ at {1, 2, ∞}):**
+- s_b = 202 / 302 / 402 / 603 s, so **the priced band is inert: `onset_bind` = 1.000.**
+- Only the free band acts. The cap is c/x̂ = 0.730 / 1.138 / 1.546 / 2.361 s, against A's c = 0.895 / 1.395 / 1.895 / 2.895 s.
+
+| T | steady share | steady on time (2 s) | p50 (reported only) | whole-run, B′ − A |
+|---|---|---|---|---|
+| 1 | 0.804–0.809 | = share | 0.80–0.85 s | −0.004 to +0.001 |
+| 1.5 | 0.804–0.809 | = share | 1.20–1.26 s | −0.004 to +0.001 |
+| 2 | 0.804–0.809 | = share | 1.61–1.67 s | −0.004 to +0.001 |
+| 3 | 0.804–0.809 | ≈ 0 (delay 2.46 s > 2) | 2.43–2.49 s | −0.004 to +0.001 |
+
+- **The −0.002 expected in the share** is the young units' resend cost: a wait of c/x plus reach plus ô is below T at every T, so units are protected.
+- **Bill check (a stop, §13.6):** A − B′ ≤ 0.004 × 480 000 ≈ 1 900 units at every finite T. B measured 9 320 at T = 1.
+- **Dominance under the verdict** (delivered and on time within 2 s): against both of today's Realtime arms, at δ = 0.005 and at 50, **equivalent**, as A. B′'s best point is T = 1, the lowest p50 among the tied points.
+  - It replaces B's measured "2.35 points worse".
+  - It is read with the reader fix of §13.6.
+- **Against ADR-0084 and Bulk:** a trade, as A.
+
+**The headroom identity (3 seeds, traces equal: B′ ≡ A):**
+- **Registered cells and lifetimes:**
+  - CLc, CLc-v and CL-long-v at the default T set of §12 (B_T);
+  - also CL-long, CL and CLw-long at T ∈ {0.4, 2, ∞}, because CL-long is where live ticks were seen.
+- **Predicted: identical in all of them.**
+  - B read `n_tau_lt_T` = 0 in every cell except CL-long at T = 2, so there x̂ ≤ 1 at every dequeue, and the identity holds by arithmetic (up to one-ulp ties).
+  - **CL-long at T = 2, seed 2** (rerun): 151 ticks with x̂ ≤ 1.0007, t_ov ≤ 14 ms and head age ≤ 1.534 s, at 3.69–3.70 s in the drain.
+    - There y = 50·0.014/(1.982 + 0.008) = 0.35 < 1, so w = c/x̄ = 1.981 s > 1.534 s, and nothing expires.
+    - The identity would break only if x̂ > 1.29, or if t_ov > 63 ms at that x̂. **Predicted margin: kept.**
+- `n_cap_lt_c` (ticks with w < c⁺) is predicted to read the same as B's `n_tau_lt_T`.
+
+**The added overload row: OV-long-m.** OV-long's link, load and τ = 0.4 s, at **δ = 0.1**.
+- **Why δ = 0.1:** s_b = (c + 0.118)/0.1 puts the onset inside the steady window at every finite T of OV-long's sweep. That reads the onset's linear dependence on (c + x·ô), so this row is MEASUREMENT DISCIPLINE 17's live witness.
+- **The rate law there:** β = bulkness(0.1) = 0.349, and RL's r(0.1) = 0.046 at ε = 0.03 and srtt 0.1 s. The clamp takes it to ≈ 0 under overload (`spare_bind` ≈ 0.99 in OV-long), so μ̂ and x̂ are as in OV-long.
+- **Sweep:** T ∈ {0.4, 0.6, 1, 2, ∞}, H = 0, for A and B′.
+
+| T | s_b | `onset_t` (t₀ + s_b) | cap c/x before onset → at 39.6 s | per-window deficit right after onset | steady share | steady on time (0.4 s) | steady p50 | whole-run delivered |
+|---|---|---|---|---|---|---|---|---|
+| 0.4 | 4.14 s | 5.3 ± 0.4 s | 0.239 → 0.047 s | 0.023 | 0.796–0.803 | = share | 0.16–0.20 s | 0.803–0.808 |
+| 0.6 | 6.14 s | 7.3 ± 0.5 s | 0.400 → 0.110 s | 0.026 | 0.792–0.802 | 0.50–0.70 (on time once the cap < 0.31 s, from t_ov ≈ 1.6·s_b) | 0.25–0.32 s | 0.806–0.812 |
+| 1 | 10.1 s | 11.3 ± 0.7 s | 0.723 → 0.30 s | 0.029 | 0.789–0.799 | 0.00–0.05 (the cap reaches 0.31 s only at t_ov ≈ 37.6 s) | 0.50–0.65 s | 0.810–0.816 |
+| 2 | 20.1 s | 21.3 ± 1.2 s | 1.529 → 1.05 s | 0.031 | 0.788–0.798 | ≈ 0 | 1.45–1.65 s (half the window is before the onset) | 0.828–0.836 |
+| ∞ | — | — | inert | — | = A | | | 1.000 |
+
+- **How the steady share is derived:** A's 0.805, minus the descent inside the window, `μ̂·(cap at the start − cap at the end)/(λ·window)` (−0.004 / −0.006 / −0.009 / −0.011 at T = 0.4 / 0.6 / 1 / 2), minus the protected units' resend cost (≈ −0.002 once the wait plus reach plus ô is below T).
+- **Whole-run delivered** is A's row minus the bill `μ̂·(c − x̂·w_end)` (2 300 / 3 500 / 5 100 / 5 700 units).
+- **A at δ = 0.1** is predicted equal to OV-long's A within the A/A floor (r is clamped, and A does not read δ otherwise).
+- **The shape readouts** decide Q33. They are read from the per-window cap trace and the per-window shares, never from a pooled share:
+  1. **`onset_t`** within the band at every T, and `onset_t − t₀` linear in (c + x̂ô): the T = 2 / T = 0.4 ratio is 4.86 ± 10 %.
+  2. **Before the onset** the cap is c/x̂ within 3 %, and the per-window deficit against A is ≤ 0.003.
+  3. **After the onset** the deficit peaks at `(μ/λ)·(c/x)/(2·s_b)` within ±30 %, then falls as `(s_b/(t_ov + s_b))²`. The old law's deficit rose linearly in t_ov instead.
+  4. **The tail:** `w·t_ov` is constant within ±15 % over t_ov ∈ [2·s_b, 38 s].
+- **Dominance at the best point** (T = 0.4) against today's Realtime at δ = 0.1, both arms run fresh:
+  - **stored arm:** share −0.005 to −0.012 against a bar of ≈ 0.0096, on time the same, and p50 −0.01 to +0.03 against a bar of ≈ 0.0085.
+    - **Predicted: "equivalent" in the upper half of the share band, "worse" in the lower half,** whichever way the share falls. It is not predicted to dominate.
+    - The reason is that U accepts the descent's ≈ 0.4-point share cost for the delay it buys, while dominance with a bar cannot price it. This is a property of the reading, recorded here so that a "worse" cannot be read as a law failure.
+  - **engine-queue arm:** **dominates** (on time +0.80, p50 −0.5 s).
+- **Reported only:** B′ against A at every T. B′ − A in delivered equals −μ̂·(c − x̂·w_end)/N within 15 %, which is the bill check again on a live descent.
+
+### 13.6 Registration (in the §12 style)
+
+**Builds.**
+- **A:** §12.1's A, unchanged. Its stored §12 rows are reused in OV-long and OV-long-v.
+- **B′:** A + §13.3.
+- **B:** stored, reported only.
+- **Old senders:** reused from the stored §12 runs in OV-long and OV-long-v (the same machinery: the clamp and `elig = "rack"`).
+  - In OV-long-m, today's Realtime runs fresh at δ = 0.1, both arms.
+  - ADR-0084 at ρ ∈ {0.95, 1} and Bulk are reused from OV-long when their configuration fingerprint is equal (they do not read δ); otherwise they run 3 seeds.
+
+**Cells and seeds:**
+
+| cell | B′ | A | baselines | runs |
+|---|---|---|---|---|
+| OV-long | 8 × 6 | stored | stored | 48 |
+| OV-long-v | 8 × 6 | stored | stored | 48 |
+| OV-long-m (new) | 5 × 6 | 5 × 6 | rt and rteq at δ = 0.1, 2 × 3 (+ ADR-0084 and Bulk, 3 × 3, only if not reusable) | 66 (75) |
+| identity: CLc, CLc-v, CL-long-v, CL-long, CL, CLw-long | 3 T × 3 seeds each | stored traces | — | 54 |
+| A/A for OV-long-m | — | 2 × 12 | — | 24 |
+| **total** | | | | **240 (249)** |
+
+- **Time:** about 7 000–8 000 CPU-s, so about 15 min on 9 workers at stage 3e's per-run times. The A/A floors of OV-long and OV-long-v are §12's frozen ones.
+
+**The reading rule.**
+- **Dominance in the three overload cells,** at B′'s best finite-T point (as §12.3, with its tie rule), on the paired steady window.
+- The video cells' p50 is reported only (§12.3).
+- B′ against A and B′ against B are reported only.
+- The shape readouts of OV-long-m (§13.5, items 1–4) are read before any dominance outcome in that cell.
+
+**The dominance reader fix (registered before any data of B′).** It also applies when §12's stored outcomes are re-read.
+
+```text
+   dominates     ⇔   worse beyond the bar on no readout     ∧   better beyond it on ≥ 1
+   equivalent    ⇔   worse on none                           ∧   better on none
+   worse         ⇔   better beyond the bar on no readout     ∧   worse beyond it on ≥ 1
+   a trade       ⇔   better on ≥ 1                           ∧   worse on ≥ 1
+   undetermined  ⇔   any readout undetermined (it takes precedence)
+```
+
+- Under this fix, §12's OV-long-v reading of B against today's Realtime ("not dominated (a trade)": share −0.0235, on time −0.0235, p50 reported only) is **worse**.
+
+**Stop rules** (each STOP sends the law back to derivation):
+1. **The headroom identity:** B′ ≢ A in any trace in the identity cells. One-ulp ties are reported and do not stop, but a tie must be shown to be one.
+2. **The bill check in OV-long-v:** A − B′ > 1 900 units at any finite T. That would mean the free band is not free, and §13.1's mechanism is wrong.
+3. **MEASUREMENT DISCIPLINE 17 in OV-long-m:** `onset_bind` ≥ 0.99 or ≤ 0.01 over the window at every finite T, so the law is inert or saturated where the onset was predicted inside. That is a defect finding and needs a ledger verdict.
+4. **§12.1's gates:** every new-model run finishes, the absolute tests hold, and S5 at T = ∞, H = ∞ equals Bulk.
+
+**Findings, not stops:**
+- a shape readout of OV-long-m outside its band (it goes to Q33);
+- `tov_resets` > 0 in an overload window;
+- `den_bind` > 0 where T > R.
+
+### 13.7 Config fields for `tools/toy/toy2.py` (branch `toy-stage3e`)
+
+Names and semantics only. All default off, so every stored row reproduces.
+
+**Config:**
+- **`wait_limit_form: str = "k_t2"`.** It selects the wait-limit expression when `wait_limit = True`.
+  - `"k_t2"` is §3.1's τ = T − K/(T − R + ô): build B, the current code.
+  - `"rev4b"` is §13.3: the predicate `a + R ≥ T ∨ a ≥ w`, with w as §13.3.
+  - It is a build selector of the offline simulation, like `wait_limit` itself, and not a dial.
+- **The law as a function:** `wait_limit_w(T, R, o, delta, x, t_ov) -> w`, implementing §13.3 literally.
+  - c⁺ = max(T − R, 0); x̄ = max(x, 1); y = delta·t_ov/(c⁺ + x̄·o); w = (c⁺/x̄)·min(1, 2/(1 + y)).
+  - No `isinf` or `isfinite`, and no branch on δ, T or x.
+  - It must return +∞ at T = ∞, and c⁺ exactly at x ≤ 1 with t_ov = 0.
+
+**Gauges** (in `out["rev4"]`):
+- **`onset_bind`:** the fraction of dequeues with x > 1 at which y ≤ 1.
+- **`onset_t`:** the first instant with x > 1 and y ≥ 1, else None.
+- **`n_cap_lt_c`:** dequeue ticks with w < c⁺. This is B′'s counterpart of `n_tau_lt_T`.
+- **`cap_series`:** per 0.5 s window, the mean of w, of the head age at the dequeue, of x̂ and of t_ov, over dequeues with x > 1. Shape readouts 1–4 read from it.
+- **`reserve_end`:** the head age at the last hand-over, and the delivered share of the units handed over after `last_hand − reserve_end`.
+- **`tov_resets`:** the transitions from x > 1 to x ≤ 1 after the first dequeue with x > 1.
+- **Kept:** `den_bind`, which now counts dequeues with T < R; `ov_frac`; `floor_bind`; `deq_early_would`, counted against the §13.3 predicate.
+
+**Cell and reader (in the confirmation driver, not in `toy2.py`):**
+- **OV-long-m:** OV-long's link, load, units and τ = 0.4 s, at δ = 0.1, with the §13.5 sweep.
+- **The fresh baselines:** today's Realtime at δ = 0.1, both arms.
+- **The dominance reader fix of §13.6,** with a test that a row better on nothing and worse on one readout reads "worse".
+- **The steady window** follows §12.2. For B′, "fill" is its first dequeue expiry.
+
+**Tests (red first):**
+- **Inert at T = ∞:** w = +∞ and never NaN over δ ∈ {0.005, 0.1, 0.5, 50, 10⁶}, x ∈ {0, 1, 1.3, 100} and t_ov ∈ {0, 10⁶}.
+- **Exact at x ≤ 1:** w == max(T − R, 0) exactly.
+- **Monotone in δ, t_ov and x (non-increasing) and in T (non-decreasing).** This includes ±2 % continuity at each δ preset and at y = 1.
+- **The bill identity on a fluid toy:** the cap held at c/x leaves `x·w_end = c`.
+- **The headroom trace identity** of §13.6's stop 1.
