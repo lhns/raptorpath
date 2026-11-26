@@ -262,7 +262,7 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
   - While the owner idles, the snapshot grows older, but `tx` only rises. A stale snapshot therefore reads B too high, and the gate errs tight. The producer's next command makes the owner poll and publish within one poll.
   - **A measured snapshot age was considered and rejected** (advisor review, 2026-11-26). After an idle second it would open β to the whole backlog: at c2, 12 900/s × 1.5 s ≈ 19 000 datagrams. That would happen exactly in the post-outage drain the clamp exists for.
 
-**§2.3b What is gated, and in what order.** Each producer turn stages control first, then resends (gap and margin), then first sends and proactive repair while B_i < β_i.
+**§2.3b What is gated, and in what order.** Each producer turn stages control first, then resends (gap and margin), then first sends while B_i < β_i. Proactive repair is staged with its first send: it is exempt from the bound and clamped only by the predicate (§2.1, paper §6.8).
 - Resends and control are exempt from the bound but count in B_i. They are bounded by their own laws: the resend budget, and the deficit-recovery exemption the engine keeps so a full window cannot deadlock a hole.
 - So a resend waits behind at most β_i plus the exempt traffic already staged.
 - This is a choice by datagram kind, not by a dial.
