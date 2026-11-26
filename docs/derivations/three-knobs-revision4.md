@@ -2142,7 +2142,7 @@ Scratch scripts, in the session scratchpad:
 - So the unit at the head at the onset instant t_on was handed over at t_on − c/x̄. Every unit handed over in [t_on − c/x̄, t_on] is dequeued after the onset and meets the descending cap.
 - **So the first c/x̄ seconds of the descent's shedding land in hand-over windows before the onset.** That is 1.53 s of windows at T = 2, 0.72 s at T = 1, 0.40 s at T = 0.6 and 0.24 s at T = 0.4.
 - **Witnesses:**
-  - **By send time, A and B′ are identical before the onset.** In seed 0 at T = 0.4, their send times agree seq by seq up to the first resend at 5.99 s.
+  - **Where neither build resends, A and B′ are identical by send time before the onset.** In seed 0 at T = 0.4, their send times agree seq by seq up to the first resend at 5.99 s. (Where B′ resends, its first-send rate is lower by the resends, 9 639 against 9 948/s at T = 2; that is the steady term below, not the shift.)
   - **On a 0.05 s grid of hand-over time** (seed 0), B′'s sent fraction steps down where the band starts, and A has no step:
 
     | T | step in B′'s sent fraction | at | predicted t_on − c/x̂ |
@@ -2151,7 +2151,7 @@ Scratch scripts, in the session scratchpad:
     | 0.4 | 0.83 → 0.80 | 4.50 s | 4.736 − 0.241 = 4.495 s |
 
   - **Per seed, the pre-onset deficit sits in the windows inside the band** (≈ 0.03 each). Outside the band it is ≈ 0.001 at every T (table in §13.10.3, "clear of the band").
-- **Nothing is lost before the onset.** The shed is the descent's own, and the whole-run bill does not change. Item 2, as registered, tested a quantity that the binning moves.
+- **The cap sheds nothing extra before the onset.** The band's shed is the descent's own, and moving it in hand-over time leaves the whole-run bill unchanged. Item 2, as registered, tested a quantity that the binning moves. What is lost before the onset is only the steady term d_ss below.
 
 **2. The steady part is a hole account, and it is not one constant per resend.**
 - **Premises:**
@@ -2215,7 +2215,7 @@ Scratch scripts, in the session scratchpad:
   - n_A = F_A·(R − ô) − D,
   - n_B = min(A*, F_B·(R − ô + c·(1 − 1/x̄)) − D).
   - On OV-long-q's inputs that is 0.00087, against 0.00089 from the measured rates.
-- **In between,** ΔP, Δdup and Δdec are measured per row.
+- **In between** (every row where B′ resends before the onset, T ≥ 0.6 here), ΔS, ΔP, Δdup and Δdec are measured per row. There d_ss closes on measured rates; it is not an ex-ante prediction.
 
 | symbol | provenance |
 |---|---|
@@ -2223,6 +2223,7 @@ Scratch scripts, in the session scratchpad:
 | C = 10 000/s, λ = 12 000/s | declared: OV-long's link capacity and hand-over rate |
 | T, δ | declared dials |
 | c, x̄, ô, R, t₀, s_b, t_on = t₀ + s_b | the law's measured inputs (§13.3); registered values in §13.9.6 |
+| t_L, w_end = w(t_L) | t_L: the last hand-over (declared by the cell: 480 000 units at λ); w_end: the law at t_L (derived) |
 | w(τ) | the law of §13.3; equal to `cap_series` to 10⁻⁴ (§13.9.2) |
 | h₁, h₂, L | declared by the test: the item 2 reader's window rule (§13.9.5) |
 | F_B = C − S_B − P_B, F_A = C − P_A | derived from C and the measured rates |
@@ -2249,7 +2250,7 @@ Scratch scripts, in the session scratchpad:
 | | 1 | 0.724 | 0.32 | 0.0010 | 0.0027 | 0.0027 | 0.0025 ± 0.0002 | 0.0006 ± 0.0002 |
 | | 2 | 1.532 | 1.12 | 0.0016 | 0.0050 | 0.0050 | 0.0052 ± 0.0002 | 0.0018 ± 0.0005 |
 
-- **Every row is within 1.2 seed standard errors.** That covers OV-long-q's total deficits at T = 1 and 2, the small values at T = 0.4 and 0.6, and OV-long-m's 0.0013 at T = 0.4 from §13.9.3 (0.0012 on this reader's windows).
+- **Every row is within one seed standard error:** the largest |measured − predicted|/se is 0.96 (OV-long-m at T = 0.4 and T = 1). That covers OV-long-q's total deficits at T = 1 and 2, the small values at T = 0.4 and 0.6, and OV-long-m's 0.0013 at T = 0.4 from §13.9.3 (0.0012 on this reader's windows).
 - **OV-long-q at T = 2** reads 0.0077 against 0.0080. That is inside one seed standard error, but outside the registered A/A floor of 0.0001.
   - That floor does not bound the B′ − A noise. B′'s cap carries x̂'s noise, scaled by c/x̄, and A's cap does not (corrected test in §13.10.4).
 - **The worst row is OV-long-m at T = 1, clear of the band:** 0.0006 ± 0.0002 against d_ss = 0.0010. It is not tuned; it is listed as open.
@@ -2266,7 +2267,7 @@ Scratch scripts, in the session scratchpad:
 ```
 
 - d_ss is taken from the pre-onset rates before the band, and from the post-onset rates after it.
-- **The last term is the end flush.** The units handed over in the last w_end are all sent (§13.1). At T = 2 that covers the window's last 0.54 s, since w_end = 0.94 s is longer than τ = 0.4 s.
+- **The last term is the end flush.** The units handed over in the last w_end are all sent (§13.1). At T = 2 that covers the window's last 0.44 s (from t_L − w_end = 39.06 s to h₂ = 39.5 s), since w_end = 0.94 s is longer than τ = 0.4 s.
 
 | T | 0.4 | 0.6 | 1 | 2 |
 |---|---|---|---|---|
@@ -2283,16 +2284,16 @@ Scratch scripts, in the session scratchpad:
 ```
 
 - **Its terms,** in order: the free band at the start, the descent, the end flush, and the hole account per phase.
-- The first three sum to F_B·(c − x̄·w_end), which is §13.1's fluid bill at B′'s first-send rate.
+- The first three sum to F_B·c − λ·w_end. That equals §13.1's fluid bill μ̂·(c − x̂·w_end) only when μ̂ = F_B and x̂ = λ/F_B; here μ̂·x̂ ≈ λ, but μ̂ exceeds F_B by 50–60/s.
 
 | T | 0.4 | 0.6 | 1 | 2 |
 |---|---|---|---|---|
 | miss, this form (units) | +41 | +58 | −1 | +21 |
 | miss, §13.9.5's form (units) | −18 | −56 | −152 | −190 |
 
-- **The drift is gone.** It came from two places: the constant κ_r = 0.065, and μ̂ in place of F_B.
-- After the onset, B′ resends at 313–319/s at every T, so d_ss there rises to 0.0015–0.0017. Before the onset, at T ≤ 1, it is 0.0009–0.0012.
-- So the constant κ_r charged the wrong amount per resend at each T.
+- **The drift is gone, and it sat in the fluid term.** With the whole-run hole account on §13.1's μ̂ form the misses are still +28, +48, −65, −142: the drift remains. The fluid term's rate on c is the cause: (μ̂ − F_B)·c is ≈ 18 / 26 / 47 / 97 units at T = 0.4 / 0.6 / 1 / 2, growing with c.
+- Replacing the constant κ_r = 0.065 by the hole account moves the four misses by +46 / +104 / +87 / +48 units: an offset with no trend in T. After the onset B′ resends at 313–319/s at every T and d_ss is 0.0015–0.0017; before the onset at T ≤ 1 it is 0.0009–0.0012.
+- **The four-term form was chosen after seeing the misses.** Its terms are each derived (above), but this is not a registered prediction.
 
 #### 13.10.4 What it changes
 
@@ -2310,7 +2311,7 @@ Scratch scripts, in the session scratchpad:
     - It read 0.0001–0.0004, against B′ − A seed errors of 0.0002–0.0010.
 - **Item 3:** the law's statistic is evaluated at τ(h), not at the window's own time.
 - **The steady share:** the flush term is included, and F_B/λ replaces μ̂/λ.
-- **The bill:** A − B′ = F_B·(c − x̄·w_end) + λ·Σ d_ss·span, with d_ss from the hole account per phase.
+- **The bill:** A − B′ = F_B·c − λ·w_end + λ·Σ d_ss·span (the four-term form above), with d_ss from the hole account per phase.
   - κ_r is withdrawn as a constant. It is p_c − p₀ at r = 0, and a per-row quantity where repair runs.
 
 **Recommended, not done here: size the repair span against the loss rate.**
