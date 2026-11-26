@@ -39,7 +39,7 @@ def cfg_of(spec, seed):
     else:
         raise ValueError(spec["design"])
     return dataclasses.replace(cfg, rev4_gauge=spec["design"] == "new", clamp=spec.get("clamp", False), wait_limit=spec.get("wait", False),
-                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0), send_gate=spec.get("gate", False), inflight_to=spec.get("to", 0.0), inflight_to_rule=spec.get("rule", ""), floor_repeat=spec.get("fr", ""))
+                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0), send_gate=spec.get("gate", False), inflight_to=spec.get("to", 0.0), inflight_to_rule=spec.get("rule", ""), floor_repeat=spec.get("fr", ""), elig=spec.get("elig", ""))
 
 
 def specs():
@@ -147,7 +147,7 @@ def one(task):
     g = r.get("gauges", {})
     row["g"] = {k: g.get(k) for k in ("rep_sent", "repair_sends", "rep_qdrop", "rep_lost", "queue_drop", "first_qdrop", "fq_evict", "fq_max", "clamp_n", "r_eff_over_spare",
                                        "dec_units_qdrop", "intake_expired_deq", "pause_events", "max_O",
-                                       "floors", "floor_rep", "bl_fires", "rep_suppressed", "rep_fired_by_timeout", "rep_fired_by_knowledge", "rep_supp_viol", "rep_checks")}
+                                       "floors", "floor_rep", "bl_fires", "rep_suppressed", "rep_fired_by_timeout", "rep_fired_by_knowledge", "rep_supp_viol", "rep_checks", "rep_fire_carrier_young", "rep_fire_carrier_overdue", "rep_fire_carrier_none", "rep_fire_viol_carrier", "resend_by_report", "resend_by_sweep", "dup")}
     row["rev4"] = r.get("rev4")
     if row["rev4"]:
         row["rev4"] = {k: v for k, v in row["rev4"].items() if k not in ("spare_bins",)}

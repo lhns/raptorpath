@@ -828,3 +828,49 @@ Reported-only runs (`rev4_floor.py`, 3 seeds): Revision 3 (clamp on) and the fro
 | E-I2, Ec | R3 and R4 | 0 then 0 | 1.0000 | identical | identical | met, every run finishes |
 
 Zero exceptions to the absolute (`rep_supp_viol` 0 in every row); all rows finish. K-OV's remaining misses in Revision 4: the frozen build is window-limited by the gate at B = 8 (0.49 before, 0.52 after), and without the gate 95 repeats still fire by knowledge, above the 20 to 60 band; delivered 0.644 against 0.70 to 0.72.
+
+## 2026-11-26 floor repeat, review: the K-OV rows by kind of link slot; the engine's send gate; the two-path cell
+
+**K-OV link slots by kind (3 seeds, T = 0.4, delta 50, clamp on, floor_repeat evidenced; `kov_split.py`).** Slots per run: first sends / resends / repairs / floors (total), delivered, duplicate arrivals:
+- Revision 3, rule off: 1 789 / 2 / 18 / 603 (2 412), 0.5394, dup 1. Rule on: 2 371 / 4 / 32 / 1 (2 409), 0.7153, dup 3.
+- Revision 4 without the gate, rule off: 1 787 / 2 / 18 / 602 (2 409), 0.5397. Rule on: 2 077 / 188 / 46 / 95 (2 406), 0.6439, dup 126.
+- Revision 4 frozen build (gate, engine expiry), rule off: 1 578 / 33 / 195 / 601 (2 407), 0.4908, dup 26. Rule on: 1 567 / 524 / 246 / 6 (2 343), 0.5183, dup 385; link busy 0.957 against 0.983 to 0.984.
+
+Where the 7 points go (0.7153 against 0.6439): Revision 4 sends 294 fewer first sends (2 371 to 2 077), and spends 292 slots elsewhere: 184 more resends (188 against 4, 126 of them arriving a second time), 14 more repairs, 94 more floors. Revision 3 sends no resends because its units are unprotected at birth; Revision 4's young units are protected and resent, at rho of about 0.09 of first sends (188 / 2 077), as the registration expected (about 0.11), but two thirds of those resends are duplicates (126 of 188): the original arrives after the resend is sent. The doc's C/((1 + rho) lambda) = 0.72 counts only useful resends.
+
+**Repeats fired while the covering carrier was still in flight (Revision 4 without the gate, rule on).** Of the 95 repeats fired by knowledge, 94 fired while the datagram carrying the covering floor (carry_ord of s*) was in flight and not yet overdue (its send time + R not passed); 1 had no carrier yet; 0 were overdue. So §10 lacks a carrier-overdue condition: the repeat fires on a hole whose covering floor has been sent less than R ago. In Revision 3 the single fire is also young (1 of 1). Frozen build: 6 fires, 4 young, 1 overdue (by timeout), 2 with no carrier. Gauges `rep_fire_carrier_young`, `_overdue`, `_none`.
+
+**K-OV frozen-build rows: out of the window range (cwnd <= steady in-flight).** B = 8 is the cell's bandwidth-delay product (40/s x 0.2 s = 8), and the unclamped in-flight peaks at 9 to 10 (rule on, Revision 3: 10): the gate window is at or below the steady in-flight, so the rows `gate=1` in K-OV (0.4908 to 0.5183) are labelled out of the window range and are not a reading of the gate at a sane window. The link is not idle (busy 0.957 against 0.984, 4 % idle): the gate does not starve the link, it fills the 8-datagram window with resends and repairs (524 and 246 slots against 33 and 195) at the cost of first sends (1 567 against 2 077).
+
+**The engine's send gate (read only).** `net/mod.rs:2473` `tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full)`. `cwnd_full` (mod.rs:2430) is true only when `brake_armed = eff_infl_cap > 0 || cwnd_brake`: (a) `RWM_INFL_CAP` static cap, default 0 = off; (b) `RWM_INFL_BDP` gain on the BDP-derived cap, unset = 0 except under gen_pipe, where it defaults to 1.5 (`sender_policy.rs:756-760`, `gen_pipe = gates.gen_pipe && generation`, `RWM_GEN_PIPE` = unified, shipped): the cap is 1.5 x the sum of the paths' `copa_bdp_anchor` (BtlBw x RTprop, windowed maximum, refreshed every 5 ms, floor 64 symbols) and is per path (`infl_percap = gen_pipe`: the sender pauses only when every live path is at its own cap); (c) `RWM_LATE_BRAKE` (default off), under which the cap is the path's own `cwnd` (`p.cwnd`, Copa-lite, `scheduler/path.rs`). So outside generation mode the engine has no in-flight gate at all (`cwnd_full` is false), and in the shipped generation mode the window is about 1.5 x BDP, not the path cwnd and not BBR's 2 x BDP. The path cwnd (`available()`, `spare_capacity()`) serves the clamp and path selection (`scheduler/mod.rs:229`), not the pause. For K-OV that window would be 1.5 x 8 = 12 datagrams against the B = 8 used; B was not changed.
+
+**Two paths (P2: owd 10 ms and 60 ms), Revision 3, repair off, floor_repeat evidenced against off, 3 seeds, T in {0.075, 0.4, inf}, H in {0, inf}, hold estimator est or 0 (`p2_fr.py`).** Every run finishes (36 of 36). Readouts identical to the off rows to four decimals (delivered 0.9709 at T = 0.075, 0.9994 at 0.4, 1.0000 at inf; p50 identical). Liveness gate on the slow path: the receiver's floor passes every unreceived seq at the end of the run (354 given-up seqs per run at T = 0.075, 178 of them on the slow path; 7 per run at T = 0.4, 3 on the slow path): orphans 0 on both paths. Floor counts do not fall (12 to 13 per run in both, all fired by knowledge, 0 suppressed): the rule saves nothing on this cell and breaks nothing. One exception to the absolute check, in the hold-estimator arms at T = 0.075 (1 suppressed repeat with F_rx <= s*): the floor-hold estimator delays the receiver's floor application by design, so the receiver's floor lags the carrier's arrival there; no liveness consequence. The P2 cells were not predicted (10.3), this is a first read.
+
+## 2026-11-26 Revision 4 sections 10.7 and 11.2 (three-knobs-rev4 30f8179e): `floor_repeat="evidenced_overdue"` and `elig="rack"`
+
+Built as fields that default off (tests `Rev4OverdueAndElig`, red first; identity sample with the fields off). Section 11.4 (the gate window) is not built: it needs its own registration.
+- **10.7:** the repeat of 10.3 also requires `now >= t_newest_carrier(s) + R`, the carriers being data datagrams only (first sends, copies, repairs; standalone floors excluded). Gauge `rep_fire_viol_carrier` (every repeat fires at least R after the newest covering data carrier was sent): 0 in every row.
+- **11.2:** the blocker deadline is `max(last_send(b) + max(P, R), last_fire + P)` and `P_reach(b) = max(P, R)` also feeds `protected()` through `sweep_reach` (blocker sweep only; the whole-tail sweep and report-driven resends are unchanged). Gauges `elig_n`, `elig_R_bind` (deadlines at which R > P, counted after the first RTT sample), `elig_viol` (a timer-driven copy of the blocker staged before its last send + max(P, R): 0 in every row).
+
+**The 11.2 condition, from the stored rows before reading K-OV.** Of Revision 4's 188 K-OV resends (floor rule on, no gate, 3 seeds), 157 were sweep-driven (`resend_by_sweep`) and 31 report-driven, so most were blocker-reach resends and the K-OV band stands.
+
+Three variants per cell (off, 10.3 only, both new fields), 3 seeds, `rev4_floor2.py`, Revision 3 (clamp) and Revision 4 (clamp, wait limit, no gate):
+
+| K-OV, T 0.4 | floors | resends (duplicate arrivals) | first sends / repairs | delivered / on time | p50 (s) | band |
+|---|---|---|---|---|---|---|
+| R3, off | 603 | 2 (1) | 1 789 / 18 | 0.5394 / 0.5393 | 0.307 | |
+| R3, 10.3 | 1 | 4 (3) | 2 371 / 32 | 0.7153 / 0.7152 | 0.321 | |
+| R3, 10.7 + 11.2 | 0 | 0 (0) | 2 375 / 34 | 0.7160 / 0.7159 | 0.322 | repeats <= 10: met; 0.715 to 0.72: met; unchanged by 11.2: met |
+| R4, off | 602 | 2 (1) | 1 787 / 18 | 0.5397 / 0.5394 | 0.239 | |
+| R4, 10.3 | 95 | 188 (126) | 2 077 / 46 | 0.6439 / 0.6389 | 0.203 | |
+| R4, 10.7 + 11.2 | 0 | 189 (2) | 2 200 / 15 | 0.7204 / 0.7204 | 0.166 | repeats 95 to <= 10: met (0); resends <= 20: MISSED (189); duplicates <= 5: met (2); delivered 0.70 to 0.71: above (0.7204); p50 about 0.24: lower (0.166) |
+
+Reading: the early resends were duplicates and are now gone (126 to 2 arrivals twice), but the resends themselves did not fall: they moved to after R, where each recovers a real loss (the 189 are mostly useful; delivered 0.7204 is the arithmetic with loss recovered by resend, above the 0.70 to 0.71 band that assumed it was not). So `protected()` with P_reach = max(P, R) did not make the blocker's seqs unprotected as the doc expected (0.09 + 0.21 + 0.15 = 0.45 > 0.4): the resends still occur. `elig_R_bind` in K-OV is 1.000.
+
+Other cells (floors, delivered, on time, p50; off against both new fields, identical unless noted):
+- **OV** (P 100 ms, R about 102 ms): `elig_R_bind` 0.97 under overload (predicted about 1, met). R3 T 0.4 floors 96 to 0, 0.8334 to 0.8341, 0.390 both; R4 T 0.4 20 to 0, 0.8090 to 0.8092; T = 2 R3 34 to 0, 0.9611 to 0.9614; R4 0.8090 to 0.8091. Shifts of 0.0001 to 0.0007 against the A/A floor of 0.0001 (delivered) and 0.0003 (on time): a few above the floor by 0.0004 to 0.0007, reported.
+- **OV-end:** floors 61 to 0 and 10 to 0 (T 0.4), 0 and 0 (T 2, delta 0.5); delivered and on time within 0.0004; p50 unchanged.
+- **CL-long** (T 0.4, 2, inf): readouts identical (0.9399; 0.9990 / 0.6383 to 0.6384; 1.0000 / 0.6328), recovery 5.87 and 6.00 s unchanged; floors 47 to 46, 1 to 0, 0 to 0 (46 by timeout through the outage); `elig_R_bind` 0.006, 0.002, 0.000: the witness is non-zero at T 0.4 and 2, so bit identity is not claimed, within the A/A floor is met.
+- **CL, CLw-long:** identical readouts; floors 47 to 46, 1 to 0, 106 to 105, 42 to 41; `elig_R_bind` 0.015, 0.005, 0.010, 0.011.
+- **K-I2, K-L10, E-I2, Ec:** identical readouts; floors 56 to 0, 600 to 0, 0 and 0; every run finishes.
+- **P2** (10 and 60 ms paths; Revision 3, repair off, 36 runs per variant): every run finishes, readouts identical to off, floors 12 to 13 per run fall to 2, orphans 0 on both paths (the receiver's floor passes every given-up hole), no exception to the carrier check.

@@ -2210,5 +2210,74 @@ class Rev4FloorRepeat(unittest.TestCase):
             self.assertTrue(r["finished"], name)
 
 
+class Rev4OverdueAndElig(unittest.TestCase):
+    """Revision 4 sections 10.7 and 11.2: the repeat waits for the newest covering data carrier to be overdue; the blocker sweep resends only an overdue last send."""
+
+    @staticmethod
+    def kov(**kw):
+        import batch3e
+        base = dict(floor_repeat="evidenced_overdue", elig="rack", wait_limit=True, clamp=True, rev4_gauge=True)
+        base.update(kw)
+        return dataclasses.replace(batch3e.new_cfg("K-OV", 0, 0.4, 0.0, 50.0, batch3e.rp("RL")), **base)
+
+    def test_defaults_and_fingerprint(self):
+        import batch3e
+        c = toy2.Cfg()
+        self.assertEqual((c.floor_repeat, c.elig), ("", ""))
+        base = batch3e.new_cfg("K-OV", 0, 0.4, 0.0, 50.0, None)
+        self.assertEqual(batch3e.fingerprint(base), batch3e.fingerprint(dataclasses.replace(base, elig="", floor_repeat="")))
+        self.assertNotEqual(batch3e.fingerprint(base), batch3e.fingerprint(dataclasses.replace(base, elig="rack")))
+        self.assertNotEqual(batch3e.fingerprint(dataclasses.replace(base, floor_repeat="evidenced")), batch3e.fingerprint(dataclasses.replace(base, floor_repeat="evidenced_overdue")))
+
+    def test_overdue_clause_waits_for_the_newest_data_carrier(self):
+        R = 0.1
+        last = {100: 11, 101: 12}
+        cv, ck = [102], [11]                                           # a floor of 102 was first carried by ordinal 11
+        # a hole 101 sent at ordinal 12 never reported; silence already evidences it; the covering datagram (a data carrier, sent t = 1.0) is young
+        young = toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + 0.5 * R, overdue=(102, 1.0))
+        old = toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + R, overdue=(102, 1.0))
+        self.assertFalse(young[0])
+        self.assertTrue(old[0])
+        self.assertTrue(toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + 0.5 * R, overdue=None)[0])   # 10.3 alone fires at once
+        self.assertTrue(toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + 0.5 * R, overdue=(101, 1.0))[0])  # nothing carried above 101: the clause holds
+        # the planted lost-tail burst of 10.5 test 2 still finishes: first member arrived, the rest lost, nothing follows
+        ords = {100: 11, 101: 12, 102: 13, 103: 14, 104: 15}
+        burst = toy2.floor_repeat_needed([104, 103, 102, 101], ords, 11, [101, 105], [11, 15], 1.0, R, 1.0 + R, overdue=(105, 1.0))
+        self.assertTrue(burst[0])
+
+    def test_k_ov_repeats_fall_and_every_repeat_is_at_least_r_after_the_carrier(self):
+        a = toy2.run(self.kov(floor_repeat="evidenced", elig=""))
+        b = toy2.run(self.kov(elig=""))
+        self.assertEqual(b["gauges"]["rep_fire_viol_carrier"], 0)
+        fires = lambda r: r["gauges"]["rep_fired_by_knowledge"] + r["gauges"]["rep_fired_by_timeout"]      # noqa: E731
+        self.assertLess(fires(b), fires(a))
+        self.assertLessEqual(fires(b), 10)                                              # 95 -> at most 10 in 60 s (10.7)
+
+    def test_outage_still_fires_by_timeout_and_finishes(self):
+        import batch3e
+        c = dataclasses.replace(batch3e.new_cfg("CL", 0, 0.4, 0.0, 50.0, None, n_total=30000, dead=(0, 0.5, 0.5)), floor_repeat="evidenced_overdue")
+        r = toy2.run(c)
+        self.assertGreater(r["gauges"]["rep_fired_by_timeout"], 0)
+        self.assertTrue(r["finished"])
+
+    def test_elig_rack_stops_the_early_blocker_resends(self):
+        off = toy2.run(self.kov(elig=""))
+        on = toy2.run(self.kov())
+        self.assertGreater(on["rev4"]["elig_R_bind"], 0)                                # K-OV executes the clause: R exceeds P
+        self.assertEqual(on["rev4"]["elig_viol"], 0)                                    # no timer-driven copy of the blocker before its last send + max(P, R)
+        self.assertLess(on["gauges"]["dup"], 15)
+        self.assertLess(on["gauges"]["repair_sends"], off["gauges"]["repair_sends"])
+
+    def test_elig_rack_is_identity_where_r_never_exceeds_p(self):
+        import batch3e
+        c = dataclasses.replace(batch3e.new_cfg("CL", 0, 0.4, 0.0, 50.0, None, n_total=20000, dead=(0, 0.5, 0.5)), rev4_gauge=True, want_trace=True)
+        on = dataclasses.replace(c, elig="rack")
+        a, b = toy2.run(c), toy2.run(on)
+        if b["rev4"]["elig_R_bind"] == 0:
+            self.assertEqual(a["_trace"], b["_trace"])
+        else:
+            self.assertLess(abs(a["share_any"] - b["share_any"]), 0.01)
+
+
 if __name__ == "__main__":
     unittest.main()
