@@ -2086,7 +2086,7 @@ class Rev4Step2(unittest.TestCase):
         b = toy2.run(dataclasses.replace(self.ov("new", n=36000), rev4_gauge=True, send_gate=True))
         self.assertGreater(a["rev4"]["emit_over_B"], 0)                       # in_flight passes B without the gate (the store pause counts outstanding seqs)
         self.assertEqual(b["rev4"]["emit_over_B"], 0)                         # no payload staged while in_flight >= cwnd_sim
-        self.assertGreaterEqual(b["gauges"]["pause_events"], a["gauges"]["pause_events"])
+        self.assertLess(b["rev4"]["in_flight_max"], a["rev4"]["in_flight_max"])
         self.assertEqual(batch3e.fingerprint(self.ov("new")), batch3e.fingerprint(dataclasses.replace(self.ov("new"), send_gate=False)))
         self.assertNotEqual(batch3e.fingerprint(self.ov("new")), batch3e.fingerprint(dataclasses.replace(self.ov("new"), send_gate=True)))
 

@@ -466,6 +466,7 @@ class Cfg:
     dhat_bias: float = 0.0         # revision 4, step 1: D_hat is read as D_hat * (1 - dhat_bias) in the gauges (the bias rows of 5.3)
     clamp: bool = False            # revision 4 step 2 (3.3): repair accrues min(r, max(spare, 0)), spare = (cwnd_sim - in_flight) / in_flight
     wait_limit: bool = False       # revision 4 step 2 (3.1): the dequeue expiry reads tau = T - K / (T - R + o_hat) in place of T
+    send_gate: bool = False        # revision 4 step 2 (3.3): no payload is staged while in_flight >= cwnd_sim (the engine's available() = cwnd - in_flight > 0)
     eq: bool = False               # revision 4 step 2 (3.3): today's Realtime behind the engine's front queue (eq_cap symbols, evicts the oldest, drains at the link rate)
     eq_cap: int = 8192             # 4 MiB of 512 B symbols
     cwnd_sim: float = 0.0          # revision 4 step 2: the clamp's and the gauge's cwnd in datagrams; 0 = the cell's store pause pause_B
@@ -606,7 +607,7 @@ class Sim:
         self.n1 = int(round(c.rate2_t * c.rate)) if c.rate2 else 0           # units handed over before the rate changes
         self.dt2 = 1.0 / c.rate2 if c.rate2 else self.dt
         self.B_sim = c.cwnd_sim or float(c.pause_B)
-        self.cnt_on = c.rev4_gauge or c.clamp or c.wait_limit                # the in_flight count and the D-hat rounds are kept
+        self.cnt_on = c.rev4_gauge or c.clamp or c.wait_limit or c.send_gate                # the in_flight count and the D-hat rounds are kept
         if c.n_total:
             self.dur = c.n_total / c.rate
             self.t_end = c.t_limit
@@ -761,7 +762,7 @@ class Sim:
         self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = 0.0, 0, 0, False, 0.0
         self.t_ov0 = 0.0
         self.r4 = dict(ticks=0, ov=0, tau_lt_T=0, den_bind=0, floor_n=0, deq_early=0, dhat_inf=0, collapse_t=None, in_flight_max=0, spare_n=0, spare_bind=0,
-                       dhat_sum=0.0, dhat_n=0, ratios=[], tau_min=math.inf, rounds=0, spare_bins={})
+                       dhat_sum=0.0, dhat_n=0, ratios=[], tau_min=math.inf, rounds=0, spare_bins={}, over_B=0)
         self.fs_after_outage = 0                   # first sends after the outage end (RB with rb_unit "sym")
         self.qf_known = 0.0
         # stage 3e receiver state (build 5.1)
@@ -1254,7 +1255,7 @@ class Sim:
         if done:
             self.src_done = True
             self.src_next = math.inf
-        elif o >= self.B:
+        elif o >= self.B or self.gate_block():
             self.paused = True
             self.pause_t0 = t
             self.g["pause_events"] += 1
@@ -1424,6 +1425,7 @@ class Sim:
             r4["deq_early"] += 1                    # the head the law would expire and section 13.2 holds
         fl = self.in_flight_now()
         r4["in_flight_max"] = max(r4["in_flight_max"], fl)
+        r4["over_B"] += fl >= self.B_sim
         if raw < math.inf:
             r4["dhat_sum"] += mu
             r4["dhat_n"] += 1
@@ -1441,7 +1443,7 @@ class Sim:
         return dict(n_ticks=r4["ticks"], n_tau_lt_T=int(r4["tau_lt_T"]), ov_frac=r4["ov"] / n, floor_bind=r4["floor_n"] / n, collapse_t=r4["collapse_t"],
                     den_bind=int(r4["den_bind"]), deq_early_would=r4["deq_early"], dhat_inf_frac=r4["dhat_inf"] / n, dhat_mean=(r4["dhat_sum"] / r4["dhat_n"]) if r4["dhat_n"] else None,
                     dhat_ratio_q05=q(0.05), dhat_ratio_q50=q(0.5), dhat_ratio_q95=q(0.95), dhat_ratio_n=len(rs), in_flight_max=r4["in_flight_max"],
-                    cwnd_sim=self.B_sim, clamp=self.cfg.clamp, wait_limit=self.cfg.wait_limit, eq=self.cfg.eq,
+                    emit_over_B=r4["over_B"], send_gate=self.cfg.send_gate, cwnd_sim=self.B_sim, clamp=self.cfg.clamp, wait_limit=self.cfg.wait_limit, eq=self.cfg.eq,
                     spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], spare_bins=sorted((k, v[0], v[1]) for k, v in r4["spare_bins"].items()), tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
 
     def astar(self, now):
@@ -2083,8 +2085,12 @@ class Sim:
         self.act(now, gen, holes, open_tail=False)
         self.arm_blocker(now)
 
+    def gate_block(self):
+        """The engine's send gate: a path takes data only while cwnd - in_flight > 0."""
+        return self.cfg.send_gate and self.in_flight_now() >= self.B_sim
+
     def maybe_resume(self, now):
-        if self.paused and self.O_ctl() < self.B:
+        if self.paused and self.O_ctl() < self.B and not self.gate_block():
             self.paused = False
             self.pause_log.append((self.pause_t0, now))
             if self.cnt_on:
