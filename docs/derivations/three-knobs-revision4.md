@@ -1963,7 +1963,7 @@ Names and semantics only. All default off, so every stored row reproduces.
   - The law's value of the statistic the reader actually computes is 0.0190 / 0.0244 / 0.0277 / 0.0303 at T = 0.4 / 0.6 / 1 / 2 (with the resend term below), against 0.0178 / 0.0231 / 0.0265 / 0.0296 measured. All are within 7 %.
   - The 0.76 to 0.96 trend in the reported ratio comes from comparing with the peak instead of with this statistic.
 
-#### 13.9.3 Read 2: the deficits. A per-resend cost is the general term; duplicates are not its mechanism
+#### 13.9.3 Read 2: the deficits. About 7 % of the extra resends fill nothing, in both cells; the mechanism is not separated
 
 **The counts, build B′ minus A, 6-seed means:**
 
