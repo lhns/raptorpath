@@ -44,9 +44,14 @@ def die(msg):
     sys.exit(1)
 
 
+REUSE_ARG = ""
+
+
 def call(script, args, tag, capture=False):
     os.makedirs(LOGS, exist_ok=True)
     cmd = [sys.executable, os.path.join(HERE, script)] + args
+    if script == "summarize3e.py" and REUSE_ARG:
+        cmd += ["--reuse-dirs", REUSE_ARG]
     log("run %s %s" % (script, " ".join(args)))
     with open(os.path.join(LOGS, tag + ".log"), "a") as lf:
         r = subprocess.run(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -97,6 +102,8 @@ def main():
     a = ap.parse_args()
     import batch3e as B
     B.build()
+    global REUSE_ARG
+    REUSE_ARG = a.reuse_dirs
     log("chain starts; reuse %s; workers %d light + %d heavy" % (a.reuse_dirs, a.light_workers, a.heavy_workers))
     batch("AA", a)
     batch("AA2", a)

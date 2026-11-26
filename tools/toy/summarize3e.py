@@ -241,7 +241,7 @@ def cell_units(cell):
 def cell_cap(cell):
     import batch3e as B
     kw = B.CELLS[B.base_of(cell)][1]
-    return rec_cap(kw) if kw.get("dead") is not None else 0.0
+    return rec_cap(kw) if kw.get("dead") is not None and "rate" in kw else 0.0     # file cells send at link rate: judged by completion time, no recovery readout
 
 
 def cmd_freeze(force=False, aa_at="tinf"):
@@ -394,7 +394,11 @@ def main():
     ap.add_argument("--out", default="")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--aa-at", default="tinf", choices=("tinf", "primary"))
+    ap.add_argument("--reuse-dirs", default="", help="the same reuse stores as batch3e, so reused rows are readable")
     a = ap.parse_args()
+    if a.reuse_dirs:
+        import batch3e as B
+        B.set_reuse([x for x in a.reuse_dirs.split(",") if x])
     if a.cmd == "freeze":
         cmd_freeze(a.force, a.aa_at)
     elif a.cmd == "smooth":
