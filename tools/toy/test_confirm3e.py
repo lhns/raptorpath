@@ -246,5 +246,33 @@ class Gates(unittest.TestCase):
         self._fake(lambda fp, s, r: r["gauges"].update(rep_supp_viol=1) if fp == hold.fp else None)
         self.assertFalse(any("rep_supp_viol" in x and "inf, hold inf" in x for x in C.run_gates("CL", self.jobs)))      # a hold row is reported only
 
+class ReReadFixes(unittest.TestCase):
+    """The first reads of CL-long and CL (2026-11-26): Bulk is read by identity, and an empty paired window is a finding, not a crash."""
+
+    def setUp(self):
+        self.orig = C.load
+
+    def tearDown(self):
+        C.load = self.orig
+
+    def test_bulk_is_read_by_identity_against_s5_at_t_inf_h_inf(self):
+        jobs = C.jobs_of("CL-long")
+        sinf = [j for j in jobs if j.design == "A" and j.key == ("lt", INF, INF)][0]
+        bulk = [j for j in jobs if j.design == "bulk"][0]
+        rec = dict(finished=True, trace_sha="t", trace_n=1, share_any=1.0, gauges={k: 0 for k in test_toy2.ID_GAUGES}, rev4={}, series={}, confirm_design="A")
+        C.load = lambda fp, s: dict(rec, gauges=dict(rec["gauges"]))
+        self.assertEqual(C.identity_row(sinf, bulk, 3), [])
+        C.load = lambda fp, s: dict(rec, gauges=dict(rec["gauges"]), trace_sha="t" if fp == sinf.fp else "u")
+        self.assertEqual([b[0] for b in C.identity_row(sinf, bulk, 3)], [0, 1, 2])
+
+    def test_an_empty_paired_window_gives_nan_not_an_exception(self):
+        dt, n = 0.01, 1000
+        h = np.arange(n) * dt
+        mk = lambda rec, fill: dict(series=CR.make_series(h, h + 0.05, n, dt), rev4=dict(first_rtt_t=0.01, first_deq_exp=fill, first_pause_t=fill, first_qdrop_t=fill, fq_full_t=fill),  # noqa: E731
+                                    confirm_design="A", tau=0.4, last_hand=(n - 1) * dt, recovery_time=rec)
+        a, b = mk(None, 4.5), mk(None, None)                                               # neither recovers: the outage exclusion runs to the end of the run
+        xs, ys = C.steady_arrays("CL", [a], [b], 1)
+        self.assertTrue(np.isnan(xs["p50"]).all() and np.isnan(ys["share"]).all())
+
 if __name__ == "__main__":
     unittest.main()

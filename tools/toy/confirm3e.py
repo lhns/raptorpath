@@ -393,12 +393,28 @@ def steady_arrays(cell, new_recs, base_recs, n):
     ys = {k: [] for k in ("share", "ot", "p50")}
     for s in range(n):
         pr = CR.paired(new_recs[s], base_recs[s], dead)
-        if pr is None:
-            raise ValueError("an empty steady window in %s seed %d" % (cell, s))
+        if pr is None:                                                                      # an empty paired window: NaN, read as "no steady window" by the caller
+            for k in xs:
+                xs[k].append(math.nan)
+                ys[k].append(math.nan)
+            continue
         for k in xs:
             xs[k].append(pr[0][k])
             ys[k].append(pr[1][k])
     return {k: np.asarray(v) for k, v in xs.items()}, {k: np.asarray(v) for k, v in ys.items()}
+
+
+def identity_row(a_job, b_job, n):
+    """Bulk (and the object API) read by identity against S5 at T = inf, H = inf (stage 3e's rule): the two rows are the same run on every id3e key and trace, at every seed."""
+    bad = []
+    for s in range(n):
+        ra, rb = load(a_job.fp, s), load(b_job.fp, s)
+        if ra is None or rb is None:
+            return None
+        d = ident_diff(ra, rb)
+        if d:
+            bad.append((s, d))
+    return bad
 
 
 def read_cell(cell, jobs, nf, double=frozenset()):
@@ -449,12 +465,19 @@ def _read_cell(cell, jobs, nf, double=frozenset()):
         P("| baseline | readout | difference [95 %] | bar | outcome |")
         P("|---|---|---|---|---|")
         readouts = (("whole-run on time", "ot", 1.0), ("recovery", "recovery", -1.0), ("steady p50", "p50", -1.0)) if outage else (("steady on time", "ot", 1.0), ("steady p50", "p50", -1.0))
+        sinf = [j for j in jobs if j.design == "A" and j.key == ("lt", INF, INF)]
         for bj in base:
             n = min([len(recs(bj))] + [len(recs(a)) for a in A])
             if bj.name not in double and n > bj.nseeds:
                 n = bj.nseeds
             nfv = nf_for(nf, cell, n)
             brecs = recs(bj, n)
+            if bj.design == "bulk" and sinf:                                              # read by identity, not on the curve (a strict-order row sits outside the any-order H = 0 curve)
+                bad = identity_row(sinf[0], bj, n)
+                if bad is not None:
+                    P("| %s | all readouts | identity against S5 at T=inf, H=inf: %s | - | %s |" % (cell_label(bj), "identical on every key and trace at %d seeds" % n if not bad else "differs at seeds %s" % [b[0] for b in bad],
+                                                                                              "equivalent (identity)" if not bad else "NOT identical"))
+                    continue
             for name, key, sign in readouts:
                 px, py = [], []
                 for a in A:
@@ -468,6 +491,10 @@ def _read_cell(cell, jobs, nf, double=frozenset()):
                         py.append(xs[key])
                 px, py = np.stack(px), np.stack(py)
                 xs0, ys0 = steady_arrays(cell, recs(A[0], n), brecs, n)
+                if key == "p50" and (np.isnan(py).any() or np.isnan(ys0["p50"]).any()):
+                    P("| %s | %s | no steady window: the paired window of 12.2 is empty at %d of %d seeds for at least one build-A point (an arm has not recovered within the run, so the outage exclusion of 12.2 runs to the end) | - | not read (registration finding) |" % (
+                        cell_label(bj), name, int((np.isnan(py).any(axis=0) | np.isnan(ys0["p50"])).sum()), n))
+                    continue
                 if outage:
                     bx = np.asarray([CR.whole(r["series"], r["tau"])[0] for r in brecs])
                     by = {"ot": np.asarray([CR.whole(r["series"], r["tau"])[1] for r in brecs]), "recovery": np.asarray([rec_of(r) for r in brecs]), "p50": ys0["p50"]}[key]
