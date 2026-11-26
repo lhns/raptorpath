@@ -80,8 +80,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
+crlf_guard plan68.py s68_report.py test_harness68.py test_s68.py
 crlf_guard lib.sh lib_battery.sh loopdiag_battery.sh loopdiag_parse.py anchordiag_parse.py stage3_parse.py \
-    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py plan61.py s61_score.py test_s61.py test_harness61.py plan62.py s62_score.py test_s62.py test_harness62.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py plan64.py rt64_score.py framing64.py s65_score.py plan51e.py s51e_score.py plan51.py s51_score.py test_s51e.py test_s51.py plan63.py test_harness63.py test_harness51.py plan67.py s67_score.py s67_fixtures.py test_s67.py test_harness67.py tun67_battery.sh loopdiag_p67.sh repeat67_run.sh binid67_run.sh
+    storelaw_parse.py disp36.py disp40.py place38_parse.py place41b_score.py bbr48_score.py test_bbr48_parse.py tail52_score.py test_tail52.py snap53_score.py test_snap53.py pool54_score.py test_pool54.py pool56_score.py test_pool56.py pool57_score.py test_pool57.py mbar59_score.py test_mbar59.py plan60.py s60_score.py test_s60.py plan61.py s61_score.py test_s61.py test_harness61.py plan62.py s62_score.py test_s62.py test_harness62.py place43_parse.py place46_parse.py event_inject.py test_guard_v2.py perf_rwm_c.sh topo.sh topo_dual.sh l1common.py plan64.py rt64_score.py framing64.py s65_score.py plan51e.py s51e_score.py plan51.py s51_score.py test_s51e.py test_s51.py plan63.py test_harness63.py test_harness51.py plan68.py s68_report.py test_harness68.py test_s68.py plan67.py s67_score.py s67_fixtures.py test_s67.py test_harness67.py tun67_battery.sh loopdiag_p67.sh repeat67_run.sh binid67_run.sh
 
 BIN="${LD_BIN:?LD_BIN}"
 WANT="${LD_SHA:?LD_SHA}"
@@ -96,7 +97,7 @@ TMPD="${LD_TMPD:-/tmp}"
 P61=0; case "$PLAN" in 61a|61b) P61=1 ;; esac      # status 61 (the c3 sweep): single-seat like plan 60, its own tables (plan61.py)
 P62=0; case "$PLAN" in 62r0|62a) P62=1 ;; esac      # status 62 (c3 at jitter 0): plan 61's shape, its own tables (plan62.py)
 P67=0; case "$PLAN" in 67a|67r|67p|67o|67d) P67=1 ;; esac      # status 67 (VM batch 1): stages A / R1 / R2 / the pool block / the dump twins (stage G is plan 41d with LD_WITNESS67, stage T is tun67_battery.sh)
-{ [ "$P61" = 1 ] || [ "$P62" = 1 ] || [ "$P67" = 1 ]; } || case "$PLAN" in 60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (67a|67r|67p|67o|67d|62r0|62a|61a|61b|60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65)"; exit 3 ;; esac
+{ [ "$P61" = 1 ] || [ "$P62" = 1 ] || [ "$P67" = 1 ]; } || case "$PLAN" in 60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|68|46|48|52|53|54b|63|64|65) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (68|67a|67r|67p|67o|67d|62r0|62a|61a|61b|60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -174,8 +175,12 @@ P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P38=1; PCAND=1; }
 # Plan 63 (status 63, F2's first VM contact; plan63.py): TWO seats on c2-100 at the Realtime hint with plan 51e's own arms. Arm C<x> = CONTROL = the BASE binary (LD_BIN_BASE, pinned LD_SHA_BASE), arm F<x> = CAND = the
 # main binary (LD_BIN / LD_SHA). CONTROL is expected to fail the warm-up, so a row runs ONCE (LD_BRINGUP_TRIES forced to 1: a failed warm-up is the datum, not a bring-up failure) and nothing is replaced.
 P63=0; [ "$PLAN" = "63" ] && { P63=1; P38=1; PCAND=1; TRIES=1; }
+# Plan 68 (status 68, the hand-off gate's step 1; plan68.py / s68_report.py, reported only) is plan 63's two-seat shape: arms B* run the BASE seat (LD_BIN_BASE, pinned LD_SHA_BASE), R* and G* the CAND seat (LD_BIN, LD_SHA:
+# R4 and GATE are ONE binary, the gate's arm is RWM_HOFF_GATE=1). The bring-up retry stays at its default: no row here is expected to fail its warm-up.
+P68=0; [ "$PLAN" = "68" ] && { P68=1; P63=1; P38=1; PCAND=1; }
 SCRUB_EXTRA=()
 { [ "$P51" = 1 ] || [ "$P51E" = 1 ] || [ "$P63" = 1 ] || [ "$P67" = 1 ]; } && SCRUB_EXTRA=(-u RWM_DELTA -u RWM_COPA_DELTA -u RWM_COPA_WIRE -u RWM_COMPLETION_EXPOSURE -u RWM_MIN_R -u RWM_CC_PACE -u RWM_PERF_RATE_MBIT)
+[ "$P68" = 1 ] && SCRUB_EXTRA+=(-u RWM_HOFF_GATE)      # plan 68: R4 leaves the gate unset whatever the shell holds (RWM_QUIC_CC is scrubbed for every plan below)
 # Plan 54 (the guard) is plan 41d unchanged; LD_WITNESS54=1 (run_all carries it for LD_PLAN=54) adds the row witnesses in the parser and the [SNAPV] preflight below.
 W54="${LD_WITNESS54:-0}"; [ "$W54" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
 BIN_BASE=""; WANT_BASE=""
@@ -219,6 +224,7 @@ if [ "$P62" = 1 ]; then INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=120 RWM_NETEM_
 # Plan 51e: plan 59's env (RWM_DIAG=1 RWM_RDIAG=1, no RWM_RTOBS); the per-row timeout is the arm's (75 s paced, 30 s U). Plan 51: plan 48-54's guard env (RWM_RTOBS=1 RWM_RDIAG=1) at 200 s.
 [ "$P51E" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)
 [ "$P63" = 1 ] && INSTR_ENV=(RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=75)      # plan 63: plan 51e's instrument env; the per-row timeout is the arm's (tmo_env)
+[ "$P68" = 1 ] && INSTR_ENV=(RWM_PERF_TIMEOUT_S=200)      # plan 68: RWM_DIAG=1 (every row, from the arm env and below) is the only gauge env; the per-row timeout is the arm's (tmo_env)
 [ "$P51" = 1 ] && INSTR_ENV=(RWM_RTOBS=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=200)
 # Plan 48's per-cell sizes (status 48b / 48 Step 1); the cell names keep their scenario. bbr48_score / place38_parse.BYTES48 is the scorer's copy.
 p48_bytes() { case "$1" in c1s-400|c1d-400) echo 5000000000 ;; c2-100|c8-100) echo 600000000 ;; *) echo "" ;; esac; }
@@ -268,7 +274,7 @@ elif [ "$PCAND" = 1 ]; then
     grep -aqF -- "[SLAW] t=" "$BIN" 2>/dev/null || { _lb_say "ABORT-SHA binary $BIN has no [SLAW] window line: it is not the gauge build"; exit 5; }
   fi
   # Plan 51e: the evicting seat's shed gate, the gauge ([SLAW] window line and the spc= field of [WSTORE]) and the pacing knob with its liveness echo. Plan 51: the delta override and the emission-batching echo.
-  if [ "$P51E" = 1 ] || [ "$P63" = 1 ]; then
+  if { [ "$P51E" = 1 ] || [ "$P63" = 1 ]; } && [ "$P68" != 1 ]; then
     preflight_binary "$BIN" "RWM_SLAW" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE" "RWM_PERF_RATE_MBIT"
     grep -aqF -- "[SLAW] t=" "$BIN" 2>/dev/null || { _lb_say "ABORT-SHA binary $BIN has no [SLAW] window line: it is not the gauge build"; exit 5; }
     grep -aqF -- "spc=" "$BIN" 2>/dev/null || { _lb_say "ABORT-SHA binary $BIN has no spc= field (the spare-clamp gauge): it is not s51e-tree"; exit 5; }
@@ -305,7 +311,20 @@ if [ "$P67" = 1 ]; then
     { [ -z "${!_tv:-}" ] || [ -f "${!_tv}/perf_rwm_c.sh" ]; } || { _lb_say "ABORT-BIN plan 67 seat $_seat: no perf_rwm_c.sh in ${!_tv}"; exit 5; }
   done
 fi
-if [ "$P63" = 1 ]; then
+if [ "$P68" = 1 ]; then
+  # Plan 68: the CAND seat (R4 + GATE, one binary) carries the gate's arm, the [HOFF] gauge and the bbr_rs override; the BASE seat carries the gauge too (main plus the gauge commit); two different files, two different shas,
+  # each equal to its pin. A paced cell (none is built while plan68.UNBUILT holds LR and PC) needs the pacing echo in BOTH binaries: a binary without it would run the row silently unpaced.
+  preflight_binary "$BIN" "RWM_HOFF_GATE" "RWM_QUIC_CC"
+  preflight_binary "$BIN_BASE" "RWM_STORE"
+  for _b68 in "$BIN" "$BIN_BASE"; do
+    grep -aqF -- "[HOFF] t=" "$_b68" 2>/dev/null || { _lb_say "ABORT-SEAT plan 68: binary $_b68 has no [HOFF] gauge (every arm carries it: BASE is main plus the gauge commit)"; exit 5; }
+    [ "$(python3 ./plan68.py needs-pacer)" != 1 ] || grep -aqF -- "offered-load pacing ACTIVE" "$_b68" 2>/dev/null || { _lb_say "ABORT-PACER plan 68: binary $_b68 has no offered-load pacing echo (a paced cell would run unpaced)"; exit 5; }
+  done
+  [ "$BIN_BASE" != "$BIN" ] || { _lb_say "ABORT-SHA BASE and CAND are the same path"; exit 5; }
+  GOTB="$(sha256sum "$BIN_BASE" | cut -d' ' -f1)"
+  [ "$GOTB" = "$WANT_BASE" ] || { _lb_say "ABORT-SHA start (BASE): $GOTB != $WANT_BASE"; exit 5; }
+  [ "$GOTB" != "$WANT" ] || { _lb_say "ABORT-SHA BASE and CAND binaries are identical"; exit 5; }
+elif [ "$P63" = 1 ]; then
   # Plan 63: the CONTROL seat (BASE) must run, carry the same E-block tokens as the CAND (the e-tree binary has the gauge, the shed gate and the pacer), be a different file with a different sha, and equal its pin.
   preflight_binary "$BIN_BASE" "RWM_SLAW" "RWM_UNIFIED_SHED" "unified overload shedding ACTIVE" "RWM_PERF_RATE_MBIT"
   [ "$BIN_BASE" != "$BIN" ] || { _lb_say "ABORT-SHA CONTROL and CAND are the same path"; exit 5; }
@@ -423,7 +442,14 @@ run_one() { # cell arm seed rep [knee|store] [variant]   (arm: MAIN|S<n>|DEF<n>|
     RBIN="${!p67_bv:-}"; RWANT="${!p67_sv:-}"
     [ -z "${!p67_tv:-}" ] || PERFDIR="${!p67_tv}"
   fi
-  if [ "$P63" = 1 ]; then
+  if [ "$P68" = 1 ]; then
+    # Plan 68: the row's bytes, timeout, hint and env from plan68.py armspec; B<cell> runs the BASE seat's binary, R<cell> / G<cell> the CAND's (an UNBUILT cell is refused here).
+    local p68_spec p68_tmo
+    p68_spec="$(python3 ./plan68.py armspec "$cell" "$arm")" || { echo "UNKNOWN-ARM $arm at $cell (plan 68)" >> "$OUT"; return 0; }
+    read -r bytes p68_tmo HINT p51_arm_env <<< "$p68_spec"
+    rowbytes="$bytes"; tmo_env=(RWM_PERF_TIMEOUT_S="$p68_tmo")
+    case "$arm" in B*) RBIN="$BIN_BASE"; RWANT="$WANT_BASE" ;; esac
+  elif [ "$P63" = 1 ]; then
     # Plan 63: the row's bytes, timeout, hint and env from plan63.py armspec (plan 51e's spec for the arm without its seat prefix); C<arm> runs the CONTROL (BASE) binary, F<arm> the CAND.
     local p63_spec p63_tmo
     p63_spec="$(python3 ./plan63.py armspec "$cell" "$arm")" || { echo "UNKNOWN-ARM $arm at $cell (plan 63)" >> "$OUT"; return 0; }
@@ -1540,6 +1566,41 @@ plan63() { # smoke -> the whole plan (0), or the smoke row (1)
     BLOCK=1
   fi
 }
+
+# ── plan 68 (status 68, the hand-off gate's step 1): the executed table of plan68.py (the registered 54 slots minus the UNBUILT cells, 9 rows each); smoke = rehearsal = one row per arm on K2. Rows run as the table says; nothing is replaced ──
+plan68() { # smoke -> the whole plan (0), or the smoke rows (1)
+  local -a tbl
+  local line cell store arm seed rep want
+  if [ "$1" = "1" ]; then
+    mapfile -t tbl < <(python3 ./plan68.py plan 68 smoke)
+    [ "${#tbl[@]}" -eq 3 ] || { echo "ABORT-PLAN68 smoke table has ${#tbl[@]} rows (3)" >> "$OUT"; exit 3; }
+  else
+    mapfile -t tbl < <(python3 ./plan68.py plan 68)
+    want=$(( 54 - 9 * $(python3 ./plan68.py unbuilt | wc -w) ))      # the registered 54 slots, 9 per UNBUILT cell
+    [ "${#tbl[@]}" -eq "$want" ] || { echo "ABORT-PLAN68 table has ${#tbl[@]} rows ($want)" >> "$OUT"; exit 3; }
+  fi
+  for line in "${tbl[@]}"; do
+    read -r cell store arm seed rep <<< "$line"
+    run_one "$cell" "$arm" "$seed" "$rep" "$store"
+  done
+  if [ "$1" != "1" ]; then
+    echo "BLOCK-COMPLETE ${#tbl[@]} slots $(date -u +%FT%TZ)" >> "$OUT"
+    BLOCK=1
+  fi
+}
+
+if [ "$P68" = 1 ]; then
+  if [ "${LD_SMOKE:-0}" = "1" ]; then
+    plan68 1
+    echo "LD-BATTERY-DONE tag=$TAG blocks=0 $(date -u +%FT%TZ)" >> "$OUT"
+    exit 0
+  fi
+  plan68 0
+  echo "=== ARMCOUNTS $(date -u +%FT%TZ)" >> "$OUT"
+  grep -ac '^P38ROW ' "$OUT" | sed 's/^/ROWS /' >> "$OUT"
+  echo "LD-BATTERY-DONE tag=$TAG blocks=$BLOCK $(date -u +%FT%TZ)" >> "$OUT"
+  exit 0
+fi
 
 if [ "$P63" = 1 ]; then
   if [ "${LD_SMOKE:-0}" = "1" ]; then

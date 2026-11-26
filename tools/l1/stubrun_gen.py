@@ -801,6 +801,51 @@ def gen63(cli, srv, drv, nbytes, fam, hint):
     return cli, srv, drv
 
 
+# ── plan 68 (s68_report.row_metrics): the hand-off gate's step 1. A row is 200 [DIAG] ticks (50 s) with the seat's controller echo (BASE: stock BBR; R4 / GATE: bbr_rs + [QCC]), [GATES] RWM_HOFF_GATE echoed on both ends as
+# the engine does, and one `[HOFF]` line per tick in the engine's format (hoff.rs) plus an UNKNOWN extra field (`qdisc=fq`, top level and inside every path block: the parser must ignore it). KNOWN TRUTH: GATE binds
+# (gate=on, hand_bind 0.62 over n = 400 turns, so 248 first-send refusals per window and path, B p95 52 under beta 53.8, batch 8); R4 and BASE print gate=off with hand_bind 0.10. STUB_BAD68 (comma list):
+# gateoff (the GATE arm's rows print gate=off and never bind: the execution witness fails), nohoff (no [HOFF] line on any row). ──
+BAD68 = {"gateoff", "nohoff"}
+
+
+def hoff68(k, nleg, gate, bound):
+    t = 0.25 * k
+    paths = ""
+    for i in range(nleg):
+        hb = 0.62 if bound else 0.10
+        paths += (f" p{i}[B=30/52/56 n=400 dgq=20 F=45 win=60 R=11500 tau_o=2.00ms({'meas' if gate else 'assumed'}) tau_p=1.00ms l_o=0.30ms l_p=0.20ms L=3.50ms beta=53.8 hand_bind={hb:.3f} "
+                  f"spare_i={'0' if bound else 'inf'} spare_bind={0.55 if bound else 0.0:.3f} reopen=0.500/3.000ms/4 starve=0.010 app_limited=0.050 batch=8.00 g_batch=1.20ms phat=1.05ms "
+                  f"fifo_wait_resend=2.50ms/3 qdisc=fq]")
+    return (f"[HOFF] t={t:.1f}s gate={'on' if gate else 'off'} owner_timer_wakes={4 * k if gate else 0} probe_acks={50 * k} tau_floor_bind=0.40 qdisc=fq{paths} "
+            f"infl_vs_out=900/880/x1.02 store_pin=0.10")
+
+
+def gen68(cli, srv, drv, nbytes, fam, hint, base):
+    bad = set(x for x in os.environ.get("STUB_BAD68", "").split(",") if x)
+    gate_env = os.environ.get("RWM_HOFF_GATE") == "1"
+    gate = gate_env and "gateoff" not in bad
+    brs = os.environ.get("RWM_QUIC_CC") == "bbr_rs"
+    nleg = len(BDP[fam])
+    rl = run_lines(fam, brs, n=200)
+    if "nohoff" not in bad:
+        k = 0
+        for i, ln in enumerate(rl):
+            if ln.startswith("[DIAG]"):
+                k += 1
+                rl[i] = ln + "\n" + hoff68(k, nleg, gate, gate)
+        rl = "\n".join(rl).split("\n")
+    echo = f" RWM_HOFF_GATE={'1' if gate_env else '0'}"
+    cli = [ln + echo if "[GATES]" in ln else ln for ln in cli] + rl
+    srv = [ln + echo if "[GATES]" in ln else ln for ln in srv]
+    cli = [ln.replace("hint=bulk", f"hint={hint}") if "[PIPE]" in ln else ln for ln in cli]      # the carrier hint echo (Auto cells)
+    srv = [ln.replace("hint=bulk", f"hint={hint}") if "[PIPE]" in ln else ln for ln in srv]
+    secs = 55.0
+    drv = [ln.replace("hint=bulk", f"hint={hint}") if "--- RWM-C perf" in ln else ln for ln in drv]
+    drv = [ln for ln in drv if '"summary"' not in ln] + [summary54(secs, int(nbytes))]
+    cli = [ln for ln in cli if '"summary"' not in ln and '"run":' not in ln] + ['{"bytes":%s,"hint":"%s","mbps":%.3f,"proto":"rp-native","run":1,"seconds":%s}' % (nbytes, hint, int(nbytes) * 8 / secs / 1e6, secs), summary54(secs, int(nbytes))]
+    return cli, srv, drv
+
+
 # ── plan 51 (s51_score.row_metrics): the delta sweep's rows. A row is a 220-tick [DIAG] series (55 s), a [SPAN] line every 0.5 s whose rr follows the rate-mix weight (beta = 1: 0.000; beta = 0: 0.2), the sender's
 # emission-batching echo, [GATES] RWM_DELTA on both ends, source symbols matching the carrier's symbol size, a summary whose rate varies with the pid. STUB_BAD51 (comma list): deltaonce (the FIRST scored slot echoes
 # RWM_DELTA wrongly on the client end; its replacement is right), nobatch (no batching echo), overdrive (dgev / hand 0.1 and infl >= cwnd), shortonce (the FIRST scored slot is a 10 s row), hbrr (rr > 0 at beta = 1),
@@ -1169,6 +1214,8 @@ def main(argv):
         cli, srv, drv = gen51e(cli, srv, drv, nbytes, fam, _hint)
     elif plan == "63":
         cli, srv, drv = gen63(cli, srv, drv, nbytes, fam, _hint)
+    elif plan == "68":
+        cli, srv, drv = gen68(cli, srv, drv, nbytes, fam, _hint, base)
     elif plan == "51":
         cli, srv, drv = gen51(cli, srv, drv, nbytes, fam, _hint)
     else:

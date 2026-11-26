@@ -595,6 +595,11 @@ import plan63  # noqa: E402
 for _a63 in plan63.all_arms():
     sp.ARM_SPEC.setdefault(_a63, ("window", "Rlc", "realtime", "ACTIVE"))
     AFAM.setdefault(_a63, "BASE" if _a63.startswith("C") else "CAND")
+# ── status 68 (the hand-off gate, step 1): arms <B|R|G><cell code> (plan68.py); B runs the BASE seat's binary, R / G the CAND seat's; the carrier hint is the cell's ──
+import plan68  # noqa: E402
+for _a68 in plan68.all_arms():
+    sp.ARM_SPEC.setdefault(_a68, ("window", "Rlc", plan68.arm_hint(_a68), "ACTIVE"))
+    AFAM.setdefault(_a68, "BASE" if _a68.startswith("B") else "CAND")
 # ── status 51, block 51 (plan 51): H-B .. I4 (plan51.py's arm names); each arm's carrier hint is its ARM_SPEC[arm][2] (the pipe-echo witness), the 4th field is the estimator-cadence echo ──
 import plan51  # noqa: E402
 for _a51 in plan51.all_arms():
@@ -1110,6 +1115,20 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, sha=No
             row["t63"] = plan63.row_metrics(cli, srv, drv)
         except Exception as e:      # a reported readout never voids a row
             row["t63"], row["t63_error"] = None, f"{type(e).__name__}: {e}"
+    if os.environ.get("LD_PLAN") == "68":
+        # Status 68: only the seat's binary (and a paced cell's pacing echo) can void a row (plan68.row_problems); the gate token, the [HOFF] gauges and every readout are READINGS (s68_report.py): a failing GATE row is STOP68, never a void.
+        import s68_report
+        p.extend(plan68.row_problems(cell, arm, cli, srv, sha, os.environ.get("LD_SHA"), os.environ.get("LD_SHA_BASE")))
+        if (row.get("pipe_cli") == ["window", "Rlc", "realtime"] and row.get("pipe_srv") == ["window", "Rlc", "realtime"]
+                and any(REALTIME_ECHO59 in ln for ln in cli) and any(REALTIME_ECHO59 in ln for ln in srv) and "window-line-missing-on-window" in row["problems"]):
+            row["problems"].remove("window-line-missing-on-window")
+            if row["status"] == "WITNESS-FAIL" and not row["problems"]:
+                row["status"] = "LIVE"
+        row["sha_checked"] = bool(sha) and bool(os.environ.get("LD_SHA")) and bool(os.environ.get("LD_SHA_BASE"))
+        try:
+            row["t68"] = s68_report.row_metrics(cli, srv, drv, row.get("bytes"), cell, arm, row.get("mbps"), row=row)
+        except Exception as e:      # a reported readout never voids a row
+            row["t68"], row["t68_error"] = None, f"{type(e).__name__}: {e}"
     f2_why = lc.f2_void(list(cli) + list(srv) + list(drv)) if os.environ.get("LD_PLAN") in ("51", "51e") else None
     row["problems"].extend(p)
     if p and row["status"] == "LIVE":
