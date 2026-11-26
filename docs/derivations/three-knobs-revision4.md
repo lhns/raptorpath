@@ -1978,19 +1978,28 @@ Names and semantics only. All default off, so every stored row reproduces.
 | | 1 | 1 362 → 12 613 | 249 → 1 551 | −269 | −16 168 | −5 186 | −5 674 |
 | | 2 | 2 972 → 13 106 | 444 → 1 682 | −273 | −15 730 | −5 869 | −6 308 |
 
-**OV-long-v is the clean cell.** The cap is constant (no descent), r = 0, and the link slots balance to within 32. There:
-- each extra resend displaces one first send;
-- the duplicate gauge does not move;
-- yet delivered falls by **0.068–0.072 units per extra resend**, constant over T.
-- Equivalently, B′'s extra resends recover ≈ 0.90 lost units each, where ≈ 0.97 was expected (a resend is itself lost with ε).
-- **The per-window deficit B′ − A** on the paired steady window is −0.0017 / −0.0019 / −0.0019 / −0.0018 at T = 1 / 1.5 / 2 / 3. That is flat in c/x̂ (0.73 → 2.36 s) and equals that cost at the measured extra-resend rate (≈ 280/s × 0.07 / 12 000 = 0.0016).
+**The account closes exactly from the stored fields.** For every row, `Δdelivered = Δ(first sends) − Δ(never_delivered)`. For example, OV-long-v at T = 1 gives −10 578 + 9 820 = −758, and OV-long-m at T = 0.4 gives −12 555 + 9 557 = −2 998. Each extra resend displaces a first send, or a link slot in the shorter end drain, and fills at most one hole. The fields read are `never_delivered` (= `passed_unfilled`), `pass_floor`, `late_floor`, `n_missing`, `dup` and `late`.
 
-**OV-long-m, after the slot term.** The remainder, Δdelivered + 0.97·|Δslots|, is −630 / −664 / −644 / −615 units, which is −0.061 per extra resend at every T.
-- That is the same order as OV-long-v's −0.07, although here the duplicate gauge rises by 1 171–1 356.
-- So duplicates do not set the cost: with them (δ = 0.1) and without them (δ = 0.005), an extra resend costs ≈ 0.06–0.07 units. Its mechanism is not identified by the stored gauges. Candidates are resends of units that arrive anyway and resends past a usable deadline. **No count separates them.**
+**Holes filled per extra resend** (Δ never_delivered / Δ resends):
+
+| | T = 1 | 1.5 | 2 | 3 |
+|---|---|---|---|---|
+| OV-long-v | 0.931 | 0.931 | 0.933 | 0.932 |
+
+| | T = 0.4 | 0.6 | 1 | 2 |
+|---|---|---|---|---|
+| OV-long-m | 0.926 | 0.930 | 0.933 | 0.930 |
+
+- So **≈ 0.07 of each extra resend fills nothing**, in both cells and at every T.
+- In OV-long-v that is 726 / 747 / 693 / 601 units, which is the cell's whole bill. The cap is constant there, r = 0, and the link slots balance to within 32.
+- **Of the 0.07, ε ≈ 0.03 is the resend itself being lost.** The other ≈ 0.04 (≈ 410 per 10 500 resends) is not separated by the fields read: `dup` and `late_floor` do not move in OV-long-v.
+  - §11.2 says a report-driven resend on one FIFO path is never a duplicate. So these ≈ 0.04 are an accounting hole, not yet a mechanism.
+- **In OV-long-m the duplicate gauge rises by +1 171 to +1 356**, more than the 712–821 unfilled resends. So that gauge does not count wasted resends one for one; `late_floor` falls by 273–342 and the freed repair slots add 203–273.
+  - The equal fill fraction in the two cells is therefore not shown to be one mechanism.
+- **The per-window deficit B′ − A in OV-long-v** on the paired steady window is −0.0017 / −0.0019 / −0.0019 / −0.0018 at T = 1 / 1.5 / 2 / 3. It is flat in c/x̂ (0.73 → 2.36 s), and it equals the unfilled fraction at the measured extra-resend rate (≈ 280/s × 0.07 / 12 000 = 0.0016).
 
 **What this explains:**
-- **§13.1's 2–6 % residual on build B.** In OV-long-v at T = 1, B sent 9 604 extra resends (11 132 against 1 528, with duplicates 90 against 89). At 0.07 each that is ≈ 670 units, against the 240–560 measured. That is the order of the residual, so the per-resend cost, not duplicates, carries it.
+- **§13.1's 2–6 % residual on build B.** In OV-long-v at T = 1, B sent 9 604 extra resends (11 132 against 1 528, with duplicates 90 against 89). At 0.07 each that is ≈ 670 units, against the 240–560 measured. That is the order of the residual, and duplicates cannot carry it there.
 - **The bill's excess in OV-long-m** (observed over predicted 1.29 / 1.20 / 1.11 / 1.08).
 - **The post-onset "+0.002" of item 3's fall.**
 - **The pre-onset deficit at T = 1** (0.0025 measured; 0.0018 from the cost at the run's own resend rate).
@@ -2001,7 +2010,7 @@ Names and semantics only. All default off, so every stored row reproduces.
 - OV-long-v shows no such growth with c/x̂. Both excesses therefore belong to δ = 0.1, which differs from δ = 0.005 by its repair (r = 0.046 before the clamp, ≈ 2 000 repairs sent) and by duplicates.
 
 **Verdict on the read: it holds in part.**
-- "The free band costs nothing" is **off by a per-resend cost**, about 0.07 units per resend. The free band makes units protected, so they are resent, which gives ≈ 0.0017 in share per window and 600–780 units whole-run in both cells.
+- "The free band costs nothing" is **off by the unfilled fraction of the resends it causes**: about 0.07 per resend, because protected units are resent. That gives ≈ 0.0017 in share per window, and 600–780 units whole-run in OV-long-v (about 700 of OV-long-m's bill).
 - The fluid bill of §13.1 leaves that cost out.
 - A δ-specific pre-onset residual of up to 0.003 remains unexplained.
 
@@ -2031,65 +2040,79 @@ Names and semantics only. All default off, so every stored row reproduces.
 2. **A model gap that goes back to derivation:** the cost of the resends the free band causes (read 2).
    - **§13.1's bill becomes**
      ```text
-        A − B′  =  μ̂·(c − x̂·w_end)⁺  +  κ_r·ΔN_resend ,       κ_r ≈ 0.06–0.07 units per extra resend (measured in OV-long-v and OV-long-m, constant over T)
+        A − B′  =  μ̂·(c − x̂·w_end)⁺  +  κ_r·ΔN_resend ,       κ_r ≈ 0.065 units per extra resend (the unfilled fraction; measured in OV-long-v and OV-long-m, constant over T)
      ```
-     κ_r is measured, not derived, so it cannot ship as a law term.
+     - κ_r is measured, not derived, so it cannot ship as a law term.
+     - It reproduces OV-long-m's four bills within 110 units (2 982 / 4 246 / 5 784 / 6 378 against 2 998 / 4 217 / 5 674 / 6 308).
    - **What is owed:**
-     - a per-resend outcome gauge: of each resend, whether it delivered a new unit, was a duplicate, was lost, or arrived late. It should be read on the stored configurations by rerunning them, not as a new cell;
-     - a derivation of κ_r from that gauge;
+     - a per-resend outcome gauge: of each resend, whether it filled a hole, was a duplicate, was lost, or arrived after its hole was passed. It should be read by rerunning the stored configurations, not as a new cell;
+     - a derivation of κ_r from that gauge. Where r > 0 it must also cover duplicates and the freed repair slots;
      - a per-window resend, duplicate and repair series, to locate OV-long-m's δ-specific pre-onset excess (≈ 0.003 at T = 2, 0.0013 at T = 0.4).
    - Until then the excess is a recorded defect finding with no ledger verdict proposed.
 
 **Corrected tests** (post-data on these rows; the fresh row below confirms them):
 - **Item 2 (before the onset):**
   - cap·x̂/c within 3 % of 1 (unchanged);
-  - deficit against A within ±0.0012 of `κ_r·(B′'s extra-resend rate)/λ`, computed from each run's own counts over the protected part of the run. That gives ≈ 0.0017 where units are protected, and 0 where they are not.
-  - On OV-long-m this fails at T = 2 (0.0049 against ≈ 0.0018) and at T = 0.4 (0.0013 against 0), which is the open δ-specific excess. It holds at T = 1 and in every OV-long-v row.
-- **Item 3 (after the onset):** the highest 3-window mean after the onset equals the law's value of that same statistic, `(μ/λ)·|w′|/(1 + |w′|)` averaged over 0.5 s windows plus the resend term, within ±15 %.
+  - deficit against A equal to `κ_r·(B′'s extra-resend rate)/λ`, computed from each run's own counts over the protected part of the run (≈ 0.0017 where units are protected, 0 where not);
+  - the bar is the p95 of |A − A′| over the same windows from the cell's own A/A pair, at the comparison's seed count. That replaces any fixed number.
+  - It is read only when at least 3 pre-onset windows lie inside the A-paired window; otherwise it is n/a.
+  - On OV-long-m it fails at T = 2 (0.0049 against ≈ 0.0018) and is marginal at T = 0.4 (0.0013 against 0), which is the open δ-specific excess. It holds at T = 1 and in every OV-long-v row.
+- **Item 3 (after the onset):** read only with 3 windows after the onset inside the window. The highest 3-window mean after the onset equals the law's value of that same statistic, `(μ/λ)·|w′|/(1 + |w′|)` averaged over 0.5 s windows plus the resend term, within ±15 %.
 - **Item 4 (tail):** per tail window, `w·t_ov` equals `2·(c/x̄)·s_b·y/(1 + y)` on the window's own inputs, within ±3 %. This replaces "constant within ±15 %".
-- **Delay (condition 1):** every p50 prediction uses the reader's convention (median over handed units, undelivered at +∞). The difference against the stored arm is checked against that convention's central value, within ±0.015 s.
-- **The bill:** A − B′ equals μ̂·(c − x̂·w_end) + κ_r·ΔN_resend within ±250 units, with κ_r = 0.065.
+- **Delay (condition 1):** every p50 prediction uses the reader's convention (median over handed units, undelivered at +∞), on the window of the pairing it is read in.
+  - The A-paired window starts at A's fill + 1 s, which differs by T. The stored-arm pairing starts at ≈ 2.7 s.
+  - With those starts the model gives 0.196 / 0.318 / 0.634 / 1.63 s on OV-long-m's A pairing, against 0.198 / 0.319 / 0.626 / 1.561 s measured.
+  - The T = 2 miss of 0.07 s comes from the 50 % cut falling within ≈ 0.2 s of the onset knee. There a small shift of the onset or of the window's delivered fraction moves the median along the knee.
+  - Bands: ±0.015 s at T < 1, ±0.03 s at T = 1, ±0.10 s at T = 2.
+- **The bill:** A − B′ equals μ̂·(c − x̂·w_end) + κ_r·ΔN_resend within ±250 units, with κ_r = 0.065 and ΔN_resend read from the run.
 
-#### 13.9.6 The fresh middle-price row: OV-long-q at δ = 0.125 (written before any run)
+#### 13.9.6 The fresh middle-price row: OV-long-q at δ = 0.118 (written before any run)
 
-**Why δ = 0.125.** The shape items read inside A's paired window, which starts at ≈ 2.9 / 3.9 / 6.0 / 11.0 s for T = 0.4 / 0.6 / 1 / 2 (A's fill + 1 s, independent of δ). Two constraints:
-- **Items 2 and 3 need the onset at least 3 windows (1.5 s) inside that window,** so that there are pre-onset windows and a full peak window: s_b ≥ start + 0.22 − t₀. That requires δ ≤ 0.133 at T = 0.4 (and ≤ 0.149, 0.163, 0.180 at the other T).
-- **Item 4 at T = 2 needs t₀ + 2·s_b ≤ 39.6 − 3 s:** δ ≥ 0.114.
-- **δ = 0.125 satisfies both.** δ = 0.3, an earlier draft of this row, put every onset before the window start, which would leave items 2 and 3 and the residual's test empty. It is withdrawn.
+**Why δ = 0.118.** The shape items read inside A's paired window, which starts at ≈ 2.9 / 3.9 / 6.0 / 11.0 s for T = 0.4 / 0.6 / 1 / 2 (A's fill + 1 s, independent of δ). Two constraints:
+- **Items 2 and 3 need at least 3 windows (1.5 s) between the window start and the onset,** plus a margin over the onset's ±8 % band.
+  - At T = 0.4 that means s_b ≥ 3.12 s plus the margin, so δ ≤ 0.133.
+  - At δ = 0.118 the third pre-onset window ends 0.38 s before the predicted onset, outside its ±0.28 s band.
+- **Item 4 at T = 2 needs tail windows:** t₀ + 2·s_b = 35.4 s ≤ 39.6 s, which gives 8 windows.
+- **The earlier drafts are withdrawn:**
+  - δ = 0.3 put every onset before the window start;
+  - δ = 0.125 left only 0.09 s of margin at T = 0.4.
 
-**The cell.** OV-long's link, load, units and τ = 0.4 s, at δ = 0.125.
-- **The rate law there:** β = 0.301 and r(0.125) = 0.050. The clamp takes r to ≈ 0 under overload, so x̂ ≈ 1.235, μ̂ ≈ 9 695, R ≈ 0.104 s, ô ≈ 0.095 s and t₀ ≈ 1.28 s, as in OV-long-m.
+**The cell.** OV-long's link, load, units and τ = 0.4 s, at δ = 0.118.
+- **The rate law there:** β = 0.314 and r(0.118) = 0.049. The clamp takes r to ≈ 0 under overload, so x̂ ≈ 1.235, μ̂ ≈ 9 695, R ≈ 0.104 s, ô ≈ 0.095 s and t₀ ≈ 1.28 s, as in OV-long-m.
 - **Rows:**
   - A and B′ at T ∈ {0.4, 0.6, 1, 2, ∞}, H = 0, 6 seeds;
-  - **its own A/A pair** (A at T = 0.4 against its phase variant, 2 × 12);
-  - today's Realtime at δ = 0.125, both arms, 3 seeds, fresh;
+  - **its own A/A pair** (A at T = 0.4 against its phase variant, 2 × 12). Its per-window floor sets item 2's bar;
+  - today's Realtime at δ = 0.118, both arms, 3 seeds, fresh;
   - ADR-0084 and Bulk reused by fingerprint (§13.6).
 
-**B′ predictions** (from the corrected model, which reproduces OV-long-m's T = 0.4 row: share 0.799 against 0.799, p50 0.197 s against 0.198 s, and item 3's statistic within 7 % at every T).
+**B′ predictions.** They come from the corrected model, which reproduces OV-long-m's rows: the p50 values of §13.9.5, the item 3 statistic within 7 %, and share 0.799 against 0.799 at T = 0.4. Item 2 and the share use the resend term (≈ 0.0018 where protected). p50 is on the A pairing.
 
-| T | s_b | `onset_t` | pre-onset windows; item 2 deficit | item 3 statistic | tail windows | steady share | on time (0.4 s) | p50 (reader's convention) | A − B′ whole-run (units) |
+| T | s_b | `onset_t` | pre-onset windows; item 2 deficit | item 3 statistic | tail windows | steady share | on time (0.4 s) | p50, A pairing | A − B′ whole-run (units) |
 |---|---|---|---|---|---|---|---|---|---|
-| 0.4 | 3.31 s | 4.59 s | 3; 0 (unprotected) | 0.022 | 63 | 0.799 | = share | 0.180 s | 2 400 + 680 = 3 100 |
-| 0.6 | 4.91 s | 6.19 s | 4; 0 (unprotected) | 0.028 | 56 | 0.797 | 0.655 | 0.291 s | 3 700 + 680 = 4 400 |
-| 1 | 8.11 s | 9.39 s | 6; 0.0018 | 0.033 | 44 | 0.793 | 0.17 | 0.60 s | 5 650 + 680 = 6 350 |
-| 2 | 16.1 s | 17.4 s | 12; 0.0018 | 0.037 | 12 | 0.790 | ≈ 0 | 1.63 s | 7 500 + 680 = 8 200 |
+| 0.4 | 3.50 s | 4.78 s | 3; 0 (unprotected) | 0.021 | 62 | 0.799 | = share | 0.184 s | 2 390 + 680 = 3 070 |
+| 0.6 | 5.20 s | 6.48 s | 4; 0 (unprotected) | 0.028 | 55 | 0.797 | 0.67 | 0.292 s | 3 660 + 680 = 4 340 |
+| 1 | 8.59 s | 9.87 s | 7; 0.0018 | 0.032 | 42 | 0.792 | 0.14 | 0.578 s | 5 510 + 680 = 6 190 |
+| 2 | 17.1 s | 18.3 s | 14; 0.0018 | 0.035 | 8 | 0.787 | ≈ 0 | 1.51 s | 7 060 + 680 = 7 740 |
 | ∞ | — | — | — | — | — | = A | | | 0 |
 
 - **Bands:**
-  - shares ±0.002; p50 ±0.015 s (±0.03 s at T ≥ 1);
+  - shares ±0.002;
+  - p50 ±0.015 s at T < 1, ±0.03 s at T = 1, ±0.10 s at T = 2 (the knee, §13.9.5);
   - s_b ±8 %; item 3 ±15 %; item 4 ±3 % per window;
-  - item 2 ±0.0012; the bill ±250 units.
+  - item 2 at the cell's own A/A floor; the bill ±250 units.
 - **Item 1:** s_b(T = 2)/s_b(T = 0.4) = 4.87 ± 10 %.
-- **The residual's test is item 2 at T = 1 and T = 2.**
-  - If it reads 0.0018 ± 0.0012, OV-long-m's excess was specific to that cell.
-  - If it reads ≈ 0.0035–0.005, the δ-specific excess is real and grows with c/x. It then goes into the derivation owed in §13.9.5.
-  - At T = 0.4 and 0.6 it reads 0 ± 0.0012 unless the unexplained unprotected excess (0.0013 at OV-long-m's T = 0.4) recurs.
+- **The residual's tests are item 2 at all four T.**
+  - At T = 1 and T = 2, a reading of 0.0018 within the floor would mean OV-long-m's excess was specific to that cell. A reading of ≈ 0.0035–0.005 would mean the δ-specific excess is real and grows with c/x, and it goes into the derivation owed in §13.9.5.
+  - At T = 0.4 and 0.6 the prediction is 0. A reading like OV-long-m's 0.0013 would be the unprotected excess recurring.
 
 **Reading (registered before any run).**
 - **The best point is T = 0.4.**
-- **Against the stored arm:** share −0.009 ± 0.002, at the ≈ 0.0096 bar; p50 +0.008 ± 0.015 s against a ≈ 0.0086 bar. **Predicted: "worse" or "equivalent".**
-  - 5.2·s_b = 17 s here, so R1's delay gain still lands too late to beat the stored arm's flat 0.172 s on the window p50.
+- **Against the stored arm** (its pairing starts at ≈ 2.7 s; B′'s p50 there is 0.184 s): share −0.009 ± 0.002, at the ≈ 0.0096 bar; p50 +0.012 ± 0.015 s against a ≈ 0.0086 bar. **Predicted: "worse"** (or "equivalent" at the low end of both bands).
+  - 5.2·s_b = 18 s here, so R1's delay gain lands too late to beat the stored arm's flat 0.172 s on the window p50.
   - This is the R1 limit of §13.9.5, at a second δ.
 - **Against the engine-queue arm:** share −0.010, p50 −0.55 s, on time +0.80. **Predicted: "a trade."**
-- **The cell confirms the corrected tests if** items 1, 3 and 4 hold at every T, item 2 holds at T = 0.4 and 0.6, and the bill and p50 lie in their bands.
+- **The cell confirms the corrected tests if all of these hold:**
+  - items 1, 3 and 4 at every T;
+  - item 2 within its floor at every T (the residual's test);
+  - the bill and p50 in their bands.
 - **Q33, Q34 and Q24 stay open.**
