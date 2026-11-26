@@ -2,6 +2,7 @@
 Run from tools/toy:  python -m unittest test_toy2   (stage 1's test_toy.py must still pass as well)."""
 import ast
 import dataclasses
+import json
 import math
 import os
 import random
@@ -2417,6 +2418,74 @@ class Rev4bLaw(unittest.TestCase):
         import batch3e
         inf = dataclasses.replace(Rev4Step2.ov("new", n=24000), T=math.inf, want_trace=True)
         self.assertEqual(batch3e.id3e(toy2.run(inf), toy2.run(dataclasses.replace(inf, wait_limit=True, wait_limit_form="rev4b"))), [])
+
+
+class ResendGauge(unittest.TestCase):
+    """Revision 4 section 13.9: the per-resend outcome gauge (resend_gauge).  Reads only: off by default, bit-identical when on, and every resend is classed exactly once."""
+
+    @staticmethod
+    def cfgs():
+        import batch3e
+        cl = dataclasses.replace(batch3e.new_cfg("CL", 0, 0.4, 0.0, 50.0, None, n_total=30000, dead=(0, 0.5, 0.5)), floor_repeat="evidenced_overdue")
+        ov = dataclasses.replace(Rev4Step2.ov("new", n=24000), rev4_gauge=True, wait_limit=True, wait_limit_form="rev4b")
+        return dict(cl=cl, ov=ov)
+
+    def test_off_by_default_and_the_fingerprint_is_stable(self):
+        import batch3e
+        self.assertFalse(toy2.Cfg().resend_gauge)
+        for c in self.cfgs().values():
+            self.assertEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, resend_gauge=False)))
+            self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, resend_gauge=True)))
+            self.assertNotIn("resend_outcome", toy2.run(c))
+
+    def test_on_changes_no_decision(self):
+        """Every id3e key and the sender trace are identical with the gauge on; only the new block and nothing else is added."""
+        import batch3e
+        for name, c in self.cfgs().items():
+            c = dataclasses.replace(c, want_trace=True)
+            a, b = toy2.run(c), toy2.run(dataclasses.replace(c, resend_gauge=True))
+            self.assertEqual(batch3e.id3e(a, b), [], name)
+            self.assertEqual(a["_trace"], b["_trace"], name)
+            self.assertEqual(set(b) - set(a), {"resend_outcome"}, name)
+            self.assertEqual(json.dumps(a["gauges"], sort_keys=True), json.dumps(b["gauges"], sort_keys=True), name)
+
+    def test_every_resend_is_classed_once_and_the_series_tie_to_the_gauges(self):
+        seen = set()
+        for name, c in self.cfgs().items():
+            sm = toy2.Sim(dataclasses.replace(c, resend_gauge=True))
+            r = sm.run()
+            ro, g = r["resend_outcome"], r["gauges"]
+            classes = ("filled", "dup", "lost", "late", "other", "open")
+            self.assertEqual(ro["n"], g["repair_sends"], name)
+            self.assertEqual(sum(ro[k] for k in classes), ro["n"], name)                       # the classes close
+            self.assertTrue(all(ro[k] >= 0 for k in classes), name)
+            self.assertLessEqual(ro["qdrop"], ro["lost"])
+            self.assertLessEqual(ro["late_floor"], ro["late"])
+            self.assertEqual(ro["open"], sum(1 for e in sm.heap if e[2] == 0 and e[3][1] >= 1), name)      # still open = copies still in the event queue (no engine queue here)
+            self.assertEqual(sum(x[1] for x in ro["series"]), ro["n"], name)
+            self.assertEqual(sum(x[2] for x in ro["series"]), g["dup"], name)
+            self.assertEqual(sum(x[3] for x in ro["series"]), g["rep_sent"], name)
+            self.assertGreaterEqual(ro["dup"], 0)
+            seen |= {k for k in classes if ro[k] > 0}
+        self.assertTrue({"filled", "dup", "lost"} <= seen, seen)                                 # each of these executes in a real run
+
+    def test_each_class_branch_by_construction(self):
+        """The arrival classifier on a synthetic receiver state: a copy of a hole fills it, of a received unit duplicates, of a passed hole is late, of an unseen unit is other."""
+        sm = toy2.Sim(dataclasses.replace(self.cfgs()["cl"], resend_gauge=True))
+        for _ in range(5):
+            sm.ro_sent(1.0)
+        sm.holes[10] = 0.5
+        sm.got[11] = 1
+        sm.passed.add(12)
+        sm.passed_by[12] = "floor"
+        for s in (10, 11, 12, 13):
+            sm.ro_arrival(1.2, s, 1)
+        sm.ro_lost(True)
+        ro = sm.ro
+        self.assertEqual((ro["filled"], ro["dup"], ro["late"], ro["late_floor"], ro["other"], ro["lost"], ro["qdrop"], ro["open"]), (1, 1, 1, 1, 1, 1, 1, 0))
+        self.assertEqual(ro["series"][2][1], 1)                                                   # the duplicate arrival at 1.2 s is in window 2 (1.0-1.5 s)
+        sm.ro_arrival(1.3, 11, 0)                                                                  # a first copy of a received unit: a duplicate in the series, not a resend class
+        self.assertEqual((ro["series"][2][1], ro["dup"]), (2, 1))
 
 
 if __name__ == "__main__":

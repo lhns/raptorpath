@@ -267,7 +267,7 @@ EARLY_CELLS = ("Ec", "RT", "OV", "CL-long-v")                                # o
 FPS = {}
 
 
-REV4_FIELDS = ("rev4_gauge", "dhat_bias", "elig", "floor_repeat", "inflight_to_rule", "inflight_to", "send_gate", "clamp", "wait_limit", "wait_limit_form", "eq", "eq_cap", "cwnd_sim", "rate2", "rate2_t")                                    # fields added after the first runs were stored: left out of the hash at their default, so stored fingerprints stay valid
+REV4_FIELDS = ("rev4_gauge", "dhat_bias", "elig", "floor_repeat", "inflight_to_rule", "inflight_to", "send_gate", "clamp", "wait_limit", "wait_limit_form", "eq", "eq_cap", "cwnd_sim", "rate2", "rate2_t", "resend_gauge")                                    # fields added after the first runs were stored: left out of the hash at their default, so stored fingerprints stay valid
 
 
 def fingerprint(cfg):
@@ -753,7 +753,7 @@ def gate_failures(r, edge, design=None):
 
 def id3e(a, b):
     """test_toy2.id_diff with the stage 3e readouts excluded as a block: every top-level key outside ID_EXCL and rep3e, plus ID_GAUGES."""
-    excl = test_toy2.ID_EXCL | {"rep3e", "trace_sha", "trace_n", "unfinished", "delivered_by_t_limit"}          # a stored run also carries its trace digest, compared separately
+    excl = test_toy2.ID_EXCL | {"rep3e", "trace_sha", "trace_n", "unfinished", "delivered_by_t_limit", "resend_outcome"}          # a stored run also carries its trace digest, compared separately
     bad = [k for k in a if k not in excl and not k.startswith("_") and json.dumps(a[k]) != json.dumps(b[k])]
     bad += [("g", k) for k in test_toy2.ID_GAUGES if a["gauges"][k] != b["gauges"][k]]
     return bad

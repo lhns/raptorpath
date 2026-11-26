@@ -279,7 +279,7 @@ def stopped():
 
 def ident_diff(a, b):
     """id3e keys and the trace digest of two runs, without the blocks that differ by construction (the rev4 echo of the build's flags, the stored series, timings)."""
-    skip = {"rev4", "series", "wall_s", "confirm_design"}
+    skip = {"rev4", "series", "wall_s", "confirm_design", "resend_outcome"}
     a2 = {k: v for k, v in a.items() if k not in skip}
     b2 = {k: v for k, v in b.items() if k not in skip}
     bad = list(B.id3e(a2, b2))

@@ -518,6 +518,7 @@ class Cfg:
     cwnd_sim: float = 0.0          # revision 4 step 2: the clamp's and the gauge's cwnd in datagrams; 0 = the cell's store pause pause_B
     rate2: float = 0.0             # revision 4 step 2 (OV-end): the source rate after rate2_t seconds; 0 = constant rate (work-conserving source only)
     rate2_t: float = 0.0
+    resend_gauge: bool = False     # revision 4 section 13.9: classify every resend once (filled a hole / duplicate / lost / arrived after its hole was passed / other / still open) and keep per-0.5 s series of resends, duplicates and repair sends, in out["resend_outcome"]; reads only, no decision changes
     rb_A: float = 3.0              # stage 3e amendment 3, arm RB (repair r = "rb"): r is held at R_MAX from the outage start until rb_A after its end
     rb_unit: str = "s"             # "s": rb_A seconds after the outage end; "sym": rb_A first sends after it
 
@@ -830,6 +831,7 @@ class Sim:
         self.send_times = []                       # send time of each, in send order (the time threshold's bisect)
         self.rd_t0, self.rd_n0, self.rd_new, self.rd_flow, self.rd_maxpause = 0.0, 0, 0, False, 0.0
         self.t_ov0 = 0.0
+        self.ro = dict(n=0, filled=0, dup=0, lost=0, qdrop=0, late=0, late_floor=0, other=0, open=0, series={}) if c.resend_gauge else None
         self.r4 = dict(ticks=0, ov=0, tau_lt_T=0, den_bind=0, floor_n=0, deq_early=0, dhat_inf=0, collapse_t=None, in_flight_max=0, spare_n=0, spare_bind=0,
                        dhat_sum=0.0, dhat_n=0, ratios=[], tau_min=math.inf, rounds=0, spare_bins={}, over_B=0, elig_n=0, elig_R_bind=0, elig_viol=0)
         self.fs_after_outage = 0                   # first sends after the outage end (RB with rb_unit "sym")
@@ -1361,6 +1363,48 @@ class Sim:
         else:
             self.src_next = nxt
 
+    # ---- section 13.9: the per-resend outcome gauge (reads only) ---------------------------------------
+    def ro_series(self, t):
+        """The 0.5 s window of t: [resends sent, duplicate arrivals, repairs sent]."""
+        return self.ro["series"].setdefault(int(t / 0.5), [0, 0, 0])
+
+    def ro_sent(self, now):
+        ro = self.ro
+        ro["n"] += 1
+        ro["open"] += 1
+        self.ro_series(now)[0] += 1
+
+    def ro_lost(self, qdrop):
+        """The copy never reaches the receiver: random or outage loss, or a bottleneck-queue drop (qdrop, a sub-count of lost)."""
+        ro = self.ro
+        ro["open"] -= 1
+        ro["lost"] += 1
+        ro["qdrop"] += bool(qdrop)
+
+    def ro_arrival(self, now, s, c):
+        """Called at the top of on_data, before the receiver state changes: every duplicate arrival enters the series (the same condition as g["dup"]); a copy (c >= 1) is classed once."""
+        ro = self.ro
+        if self.got[s]:
+            self.ro_series(now)[1] += 1
+        if c < 1:
+            return
+        ro["open"] -= 1
+        if self.got[s]:
+            ro["dup"] += 1
+        elif s in self.holes:
+            ro["filled"] += 1
+        elif s in self.passed:
+            ro["late"] += 1
+            ro["late_floor"] += self.passed_by.get(s) == "floor"
+        else:
+            ro["other"] += 1                         # the unit is not a hole yet (it is ahead of the receiver's highest seq)
+
+    def summary_resend_outcome(self):
+        ro = self.ro
+        out = {k: int(v) for k, v in ro.items() if k != "series"}
+        out["series"] = [[k * 0.5] + v for k, v in sorted(ro["series"].items())]
+        return out
+
     def send_copy(self, now, s):
         """Stage a copy of s.  Returns False when the resend budget (15.4) refuses it; nothing is mutated then."""
         c = self.cfg
@@ -1394,6 +1438,8 @@ class Sim:
             self.send_times.append(now)
             self.sends_n += 1
         self.g["repair_sends"] += 1
+        if self.ro is not None:
+            self.ro_sent(now)
         if self.trace is not None:
             self.trace.append((round(now, 9), s, k, 0, 1))
         def fin(a, dep):
@@ -1407,6 +1453,8 @@ class Sim:
             if a is not None and not self.lost(s, k, dep):
                 self.push(a, 0, (s, k, now, ps, 0))      # every copy goes on path A (17.7)
                 self.carry_floor(a)
+            elif self.ro is not None:
+                self.ro_lost(a is None)
 
         if self.fq is not None:
             if c.floor_law == "protect":
@@ -1723,6 +1771,8 @@ class Sim:
         if self.trace is not None:
             self.trace.append((round(now, 9), lo, j, end, 3))        # kind 3: a repair over [lo, end) (the identity gates compare traces)
         self.wadd("repair", now)
+        if self.ro is not None:
+            self.ro_series(now)[2] += 1
         ordv = None
         if self.fr:
             ordv = self.next_ord(now)
@@ -1830,6 +1880,8 @@ class Sim:
     def on_data(self, now, s, c, tau, ps=None, path=0):
         """tau is None for a decoded unit (stage 3e): it carries no send stamp, no path and no delay sample."""
         got = self.got
+        if self.ro is not None:
+            self.ro_arrival(now, s, c)
         if self.fr and ps is not None:
             o = self.ord_ps.get(ps)
             if o is not None and o > self.rx_ord_cur:
@@ -2749,6 +2801,8 @@ class Sim:
         self.summary3e(out, n, ok, dl, hs_)
         if c.rev4_gauge:
             out["rev4"] = self.summary_rev4()
+        if self.ro is not None:
+            out["resend_outcome"] = self.summary_resend_outcome()
         self.summary3d(out, n, ok, dl, hs_)
         if c.n_total:
             out["tail_time"] = (self.t_front - self.sent_t[n - 1]) if self.t_front is not None else None
