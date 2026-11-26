@@ -699,6 +699,62 @@ class ReaderCounts(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(td, "VERDICT-PASSES")))
 
 
+class IdentityBaselines(unittest.TestCase):
+    """The 2026-11-26 amendment: Bulk and the object API are configurations of the new model, read by identity.  DECIDE's CL-long read 'outside the swept range'
+    for both, because the T = 2 point (0.99926 delivered; 0.9996 in the synthetic rows) absorbed the T = inf point (1.0) in the merge of neighbours within the A/A noise (0.00126)."""
+
+    def rows(self):
+        import copy
+        new = {0.4: (0.90, 0.88, 0.0), 2.0: (0.9996, 0.653, 5.0), INF: (1.0, 0.650, 5.5)}
+        R = fake_cell(new, {0.95: (0.992, 0.60, 9.0), 1.0: (0.992, 0.60, 9.0)})
+        R[("lt", INF, INF)] = fake(1.0, 0.61, 6.7)
+        R[("bulk",)] = copy.deepcopy(R[("lt", INF, INF)])
+        return R
+
+    def read(self, R):
+        return S.read_mode(R, NF, units=200000, ys=("share_by_0p4", "recovery_time"), nseeds=SEEDS, rec_cap=14.5)
+
+    def test_the_registered_rule_reads_the_bulk_point_out_of_range_when_the_inf_point_is_merged_away(self):
+        R = self.rows()
+        del R[("lt", INF, INF)]                                                                 # no identity row to read against: the old interpolation
+        out = self.read(R)
+        self.assertEqual(out["outcome"], "FAILS")
+        self.assertTrue(any(c["base"] == ("bulk",) and c["rd"]["word"] == "outside the swept range" for c in out["comps"]))
+
+    def test_bulk_and_the_object_api_are_read_by_identity(self):
+        out = self.read(self.rows())
+        ids = {(c["base"], c["k"]): c["rd"]["word"] for c in out["comps"] if c["kind"] == "identity"}
+        self.assertEqual(set(ids.values()), {"identity"})
+        self.assertEqual({b for b, _ in ids}, {("bulk",), ("api",)})
+        self.assertNotIn("outside the swept range", [c["rd"]["word"] for c in out["comps"] if c["base"] in (("bulk",), ("api",))])
+        self.assertEqual(out["outcome"], "PASSES")                                              # neither better nor worse
+        self.assertFalse(out["broken"])
+
+    def test_an_identity_that_does_not_hold_is_a_failure_and_named(self):
+        R = self.rows()
+        R[("bulk",)][3]["share_by_0p4"] += 0.01
+        out = self.read(R)
+        self.assertEqual(out["outcome"], "FAILS")
+        self.assertEqual([b for b, _ in out["broken"]][:1], [("bulk",)])
+        self.assertTrue(any(c["rd"]["word"] == "identity broken" for c in out["comps"]))
+
+    def test_the_trace_digest_is_part_of_the_identity(self):
+        R = self.rows()
+        for s_ in range(SEEDS):
+            R[("lt", INF, INF)][s_]["trace_sha"] = "aa"
+            R[("bulk",)][s_]["trace_sha"] = "aa"
+        self.assertEqual(self.read(R)["outcome"], "PASSES")
+        R[("bulk",)][0]["trace_sha"] = "bb"
+        self.assertEqual(self.read(R)["outcome"], "FAILS")
+
+    def test_strict_order_bulk_is_never_read_against_the_any_order_curve(self):
+        R = self.rows()
+        R[("bulk",)] = {s_: dict(v, share_by_0p4=0.2) for s_, v in R[("bulk",)].items()}      # a Bulk that is not S5 at T = inf, hold inf
+        out = self.read(R)
+        self.assertEqual(out["outcome"], "FAILS")                                               # identity broken, and no fall back to the H = 0 curve
+        self.assertFalse(any(c["base"] == ("bulk",) and c["kind"] == "point" for c in out["comps"]))
+
+
 class Floors(unittest.TestCase):
     def test_the_larger_floor_and_the_degenerate_one(self):
         cells, deg = S.combine_floors(dict(share_by_0p4=0.0, recovery_time=0.1, share_any=0.0), dict(share_by_0p4=0.003, recovery_time=0.0, share_any=0.0))

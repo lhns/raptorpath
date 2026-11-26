@@ -80,6 +80,18 @@ def stage_verdict(outcomes, better_somewhere):
 
 
 # ---- one cell in one repair mode ----------------------------------------------------------------------------------------------------------
+def identical(a, b):
+    """Amendment 3e-4 (identity baselines): the keys registration 13.6 compares for the T = inf, H = inf arm against today's Bulk (every top-level key outside
+    batch3e's id3e exclusions and the ID_GAUGES), plus the trace digest when both runs carry one.  Returns the differing keys (empty: identical)."""
+    import test_toy2
+    excl = test_toy2.ID_EXCL | {"rep3e", "trace_sha", "trace_n", "wall_s"}
+    bad = [k for k in a if k not in excl and not k.startswith("_") and json.dumps(a[k]) != json.dumps(b.get(k, "<missing>"))]
+    bad += [("g", k) for k in test_toy2.ID_GAUGES if a.get("gauges", {}).get(k) != b.get("gauges", {}).get(k)]
+    if a.get("trace_sha") and b.get("trace_sha") and a["trace_sha"] != b["trace_sha"]:
+        bad.append("trace")
+    return bad
+
+
 def nf_n(nfall, cell, n):
     """The frozen A/A floor of a cell for a comparison of n seeds (registration 14.3): the freeze at the largest count not above n (the A/A rows
     run at 12 seeds, so 24 reads the 12-seed floor), else the smallest count."""
@@ -141,7 +153,21 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
         R[("api",)] = R[("lt", INF, 0.0)]
     nfn = nf if callable(nf) else (lambda n: nf)
     xn = lambda n: max(nf_of(nfn(n), "share_any"), 1.0 / units)              # noqa: E731
-    comps, undet = [], set()
+    comps, undet, broken = [], set(), []
+
+    def identity_reading(bk, R, nb):
+        """Amendment (dated 2026-11-26, after CL-long's data, before any other cell's): a baseline that is itself a configuration of the new model is read by
+        identity.  The object API is S5 at T = inf, hold 0, the curve's own last point.  Today's Bulk is S5 at T = inf, hold inf (strict order), so it is compared
+        with that row, never with the any-order H = 0 curve.  Identity counts as neither better nor worse; a difference is a finding (it fails the cell)."""
+        if bk == ("api",):
+            return dict(word="identity", mean=0.0, lo=0.0, hi=0.0, m=0.0, n_out=0, note="the object API is the curve's own point: S5 at T=inf, hold 0")
+        if bk == ("bulk",) and ("lt", INF, INF) in R and have(("lt", INF, INF), nb) and have(bk, nb):
+            diffs = [(s, identical(R[("lt", INF, INF)][s], R[bk][s])) for s in range(nb)]
+            diffs = [d for d in diffs if d[1]]
+            if not diffs:
+                return dict(word="identity", mean=0.0, lo=0.0, hi=0.0, m=0.0, n_out=0, note="today's Bulk equals S5 at T=inf, hold inf on every compared key, %d seeds" % nb)
+            return dict(word="identity broken", mean=float("nan"), lo=float("nan"), hi=float("nan"), m=0.0, n_out=0, note="differs on %s at seed %d" % (diffs[0][1][:3], diffs[0][0]))
+        return None
 
     def scope_of(key, k=None):
         if k in degenerate or (reported is not None and reported(key)):
@@ -153,6 +179,12 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
     for k in ys:
         for bk in base_keys:
             nb = base_n.get(bk, nseeds)
+            idn = identity_reading(bk, R, nb)
+            if idn is not None:                                               # a configuration of the new model itself: read by identity, never interpolated
+                if idn["word"] == "identity broken":
+                    broken.append((bk, idn))
+                comps.append(dict(scope=scope_of(bk, k), kind="identity", base=bk, k=k, rd=idn))
+                continue
 
             def run(newk, ns):
                 nx, ny = arr(newk, "share_any", ns), arr(newk, k, ns)
@@ -194,8 +226,8 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
                     else:
                         undet.update(a for a in ({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)}) if not have(a, 2 * na))
                 comps.append(dict(scope="reported" if (k in degenerate or (reported is not None and reported(n))) else "verdict", kind="curve", base=n, k=k, rd=rd))
-    out, worse, und, better = classify(comps, gates_bad)
-    return dict(outcome=out, comps=comps, undet=undet, worse=worse, undetermined=und, better=better)
+    out, worse, und, better = classify(comps, gates_bad or bool(broken))
+    return dict(outcome=out, comps=comps, undet=undet, worse=worse, undetermined=und, better=better, broken=broken)
 
 
 # ---- the store, per cell --------------------------------------------------------------------------------------------------------------------
