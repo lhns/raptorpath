@@ -68,3 +68,4 @@ docs/l1-raw/bbr48b/tail-c8/*.* -export-ignore
 # REBASE-CHECK UNAVAILABLE in an archive and run on the host.
 docs/l1-raw/s52/guard-ld.log -export-ignore
 docs/l1-raw/bbr48b/run/bbr48/ld.log -export-ignore
+docs/l1-raw/s51e/s51e-session.tgz -export-ignore
