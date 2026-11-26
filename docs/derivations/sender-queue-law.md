@@ -24,7 +24,7 @@
 - B_i is what the producer has staged for leg i and quinn has not yet transmitted. R_i is quinn's pacer refill (RFC 9002 §7.7, N = 1.25). L_i is the worst-case reopen latency: the realized waits of the owner's republish timer and the producer's 1 ms backpressure poll, plus one owner poll and one producer iteration of work. s_i is the datagram size. **This is revision 4; paper §6.8 is the authority** (the revision history is in §0).
 - w is Revision 4's wait limit (§13.3), taken by reference.
 - The `bbr_rs` window is unchanged and δ-free: W_i = 2·b̂_i·m̂_i + A_i.
-- Control, resends and repair are exempt from the bound but count in B_i. Repair is clamped by a state predicate: spare_i = +∞ if the producer's last turn for leg i ended with no first send waiting, 0 if it ended with the gate closed.
+- Control, resends and repair are exempt from the bound but count in B_i. Repair is clamped by a state predicate: spare_i = 0 if path i refused a first send during the last completed producer turn, else +∞. The value is held through the current turn, store-full turns leave it unchanged, and the scheduler-wide value is the max over active paths. Known limit: bursts above β with link headroom (paper §6.8).
 - The store law is unchanged in the first build: the δ seat (Q-S4, Q-S5) is open.
 
 **The δ seat.** W1.2's store seat and the three-knob intake are not the same seat. W1.2's seat prices what the sender keeps *downstream* of its hand-off. It sits where three knobs' gate window would sit under Q31's alternative. The three-knob intake prices how long a unit waits *upstream*, and only under overload. **Recommended: δ on the intake, the store and gate δ-free** (§4). This is a recommendation for the owner, not a proof:
@@ -495,7 +495,8 @@ The original order follows for the record.
 2. **No dial is read.** Decision traces are byte-identical across Bulk, Auto and Realtime, across ±2 % δ nudges at each preset, and at ρ < 1. This is the NO-MODE-SWITCH routing witness, extending the `test_visualizer_ui` pattern to the engine.
 3. **Clamp (last-turn predicate), absolute.**
    - A 36/s call with r_law = 0.25 over 1 000 sources, each turn ending dry, sends exactly 250 repairs, each staged in its source's turn.
-   - The same call under overload (turns ending with the gate closed) sends 0 repairs.
+   - The same call under overload (the path refusing first sends) sends 0 repairs.
+   - A store-full turn leaves the predicate unchanged. At cold start it reads +∞.
    - A turn that admits sources and then closes the gate sets spare = 0 for that path until a turn ends dry.
    - At N = 2, with leg 0 saturated (every turn closed) and leg 1 dry, r_law = 0.25 over 1 000 sources sends exactly 250 repairs, all placed on leg 1, and the scheduler-wide spare reads +∞.
    - With both legs closed, it sends 0.

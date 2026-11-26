@@ -3158,10 +3158,12 @@ That band is free in the sense of the three-knob derivation's Revision 4 §13.1.
    β_i      =  R_i · L_i / s_i
    R_i      =  1.25 · cwnd_i / srtt_i                      quinn's pacer refill (the controller's r_i when it supplies one)
    L_i      =  τ̂_o + ℓ̂_o + τ̂_p + ℓ̂_p                       the worst-case time from quinn draining to the producer handing again
-   spare_i  =  +∞  if the producer's last turn for path i ended with no first send waiting (the source ran dry)
-               0   if it ended with a first send waiting for path i (the gate closed)
-   r_eff    =  min( r_law , spare )      at the existing seams (emit_source cadence, fec_rate taper grant); the scheduler-wide spare is
-               +∞ when some live path's last turn ended dry; repair placement reads the per-path value
+   spare_i  =  0   if path i refused a first send (B_i ≥ β_i with a first send waiting) during the last completed producer turn
+               +∞  otherwise (the turn's waiting first sends all found room, or the source ran dry); +∞ at cold start
+               held for the whole current turn; a turn that ends because the store is full does not update it
+   r_eff    =  min( r_law , spare )      at the existing seams (emit_source cadence, fec_rate taper grant)
+   spare    =  max over active paths of spare_i      (the scheduler-wide value; today it is the min of the Copa-cwnd spares, `Scheduler::spare_capacity`);
+               repair placement reads the per-path spare_i
    owner:   while hand_i − tx_i > 0 at its last publish, republish every VIEW_REFRESH (new; it reverses the owner's
             "no timer: an idle owner never wakes" rule only while the owner holds unsent data, and is gauged as owner_timer_wakes)
    producer: the 1 ms backpressure poll is armed whenever the source is paused by the gate or the store, at every ρ
@@ -3201,10 +3203,21 @@ That band is free in the sense of the three-knob derivation's Revision 4 §13.1.
 - **The B/β form fails it too.** Over one refill cycle at c2, B runs from about β − batch up to β, so its spare averages ≈ batch/(2β) and never reads 0 under saturation. At β < 1 it reads 0 whenever one datagram is staged.
 - **The predicate passes all four cases:**
   - a call with headroom, Startup and recovery included: each turn ends dry, so repair is r (a recovery window that really blocks a send makes a first send wait, which is true saturation);
-  - a call under overload: turns end with the gate closed, so repair is 0;
+  - a call under overload: the path refuses first sends, so repair is 0;
   - c2 saturated: 0;
   - c2 paced at 70 %: +∞.
-- **It self-limits near capacity.** Repair that pushes the path over capacity closes the gate, which stops repair until the source alone fits again. Repair then runs at a duty cycle, filling what the source leaves.
+- **Expected, not yet read by any row or test: it self-limits near capacity.** Repair that pushes the path over capacity makes the path refuse a first send, which stops repair until the source alone fits. Repair then runs at a duty cycle, filling what the source leaves.
+- **Per path, at N ≥ 2.** The intake is pooled, so a first send refused by a full path goes to a path with room. The refusing path reads 0 and the path that took it reads +∞.
+  - The scheduler-wide spare becomes the max over active paths: repair has somewhere to go if any path has room, and placement routes it there.
+  - Today's aggregation is the min of Copa-cwnd spares over the paths flagged active. That changes here.
+- **The latch.** The seam reads spare per emitted source, right after that source's own admission. So the value used is the last *completed* turn's, held for the whole current turn.
+- **The store pause.** A turn that ends because the store is full has no first send waiting for a path. It leaves the predicate unchanged.
+- **Saturating transfers lose proactive repair.** Any transfer that saturates its path off Bulk (Auto or Realtime) has paths refusing first sends on most turns, so its proactive repair is off. Recovery is then by resend. That is §3.3's intended semantics: repair displaces a source one for one on a window-bound path. Stage A of the registration shows it.
+- **A known limit: bursts with headroom.** A source that sends in bursts, such as a video frame of ≈ 10 datagrams every 33 ms, can exceed β while the link is idle.
+  - In ProbeBw after a non-app-limited episode, W ≈ 2·b̂·m̂ + A ≈ 24 datagrams at ≈ 300/s and 40 ms, so R ≈ 750/s and β ≈ 3.
+  - The frame then goes out in chunks of β, one L apart (≈ 4 ms each), and its repair is cut while the link idles.
+  - Covering quinn's bucket capacity in β (clamp(W·2 ms/srtt, 10, 256) MTU) would fix this, but would hold ≈ 10 datagrams (≈ 0.28 s at 36/s) in quinn under a call-rate overload.
+  - This revision does not choose. The limit is registered with a bursty Realtime row, and its result decides whether β takes the bucket term.
 - **It is a state predicate, not a dial comparison.** It is like the three-knob intake's "a younger unit is waiting". It is discontinuous in queue state, but no dial selects it.
 - **It reads no window,** which narrows the Section 8.4 amendment below to R_i alone.
 
@@ -5259,7 +5272,7 @@ engine.
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s
    pause        ⇔  (H + 1 − F − |released|) ≥ cap  ∨  cwnd_full   (every ρ)   ADR-0084, pending; main: store_len ≥ cap ∨ cwnd_full, at ρ = 1 only
    burst b      =  emit_burst   (every N; no path-count input; RWM_EMIT_BATCH, on)  emit_burst_bound
-   β_i          =  1.25·cwnd_i/srtt_i · (τ̂_o + ℓ̂_o + τ̂_p + ℓ̂_p)/s_i ;  hand a first send ⇔ B_i < β_i ;  spare_i = +∞ (last turn ended dry) or 0 (it ended with the gate closed)   (Section 6.8, proposed)  —
+   β_i          =  1.25·cwnd_i/srtt_i · (τ̂_o + ℓ̂_o + τ̂_p + ℓ̂_p)/s_i ;  hand a first send ⇔ B_i < β_i ;  spare_i = 0 if path i refused a first send in the last completed turn, else +∞ ;  spare = max_i spare_i   (Section 6.8, proposed)  —
 ```
 
 ### A.6 The recovery decision (Section 7)

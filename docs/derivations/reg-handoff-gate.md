@@ -42,7 +42,7 @@
    - first-send admission while B_i < β_i, at every hint and ρ. Control, resends and repair are exempt from the bound and count in B_i;
    - the 1 ms backpressure poll armed on the gate's pause at every ρ, not only under `tx_paused = reliable && …`;
    - the owner's republish every VIEW_REFRESH while its last published queue was non-empty;
-   - the clamp's last-turn predicate at the existing `min(r, spare)` seats (`emit_source.rs` cadence, `fec_rate.rs` taper grant). The scheduler-wide spare is +∞ when some live path's last turn ended dry.
+   - the clamp's predicate at the existing `min(r, spare)` seats (`emit_source.rs` cadence, `fec_rate.rs` taper grant). spare_i is 0 if path i refused a first send in the last completed turn, else +∞. It is held through the turn, and store-full turns leave it unchanged. `Scheduler::spare_capacity` changes from the min to the max over active paths, and repair placement reads spare_i.
    - **Not in it:** placement's load term, any store-law or δ change, any ρ < 1 law.
 3. **Red-first tests,** with the absolute anchors of `sender-queue-law.md` §7:
    - gate decision: β = 53.83 (hand at 53, not at 54); second leg 12.29 (hand at 12, not at 13); cold start 27.25;
@@ -66,10 +66,11 @@
 | c2-100 | Auto | 600 MB | 3 |
 | c2-100, low rate | Realtime, ρ = 1 (`window_reliable: true` witnessed), the source paced at a call rate (≈ 36 datagrams/s) with §51 Block E's pacing mechanism | 60 s | 3 |
 | c2-100, paced (headroom) | Auto, the source paced at ≈ 70 % of the link, with the same mechanism | 600 MB or 60 s | 3 |
+| c2-100, bursty (headroom) | Realtime, ρ = 1, frames of ≈ 10 datagrams every 33 ms with the same mechanism (or `UNBUILT`) | 60 s | 3 |
 
-- **Rows.** 5 cells × 3 arms × 3 rows (seed 42 × 3) = 45, interleaved.
-  - If the harness has no source pacing, the two paced cells read `UNBUILT`. The host tests of §2 (repair at β < 1, and the predicate) are then the only witnesses, and step 2 waits for the owner.
-- **Cost.** About 40 min of rows plus builds and suites.
+- **Rows.** 6 cells × 3 arms × 3 rows (seed 42 × 3) = 54, interleaved.
+  - If the harness has no source pacing, the three paced cells read `UNBUILT`. The host tests of §2 (repair at β < 1, and the predicate) are then the only witnesses, and step 2 waits for the owner.
+- **Cost.** About 50 min of rows plus builds and suites.
 
 **What step 1 reads, with a rule before step 2 for each.**
 
@@ -80,7 +81,8 @@
 | **Gate executes** | `gate=on` on GATE rows; `hand_bind` > 0.5 at c2 Bulk; B p95 ≤ β + one batch; RouteProbe reads > 0 and `congestion_state()` reads = 0 | any failure: harness or build fault; stop |
 | **Clamp at Auto** | `spare_bind`; coded share GATE against R4 | reported; a coded share on GATE ≥ R4's while `hand_bind` > 0.5 means the clamp is inert, so stop |
 | **Clamp with headroom** (paced cell) | `spare_bind` on GATE; coded share GATE against R4 | `spare_bind` > 0.05, or a coded share outside R4's ± A/A: the clamp binds with headroom, so stop |
-| **Low rate** | repairs per source against the rate law's r (from the `[DIAG]` rate echo); B max; first-send delay against R4 | repairs per source outside r ± 5 % or B max > 1: the β < 1 handling fails, so stop |
+| **Bursts with headroom** (bursty cell; the registered limit of §6.8) | frame completion time GATE against R4; repairs per source; `hand_bind` | completion + L·(frame/β − 1) or more, or repairs per source < 0.9 r: the limit binds. β then takes quinn's bucket term (re-derived and re-reviewed) before step 2 |
+| **Low rate** | repairs per source against the rate law's r (from the `[DIAG]` rate echo); B max; first-send delay against R4 | repairs per source outside r ± 5 % or B max > 2: the β < 1 handling fails, so stop |
 | **§8.4 step in time** | β and spare across ProbeRtt episodes (`qm = R`) | reported, for the amendment decision |
 
 **Step 1 predictions (ratios against BASE).**
@@ -98,6 +100,7 @@
 | c2 Auto | coded share | as BASE ± 30 % | ≤ 0.3 × R4's |
 | low rate (Realtime ρ = 1) | repairs per source | = r | = r (±5 %); B max ≤ 2 |
 | paced (headroom) | `spare_bind`; coded share | — | ≤ 0.05; within A/A of R4's |
+| bursty (headroom) | frame completion; repairs per source | — | the limit is predicted to bind in ProbeBw (β ≈ 3 against a 10-datagram frame): + 2 L to + 3 L per frame and repairs cut on most frames |
 
 With n = 3 these are directional readings, not tests.
 
@@ -112,6 +115,7 @@ Step 2 is registered only after step 1's rules are cleared, and with any priced 
 | **R, Realtime** | c2 at 100 MB, ρ = 1 witnessed by `window_reliable: true` on both ends (plan 64's stage R pattern) | 12 + 12, 24 | reported |
 | **L, low rate** | step 1's low-rate cell (Realtime ρ = 1) | 6 + 6, 12 | reported. A witness of the β < 1 handling |
 | **P, paced headroom** | step 1's paced cell | 6 + 6, 12 | reported. A witness that the clamp does not bind with headroom |
+| **B, bursty** | step 1's bursty cell, if the burst limit is resolved | 6 + 6, 12 | reported |
 
 - **ρ < 1 is not run.** Promotion there is blocked on the three-knob lifetime (Q-S11).
 - **Post-outage drain.** The VM harness cannot cut a link, so the three-knob verdict's witness (`spare_bind` in a post-outage drain with repair on) is the host L0 netem test of §2, re-run on the pinned binary. A VM stage is added if the harness gains a link cut.
@@ -129,6 +133,7 @@ Step 2 is registered only after step 1's rules are cleared, and with any priced 
 - **Reported:** A_x per leg as in step 1 (c1s ≈ R4's, since β ≈ 920 exceeds its queue of 715 there); wire RTT 0.17–0.29 at c2, 0.17–0.28 and 0.35–0.45 on c8's legs, 1.15–1.60 at c1s; stage A's coded share ≤ 0.3 × BASE's under saturation; stage R's A_x 0.12–0.20.
 - **The label, as predicted now:** PASS ≈ 0.35, through c8 `cpu_srv/GB` or c2 goodput. Step 1 exists to move this before scoring.
 - **Witnesses and bind gauges** are as in step 1, with the same stop rules.
+- **Saturating transfers off Bulk run without proactive repair under the predicate.** Stage A's coded share ≤ 0.3 × BASE's is that effect, and it is a deliberate change, not a fault.
 
 ## 5. Decision rule (step 2)
 
