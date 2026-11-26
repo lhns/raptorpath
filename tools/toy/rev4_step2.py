@@ -65,6 +65,8 @@ def specs():
     for cell, kw in (("OV", {}), ("OV-end", ovend), ("OV-crit", ovcrit)):
         for eq in (False, True):
             for cl in (False, True):
+                if eq and not cl:
+                    continue                      # not run: the engine has the clamp, so the engine-queue arm without it has no engine counterpart (coordinator, 2026-11-26)
                 add("RT-arms", cell, "OV", "rt", "RL", None, 50.0, cl, False, eq, **kw)
     # 3. OV-end: Revision 4 with the clamp (T 0.4 at delta 50 and 25, T 2 at delta 0.5 and 0.25) and Revision 3 with the clamp at both T
     for T, ds in ((0.4, (50.0, 25.0)), (2.0, (0.5, 0.25))):
