@@ -921,81 +921,126 @@ Stored rows, new model at T = 0.4, repair off, measured by the coordinator:
   - and the sender has no evidence that any datagram carrying a floor above s has arrived.
 - **Both are already measured** (§13.1):
   - the hole is "evidence of loss": a later datagram arrived, or s is overdue by R;
-  - the arrival is the echoed τ_rx, the newest send stamp the receiver has received.
+  - the arrival is the echoed largest send ordinal the receiver has received (§10.3 says why an ordinal and not a stamp).
 
 ### 10.3 The repeat law
 
 ```text
    at each repeat instant (the sweep or blocker fire, unchanged):
-      send the floor  ⇔   ∃ s ∈ [A_known, F_ann) :   s unresolved   ∧   evidence(s, now)   ∧   τ_rx  <  t_carry(s)
-      t_carry(s)      =   the send instant of the first datagram (data or floor) that carried a floor value > s      (+∞ if none yet)
-      evidence(s, now) ⇔  last_send(s) < τ_rx   ∨   now ≥ last_send(s) + R                                            (§13.1, unchanged)
+      send the floor   ⇔   ∃ s ∈ [A_known, F_ann) :   s unresolved   ∧   loss_ev(s, now)   ∧   rx_ord  <  carry_ord(s)
+      carry_ord(s)     =   the send ordinal of the first datagram (data, copy, repair or floor) that carried a floor value > s     (+∞ if none yet)
+      loss_ev(s, now)  ⇔   ord(last send of s) < rx_ord        (knowledge: a datagram sent later has arrived)
+                        ∨   now ≥ t_newest_send + R             (silence: nothing sent has been followed by a report for R)
 ```
 
 | symbol | provenance |
 |---|---|
 | F_ann, A_known, "unresolved" | sender state (§15.3, ADR-0084) |
-| τ_rx | measured: the newest send stamp among the datagrams the receiver has received, echoed in its report (§13.1). The offline simulation has it (`tau_rx`). In the engine it is Q14, still open: either a field of the existing acknowledgements or one ack field |
-| R | the ack timeout (§13) |
-| t_carry(s) | sender state: the floor is a running maximum, so t_carry is non-decreasing in s. It is kept as a monotone list of (value, first carrying send instant), pruned below A_known |
+| send ordinal | sender state: one counter per datagram sent, the offline simulation's `ps_ctr`. In the engine it is the QUIC packet number |
+| rx_ord | measured: the largest send ordinal the receiver has received, echoed in its report. It is RFC 9002's "largest acknowledged" (§13.1), used in place of the send stamp τ_rx. In the engine it already comes with QUIC's acks; whether raptorpath's own report carries it is Q14 |
+| carry_ord(s) | sender state: the floor is a running maximum, so carry_ord is non-decreasing in s. It is kept as a monotone list of (value, first carrying ordinal), pruned below A_known |
+| t_newest_send, R | sender state, and the ack timeout of §13 |
 | the repeat clock | unchanged: the sweep or blocker period. Its cap is Q17 and is not touched here |
 
-- **It is one predicate on state,** of the same kind as §13.1's verdict evidence. It reads no rate, no dial and no constant. Nothing compares δ, T or ρ with anything, so there is no mode bit.
-- **An efficient form.** t_carry is non-decreasing in s, so the hardest seq to cover is the highest one with evidence. It is enough to test `s* = max{ s < F_ann : s unresolved ∧ evidence(s, now) }`.
+**Why ordinals, not send stamps** (advisor review).
+- The work-conserving source stages a whole burst at one instant. With stamps, an earlier member of the burst that carried a lower floor would count as "the carrier arrived".
+- In the last burst before a pause, or at the end of a run, an early member can arrive while the later members are lost and nothing follows. The repeat would then be suppressed for ever, and the run would not finish. That is §18's S5v gap, "a hole sent in the same instant as the newest arrival".
+- Ordinals are strictly ordered, so `rx_ord ≥ carry_ord(s)` holds exactly when the carrier itself, or a datagram sent after it, has arrived.
+- **The ties go the conservative way:** any doubt keeps the repeat.
 
-**Shape against the sentence it implements** ("repeat the floor only when the receiver may not know it").
-- **Under steady data flow, a hole s is detected by a later arrival.**
-  - If s was unprotected when that later datagram was sent, the datagram itself carried F > s. Its arrival raises τ_rx past t_carry(s), so no repeat.
-  - If s became unprotected later, at t_pass, the next data datagram sent after t_pass carries it. A repeat can fire only during the gap between t_pass and the report of that carrier's arrival, about one RTT.
-- **In-flight data that nobody has reported** has no loss evidence until it is overdue by R, so it no longer triggers a repeat. That is the K-OV case.
-- **After an outage, or with a lost tail,** nothing arrives, so τ_rx stays below t_carry. The seqs become overdue after R, the condition holds, and the floor repeats on the same clock as today (§10.5).
+**Why the silence branch reads the newest send, not s** (§13.1's timeout reads s).
+- §19 found R only about a tick above srtt. With a per-seq timeout, every in-flight datagram whose rtt exceeds R by queue jitter would become "evidenced" and would fire a repeat. Under flow that is many of them.
+- The newest send is overdue only when the path has gone silent: an outage, a pause with nothing in reply, or a lost tail. Those are exactly the cases where no data can carry the floor.
+- Under flow the newest send is always younger than R. So in-flight data that nobody has reported triggers nothing, which is the K-OV case.
 
-### 10.4 Inert where today's repeat costs nothing, in what the receiver learns
+**What the law is.**
+- One predicate on sender state, with no rate, no dial and no constant. Nothing compares δ, T or ρ with anything, so there is no mode bit.
+- **An efficient form.** carry_ord is non-decreasing in s, so it is enough to test the highest evidenced seq: `s* = max{ s < F_ann : s unresolved ∧ loss_ev(s, now) }`.
+- **Scope.**
+  - It holds under the header carrier only (Q15(a)).
+  - Under the datagram carrier (Q15(b), arm S4b) every floor is standalone, and this law does not apply.
+  - **Two paths are not predicted.** The standalone floor went on every live path (§17.7). A carried floor rides the one path its datagram takes. The P2 cells must be re-derived before any claim.
+- **It supersedes:**
+  - §15.3's liveness bullet (the sweep sends F every P while F > A_rx);
+  - §17.3's bullet "each fire also … repeats it while F_ann > A_known".
 
-- **A repeat is suppressed only when every evidenced hole below F_ann already has a carrier reported arrived.** Then the receiver already holds a floor above each of them and has passed them, or will on the carrier's arrival, which comes no later than the repeat would have.
-- **So the instant at which each hole is passed is unchanged.** The only datagrams removed are floors that pass nothing new.
-- **What does change:**
+**Shape against the sentence it implements** ("repeat the floor only when the receiver may not know it"):
+- **A hole detected under flow** is known through a later arrival, which raises rx_ord past that datagram's ordinal.
+  - If s was unprotected when that datagram was sent, the datagram carried F > s, so no repeat.
+  - If the first carrier was lost and a later one arrived, rx_ord is at least the later ordinal, which is at least carry_ord(s). So again no repeat, correctly: the later one carried F > s too.
+- **A hole that becomes unprotected after birth** (Revision 4's young units, after their resends fail) can repeat only in the gap between t_pass and the report of the next carrier, about one RTT.
+- **After an outage, or with a lost tail,** nothing is sent or answered. The silence branch fires after R, and the floor repeats on the same clock as today.
+
+### 10.4 Checks of the inertness premise, against the code
+
+1. **Every datagram whose arrival can raise rx_ord carries the floor.** In `toy2.py`, `carry_floor` is called:
+   - for first sends, in `emit`;
+   - for copies, in `send_copy`'s `fin`;
+   - for repairs, in `stage_repair`.
+
+   Floor datagrams carry their own value. **Checked.**
+2. **The guard `F_ann > lu` cannot be false while an unresolved s < F_ann exists.** lu is the lowest unresolved seq as of the last report, `min(M_known)` or `rhi_known + 1`. Any unresolved s satisfies s ≥ lu, so F_ann > s ≥ lu. **Checked.**
+
+**Consequence.**
+- A repeat is suppressed only when a datagram carrying a floor above every evidenced hole has arrived at the receiver. The receiver has then already passed those holes.
+- So the instant at which each hole is passed is unchanged, and only floors that pass nothing new are removed.
+- **What changes:**
   - the link slots those floors took, which is the gain;
   - the floor count;
-  - and, through the freed slots, the trace of every cell where repeats were sent.
-- **This is a model change of the new model, not an identity.** Repeats were sent in every link cell, so the traces change, and stage 3e's new-model rows are re-baselined under it.
-- **The readouts must not move** beyond the A/A floor wherever repeats were a negligible share of the link.
-- **Today's designs are not touched.** ADR-0084's verdict floor keeps ADR-0084's repeat, and today's Realtime sends no floor at all.
+  - and, through the freed slots, the trace of every link cell.
+- **It is a model change of the new model, not an identity.** The new-model rows are re-baselined under it.
+- **The readouts must not move beyond the A/A floor** where repeats were a negligible share of the link.
+- **Today's designs are untouched.** ADR-0084's verdict floor keeps its own repeat, and today's Realtime sends no floor.
 
-### 10.5 Predictions (written before any run) and the liveness check
+### 10.5 Predictions (written before any run) and the tests
 
-**Repeat share of the link today.** At most one repeat per fire, at a period P = clamp(2·srtt, 25 ms, 100 ms), so the share is at most `1/(P·C)`:
+**Repeat share of the link today.** At most one repeat per fire at period P = clamp(2·srtt, 25 ms, 100 ms), so the share is at most `1/(P·C)`:
 
 | cell | P, C | share ≤ |
 |---|---|---|
-| K-OV | 0.1 s, 40/s | **25 %** (measured: 603/2 400) |
-| OV | 0.1 s at srtt 98 ms, 10 000/s | 0.1 % |
-| CL-long, CL | 25 ms at srtt 11 ms, 12 500/s | 0.3 % |
-| RT, the call cell | no link: floors take no slot from data | 0 |
+| K-OV | 0.1 s, 40/s | **25 %** (measured 603/2 400) |
+| OV | 0.1 s, 10 000/s | 0.1 % |
+| CL-long, CL | 25 ms, 12 500/s | 0.3 % |
+| RT, the call cell | no link | 0 |
 
-**Predictions.**
-- **K-OV, the new model, T = 0.4:**
-  - **Revision 3:** about 600 slots free. First sends rise to about 1 794 + 600 − (the new repeats, ≤ 20) ≈ 2 370–2 390, delivered at 90 %, so **delivered ≈ 0.71–0.72**, the carryable `(C/λ)(1 − ε)` = 0.72. On time is the same, because units sent at T − R ≈ 0.19 s arrive by about 0.34 s. p50 is unchanged at about 0.31 s.
-  - **Revision 4 with the clamp:** the same share. Its young units are protected and resent at ρ ≈ ε/(1 − ε) = 0.11, so `C/((1 + ρ)·λ)` ≈ 0.72. p50 stays about 0.24 s.
-  - **The floor count** falls from 603 to a few tens or fewer.
-- **OV:** the floor count falls. delivered, on time and p50 stay within the A/A floor (about 100 slots of about 100 000).
-- **CL-long:** during the outage nothing arrives, so the repeat fires on every sweep as today. After the outage the first data datagrams carry F, and their arrival stops the repeats.
-  - The hole-pass instants are unchanged (§10.4).
-  - So recovery is the same within the 0.1 s resolution, and on time and delivered are within the A/A floor. The floor count falls before and after the outage.
-- **CL, CLw-long, the K cells and the E cells:** within the A/A floor.
-  - **The E cells' lost tail with nothing after it** keeps its repeat by the timeout branch.
+**K-OV, T = 0.4.**
+- **Residual repeats, derived.**
+  - **Revision 3:** units are unprotected at birth, so every known hole already has an arrived carrier. That leaves only the silence branch, which needs the newest send to be overdue by R while the store pause (B = 8) holds the sender. At 40/s with srtt ≈ 0.2 s the pause clears on every report, so silence is rare.
+  - **Revision 4:** its young units are protected. Holes that become unprotected after a failed resend arrive at about 4/s × pc 0.1 ≈ 0.4/s, and each opens one window of about one RTT. At P = 0.1 s that is up to about 2 fires per hole.
 
-**Liveness check (absolute, red first).**
-1. **After any outage,** the receiver learns the post-outage floor within one repeat period plus one owd of the outage end, as today. The test compares the instant of the first floor pass after the outage, in CL-long, the K cells and E-I2, against the stored rows: equal to the event, or to within one sweep period where traces diverge.
-2. **A lost tail with no later data** (the E cells): every run finishes (the `finished` gate), and the tail's holes are passed.
-3. **No hole is held past the instant it would be passed today.** At the receiver, `t_pass_new(s) ≤ t_pass_old(s) + P` for every s, on the stored seeds, with zero exceptions.
-4. **Suppression is evidenced.** Every suppressed repeat has a recorded carrier with send stamp ≥ t_carry(s*) and ≤ τ_rx: an absolute count, zero violations.
+  | | repeats predicted | `rep_fired_by_timeout` (registered) |
+  |---|---|---|
+  | Revision 3 | 0–30 in 60 s | 0–30 |
+  | Revision 4 | 20–60 | ≤ 30 |
 
-**Gauges.**
-- `floor_rep` per second;
-- `rep_suppressed`;
-- `rep_fired_by_timeout`, the repeats where the timeout branch of the evidence predicate fired;
-- the share of link slots taken by floors.
+- **Delivered and on time.**
+  - **Revision 3:** about 570–600 slots are freed, so first sends ≈ 2 360–2 390, delivered at 90 %. **Delivered and on time ≈ 0.70–0.72**, against `(C/λ)(1 − ε)` = 0.72. p50 is unchanged at about 0.31 s.
+  - **Revision 4 with the clamp:** the same band. Its resends take ρ ≈ ε/(1 − ε) = 0.11, so `C/((1 + ρ)·λ)` ≈ 0.72. p50 is about 0.24 s.
+- **If the timeout count exceeds its band,** R's honesty (§19) is the cause to read first.
+
+**OV:** the floor count falls. delivered, on time and p50 stay within the A/A floor.
+
+**CL-long:**
+- During the outage nothing is sent or answered, so the silence branch repeats on every sweep, as today.
+- After the outage, the first arrivals carry F, and the repeats stop.
+- The hole-pass instants are unchanged, so recovery is the same within the 0.1 s resolution, and on time and delivered are within the A/A floor.
+
+**CL, CLw-long, the K cells and the E cells:** within the A/A floor. The E cells' lost tail with nothing after it keeps its repeat by the silence branch.
+
+**Tests (red first).**
+1. **The receiver holds the floor at every suppressed repeat.** This is an absolute check on one clock in one run: whenever a repeat is suppressed, the receiver's own floor F_rx at that instant exceeds s*. Zero exceptions. It replaces the cross-run comparison of pass instants, which is ill-defined once traces diverge.
+2. **A planted equal-stamp burst.** A burst staged at one instant: its first member arrives, the rest are lost, and nothing follows.
+   - The repeat fires after R, the tail is passed, and the run finishes.
+   - It is red against the stamp-based form (`τ_rx ≥ t_carry`), green with ordinals.
+3. **Liveness.**
+   - After any outage (CL-long, the K cells, E-I2), the receiver passes the post-outage holes within one repeat period plus one owd of the outage end.
+   - In the E cells every run finishes (`finished`).
+4. **Execution witnesses:**
+   - `rep_suppressed` > 0 in K-OV and OV;
+   - `rep_fired_by_timeout` > 0 through CL-long's outage window;
+   - the floor share of link slots in K-OV is at most 3 %.
+
+**Gauges:** `floor_rep` per second, `rep_suppressed`, `rep_fired_by_timeout`, `rep_fired_by_knowledge`, and the floor share of link slots.
 
 ### 10.6 Note on the engine-queue arm's steady share (§9.4)
 
