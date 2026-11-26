@@ -2022,6 +2022,7 @@ class Rev4Step2(unittest.TestCase):
     @staticmethod
     def ov(design, n=24000, **kw):
         import batch3e
+        n = kw.pop("n_total", n)
         rp = batch3e.rp("RL")
         if design == "new":
             return batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, rp, n_total=n, **kw)
@@ -2086,16 +2087,19 @@ class Rev4Step2(unittest.TestCase):
         ra, rb = toy2.run(ref), toy2.run(calm)
         self.assertEqual(rb["gauges"]["fq_evict"], 0)
         self.assertEqual(ra["delivered"], rb["delivered"])
-        over = dataclasses.replace(self.ov("rt", n=24000, dead=None), eq=True, eq_cap=200)
+        over = dataclasses.replace(self.ov("rt", n=3000, dead=None), eq=True, eq_cap=100)
         r = toy2.run(over)
         self.assertGreater(r["gauges"]["fq_evict"], 0)
-        self.assertLessEqual(r["gauges"]["fq_max"], 200)
+        self.assertLessEqual(r["gauges"]["fq_max"], 100)
         self.assertEqual(r["gauges"]["queue_drop"], 0)                                 # drained at the link rate: the link buffer stays empty
 
     def test_engine_queue_adds_residence_under_sustained_overload(self):
-        eq = toy2.run(dataclasses.replace(self.ov("rt", n=36000, dead=None), eq=True, eq_cap=2000))
-        st = toy2.run(self.ov("rt", n=36000, dead=None))
-        self.assertGreater(eq["dh_p50"], st["dh_p50"])
+        eq = toy2.run(dataclasses.replace(self.ov("rt", n=9000, dead=None), eq=True, eq_cap=4000))
+        st = toy2.run(self.ov("rt", n=9000, dead=None))
+        self.assertGreater(eq["w_p50"], st["w_p50"])                                      # delivered units wait in the queue instead of being dropped at the link
+        self.assertEqual(eq["gauges"]["queue_drop"], 0)
+        self.assertGreater(st["gauges"]["queue_drop"], 0)
+        self.assertGreater(eq["share_any"], st["share_any"])
 
 
 if __name__ == "__main__":

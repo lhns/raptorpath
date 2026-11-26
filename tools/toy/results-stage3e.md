@@ -722,3 +722,5 @@ So it is confined to [outage start, drain end]; before the outage it is 0. This 
 Registered before the clamp-on CL-long rows run (RL at T = 0.4, 2 and inf, clamp on, against clamp off and repair off, 3 seeds):
 - T = 0.4: delivered 0.939 to 0.942 (stored RL 0.939, repair off 0.9414), on time and recovery within 0.1 s as stored: no visible change (the drain is short, repair there was small).
 - T = 2 and T = inf: the clamp removes the drain-time repair, so recovery_time moves from RL's 9.2 s (T = 2) and 9.4 s (T = inf) toward the repair-off value; predicted to close more than half the gap. Delivered and on-time shares: between RL and repair off, no worse than RL beyond the A/A floor.
+
+- Correction, same day: the spare_bind gauge reads the cell's own store pause B (cfg.pause_B: 1 000 in CL-long, OV and the other link cells, 8 in K-OV, the default 2 048 where none is configured), as the doc's cwnd_sim = B. The spare formulas written above with 2 048 were my text, not what ran: every spare_bind number in the notes is at B = 1 000 in the link cells. New field cwnd_sim (0 = the cell's pause_B) lets a row state and vary it; every step-2 row carries its cwnd_sim.

@@ -464,6 +464,13 @@ class Cfg:
     tau_extra: tuple = ()          # stage 3e: extra on-time readouts (RT: (0.12,)), reported in out["rep3e"]["share_by"]
     rev4_gauge: bool = False       # revision 4, step 1: read lambda_hat, D_hat, t_ov, K, tau, spare as outputs (out["rev4"]); no decision reads them
     dhat_bias: float = 0.0         # revision 4, step 1: D_hat is read as D_hat * (1 - dhat_bias) in the gauges (the bias rows of 5.3)
+    clamp: bool = False            # revision 4 step 2 (3.3): repair accrues min(r, max(spare, 0)), spare = (cwnd_sim - in_flight) / in_flight
+    wait_limit: bool = False       # revision 4 step 2 (3.1): the dequeue expiry reads tau = T - K / (T - R + o_hat) in place of T
+    eq: bool = False               # revision 4 step 2 (3.3): today's Realtime behind the engine's front queue (eq_cap symbols, evicts the oldest, drains at the link rate)
+    eq_cap: int = 8192             # 4 MiB of 512 B symbols
+    cwnd_sim: float = 0.0          # revision 4 step 2: the clamp's and the gauge's cwnd in datagrams; 0 = the cell's store pause pause_B
+    rate2: float = 0.0             # revision 4 step 2 (OV-end): the source rate after rate2_t seconds; 0 = constant rate (work-conserving source only)
+    rate2_t: float = 0.0
     rb_A: float = 3.0              # stage 3e amendment 3, arm RB (repair r = "rb"): r is held at R_MAX from the outage start until rb_A after its end
     rb_unit: str = "s"             # "s": rb_A seconds after the outage end; "sym": rb_A first sends after it
 
@@ -596,6 +603,10 @@ class Sim:
         self.b = b_of_delta(c.delta)
         self.D_rt = min(self.b * self.rtt, 2 * self.rtt)
         self.dt = 1.0 / c.rate
+        self.n1 = int(round(c.rate2_t * c.rate)) if c.rate2 else 0           # units handed over before the rate changes
+        self.dt2 = 1.0 / c.rate2 if c.rate2 else self.dt
+        self.B_sim = c.cwnd_sim or float(c.pause_B)
+        self.cnt_on = c.rev4_gauge or c.clamp or c.wait_limit                # the in_flight count and the D-hat rounds are kept
         if c.n_total:
             self.dur = c.n_total / c.rate
             self.t_end = c.t_limit
@@ -742,6 +753,8 @@ class Sim:
         self.eps_est = beta_upper(1.0, 1.0)
         self.astar_cur = 1
         self.dh = DHat()                           # revision 4 step 1 (gauge only)
+        self.fq = deque() if c.eq else None        # today's Realtime behind the engine's front queue (revision 4 step 2)
+        self.fq_busy = False
         self.sends_n = 0                           # every datagram sent (first sends, copies, repairs), in send order (gauge only)
         self.sends_cov = 0                         # the first sends_cov of them are covered by a report
         self.send_idx = []                         # send_idx[s] = position of seq s's first send in that order
@@ -790,8 +803,30 @@ class Sim:
         self.r0e_timer_t = math.inf
         self.ps_ctr = 0
         self.shed_budget = 0.0                      # proof stage 1: budget_frac, refreshed at each source emission (0 before the first estimate)
+        if c.eq:
+            self.g["fq_evict"] = 0
+            self.g["fq_max"] = 0
+        if c.clamp:
+            self.g["clamp_n"] = 0
+            self.g["r_eff_over_spare"] = 0.0
 
     # ---- helpers --------------------------------------------------------------------------
+    def ht(self, u):
+        """Hand-over time of unit u: u / rate, or u / rate until n1 units and then u / rate2 (OV-end)."""
+        if not self.n1 or u <= self.n1:
+            return u * self.dt
+        return self.n1 * self.dt + (u - self.n1) * self.dt2
+
+    def hand_count(self, x):
+        """Units handed over by time x."""
+        if x < 0.0:
+            return 0
+        if not self.n1:
+            return min(self.units_total, int(x / self.dt) + 1)
+        if x <= self.n1 * self.dt:
+            return min(self.units_total, int(x / self.dt + 1e-9) + 1)
+        return min(self.units_total, self.n1 + int((x - self.n1 * self.dt) / self.dt2 + 1e-9) + 1)
+
     def push(self, t, kind, payload):
         self.ctr += 1
         heapq.heappush(self.heap, (t, self.ctr, kind, payload))
@@ -1021,6 +1056,29 @@ class Sim:
         ls = self.last_send[s]
         return ls < self.tau_rx or now >= ls + self.R_now()
 
+    def fq_submit(self, now, fin):
+        """Today's Realtime behind the engine's queue (3.3): a datagram handed to the front FIFO; when it is full the oldest queued one is evicted, silently.
+        fin(a, dep) runs when the datagram leaves the queue onto the link (or fin(None, now) when evicted)."""
+        q = self.fq
+        if len(q) >= self.cfg.eq_cap:
+            self.g["fq_evict"] += 1
+            q.popleft()(None, now)
+        q.append(fin)
+        if len(q) > self.g["fq_max"]:
+            self.g["fq_max"] = len(q)
+        if not self.fq_busy:
+            self.fq_busy = True
+            self.push(now, 12, None)
+
+    def on_fq(self, now):
+        fin = self.fq.popleft()
+        a, dep = self.fwd(now)
+        fin(a, dep)
+        if self.fq:
+            self.push(now + self.link_sv, 12, None)
+        else:
+            self.fq_busy = False
+
     def fwd(self, t, path=0):
         """A forward send at t.  Returns (arrival, departure); arrival is None when the bottleneck queue drops it (13.7.1 item 6).
         With no link: arrival = t + delay.at(t), departure = t."""
@@ -1058,13 +1116,14 @@ class Sim:
     def emit(self, t):
         c = self.cfg
         # L1 at the intake: units that have outlived T before they could be sent are dropped, never get a seq
-        while self.u_next < self.units_total and intake_expired_fn(self.Te, t - self.u_next * self.dt):
+        while self.u_next < self.units_total and intake_expired_fn(self.Te, t - self.ht(self.u_next)):
             self.intake_expired += 1
             self.u_next += 1
         if c.deq_expiry:                                         # 13.2: expire the head at the dequeue when a younger unit waits (after L1)
+            te_dq = self.tau_now(t)[0] if c.wait_limit else self.Te      # revision 4: the wait limit tau (= T exactly at x <= 1, +inf at T = inf)
             while (self.u_next + 1 < self.units_total
-                   and (self.u_next + 1) * self.dt <= t
-                   and dequeue_expired(self.Te, t - self.u_next * self.dt, self.R_now() + c.R_bias)):
+                   and self.ht(self.u_next + 1) <= t
+                   and dequeue_expired(te_dq, t - self.ht(self.u_next), self.R_now() + c.R_bias)):
                 if self.first_deq_exp is None:
                     self.first_deq_exp = t
                 self.intake_expired_deq += 1
@@ -1078,16 +1137,16 @@ class Sim:
             return
         s = self.n_sent
         if self.trace is not None:
-            self.deq_log.append((t, self.u_next, t - self.u_next * self.dt, self.R_now(),
-                                 self.u_next + 1 < self.units_total and (self.u_next + 1) * self.dt <= t))
+            self.deq_log.append((t, self.u_next, t - self.ht(self.u_next), self.R_now(),
+                                 self.u_next + 1 < self.units_total and self.ht(self.u_next + 1) <= t))
         if self.oe is not None and self.first_emit_oe is None and t >= self.oe:
             self.first_emit_oe = t
-        self.h_seq[s] = self.u_next * self.dt
+        self.h_seq[s] = self.ht(self.u_next)
         self.u_next += 1
         self.n_sent += 1
         self.sent_t[s] = t
         self.last_send[s] = t
-        if c.rev4_gauge:
+        if self.cnt_on:
             self.send_idx.append(self.sends_n)
             self.sends_n += 1
         if staged_past_lifetime(self.Te, t - self.h_seq[s]):
@@ -1098,46 +1157,59 @@ class Sim:
         if self.paths is not None and not dup and u01(c.seed, s, 0, 0, SALT_PLACE) < c.phi:      # 17.7: first sends go on B with probability phi
             pth = 1
             self.path_of[s] = 1
-        a, dep = self.fwd(t, pth)
-        if a is None:                                # dropped at the bottleneck queue: no arrival, no loss draw
-            self.qd_first[s] = 1
-            self.g["first_qdrop"] += 1
-            self.atilde[s] = t + self.delays[pth].at(t)
-        else:
-            self.atilde[s] = a
-            self.fifo_note(a, pth)
+        def fin_a(a, dep):
+            if a is None:                            # dropped at the bottleneck queue (or evicted from the front queue): no arrival, no loss draw
+                self.qd_first[s] = 1
+                self.g["first_qdrop"] += 1
+                self.atilde[s] = t + self.delays[pth].at(t)
+            else:
+                self.atilde[s] = a
+                self.fifo_note(a, pth)
+
+        deferred = self.fq is not None
+        a = dep = None
+        if not deferred:
+            a, dep = self.fwd(t, pth)
+            fin_a(a, dep)
         if self.trace is not None:
             self.trace.append((round(t, 9), s, 0, 0, 0))
         if c.floor_law == "protect":
             self.update_floor(t)
             self.flag_sum += self.n_sent - self.F_ann
             self.flag_n += 1
-        ps = self.ps_ctr
-        self.ps_ctr += 1
-        first_lost = a is None or self.lost(s, 0, dep, SALT_LOSS, pth)
-        if not first_lost:
-            self.push(a, 0, (s, 0, t, ps, pth))
-            self.carry_floor(a)
-        dup_ok = False
-        if dup:                                      # today's Realtime: a duplicate first send on the second path (a recorded hint debt)
-            a2, dep2 = self.fwd(t, 1)
-            if a2 is not None:
-                self.fifo_note(a2, 1)
-            ps2 = self.ps_ctr
+
+        def fin_b(a, dep):
+            ps = self.ps_ctr
             self.ps_ctr += 1
-            self.g["dup_first"] += 1
-            if a2 is not None and not self.lost(s, 0, dep2, SALT_LOSS, 1):
-                self.push(a2, 0, (s, 0, t, ps2, 1))
-                dup_ok = True
-        if first_lost and not dup_ok:
-            self.orig_lost.append(s)
+            first_lost = a is None or self.lost(s, 0, dep, SALT_LOSS, pth)
+            if not first_lost:
+                self.push(a, 0, (s, 0, t, ps, pth))
+                self.carry_floor(a)
+            dup_ok = False
+            if dup:                                  # today's Realtime: a duplicate first send on the second path (a recorded hint debt)
+                a2, dep2 = self.fwd(t, 1)
+                if a2 is not None:
+                    self.fifo_note(a2, 1)
+                ps2 = self.ps_ctr
+                self.ps_ctr += 1
+                self.g["dup_first"] += 1
+                if a2 is not None and not self.lost(s, 0, dep2, SALT_LOSS, 1):
+                    self.push(a2, 0, (s, 0, t, ps2, 1))
+                    dup_ok = True
+            if first_lost and not dup_ok:
+                self.orig_lost.append(s)
+
+        if deferred:
+            self.fq_submit(t, lambda a, dep: (fin_a(a, dep), fin_b(a, dep)))
+        else:
+            fin_b(a, dep)
         if c.repair is not None:                     # stage 3e (build 4.3): repair credit accrues at each first send; at r = 0 nothing is pushed or drawn
             if self.t_first is None:
                 self.t_first = t
             self.fs_times.append(t)
             if c.rev4_gauge:
                 fl = self.in_flight_now()
-                sp = (c.pause_B - fl) / fl if fl > 0 else math.inf
+                sp = (self.B_sim - fl) / fl if fl > 0 else math.inf
                 self.r4["spare_n"] += 1
                 self.r4["spare_bind"] += sp < self.r_cur
                 bn = self.r4["spare_bins"].setdefault(int(t), [0, 0])      # per 1 s: first sends, first sends at which spare < r
@@ -1147,7 +1219,15 @@ class Sim:
                 self.fs_after_outage += 1
             if t - self.t_eval >= min(RATE_CADENCE_MAX, self.srtt_eff() / 4.0):
                 self.read_law(t)
-            self.owed += self.r_cur
+            if c.clamp:                              # the engine's clamp: r_eff = min(r, max(spare, 0)); nothing changes at r = 0
+                fl = self.in_flight_now()
+                sp = (self.B_sim - fl) / fl if fl > 0 else math.inf
+                r_eff = min(self.r_cur, max(sp, 0.0))
+                self.g["clamp_n"] += r_eff < self.r_cur
+                self.g["r_eff_over_spare"] = max(self.g["r_eff_over_spare"], r_eff - max(sp, 0.0))
+                self.owed += r_eff
+            else:
+                self.owed += self.r_cur
             if self.owed >= 1.0:
                 self.owed -= 1.0
                 self.g["rep_credits"] += 1
@@ -1180,7 +1260,7 @@ class Sim:
             self.g["pause_events"] += 1
             self.src_next = math.inf
         elif c.src_model == "wc":                    # work-conserving: a waiting backlog is sent at once, else the next unit at its own time
-            self.src_next = max(t, self.u_next * self.dt)
+            self.src_next = max(t, self.ht(self.u_next))
         else:
             self.src_next = nxt
 
@@ -1206,21 +1286,29 @@ class Sim:
         k = self.copies[s] + 1
         self.copies[s] = k
         self.last_send[s] = now
-        if c.rev4_gauge:
+        if self.cnt_on:
             self.sends_n += 1
         self.g["repair_sends"] += 1
         if self.trace is not None:
             self.trace.append((round(now, 9), s, k, 0, 1))
-        a, dep = self.fwd(now)
-        if a is not None:
-            self.fifo_note(a)
-        if c.floor_law == "protect":
-            self.update_floor(now)
-        ps = self.ps_ctr
-        self.ps_ctr += 1
-        if a is not None and not self.lost(s, k, dep):
-            self.push(a, 0, (s, k, now, ps, 0))          # every copy goes on path A (17.7)
-            self.carry_floor(a)
+        def fin(a, dep):
+            if a is not None:
+                self.fifo_note(a)
+            ps = self.ps_ctr
+            self.ps_ctr += 1
+            if a is not None and not self.lost(s, k, dep):
+                self.push(a, 0, (s, k, now, ps, 0))      # every copy goes on path A (17.7)
+                self.carry_floor(a)
+
+        if self.fq is not None:
+            if c.floor_law == "protect":
+                self.update_floor(now)
+            self.fq_submit(now, fin)
+        else:
+            a, dep = self.fwd(now)
+            if c.floor_law == "protect":
+                self.update_floor(now)
+            fin(a, dep)
         if c.sweep_form == "blocker":
             self.arm_blocker(now)
         return True
@@ -1300,12 +1388,11 @@ class Sim:
         w = min(8.0 * self.srtt_eff(), t)
         if w <= 0.0:
             return 0.0
-        hand = lambda x: min(self.units_total, int(x / self.dt) + 1) if x >= 0.0 else 0      # noqa: E731
-        return (hand(t) - hand(t - w)) / w
+        return (self.hand_count(t) - self.hand_count(t - w)) / w
 
-    def rev4_tick(self, t):
-        """At each dequeue: lambda_hat, mu_hat = D_hat, t_ov, K, tau and the counts the revision's step 1 reads.  No decision reads them."""
-        c, r4 = self.cfg, self.r4
+    def tau_now(self, t):
+        """The wait limit at t: (tau, K, x, t_ov, R, o_hat, den0, D_hat, mu_hat).  t_ov0 is a timestamp of state, set while x <= 1; no branch selects a law."""
+        c = self.cfg
         lam = self.lam_hat(t)
         raw = self.dh.value()
         mu = raw * (1.0 - c.dhat_bias)
@@ -1317,7 +1404,12 @@ class Sim:
         R, o = self.R_now(), self.o_hat()
         den0 = self.Te - R + o
         den = max(den0, o)
-        tau = wait_limit_tau(self.Te, K, den)
+        return wait_limit_tau(self.Te, K, den), K, x, t_ov, R, o, den0, raw, mu
+
+    def rev4_tick(self, t):
+        """At each dequeue: lambda_hat, mu_hat = D_hat, t_ov, K, tau and the counts the revision's step 1 reads.  No decision reads them."""
+        c, r4 = self.cfg, self.r4
+        tau, K, x, t_ov, R, o, den0, raw, mu = self.tau_now(t)
         r4["ticks"] += 1
         r4["ov"] += x > 1.0
         r4["tau_lt_T"] += tau_below_t(tau, self.Te)
@@ -1328,7 +1420,7 @@ class Sim:
             r4["floor_n"] += 1
             if r4["collapse_t"] is None:
                 r4["collapse_t"] = t
-        if self.u_next + 1 < self.units_total and (self.u_next + 1) * self.dt <= t and dequeue_expired(tau, t - self.u_next * self.dt, R):
+        if self.u_next + 1 < self.units_total and self.ht(self.u_next + 1) <= t and dequeue_expired(tau, t - self.ht(self.u_next), R):
             r4["deq_early"] += 1                    # the head the law would expire and section 13.2 holds
         fl = self.in_flight_now()
         r4["in_flight_max"] = max(r4["in_flight_max"], fl)
@@ -1349,6 +1441,7 @@ class Sim:
         return dict(n_ticks=r4["ticks"], n_tau_lt_T=int(r4["tau_lt_T"]), ov_frac=r4["ov"] / n, floor_bind=r4["floor_n"] / n, collapse_t=r4["collapse_t"],
                     den_bind=int(r4["den_bind"]), deq_early_would=r4["deq_early"], dhat_inf_frac=r4["dhat_inf"] / n, dhat_mean=(r4["dhat_sum"] / r4["dhat_n"]) if r4["dhat_n"] else None,
                     dhat_ratio_q05=q(0.05), dhat_ratio_q50=q(0.5), dhat_ratio_q95=q(0.95), dhat_ratio_n=len(rs), in_flight_max=r4["in_flight_max"],
+                    cwnd_sim=self.B_sim, clamp=self.cfg.clamp, wait_limit=self.cfg.wait_limit, eq=self.cfg.eq,
                     spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], spare_bins=sorted((k, v[0], v[1]) for k, v in r4["spare_bins"].items()), tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
 
     def astar(self, now):
@@ -1414,25 +1507,31 @@ class Sim:
             if not resend_admissible(self.Te, age, o):
                 g["worth_viol_rep"] += 1
         g["rep_sent"] += 1
-        if c.rev4_gauge:
+        if self.cnt_on:
             self.sends_n += 1
         g["rep_members_sum"] += end - lo
         if self.trace is not None:
             self.trace.append((round(now, 9), lo, j, end, 3))        # kind 3: a repair over [lo, end) (the identity gates compare traces)
         self.wadd("repair", now)
-        a, dep = self.fwd(now)
-        if a is not None:
-            self.fifo_note(a)
-        dd = c.dead
-        lost = (a is None) or (dd is not None and lo >= dd[0] and dd[1] <= dep < dd[1] + dd[2]) \
-            or (u01(c.seed, j, 0, 0, SALT_REPAIR) < self.p0)
-        if a is None:
-            g["rep_qdrop"] += 1
-        elif lost:
-            g["rep_lost"] += 1
-        if not lost:
-            self.push(a, 11, (j, lo, end, now))
-            self.carry_floor(a)
+        def fin(a, dep):
+            if a is not None:
+                self.fifo_note(a)
+            dd = c.dead
+            lost = (a is None) or (dd is not None and lo >= dd[0] and dd[1] <= dep < dd[1] + dd[2]) \
+                or (u01(c.seed, j, 0, 0, SALT_REPAIR) < self.p0)
+            if a is None:
+                g["rep_qdrop"] += 1
+            elif lost:
+                g["rep_lost"] += 1
+            if not lost:
+                self.push(a, 11, (j, lo, end, now))
+                self.carry_floor(a)
+
+        if self.fq is not None:
+            self.fq_submit(now, fin)
+        else:
+            a, dep = self.fwd(now)
+            fin(a, dep)
 
     def send_floor(self, now, f):
         if not self.cfg.floor_send:                  # today's Realtime: a shed is silent
@@ -1974,7 +2073,7 @@ class Sim:
         self.srtt_sum += 0.333 if self.srtt is None else self.srtt
         self.rep_n += 1
         self.maybe_resume(now)
-        if self.cfg.rev4_gauge:
+        if self.cnt_on:
             self.dhat_on_report(now, rep, rhi)
         self.trig = "report"
         holes = sorted(Mk)
@@ -1988,10 +2087,10 @@ class Sim:
         if self.paused and self.O_ctl() < self.B:
             self.paused = False
             self.pause_log.append((self.pause_t0, now))
-            if self.cfg.rev4_gauge:
+            if self.cnt_on:
                 self.dhat_note_pause(now - self.pause_t0)
             if self.cfg.src_model == "wc":
-                self.src_next = max(now, self.u_next * self.dt)
+                self.src_next = max(now, self.ht(self.u_next))
             else:
                 self.src_next = max(now, self.src_next if self.src_next != math.inf else now)
 
@@ -2264,6 +2363,8 @@ class Sim:
                 self.on_blocker(t, pl)
             elif kind == 11:
                 self.on_repair(t, pl)
+            elif kind == 12:
+                self.on_fq(t)
         return self.summary()
 
     # ---- readouts -------------------------------------------------------------------------
