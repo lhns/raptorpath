@@ -704,6 +704,7 @@ class Sim:
         self.qf_known = 0.0
         # stage 3e receiver state (build 5.1)
         self.dec_flag = bytearray(self.nmax)
+        self.qd_first = bytearray(self.nmax)       # first send dropped at the link queue (gauge only: splits the decoded units by cause)
         self.eqs = {}                              # eq id -> set of unknown seqs
         self.eq_of = {}                            # unknown seq -> set of eq ids
         self.eq_meta = {}                          # eq id -> (repair index j, send time)
@@ -724,7 +725,7 @@ class Sim:
                       astar_floor_bind=0, D_cap_bind=0, astar_W_bind=0, delta_bind=0, rep_drop_edge=0, rep_drop_young=0, rep_cut_edge=0,
                       l1_viol_rep=0, worth_viol_rep=0, rep_sent=0, rep_members_sum=0, rep_qdrop=0, rep_lost=0, eps_est_sum=0.0, eps_est_n=0,
                       dup_after_dec=0, rep_redundant=0, rep_innov=0, dec_comp_max=0, rep_used=0, rep_late_only=0, dec_units=0, dec_on_time=0,
-                      dec_late=0, dec_after_release=0, late_floor_dec=0, rmax_bind=0, burst_bind=0)
+                      dec_late=0, dec_after_release=0, late_floor_dec=0, rmax_bind=0, burst_bind=0, first_qdrop=0, dec_units_qdrop=0)
         self.ser = {k: {} for k in ("r", "W", "n", "A", "nA", "dec")}          # per-1 s series of stage 3e (registration 6): sums and counts by second
         self.trace = [] if c.want_trace else None
         self.orig_lost = []
@@ -1044,6 +1045,8 @@ class Sim:
             self.path_of[s] = 1
         a, dep = self.fwd(t, pth)
         if a is None:                                # dropped at the bottleneck queue: no arrival, no loss draw
+            self.qd_first[s] = 1
+            self.g["first_qdrop"] += 1
             self.atilde[s] = t + self.delays[pth].at(t)
         else:
             self.atilde[s] = a
@@ -1536,6 +1539,8 @@ class Sim:
                     self.eq_meta.pop(f, None)
             for s in dec:                                             # 2. then count and deliver each decoded unit once
                 self.dec_flag[s] = 1
+                if self.qd_first[s]:
+                    self.g["dec_units_qdrop"] += 1
                 self.ser["dec"][int(now)] = self.ser["dec"].get(int(now), 0) + 1
                 age = now - self.h_seq[s]
                 self.g["dec_units"] += 1

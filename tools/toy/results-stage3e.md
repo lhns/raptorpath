@@ -681,3 +681,21 @@ K-OV and OV-long are not read until a reading is registered (equal deadline, ste
 
 **K-OV's baseline rows stop the run (2026-11-26).**  `--part BASE` wrote `STOP` at the first K-OV row: ADR-0084 at rho 0.95, repair off, seed 0, did not finish (`finished` False): it sent 2 681 of 3 000 units in the 120 s `t_limit`, paused for 119.8 s of them (B = 8 against a 0.2 s round trip),
 delivered 0.886 and was on time on 0.008.  The registration's K-OV prediction (old designs read at most 0.08 on time) did not consider the time limit.  K-OV's baseline rows are held out of BASE until a decision (a longer `t_limit` changes the cell, so it needs an amendment); the STOP is left in place for the coordinator.
+
+## 2026-11-26: what repair does in OV (stored runs and one new seed), and BASE's repair-on rows are provisional
+
+**OV under RL, 6 seeds (stored runs), per run.**
+
+| design | repairs sent | repairs dropped at the link queue | innovative at the receiver | units decoded | lost first sends | share of link sends that is repair |
+|---|---|---|---|---|---|---|
+| today's Realtime, delta 50 | 10 507 | 10 077 (96 %) | 138 | 138 (0.6 % of the lost) | 22 194 | 0.080 |
+| today's Realtime, delta 0.5 | 9 154 | 8 762 (96 %) | 144 | 144 | 22 158 | 0.071 |
+| new model, T = 0.4 | 8 331 | 0 | 2 823 | 2 821 (99.8 % of the lost) | 2 826 | 0.080 |
+
+Link-queue drops in today's Realtime: 29 263 per run (delta 50), of which 10 077 are its own repairs; the other 19 187 are first sends (the gauge `first_qdrop`, added below, reads 19 187 on seed 0).  So its repairs do not mostly recover what the link buffer dropped: it decodes 138 units against 19 187 first sends the queue dropped, and
+96 % of its repairs are themselves dropped by the same queue.  The new model at T = 0.4 has no queue drops, repairs 8 331 times (5 254 redundant) and decodes 2 821 of 2 826 lost first sends; repair takes 0.080 of its link slots, which are 8.0 % of the 103 700 sends the link carried, against 95 100 first sends (24 900 units were shed at the intake by the dequeue rule).
+
+**Gauge added (no behaviour change):** `first_qdrop` (first sends dropped at the link queue) and `dec_units_qdrop` (decoded units whose first send was dropped at the link queue), which split the decoded units by cause; the stored rows lacked them.  On seed 0 in OV under RL: today's Realtime `first_qdrop` 19 187, `dec_units_qdrop` 0 (all 138 decoded units were channel losses, none was a queue drop); the new model at T = 0.4 `first_qdrop` 0, `dec_units_qdrop` 0.
+Proof of no behaviour change: `check_ident3e.py` (the identity sample) passes with the gauges in place, and the tests `Stage3eDecodedByCause`.
+
+**BASE's repair-on rows are provisional.**  Revision 4 may add the engine's spare-capacity clamp on repair (Q22, `min(r, (cwnd - in_flight)/in_flight)`) to every design; that would change every repair-on baseline row, which BASE is running now.  The repair-off rows stay valid.

@@ -1888,5 +1888,27 @@ class Stage3eBracket(unittest.TestCase):
             self.assertEqual(ra["gauges"]["rep_sent"], rb["gauges"]["rep_sent"])
 
 
+class Stage3eDecodedByCause(unittest.TestCase):
+    """Gauges that split the decoded units by why their first send was missing (read-only: no behaviour changes)."""
+
+    def test_a_decoded_unit_whose_first_send_the_link_queue_dropped_is_counted(self):
+        sm = Stage3e.rx({5, 6})
+        sm.qd_first[5] = 1                                                                     # the link queue dropped seq 5's first send
+        sm.on_repair(0.2, (0, 5, 6, 0.19))
+        sm.on_repair(0.21, (1, 6, 7, 0.2))
+        self.assertEqual(sm.g["dec_units"], 2)
+        self.assertEqual(sm.g["dec_units_qdrop"], 1)
+
+    def test_the_queue_drop_of_a_first_send_is_counted_once_per_unit_on_an_overloaded_link(self):
+        lk = dict(link=dict(C=10000.0, Q=1250.0), rate=12000.0, n_total=12000, dead=None, t_limit=6.0)
+        out = toy2.run(rt_cfg(repair=dict(r="law", edge="evict"), **lk))
+        g = out["gauges"]
+        self.assertGreater(g["first_qdrop"], 0)
+        self.assertLessEqual(g["first_qdrop"], g["queue_drop"])
+        self.assertLessEqual(g["dec_units_qdrop"], min(g["dec_units"], g["first_qdrop"]))
+        off = toy2.run(rt_cfg(**lk))
+        self.assertEqual(off["gauges"]["dec_units_qdrop"], 0)                                  # nothing decodes without repair
+
+
 if __name__ == "__main__":
     unittest.main()
