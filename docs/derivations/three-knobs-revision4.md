@@ -1221,29 +1221,50 @@ So the steady window as registered includes a filling transient, and the arm's t
 - The sizing result it records: K-OV with §10.7 and §11.2 reads 0.716 for Revision 3 at p50 0.32 s, and 0.720 for Revision 4 with no gate at p50 0.166 s.
   - Revision 4 had 189 resends and 2 duplicates. The "≤ 20 resends" band of §11.3 was missed: the resends now come after R, and they recover real losses.
   - Every other cell was within the A/A floor, and P2 finished with identical readouts.
-- **The cells below have not been read under any Revision 4 build.** This registration is written before any of their data.
+- **The cells below have not been read under any Revision 4 build,** except CL-long's new-model clamp rows (§12.4). This registration is written before any of their data.
+- **Revised before any run** (2026-11-26, after the advisor's review of `70c976b2`):
+  - the resend-eligibility fix goes on every design;
+  - build B drops the send gate;
+  - the scope is stated;
+  - the video cells' delay is reported only;
+  - comparisons use paired windows, and delay gets a bar;
+  - CL-long's rows are labelled post-data;
+  - the run time waits on a timing run.
+
+**Scope, stated before data.**
+- **Stage 3e's registered outcome for Revision 3 stands:** OV FAILS, and CL-long is UNDETERMINED under unclamped repair. §12 does not re-read it.
+- **§12 is a new verdict,** for builds A and B, on its own cells, on one path.
+- **Rows with unclamped repair are reported only.**
 
 ### 12.1 Builds and baselines
 
 | code | build |
 |---|---|
-| **A** | Revision 3 (S5) + the repair clamp (§3.3, cwnd_sim = the cell's pause B) + the floor repeat of §10.3 with §10.7 + the resend eligibility of §11.2 |
-| **B** | A + the wait limit (§3.1, μ̂ = D̂ of §3.2) + the send gate as frozen: in_flight < the cell's pause B, with the engine's in-flight expiry max(4·SRTT, 250 ms) (§9.3) |
-| ADR-0084 at ρ ∈ {0.95, 0.98, 0.99, 0.995, 1} | with the clamp |
-| today's Realtime, stored arm, at δ ∈ {0.5, 5, 50} plus the cell's δ | with the clamp |
-| today's Realtime, engine-queue arm (§3.3), at the same δ | with the clamp |
-| today's Bulk | with the clamp |
+| **A** | Revision 3 (S5) + the repair clamp (§3.3, cwnd_sim = the cell's pause B) + the floor repeat of §10.3 with §10.7 + the resend eligibility of §11.2 (`elig = "rack"`) |
+| **B** | A + the wait limit (§3.1, μ̂ = D̂ of §3.2). **No send gate.** |
+| ADR-0084 at ρ ∈ {0.95, 0.98, 0.99, 0.995, 1} | with the clamp and `elig = "rack"` |
+| today's Realtime, stored arm, at δ ∈ {0.5, 5, 50} plus the cell's δ | with the clamp and `elig = "rack"` |
+| today's Realtime, engine-queue arm (§3.3), at the same δ | with the clamp and `elig = "rack"` |
+| today's Bulk | with the clamp and `elig = "rack"` |
 
-- **Every row has the clamp, because the engine has it.**
+- **Shared machinery goes on every design.**
+  - The repair clamp is the engine's, at every hint.
+  - The resend eligibility of §11.2 is the sweep's timing, which every design's timer-driven resends use.
+  - Without §11.2 on Bulk, the gate "S5 at T = ∞ ≡ Bulk" would fail by construction.
+- **The floor-repeat rule (§10.3 with §10.7) applies to the new model only.**
+  - It is part of the new model's floor law, the protected floor of §15.3.
+  - ADR-0084's verdict floors are its own design, and they keep ADR-0084's repeat unchanged.
+  - Today's Realtime sends no floor. Bulk sends none, because it never gives up.
+- **No design has a send gate in §12.** With the gate, CL-long's repair-on rows would differ from A, so the "B ≡ A in headroom cells" stop would fire. Nor has the gate ever run together with §10.7 and §11.2. The gate (the §11.4 window, Q31) gets its own registration later.
 - **Repair mode:** RL. At δ = 0.005, r = 0 exactly, so RL is the repair-off row by arithmetic and the clamp is inert.
 - **The new builds sweep T as in registration §13.2:**
   - CL, CL-long, CLw-long: 15 points, plus H = ∞ at {0.4, 1.4, ∞};
   - OV-long: {0.4, 0.6, 1, 2, ∞}, plus H = ∞ at {0.4, 2, ∞};
   - the video cells: {1, 1.5, 2, 3, ∞}, plus H = ∞ at {1, 2, ∞};
   - CLc: {0.4, 1, ∞} × H ∈ {0, ∞}.
-- **In the cells with headroom,** B differs from A only where λ̂ > μ̂ (§3.1). So B runs there at 3 seeds as an **identity check** against A at T ∈ {0.4, 2, ∞}: traces equal, `n_tau_lt_T` = 0. It runs the full sweep only in the two overload cells.
+- **In the cells with headroom,** B differs from A only where λ̂ > μ̂ (§3.1). So B runs there at 3 seeds as an **identity check** against A at T ∈ {0.4, 2, ∞}: traces equal, `n_tau_lt_T` = 0. Without a gate this is an identity by arithmetic. It runs the full sweep only in the two overload cells.
 - **Gates** (stop rules, as in registration §13.6):
-  - S5 at T = ∞, H = ∞ (A and B) equals today's Bulk with the clamp, on every key and trace;
+  - S5 at T = ∞, H = ∞ (A and B) equals today's Bulk with the clamp and `elig = "rack"`, on every key and trace. Neither sends a floor at T = ∞, so the new model's floor rule is inert there;
   - every new-model run finishes. Today's Realtime is read with `unfinished` and `delivered_by_t_limit`, per the dated amendment;
   - §10.5's and §11.3's absolute tests hold in every run.
 
@@ -1261,7 +1282,12 @@ So the steady window as registered includes a filling transient, and the arm's t
   - for ADR-0084 and Bulk, the first store pause.
 
   If an arm's queue never fills (a cell with headroom), the window starts one second after the first RTT sample. That is the one rule, with no declared second.
-- **In outage cells** the steady window excludes [outage start, recovery end]. The outage is read through the registered recovery time and the whole-run share by τ, as in stage 3e.
+- **One steady window per comparison.** Each comparison uses the later of the two arms' starts and the common end, so the per-seed differences stay paired.
+- **In outage cells** the steady window excludes [outage start, the later recovery end]. The outage is read through the registered recovery time and the whole-run share by τ, as in stage 3e.
+- **Bars.**
+  - **For the two shares:** the registered form, `max(T_bar, NF)` with `T_bar = 0.05·(1 − share_ref)`.
+  - **For delay p50:** `max(NF_p50, 0.05·p50_ref)`. The 0.05 is the same relative bar the registration already uses for shares, so no new constant is added.
+- **A/A floors for the steady-window readouts.** The re-frozen A/A rows (§12.3) carry steady share, steady on time and steady p50, computed with the same paired-window rule (A against A′). NF for each is the p95 of |A − A′| over the comparison's seed count, frozen before any comparison at that count is read.
 
 ### 12.3 The reading rule
 
@@ -1269,6 +1295,10 @@ So the steady window as registered includes a filling transient, and the arm's t
 - **Dominance** (§3.1) applies where the sweep collapses (`floor_bind` ≈ 1 at every finite T). It also applies wherever the steady delivered share does not vary with T, as in every overload cell, where it is the capacity share at every T.
   - Each baseline point is compared with the build's best finite-T point on the three readouts.
   - "Dominates" means not worse beyond the bar on any readout and better beyond it on at least one. Otherwise the result is "not dominated", a trade, and it is reported as such.
+- **The video cells (δ = 0.005): delay p50 is reported only.**
+  - Under the verdict there: delivered, and on time within 2 s.
+  - The reason is the design record: at δ ≈ 0, delay inside the buffer is not priced (§4 of the derivation: buffered video is T = 2 s with δ ≈ 0), so delay cannot decide a comparison there.
+  - So the OV-long-v prediction below is a comparison on share and on time only. Its delay difference is reported, and it feeds Q32.
 - **Bars, NF and seeds** follow amendment 2 (§14.3):
   - 12 paired seeds in CL, CL-long, CLw-long, CLc, CLc-v and CL-long-v;
   - 6 in OV-long and OV-long-v, with the old senders there at 3 seeds at their dial ends (§14.4): ADR-0084 at ρ ∈ {0.95, 1}, today's Realtime at δ ∈ {0.5, 50} (or {0.005, 50} in OV-long-v), and Bulk;
@@ -1283,7 +1313,10 @@ So the steady window as registered includes a filling transient, and the arm's t
   - **ADR-0084 at ρ ∈ {0.95, 0.98}:** **+0.04 to +0.06**, shown better.
   - **Today's Realtime** (both arms; the FIFO never fills at λ < C, so they are the same within A/A): **+0.035 to +0.05** on on-time share at matched share, shown better. Recovery is equivalent, as stored.
   - **Today's Bulk and the object API:** identity.
-- **A's own rows:** T = 0.4 at 0.939–0.941 delivered and on time; T = 2 and T = ∞ on time at 0.63–0.645, with recovery 5.7–6.1 s. These are §9.1's measured clamp-on rows ± the A/A floor, because §10.7 and §11.2 are predicted within A/A here.
+- **A's own rows are post-data,** and are labelled so: they were sized in step 2 (§9.1). They are T = 0.4 at 0.939–0.941 delivered and on time, and T = 2 and T = ∞ on time at 0.63–0.645, with recovery 5.7–6.1 s.
+  - These are §9.1's measured clamp-on rows ± the A/A floor, because §10.7 and §11.2 are predicted within A/A here.
+  - They confirm nothing. What is new in CL-long is the baselines under the clamp and `elig = "rack"`, which are unread.
+- **The window bracket on the conclusion.** CL-long's reading under §12 holds at cwnd_sim = B = 1 000, where the clamp binds in the drain. At cwnd_sim = 2 048 the clamp never binds in CL-long (§9.1), so the stored unclamped reading, UNDETERMINED, holds there. The conclusion is stated with that bracket, and not as a property of the design alone.
 - **B ≡ A** (identity check).
 
 **CL** (the same as CL-long, but 10 s): the outage costs twice the share of a 20 s run.
@@ -1323,7 +1356,7 @@ So the steady window as registered includes a filling transient, and the arm's t
 | comparison | predicted reading |
 |---|---|
 | B against the stored arm | **B dominates**: share and on time within the bar, p50 better by about 0.075 s |
-| B against the engine-queue arm | **B dominates**: share within the bar on the arm's own steady window (§10.6), on time +0.8, p50 about 0.6 s better |
+| B against the engine-queue arm | **B dominates**: share within the bar on the paired window, which starts at the engine-queue arm's later start, after its FIFO fills (§10.6), on time +0.8, p50 about 0.6 s better |
 | B against ADR-0084 and Bulk | **not dominated**, a trade: on time +0.8 and p50 better by seconds, but share_any lower (0.81 against 1.0 by t_limit) |
 | A against the stored arm | **not dominated**: equal share and on time, p50 worse by about 0.22 s |
 
@@ -1334,9 +1367,9 @@ So the steady window as registered includes a filling transient, and the arm's t
   - Steady share and on time as A; **p50 1.6–1.8 s** at T = 2.
   - At T = 1 it collapses at about 27 s, and at T ≥ 1.5 not within the run.
 - **Baselines:** the stored arm reads 0.808 / 0.808 / ≈ 0.17 s, and the engine-queue arm 0.809 / 0.809 / ≈ 0.69 s (its 0.68 s residence is within 2 s).
-- **Predicted reading: both arms of today's Realtime dominate A and B,** with equal share and on time and far lower delay. **This is a predicted loss for the new model,** and it follows from δ's meaning in §2.
-  - At δ = 0.005 the bet prices delay so cheaply that the intake keeps most of its standing queue, though a standing queue buys nothing (§2) at any δ.
-  - **Recorded as open question Q32:** whether the bet's δ-scaling is the right scaling at the video point, or whether a standing queue that is pure waste should be shed at every δ.
+- **Predicted reading under the verdict (delivered and on time within 2 s): equivalent to both arms of today's Realtime.**
+- **Reported only:** delay p50. The new builds read 1.6–2.0 s, against 0.17 s for the stored arm and 0.69 s for the engine-queue arm.
+- **Q32 follows from that choice.** The verdict cannot see the standing queue at δ ≈ 0, by the design record's own pricing. So whether a standing queue that buys nothing should be shed at every δ is an owner question. It is not decided by this run.
 - **ADR-0084 and Bulk:** on time ≈ 0 within 2 s, a trade as in OV-long.
 
 ### 12.5 Run count and time
@@ -1356,12 +1389,14 @@ So the steady window as registered includes a filling transient, and the arm's t
 | A/A, re-frozen | | | 8 cells × 12 | 96 |
 | **total** | | | | **2 208** |
 
-- **No reuse.** §10.7 and §11.2 change every new-model trace, and the clamp changes every repair-on row.
-- **Time** (TIME's measured per-design wall times, one process each: 7–15 s for most rows; ADR-0084 44 s in CL-long-v; in OV-long 31–34 s, today's Realtime 160 s and Bulk 26 s; in OV-long-v 29 s for the new model, ADR-0084 609 s, today's Realtime 185 s and Bulk 24 s):
-  - about 40 000 CPU-seconds in all, so **about 75 min on 9 workers**;
-  - **about 1.5–2 h** with the one doubling;
-  - the critical path is ADR-0084 in OV-long-v, about 10 min per run.
-  - The clamp makes today's Realtime rows faster where repair was the decoder's load, so these are upper bounds.
+- **The count is unchanged by the revision:** dropping the gate does not change B's rows, and §11.2 on the baselines does not add any.
+- **No reuse.** §10.7 and §11.2 change every new-model trace, §11.2 changes the baselines' resend timing wherever R > P, and the clamp changes every repair-on row.
+- **Where §11.2 changes the baselines:** wherever `elig_R_bind` > 0 after the first sample. That is the overload cells (srtt ≈ 0.1 s, with P at its cap) and the moments of CL-long's drain when rttvar spikes. Predicted within the A/A floor for every baseline readout, and gauged per row.
+- **Time.** The time is not quoted until one timing run is done.
+  - **The timing run:** one seed of ADR-0084 at ρ = 0.95 in OV-long-v, under the clamp and `elig = "rack"`. Stage 3e's TIME read 609 s for it without the clamp, which makes it the critical path.
+  - **The estimate the timing run replaces** (stage 3e's TIME, one process each, unclamped): 7–15 s for most rows; 44 s for ADR-0084 in CL-long-v; 31–34 s, 160 s and 26 s for the new model, today's Realtime and Bulk in OV-long; 29 s, 609 s, 185 s and 24 s for the new model, ADR-0084, today's Realtime and Bulk in OV-long-v. That gives about 40 000 CPU-seconds, so about 75 min on 9 workers, or 1.5–2 h with the doubling.
+  - **The schedule** is quoted from the timing run's measured value.
+  - **If the run exceeds 30 min,** OV-long-v's ADR-0084 rows are reported before the batch continues, as in registration §4.
 - **Order:**
   1. the A/A rows;
   2. CL-long, the deciding case;
