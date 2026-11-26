@@ -339,6 +339,15 @@ def wait_limit_tau(T, K, den):
     return T - K / den
 
 
+def wait_limit_w(T, R, o, delta, x, t_ov):
+    """Revision 4 section 13.3 (build B'): the queue-wait cap w [s] = (c / xb) * min(1, 2 / (1 + y)), c = max(T - R, 0), xb = max(x, 1), y = delta * t_ov / (c + xb * o).
+    One expression, no branch on delta, T or x.  T = inf: c = inf, y = 0.0, w = inf (never NaN: xb is >= 1, and a NaN x reads as 1).  x <= 1 and t_ov = 0: y = 0.0, w = c exactly."""
+    c = max(T - R, 0.0)
+    xb = max(1.0, x)
+    y = delta * t_ov / (c + xb * o)
+    return (c / xb) * min(1.0, 2.0 / (1.0 + y))
+
+
 def wait_limit_Kc(T, R, o):
     """The collapse threshold: K_c = (T - R)(T - R + o_hat); at K_c the effective margin T - R - K / (T - R + o_hat) is 0."""
     return (T - R) * (T - R + o)
@@ -498,6 +507,7 @@ class Cfg:
     dhat_bias: float = 0.0         # revision 4, step 1: D_hat is read as D_hat * (1 - dhat_bias) in the gauges (the bias rows of 5.3)
     clamp: bool = False            # revision 4 step 2 (3.3): repair accrues min(r, max(spare, 0)), spare = (cwnd_sim - in_flight) / in_flight
     wait_limit: bool = False       # revision 4 step 2 (3.1): the dequeue expiry reads tau = T - K / (T - R + o_hat) in place of T
+    wait_limit_form: str = "k_t2"  # revision 4 section 13.7: with wait_limit, "k_t2" = build B (tau = T - K / (T - R + o_hat)); "rev4b" = build B' (13.3: expire at a + R >= T or a >= w).  A build selector of the offline simulation, not a dial
     floor_repeat: str = ""         # revision 4 section 10: "evidenced" = send a standalone floor only when the receiver may not know it (ordinals); "evidenced_overdue" (10.7) also waits until the newest covering data carrier is overdue (R); "" = today's rule
     elig: str = ""                 # revision 4 section 11.2: "rack" = the blocker sweep resends a seq only once its last send is overdue: deadline max(last_send(b) + max(P, R), last_fire + P), P_reach = max(P, R)
     inflight_to_rule: str = ""     # revision 4 step 2: "engine" = in_flight expires at max(4 x SRTT, 250 ms) (scheduler/path.rs expire_in_flight, copa.rs:307); "" = off
@@ -643,6 +653,8 @@ class Sim:
         self.n1 = int(round(c.rate2_t * c.rate)) if c.rate2 else 0           # units handed over before the rate changes
         self.dt2 = 1.0 / c.rate2 if c.rate2 else self.dt
         self.B_sim = c.cwnd_sim or float(c.pause_B)
+        if c.wait_limit_form not in ("k_t2", "rev4b"):
+            raise ValueError("wait_limit_form: %r" % (c.wait_limit_form,))
         self.cnt_on = c.rev4_gauge or c.clamp or c.wait_limit or c.send_gate                # the in_flight count and the D-hat rounds are kept
         if c.n_total:
             self.dur = c.n_total / c.rate
@@ -1191,10 +1203,12 @@ class Sim:
             self.intake_expired += 1
             self.u_next += 1
         if c.deq_expiry:                                         # 13.2: expire the head at the dequeue when a younger unit waits (after L1)
-            te_dq = self.tau_now(t)[0] if c.wait_limit else self.Te      # revision 4: the wait limit tau (= T exactly at x <= 1, +inf at T = inf)
+            rev4b = c.wait_limit and c.wait_limit_form == "rev4b"
+            te_dq = self.tau_now(t)[0] if (c.wait_limit and not rev4b) else self.Te      # revision 4: the wait limit tau (= T exactly at x <= 1, +inf at T = inf)
+            w_dq = self.cap_now(t)[0] if rev4b else math.inf                              # build B' (13.3): the second threshold, always computed beside a + R >= T
             while (self.u_next + 1 < self.units_total
                    and self.ht(self.u_next + 1) <= t
-                   and dequeue_expired(te_dq, t - self.ht(self.u_next), self.R_now() + c.R_bias)):
+                   and (dequeue_expired(te_dq, t - self.ht(self.u_next), self.R_now() + c.R_bias) or t - self.ht(self.u_next) >= w_dq)):
                 if self.first_deq_exp is None:
                     self.first_deq_exp = t
                 self.intake_expired_deq += 1
@@ -1506,8 +1520,8 @@ class Sim:
             self.carry_vals.append(v)
             self.carry_ords.append(ordv)
 
-    def tau_now(self, t):
-        """The wait limit at t: (tau, K, x, t_ov, R, o_hat, den0, D_hat, mu_hat).  t_ov0 is a timestamp of state, set while x <= 1; no branch selects a law."""
+    def ov_inputs(self, t):
+        """(x, t_ov, R, o_hat, D_hat raw, mu_hat) at t.  t_ov0 is a timestamp of state, set while x <= 1; no branch selects a law."""
         c = self.cfg
         lam = self.lam_hat(t)
         raw = self.dh.value()
@@ -1516,33 +1530,48 @@ class Sim:
         if not x > 1.0:
             self.t_ov0 = t
         t_ov = t - self.t_ov0
+        return x, t_ov, self.R_now(), self.o_hat(), raw, mu
+
+    def tau_now(self, t):
+        """The wait limit at t: (tau, K, x, t_ov, R, o_hat, den0, D_hat, mu_hat).  t_ov0 is a timestamp of state, set while x <= 1; no branch selects a law."""
+        c = self.cfg
+        x, t_ov, R, o, raw, mu = self.ov_inputs(t)
         K = wait_limit_K(c.delta, x, t_ov)
-        R, o = self.R_now(), self.o_hat()
         den0 = self.Te - R + o
         den = max(den0, o)
         return wait_limit_tau(self.Te, K, den), K, x, t_ov, R, o, den0, raw, mu
 
+    def cap_now(self, t):
+        """Build B' (13.3) at t: (w, c_plus, y, x, t_ov, R, o_hat)."""
+        x, t_ov, R, o, raw, mu = self.ov_inputs(t)
+        cp = max(self.Te - R, 0.0)
+        y = self.cfg.delta * t_ov / (cp + max(1.0, x) * o)
+        return wait_limit_w(self.Te, R, o, self.cfg.delta, x, t_ov), cp, y, x, t_ov, R, o
+
     def rev4_tick(self, t):
         """At each dequeue: lambda_hat, mu_hat = D_hat, t_ov, K, tau and the counts the revision's step 1 reads.  No decision reads them."""
         c, r4 = self.cfg, self.r4
-        tau, K, x, t_ov, R, o, den0, raw, mu = self.tau_now(t)
-        r4["ticks"] += 1
-        r4["ov"] += x > 1.0
-        r4["tau_lt_T"] += tau_below_t(tau, self.Te)
-        r4["den_bind"] += den0 < o
-        r4["tau_min"] = min(r4["tau_min"], tau)
-        Kc = wait_limit_Kc(self.Te, R, o)
-        if K > 0.0 and K >= Kc:
-            r4["floor_n"] += 1
-            if r4["collapse_t"] is None:
-                r4["collapse_t"] = t
-        if self.u_next + 1 < self.units_total and self.ht(self.u_next + 1) <= t and dequeue_expired(tau, t - self.ht(self.u_next), R):
-            r4["deq_early"] += 1                    # the head the law would expire and section 13.2 holds
+        if c.wait_limit and c.wait_limit_form == "rev4b":
+            raw = self.rev4b_tick(t)
+        else:
+            tau, K, x, t_ov, R, o, den0, raw, mu = self.tau_now(t)
+            r4["ticks"] += 1
+            r4["ov"] += x > 1.0
+            r4["tau_lt_T"] += tau_below_t(tau, self.Te)
+            r4["den_bind"] += den0 < o
+            r4["tau_min"] = min(r4["tau_min"], tau)
+            Kc = wait_limit_Kc(self.Te, R, o)
+            if K > 0.0 and K >= Kc:
+                r4["floor_n"] += 1
+                if r4["collapse_t"] is None:
+                    r4["collapse_t"] = t
+            if self.u_next + 1 < self.units_total and self.ht(self.u_next + 1) <= t and dequeue_expired(tau, t - self.ht(self.u_next), R):
+                r4["deq_early"] += 1                    # the head the law would expire and section 13.2 holds
         fl = self.in_flight_now(t)
         r4["in_flight_max"] = max(r4["in_flight_max"], fl)
         r4["over_B"] += fl >= self.B_sim
         if raw < math.inf:
-            r4["dhat_sum"] += mu
+            r4["dhat_sum"] += raw * (1.0 - c.dhat_bias)
             r4["dhat_n"] += 1
             if r4["dhat_n"] % 200 == 1 and c.link is not None and len(r4["ratios"]) < 4000:     # the readout against the oracle: C / (1/(1 - eps) + r), a readout only
                 oracle = c.link["C"] / (1.0 / (1.0 - self.p0) + self.r_cur)
@@ -1550,17 +1579,79 @@ class Sim:
         else:
             r4["dhat_inf"] += 1
 
+    def rev4b_tick(self, t):
+        """Build B' gauges (13.7), per dequeue after the expiry loop; returns the raw D_hat.  They read the same inputs as the law and decide nothing."""
+        r4 = self.r4
+        w, cp, y, x, t_ov, R, o = self.cap_now(t)
+        g = r4.setdefault("b", dict(ov_n=0, onset_n=0, onset_t=None, onset_tov=None, cap_lt_c=0, series={}, ov_t0=None, was_ov=False, resets=0, y_max=0.0, w_over_c_min=None,
+                                    last_age=None, last_t=None, floor_n=0))
+        raw = self.dh.value()
+        age = t - self.ht(self.u_next)
+        r4["ticks"] += 1
+        ov = x > 1.0
+        r4["ov"] += ov
+        tr = self.Te - R
+        r4["den_bind"] += tr < 0.0                          # T < R: c+ clamps to 0 (section 13.2 already expires every head)
+        r4["tau_lt_T"] += w < cp                            # counterpart of n_tau_lt_T: n_cap_lt_c
+        g["cap_lt_c"] += w < cp
+        g["floor_n"] += w <= 0.0                            # the cap at 0: floor_bind (13.3 "the floor": no K_c; w > 0 at every finite t_ov unless T <= R)
+        if w < r4["tau_min"]:
+            r4["tau_min"] = w
+        if ov:
+            g["ov_n"] += 1
+            g["onset_n"] += y <= 1.0
+            if g["ov_t0"] is None:
+                g["ov_t0"] = t - t_ov                       # the instant the first overload episode began (t_ov = 0 there): onset_t - ov_t0 = s_b
+            if g["onset_t"] is None and y >= 1.0:
+                g["onset_t"], g["onset_tov"] = t, t_ov            # t_ov there is s_b (y = 1 at t_ov = s_b)
+            b = g["series"].setdefault(int(t / 0.5), [0, 0.0, 0.0, 0.0, 0.0, 0.0, 0])
+            b[0] += 1
+            b[1] += w
+            b[2] += age
+            b[3] += x
+            b[4] += t_ov
+            b[5] += cp
+            b[6] += y <= 1.0
+        g["resets"] += g["was_ov"] and not ov              # x > 1 to x <= 1 after the first dequeue with x > 1
+        g["was_ov"] = ov
+        g["y_max"] = max(g["y_max"], y)
+        if cp > 0.0:
+            wc = (1.0 / max(1.0, x)) * min(1.0, 2.0 / (1.0 + y))      # w / c+, written without dividing by an infinite c+
+            g["w_over_c_min"] = wc if g["w_over_c_min"] is None else min(g["w_over_c_min"], wc)
+        if self.ht(self.units_total - 1) >= t:
+            g["last_age"], g["last_t"] = age, t             # the head's wait at the last dequeue at or before the last hand-over
+        if self.u_next + 1 < self.units_total and self.ht(self.u_next + 1) <= t and (dequeue_expired(self.Te, age, R) or age >= w):
+            r4["deq_early"] += 1                            # the head the law would expire and section 13.2 holds
+        return raw
+
+    def summary_rev4b(self, n):
+        g = self.r4["b"]
+        fin = lambda v: v if math.isfinite(v) else None                        # noqa: E731
+        series = [(k * 0.5, b[0], fin(b[1] / b[0]), b[2] / b[0], b[3] / b[0], b[4] / b[0], fin(b[5] / b[0]), b[6]) for k, b in sorted(g["series"].items())]       # window start, n, mean w, mean head age, mean x, mean t_ov, mean c+, n with y <= 1
+        res = dict(wait_limit_form="rev4b", onset_bind=(g["onset_n"] / g["ov_n"]) if g["ov_n"] else None, onset_t=g["onset_t"], ov_t0=g["ov_t0"], onset_tov=g["onset_tov"], n_cap_lt_c=int(g["cap_lt_c"]), cap_series=series,
+                   tov_resets=int(g["resets"]), y_max=g["y_max"], w_min_over_c=g["w_over_c_min"], reserve_end=None, floor_bind=g["floor_n"] / n)
+        la = g["last_age"]
+        if la is not None:
+            cut = self.ht(self.units_total - 1) - la
+            H = sum(1 for u in range(self.units_total) if self.ht(u) > cut)
+            D = sum(1 for s_ in range(self.n_sent) if self.h_seq[s_] > cut and self.dlv[s_] >= 0)
+            res["reserve_end"] = dict(age=la, t_last=g["last_t"], handed=H, delivered=D, share=D / H if H else None)
+        return res
+
     def summary_rev4(self):
         r4 = self.r4
         n = max(r4["ticks"], 1)
         rs = sorted(r4["ratios"])
         q = lambda p: rs[min(len(rs) - 1, int(p * len(rs)))] if rs else None        # noqa: E731
-        return dict(n_ticks=r4["ticks"], n_tau_lt_T=int(r4["tau_lt_T"]), ov_frac=r4["ov"] / n, floor_bind=r4["floor_n"] / n, collapse_t=r4["collapse_t"],
+        out = dict(n_ticks=r4["ticks"], n_tau_lt_T=int(r4["tau_lt_T"]), ov_frac=r4["ov"] / n, floor_bind=r4["floor_n"] / n, collapse_t=r4["collapse_t"],
                     den_bind=int(r4["den_bind"]), deq_early_would=r4["deq_early"], dhat_inf_frac=r4["dhat_inf"] / n, dhat_mean=(r4["dhat_sum"] / r4["dhat_n"]) if r4["dhat_n"] else None,
                     dhat_ratio_q05=q(0.05), dhat_ratio_q50=q(0.5), dhat_ratio_q95=q(0.95), dhat_ratio_n=len(rs), in_flight_max=r4["in_flight_max"],
                     emit_over_B=r4["over_B"], first_rtt_t=self.first_rtt_t, first_pause_t=self.first_pause_t, first_qdrop_t=self.first_qdrop_t, fq_full_t=self.fq_full_t,
                     first_deq_exp=self.first_deq_exp, elig_n=r4["elig_n"], elig_R_bind=r4["elig_R_bind"], elig_viol=r4["elig_viol"], send_gate=self.cfg.send_gate, cwnd_sim=self.B_sim, clamp=self.cfg.clamp, wait_limit=self.cfg.wait_limit, eq=self.cfg.eq,
                     spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], spare_bins=sorted((k, v[0], v[1]) for k, v in r4["spare_bins"].items()), tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
+        if "b" in r4:                                   # build B' only: its gauges are added, so every other row's block is unchanged
+            out.update(self.summary_rev4b(n))
+        return out
 
     def astar(self, now):
         """Paper 5.3: A* = clamp(ceil(rate_hat * min(b*srtt, 2*srtt)), 1, W); 1 before the first RTT sample."""

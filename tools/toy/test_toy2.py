@@ -2299,5 +2299,125 @@ class Rev4OverdueAndElig(unittest.TestCase):
             self.assertLess(abs(a["share_any"] - b["share_any"]), 0.01)
 
 
+class Rev4bLaw(unittest.TestCase):
+    """Revision 4 section 13.3 and 13.7: build B' (wait_limit_form = "rev4b"), the wait cap w = (c / xb) * min(1, 2 / (1 + y))."""
+
+    R, O = 0.104, 0.095
+    PRESETS = (0.005, 0.1, 0.5, 5.0, 50.0)
+
+    def w(self, T=0.4, delta=50.0, x=1.24, t_ov=1.0, R=None, o=None):
+        return toy2.wait_limit_w(T, self.R if R is None else R, self.O if o is None else o, delta, x, t_ov)
+
+    def test_default_form_is_build_b_and_the_selector_is_validated(self):
+        import batch3e
+        c = batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, None, wait_limit=True)
+        self.assertEqual(c.wait_limit_form, "k_t2")
+        self.assertEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, wait_limit_form="k_t2")))
+        self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, wait_limit_form="rev4b")))
+        with self.assertRaises(ValueError):
+            toy2.Sim(dataclasses.replace(c, wait_limit_form="rev4"))
+
+    def test_inert_at_t_inf_and_never_nan(self):
+        for delta in (0.005, 0.1, 0.5, 50.0, 1e6):
+            for x in (0.0, 1.0, 1.3, 100.0):
+                for t_ov in (0.0, 1e6):
+                    w = toy2.wait_limit_w(math.inf, self.R, self.O, delta, x, t_ov)
+                    self.assertEqual(w, math.inf, (delta, x, t_ov))
+
+    def test_never_nan_over_the_grid(self):
+        for T in (0.0, 0.05, 0.4, 2.0, math.inf):
+            for x in (0.0, 0.5, 1.0, 1.3, 1e6, math.nan):
+                for t_ov in (0.0, 1.0, 1e6):
+                    for delta in (0.005, 50.0, 1e6):
+                        self.assertFalse(math.isnan(self.w(T=T, delta=delta, x=x, t_ov=t_ov)), (T, x, t_ov, delta))
+
+    def test_exact_at_headroom(self):
+        for T in (0.05, 0.4, 1.0, 2.0, 1e9):
+            for x in (0.0, 0.5, 1.0):
+                for delta in self.PRESETS:
+                    self.assertEqual(self.w(T=T, delta=delta, x=x, t_ov=0.0), max(T - self.R, 0.0), (T, x, delta))
+        self.assertEqual(self.w(T=0.1, x=2.0, t_ov=5.0), 0.0)                    # T <= R: the cap is 0, as 13.2 already expires every head
+
+    def test_the_law_is_branch_free(self):
+        import inspect
+        body = inspect.getsource(toy2.wait_limit_w).split('"""')[2]
+        for bad in ("isinf", "isfinite", "if ", "else", "while"):
+            self.assertNotIn(bad, body)
+
+    def test_monotone_in_delta_t_ov_x_and_in_T(self):
+        for T in (0.4, 1.0, 2.0):
+            for x in (1.0, 1.24, 3.0):
+                for t_ov in (0.0, 0.01, 1.0, 40.0):
+                    ds = [self.w(T=T, delta=d, x=x, t_ov=t_ov) for d in (0.005, 0.1, 0.5, 5.0, 50.0, 1e3)]
+                    self.assertTrue(all(a >= b for a, b in zip(ds, ds[1:])), (T, x, t_ov))
+        for d in self.PRESETS:
+            ts = [self.w(delta=d, t_ov=t) for t in (0.0, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0)]
+            self.assertTrue(all(a >= b for a, b in zip(ts, ts[1:])), d)
+            xs = [self.w(delta=d, x=x, t_ov=2.0) for x in (0.5, 1.0, 1.1, 1.5, 3.0, 30.0)]
+            self.assertTrue(all(a >= b for a, b in zip(xs, xs[1:])), d)
+            Ts = [self.w(T=T, delta=d, t_ov=2.0) for T in (0.1, 0.2, 0.4, 1.0, 2.0, 5.0)]
+            self.assertTrue(all(a <= b for a, b in zip(Ts, Ts[1:])), d)
+
+    def test_continuity_within_2_percent_at_each_preset_and_at_y_1(self):
+        for d in self.PRESETS:
+            for T in (0.4, 2.0):
+                for x in (1.226, 1.39):
+                    c = T - self.R
+                    sb = (c + x * self.O) / d                                        # y = t_ov / s_b: the onset
+                    for t_ov in (0.2 * sb, 0.99 * sb, sb, 1.01 * sb, 5.0 * sb):
+                        w0 = self.w(T=T, delta=d, x=x, t_ov=t_ov)
+                        y = d * t_ov / (c + x * self.O)
+                        for k in (0.98, 1.02):
+                            self.assertLessEqual(abs(self.w(T=T, delta=d * k, x=x, t_ov=t_ov) - w0) / w0, 0.02 * y / (1.0 + 0.98 * y) + 1e-12, (d, T, x, t_ov))        # the spec's first-order bound 2 % * y / (1 + y), exact for a 2 % step
+                            self.assertLessEqual(abs(self.w(T=T, delta=d, x=x, t_ov=t_ov * k) - w0) / w0, 0.02 + 1e-12, (d, T, x, t_ov))
+                    self.assertAlmostEqual(self.w(T=T, delta=d, x=x, t_ov=sb), c / x, delta=1e-12)         # y = 1: the ramp starts where min(1, 2/(1+y)) = 1
+
+    def test_the_free_band_and_the_fluid_bill_identity(self):
+        """Fluid toy (13.1): A - B = mu * (c - x * w_end)+ ; a cap held at c / x leaves x * w_end = c, so the bill is 0; below it, the bill is the missing stretch."""
+        mu = 9786.0
+        bill = lambda c, x, w_end: mu * max(c - x * w_end, 0.0)                    # noqa: E731
+        for T in (1.0, 1.5, 2.0, 3.0):
+            c, x = T - self.R, 1.226
+            w_free = self.w(T=T, delta=0.005, x=x, t_ov=0.0)                         # y = 0: the free band only
+            self.assertAlmostEqual(w_free, c / x, delta=1e-12)
+            self.assertAlmostEqual(x * w_free, c, delta=1e-12)
+            self.assertEqual(bill(c, x, w_free), 0.0)
+            w_low = self.w(T=T, delta=50.0, x=x, t_ov=5.0)                           # deep in the priced band
+            self.assertLess(w_low, c / x)
+            self.assertAlmostEqual(bill(c, x, w_low), mu * (c - x * w_low), delta=1e-6)
+            self.assertGreater(bill(c, x, w_low), 0.0)
+
+    def test_headroom_trace_identity_with_a_and_the_gauges_in_overload(self):
+        import batch3e
+        for T in (0.4, 2.0):
+            c = e_cfg("CL", 0, T, 0.0, repair=dict(r="law", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), want_trace=True, rev4_gauge=True)
+            a, b = toy2.run(c), toy2.run(dataclasses.replace(c, wait_limit=True, wait_limit_form="rev4b"))
+            self.assertEqual(batch3e.id3e({k: v for k, v in a.items() if k != "rev4"}, {k: v for k, v in b.items() if k != "rev4"}), [], T)      # the rev4 block echoes the build's flags
+            self.assertEqual(a["_trace"], b["_trace"], T)
+            r = b["rev4"]
+            self.assertEqual(r["n_cap_lt_c"], 0)
+            self.assertEqual(r["tov_resets"], 0)
+            self.assertEqual(r["w_min_over_c"], 1.0)
+        base = dataclasses.replace(Rev4Step2.ov("new", n=60000), rev4_gauge=True)
+        a = toy2.run(base)
+        b = toy2.run(dataclasses.replace(base, wait_limit=True, wait_limit_form="rev4b"))
+        r = b["rev4"]
+        self.assertGreater(r["n_cap_lt_c"], 0)
+        self.assertLess(b["dh_p50"], a["dh_p50"])
+        self.assertGreater(r["ov_frac"], 0.5)
+        self.assertIsNotNone(r["onset_bind"])
+        self.assertTrue(r["cap_series"] and len(r["cap_series"][0]) == 8)
+        self.assertGreater(r["y_max"], 1.0)                                          # delta 50: the onset is passed within the run
+        self.assertIsNotNone(r["onset_t"])
+        self.assertLess(r["w_min_over_c"], 1.0 / 1.2)
+        self.assertEqual(r["wait_limit_form"], "rev4b")
+        self.assertNotIn("onset_bind", a["rev4"])                                    # build A's gauge block is unchanged
+
+    def test_inert_at_t_inf_in_the_simulation(self):
+        import batch3e
+        inf = dataclasses.replace(Rev4Step2.ov("new", n=24000), T=math.inf, want_trace=True)
+        self.assertEqual(batch3e.id3e(toy2.run(inf), toy2.run(dataclasses.replace(inf, wait_limit=True, wait_limit_form="rev4b"))), [])
+
+
 if __name__ == "__main__":
     unittest.main()
