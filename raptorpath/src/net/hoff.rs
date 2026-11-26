@@ -130,11 +130,14 @@ pub(crate) struct PathIn {
     pub tx_dgrams: u64,
     /// Datagrams the owner discarded before quinn (send errors, shim loss).
     pub dropped: u64,
+    /// Datagrams quinn accepted and discarded without a tx (the owner's count).
+    pub quinn_discards: u64,
 }
 
 impl PathIn {
     pub(crate) fn backlog(&self) -> u64 {
-        self.staged.saturating_sub(self.tx.saturating_add(self.dropped))
+        self.staged
+            .saturating_sub(self.tx.saturating_add(self.dropped).saturating_add(self.quinn_discards))
     }
     pub(crate) fn dgram_size(&self) -> f64 {
         if self.staged > 0 { self.staged_bytes as f64 / self.staged as f64 } else { 0.0 }
@@ -413,7 +416,7 @@ impl HoffGauge {
             };
             let _ = write!(
                 out,
-                " p{id}[B={}/{}/{} n={} dgq={} F={} win={} R={:.0} tau_o={}ms({}) tau_p={}ms l_o={}ms l_p={}ms L={}ms beta={} hand_bind={} spare_i={} spare_bind={} reopen={}/{}ms/{} starve={} app_limited={} batch={} g_batch={}ms phat={}ms fifo_wait_resend={}ms/{}]",
+                " p{id}[B={}/{}/{} n={} dgq={} F={} win={} R={:.0} tau_o={}ms({}) tau_p={}ms l_o={}ms l_p={}ms L={}ms beta={} hand_bind={} spare_i={} spare_bind={} reopen={}/{}ms/{} starve={} qdisc={} app_limited={} batch={} g_batch={}ms phat={}ms fifo_wait_resend={}ms/{}]",
                 quantile(&st.b, 0.5),
                 quantile(&st.b, 0.95),
                 st.b.last().copied().unwrap_or(0),
@@ -436,6 +439,7 @@ impl HoffGauge {
                 f2(st.reopen_ms.last().copied().unwrap_or(0.0)),
                 st.reopen_ms.len(),
                 f2(st.starve as f64 / n),
+                d(cur.quinn_discards, prev.quinn_discards),
                 f2(al),
                 f1(batch),
                 ms(g_batch),
@@ -508,6 +512,7 @@ impl HoffGauge {
             tx_batches: c.tx_batches.load(Relaxed),
             tx_dgrams: c.tx_dgrams.load(Relaxed),
             dropped: h.dropped.load(Relaxed),
+            quinn_discards: h.quinn_discards.load(Relaxed),
         }
     }
 }
@@ -569,6 +574,7 @@ mod tests {
             tx_batches: 50,
             tx_dgrams: 500,
             dropped: 0,
+            quinn_discards: 0,
         }
     }
 
@@ -647,7 +653,7 @@ mod tests {
         assert!(l.starts_with("[HOFF] t=0.3s gate=off owner_timer_wakes=0 "), "{l}");
         for f in [
             "B=", "n=", "dgq=", "F=", "win=", "R=", "tau_o=", "(assumed)", "tau_p=", "l_o=", "l_p=",
-            "L=", "beta=", "hand_bind=", "spare_i=", "spare_bind=", "reopen=", "starve=",
+            "L=", "beta=", "hand_bind=", "spare_i=", "spare_bind=", "reopen=", "starve=", "qdisc=",
             "app_limited=", "batch=", "g_batch=", "phat=", "fifo_wait_resend=", "tau_floor_bind=",
             "probe_acks=", "infl_vs_out=", "store_pin=",
         ] {

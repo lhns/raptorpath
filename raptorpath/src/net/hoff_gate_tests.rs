@@ -10,7 +10,7 @@
 //! call-site invariant.
 
 use super::hoff::{HoffGauge, PathIn};
-use super::hoff_gate::{admits, owner_republishes, poll_armed, r_eff, HandoffGate, Terms};
+use super::hoff_gate::{admits, owner_republishes, poll_armed, quinn_discards_found, r_eff, HandoffGate, Terms};
 use crate::scheduler::{Scheduler, WallClock};
 use crate::transport::io_owner::WorkHist;
 use std::sync::Arc;
@@ -77,6 +77,59 @@ fn cold_start_admits() {
 fn backlog_nets_out_owner_drops() {
     let i = PathIn { staged: 100, tx: 40, dropped: 10, ..Default::default() };
     assert_eq!(i.backlog(), 50);
+}
+
+/// quinn discards queued datagrams without a tx (drop-oldest on a full send
+/// buffer, oversize after an MTU shrink). Each is a permanent +1 on B_i unless
+/// the owner finds it: when quinn's queue reads empty (`space == capacity`,
+/// read before `tx`), `handed − tx − counted` is exactly the discarded.
+/// Model: a queue of `CAP` datagrams, drop-oldest; on slow leg 2 (β = 12.29).
+#[test]
+fn quinn_discards_return_to_zero_and_the_gate_reopens() {
+    const CAP: u64 = 10;
+    let cap_bytes = (CAP * S) as usize;
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG2);
+    let (mut staged, mut handed, mut tx, mut counted) = (0u64, 0u64, 0u64, 0u64);
+    let mut queued = 0u64;
+    let b = |staged: u64, tx: u64, counted: u64| PathIn { staged, tx, quinn_discards: counted, ..pin(0, 230_000, 88_000) }.backlog();
+    for round in 0..6 {
+        // A burst of 30 into a 10-deep queue: 20 evicted silently.
+        for _ in 0..30 {
+            staged += 1;
+            handed += 1;
+            queued = (queued + 1).min(CAP);
+        }
+        // Queue non-empty: nothing is claimed discarded.
+        let space = cap_bytes - (queued * S) as usize;
+        assert_eq!(quinn_discards_found(space, cap_bytes, handed, tx, counted), 0, "round {round}: queue holds data");
+        // quinn transmits what is left; the queue empties.
+        tx += queued;
+        queued = 0;
+        let found = quinn_discards_found(cap_bytes, cap_bytes, handed, tx, counted);
+        assert_eq!(found, 20, "round {round}");
+        counted += found;
+        assert_eq!(quinn_discards_found(cap_bytes, cap_bytes, handed, tx, counted), 0, "found once");
+        assert_eq!(b(staged, tx, counted), 0, "round {round}: B back to 0");
+        let i = PathIn { staged, staged_bytes: staged * S, tx, quinn_discards: counted, ..pin(0, 230_000, 88_000) };
+        assert!(g.admit(1, &i), "round {round}: the gate reopens");
+    }
+    // Without the accounting the leak closes the leg for good (B ≥ β = 12.29).
+    assert!(!g.admit(1, &PathIn { staged, staged_bytes: staged * S, tx, ..pin(0, 230_000, 88_000) }));
+}
+
+/// The owner reads space, then tx, in one publish; no hand sits between.
+#[test]
+fn quinn_discards_are_read_space_before_tx() {
+    let o = include_str!("../transport/io_owner.rs");
+    let p = o.split("fn publish(").nth(1).expect("publish");
+    let (sp, st, f) = (
+        p.find("datagram_send_buffer_space()").expect("space"),
+        p.find("conn.stats()").expect("stats"),
+        p.find("quinn_discards_found(").expect("found"),
+    );
+    assert!(sp < st && st < f, "space, then tx, then the residue");
+    assert!(include_str!("../transport/quic.rs").matches("datagram_send_buffer_size(DATAGRAM_SEND_BUFFER)").count() == 2);
 }
 
 // ── 2. no dial is read; the wiring is where the law says ───────────────────

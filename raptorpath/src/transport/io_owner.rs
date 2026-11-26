@@ -202,6 +202,12 @@ pub struct HoffCounters {
     /// Datagrams the owner discarded before quinn (send errors, shim loss,
     /// orphaned batches): netted out of B_i.
     pub dropped: AtomicU64,
+    /// Datagrams quinn accepted (`send_datagram` `Ok`), counted whenever `on`.
+    pub handed: AtomicU64,
+    /// Datagrams quinn accepted and then discarded without a tx (drop-oldest
+    /// when its send buffer is full, oversize after an MTU shrink): netted out
+    /// of B_i, found by the owner when quinn's queue reads empty.
+    pub quinn_discards: AtomicU64,
 }
 
 /// Log-spaced (two buckets per octave) histogram of ns durations.
@@ -1403,6 +1409,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     while shim_q.front().is_some_and(|(rel, _)| *rel <= now) {
                         let (_, b) = shim_q.pop_front().expect("front");
                         let ok = conn.send_datagram(b).is_ok();
+                        if ok && view.hoff.on {
+                            view.hoff.handed.fetch_add(1, Relaxed);
+                        }
                         shim.released(path, ok);
                     }
                 }
@@ -1441,7 +1450,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
             && crate::net::hoff_gate::owner_republishes(
                 true,
                 ctr.tx_dgrams.load(Relaxed) + ctr.ctrl_dgrams.load(Relaxed),
-                view.hoff.dropped.load(Relaxed),
+                view.hoff.dropped.load(Relaxed) + view.hoff.quinn_discards.load(Relaxed),
                 view.frame_tx_dgram.load(Relaxed),
             )
         {
@@ -1535,6 +1544,9 @@ fn send_one(conn: &OwnedConn, a: &OwnerArgs, shim_q: &mut VecDeque<(u64, Bytes)>
             if a.dg_audit {
                 audit.handoff.fetch_add(1, Relaxed);
             }
+            if a.view.hoff.on {
+                a.view.hoff.handed.fetch_add(1, Relaxed);
+            }
         }
         Err(e) => {
             if a.dg_audit {
@@ -1553,7 +1565,23 @@ fn send_one(conn: &OwnedConn, a: &OwnerArgs, shim_q: &mut VecDeque<(u64, Bytes)>
 /// snapshot when `full`.
 fn publish(conn: &OwnedConn, view: &PathView, full: bool, copa_wire: bool) {
     if full {
+        // Space BEFORE tx, no hand between: an empty quinn queue then means
+        // every handed datagram is either in `tx` or was discarded.
+        let space = view.hoff.on.then(|| conn.datagram_send_buffer_space());
         let s = conn.stats();
+        if let Some(space) = space {
+            let h = &view.hoff;
+            let found = crate::net::hoff_gate::quinn_discards_found(
+                space,
+                crate::transport::quic::DATAGRAM_SEND_BUFFER,
+                h.handed.load(Relaxed),
+                s.frame_tx.datagram,
+                h.quinn_discards.load(Relaxed),
+            );
+            if found > 0 {
+                h.quinn_discards.fetch_add(found, Relaxed);
+            }
+        }
         view.rtt_us.store(s.path.rtt.as_micros() as u64, Relaxed);
         view.frame_rx_dgram.store(s.frame_rx.datagram, Relaxed);
         view.frame_tx_dgram.store(s.frame_tx.datagram, Relaxed);

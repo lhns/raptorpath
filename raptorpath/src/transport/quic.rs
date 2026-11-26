@@ -223,6 +223,11 @@ fn quic_cc_factory(
 /// bound can cite it; no behaviour change.
 pub const QUIC_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// quinn's datagram send buffer, bytes. The I/O owner compares
+/// `datagram_send_buffer_space()` with it to see quinn's queue empty (the
+/// hand-off gate's discard accounting), so one constant feeds both.
+pub(crate) const DATAGRAM_SEND_BUFFER: usize = 4 * 1024 * 1024;
+
 /// A QUIC-based multipath transport.
 ///
 /// Threading Q1: every path is served by its I/O owner
@@ -955,7 +960,7 @@ impl QuicTransport {
         transport.max_concurrent_uni_streams(100u32.into());
         transport.max_idle_timeout(Some(QUIC_IDLE_TIMEOUT.try_into().expect("idle timeout fits a VarInt")));
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
-        transport.datagram_send_buffer_size(4 * 1024 * 1024);
+        transport.datagram_send_buffer_size(DATAGRAM_SEND_BUFFER);
         Self::apply_mtu_floor(transport);
         if let Some(cc) = cc {
             transport.congestion_controller_factory(cc);
@@ -1000,7 +1005,7 @@ impl QuicTransport {
         let mut transport = quinn::TransportConfig::default();
         transport.max_idle_timeout(Some(QUIC_IDLE_TIMEOUT.try_into().expect("idle timeout fits a VarInt")));
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
-        transport.datagram_send_buffer_size(4 * 1024 * 1024);
+        transport.datagram_send_buffer_size(DATAGRAM_SEND_BUFFER);
         Self::apply_mtu_floor(&mut transport);
         if let Some(cc) = cc {
             transport.congestion_controller_factory(cc);

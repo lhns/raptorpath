@@ -61,6 +61,19 @@ pub(crate) fn owner_republishes(armed: bool, handed: u64, dropped: u64, tx_at_pu
     armed && handed.saturating_sub(dropped).saturating_sub(tx_at_publish) > 0
 }
 
+/// Datagrams quinn discarded without a tx, found when its queue reads empty.
+/// `space` is `datagram_send_buffer_space()` read BEFORE `tx`, with no hand
+/// between; `space == capacity` means nothing is queued, so every datagram
+/// handed and neither transmitted nor already counted was discarded (drop-oldest
+/// on a full buffer, oversize after an MTU shrink). Zero while the queue holds data.
+pub(crate) fn quinn_discards_found(space: usize, capacity: usize, handed: u64, tx: u64, counted: u64) -> u64 {
+    if space >= capacity {
+        handed.saturating_sub(tx).saturating_sub(counted)
+    } else {
+        0
+    }
+}
+
 /// Whether the producer's 1 ms backpressure poll is armed: the store's pause
 /// (`reliable &&` today) or the gate's own pause, at every ρ.
 pub(crate) fn poll_armed(tx_paused: bool, gate_paused: bool) -> bool {
