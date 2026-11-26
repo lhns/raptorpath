@@ -103,6 +103,11 @@ impl TunInterface {
         self.rx.recv().await
     }
 
+    /// A packet is queued (a first send is waiting; the hand-off gate's predicate).
+    pub fn has_queued(&self) -> bool {
+        !self.rx.is_empty()
+    }
+
     /// Non-blocking read (`RWM_EMIT_BATCH`): drain an already-queued packet
     /// without yielding, `None` when the queue is empty or the channel is
     /// closed (closure is then observed by

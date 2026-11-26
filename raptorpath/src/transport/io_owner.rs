@@ -176,9 +176,9 @@ pub struct DatagramQueueAudit {
 /// The `[HOFF]` gauge's raw inputs on one path view (reported only).
 ///
 /// `staged`/`staged_bytes`: datagrams (and bytes) the producers handed to this
-/// path's owner channel, counted in [`TxBatch::flush`] only when `on`
-/// (`RWM_DIAG` at construction), so B_i = `staged` − quinn's `tx` includes the
-/// owner's command channel. `qinfl`, `end_acks`, `app_limited_acks`: quinn's
+/// path's owner, counted in [`TxBatch::stage`] only when `on`
+/// (`RWM_DIAG` or `RWM_HOFF_GATE` at construction), so B_i = `staged` − quinn's
+/// `tx` − `dropped` includes this turn's unflushed batch and the owner's channel. `qinfl`, `end_acks`, `app_limited_acks`: quinn's
 /// bytes in flight and the `app_limited` flag at each `on_end_acks`, published
 /// by the [`RouteProbe`] wrapper (never `congestion_state()`, which clones the
 /// controller).
@@ -403,7 +403,7 @@ impl PathView {
             qcc_reads: AtomicU64::new(0),
             qcc_ns_sum: AtomicU64::new(0),
             audit: DatagramQueueAudit::default(),
-            hoff: HoffCounters::new(crate::gates::get().diag),
+            hoff: HoffCounters::new(crate::gates::get().diag || crate::gates::get().hoff_gate),
             app_read: AtomicU64::new(0),
             readers_started: AtomicBool::new(false),
             ctr: OwnerCounters::default(),
@@ -1041,6 +1041,7 @@ async fn owner_body(mut a: OwnerArgs) {
             }
             IoCmd::Send { dgrams, .. } => {
                 a.view.ctr.orphaned.fetch_add(dgrams.len() as u64, Relaxed);
+                a.view.hoff.dropped.fetch_add(dgrams.len() as u64, Relaxed);
                 continue;
             }
             IoCmd::StartReaders { msg_tx, ctrl_tx, sender_tx } => {
@@ -1158,6 +1159,14 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     // never wakes for it), rate-limited by snapshot age.
     let mut last_full = crate::clock::now();
     let mut dirty = false;
+    // The hand-off gate's republish timer (paper §6.8): while the owner holds
+    // unsent data (what it handed to quinn exceeds quinn's `tx` at its last
+    // publish) it republishes every `VIEW_REFRESH`, so a closed gate reopens
+    // without inbound traffic. Off unless `RWM_HOFF_GATE`: an idle owner never wakes.
+    let hoff_gate = crate::gates::get().hoff_gate;
+    let republish_sleep = tokio::time::sleep_until(far);
+    tokio::pin!(republish_sleep);
+    let mut republish_at: Option<Instant> = None;
     publish(conn, &view, true, copa_wire);
 
     loop {
@@ -1368,6 +1377,13 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     let _ = reply.send(r);
                 }
             }
+            _ = &mut republish_sleep, if republish_at.is_some() => {
+                view.hoff.timer_wakes.fetch_add(1, Relaxed);
+                if let Some(t0) = republish_at.take() {
+                    view.hoff.timer_wait.record(t0.elapsed().as_nanos() as u64);
+                }
+                dirty = true;
+            }
             _ = &mut shim_sleep, if !shim_q.is_empty() => {
                 if let Some(shim) = a.shim.as_ref() {
                     let now = shim.now_us();
@@ -1406,6 +1422,18 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
         if full {
             last_full = now;
             dirty = false;
+        }
+        if hoff_gate
+            && republish_at.is_none()
+            && crate::net::hoff_gate::owner_republishes(
+                true,
+                ctr.tx_dgrams.load(Relaxed) + ctr.ctrl_dgrams.load(Relaxed),
+                view.hoff.dropped.load(Relaxed),
+                view.frame_tx_dgram.load(Relaxed),
+            )
+        {
+            republish_sleep.as_mut().reset(tokio::time::Instant::from_std(last_full + VIEW_REFRESH));
+            republish_at = Some(Instant::now());
         }
         if close {
             break;
@@ -1475,6 +1503,8 @@ fn send_one(conn: &OwnedConn, a: &OwnerArgs, shim_q: &mut VecDeque<(u64, Bytes)>
     if let Some(shim) = a.shim.as_ref() {
         if let Some(rel) = shim.shape(a.path, a.is_server, b.len()) {
             shim_q.push_back((rel, b));
+        } else {
+            a.view.hoff.dropped.fetch_add(1, Relaxed); // shaped away before quinn
         }
         return;
     }
@@ -1498,6 +1528,7 @@ fn send_one(conn: &OwnedConn, a: &OwnerArgs, shim_q: &mut VecDeque<(u64, Bytes)>
             if a.dg_audit {
                 audit.err.fetch_add(1, Relaxed);
             }
+            a.view.hoff.dropped.fetch_add(1, Relaxed);
             let n = a.view.ctr.send_err.fetch_add(1, Relaxed) + 1;
             if warn_pow2(n) {
                 warn!(path_id = a.path, ?e, errors = n, "datagram send failed at the owner");
@@ -1600,6 +1631,13 @@ impl TxBatch {
                 );
             }
         }
+        // `[HOFF]` / the hand-off gate: B_i counts a datagram from its staging, so
+        // it includes this turn's unflushed batch.
+        let h = &s.io.view.hoff;
+        if h.on {
+            h.staged.fetch_add(1, Relaxed);
+            h.staged_bytes.fetch_add(b.len() as u64, Relaxed);
+        }
         match lane {
             Lane::Data => s.data.push(b),
             Lane::Ctrl => s.ctrl.push(b),
@@ -1619,6 +1657,7 @@ impl TxBatch {
             None => {
                 let n = (s.data.len() + s.ctrl.len()) as u64;
                 s.io.view.ctr.orphaned.fetch_add(n, Relaxed);
+                s.io.view.hoff.dropped.fetch_add(n, Relaxed);
                 false
             }
         });
@@ -1645,11 +1684,6 @@ impl TxBatch {
                 let fresh = s.io.view.take_vec();
                 let dgrams = std::mem::replace(v, fresh);
                 let n = dgrams.len() as u64;
-                let h = &s.io.view.hoff;
-                if h.on {
-                    h.staged.fetch_add(n, Relaxed);
-                    h.staged_bytes.fetch_add(dgrams.iter().map(|b| b.len() as u64).sum(), Relaxed);
-                }
                 let cmd = IoCmd::Send { lane, dgrams };
                 let res = if crate::task_obs::deep() {
                     // The outbound back-pressure witness (`RWM_RTOBS=2`): the
@@ -1674,6 +1708,7 @@ impl TxBatch {
                 };
                 if res.is_err() {
                     s.io.view.ctr.orphaned.fetch_add(n, Relaxed);
+                    s.io.view.hoff.dropped.fetch_add(n, Relaxed);
                 }
             }
         }

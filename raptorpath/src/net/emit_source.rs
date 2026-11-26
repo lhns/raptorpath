@@ -64,6 +64,8 @@ pub(crate) struct SenderCtx<'a> {
     /// `Some(..)` in plain in-order mode when the Copa delivery feed is on.
     /// `None` = shipped path.
     pub copa_feed: Option<&'a Arc<CopaFeed>>,
+    /// The hand-off gate (paper §6.8; inert unless `RWM_HOFF_GATE`).
+    pub hg: &'a mut super::hoff_gate::HandoffGate,
 }
 
 /// The window sender's mutable state — the encoder and every local the
@@ -352,15 +354,31 @@ pub(crate) fn emit_source(
     // per-symbol placement law (softmax over marginal cost, paper §5.7);
     // a single path collapses to that path. Non-reliable (realtime/EVICT)
     // mode keeps the single best-path pick + redundant duplicate.
+    //
+    // Hand-off gate (paper §6.8): a first send goes to a path with room
+    // (B_i < β_i), through the same placement law restricted to those paths.
     let source_path = {
         if pol.reliable {
             let sched = &*ctx.scheduler;
-            sched.place_symbol(false, &[]).unwrap_or(0)
+            if ctx.hg.on() {
+                let open = ctx.hg.open_live();
+                sched.place_symbol_among(false, &[], &|id| open.contains(&id)).unwrap_or(0)
+            } else {
+                sched.place_symbol(false, &[]).unwrap_or(0)
+            }
         } else {
             let sched = &*ctx.scheduler;
-            select_source_path(&sched)
+            if ctx.hg.on() {
+                let open = ctx.hg.open_live();
+                sched.best_source_path_among(&|id| open.contains(&id)).unwrap_or(0)
+            } else {
+                select_source_path(&sched)
+            }
         }
     };
+    if ctx.hg.on() {
+        ctx.hg.note_first_send(source_path);
+    }
     st.last_source_path = source_path;
     // ── `[ETA]`: stamp the sender's own prediction ───────────────────────
     // `E_picked` is `E_i` (`Scheduler::place_e`) of the path the placement
@@ -571,7 +589,9 @@ pub(crate) fn emit_source(
         );
         let (repair_rate, span_params, taper_rtt) = {
             let sched = &*ctx.scheduler;
-            let spare = sched.spare_capacity();
+            // The hand-off gate's predicate replaces the Copa-cwnd spare (the max over
+            // the active paths of spare_i, paper §6.8).
+            let spare = if ctx.hg.on() { ctx.hg.spare_all() } else { sched.spare_capacity() };
             let path_estimator = super::worst_eps_estimator(&sched);
             match path_estimator {
                 Some(est) => {
@@ -722,6 +742,13 @@ pub(crate) fn emit_source(
                 );
             }
         }
+        // The predicate holds for the whole turn and outside the taper cache: a
+        // rate cached in an open turn must not leak repair into a closed one.
+        let repair_rate = if ctx.hg.on() {
+            super::hoff_gate::r_eff(repair_rate, ctx.hg.spare_all())
+        } else {
+            repair_rate
+        };
         // `repair_rate_floor` (`RWM_MIN_R`): floor the per-symbol
         // repair rate. Applied after the spare cap on purpose — the arm
         // forces the bandwidth spend.
@@ -739,7 +766,10 @@ pub(crate) fn emit_source(
         st.repair_debt += repair_rate;
         st.taper_offset += 1;
 
-        while st.repair_debt >= 1.0 && st.encoder.window_size() > 0 {
+        while st.repair_debt >= 1.0
+            && st.encoder.window_size() > 0
+            && !(ctx.hg.on() && ctx.hg.spare_all() <= 0.0)
+        {
             st.repair_debt -= 1.0;
 
             // P_lost-based correction symbol decision:
@@ -866,7 +896,18 @@ pub(crate) fn emit_source(
                         &st.source_path_map,
                         &mut st.covered_scratch,
                     );
-                    sched.place_symbol(true, &st.covered_scratch).unwrap_or(source_path)
+                    if ctx.hg.on() {
+                        // Repair placement reads the per-path predicate.
+                        let hg = &*ctx.hg;
+                        sched
+                            .place_symbol_among(true, &st.covered_scratch, &|id| hg.spare_of(id) > 0.0)
+                            .unwrap_or(source_path)
+                    } else {
+                        sched.place_symbol(true, &st.covered_scratch).unwrap_or(source_path)
+                    }
+                } else if ctx.hg.on() {
+                    let hg = &*ctx.hg;
+                    sched.best_repair_path_among(&|id| hg.spare_of(id) > 0.0).unwrap_or(source_path)
                 } else {
                     select_repair_path(&sched, source_path)
                 }

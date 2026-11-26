@@ -296,7 +296,7 @@ impl QuicTransport {
         symbol_size: u16,
     ) -> anyhow::Result<Self> {
         let g = crate::gates::get();
-        Self::new_probed(bind_addrs, is_server, pin_cert_path, g.rtobs || g.diag, symbol_size).await
+        Self::new_probed(bind_addrs, is_server, pin_cert_path, g.rtobs || g.diag || g.hoff_gate, symbol_size).await
     }
 
     /// [`Self::new`] with an explicit routing-probe switch (a test arms it

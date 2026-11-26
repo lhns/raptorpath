@@ -506,6 +506,36 @@ impl Scheduler {
             .map(|p| p.id)
     }
 
+    /// [`Self::best_source_path`] over the paths `allow` admits (the hand-off
+    /// gate's open paths); with none admitted, `best_source_path`.
+    pub fn best_source_path_among(&self, allow: &dyn Fn(PathId) -> bool) -> Option<PathId> {
+        self.paths
+            .values()
+            .filter(|p| p.active && p.available() > 0 && allow(p.id))
+            .min_by(|a, b| {
+                let cost_a = self.path_cost(a);
+                let cost_b = self.path_cost(b);
+                cost_a.partial_cmp(&cost_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| p.id)
+            .or_else(|| self.best_source_path())
+    }
+
+    /// [`Self::best_repair_path`] over the paths `allow` admits (the hand-off
+    /// gate's spare paths); with none admitted, `best_repair_path`.
+    pub fn best_repair_path_among(&self, allow: &dyn Fn(PathId) -> bool) -> Option<PathId> {
+        self.paths
+            .values()
+            .filter(|p| p.active && p.available() > 0 && allow(p.id))
+            .max_by(|a, b| {
+                a.effective_goodput()
+                    .partial_cmp(&b.effective_goodput())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| p.id)
+            .or_else(|| self.best_repair_path())
+    }
+
     /// Compute the interpolated scheduling cost for a path.
     fn path_cost(&self, path: &PathState) -> f64 {
         let e_i = path.effective_delivery_time();

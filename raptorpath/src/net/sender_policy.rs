@@ -280,6 +280,9 @@ pub(crate) struct SenderPolicy {
     // ── Instruments ──────────────────────────────────────────────────────
     /// `RWM_DIAG` master gate.
     pub diag_on: bool,
+    /// `RWM_HOFF_GATE` (paper §6.8): the sender hand-off gate. An experiment arm, not
+    /// a dial; off in generation mode (its first sends are not handed at intake).
+    pub hoff_gate_on: bool,
     /// `RWM_ACKDIAG` master gate — the ack-cadence gauge (`net/ackdiag.rs`).
     /// Independent of `diag_on`: it prints its own `[ACKDIAG]` line on its own
     /// ~2 s cadence.
@@ -839,6 +842,7 @@ impl SenderPolicy {
             emit_burst,
             use_packing,
             diag_on,
+            hoff_gate_on: gates.hoff_gate && !generation,
             ackdiag_on: gates.ackdiag,
             walldiag_on: gates.walldiag,
             // Sampled by the sender at its original point in setup (see the

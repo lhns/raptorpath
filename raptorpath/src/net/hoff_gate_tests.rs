@@ -222,6 +222,8 @@ fn two_leg_burst(mut gate: Option<&mut HandoffGate>) -> Out {
     let (mut rr, mut samples, mut over_beta, mut starve, mut b1_max, mut over400) = (0u32, 0u64, 0u64, 0u64, 0u64, 0u64);
     let mut resend_wait_max = 0.0f64;
     let mut beta1 = 0.0;
+    let mut refg = HandoffGate::new(true);
+    refg.fix_terms(LEG2);
     let reading = |i: usize, staged: &[u64; 2], view_tx: &[u64; 2]| PathIn {
         staged: staged[i],
         staged_bytes: staged[i] * S,
@@ -301,8 +303,9 @@ fn two_leg_burst(mut gate: Option<&mut HandoffGate>) -> Out {
             samples += 1;
             let b1 = (staged[1] as f64 - tx_true[1]).max(0.0);
             b1_max = b1_max.max(b1 as u64);
-            if let Some(g) = gate.as_deref() {
-                beta1 = g.beta(1, &reading(1, &staged, &view_tx)).unwrap_or(f64::INFINITY);
+            if gate.is_some() {
+                // The bound is the law's (L = LEG2), whatever the gate under test reads.
+                beta1 = refg.beta(1, &reading(1, &staged, &view_tx)).unwrap_or(f64::INFINITY);
                 over_beta += (b1 > beta1 + 64.0) as u64;
             }
             starve += (b1 < 1.0) as u64;

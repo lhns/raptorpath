@@ -48,7 +48,9 @@
 //!     never called);
 //!   * `fifo_wait_resend` = B_i·s_i/R_i at each source resend's hand-off (p95 ms
 //!     / count), at the SACK-gap and request-law resend site;
-//!   * `owner_timer_wakes` = 0 until the gate commit builds the timer.
+//!   * `owner_timer_wakes` = the owner's republish-timer wakes (0 with the gate off);
+//!     with `RWM_HOFF_GATE` the line prints `gate=on` and the gate's own β, τ̂_o
+//!     (`(meas)`), hand_bind and predicate instead of the shadow model's.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -132,7 +134,7 @@ pub(crate) struct PathIn {
 
 impl PathIn {
     pub(crate) fn backlog(&self) -> u64 {
-        self.staged.saturating_sub(self.tx)
+        self.staged.saturating_sub(self.tx.saturating_add(self.dropped))
     }
     pub(crate) fn dgram_size(&self) -> f64 {
         if self.staged > 0 { self.staged_bytes as f64 / self.staged as f64 } else { 0.0 }
@@ -306,7 +308,13 @@ impl HoffGauge {
     }
 
     /// Read ℓ̂_o from the views, then close the window (see [`Self::line`]).
-    pub(crate) fn line_from_views(&mut self, now_us: u64, engine_infl: u64, store_full: bool) -> String {
+    pub(crate) fn line_from_views(
+        &mut self,
+        now_us: u64,
+        engine_infl: u64,
+        store_full: bool,
+        gate: Option<&mut super::hoff_gate::HandoffGate>,
+    ) -> String {
         for (id, v) in &self.views {
             let st = self.paths.entry(*id).or_default();
             let h = v.hoff.work.snapshot();
@@ -316,23 +324,26 @@ impl HoffGauge {
             st.l_o = hist_p99_s(&h, &st.prev_hist);
             st.prev_hist = h.to_vec();
         }
-        self.line(now_us, engine_infl, store_full)
+        self.line_gated(now_us, engine_infl, store_full, gate)
     }
 
-    /// [`Self::line`] reading the hand-off gate's real state when one is given.
+    /// Close the window and render the `[HOFF]` line. `engine_infl` is the
+    /// engine's `in_flight` (datagrams), `store_full` whether `n ≥ N·P`.
+    #[cfg(test)]
+    pub(crate) fn line(&mut self, now_us: u64, engine_infl: u64, store_full: bool) -> String {
+        self.line_gated(now_us, engine_infl, store_full, None)
+    }
+
+    /// [`Self::line`] reading the hand-off gate's real state (its β, measured
+    /// τ̂_o, hand_bind and predicate, and the owner's timer wakes) when one is
+    /// armed; otherwise the shadow model, `gate=off`.
     pub(crate) fn line_gated(
         &mut self,
         now_us: u64,
         engine_infl: u64,
         store_full: bool,
-        _gate: Option<&mut super::hoff_gate::HandoffGate>,
+        mut gate: Option<&mut super::hoff_gate::HandoffGate>,
     ) -> String {
-        self.line(now_us, engine_infl, store_full)
-    }
-
-    /// Close the window and render the `[HOFF]` line. `engine_infl` is the
-    /// engine's `in_flight` (datagrams), `store_full` whether `n ≥ N·P`.
-    pub(crate) fn line(&mut self, now_us: u64, engine_infl: u64, store_full: bool) -> String {
         let win_s = now_us.saturating_sub(self.win_start_us) as f64 / 1e6;
         self.lines += 1;
         self.pinned += store_full as u64;
@@ -349,6 +360,8 @@ impl HoffGauge {
         ids.sort_unstable();
         let mut out = String::new();
         let mut outstanding = 0.0;
+        let gate_on = gate.as_deref().is_some_and(|g| g.on());
+        let wakes = gate.as_deref().map_or(0, |g| g.owner_timer_wakes());
         for id in ids {
             let st = self.paths.get_mut(&id).expect("id from keys");
             let (cur, prev) = (st.last, st.prev);
@@ -370,9 +383,37 @@ impl HoffGauge {
             let batch = if batches > 0 { d(cur.tx_dgrams, prev.tx_dgrams) as f64 / batches as f64 } else { f64::NAN };
             st.resend_ms.sort_by(|a, b| a.total_cmp(b));
             st.reopen_ms.sort_by(|a, b| a.total_cmp(b));
+            // The gate's real state replaces the shadow model's when armed.
+            let row = gate.as_deref_mut().and_then(|g| g.take_row(id));
+            let (tau_o_v, tau_o_tag, l_o_v, tau_p_v, l_p_v, l_v, beta_v, hand_bind_v, spare_i_v, spare_bind_v) = match row {
+                Some(r) => (
+                    r.terms.tau_o.unwrap_or(TIMER_FLOOR_S),
+                    if r.terms.tau_o.is_some() { "meas" } else { "floor" },
+                    r.terms.l_o,
+                    r.terms.tau_p.unwrap_or(TIMER_FLOOR_S),
+                    r.terms.l_p,
+                    r.terms.l_s(),
+                    r.beta,
+                    r.hand_bind,
+                    if r.spare_zero { "0" } else { "inf" },
+                    r.spare_bind,
+                ),
+                None => (
+                    tau_o,
+                    "assumed",
+                    st.l_o,
+                    tau_p,
+                    l_p,
+                    l,
+                    beta,
+                    st.closed as f64 / n,
+                    if st.prev_closed { "0" } else { "inf" },
+                    st.spare_zero as f64 / st.waiting.max(1) as f64,
+                ),
+            };
             let _ = write!(
                 out,
-                " p{id}[B={}/{}/{} n={} dgq={} F={} win={} R={:.0} tau_o={}ms(assumed) tau_p={}ms l_o={}ms l_p={}ms L={}ms beta={} hand_bind={} spare_i={} spare_bind={} reopen={}/{}ms/{} starve={} app_limited={} batch={} g_batch={}ms phat={}ms fifo_wait_resend={}ms/{}]",
+                " p{id}[B={}/{}/{} n={} dgq={} F={} win={} R={:.0} tau_o={}ms({}) tau_p={}ms l_o={}ms l_p={}ms L={}ms beta={} hand_bind={} spare_i={} spare_bind={} reopen={}/{}ms/{} starve={} app_limited={} batch={} g_batch={}ms phat={}ms fifo_wait_resend={}ms/{}]",
                 quantile(&st.b, 0.5),
                 quantile(&st.b, 0.95),
                 st.b.last().copied().unwrap_or(0),
@@ -381,15 +422,16 @@ impl HoffGauge {
                 cur.qinfl,
                 cur.window(),
                 r,
-                ms(tau_o),
-                ms(tau_p),
-                ms(st.l_o),
-                ms(l_p),
-                ms(l),
-                f1(beta.unwrap_or(f64::NAN)),
-                f2(st.closed as f64 / n),
-                if st.prev_closed { "0" } else { "inf" },
-                f2(st.spare_zero as f64 / st.waiting.max(1) as f64),
+                ms(tau_o_v),
+                tau_o_tag,
+                ms(tau_p_v),
+                ms(l_o_v),
+                ms(l_p_v),
+                ms(l_v),
+                f1(beta_v.unwrap_or(f64::NAN)),
+                f2(hand_bind_v),
+                spare_i_v,
+                f2(spare_bind_v),
                 f2(quantile(&st.reopen_ms, 0.5)),
                 f2(st.reopen_ms.last().copied().unwrap_or(0.0)),
                 st.reopen_ms.len(),
@@ -415,8 +457,10 @@ impl HoffGauge {
         let ratio = if outstanding > 0.0 { engine_infl as f64 / outstanding } else { f64::NAN };
         let probe_acks: u64 = self.paths.values().map(|p| p.last.end_acks).sum();
         let l = format!(
-            "[HOFF] t={:.1}s gate=off owner_timer_wakes=0 probe_acks={} tau_floor_bind={:.2}{} infl_vs_out={}/{:.0}/x{} store_pin={:.2}",
+            "[HOFF] t={:.1}s gate={} owner_timer_wakes={} probe_acks={} tau_floor_bind={:.2}{} infl_vs_out={}/{:.0}/x{} store_pin={:.2}",
             now_us.saturating_sub(self.start_us) as f64 / 1e6,
+            if gate_on { "on" } else { "off" },
+            wakes,
             probe_acks,
             self.floor_binds as f64 / self.floor_reads as f64,
             out,

@@ -2043,6 +2043,8 @@ async fn run_window_sender(
     // The emission step's handles, built at each emission site: the
     // scheduler and the FEC controller are lent to it as `&mut` for that call
     // only (threading Q2).
+    // The hand-off gate (paper §6.8): inert unless `RWM_HOFF_GATE`.
+    let mut hg = hoff_gate::HandoffGate::new(pol.hoff_gate_on);
     macro_rules! sctx {
         () => {
             SenderCtx {
@@ -2053,6 +2055,7 @@ async fn run_window_sender(
                 batch_counter,
                 window_ack_seq,
                 copa_feed: copa_feed.as_ref(),
+                hg: &mut hg,
             }
         };
     }
@@ -2473,6 +2476,15 @@ async fn run_window_sender(
             pol.store_max
         };
         let tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full); #[cfg(any(debug_assertions, feature = "test-seams"))] { st.acct.store_cap = effective_store_cap as u64; }
+        // The hand-off gate (paper §6.8; `RWM_HOFF_GATE`): pauses the intake while no path
+        // has room (B_i < β_i), at every ρ. It opens the turn (latching the last turn's
+        // spare predicate) and arms the 1 ms poll that re-reads it. `tx_paused` is
+        // untouched.
+        let gate_paused = if hg.on() {
+            hg.begin_turn_live(now_us(), tun.has_queued(), tx_paused, &*scheduler, transport)
+        } else {
+            false
+        };
 
         // wnd2/relgap tracking (see decls): the release
         // frontier is max(highest SACK-released seq, cumulative ack) —
@@ -2506,6 +2518,7 @@ async fn run_window_sender(
                     transport,
                     stats,
                     window_ack_seq,
+                    hg: &mut hg,
                 },
                 DiagInputs {
                     tx_paused,
@@ -2843,7 +2856,7 @@ async fn run_window_sender(
         // `[DIAG]` charges it to `busy`; the dead-wall gauge reads it to
         // tell a busy wake from a productive one. Clock read only when one
         // of the two instruments is on.
-        let (await_start_us, body_us) = if pol.diag_on || pol.walldiag_on {
+        let (await_start_us, body_us) = if pol.diag_on || pol.walldiag_on || hg.on() {
             let t = now_us();
             let body = if pol.diag_on {
                 let b = dg.wait_enter_await(t);
@@ -2852,6 +2865,9 @@ async fn run_window_sender(
             } else {
                 t.saturating_sub(wall_resolved_us)
             };
+            if hg.on() {
+                hg.iter_work(t, body);
+            }
             (t, body)
         } else {
             (0, 0)
@@ -2860,12 +2876,12 @@ async fn run_window_sender(
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
             // below (mirrors the block sender's 1 ms backpressure poll).
-            _ = tokio::time::sleep_until(poll_1ms), if tx_paused => { wait_arm = 1; None },
+            _ = tokio::time::sleep_until(poll_1ms), if hoff_gate::poll_armed(tx_paused, gate_paused) => { wait_arm = 1; None },
             // Pacing wake — when source sends are paced-off (bucket
             // empty), wake at 1 ms to refill it. Without this the select could
             // block in read_packet with the pacing gate closed and stall intake.
             _ = tokio::time::sleep_until(poll_1ms),
-                if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => { wait_arm = 2; None },
+                if pol.cc_pace && !tx_paused && !gate_paused && st.src_tokens < 1.0 => { wait_arm = 2; None },
             // Threading Q2 — the input arm: TX-direction control input (the
             // client's acks, PathReport, Ping), drained whole by ONE
             // `recv_many` and handled here, in the sender (`on_window_ack`
@@ -2901,7 +2917,7 @@ async fn run_window_sender(
                 None
             }
             p = tun.read_packet(),
-                if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => { wait_arm = 0; Some(p) },
+                if !tx_paused && !gate_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => { wait_arm = 0; Some(p) },
             // Generation coding: a 1 ms emission poll so the loop keeps waking to
             // run the paced coded-emission block even when no TUN packet is ready
             // (the tail — all sources read but the last generations still need
@@ -3099,7 +3115,7 @@ async fn run_window_sender(
         // sender's wait-reason attribution, which says where idle sender time
         // (`sidle`) goes. Unlike `gd_us` it has no `generation` guard: the
         // arms it names exist in every window mode.
-        let resolved_us = if pol.diag_on || pol.walldiag_on { now_us() } else { 0 };
+        let resolved_us = if pol.diag_on || pol.walldiag_on || hg.on() { now_us() } else { 0 };
         if pol.diag_on && wait_arm < WAIT_BUCKETS {
             // The await only: the body before it went to `busy` above.
             let dt = dg.wait_resolve(resolved_us);
@@ -3118,6 +3134,10 @@ async fn run_window_sender(
             if (wait_arm == 1 || wait_arm == 2) && !sender_in.is_empty() {
                 dg.wake_timer_acked += 1;
             }
+        }
+        if hg.on() && wait_arm == 1 {
+            // τ̂_p: the realized wait of the 1 ms backpressure poll.
+            hg.paused_wait(resolved_us, resolved_us.saturating_sub(await_start_us));
         }
         wall_resolved_us = resolved_us;
         // ── The dead-wall gauge (`RWM_WALLDIAG`, net/walldiag.rs) ─────────
@@ -3146,8 +3166,17 @@ async fn run_window_sender(
             }
         }
 
-        if let Some(packet) = packet {
+        // The intake's emission. Arm off: here, as ever. Armed (paper §6.8): each turn
+        // stages control first, then resends, then first sends, so the packet waits
+        // for the resend phase below (`deferred_intake`).
+        macro_rules! emit_intake {
+            ($packet:expr) => {
+        if let Some(packet) = $packet {
             txp.sec(TxSec::Emit);
+            if hg.on() {
+                // The packet read from the intake is a first send waiting: a closed path refuses it.
+                let _ = hg.check_live(true);
+            }
             let pkt = match packet {
                 Some(p) => {
                     // `RWM_COMPLETION_EXPOSURE`: the admitted bytes drain the
@@ -3234,7 +3263,15 @@ async fn run_window_sender(
                             ) >= effective_store_cap
                         {
                             why = emit_burst::BurstEnd::Store;
+                            if hg.on() {
+                                hg.note_store_end();
+                            }
                             break; // store headroom exhausted (flow control)
+                        }
+                        if hg.on() && tun.has_queued() && !hg.check_live(true) {
+                            // Every path is closed with a first send waiting: it stays in the intake.
+                            why = emit_burst::BurstEnd::Drained;
+                            break;
                         }
                         if pol.cc_pace && st.src_tokens < 1.0 {
                             why = emit_burst::BurstEnd::Tokens;
@@ -3271,6 +3308,14 @@ async fn run_window_sender(
                 }
                 // [EMIT-BURST-END]
             }
+        }
+            };
+        }
+        let mut deferred_intake = None;
+        if hg.on() {
+            deferred_intake = packet;
+        } else {
+            emit_intake!(packet);
         }
 
         txp.sec(TxSec::Nbud);
@@ -3561,6 +3606,9 @@ async fn run_window_sender(
             nack_repairs_this_period: &mut nack_repairs_this_period,
             mp_evid_max: &mut mp_evid_max,
         });
+        if hg.on() {
+            emit_intake!(deferred_intake.take());
+        }
         txp.sec(TxSec::AckAdv);
         // Advance encoder window based on receiver ACKs (v9: the peer's
         // `next_expected`, the count of its delivered prefix).

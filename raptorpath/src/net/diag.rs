@@ -391,6 +391,8 @@ pub(crate) struct DiagCtx<'a> {
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub window_ack_seq: &'a Arc<AtomicU64>,
+    /// The hand-off gate (`[HOFF]` reads its real state when armed).
+    pub hg: &'a mut super::hoff_gate::HandoffGate,
 }
 
 /// The registered paths' views, sorted by id (the `[HOFF]` gauge's inputs).
@@ -425,6 +427,7 @@ pub(crate) fn report(
         transport,
         stats,
         window_ack_seq,
+        hg,
     } = ctx;
     let DiagInputs {
         tx_paused,
@@ -1049,7 +1052,7 @@ pub(crate) fn report(
         // `[HOFF]`: the hand-off reserve's gauges, `gate=off` (nothing gates).
         {
             dg.hoff.set_views(hoff_views(scheduler, transport));
-            crate::readout!("{}", dg.hoff.line_from_views(dnow, fl, store_len >= effective_store_cap));
+            crate::readout!("{}", dg.hoff.line_from_views(dnow, fl, store_len >= effective_store_cap, Some(&mut *hg)));
         }
         dg.diag_last_us = dnow; #[cfg(any(debug_assertions, feature = "test-seams"))] { let (ws, _) = st.encoder.window_span(); crate::readout!("{}", st.acct.line(&st.retransmit_buffer, ws, false)); }
         dg.diag_last_ack = ack_now;

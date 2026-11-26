@@ -99,16 +99,32 @@ impl Scheduler {
         probs.last().map(|(pid, _)| *pid)
     }
 
-    /// [`Self::place_symbol`] over the candidates `allow` admits (the hand-off
-    /// gate's open paths for a first send, its spare paths for a repair).
-    /// INERT SCAFFOLDING: ignores `allow`.
+    /// [`Self::place_symbol`] over the candidates `allow` admits: the hand-off
+    /// gate's open paths for a first send, its spare paths for a repair. The
+    /// same law on the restricted set (the costs of the admitted paths, one
+    /// softmax over them), not a re-pricing. With no admitted path it is
+    /// `place_symbol`.
     pub fn place_symbol_among(
         &self,
         is_repair: bool,
         covered_paths: &[PathId],
-        _allow: &dyn Fn(PathId) -> bool,
+        allow: &dyn Fn(PathId) -> bool,
     ) -> Option<PathId> {
-        self.place_symbol(is_repair, covered_paths)
+        let mut costs = self.place_costs(is_repair, covered_paths);
+        costs.retain(|(pid, _)| allow(*pid));
+        if costs.is_empty() {
+            return self.place_symbol(is_repair, covered_paths);
+        }
+        let probs = Self::probs_from_costs(costs, place_temperature());
+        let u: f64 = crate::clock::random_f64();
+        let mut acc = 0.0;
+        for (pid, p) in &probs {
+            acc += p;
+            if u <= acc {
+                return Some(*pid);
+            }
+        }
+        probs.last().map(|(pid, _)| *pid)
     }
 
     /// Cross-path repair placement ("repair rides the spare path"; env
@@ -175,7 +191,12 @@ impl Scheduler {
         covered_paths: &[PathId],
         temperature: f64,
     ) -> Vec<(PathId, f64)> {
-        let costs = self.place_costs(is_repair, covered_paths);
+        Self::probs_from_costs(self.place_costs(is_repair, covered_paths), temperature)
+    }
+
+    /// The softmax over `costs` at `temperature` (shifted by the min cost; the argmin
+    /// takes all the mass when the weights degenerate).
+    fn probs_from_costs(costs: Vec<(PathId, f64)>, temperature: f64) -> Vec<(PathId, f64)> {
         if costs.is_empty() {
             return vec![];
         }
