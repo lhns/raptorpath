@@ -312,9 +312,55 @@ This holds whatever r is, so no mix correction is needed.
 - **CL before an outage:** in_flight ≈ λ·RTT ≈ 110, so spare ≈ 8 ≫ r. Unchanged.
 - **The CL-long drain and OV:** in_flight ≈ B, so spare ≈ 0 to 0.02 and r_eff falls to about 0–0.02.
 - **Gauge `spare_bind`,** per cell and arm: the fraction of first sends at which spare < r.
-  - It must read ≈ 0 wherever the cell has headroom outside a drain: CL before its outage, RT, the file, E, M and K-I2/K-L10 cells, and CLw-long before its outage.
-  - It reads near 1 in OV and in the CL-long and CLw-long drains.
-- **The CL-long RL rows change.** Repair stops during the drain, so recovery moves toward the repair-off rows: in stage 3e, RL lengthened ADR-0084's recovery from 4.8 to 8.6 s. Those rows are re-baselined, not inherited.
+  - **It must read ≈ 0 outside overload and drain windows:** CL and CL-long before their outage, RT, the file, E, M and K-I2/K-L10 cells, and CLw-long before its outage.
+  - It binds in OV, and in the post-outage drain of CL-long and CLw-long. That window has no spare capacity, which is consistent with the engine read: the engine's clamp exists exactly to stop repair there.
+
+**Measured** (coordinator, 2026-11-26; in_flight counts every unreported datagram, first sends, copies and repairs; cwnd_sim = 2 048):
+
+| | T = 0.4 | T = ∞ | RS at T = ∞ | RF3 |
+|---|---|---|---|---|
+| `spare_bind`, CL-long, RL | 0.12 | 0.67 | 0.77 | 0.97 |
+
+- **Elsewhere:** about 0 in CL-long-v, Ec and RT.
+- **in_flight in the post-outage drain:** 1 230–1 460.
+- **The clamp binds when in_flight exceeds `cwnd/(1 + r)`,** 1 850 at r = 0.107, so the bind comes from the drain's in-flight peaks.
+- **It rises with T** because the drain gets longer: at T = 0.4 the intake rule keeps only λ·(T − R) ≈ 3 850 units of backlog, against about 15 000 at T = ∞. So a larger share of the run is drain.
+
+**Predictions for CL-long with the clamp on, RL** (derived from the drain arithmetic, written before the clamp-on runs):
+
+- **The arithmetic.** Recovery after the outage is the backlog over the drain headroom `h = μ − λ`, with μ the first-send capacity `C/(1/(1 − ε) + r_eff)` and λ = 10 000. The backlog is the same in all three modes at a given T.
+  - **Repair off:** μ = 12 124, h ≈ 2 120/s.
+  - **RL:** r falls to ≈ 0.088 once the queue raises srtt (registration §2.6), so μ ≈ 11 230 and h ≈ 1 230/s. That predicts recovery 1.7× repair-off, against ADR-0084's measured 4.8 → 8.6 s (1.79×), which checks it.
+  - **Clamp on:** in the drain, `r_eff ≤ r·(1 − spare_bind_drain)`. This is an upper bound on r_eff, because a binding grant is max(spare, 0), not 0. At the drain's bind fraction (≈ 0.6–0.7 at T ≥ 2), r_eff ≲ 0.03, so μ ≈ 11 790 and h ≈ 1 790/s.
+- **Recovery time** scales as 1/h: about 1.15–1.25 × repair-off at T = 2 and ∞, against RL's 1.7–1.8×. So clamp-on sits about a quarter to a third of the way from repair-off to RL.
+- **On-time share** loses the units late during the drain, which is proportional to the drain duration, so it interpolates the same way:
+
+  | T | repair off | RL (stage 3e) | clamp on, predicted |
+  |---|---|---|---|
+  | ∞ | 0.6500 | 0.4485 | ≈ 0.59–0.61 |
+  | 2 | 0.6531 | 0.4586 | ≈ 0.58–0.61 |
+  | 0.4 | — | — | equal to RL within the A/A floor |
+
+  - **Recovery at T = 0.4:** within the 0.1 s resolution in all three modes, as in stage 3d.
+  - **Why T = 0.4 does not move.** The bind fraction is 0.12, so r_eff ≈ 0.09, h moves by under 5 %, and the backlog is short.
+- **Every clamp-on value must lie between repair-off and RL.** A value outside that interval is a finding, not a pass.
+
+**cwnd_sim = B is a modelling choice.** The engine's cwnd is BBR's under quinn by default, and the anchor of paper §8.3 holds it at about BtlBw·RTprop or more, so the bind fraction depends on that choice.
+- **The conclusion** "the clamp binds in overload and drain windows, not elsewhere" holds for:
+
+  ```text
+     (1 + r)·in_flight_steady   <   cwnd   <   (1 + r)·in_flight_drain_peak
+  ```
+
+  - in_flight_steady is λ·RTT plus the outstanding holes, about 110–150 in CL before its outage.
+  - in_flight_drain_peak is 1 850 or more here.
+  - So the conclusion holds for **cwnd roughly between 300 and 2 000 datagrams** in CL-long.
+- **Above that range** the drain never binds, so the clamp buys nothing in CL-long but still binds in OV, where in_flight sits at the cap.
+- **Near the BDP** (about 125–250 at CL's 12 500/s and 10 ms RTprop), the clamp would also bind in CL's steady state at 80 % load, which would change the call and CL rows.
+  - So if the engine read finds its cwnd close to the BDP, the "≈ 0 outside overload and drain" claim fails.
+  - The clamp model must then take the engine's cwnd law, and not B.
+- **The gauge-first step reports `in_flight` quantiles per cell,** so this range can be checked against any cwnd without a rerun.
+- **The CL-long RL rows change.** They are re-baselined, not inherited.
 - **Every repair-on row re-runs under the clamp, DECIDE included,** for every design and every cell. The DECIDE row is CL-long under RL. Its stage 3e reading (UNDETERMINED with repair, PASS with repair off) is void for the repair modes until the re-run. Repair-off rows are bit-identical by arithmetic, and are checked, not assumed.
 
 **Today's Realtime: two arms, both run and reported (Fairness rule 4; Q30 settled by the engine read).**
@@ -543,6 +589,8 @@ FORMULA-FIRST: the law, §2's derivation and §3.3's clamp go into the paper fir
    - No payload datagram is staged while in_flight ≥ B.
    - `spare_bind` = 0 in CL before the outage, and in RT, the file cells and E, M, K-I2 and K-L10.
    - The RT, file and call-cell rows are trace-identical with the clamp on and off.
+   - In CL-long under RL at T ∈ {0.4, 2, ∞}, the clamp-on on-time share and recovery lie between the repair-off and RL rows (§3.3).
+   - The measurement used cwnd_sim = 2 048. The run must state the cwnd_sim it used, because the bind fraction depends on it.
 10. **Starvation and the unchanged absolutes.**
     - With τ < R, first sends per round are greater than 0.
     - `l1_viol` = 0 and the commitment violations are 0.
