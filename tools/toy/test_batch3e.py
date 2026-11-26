@@ -18,8 +18,8 @@ import summarize3e as S  # noqa: E402
 
 INF = math.inf
 SEEDS = 12
-REG_AMEND = {"CLw-long": 75, "RT": 55, "CL": 52, "OV": 47, "K-I2": 40, "K-L10": 40, "K-OV": 36, "OV-long": 26, "CLc": 30, "CL-long": 26,
-             "CLc-v": 36, "CL-long-v": 36, "OV-long-v": 26, "Ec": 6, "E-I2": 6, "M-I2": 6}          # registration 14.9: 543 configurations (14.4 drops the inner points of the long overload cells)
+REG_AMEND = {"CLw-long": 75, "RT": 55, "CL": 52, "OV": 47, "K-I2": 40, "K-L10": 40, "K-OV": 36, "OV-long": 28, "CLc": 30, "CL-long": 26,
+             "CLc-v": 36, "CL-long-v": 36, "OV-long-v": 30, "Ec": 6, "E-I2": 6, "M-I2": 6}          # registration 14.9: 543 configurations (14.4 drops the inner points of the long overload cells)
 
 
 class Cells(unittest.TestCase):
@@ -112,12 +112,14 @@ class Parts(unittest.TestCase):
         self.assertEqual(len(P["ROBUST"]), 32)
         self.assertEqual(len(P["SMOOTH"]), 272)
         am = P["AMEND"]
-        self.assertEqual(len(am), 543)
+        self.assertEqual(len(am), 549)                                                             # 543 of registration 14.9, plus the Realtime rows restored in OV-long and OV-long-v
         by = {}
         for j in am:
             by[j.cell] = by.get(j.cell, 0) + 1
         self.assertEqual(by, REG_AMEND)
-        self.assertEqual(sorted(j.name for j in P["EARLY"] + P["REST"]), sorted(j.name for j in am))     # EARLY and REST split AMEND
+        extra = [j for j in P["EARLY"] if j.part == "EARLY" and j.key[0] == "lt" and j.mode == "RL" and j.cell in ("RT", "OV") and j not in am]
+        self.assertEqual(len(extra), 2)                                                            # MAIN's RL arm of RT (T = 0.12) and OV (T = 0.4) is also an EARLY row
+        self.assertEqual(sorted(j.name for j in P["EARLY"] + P["REST"] if j not in extra), sorted(j.name for j in am))     # EARLY and REST split AMEND
 
     def test_main_arms_per_cell(self):
         by = {}
@@ -382,15 +384,21 @@ class Amendment2(unittest.TestCase):
             if j.mode != "OFF" and j.builder(0).delta == 0.005:
                 self.assertEqual(j.nseeds, 3, j.name)                                                # the delta = 0.005 identity rows
 
-    def test_long_overload_cells_run_the_old_senders_at_their_dial_ends_at_three_seeds(self):
-        for cell, ends in (("OV-long", (0.5, 50.0)), ("OV-long-v", (0.005, 50.0))):
-            old = [j for j in B.PARTS["AMEND"] if j.cell == cell and j.key[0] in ("adr", "rt", "bulk")]
+    def test_long_overload_cells_run_adr_and_bulk_at_their_dial_ends_at_three_seeds_and_todays_realtime_in_full(self):
+        for cell, rts in (("OV-long", (0.5, 5.0, 50.0)), ("OV-long-v", (0.005, 0.5, 5.0, 50.0))):
+            old = [j for j in B.PARTS["AMEND"] if j.cell == cell and j.key[0] in ("adr", "bulk")]
             self.assertEqual({j.nseeds for j in old}, {3})
             self.assertEqual(sorted({j.key[1] for j in old if j.key[0] == "adr"}), [0.95, 1.0])
-            self.assertEqual(sorted({j.key[1] for j in old if j.key[0] == "rt"}), sorted(ends))
-            self.assertEqual({j.key[0] for j in old}, {"adr", "rt", "bulk"})
+            rt = [j for j in B.PARTS["AMEND"] if j.cell == cell and j.key[0] == "rt"]
+            self.assertEqual(sorted({j.key[1] for j in rt}), sorted(rts))                         # the whole delta range ...
+            self.assertEqual({j.nseeds for j in rt if j.builder(0).delta != 0.005 or j.mode == "OFF"}, {6})        # ... at full seeds: today's Realtime does not read about 0 on time under overload
             new = [j for j in B.PARTS["AMEND"] if j.cell == cell and j.key[0] == "lt" and j.mode == "OFF"]
             self.assertEqual({j.nseeds for j in new}, {6})                                          # the new model's sweep at 6
+
+    def test_early_holds_the_cells_primary_lifetime_row(self):
+        for cell, T in (("RT", 0.12), ("OV", 0.4), ("CL-long-v", 2.0)):
+            keys = {j.key for j in B.PARTS["EARLY"] if j.cell == cell}
+            self.assertIn(("lt", T, 0.0), keys, cell)                                              # MAIN's RL arm is a sweep point that AMEND leaves out; EARLY needs it
 
     def test_early_is_the_four_cells_at_the_call_point_under_rl(self):
         self.assertEqual({j.cell for j in B.PARTS["EARLY"]}, {"Ec", "RT", "OV", "CL-long-v"})
@@ -753,6 +761,57 @@ class IdentityBaselines(unittest.TestCase):
         out = self.read(R)
         self.assertEqual(out["outcome"], "FAILS")                                               # identity broken, and no fall back to the H = 0 curve
         self.assertFalse(any(c["base"] == ("bulk",) and c["kind"] == "point" for c in out["comps"]))
+
+
+class PrimaryLifetime(unittest.TestCase):
+    def rows(self, drop):
+        new = {0.6: (0.807, 0.1175, 3.0), 1.0: (0.83, 0.1175, 3.0), INF: (1.0, 0.1175, 5.0)}
+        R = fake_cell(new, {0.95: (0.99, 0.11, 6.0), 1.0: (0.99, 0.11, 6.0)}, rt_pts=[(50.0, (0.817, 0.814, 0.0))])
+        if drop is not None:
+            R.pop(drop, None)
+        return R
+
+    def test_a_cell_whose_curve_lacks_the_primary_lifetime_is_refused(self):
+        R = self.rows(None)
+        out = S.read_mode(R, NF, units=200000, ys=("share_by_0p4",), nseeds=SEEDS, rec_cap=14.5, require_key=("lt", 0.4, 0.0))
+        self.assertEqual(out["outcome"], "REFUSED")                                                # OV read FAILS against today's Realtime with no T = 0.4 point
+        self.assertIn("0.4", out["reason"])
+        self.assertEqual(out["comps"], [])
+        R[("lt", 0.4, 0.0)] = fake(0.79, 0.79, 3.0)
+        ok = S.read_mode(R, NF, units=200000, ys=("share_by_0p4",), nseeds=SEEDS, rec_cap=14.5, require_key=("lt", 0.4, 0.0))
+        self.assertNotEqual(ok["outcome"], "REFUSED")
+
+    def test_the_delay_table_lists_every_row(self):
+        R = {("lt", 0.6, 0.0): {s: dict(dh_p50=0.59, dh_p90=INF, w_p50=0.58, share_any=0.8, share_by_0p4=0.1, gauges={}) for s in range(SEEDS)},
+             ("rt", 50.0): {s: dict(dh_p50=0.172, dh_p90=0.18, w_p50=0.16, share_any=0.82, share_by_0p4=0.81, gauges={}) for s in range(SEEDS)}}
+        txt = "\n".join(S.delay_table(R, SEEDS))
+        self.assertIn("0.172", txt)
+        self.assertIn("inf", txt)
+        self.assertIn("delay p50", txt)
+
+
+class IdentityRows(unittest.TestCase):
+    """CL-long-v under RL: the delta = 0.005 rows have 3 seeds and equal their repair-off rows by arithmetic; the reader reads them by identity, not as a curve of 12 seeds
+    (EARLY's reader crashed on the empty curve)."""
+
+    def rows(self, broken=False):
+        off = fake(0.9, 0.8, 1.0, ns=3)
+        rl = {s: dict(v) for s, v in off.items()}
+        if broken:
+            rl[1]["share_by_0p4"] += 0.01
+        return off, rl
+
+    def test_identical_rows_pass_and_a_missing_off_row_is_pending(self):
+        off, rl = self.rows()
+        word, detail = S.identity_vs_off({("lt", 0.4, 0.0): rl}, {("lt", 0.4, 0.0): off})
+        self.assertEqual(word, "IDENTITY PASSES")
+        self.assertEqual(S.identity_vs_off({("lt", 0.4, 0.0): rl}, {})[0], "IDENTITY PENDING")
+
+    def test_a_difference_fails_and_is_named(self):
+        off, rl = self.rows(broken=True)
+        word, detail = S.identity_vs_off({("lt", 0.4, 0.0): rl}, {("lt", 0.4, 0.0): off})
+        self.assertEqual(word, "FAILS")
+        self.assertIn("share_by_0p4", str(detail))
 
 
 class Floors(unittest.TestCase):

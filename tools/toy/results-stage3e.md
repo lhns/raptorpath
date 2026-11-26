@@ -463,3 +463,193 @@ enters only through the age deadline `b(delta) srtt`, which by inference from th
 
 So the prediction held for rho 0.99 on recovery and failed at rho >= 0.995, where the lead roughly halved to "equivalent" on both readouts.  What the stored runs show: repair raises ADR-0084's delivered share (0.99209 to 0.99503) while its on-time share falls
 0.173 (0.6861 to 0.5127); the new model's curve is steeper there, so moving the matched point up 0.003 in delivery costs it about 0.02 of on-time share, and the matched-share lead shrinks.  That is an observation, not a tested explanation.
+### CL-long (readouts share_by_0p4, recovery_time; paired seeds, the first 12)
+
+#### repair off: PASSES
+
+| baseline | readout | difference | outcome | under the verdict |
+|---|---|---|---|---|
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | share_by_0p4 | 0.0595 [0.0576, 0.0616] vs m=0.0173: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | share_by_0p4 | 0.0409 [0.0389, 0.0433] vs m=0.0164: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | share_by_0p4 | 0.0268 [0.0248, 0.0289] vs m=0.0157: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | share_by_0p4 | 0.0268 [0.0248, 0.0289] vs m=0.0157: shown better | shown better | yes |
+| ADR-0084 sender at rho=1, today's receiver (C1) | share_by_0p4 | 0.0265 [0.0247, 0.0282] vs m=0.0157: shown better | shown better | yes |
+| today's Realtime, delta=0p5 (E-rt) | share_by_0p4 | 0.0428 [0.0424, 0.0432] vs m=0.00512: shown better (against the curve's lowest point, 12 seeds) | shown better | no, reported only |
+| today's Realtime, delta=5 (E-rt) | share_by_0p4 | 0.0436 [0.0432, 0.044] vs m=0.00512: shown better (against the curve's lowest point, 12 seeds) | shown better | no, reported only |
+| today's Realtime, delta=50 (E-rt) | share_by_0p4 | 0.0436 [0.0432, 0.044] vs m=0.00512: shown better (against the curve's lowest point, 12 seeds) | shown better | no, reported only |
+| never gives up, strict order = today's Bulk (C3) | share_by_0p4 | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 12 seeds] | identity | yes |
+| object API (S5 at T=inf, hold 0) | share_by_0p4 | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | yes |
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | recovery_time | 1.04 [0.978, 1.1] vs m=0.273: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | recovery_time | 0.659 [0.612, 0.711] vs m=0.255: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | recovery_time | 0.369 [0.316, 0.425] vs m=0.24: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | recovery_time | 0.369 [0.316, 0.425] vs m=0.24: shown better | shown better | yes |
+| ADR-0084 sender at rho=1, today's receiver (C1) | recovery_time | 0.369 [0.322, 0.414] vs m=0.24: shown better | shown better | yes |
+| today's Realtime, delta=0p5 (E-rt) | recovery_time | 0 [0, 0] vs m=0.1: equivalent (against the curve's lowest point, 12 seeds) | equivalent | no, reported only |
+| today's Realtime, delta=5 (E-rt) | recovery_time | 0 [0, 0] vs m=0.1: equivalent (against the curve's lowest point, 12 seeds) | equivalent | no, reported only |
+| today's Realtime, delta=50 (E-rt) | recovery_time | 0 [0, 0] vs m=0.1: equivalent (against the curve's lowest point, 12 seeds) | equivalent | no, reported only |
+| never gives up, strict order = today's Bulk (C3) | recovery_time | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 12 seeds] | identity | yes |
+| object API (S5 at T=inf, hold 0) | recovery_time | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | yes |
+
+- shown worse or outside the swept range: 0; undetermined: 0; shown better: 10
+
+#### repair RL (live law, true loss): UNDETERMINED
+
+| baseline | readout | difference | outcome | under the verdict |
+|---|---|---|---|---|
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | share_by_0p4 | 0.0874 [0.083, 0.0923] vs m=0.028: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | share_by_0p4 | 0.0665 [0.0621, 0.071] vs m=0.0271: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | share_by_0p4 | 0.0272 [0.0241, 0.0301] vs m=0.0251: undetermined [doubled to 24 seeds] | undetermined | yes |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | share_by_0p4 | 0.0127 [0.00913, 0.0167] vs m=0.0244: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=1, today's receiver (C1) | share_by_0p4 | 0.0127 [0.00826, 0.0187] vs m=0.0244: equivalent | equivalent | yes |
+| today's Realtime, delta=0p5 (E-rt) | share_by_0p4 | 0.0139 [0.0135, 0.0142] vs m=0.00512: shown better (against the curve's lowest point, 12 seeds) | shown better | no, reported only |
+| today's Realtime, delta=5 (E-rt) | share_by_0p4 | 0.0139 [0.0135, 0.0142] vs m=0.00512: shown better (against the curve's lowest point, 12 seeds) | shown better | no, reported only |
+| today's Realtime, delta=50 (E-rt) | share_by_0p4 | 0.0139 [0.0135, 0.0142] vs m=0.00512: shown better (against the curve's lowest point, 12 seeds) | shown better | yes |
+| never gives up, strict order = today's Bulk (C3) | share_by_0p4 | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 12 seeds] | identity | yes |
+| object API (S5 at T=inf, hold 0) | share_by_0p4 | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | yes |
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | recovery_time | 1.76 [1.66, 1.86] vs m=0.488: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | recovery_time | 1.33 [1.23, 1.43] vs m=0.469: shown better | shown better | yes |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | recovery_time | 0.527 [0.461, 0.592] vs m=0.429: shown better [doubled to 24 seeds] | shown better | yes |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | recovery_time | 0.257 [0.184, 0.334] vs m=0.415: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=1, today's receiver (C1) | recovery_time | 0.248 [0.153, 0.378] vs m=0.415: equivalent | equivalent | yes |
+| today's Realtime, delta=0p5 (E-rt) | recovery_time | 0 [0, 0] vs m=0.1: equivalent (against the curve's lowest point, 12 seeds) | equivalent | no, reported only |
+| today's Realtime, delta=5 (E-rt) | recovery_time | 0 [0, 0] vs m=0.1: equivalent (against the curve's lowest point, 12 seeds) | equivalent | no, reported only |
+| today's Realtime, delta=50 (E-rt) | recovery_time | 0 [0, 0] vs m=0.1: equivalent (against the curve's lowest point, 12 seeds) | equivalent | yes |
+| never gives up, strict order = today's Bulk (C3) | recovery_time | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 12 seeds] | identity | yes |
+| object API (S5 at T=inf, hold 0) | recovery_time | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | yes |
+
+- shown worse or outside the swept range: 0; undetermined: 1; shown better: 6
+
+**CELL CL-long: UNDETERMINED**
+
+### RT (readouts share_by_0p4, share_by_0p12; paired seeds, the first 12)
+
+#### repair RL (live law, true loss): PASSES
+
+| baseline | readout | difference | outcome | under the verdict |
+|---|---|---|---|---|
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=1, today's receiver (C1) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | yes |
+| today's Realtime, delta=0p5 (E-rt) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | no, reported only |
+| today's Realtime, delta=5 (E-rt) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | no, reported only |
+| today's Realtime, delta=50 (E-rt) | share_by_0p4 | 0 [0, 0] vs m=0.000333: equivalent | equivalent | yes |
+| never gives up, strict order = today's Bulk (C3) | share_by_0p4 | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 12 seeds] | identity | yes |
+| object API (S5 at T=inf, hold 0) | share_by_0p4 | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | yes |
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | share_by_0p12 | 0.000764 [6.47e-05, 0.00148] vs m=0.00113: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | share_by_0p12 | 0.000764 [6.47e-05, 0.00148] vs m=0.00113: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | share_by_0p12 | 0.000764 [6.47e-05, 0.00148] vs m=0.00113: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | share_by_0p12 | 0.000764 [6.47e-05, 0.00148] vs m=0.00113: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| ADR-0084 sender at rho=1, today's receiver (C1) | share_by_0p12 | 0.000764 [6.47e-05, 0.00148] vs m=0.00113: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| today's Realtime, delta=0p5 (E-rt) | share_by_0p12 | 0.00218 [0.000993, 0.00364] vs m=0.00121: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| today's Realtime, delta=5 (E-rt) | share_by_0p12 | 0.00147 [0.000303, 0.00262] vs m=0.00117: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| today's Realtime, delta=50 (E-rt) | share_by_0p12 | 0.000536 [-0.000325, 0.00139] vs m=0.00113: undetermined [doubled to 24 seeds] | undetermined | no, reported only |
+| never gives up, strict order = today's Bulk (C3) | share_by_0p12 | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 12 seeds] | identity | no, reported only |
+| object API (S5 at T=inf, hold 0) | share_by_0p12 | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | no, reported only |
+
+- shown worse or outside the swept range: 0; undetermined: 0; shown better: 0
+
+**CELL RT: PASSES**
+
+### OV (readouts share_by_0p4; paired seeds, the first 6)
+
+#### repair RL (live law, true loss): FAILS
+
+| baseline | readout | difference | outcome | under the verdict |
+|---|---|---|---|---|
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | share_by_0p4 | 0.00794 [0.00752, 0.00842] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | share_by_0p4 | 0.00803 [0.00763, 0.00846] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | share_by_0p4 | 0.00798 [0.00757, 0.0084] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | share_by_0p4 | 0.00784 [0.00749, 0.00826] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=1, today's receiver (C1) | share_by_0p4 | 8.89e-05 [2.08e-05, 0.000154] vs m=0.0441: equivalent | equivalent | yes |
+| today's Realtime, delta=0p5 (E-rt) | share_by_0p4 | -0.696 [-0.697, -0.696] vs m=0.0093: shown worse | shown worse | no, reported only |
+| today's Realtime, delta=5 (E-rt) | share_by_0p4 | -0.696 [-0.696, -0.695] vs m=0.00934: shown worse | shown worse | no, reported only |
+| today's Realtime, delta=50 (E-rt) | share_by_0p4 | -0.697 [-0.697, -0.696] vs m=0.0093: shown worse | shown worse | yes |
+| never gives up, strict order = today's Bulk (C3) | share_by_0p4 | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 6 seeds] | identity | yes |
+| object API (S5 at T=inf, hold 0) | share_by_0p4 | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | yes |
+
+- shown worse or outside the swept range: 1; undetermined: 0; shown better: 0
+
+**CELL OV: FAILS**
+
+
+
+## 2026-11-26: EARLY, OV reads FAILS (kept); what the stored runs show; fixes to the reader and the plan
+
+**OV, repair RL, as registered: FAILS (kept).**  Today's Realtime delivers 0.8165 to 0.8169 and is on time on 0.814 (delta 0.5, 5, 50, 6 seeds); the new model's curve at that delivered share, between T = 0.6 (0.8068
+delivered) and T = 1 (0.8348), is on time on 0.1175: shown worse by 0.70 (bar 0.0093).  Re-read with MAIN's T = 0.4 RL row added (it was missing from EARLY, see below; 6 seeds): the reading is unchanged, because T = 0.4 delivers
+0.7929 (on time 0.7928, delay p50 0.390 s), below today's Realtime's 0.8169, and the curve has a cliff at T = tau: every T from 0.6 to infinity is on time on 0.1175 at tau = 0.4 s, since the delay p50 is the lifetime itself (0.59 s at T = 0.6).
+The reading rule is not changed.
+
+**Today's Realtime in OV under RL, from the stored runs (6 seeds, mean per run; keys `win_first`, `win_resend`, `gauges.rep_sent`, `queue_drop_out`, `evict_skip`, `verdicts`, `refusals`, `dh_p50`, `dh_p90`):**
+
+| design | delivered | on time at 0.4 s | repair share of link sends | link-queue drops | window skips | sheds | budget refusals | delay p50 / p90 (s) |
+|---|---|---|---|---|---|---|---|---|
+| today's Realtime, delta 50 | 0.8165 | 0.8141 | 0.080 (10 507 of ~131 000) | 29 263 | 426 562 | 0 | 264 | 0.172 / inf |
+| today's Realtime, delta 0.5 | 0.8169 | 0.8139 | 0.071 | 27 910 | 426 389 | 0 | 264 | 0.172 / inf |
+| new model, T = 0.4 | 0.7929 | 0.7928 | 0.080 | 0 | 0 | 0 | 0 | 0.390 / inf |
+| new model, T = 0.6 | 0.8068 | 0.1175 | 0.080 | 0 | 0 | 0 | 0 | 0.590 / inf |
+| new model, T = inf | 1.0000 | 0.1175 | 0.079 | 0 | 0 | 0 | 0 | 1.685 / 3.03 |
+| ADR-0084 (rho 0.95 to 1), today's Bulk | 1.0000 | 0.110 to 0.117 | 0.079 | 0 | 0 | 0 to 3 156 | 0 to 4 486 | 1.69 to 1.81 / 3.0 to 3.3 |
+
+So today's Realtime arm is not sending almost no repair: its repair share (0.071 to 0.080) equals the new model's.  It has no source pause (`pause_events` 0 against 5 000 to 6 600 for the paused designs), so all 120 000 first sends enter the link, the 1 250-datagram
+queue drops about 29 000 of them (the excess over capacity: 10 000 against 12 000 offered), the window skips 426 000 candidates, and what arrives arrives within 0.17 s.  Its delivered share is the capacity share, about (C/lambda)(1 - eps) = 0.81.
+
+**Prediction or arm?**  The registration's OV row (13.4) predicted exactly this for OV: "Today's Realtime sends fresh units into a 0.125 s queue that drops the excess, so it is about (C/lambda)(1 - eps) = 0.81".  The 0.1-or-less prediction belongs to K-OV (a 1 s queue).
+So for OV the prediction is right and the arm does what it was registered to do.  What the arm leaves out is the engine's congestion-window gate: `scheduler/mod.rs` `active_paths()` (line 229) keeps only paths with `available() > 0` (`PathState::available` = cwnd - in_flight, `path.rs:456`),
+so the engine does not push 12 000/s into a 10 000/s path past its window; the offline simulation has no cwnd (Q22) and no source pause for this arm.  Whether the engine would deliver more or less than 0.81 under this overload is not established by this arm.  Recorded as a threat.
+
+**Fixes made after this reading** (no new data except the two rows below):
+- **EARLY lacked the primary-lifetime row** of RT (T = 0.12) and OV (T = 0.4): MAIN's RL arm is a sweep point that AMEND leaves out, and MAIN runs after EARLY.  EARLY now includes both; they were run (`--part EARLY --cells OV,RT`, 18 runs).
+  RT's PASS did not rest on the gap: its readings are the same with the T = 0.12 point added (0 difference in every verdict comparison at 0.4 s: both sides are on time on 0.9989 to 1.0, a ceiling), and its 0.12 s readouts are reported only
+  (degenerate floor) or undetermined after their doubling.  RT's PASS is therefore vacuous at 0.4 s and open at 0.12 s.
+- The reader now refuses a cell whose curve lacks the cell's primary lifetime (`REFUSED`; the chain stops on it).
+- CL-long-v under RL: the delta = 0.005 rows have 3 seeds and equal their repair-off rows by arithmetic; the reader had no 12-seed curve (the crash was `np.stack` of an empty list).  They are now read by identity against their repair-off rows
+  (IDENTITY PASSES, FAILS if they differ, IDENTITY PENDING while the repair-off rows, which are REST rows, have not run); CL-long-v reads IDENTITY PENDING.
+- The reading output gains a delay table per row (delay p50 and p90 from hand-over over every unit, and the delivered units' p50).
+- OV-long and OV-long-v: today's Realtime is restored to full seeds (6) and its whole delta range (the 2026-11-25 cut assumed old senders read about 0 on time under overload; this arm does not).  ADR-0084 and Bulk stay at 3 seeds at the dial ends
+  (ADR-0084 reads 0.110 to 0.117 on time in OV, close to 0).  AMEND is 549 configurations.
+
+### OV (readouts share_by_0p4; paired seeds, the first 6)
+
+#### repair RL (live law, true loss): FAILS
+
+| baseline | readout | difference | outcome | under the verdict |
+|---|---|---|---|---|
+| ADR-0084 sender at rho=0p95, today's receiver (C1) | share_by_0p4 | 0.00794 [0.00752, 0.00842] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p98, today's receiver (C1) | share_by_0p4 | 0.00803 [0.00763, 0.00846] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p99, today's receiver (C1) | share_by_0p4 | 0.00798 [0.00757, 0.0084] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=0p995, today's receiver (C1) | share_by_0p4 | 0.00784 [0.00749, 0.00826] vs m=0.0445: equivalent | equivalent | yes |
+| ADR-0084 sender at rho=1, today's receiver (C1) | share_by_0p4 | 8.89e-05 [2.08e-05, 0.000154] vs m=0.0441: equivalent | equivalent | yes |
+| today's Realtime, delta=0p5 (E-rt) | share_by_0p4 | -0.696 [-0.697, -0.696] vs m=0.0093: shown worse | shown worse | no, reported only |
+| today's Realtime, delta=5 (E-rt) | share_by_0p4 | -0.696 [-0.696, -0.695] vs m=0.00934: shown worse | shown worse | no, reported only |
+| today's Realtime, delta=50 (E-rt) | share_by_0p4 | -0.697 [-0.697, -0.696] vs m=0.0093: shown worse | shown worse | yes |
+| never gives up, strict order = today's Bulk (C3) | share_by_0p4 | 0 [0, 0] vs m=0: identity [today's Bulk equals S5 at T=inf, hold inf on every compared key, 6 seeds] | identity | yes |
+| object API (S5 at T=inf, hold 0) | share_by_0p4 | 0 [0, 0] vs m=0: identity [the object API is the curve's own point: S5 at T=inf, hold 0] | identity | yes |
+
+- shown worse or outside the swept range: 1; undetermined: 0; shown better: 0
+
+Delay from hand-over per row (the readout the on-time share hides), first 6 seeds:
+
+| row | delivered | on time | delay p50 (s) | delay p90 (s) | delivered units' p50 (s) |
+|---|---|---|---|---|---|
+| ('adr', 0.95) | 1.0000 | 0.1096 | 1.812 | 3.260 | 1.807 |
+| ('adr', 0.98) | 1.0000 | 0.1095 | 1.811 | 3.258 | 1.806 |
+| ('adr', 0.99) | 1.0000 | 0.1095 | 1.812 | 3.260 | 1.807 |
+| ('adr', 0.995) | 1.0000 | 0.1097 | 1.811 | 3.260 | 1.806 |
+| ('adr', 1.0) | 1.0000 | 0.1174 | 1.686 | 3.031 | 1.681 |
+| ('bulk',) | 1.0000 | 0.1173 | 1.686 | 3.031 | 1.681 |
+| ('lt', 0.4, 0.0) | 0.7929 | 0.7928 | 0.390 | inf | 0.385 |
+| ('lt', 0.6, 0.0) | 0.8068 | 0.1175 | 0.590 | inf | 0.585 |
+| ('lt', 1.0, 0.0) | 0.8348 | 0.1175 | 0.990 | inf | 0.985 |
+| ('lt', 2.0, 0.0) | 0.9045 | 0.1175 | 1.685 | 1.992 | 1.519 |
+| ('lt', 2.0, inf) | 0.9045 | 0.1173 | 1.686 | 1.992 | 1.519 |
+| ('lt', inf, 0.0) | 1.0000 | 0.1175 | 1.685 | 3.031 | 1.680 |
+| ('lt', inf, inf) | 1.0000 | 0.1173 | 1.686 | 3.031 | 1.681 |
+| ('rt', 0.5) | 0.8169 | 0.8139 | 0.172 | inf | 0.163 |
+| ('rt', 5.0) | 0.8167 | 0.8132 | 0.172 | inf | 0.163 |
+| ('rt', 50.0) | 0.8165 | 0.8141 | 0.172 | inf | 0.163 |
+
+**CELL OV: FAILS**
+

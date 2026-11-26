@@ -47,7 +47,7 @@ SEEDS_ID = 3
 SEEDS_LIGHT = 6
 SEEDS12 = ("CL-long", "CL", "CLw-long", "RT", "CLc", "CLc-v", "CL-long-v", "K-I2", "K-L10")      # registration 14.3: the deciding row and the near-tie cells
 HEAVY_CELLS = ("CL-long", "CLw-long", "CL-long-v", "OV-long", "OV-long-v", "RQ")                 # the long cells (RQ is CL-long with a reverse queue)
-OLD_ENDS = {"OV-long": dict(adr=(0.95, 1.0), rt=(0.5, 50.0)), "OV-long-v": dict(adr=(0.95, 1.0), rt=(0.005, 50.0))}        # 14.4: the dial ends
+OLD_ENDS = {"OV-long": dict(adr=(0.95, 1.0)), "OV-long-v": dict(adr=(0.95, 1.0))}        # 14.4, narrowed 2026-11-26: ADR-0084 and Bulk at their dial ends only; today's Realtime in full
 LINK_KW = batch3c.LINK_KW
 
 
@@ -120,7 +120,7 @@ def row_nseeds(cell, key, mode):
     """The seeds of one design row in one mode: 3 for a delta = 0.005 identity row and for the old senders of the long overload cells (their ends only)."""
     if mode in ("RL", "RE") and row_delta(cell, key) == 0.005:
         return SEEDS_ID
-    if cell in OLD_ENDS and key[0] in ("adr", "rt", "bulk"):
+    if cell in OLD_ENDS and key[0] in ("adr", "bulk"):                       # today's Realtime is not cut: under overload it does not read about 0 on time
         return SEEDS_ID
     return cell_seeds(cell)
 
@@ -247,7 +247,7 @@ def rows_of(cell):
     if cell in FILE_CELLS:
         return [("lt", INF, 0.0), ("lt", INF, INF), ("bulk",)]
     if cell in OLD_ENDS:                                                     # 14.4: the old senders read about 0 on time there; only the ends of their dials
-        return keys + [("adr", r) for r in OLD_ENDS[cell]["adr"]] + [("rt", x) for x in OLD_ENDS[cell]["rt"]] + [("bulk",)]
+        return keys + [("adr", r) for r in OLD_ENDS[cell]["adr"]] + [("rt", x) for x in DELTA_SET + ([0.005] if cell in VIDEO else [])] + [("bulk",)]
     keys += [("adr", r) for r in RHO_SET] + [("rt", x) for x in DELTA_SET + ([0.005] if cell in VIDEO else [])] + [("bulk",)]
     return keys
 
@@ -420,6 +420,8 @@ def amend_jobs():
     for j in PARTS["AMEND"]:                                                 # EARLY: the RL rows of the four use-case cells (14.6); REST: everything else
         j.part = "EARLY" if (j.cell in EARLY_CELLS and j.mode == "RL") else "REST"
     PARTS["EARLY"] = [j for j in PARTS["AMEND"] if j.part == "EARLY"]
+    for cell in ("RT", "OV"):                                                # MAIN's RL arm is a sweep point AMEND leaves out; the reader needs the primary lifetime in EARLY
+        add_row("EARLY", cell, ("lt", primary_T(cell), 0.0), "RL")
     PARTS["REST"] = sorted([j for j in PARTS["AMEND"] if j.part == "REST"], key=cell_order)
 
 

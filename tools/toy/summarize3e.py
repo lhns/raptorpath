@@ -128,7 +128,37 @@ def write_verdict_marker(out_dir, verdict):
         os.remove(path)
 
 
-def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=(), base_n=None, reported=None):
+def delay_table(R, nseeds):
+    """Markdown rows: the delay from hand-over (p50 and p90 over every unit handed over, inf where fewer arrive) and of the delivered units (p50), per row."""
+    out = ["| row | delivered | on time | delay p50 (s) | delay p90 (s) | delivered units' p50 (s) |", "|---|---|---|---|---|---|"]
+    for key in sorted(R, key=str):
+        ss = [s for s in range(nseeds) if s in R[key]]
+        if not ss or "dh_p50" not in R[key][ss[0]]:
+            continue
+        mean = lambda k: float(np.mean([R[key][s][k] for s in ss]))        # noqa: E731
+        out.append("| %s | %.4f | %.4f | %.3f | %.3f | %.3f |" % (key, mean("share_any"), mean("share_by_0p4"), mean("dh_p50"), mean("dh_p90"), mean("w_p50")))
+    return out
+
+
+def identity_vs_off(rl_rows, off_rows, nseeds=3):
+    """The delta = 0.005 rows of a repair mode have 3 seeds and equal their repair-off rows (the law gives r = 0 exactly there): read by identity.
+    rows: key -> seed -> result.  Returns (IDENTITY PASSES | IDENTITY PENDING | FAILS, the differences)."""
+    diffs, pending = [], False
+    for key, rows in rl_rows.items():
+        off = off_rows.get(key)
+        if off is None or any(s not in off for s in range(nseeds)):
+            pending = True
+            continue
+        for s in range(nseeds):
+            d = identical(rows[s], off[s])
+            if d:
+                diffs.append((key, s, d))
+    if diffs:
+        return "FAILS", diffs[:5]
+    return ("IDENTITY PENDING" if pending else "IDENTITY PASSES"), []
+
+
+def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=(), base_n=None, reported=None, require_key=None):
     """R: row key -> seed -> result, keys ("lt", T, 0.0) (the new curve), ("adr", rho), ("rt", delta), ("bulk",).  The object API is the new
     curve's own T = inf, H = 0 point.  ADR-0084 (curve and points), today's Bulk and the object API are under the verdict in every mode;
     today's Realtime only at the deltas in rt_verdict (50 in RL and RE, none in OFF), elsewhere it is reported.
@@ -138,6 +168,9 @@ def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=F
     A readout in `degenerate` has a zero A/A floor in the cell (both pairs): its comparisons are reported only, never under the verdict.
     Returns dict(outcome, comps, undet (row keys to double), worse, better)."""
     base_n = base_n or {}
+    if require_key is not None and not (require_key in R and all(s in R[require_key] for s in range(nseeds))):
+        return dict(outcome="REFUSED", reason="the new curve lacks the cell's primary lifetime point %s" % (require_key,), comps=[], undet=set(), worse=[],
+                    undetermined=[], better=[], broken=[])
 
     def have(key, ns):
         return key in R and all(s in R[key] for s in range(ns))
@@ -338,10 +371,24 @@ def cmd_read(cell, modes, nseeds, write_undet, out_path):
         if not R:
             P_("- mode %s: no complete rows on disk" % mode)
             continue
+        if mode in ("RL", "RE") and B.delta_of(cell) == 0.005 and all(B.row_nseeds(cell, key, mode) == B.SEEDS_ID for key in R if key[0] == "lt"):
+            off = {key: {s: B.load(B.fingerprint(B.row_builder(cell, key, "OFF")(0)), s) for s in range(B.SEEDS_ID)} for key in R}
+            off = {k: v for k, v in off.items() if all(x is not None for x in v.values())}
+            ident = {key: rows for key, rows in R.items() if B.row_nseeds(cell, key, mode) == B.SEEDS_ID}
+            word, detail = identity_vs_off(ident, off)
+            outcomes[mode] = word
+            P_("#### %s: %s\n" % (B.n_mode(mode), word))
+            P_("- at delta = 0.005 the law gives r = 0 exactly, so these %d rows (3 seeds) are read against their repair-off rows by identity, not as a curve; %d have their repair-off row on disk%s\n"
+               % (len(ident), len(off), "; the difference: %s" % (detail,) if detail else ""))
+            continue
         rt_verdict = () if mode == "OFF" else (50.0,)
         rep = (lambda key, cell=cell: rb_reported_only(B.OUT, cell, key)) if mode in ("RB", "RB025") else None
-        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate, base_n=base_n, reported=rep)
+        req = ("lt", B.primary_T(cell), 0.0) if mode in ("OFF", "RL", "RE") else None
+        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate, base_n=base_n, reported=rep, require_key=req)
         outcomes[mode] = res["outcome"]
+        if res["outcome"] == "REFUSED":
+            P_("#### %s: REFUSED, %s\n" % (B.n_mode(mode), res["reason"]))
+            continue
         better_somewhere = better_somewhere or bool(res["better"])
         for key in res["undet"]:
             undet_fp.add(B.fingerprint(B.row_builder(cell, key, mode)(0)))
@@ -352,7 +399,12 @@ def cmd_read(cell, modes, nseeds, write_undet, out_path):
             P_("| %s | %s | %s | %s | %s |" % (B.row_name(c["base"]) if c["base"][0] != "api" else "object API (S5 at T=inf, hold 0)", c["k"], P.fmt(c["rd"]),
                                              c["rd"]["word"], "yes" if c["scope"] == "verdict" else "no, reported only"))
         P_("\n- shown worse or outside the swept range: %d; undetermined: %d; shown better: %d\n" % (len(res["worse"]), len(res["undetermined"]), len(res["better"])))
-    cell_out = "FAILS" if "FAILS" in outcomes.values() else ("UNDETERMINED" if "UNDETERMINED" in outcomes.values() else ("PASSES" if outcomes else "no data"))
+        P_("Delay from hand-over per row (the readout the on-time share hides), first %d seeds:\n" % nseeds)
+        L.extend(delay_table(R, nseeds))
+        P_("")
+    vals = set(outcomes.values())
+    cell_out = ("REFUSED" if "REFUSED" in vals else "FAILS" if "FAILS" in vals else "UNDETERMINED" if "UNDETERMINED" in vals else
+                "PASSES" if "PASSES" in vals else (sorted(vals)[0] if vals else "no data"))
     P_("**CELL %s: %s**\n" % (cell, cell_out))
     text = "\n".join(L)
     print(text)

@@ -95,6 +95,8 @@ def read_cell(cell, modes, part, a, partial=False):
         call("summarize3e.py", ["read", cell, "--modes", ",".join(modes), "--out", RESULTS], "reread-%s-%s" % (part, cell))
     m = re.search(r"\*\*CELL (\S+): (\w[\w ]*)\*\*", out)
     outcome = m.group(2) if m else "no data"
+    if outcome == "REFUSED":
+        die("the reader refused %s: its new curve lacks the cell's primary lifetime" % cell)
     verdict_file(part, "%s: %s" % (cell, outcome))
     log("reader %s %s: %s" % (part, cell, outcome))
     return outcome
