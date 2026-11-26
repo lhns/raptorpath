@@ -653,3 +653,28 @@ Delay from hand-over per row (the readout the on-time share hides), first 6 seed
 
 **CELL OV: FAILS**
 
+
+
+## 2026-11-26: OV steady windows, the exploratory sender-wait rows, and the hold on the new model's remaining rows
+
+**OV under RL, steady window (stored runs, 6 seeds).**  From 0.5 s after the first dequeue expiry to 0.5 s before the source stops, the on-time share at 2 s is 0.7653 to 0.7655 for every T from 0.4 to 2: flat in T.  The delivered share rises with T (0.7929, 0.8068,
+0.8348, 0.9045, 1.0 for T = 0.4, 0.6, 1, 2, inf) only through the backlog still queued when the source stops.  Today's Realtime's steady window is 0.808, 0.043 above.  The new model's delay is its lifetime (p50 0.390 s at T = 0.4, 0.590 s at 0.6), not T - R (R_mean 0.111 s): the
+dequeue rule sends a unit as late as age T - R and it then waits about R in the queue and on the path.  Today's Realtime delivers at 0.172 s (its link queue is capped at 1 250 datagrams: 0.125 s, plus the path).  Every design spends 0.071 to 0.080 of its link sends on repair.
+
+**Exploratory: sizing a sender wait limit.**  Reported only; these rows never count under the verdict.
+
+exploratory: sizing a sender wait limit (OV, repair off both sides, 6 seeds; reported only, never under the verdict)
+
+| row | delivered | on time 0.4 s | on time 2 s | steady 0.4 s | steady 2 s | delay p50 | delay p90 | R | srtt | repairs | repair share | queue drops |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ('lt', 0.15, 0.0) | 0.8182 | 0.8182 | 0.8182 | 0.8077 | 0.8077 | 0.138 | inf | 0.103 | 0.097 | 0 | 0.000 | 0 |
+| ('lt', 0.2, 0.0) | 0.8220 | 0.8220 | 0.8220 | 0.8077 | 0.8077 | 0.188 | inf | 0.103 | 0.097 | 0 | 0.000 | 0 |
+| ('lt', 0.4, 0.0) | 0.8378 | 0.8378 | 0.8378 | 0.8076 | 0.8076 | 0.388 | inf | 0.103 | 0.097 | 0 | 0.000 | 0 |
+| ('rt', 50.0) | 0.8186 | 0.8155 | 0.8186 | 0.8083 | 0.8089 | 0.171 | inf | 0.135 | 0.131 | 0 | 0.000 | 18751 |
+
+
+Without repair the new model's steady window (0.8077) equals today's Realtime's (0.8083), and at T = 0.15 it delivers the same share (0.8182 against 0.8186) at a lower delay p50 (0.138 s against 0.171 s).  With repair the new model's steady window fell to 0.7655, today's Realtime's to 0.808.
+Why repair costs the new model more is not tested here.
+
+**Hold.**  Every new-model row still to run (MAIN and REST) is held, because a Revision 4 of the sender may re-run them.  The baseline rows (ADR-0084, today's Realtime, today's Bulk) stay valid and run now (`--part BASE`, any cell, 240 fingerprints, 1 983 runs at the time of writing);
+K-OV and OV-long are not read until a reading is registered (equal deadline, steady windows, delay p50, like-for-like repair); only their baseline rows run.  The chain stops after EARLY and BASE.

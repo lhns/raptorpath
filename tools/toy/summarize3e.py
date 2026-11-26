@@ -128,6 +128,51 @@ def write_verdict_marker(out_dir, verdict):
         os.remove(path)
 
 
+def steady_window(r, rate):
+    """The steady window of a run (OV and the other overload cells): from the first dequeue expiry (+ the 0.5 s window width) to the source stop (- the width).  Returns
+    (first expiry, mean on-time share at 0.4 s over the windows, mean on-time share at 2 s over them, source stop)."""
+    t0 = r["first_deq_exp"] if r.get("first_deq_exp") is not None else 0.0
+    stop = r["units"] / rate
+    ks = [k for k in range(len(r["win_ot04"])) if k * 0.1 >= t0 + 0.5 - 1e-9 and k * 0.1 + 0.5 <= stop + 1e-9]
+    if not ks:
+        return t0, float("nan"), float("nan"), stop
+    return t0, float(np.mean([r["win_ot04"][k] for k in ks])), float(np.mean([r["win_ot2"][k] for k in ks])), stop
+
+
+def steady_table(R, nseeds, rate, link_rate=None):
+    """Markdown rows per design row: delivered, on time at 0.4 s and 2 s, the same over the steady window, delay p50 and p90, R and srtt, repairs, repair share of link
+    sends, link-queue drops."""
+    out = ["| row | delivered | on time 0.4 s | on time 2 s | steady 0.4 s | steady 2 s | delay p50 | delay p90 | R | srtt | repairs | repair share | queue drops |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for key in sorted(R, key=str):
+        ss = [s for s in range(nseeds) if s in R[key]]
+        if not ss or "win_ot04" not in R[key][ss[0]]:
+            continue
+        g = lambda f: float(np.mean([f(R[key][s]) for s in ss]))        # noqa: E731
+        st = [steady_window(R[key][s], rate) for s in ss]
+        first, res = g(lambda r: sum(r["win_first"])), g(lambda r: sum(r["win_resend"]))
+        rep = g(lambda r: r["gauges"].get("rep_sent", 0))
+        out.append("| %s | %.4f | %.4f | %.4f | %.4f | %.4f | %.3f | %.3f | %.3f | %.3f | %.0f | %.3f | %.0f |" % (
+            key, g(lambda r: r["share_any"]), g(lambda r: r["share_by_0p4"]), g(lambda r: r["share_by_2"]), float(np.nanmean([x[1] for x in st])),
+            float(np.nanmean([x[2] for x in st])), g(lambda r: r["dh_p50"]), g(lambda r: r["dh_p90"]), g(lambda r: r["R_mean"]), g(lambda r: r["srtt_mean"]), rep,
+            rep / (first + res + rep) if first + res + rep else 0.0, g(lambda r: r["gauges"].get("queue_drop_out", 0))))
+    return out
+
+
+def cmd_expl(nseeds=6):
+    """The exploratory rows (OV, repair off): sizing a sender wait limit.  Reported only; never read under the verdict."""
+    import batch3e as B
+    B.build()
+    R = {}
+    for j in B.PARTS["EXPL"]:
+        rows = {s: B.load(j.fp, s) for s in range(nseeds)}
+        if all(v is not None for v in rows.values()):
+            R[j.key] = rows
+    rate = B.CELLS["OV"][1]["rate"]
+    print("exploratory: sizing a sender wait limit (OV, repair off both sides, %d seeds; reported only, never under the verdict)\n" % nseeds)
+    print("\n".join(steady_table(R, nseeds, rate)))
+
+
 def delay_table(R, nseeds):
     """Markdown rows: the delay from hand-over (p50 and p90 over every unit handed over, inf where fewer arrive) and of the delivered units (p50), per row."""
     out = ["| row | delivered | on time | delay p50 (s) | delay p90 (s) | delivered units' p50 (s) |", "|---|---|---|---|---|---|"]
@@ -470,7 +515,7 @@ def cmd_smooth(nseeds=3):                                                   # SM
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("freeze", "read", "verdict", "smooth"))
+    ap.add_argument("cmd", choices=("freeze", "read", "verdict", "smooth", "expl"))
     ap.add_argument("cell", nargs="?", default="")
     ap.add_argument("--modes", default="OFF,RL")
     ap.add_argument("--nseeds", type=int, default=None, help="default: the cell's seed count (12 or 6)")
@@ -485,6 +530,8 @@ def main():
         B.set_reuse([x for x in a.reuse_dirs.split(",") if x])
     if a.cmd == "freeze":
         cmd_freeze(a.force, a.aa_at)
+    elif a.cmd == "expl":
+        cmd_expl(a.nseeds or 6)
     elif a.cmd == "smooth":
         cmd_smooth(a.nseeds or 3)
     elif a.cmd == "read":

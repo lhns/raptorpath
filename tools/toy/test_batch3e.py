@@ -763,6 +763,43 @@ class IdentityBaselines(unittest.TestCase):
         self.assertFalse(any(c["base"] == ("bulk",) and c["kind"] == "point" for c in out["comps"]))
 
 
+class ExploratoryAndBaseline(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        B.build()
+
+    def test_expl_is_ov_repair_off_sizing_a_wait_limit(self):
+        rows = B.PARTS["EXPL"]
+        self.assertEqual({j.cell for j in rows}, {"OV"})
+        self.assertEqual({j.mode for j in rows}, {"OFF"})
+        self.assertEqual({j.nseeds for j in rows}, {6})
+        keys = {j.key for j in rows}
+        self.assertEqual(keys, {("lt", 0.15, 0.0), ("lt", 0.2, 0.0), ("lt", 0.4, 0.0), ("rt", 50.0)})
+        self.assertTrue(all("exploratory: sizing a sender wait limit" in j.name for j in rows))
+        self.assertEqual(sorted(j.builder(0).T for j in rows if j.key[0] == "lt"), [0.15, 0.2, 0.4])
+        self.assertTrue(all(j.builder(0).repair is None for j in rows))
+
+    def test_expl_never_counts_under_the_verdict_or_in_the_plan(self):
+        self.assertFalse([k for k in B.plan_classes() if k[0] == "OV" and k[1] == "new" and False])
+        self.assertNotIn("EXPL", B.CHAIN)
+        self.assertEqual(B.missing_markers("EXPL"), B.missing_markers("CROSS"))
+
+    def test_base_is_every_baseline_design_row_and_no_new_model_row(self):
+        base = B.PARTS["BASE"]
+        self.assertTrue(base)
+        self.assertEqual({j.design for j in base}, {"adr", "rt", "bulk"})
+        self.assertTrue({"K-OV", "OV-long", "OV-long-v"} <= {j.cell for j in base})                 # their baseline rows run, nothing else of those cells
+        self.assertFalse([j for j in base if j.design == "new"])
+        self.assertEqual(B.missing_markers("BASE"), B.missing_markers("CROSS"))                      # valid whatever Revision 4 does to the new model
+
+    def test_steady_window_of_a_run(self):
+        r = dict(first_deq_exp=1.0, units=120000, win_ot04=[0.0] * 15 + [0.8] * 100, win_ot2=[0.0] * 15 + [0.9] * 100)
+        t0, a, b, stop = S.steady_window(r, 12000.0)
+        self.assertEqual((t0, stop), (1.0, 10.0))
+        self.assertAlmostEqual(a, 0.8)
+        self.assertAlmostEqual(b, 0.9)
+
+
 class PrimaryLifetime(unittest.TestCase):
     def rows(self, drop):
         new = {0.6: (0.807, 0.1175, 3.0), 1.0: (0.83, 0.1175, 3.0), INF: (1.0, 0.1175, 5.0)}

@@ -136,6 +136,11 @@ def main():
         if stopped():
             die("STOP while waiting for PASS-simread")
         time.sleep(60)
+    log("EARLY done; the new-model rows of MAIN and REST are held for a Revision 4 of the sender (2026-11-26); baseline rows run now")
+    batch("BASE", a)
+    verdict_file("BASE", "every baseline row (ADR-0084, today's Realtime, today's Bulk) of EARLY and REST run; new-model rows held")
+    log("chain stops here: hold")
+    return
     batch("MAIN", a)
     verdict_file("MAIN", "MAIN done: every run finished, every gate held (the runner stops on a failure); predictions are read from the stored runs")
     cells = []

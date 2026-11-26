@@ -262,7 +262,7 @@ def row_delta(cell, key):
 
 
 PARTS = {}
-ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "EARLY", "REST", "RB", "ROBUST", "SMOOTH"]       # attribution of a fingerprint; TIME is timing only, AMEND = EARLY + REST
+ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "EARLY", "REST", "RB", "ROBUST", "SMOOTH", "EXPL"]       # attribution of a fingerprint; TIME is timing only, AMEND = EARLY + REST
 EARLY_CELLS = ("Ec", "RT", "OV", "CL-long-v")                                # one cell per use case (registration 14.6)
 FPS = {}
 
@@ -425,6 +425,13 @@ def amend_jobs():
     PARTS["REST"] = sorted([j for j in PARTS["AMEND"] if j.part == "REST"], key=cell_order)
 
 
+def expl_jobs():
+    """Exploratory, reported only, never under the verdict: sizing a sender wait limit.  OV, repair off on both sides, 6 seeds: the new model at T = 0.15, 0.2 and 0.4 (H = 0)
+    and today's Realtime at delta 50."""
+    for key in (("lt", 0.15, 0.0), ("lt", 0.2, 0.0), ("lt", 0.4, 0.0), ("rt", 50.0)):
+        add("EXPL", "exploratory: sizing a sender wait limit | " + job_name("OV", row_name(key), "OFF"), "OV", key, "OFF", row_builder("OV", key, "OFF"), SEEDS_LIGHT, arm="EXPL")
+
+
 RB_CELLS = ("CL-long", "CLw-long", "CL-long-v")                              # the long-outage cells (amendment 3)
 
 
@@ -492,7 +499,7 @@ def build():
     PARTS.clear()
     FPS.clear()
     SMOOTH_GROUPS.clear()
-    for p in ORDER + ["AMEND", "TIME"]:
+    for p in ORDER + ["AMEND", "TIME", "BASE"]:
         PARTS[p] = []
     if SMOKE:                                                                # --smoke-pool: two tiny configurations, nothing else
         for nm, mode in (("smoke OFF (S5)", "OFF"), ("smoke RL (S5)", "RL")):
@@ -508,7 +515,9 @@ def build():
     rb_jobs()
     robust_jobs()
     smooth_jobs()
+    expl_jobs()
     time_jobs()
+    PARTS["BASE"] = [j for p in ("EARLY", "REST") for j in PARTS[p] if j.design in ("adr", "rt", "bulk")]   # every baseline row: valid whatever Revision 4 does to the new model
     register()
 
 
@@ -633,7 +642,7 @@ DONE_MARK = {"TIME": "PASS-time"}
 
 
 def _need(part):
-    if part == "CROSS":
+    if part in ("CROSS", "EXPL", "BASE"):
         earlier = ["AA", "AA2", "DECIDE"]
     elif part == "RB":
         earlier = CHAIN[:CHAIN.index("REST") + 1]                            # reported only: after the verdict, independent of ROBUST and SMOOTH
@@ -1080,7 +1089,7 @@ def main(argv=None):
             break
     if rc == 0:
         want = [(fp, s) for fp in fps for s in seeds_of(fp)]
-        if not cells and not a.only and all(have_run(fp, s) for fp, s in want):
+        if not cells and not a.only and base != "BASE" and all(have_run(fp, s) for fp, s in want):
             open(os.path.join(OUT, "DONE-%s" % a.part.replace(":", "-")), "w").close()
             print("DONE-%s" % a.part.replace(":", "-"))
     print("[%6.0fs] done" % (time.time() - t0), flush=True)
