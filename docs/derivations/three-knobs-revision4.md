@@ -1626,7 +1626,7 @@ So the steady window as registered includes a filling transient, and the arm's t
 **Q34 (new; open): the priced band at x̂ → 1⁺.**
 - The old law's (x − 1)⁺ came from refund odds that the policy refutes. So the new priced band has no factor that vanishes at x = 1, and a false overload reading longer than s_b sheds a headroom backlog (§13.3, the x̂ = 1 edge).
 - **A candidate with provenance, not derived here:** charge the priced band only against the wait the overload itself built under A, `∫(x̂ − 1)⁺ dt`. That is the status-quo queue growth, and it is 0 in a drain whose backlog came from an outage.
-- **Default: none.** The registered run measures the edge through `y_max` and `w_min_over_c` in the identity cells.
+- **Default: none.** The registered run measures the edge through `y_max` and `w_min_over_c` in the identity cells. §13.8 records the margin check.
 
 **Open reading for the owner: OV-long-m against today's Realtime is predicted "equivalent" or "worse", not "dominates"** (§13.5).
 - U accepts the descent's share cost for the delay it buys, and a barred dominance reading cannot price that.
@@ -1635,7 +1635,7 @@ So the steady window as registered includes a filling transient, and the arm's t
 **Q33 (new; it blocks shipping, with Q24).** The ramp `min(1, 2/(1 + y))`, the even-money Kelly form, relaxes the U-optimal jump.
 - Alternatives: any continuous φ(t_ov/s_b) that is 0 below 1 and tends to 1.
 - §13.5's OV-long-m rows read its shape: the onset instant, the post-onset deficit and the 1/t_ov tail.
-- **No default is proposed.**
+- **Registered default: R1, the form above** (§13.8 compares the alternatives and gives the reasons). Q33 stays open for the owner.
 
 ### 13.5 Predictions (written before any run of B′)
 
@@ -1691,7 +1691,8 @@ So the steady window as registered includes a filling transient, and the arm's t
   - CLc, CLc-v and CL-long-v at the default T set of §12 (B_T);
   - also CL-long, CL and CLw-long at T ∈ {0.4, 2, ∞}, because CL-long is where live ticks were seen.
 - **Predicted: identical in all of them.**
-  - B read `n_tau_lt_T` = 0 in every cell except CL-long at T = 2, so there x̂ ≤ 1 at every dequeue, and the identity holds by arithmetic (up to one-ulp ties).
+  - Overload ticks appear only at CL and CL-long at T = 2, seed 2 (one trajectory: the two configs differ only in units and t_limit, and the episode lies at 3.69 s), and at CL-long-v, seed 11 (§13.8). Elsewhere x̂ ≤ 1 at every dequeue, and the identity holds by arithmetic (up to one-ulp ties).
+  - CL's B rows were not read in §12: its reading stopped on an empty steady window. Its exposure comes from the coordinator's rerun.
   - **CL-long at T = 2, seed 2** (rerun): 151 ticks with x̂ ≤ 1.0007, t_ov ≤ 14 ms and head age ≤ 1.534 s, at 3.69–3.70 s in the drain.
     - There y = 50·0.014/(1.982 + 0.008) = 0.35 < 1, so w = c/x̄ = 1.981 s > 1.534 s, and nothing expires.
     - The identity would break only if x̂ > 1.29, or if t_ov > 63 ms at that x̂. **Predicted margin: kept.**
@@ -1743,9 +1744,10 @@ So the steady window as registered includes a filling transient, and the arm's t
 | OV-long-v | 8 × 6 | stored | stored | 48 |
 | OV-long-m (new) | 5 × 6 | 5 × 6 | rt and rteq at δ = 0.1, 2 × 3 (+ ADR-0084 and Bulk, 3 × 3, only if not reusable) | 66 (75) |
 | identity: CLc, CLc-v, CL-long-v, CL-long, CL, CLw-long | 3 T × 3 seeds each (seeds 0–2, so CL and CL-long at T = 2 include the exposed seed 2, §13.8) | stored traces | — | 54 |
+| identity, exposed seed: CL-long-v at T = 2, seed 11 (my addition; the coordinator asked for CL only) | 1 | 1, traced rerun (only seeds 0–2 carry traces) | — | 2 |
 | A/A for OV-long-m | — | 2 × 12 | — | 24 |
 | K-OV (reported only, §13.8) | T = 0.4 × 6 | T = 0.4 × 6 | — | 12 |
-| **total** | | | | **252 (261)** |
+| **total** | | | | **254 (263)** |
 
 - **Time:** about 7 000–8 000 CPU-s, so about 15 min on 9 workers at stage 3e's per-run times. The A/A floors of OV-long and OV-long-v are §12's frozen ones.
 
@@ -1755,8 +1757,8 @@ So the steady window as registered includes a filling transient, and the arm's t
 - B′ against A and B′ against B are reported only.
 - The shape readouts of OV-long-m (§13.5, items 1–4) are read before any dominance outcome in that cell.
 - **OV-long-m is in the verdict,** not reported-only: it is the only cell where the law acts mid-run.
-- **The verdict sentence carries the limit of §13.8.** At δ = 0.1, no admissible relaxation is predicted to dominate today's stored Realtime arm in a 40 s run. The new model's share sits 0.009 ± 0.002 behind it at the best point, against a bar of ≈ 0.0096.
-  - The default (Q33: the Kelly ramp) is predicted "equivalent".
+- **The verdict sentence carries the limit of §13.8.** At δ = 0.1, every continuous relaxation puts the new model's steady share at the bar against today's stored Realtime arm at the best point: 0.008–0.010 behind it, against a bar of ≈ 0.0096. The relaxation (Q33) decides only whether the delay gain lands inside the 40 s window.
+  - The registered default (R1, the Kelly ramp) is predicted "equivalent or worse". Its share sits ≈ 0.0004 inside the bar, with a ±0.002 band.
   - A "worse" there is read as that limit only if the decomposition test of §13.8 passes. Otherwise it is a law finding.
 - **K-OV:** A and B′ are reported only (§13.8).
 
@@ -1840,7 +1842,7 @@ Names and semantics only. All default off, so every stored row reproduces.
 
 | law | steady share | on time (0.4 s) | p50 | whole-run | against the stored arm: share / p50 | predicted reading |
 |---|---|---|---|---|---|---|
-| R1 | 0.799 | 0.799 | 0.176 s | 0.806 | −0.009 / +0.006 s | **equivalent** (worse if the share falls past −0.0096) |
+| R1 | 0.799 | 0.799 | 0.176 s | 0.806 | −0.009 / +0.006 s | **equivalent or worse** (the share is ≈ 0.0004 inside the bar) |
 | R2 | 0.800 | 0.800 | 0.135 s | 0.805 | −0.008 / −0.035 s | dominates, or a trade at the low edge; **but it breaks the headroom identity** (below) |
 | R3 | 0.798 | 0.798 | 0.094 s | 0.804 | −0.010 / −0.076 s | a trade, or dominates at the high edge |
 | BB | ≈ 0.798 | ≈ 0.798 | 0.094 s | 0.804 | −0.010 / −0.076 s | a trade (bound only) |
@@ -1853,13 +1855,13 @@ Names and semantics only. All default off, so every stored row reproduces.
 | 1 | 0.794 / 0.02 / 0.58 s | 0.793 / 0.53 / 0.34 s | 0.788 / 0.48 / 0.12 s |
 | 2 | 0.793 / 0 / 1.62 s | 0.784 / 0 / 0.86 s | 0.775 / 0.04 / 1.62 s |
 
-- R1's values fall inside §13.5's registered bands at every T, so those bands stand.
+- **The registered bands are §13.5's** (for example 0.796–0.803 for the steady share at T = 0.4). This table is the comparison model behind them: central values, with ±0.002 inside those bands. R1's values fall inside §13.5's bands at every T.
 
 **Fable's suspicion is confirmed.**
 - R1's slow tail (w ∝ 1/t_ov) pays share across the whole window and delivers its delay gain late: p50 is 0.176 s against R3's 0.094 s. So Q33 sets the OV-long-m outcome against the stored arm, between "equivalent" (R1) and "a trade or dominates" (R3, R2).
 
 **The limit, and its size** (carried by §13.6's verdict sentence).
-- **No admissible relaxation reads ahead of the stored arm on share.**
+- **No relaxation reads ahead of the stored arm on share.**
   - Every one reads 0.008–0.010 behind it at the best point.
   - That is made of: the new model's base deficit, measured in OV-long (A −0.0035; B −0.005 with young units' resends); plus the in-window descent, from 0.002 (R2: most of the shed lands before the window starts) to 0.005 (R3, BB: the whole band c/x = 0.239 s inside the window, `μ̂·0.239/(λ·37 s)`).
   - So the share readout sits at the bar whatever the relaxation. The relaxation decides only whether the delay gain lands inside the window.
@@ -1873,7 +1875,7 @@ Names and semantics only. All default off, so every stored row reproduces.
 3. **It holds more than the U optimum at every t_ov,** so its error is in the conservative direction (share kept, delay paid).
 4. **Its form is cited** (Kelly). The mapping onto even money is still a choice (Q33 stays open).
 - **The cost of the choice, stated before data:**
-  - OV-long-m is predicted "equivalent" to the stored arm, not "dominates";
+  - OV-long-m is predicted "equivalent or worse" against the stored arm, not "dominates". R3 or R2 might dominate it, but R3 carries an unprovenanced width and R2 breaks the identity;
   - p50 is 0.176 s against 0.17 s;
   - the delay gain over A (p50 0.39 s → 0.18 s) is real, but it does not beat today's Realtime inside 40 s.
 - **What would change the default:** an admissible relaxation with a faster tail and no added constant. None is known.
@@ -1902,6 +1904,8 @@ Names and semantics only. All default off, so every stored row reproduces.
 | A | 0.70–0.73 | delivered − ≤ 0.01 | 0.30–0.34 s |
 | B′ | 0.70–0.73 | delivered − ≤ 0.02 (a resend arrives near 0.36 s) | 0.15–0.19 s |
 
+- These readouts are whole-run, and K-OV has no registered steady window.
+- K-OV's run time is not in §13.6's 15 min: it takes the time-limited run of §5.4, and its timing is reported when run.
 - The figure is attributed to B′ only once these rows read inside their bands.
 
 **The Q34 margin check** (the coordinator's reruns of build A with the `ana_cll` hook, at the seeds that saw overload ticks; the CL-long row is §13.5's rerun of build B).
@@ -1915,6 +1919,7 @@ Names and semantics only. All default off, so every stored row reproduces.
 
 - **In every headroom row with any overload tick, no tick would shed under R1.** No other headroom row of A in §12 has `ov_frac` > 0, and CLw-long has none.
 - **The margin at δ = 50:** t_ov = 14 ms against s_b ≈ 40 ms, about 3×. Under R2 the same tick sheds, as above.
-- **To confirm:** the CL and CL-long rows read identically, value for value. They should be confirmed as two separate runs.
+- **The CL and CL-long rows are one trajectory.** The two configs differ only in `n_total` and `t_limit` (checked), and the episode at 3.69 s comes before CL's 10 s end.
+- **CL-long-v's live seed 11 lies outside the identity seeds 0–2.** So the 3-seed check executes no live tick there. §13.6 adds seed 11 at T = 2 as a traced pair.
 - **CL at T = 2 is in the B′ identity set,** with 3 seeds including seed 2 (§13.6).
 - **Q34 stays open, and blocks the engine step together with Q24.** This check bounds the edge only on the seeds seen.
