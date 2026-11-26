@@ -367,6 +367,11 @@ class DHat:
         return max(max(s for s, _ in self.rounds), 1e-9)
 
 
+def engine_in_flight_horizon(srtt):
+    """The engine's in-flight expiry horizon (scheduler/path.rs expire_in_flight, default): max(4 x SRTT, IN_FLIGHT_EXPIRY_MIN = 250 ms)."""
+    return max(4.0 * srtt, 0.25)
+
+
 def rb_hold(sim, now):
     """Amendment 3 (registration 15.3): is `now` inside RB's cap window, [outage start, outage end + A)?  The outage window is the cell's declared
     `dead` (an oracle: RB is a bracket, not a design).  rb_unit "sym": A counts first sends after the outage end.  Named in EXEMPT."""
@@ -466,6 +471,7 @@ class Cfg:
     dhat_bias: float = 0.0         # revision 4, step 1: D_hat is read as D_hat * (1 - dhat_bias) in the gauges (the bias rows of 5.3)
     clamp: bool = False            # revision 4 step 2 (3.3): repair accrues min(r, max(spare, 0)), spare = (cwnd_sim - in_flight) / in_flight
     wait_limit: bool = False       # revision 4 step 2 (3.1): the dequeue expiry reads tau = T - K / (T - R + o_hat) in place of T
+    inflight_to_rule: str = ""     # revision 4 step 2: "engine" = in_flight expires at max(4 x SRTT, 250 ms) (scheduler/path.rs expire_in_flight, copa.rs:307); "" = off
     inflight_to: float = 0.0       # revision 4 step 2: a datagram unreported for inflight_to x R is declared lost and leaves in_flight (RFC 9002's time threshold is 9/8); 0 = reports only
     send_gate: bool = False        # revision 4 step 2 (3.3): no payload is staged while in_flight >= cwnd_sim (the engine's available() = cwnd - in_flight > 0)
     eq: bool = False               # revision 4 step 2 (3.3): today's Realtime behind the engine's front queue (eq_cap symbols, evicts the oldest, drains at the link rate)
@@ -1387,7 +1393,9 @@ class Sim:
         """Every datagram sent (first sends, copies, repairs) and not yet covered by a report, as the engine's in_flight counts: a report covering first-send
         seq rhi covers everything sent up to that first send's time."""
         cov = self.sends_cov
-        if self.cfg.inflight_to:
+        if self.cfg.inflight_to_rule:
+            cov = max(cov, bisect.bisect_right(self.send_times, now - engine_in_flight_horizon(self.srtt_eff())))
+        elif self.cfg.inflight_to:
             cov = max(cov, bisect.bisect_right(self.send_times, now - self.cfg.inflight_to * self.R_now()))
         return self.sends_n - cov
 

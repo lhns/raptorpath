@@ -39,13 +39,13 @@ def cfg_of(spec, seed):
     else:
         raise ValueError(spec["design"])
     return dataclasses.replace(cfg, rev4_gauge=spec["design"] == "new", clamp=spec.get("clamp", False), wait_limit=spec.get("wait", False),
-                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0), send_gate=spec.get("gate", False), inflight_to=spec.get("to", 0.0))
+                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0), send_gate=spec.get("gate", False), inflight_to=spec.get("to", 0.0), inflight_to_rule=spec.get("rule", ""))
 
 
 def specs():
     out = []
 
-    def add(group, cell, base, design, mode, T=None, delta=50.0, clamp=False, wait=False, eq=False, cwnd=0.0, H=0.0, gate=False, to=0.0, **kw):
+    def add(group, cell, base, design, mode, T=None, delta=50.0, clamp=False, wait=False, eq=False, cwnd=0.0, H=0.0, gate=False, to=0.0, rule="", **kw):
         if design == "rt" and clamp and not cwnd:                    # today's Realtime has no store pause (pause_B 1e9): cwnd_sim is the cell's configured B (3.3)
             cwnd = float(B.CELLS[base][1]["pause_B"])
         lab = "%s | %s | %s %s T=%s d=%g clamp=%d wait=%d eq=%d cwnd=%s" % (group, cell, design, mode, "-" if T is None else B.TAG(T), delta, clamp, wait, eq, cwnd or "cell")
@@ -55,7 +55,9 @@ def specs():
             lab += " gate=1"                                           # the send gate: appended only when on, so the earlier labels stay valid
         if to:
             lab += " to=%g" % to                                      # in_flight with RFC 9002's time-threshold loss declaration (to x R)
-        out.append(dict(label=lab, group=group, cell=cell, base=base, design=design, mode=mode, T=T, delta=delta, clamp=clamp, wait=wait, eq=eq, cwnd=cwnd, kw=kw, H=H, gate=gate, to=to))
+        if rule:
+            lab += " rule=%s" % rule                                  # in_flight expires at the engine's horizon max(4 srtt, 250 ms)
+        out.append(dict(label=lab, group=group, cell=cell, base=base, design=design, mode=mode, T=T, delta=delta, clamp=clamp, wait=wait, eq=eq, cwnd=cwnd, kw=kw, H=H, gate=gate, to=to, rule=rule))
 
     # 1. OV, the 2x2 (RL arm: wait limit x clamp, T x delta) plus the repair-off arm with and without the wait limit
     for T in (0.4, 2.0, INF):
@@ -110,6 +112,7 @@ def specs():
     for x in base:
         add(x["group"], x["cell"], x["base"], x["design"], x["mode"], x["T"], x["delta"], x["clamp"], x["wait"], x["eq"], x["cwnd"], x["H"], True, **x["kw"])
         add(x["group"], x["cell"], x["base"], x["design"], x["mode"], x["T"], x["delta"], x["clamp"], x["wait"], x["eq"], x["cwnd"], x["H"], True, 1.125, **x["kw"])   # with the time threshold
+        add(x["group"], x["cell"], x["base"], x["design"], x["mode"], x["T"], x["delta"], x["clamp"], x["wait"], x["eq"], x["cwnd"], x["H"], True, 0.0, "engine", **x["kw"])   # the frozen build: gate, engine expiry
         if x["group"] == "CL-long" and x["clamp"] and not x["cwnd"]:
             add(x["group"], x["cell"], x["base"], x["design"], x["mode"], x["T"], x["delta"], x["clamp"], x["wait"], x["eq"], x["cwnd"], x["H"], False, 1.125, **x["kw"])  # clamp only, in_flight with the threshold
     return out

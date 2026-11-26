@@ -2107,6 +2107,21 @@ class Rev4Step2(unittest.TestCase):
         self.assertGreater(free["share_any"], 0.9)
         self.assertEqual(free["rev4"]["emit_over_B"], 0)
 
+    def test_engine_in_flight_horizon_and_the_gate_under_it(self):
+        """scheduler/path.rs expire_in_flight: the charge log is swept at max(4 x SRTT, IN_FLIGHT_EXPIRY_MIN = 250 ms) (copa.rs:307)."""
+        self.assertEqual(toy2.engine_in_flight_horizon(0.05), 0.25)
+        self.assertEqual(toy2.engine_in_flight_horizon(0.1), 0.4)
+        self.assertEqual(toy2.engine_in_flight_horizon(0.0625), 0.25)
+        self.assertEqual(toy2.Cfg().inflight_to_rule, "")
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=None, n_total=20000, dead=(0, 0.3, 0.5), send_gate=True, rev4_gauge=True)
+        free = toy2.run(dataclasses.replace(c, inflight_to_rule="engine"))
+        self.assertGreater(free["share_any"], 0.9)                                    # no deadlock after the outage
+        self.assertEqual(free["rev4"]["emit_over_B"], 0)
+        a = toy2.run(dataclasses.replace(c, inflight_to_rule="engine", n_total=6000, dead=None, want_trace=True, rev4_gauge=False))
+        b = toy2.run(dataclasses.replace(c, send_gate=False, n_total=6000, dead=None, want_trace=True, rev4_gauge=False))
+        import batch3e
+        self.assertEqual(batch3e.id3e(a, b), [])                                      # headroom: the gate with the engine rule never binds
+
     def test_engine_queue_evicts_the_oldest_and_is_inert_without_overload(self):
         import batch3e
         base = self.ov("rt", n=4000, dead=None)

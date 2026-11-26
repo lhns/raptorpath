@@ -267,7 +267,7 @@ EARLY_CELLS = ("Ec", "RT", "OV", "CL-long-v")                                # o
 FPS = {}
 
 
-REV4_FIELDS = ("rev4_gauge", "dhat_bias", "inflight_to", "send_gate", "clamp", "wait_limit", "eq", "eq_cap", "cwnd_sim", "rate2", "rate2_t")                                    # fields added after the first runs were stored: left out of the hash at their default, so stored fingerprints stay valid
+REV4_FIELDS = ("rev4_gauge", "dhat_bias", "inflight_to_rule", "inflight_to", "send_gate", "clamp", "wait_limit", "eq", "eq_cap", "cwnd_sim", "rate2", "rate2_t")                                    # fields added after the first runs were stored: left out of the hash at their default, so stored fingerprints stay valid
 
 
 def fingerprint(cfg):
