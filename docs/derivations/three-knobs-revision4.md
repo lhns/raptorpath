@@ -1,6 +1,6 @@
 # Three knobs, Revision 4: a sender-side wait limit under sustained overload, and the engine's repair clamp (derivation, no runs)
 
-**Status.** Design and derivation. §1–§8 were written before any run. §9 (2026-11-26) reports the step 2 sizing run, reported only, and amends §3.3.
+**Status.** Design and derivation. §1–§8 were written before any run. §9 (2026-11-26) reports the step 2 sizing run, reported only, and amends §3.3. §10 (2026-11-26, derivation) adds the floor-repeat addendum.
 - **What it amends.** `three-knobs.md` §13.2 (the dequeue rule). It withdraws that section's paragraph "What cannot be fixed: delay pinned near T − R", and Q12's default ("no loss price").
 - **What it adds to the model of every design** (§3.3): the engine's spare-capacity clamp on repair. It also adds the engine's send gate to the designs that pause in the engine, and a second arm for today's Realtime that models the engine's real send queue, settled by an engine read (Q30).
 - **What is unchanged:** L1, L2 (§2.1, and §2.2 as revised in §17.1), the protected floor (§17.1), the brake and the store pause.
@@ -845,6 +845,7 @@ It meets requirements 1 to 3 and 5:
 - Revision 4: 0.540 / 0.539 / 0.239 s.
 - Predicted 0.72 delivered and 0.66–0.72 on time.
 - **Repair is not the cause.** The clamp cut repairs from 503 to 20, and delivered returned to the repair-off value.
+- **Superseded by §10.1:** the measured cause is the floor repeat, taking 25 % of the link. The inference that follows is withdrawn.
 - **The miss is in the base arithmetic** `(C/λ)(1 − ε)`, which assumes the link is saturated. 0.54·50 = 27 units/s delivered, against 36 available. The inference is that the 8-seq store pause, with holes held in the outstanding count across an RTT of about 0.2 s, underfills the 40/s link. That is a B-sizing question for the cell, not a Revision 4 one. It is unconfirmed; `link_util_w` is the gauge to read.
 - **Today's Realtime in K-OV:** the stored arm reads 0.740 / 0.007 / 1.52 s, and the ≤ 0.1 on-time prediction is met. The engine-queue arm reads 0.917 / 0.007 / 10.3 s: delivered met, on time near the predicted 0.03, p50 higher than the predicted ≈ 7 s.
 
@@ -893,3 +894,113 @@ The comparison uses the registered rule (§3.1, §4.3), in OV's steady window, R
 - The delivered deficit matches the engine-queue arm's steady share of 0.815 against Revision 4's 0.803.
 - **The likely source of the 1.2 points** is the young units' resends plus residual repair (§9.1, OV). That is an inference and is not gauged here.
 - **Against the stored arm** the steady delivered share is 0.803 against 0.808 (−0.005, inside the bar), and the delay is better.
+
+## 10. Addendum: the floor repeat says only what the receiver may not know (2026-11-26; derivation, no runs)
+
+### 10.1 The measured cause in K-OV
+
+Stored rows, new model at T = 0.4, repair off, measured by the coordinator:
+- **603 standalone floor datagrams in 60 s,** one per firing of the blocker timer. The timer fires every 100 ms, the sweep period `clamp(2·srtt, 25 ms, 100 ms)`, whose cap binds under a 200 ms RTT (Q17).
+- **That is 25 % of the link's 2 400 slots** at 40/s.
+- **The rest:** 3 resends, 0 repairs and 2 duplicates.
+- **First sends:** about 1 794, delivered at 90 %, which gives the 0.54 delivered.
+
+**So the floor repeat holds the new model at 0.54 against 0.72 carryable.** Repair and the sweep's resends do not. This replaces §9.1's inferred K-OV cause ("the 8-seq store pause underfills the link"), which is withdrawn.
+
+**Why it fires.**
+- The offline simulation's `on_blocker` calls `floor_repeat`. That sends F_ann whenever `F_ann > A_known` (`toy2.py`, `floor_repeat`; §17.3's "each fire also … repeats it while F_ann > A_known").
+- Under overload at T = 0.4 the units are unprotected at birth (§15.3), so F_ann sits at the send frontier.
+- A_known is the lowest seq not yet acknowledged, which includes one RTT of data still in flight. So `F_ann > A_known` holds at every fire, even when no hole lies below F.
+
+### 10.2 When a standalone floor adds information
+
+- **The floor already rides on every data datagram** (§15.3, header carrier Q15(a); `carry_floor`). A datagram sent at time t carries `F_ann(t)`.
+- **The receiver uses the floor for one thing only:** to pass a hole below it (L6; §15.3).
+- **So a standalone floor tells the receiver something new only if two things hold:**
+  - the receiver may hold a hole at some seq s < F_ann;
+  - and the sender has no evidence that any datagram carrying a floor above s has arrived.
+- **Both are already measured** (§13.1):
+  - the hole is "evidence of loss": a later datagram arrived, or s is overdue by R;
+  - the arrival is the echoed τ_rx, the newest send stamp the receiver has received.
+
+### 10.3 The repeat law
+
+```text
+   at each repeat instant (the sweep or blocker fire, unchanged):
+      send the floor  ⇔   ∃ s ∈ [A_known, F_ann) :   s unresolved   ∧   evidence(s, now)   ∧   τ_rx  <  t_carry(s)
+      t_carry(s)      =   the send instant of the first datagram (data or floor) that carried a floor value > s      (+∞ if none yet)
+      evidence(s, now) ⇔  last_send(s) < τ_rx   ∨   now ≥ last_send(s) + R                                            (§13.1, unchanged)
+```
+
+| symbol | provenance |
+|---|---|
+| F_ann, A_known, "unresolved" | sender state (§15.3, ADR-0084) |
+| τ_rx | measured: the newest send stamp among the datagrams the receiver has received, echoed in its report (§13.1). The offline simulation has it (`tau_rx`). In the engine it is Q14, still open: either a field of the existing acknowledgements or one ack field |
+| R | the ack timeout (§13) |
+| t_carry(s) | sender state: the floor is a running maximum, so t_carry is non-decreasing in s. It is kept as a monotone list of (value, first carrying send instant), pruned below A_known |
+| the repeat clock | unchanged: the sweep or blocker period. Its cap is Q17 and is not touched here |
+
+- **It is one predicate on state,** of the same kind as §13.1's verdict evidence. It reads no rate, no dial and no constant. Nothing compares δ, T or ρ with anything, so there is no mode bit.
+- **An efficient form.** t_carry is non-decreasing in s, so the hardest seq to cover is the highest one with evidence. It is enough to test `s* = max{ s < F_ann : s unresolved ∧ evidence(s, now) }`.
+
+**Shape against the sentence it implements** ("repeat the floor only when the receiver may not know it").
+- **Under steady data flow, a hole s is detected by a later arrival.**
+  - If s was unprotected when that later datagram was sent, the datagram itself carried F > s. Its arrival raises τ_rx past t_carry(s), so no repeat.
+  - If s became unprotected later, at t_pass, the next data datagram sent after t_pass carries it. A repeat can fire only during the gap between t_pass and the report of that carrier's arrival, about one RTT.
+- **In-flight data that nobody has reported** has no loss evidence until it is overdue by R, so it no longer triggers a repeat. That is the K-OV case.
+- **After an outage, or with a lost tail,** nothing arrives, so τ_rx stays below t_carry. The seqs become overdue after R, the condition holds, and the floor repeats on the same clock as today (§10.5).
+
+### 10.4 Inert where today's repeat costs nothing, in what the receiver learns
+
+- **A repeat is suppressed only when every evidenced hole below F_ann already has a carrier reported arrived.** Then the receiver already holds a floor above each of them and has passed them, or will on the carrier's arrival, which comes no later than the repeat would have.
+- **So the instant at which each hole is passed is unchanged.** The only datagrams removed are floors that pass nothing new.
+- **What does change:**
+  - the link slots those floors took, which is the gain;
+  - the floor count;
+  - and, through the freed slots, the trace of every cell where repeats were sent.
+- **This is a model change of the new model, not an identity.** Repeats were sent in every link cell, so the traces change, and stage 3e's new-model rows are re-baselined under it.
+- **The readouts must not move** beyond the A/A floor wherever repeats were a negligible share of the link.
+- **Today's designs are not touched.** ADR-0084's verdict floor keeps ADR-0084's repeat, and today's Realtime sends no floor at all.
+
+### 10.5 Predictions (written before any run) and the liveness check
+
+**Repeat share of the link today.** At most one repeat per fire, at a period P = clamp(2·srtt, 25 ms, 100 ms), so the share is at most `1/(P·C)`:
+
+| cell | P, C | share ≤ |
+|---|---|---|
+| K-OV | 0.1 s, 40/s | **25 %** (measured: 603/2 400) |
+| OV | 0.1 s at srtt 98 ms, 10 000/s | 0.1 % |
+| CL-long, CL | 25 ms at srtt 11 ms, 12 500/s | 0.3 % |
+| RT, the call cell | no link: floors take no slot from data | 0 |
+
+**Predictions.**
+- **K-OV, the new model, T = 0.4:**
+  - **Revision 3:** about 600 slots free. First sends rise to about 1 794 + 600 − (the new repeats, ≤ 20) ≈ 2 370–2 390, delivered at 90 %, so **delivered ≈ 0.71–0.72**, the carryable `(C/λ)(1 − ε)` = 0.72. On time is the same, because units sent at T − R ≈ 0.19 s arrive by about 0.34 s. p50 is unchanged at about 0.31 s.
+  - **Revision 4 with the clamp:** the same share. Its young units are protected and resent at ρ ≈ ε/(1 − ε) = 0.11, so `C/((1 + ρ)·λ)` ≈ 0.72. p50 stays about 0.24 s.
+  - **The floor count** falls from 603 to a few tens or fewer.
+- **OV:** the floor count falls. delivered, on time and p50 stay within the A/A floor (about 100 slots of about 100 000).
+- **CL-long:** during the outage nothing arrives, so the repeat fires on every sweep as today. After the outage the first data datagrams carry F, and their arrival stops the repeats.
+  - The hole-pass instants are unchanged (§10.4).
+  - So recovery is the same within the 0.1 s resolution, and on time and delivered are within the A/A floor. The floor count falls before and after the outage.
+- **CL, CLw-long, the K cells and the E cells:** within the A/A floor.
+  - **The E cells' lost tail with nothing after it** keeps its repeat by the timeout branch.
+
+**Liveness check (absolute, red first).**
+1. **After any outage,** the receiver learns the post-outage floor within one repeat period plus one owd of the outage end, as today. The test compares the instant of the first floor pass after the outage, in CL-long, the K cells and E-I2, against the stored rows: equal to the event, or to within one sweep period where traces diverge.
+2. **A lost tail with no later data** (the E cells): every run finishes (the `finished` gate), and the tail's holes are passed.
+3. **No hole is held past the instant it would be passed today.** At the receiver, `t_pass_new(s) ≤ t_pass_old(s) + P` for every s, on the stored seeds, with zero exceptions.
+4. **Suppression is evidenced.** Every suppressed repeat has a recorded carrier with send stamp ≥ t_carry(s*) and ≤ τ_rx: an absolute count, zero violations.
+
+**Gauges.**
+- `floor_rep` per second;
+- `rep_suppressed`;
+- `rep_fired_by_timeout`, the repeats where the timeout branch of the evidence predicate fired;
+- the share of link slots taken by floors.
+
+### 10.6 Note on the engine-queue arm's steady share (§9.4)
+
+The registered steady window [3, 9] s for today's Realtime, engine-queue arm, reads 0.815. **Second 3 of that window** falls while the 4 MiB queue is still filling (it fills at ≈ 4.1 s), and reads 0.850. **Seconds 4–9 read 0.809**, which is the link's carryable 0.808.
+
+So the steady window as registered includes a filling transient, and the arm's true steady share is 0.809.
+- Against that, Revision 4's 0.803 is −0.006, inside the 0.009 bar. The −0.012 of §9.4 is mostly the transient.
+- **The dominance reading is not re-run here.** It stays as registered ("not dominated"). The transient is recorded so the next registration can start the window after the queue is full: from `fill time + 1 s`, computed from the arm's own queue-length gauge, not from a declared second.
