@@ -349,6 +349,7 @@ gantt
     Fix the lost tail, re-derive the hold :active, model_tail_and_hold, 2026-11-22, 2026-11-26
     Owner call - last copy, ack pairs :model_adr84_amend2, 2026-11-21, 2026-11-21
     Owner call - sender side first :model_adr84_sender_first, 2026-11-21, 2026-11-21
+    One law for the sender's hand-off to th… :active, model_sender_queue_law, 2026-11-26, 2026-11-26
     Three application knobs (lifetime T, de… :active, model_three_knobs, 2026-11-23, 2026-11-26
     Burst estimate explodes after a long ou… :model_defect_ge_after_outage, 2026-11-25, 2026-11-26
     Repair rate sized for a wider window th… :model_defect_rate_vs_span, 2026-11-24, 2026-11-26
