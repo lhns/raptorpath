@@ -1444,15 +1444,17 @@ So the steady window as registered includes a filling transient, and the arm's t
 
 **Check against all four finite-T rows of OV-long-v** (δ = 0.005; μ̂ = 9 786, x̂ = 1.226, R = 0.105; w_end = B's `tau_min` − R, since the cap only falls):
 
-| T | c (s) | w_end (s) | measured A − B (units) | §2's bill μ̂·(c − w_end) | the policy's bill μ̂·(c − x̂·w_end)⁺ |
+| T | c (s) | w_end (s) | measured A − B (units) | the brief's bill with no refund, μ̂·(c − w_end) | the policy's bill μ̂·(c − x̂·w_end)⁺ |
 |---|---|---|---|---|---|
 | 1 | 0.895 | ≤ 0 (collapsed at 29.6 s) | 9 320 | 8 760 | 8 760 |
 | 1.5 | 1.395 | 0.223 | 11 111 | 11 470 | 10 980 |
 | 2 | 1.895 | 1.033 | 6 296 | 8 440 | 6 160 |
 | 3 | 2.895 | 2.315 | 798 | 5 680 | 560 |
 
-- The policy's bill fits every row to within 240–560 units. The bill implied by §2 fails at T = 2 and T = 3.
-- **The residual, about +2–6 %, is the young units' resend cost** (§9.1): B's units are protected and resent. After the collapse at T = 1, B's 4 s windows read 0.806 against A's 0.808.
+- The policy's bill fits every row to within 240–560 units. The no-refund bill (the coordinator's estimate, which is right at T = 1, where w_end = 0) fails at T = 2 and T = 3.
+- **The residual, about +2–6 %, has no identified cause.** It is measured as an offset: after the collapse at T = 1, B's 4 s windows read 0.806 against A's 0.808, and in OV-long B's steady share is 0.803 against A's 0.805.
+  - The inferred cause is B's young units: they are protected and resent (11 132 resends against A's 1 528 at T = 1).
+  - Units per link send are equal, though (0.969 against 0.968), so the resends do not explain it by count. The offset is carried into §13.5's bands as measured, not as derived.
 - **The end flush can be seen directly.** At T = 3, B delivers 1.000 of the units handed over in its last ≈ 2 s, against A's 0.808. That is λ·w_end units drained whole.
 
 **The descent, read per window (T = 1).** B's delivered share per 4 s hand-over window, from [4, 8] s to [24, 28] s:
@@ -1475,6 +1477,11 @@ So the steady window as registered includes a filling transient, and the arm's t
 2. **The priced band.** Below c/x, each second of cap costs λ units, paid once and only if the overload ends while the cap is there: `bill = λ·(c/x − w)⁺`.
    - The odds t_ov/t_r of §2 describe neither band.
    - The factor in t_ov² that came from those odds has no counterpart in the policy (§13.4).
+
+**Departures from the brief's expectations, stated.**
+- **The no-refund bill is itself corrected.** The cap's end value is refunded up to `x·w_end` (the table above).
+- **The new law is not inert at δ = 0.005.** The free band moves the cap from c to c/x̂ at the first overload dequeue, so p50 in OV-long-v at T = 2 goes from ≈ 1.99 s to ≈ 1.64 s, at no predicted cost in share. Only the priced band is inert there, with s_b ≈ 200–600 s, which is the brief's "≈ d₀/δ" scale.
+- **The free band is §8(a)'s form.** It is τ = R + (T − R)/x̄, against §8(a)'s T·min(1, μ̂/λ̂). §8 rejected it as a whole law because it keeps a standing queue ∝ T. It returns here only as the zero-cost part, derived from the bill. The priced band removes the standing queue that §8 objected to, at δ-dependent speed.
 
 **Premises of the bill, each with a gauge:**
 - **The link stays busy.** The store pause holds about 880 datagrams in the link buffer (§1). Gauge: `link_util_w`.
@@ -1578,10 +1585,19 @@ So the steady window as registered includes a filling transient, and the arm's t
 - **Headroom, x̂ ≤ 1:** t_ov = 0 and x̄ = 1.0, so y = 0.0, the min is 1.0 and w = c⁺ = fl(T − R) exactly.
   - The second clause `a ≥ fl(T − R)` then differs from §13.2's `fl(a + R) ≥ T` only when a lies within one rounding of T − R.
   - So "identity" here means "identical except at one-ulp ties". The B′ ≡ A trace check is its witness. The form that is exact at ulps, `a + R ≥ T − (c − w)`, is ∞ − ∞ at T = ∞ and is rejected.
-- **The t_ov reset.**
-  - A tick with x̂ ≤ 1 resets t_ov, so the cap jumps up to c/x̄.
-  - The old law had the same reset (§5.1). A rise in the cap sheds nothing, and the queue regrows at (x − 1) s/s, so the behaviour is continuous in x even where τ is not continuous in time.
-  - Gauge: `tov_resets`, the resets after the first overload dequeue. D̂ = +∞ outside the start (`dhat_inf_frac` 0.034 ≈ t₀/40 s) suggests 0.
+- **The x̂ = 1 edge (a regression against build B).**
+  - **As a function,** w is continuous in (x, t_ov).
+  - **Along a trajectory it is not.** t_ov is state, and it resets at x̂ ≤ 1. With x̂ = 1.0007 held past the onset, the cap is far below c; one tick at x̂ = 0.9999 gives c.
+  - The old law did not step there in effect: its K carried (x − 1)⁺, so the cap was already at T − R whenever t_ov reset. The new priced band has no factor that vanishes as x → 1.
+  - **A rise in the cap sheds nothing.** The harm runs the other way: a false x̂ > 1 that lasts past s_b in a headroom drain sheds the backlog.
+    - At δ = 50 and T = 2, s_b ≈ 40 ms, and the identity margin in CL-long is t_ov ≤ 63 ms. The old law tolerated seconds. The one episode seen lasted 14 ms, over 3 seeds.
+    - The free band is first order in x̂ − 1 as well: a live tick with the head at age in [c/x̂, c] expires it, and breaks the trace identity by a few units.
+  - **So §1's "an outage must not read as overload" now rests on μ̂'s margin and on short false episodes,** not on the law.
+  - **Gauges:**
+    - `tov_resets`, the resets after the first overload dequeue;
+    - `y_max` and `w_min_over_c` (the minimum of w/c⁺), reported in every identity cell.
+  - **§5.2 test 3's "continuity through x = 1 ± 10⁻⁹"** is restated as continuity of w in (x, t_ov) jointly. The trajectory step is bounded by a test instead: in a planted drain with x̂ = 1 + 10⁻³ for t_ov ∈ {0.5, 1, 2}·s_b, the shed is reported against the backlog.
+  - **Owner question Q34** (§13.4). It is not patched with a constant.
 - **NO-MODE-SWITCH.** One expression. Three clamps, each continuous and each gauged. No dial is compared with a constant. The OR is a minimum of two thresholds, and both are always computed.
 - **The floor.** w > 0 at every finite t_ov, so the old collapse threshold K_c has no counterpart. `floor_bind` is reported, and `collapse_t` is replaced by `onset_t`, the first instant with y ≥ 1, that is, t₀ + s_b.
 
@@ -1607,6 +1623,15 @@ So the steady window as registered includes a filling transient, and the arm's t
 - So at video δ the new law still holds a standing queue of c/x (≈ 1.55 s at T = 2, p50 ≈ 1.64 s), against the 0.17 s of today's Realtime.
 - **What Q32 still asks:** whether a reserve that U values should be held at δ ≈ 0, where the verdict cannot see delay (§12.3).
 
+**Q34 (new; open): the priced band at x̂ → 1⁺.**
+- The old law's (x − 1)⁺ came from refund odds that the policy refutes. So the new priced band has no factor that vanishes at x = 1, and a false overload reading longer than s_b sheds a headroom backlog (§13.3, the x̂ = 1 edge).
+- **A candidate with provenance, not derived here:** charge the priced band only against the wait the overload itself built under A, `∫(x̂ − 1)⁺ dt`. That is the status-quo queue growth, and it is 0 in a drain whose backlog came from an outage.
+- **Default: none.** The registered run measures the edge through `y_max` and `w_min_over_c` in the identity cells.
+
+**Open reading for the owner: OV-long-m against today's Realtime is predicted "equivalent" or "worse", not "dominates"** (§13.5).
+- U accepts the descent's share cost for the delay it buys, and a barred dominance reading cannot price that.
+- Whether the verdict at intermediate δ should read U, or dominance, is the owner's question. This registration reads dominance as §12 does.
+
 **Q33 (new; it blocks shipping, with Q24).** The ramp `min(1, 2/(1 + y))`, the even-money Kelly form, relaxes the U-optimal jump.
 - Alternatives: any continuous φ(t_ov/s_b) that is 0 below 1 and tends to 1.
 - §13.5's OV-long-m rows read its shape: the onset instant, the post-onset deficit and the 1/t_ov tail.
@@ -1615,6 +1640,10 @@ So the steady window as registered includes a filling transient, and the arm's t
 ### 13.5 Predictions (written before any run of B′)
 
 **Build B′** = A + the law of §13.3 (no send gate), everything else as §12.1's A.
+
+**The H = ∞ rows** (OV-long at T ∈ {0.4, 2, ∞}; OV-long-v at T ∈ {1, 2, ∞}) are **reported only**, with no band.
+- The one expectation: their on time is ≤ the H = 0 row at the same T. B read 0.7908 against 0.8042 at T = 2 in OV-long.
+- T = ∞, H = ∞ is §12.1's Bulk gate.
 
 **Common numbers:**
 - OV-long and OV-long-m (δ = 50, and 0.1): x̂ ≈ 1.24 (B's young units read μ̂ ≈ 9 690), R ≈ 0.104 s, ô ≈ 0.095 s, t₀ ≈ 1.2 s.
