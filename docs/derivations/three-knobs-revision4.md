@@ -45,7 +45,8 @@
 **The gap to today's Realtime (0.8165 / 0.814 / 0.172 s) has two halves.** Revision 4 takes both.
 - **Delay: the intake's standing queue.** Fixed by the wait limit (§2, §3.1).
 - **Share: repair that displaces source under saturation.**
-  - Today's Realtime arm sends every unit into the link, and its repairs can decode the units the link buffer drops. That mechanism is inferred from the arithmetic; §5.4 adds the gauge.
+  - **Measured** (stored runs plus two count-only gauges, `toy-stage3e` `fd77697a`; §3.4). Today's Realtime arm sends 10 507 repairs, and its own link queue drops 96 % of them. Of the 138 units it decodes, none were first sends the queue had dropped. So its share is set by the link buffer passing first sends: `(N − 19 187 queue-dropped first sends)·(1 − ε)/N` ≈ 0.815.
+  - The new model's repair is effective: it decodes 2 821 of 2 826 lost first sends. But it takes 8.0 % of link sends, one for one from first sends, and 5 254 of its repairs are redundant.
   - The new model drops before a unit has a seq, so any r above ε/(1 − ε) displaces source.
   - The fix is the engine's own spare-capacity clamp, `r_eff = min(r, spare)`, applied to every design. The offline simulation lacks it because it has no cwnd (§3.3).
 
@@ -75,7 +76,7 @@
 | design | prediction |
 |---|---|
 | Revision 3 (stored) | 0.793 / 0.793 / 0.390 s |
-| the clamp alone | 0.832 / 0.832 / 0.39 s |
+| the clamp alone | 0.837 / 0.837 / 0.39 s |
 | the wait limit alone | 0.770 / 0.770 / 0.095 s |
 | Revision 4, both | 0.79–0.81 / 0.79–0.80 / 0.095–0.10 s |
 | today's Realtime behind the engine's gate, with a 500-packet front queue | about 0.808 / 0.80 / 0.15 s |
@@ -280,6 +281,37 @@ Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower 
 - **It cannot fall below the 0.093 s link-queue floor** that both designs share. A front queue of depth 0 would equal Revision 4's 0.095 s.
 - **Its share:** front-queue drops are off the wire, so the clamp takes its repair to about 0 as well. Its units are young enough to resend, so share ≈ C/((1 + ε/(1 − ε))·λ) ≈ 0.808.
 
+### 3.4 What the clamp nets under saturation, from the measured mechanism
+
+**Measured in OV under RL** (stored runs plus count-only gauges, `toy-stage3e` `fd77697a`; 120 000 units):
+
+| design | repairs sent | repairs dropped by the link queue | units decoded | of them, queue-dropped first sends | redundant repairs | first sends dropped |
+|---|---|---|---|---|---|---|
+| today's Realtime, δ = 50 | 10 507 | 10 077 (96 %) | 138 | 0 | — | 19 187 by the link queue, of 29 263 queue drops |
+| new model, T = 0.4 | 8 331 (8.0 % of link sends) | 0 | 2 821 (99.8 % of 2 826 lost first sends) | — | 5 254 | 24 853 at the intake (dequeue rule) |
+
+- **Today's sender:** its repair is spent on its own queue. Its share is the link buffer passing first sends, `(120 000 − 19 187)·(1 − ε)/120 000 ≈ 0.815`, against 0.8165 measured. It is not a decode effect: the first draft's inference is refuted.
+- **The new model:** its repair works, but under saturation every repair slot is a first send not made.
+
+**The net of the clamp** (r_eff → 0 under saturation), per first send f:
+- it gains r·f first sends, each delivered with probability 1 − ε;
+- it loses the ε·P_dec·f units the repair decoded.
+
+```text
+   Δshare  =  (f/N) · ( r·(1 − ε)  −  ε·P_dec )
+```
+
+- **Inputs:** r = 8 331/f, with f ≈ 95 800 first sends, so r ≈ 0.087. ε ≈ 2 826/f ≈ 0.0295. P_dec = 0.998.
+- **Result:** Δshare = 0.798·(0.0844 − 0.0294) = **+0.044**.
+- **Check against the counts:** +8 331·0.97 − 2 821 = +5 260 units, which equals the 5 254 redundant repairs to within the loss on the freed slots.
+
+**Applied to the 2×2 of §4.1:**
+- **Wait limit off, clamp on:** 0.7929 + 0.044 = **0.837**, on time the same, p50 unchanged at 0.390 s. The units are still unprotected at T − R, so the lost ε stays lost.
+- **Wait limit on, clamp on:** the units are young, so the lost ε is recovered by resend, costing ρ = ε/(1 − ε) ≈ 0.030 of link sends instead of r = 0.087. The steady share is C/((1 + ρ)·λ) = **0.808**, on time 0.80, p50 ≈ 0.10 s. That is +0.038 against the wait limit alone (0.770), with no flush.
+- **Today's sender behind the gate:** the clamp removes the repairs its queue was dropping, so its share stays ≈ 0.81 (§3.3).
+
+**Revised prediction rows:** clamp alone 0.837 / 0.837 / 0.39 s; Revision 4 with both parts 0.80–0.81 / 0.79–0.80 / 0.095–0.10 s.
+
 ## 4. Predictions (derived, written before any run)
 
 **Common numbers (OV).**
@@ -294,11 +326,11 @@ Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower 
 
 | | clamp off | clamp on |
 |---|---|---|
-| **wait limit off** (Revision 3) | 0.7929 / 0.7928 / 0.390 s (stored) | 0.832 / 0.832 / 0.39 s |
+| **wait limit off** (Revision 3) | 0.7929 / 0.7928 / 0.390 s (stored) | 0.837 / 0.837 / 0.39 s (§3.4) |
 | **wait limit on** | 0.770 / 0.770 / 0.095 s | 0.79–0.81 / 0.79–0.80 / 0.095–0.10 s |
 
 How each cell is derived:
-- **Clamp alone.** r_eff ≈ 0, so there is no displacement. Units are still sent unprotected at T − R, so first-send loss stays lost: `(C/λ)(1 − ε)` = 0.808, plus a flush of 0.298·9 700·0.97/120 000 = 0.024.
+- **Clamp alone.** r_eff ≈ 0, so there is no displacement. Units are still sent unprotected at T − R, so first-send loss stays lost: `(C/λ)(1 − ε)` = 0.808, plus a flush of 0.298·9 700·0.97/120 000 = 0.024. That gives 0.832 from capacity, and 0.837 from the measured counts (§3.4); the counts are used.
 - **Wait limit alone.** `μ̂·10 s/N` with no flush, so 0.767–0.772. The collapse comes 47 ms after μ̂ becomes finite.
 - **Both.** Units are young and so protected at birth (0.098 + 0.093 < 0.4). Loss is recovered by resend, at ρ ≈ ε/(1 − ε), and a resend arrives by about 0.3 s. The share is C/((1 + r_eff + ρ)·λ), which is 0.808 at r_eff = 0 and about 0.79 if r_eff stays near 0.02.
 
@@ -453,7 +485,7 @@ The law is added as **readouts only**: λ̂, μ̂ (with Ĉ, r_eff and ε̂), t_o
 - the gauges `deq_early`, `floor_bind`, `collapse_t`, `band_hold`, `ov_frac` and `spare_bind`;
 - the fraction of rounds with Ĉ = +∞;
 - r_eff and the resend rate;
-- **today's Realtime's decodes of link-dropped units**, the gauge the repair-displacement explanation rests on;
+- `dec_units_qdrop` and the queue drops of repairs, per design, to confirm §3.4's accounting under the clamp;
 - the Gott calibration: forecast persistence against realised persistence, per episode.
 
 ## 6. Owner questions (numbering continues from Q23)
