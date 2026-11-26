@@ -2,7 +2,7 @@
    d_ss + (F/lam) (w(tau1) - w(tau2)) / L, tau = h + w(tau), w from the run's own cap_series (the law's output, 13.9.2), and against the
    ex-ante form d_ss + D0 * overlap / L.  d_ss: kappa_r S / lam where B' resends before the onset, the decode term where neither build resends."""
 import sys, os, math
-TOY = r"C:\Users\pierr\AppData\Local\Temp\claude\c92d18e023ce8566\28b06ad0-9458-4799-81e9-72731fe0b356\scratchpad\s3e\tools\toy"
+TOY = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOY); os.chdir(TOY)
 import numpy as np
 import confirm13q as Q, confirm13 as K, confirm3e as C, confirm_read as CR

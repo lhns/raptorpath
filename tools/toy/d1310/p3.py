@@ -1,6 +1,6 @@
 """d_ss from the stored rates over the clear pre-onset span (send time): S_B (pc - p0) + dP (1 - p0) + dup_B - dec_B + dec_A - dup_A, per lam."""
 import sys, os, math
-TOY = r"C:\Users\pierr\AppData\Local\Temp\claude\c92d18e023ce8566\28b06ad0-9458-4799-81e9-72731fe0b356\scratchpad\s3e\tools\toy"
+TOY = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOY); os.chdir(TOY)
 import numpy as np
 import confirm13q as Q, confirm13 as K, confirm3e as C, confirm_read as CR

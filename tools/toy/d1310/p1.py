@@ -1,7 +1,7 @@
 """Item 2 as the reader computes it, beside the hand-over-shift term: per seed, the overlap of the reader's pre-onset windows with [t_on,i - c/x, t_on,i],
 times D0 = (mu/lam) g/(1+g), g = c / (2 x s_b).  Also the measured deficit in the pre windows split into 'inside the shift band' and 'outside'."""
 import sys, os, math
-TOY = r"C:\Users\pierr\AppData\Local\Temp\claude\c92d18e023ce8566\28b06ad0-9458-4799-81e9-72731fe0b356\scratchpad\s3e\tools\toy"
+TOY = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOY); os.chdir(TOY)
 import numpy as np
 import confirm13q as Q, confirm13 as K, confirm3e as C, confirm_read as CR

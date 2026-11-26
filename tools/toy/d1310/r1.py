@@ -1,6 +1,6 @@
 """Run one seed of A and B' of OV-long-q at T, keep the per-seq arrays (send time, hand-over time, lost, delivered) to compare in seq space."""
 import sys, os, math, time, pickle
-TOY = r"C:\Users\pierr\AppData\Local\Temp\claude\c92d18e023ce8566\28b06ad0-9458-4799-81e9-72731fe0b356\scratchpad\s3e\tools\toy"
+TOY = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOY); os.chdir(TOY)
 import numpy as np
 import confirm13q as Q, confirm13 as K, toy2
