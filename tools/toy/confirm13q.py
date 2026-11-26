@@ -447,8 +447,16 @@ def read_q(jobs, nf, double=frozenset()):
     lines.append("\nThe corrected tests (13.9.5) and the registered predictions, per lifetime (item 2's bar is the p95 of |A - A'| over the same windows from the cell's own A/A pair, 12 seeds, at the comparison's seed count):\n")
     tl, flags, _ = tests_for(Q, Q_DELTA, jobs, aa_pair, PRED)
     lines += tl
-    bad = sorted(k for k, v in flags.items() if v is False)
-    na = sorted(k for k, v in flags.items() if v is None)
+    for bj in [j for j in jobs if K.is_bp(j) and j.key == ("lt", INF, 0.0)]:
+        aj = [x for x in jobs if x.design == "A" and x.key == bj.key]
+        if aj and C.recs(aj[0]) and C.recs(bj):
+            n = min(len(C.recs(aj[0])), len(C.recs(bj)))
+            diffs = [C.ident_diff(C.load(aj[0].fp, s_), C.load(bj.fp, s_)) for s_ in range(n)]
+            du = float(np.mean([(ra["share_any"] - rb["share_any"]) * ra["units_total"] for ra, rb in zip(C.recs(aj[0], n), C.recs(bj, n))]))
+            lines.append("\nT = inf (registered: B' = A, bill 0): %d of %d seeds identical to A on every id3e key; whole-run A - B' = %.0f units" % (sum(1 for d in diffs if not d), n, du))
+    crit = {k: v for k, v in flags.items() if not k.startswith("share@")}              # the share band is printed per lifetime; 13.9.6's criterion is items 1-4, the bill and p50
+    bad = sorted(k for k, v in crit.items() if v is False)
+    na = sorted(k for k, v in crit.items() if v is None)
     lines.append("\nThe cell confirms the corrected tests if items 1, 3 and 4 hold at every T, item 2 is within its floor at every T, and the bill and p50 are in their bands: %s%s" % (
         "all hold" if not bad else "OUTSIDE: " + ", ".join(bad), "; not read (n/a): " + ", ".join(na) if na else ""))
     lines.append("The residual's test is item 2 at all four T: a reading of 0.0018 within the floor at T = 1 and 2 means OV-long-m's excess was specific to that cell; about 0.0035-0.005 means the delta-specific "
