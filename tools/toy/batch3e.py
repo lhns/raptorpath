@@ -425,6 +425,9 @@ def amend_jobs():
     PARTS["REST"] = sorted([j for j in PARTS["AMEND"] if j.part == "REST"], key=cell_order)
 
 
+BASE_HELD_CELLS = ("K-OV",)      # 2026-11-26: K-OV's baseline rows do not finish within t_limit = 120 s (ADR-0084 at rho 0.95 sends 2 681 of 3 000 units, paused 119.8 s of 120): held for a decision
+
+
 def expl_jobs():
     """Exploratory, reported only, never under the verdict: sizing a sender wait limit.  OV, repair off on both sides, 6 seeds: the new model at T = 0.15, 0.2 and 0.4 (H = 0)
     and today's Realtime at delta 50."""
@@ -517,7 +520,7 @@ def build():
     smooth_jobs()
     expl_jobs()
     time_jobs()
-    PARTS["BASE"] = [j for p in ("EARLY", "REST") for j in PARTS[p] if j.design in ("adr", "rt", "bulk")]   # every baseline row: valid whatever Revision 4 does to the new model
+    PARTS["BASE"] = [j for p in ("EARLY", "REST") for j in PARTS[p] if j.design in ("adr", "rt", "bulk") and j.cell not in BASE_HELD_CELLS]   # every baseline row: valid whatever Revision 4 does
     register()
 
 

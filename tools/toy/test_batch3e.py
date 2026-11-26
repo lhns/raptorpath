@@ -788,8 +788,9 @@ class ExploratoryAndBaseline(unittest.TestCase):
         base = B.PARTS["BASE"]
         self.assertTrue(base)
         self.assertEqual({j.design for j in base}, {"adr", "rt", "bulk"})
-        self.assertTrue({"K-OV", "OV-long", "OV-long-v"} <= {j.cell for j in base})                 # their baseline rows run, nothing else of those cells
+        self.assertTrue({"OV-long", "OV-long-v"} <= {j.cell for j in base})                 # OV-long's baseline rows run, nothing else; K-OV's do not finish in 120 s and are held
         self.assertFalse([j for j in base if j.design == "new"])
+        self.assertFalse([j for j in base if j.cell in B.BASE_HELD_CELLS])
         self.assertEqual(B.missing_markers("BASE"), B.missing_markers("CROSS"))                      # valid whatever Revision 4 does to the new model
 
     def test_steady_window_of_a_run(self):

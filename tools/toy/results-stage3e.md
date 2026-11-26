@@ -678,3 +678,6 @@ Why repair costs the new model more is not tested here.
 
 **Hold.**  Every new-model row still to run (MAIN and REST) is held, because a Revision 4 of the sender may re-run them.  The baseline rows (ADR-0084, today's Realtime, today's Bulk) stay valid and run now (`--part BASE`, any cell, 240 fingerprints, 1 983 runs at the time of writing);
 K-OV and OV-long are not read until a reading is registered (equal deadline, steady windows, delay p50, like-for-like repair); only their baseline rows run.  The chain stops after EARLY and BASE.
+
+**K-OV's baseline rows stop the run (2026-11-26).**  `--part BASE` wrote `STOP` at the first K-OV row: ADR-0084 at rho 0.95, repair off, seed 0, did not finish (`finished` False): it sent 2 681 of 3 000 units in the 120 s `t_limit`, paused for 119.8 s of them (B = 8 against a 0.2 s round trip),
+delivered 0.886 and was on time on 0.008.  The registration's K-OV prediction (old designs read at most 0.08 on time) did not consider the time limit.  K-OV's baseline rows are held out of BASE until a decision (a longer `t_limit` changes the cell, so it needs an amendment); the STOP is left in place for the coordinator.
