@@ -1,0 +1,12 @@
+c1s-400 BASE p0: anchor btlbw 998252/s vs tx 79301/s (x12.6); anchor bdp 3423 vs tx*rtp 267 (x12.8); rtp 3.36 ms
+c1s-400 CAND p0: anchor btlbw 1045308/s vs tx 81336/s (x12.9); anchor bdp 3460 vs tx*rtp 271 (x12.8); rtp 3.33 ms; bbr_rs qbw 125655376 B/s (= 1545 B per tx dgr); qrt 2.20 ms
+c1d-400 BASE p0: anchor btlbw 562016/s vs tx 46977/s (x12.0); anchor bdp 1620 vs tx*rtp 136 (x11.9); rtp 2.89 ms
+c1d-400 BASE p1: anchor btlbw 554864/s vs tx 45253/s (x12.3); anchor bdp 1662 vs tx*rtp 126 (x13.2); rtp 2.79 ms
+c1d-400 CAND p0: anchor btlbw 580839/s vs tx 48753/s (x11.9); anchor bdp 1680 vs tx*rtp 141 (x11.9); rtp 2.89 ms; bbr_rs qbw 122651437 B/s (= 2516 B per tx dgr); qrt 2.15 ms
+c1d-400 CAND p1: anchor btlbw 583910/s vs tx 47575/s (x12.3); anchor bdp 1730 vs tx*rtp 142 (x12.1); rtp 3.00 ms; bbr_rs qbw 122912289 B/s (= 2584 B per tx dgr); qrt 2.15 ms
+c2-100 BASE p0: anchor btlbw 62883/s vs tx 9047/s (x7.0); anchor bdp 11285 vs tx*rtp 1720 (x6.6); rtp 190.08 ms
+c2-100 CAND p0: anchor btlbw 72535/s vs tx 8567/s (x8.5); anchor bdp 12080 vs tx*rtp 1620 (x7.5); rtp 189.15 ms; bbr_rs qbw 13329970 B/s (= 1556 B per tx dgr); qrt 7.81 ms
+c8-100 BASE p0: anchor btlbw 110158/s vs tx 8523/s (x12.9); anchor bdp 11790 vs tx*rtp 840 (x14.0); rtp 98.55 ms
+c8-100 BASE p1: anchor btlbw 23764/s vs tx 1732/s (x13.7); anchor bdp 1036 vs tx*rtp 71 (x14.6); rtp 40.82 ms
+c8-100 CAND p0: anchor btlbw 113210/s vs tx 8375/s (x13.5); anchor bdp 8454 vs tx*rtp 671 (x12.6); rtp 80.08 ms; bbr_rs qbw 13267554 B/s (= 1584 B per tx dgr); qrt 8.34 ms
+c8-100 CAND p1: anchor btlbw 22476/s vs tx 1769/s (x12.7); anchor bdp 2794 vs tx*rtp 214 (x13.0); rtp 121.16 ms; bbr_rs qbw 2585224 B/s (= 1461 B per tx dgr); qrt 39.43 ms

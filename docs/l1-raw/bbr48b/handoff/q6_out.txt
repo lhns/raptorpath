@@ -1,0 +1,8 @@
+c1s-400 BASE: in-order delay mean ms  median 22  range 19-96
+c1s-400 CAND: in-order delay mean ms  median 20  range 17-22
+c1d-400 BASE: in-order delay mean ms  median 27  range 23-68
+c1d-400 CAND: in-order delay mean ms  median 27  range 23-30
+c2-100 BASE: in-order delay mean ms  median 344  range 309-357
+c2-100 CAND: in-order delay mean ms  median 350  range 341-366
+c8-100 BASE: in-order delay mean ms  median 4203  range 3756-4714
+c8-100 CAND: in-order delay mean ms  median 6141  range 5456-6587

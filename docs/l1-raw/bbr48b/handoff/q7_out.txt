@@ -1,0 +1,8 @@
+c1s-400 BASE: lines 3124  cap at N*P 1.000  cap at N*P and occupancy >= 0.98 cap 0.615
+c1s-400 CAND: lines 2165  cap at N*P 1.000  cap at N*P and occupancy >= 0.98 cap 0.364
+c1d-400 BASE: lines 2265  cap at N*P 0.212  cap at N*P and occupancy >= 0.98 cap 0.023
+c1d-400 CAND: lines 2096  cap at N*P 0.294  cap at N*P and occupancy >= 0.98 cap 0.019
+c2-100 BASE: lines 2510  cap at N*P 0.803  cap at N*P and occupancy >= 0.98 cap 0.790
+c2-100 CAND: lines 2548  cap at N*P 0.821  cap at N*P and occupancy >= 0.98 cap 0.803
+c8-100 BASE: lines 2263  cap at N*P 0.724  cap at N*P and occupancy >= 0.98 cap 0.707
+c8-100 CAND: lines 2321  cap at N*P 0.714  cap at N*P and occupancy >= 0.98 cap 0.699

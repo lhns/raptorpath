@@ -1,0 +1,36 @@
+== c8-100 BASE (median over rows of row-median per bin)
+[ 0, 1) n=12 win 784/802 cw 737 fl 599 | B0 48 infl0 408 wrtt0 42 rtt0 49 qcw0 596114 | B1 16 infl1 156 wrtt1 80 rtt1 120 qcw1 348311
+[ 1, 4) n=12 win 1412/1419 cw 1096 fl 468 | B0 65 infl0 439 wrtt0 77 rtt0 86 qcw0 1013005 | B1 3 infl1 44 wrtt1 246 rtt1 254 qcw1 1080353
+[ 4, 8) n=12 win 2045/2056 cw 1588 fl 405 | B0 307 infl0 362 wrtt0 90 rtt0 126 qcw0 1129527 | B1 2 infl1 14 wrtt1 252 rtt1 258 qcw1 1764540
+[ 8,16) n=12 win 4096/4096 cw 8386 fl 1410 | B0 1360 infl0 1079 wrtt0 102 rtt0 249 qcw0 1271401 | B1 2 infl1 134 wrtt1 284 rtt1 329 qcw1 1742073
+[16,24) n=12 win 4096/4096 cw 12534 fl 926 | B0 708 infl0 527 wrtt0 129 rtt0 206 qcw0 1642683 | B1 0 infl1 373 wrtt1 246 rtt1 290 qcw1 1300924
+[24,32) n=12 win 4096/4096 cw 11339 fl 671 | B0 996 infl0 445 wrtt0 146 rtt0 214 qcw0 1845519 | B1 2 infl1 70 wrtt1 254 rtt1 272 qcw1 1261947
+[32,40) n=12 win 4096/4096 cw 11321 fl 368 | B0 736 infl0 208 wrtt0 130 rtt0 191 qcw0 1855382 | B1 2 infl1 45 wrtt1 251 rtt1 259 qcw1 1560991
+[40,60) n=12 win 3970/4096 cw 11641 fl 168 | B0 42 infl0 38 wrtt0 74 rtt0 134 qcw0 1620552 | B1 0 infl1 0 wrtt1 121 rtt1 112 qcw1 2455395
+== c8-100 CAND (median over rows of row-median per bin)
+[ 0, 1) n=12 win 936/966 cw 952 fl 813 | B0 434 infl0 561 wrtt0 20 rtt0 60 qcw0 272143 | B1 43 infl1 278 wrtt1 135 rtt1 146 qcw1 473320
+[ 1, 4) n=12 win 1610/1624 cw 1254 fl 718 | B0 651 infl0 572 wrtt0 20 rtt0 85 qcw0 255630 | B1 546 infl1 136 wrtt1 88 rtt1 331 qcw1 224720
+[ 4, 8) n=12 win 2350/2364 cw 1826 fl 326 | B0 721 infl0 317 wrtt0 20 rtt0 94 qcw0 258590 | B1 790 infl1 22 wrtt1 88 rtt1 476 qcw1 223695
+[ 8,16) n=12 win 4096/4096 cw 11590 fl 351 | B0 1082 infl0 336 wrtt0 21 rtt0 131 qcw0 267976 | B1 964 infl1 19 wrtt1 90 rtt1 565 qcw1 233464
+[16,24) n=12 win 4096/4096 cw 16011 fl 194 | B0 1002 infl0 174 wrtt0 22 rtt0 123 qcw0 281915 | B1 322 infl1 9 wrtt1 90 rtt1 248 qcw1 230501
+[24,32) n=12 win 4096/4096 cw 15506 fl 162 | B0 984 infl0 142 wrtt0 23 rtt0 125 qcw0 289529 | B1 288 infl1 11 wrtt1 90 rtt1 234 qcw1 227811
+[32,40) n=12 win 4096/4096 cw 13572 fl 153 | B0 1048 infl0 142 wrtt0 23 rtt0 129 qcw0 288841 | B1 244 infl1 10 wrtt1 90 rtt1 209 qcw1 233810
+[40,60) n=12 win 2972/4096 cw 10798 fl 0 | B0 10 infl0 0 wrtt0 16 rtt0 100 qcw0 247926 | B1 4 infl1 0 wrtt1 56 rtt1 54 qcw1 211676
+== c2-100 BASE (median over rows of row-median per bin)
+[ 0, 1) n=12 win 432/439 cw 339 fl 266 | B0 10 infl0 266 wrtt0 36 rtt0 46 qcw0 616416 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[ 1, 4) n=12 win 538/544 cw 420 fl 47 | B0 8 infl0 47 wrtt0 53 rtt0 54 qcw0 928488 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[ 4, 8) n=12 win 750/750 cw 579 fl 32 | B0 12 infl0 32 wrtt0 73 rtt0 75 qcw0 984981 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[ 8,16) n=12 win 2048/2048 cw 2476 fl 189 | B0 940 infl0 189 wrtt0 99 rtt0 204 qcw0 1237381 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[16,24) n=12 win 2048/2048 cw 3786 fl 29 | B0 1018 infl0 29 wrtt0 104 rtt0 207 qcw0 1292890 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[24,32) n=12 win 2048/2048 cw 10000 fl 31 | B0 862 infl0 31 wrtt0 118 rtt0 208 qcw0 1481645 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[32,40) n=12 win 2048/2048 cw 10000 fl 29 | B0 837 infl0 29 wrtt0 122 rtt0 207 qcw0 1524269 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[40,60) n=12 win 2048/2048 cw 10000 fl 28 | B0 819 infl0 28 wrtt0 124 rtt0 207 qcw0 1534797 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+== c2-100 CAND (median over rows of row-median per bin)
+[ 0, 1) n=12 win 470/470 cw 363 fl 274 | B0 248 infl0 274 wrtt0 22 rtt0 43 qcw0 292724 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[ 1, 4) n=12 win 648/650 cw 502 fl 64 | B0 423 infl0 64 wrtt0 22 rtt0 66 qcw0 267940 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[ 4, 8) n=12 win 702/702 cw 542 fl 28 | B0 484 infl0 28 wrtt0 21 rtt0 71 qcw0 268617 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[ 8,16) n=12 win 2044/2048 cw 2836 fl 215 | B0 1786 infl0 215 wrtt0 23 rtt0 205 qcw0 299741 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[16,24) n=12 win 2048/2048 cw 6174 fl 35 | B0 1814 infl0 35 wrtt0 22 rtt0 208 qcw0 297948 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[24,32) n=12 win 2048/2048 cw 10000 fl 34 | B0 1814 infl0 34 wrtt0 22 rtt0 208 qcw0 280446 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[32,40) n=12 win 2048/2048 cw 10000 fl 30 | B0 1828 infl0 30 wrtt0 21 rtt0 207 qcw0 261973 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
+[40,60) n=12 win 2048/2048 cw 10000 fl 35 | B0 1814 infl0 35 wrtt0 23 rtt0 207 qcw0 287384 | B1 - infl1 - wrtt1 - rtt1 - qcw1 -
