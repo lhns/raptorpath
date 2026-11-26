@@ -344,7 +344,7 @@ EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expir
           # stage 3e (three-knobs-stage3e-build.md 2): the repair laws as shipped and the two lifetime comparisons of the repair span; by name only
           "normal_survival_as", "normal_quantile_as", "p_fec_normal_as", "z_for_tail_target", "r_star_with_z", "r_saturation", "soft_saturate",
           "controller_rate_parts", "derive_window_parts", "bulkness", "t_tail_of", "rate_law", "beta_upper", "span_edge_ok", "decoded_late",
-          "saturation_pressure", "rb_hold"}
+          "saturation_pressure", "rb_hold", "wait_limit_tau", "wait_limit_K", "wait_limit_Kc", "tau_below_t"}
 
 
 def _names(node):
@@ -1908,6 +1908,100 @@ class Stage3eDecodedByCause(unittest.TestCase):
         self.assertLessEqual(g["dec_units_qdrop"], min(g["dec_units"], g["first_qdrop"]))
         off = toy2.run(rt_cfg(**lk))
         self.assertEqual(off["gauges"]["dec_units_qdrop"], 0)                                  # nothing decodes without repair
+
+
+class Rev4Gauge(unittest.TestCase):
+    """Revision 4, step 1 (three-knobs-revision4.md 3.1, 3.2, 5.3): the wait limit's inputs as readouts only.  No decision reads them."""
+
+    def test_defaults(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.rev4_gauge, c.dhat_bias), (False, 0.0))
+
+    def test_tau_is_inert_at_t_inf_and_never_nan(self):
+        for delta in (0.005, 0.5, 50.0, 1e6):
+            for x in (0.0, 1.0, 1.3, 100.0):
+                for t_ov in (0.0, 1e6):
+                    K = toy2.wait_limit_K(delta, x, t_ov)
+                    tau = toy2.wait_limit_tau(math.inf, K, math.inf)
+                    self.assertEqual(tau, math.inf)
+                    self.assertFalse(math.isnan(tau))
+
+    def test_tau_is_t_exactly_at_headroom(self):
+        for T in (0.1, 0.4, 2.0, 1e9):
+            for x in (0.0, 0.5, 1.0):
+                self.assertEqual(toy2.wait_limit_tau(T, toy2.wait_limit_K(50.0, x, 1e3), T - 0.1 + 0.09), T)
+
+    def test_shape_monotone_and_the_collapse_threshold(self):
+        R, o = 0.102, 0.093
+        den = lambda T: max(T - R + o, o)                                    # noqa: E731
+        prev = -math.inf
+        for T in (0.2, 0.4, 0.8, 2.0):
+            tau = toy2.wait_limit_tau(T, 0.05, den(T))
+            self.assertGreater(tau, prev)
+            prev = tau
+        for a, b in (((0.5, 1.3, 2.0), (50.0, 1.3, 2.0)), ((50.0, 1.3, 2.0), (50.0, 2.0, 2.0)), ((50.0, 1.3, 2.0), (50.0, 1.3, 3.0))):
+            self.assertGreaterEqual(toy2.wait_limit_tau(0.4, toy2.wait_limit_K(*a), den(0.4)), toy2.wait_limit_tau(0.4, toy2.wait_limit_K(*b), den(0.4)))
+        for T, o_ in ((0.4, 0.093), (1.0, 0.05), (2.0, 0.2)):
+            Kc = toy2.wait_limit_Kc(T, R, o_)
+            self.assertAlmostEqual(Kc, (T - R) * (T - R + o_), delta=1e-12)
+            c = T - R
+            self.assertAlmostEqual(c - Kc / (c + o_), 0.0, delta=1e-12)     # the effective margin reaches 0 at K_c
+        K = toy2.wait_limit_K(50.0, 1.25, 1.0)
+        self.assertAlmostEqual(K, 12.5, delta=1e-12)
+
+    def test_dhat_needs_ten_qualifying_rounds_and_a_short_pause(self):
+        d = toy2.DHat()
+        self.assertEqual(d.value(), math.inf)
+        for i in range(9):
+            d.add_round(100, 0.1, True, 0.0, 0.1)
+        self.assertEqual(d.value(), math.inf)                                    # nine rounds: not enough
+        d.add_round(120, 0.1, True, 0.05, 0.1)
+        self.assertEqual(d.value(), 1200.0)                                       # the maximum over the ten
+        d.add_round(500, 0.1, True, 0.5, 0.1)                                     # a pause longer than R: the round does not qualify
+        self.assertEqual(d.value(), math.inf)
+        for i in range(10):
+            d.add_round(100, 0.1, True, 0.0, 0.1)
+        self.assertEqual(d.value(), 1000.0)                                       # ten clean rounds later it is back, the bad one forgotten
+        d.add_round(100, 0.1, False, 0.0, 0.1)                                    # not flow-limited: the link may have idled
+        self.assertEqual(d.value(), math.inf)
+        z = toy2.DHat()
+        for i in range(10):
+            z.add_round(0, 0.1, True, 0.0, 0.1)
+        self.assertGreater(z.value(), 0.0)                                        # D-hat > 0 always
+
+    def test_the_estimator_cannot_read_the_cells_link(self):
+        import inspect
+        src = inspect.getsource(toy2.DHat) + inspect.getsource(toy2.Sim.dhat_close_round) + inspect.getsource(toy2.Sim.dhat_note_pause)
+        for forbidden in ("link", "p0", "pc", "link_sv", "cell"):
+            self.assertNotIn(forbidden, src)
+
+    def test_gauges_change_nothing(self):
+        for cell, kw in (("CL", dict(n_total=6000, dead=(0, 0.1, 0.1))), ("OV", dict(n_total=6000))):
+            a = e_cfg(cell, 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), **kw)
+            b = e_cfg(cell, 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), rev4_gauge=True, **kw)
+            a.want_trace = b.want_trace = True
+            ra, rb = toy2.run(a), toy2.run(b)
+            import batch3e
+            self.assertEqual(batch3e.id3e(ra, rb), [], cell)
+            self.assertEqual(ra["_trace"], rb["_trace"], cell)
+            self.assertNotIn("rev4", ra)
+            self.assertIn("rev4", rb)
+
+    def test_no_tick_is_below_t_with_headroom_and_overload_shows(self):
+        ok = toy2.run(e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rev4_gauge=True))["rev4"]
+        self.assertGreater(ok["n_ticks"], 0)
+        self.assertEqual(ok["n_tau_lt_T"], 0)
+        ov = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True))["rev4"]
+        self.assertGreater(ov["ov_frac"], 0.1)
+        self.assertGreater(ov["n_tau_lt_T"], 0)
+        self.assertIsNotNone(ov["collapse_t"])
+        self.assertGreater(ov["in_flight_max"], 0)
+
+    def test_a_biased_dhat_reads_lower(self):
+        r0 = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True))["rev4"]
+        r1 = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True, dhat_bias=0.10))["rev4"]
+        self.assertGreaterEqual(r1["n_tau_lt_T"], r0["n_tau_lt_T"])
+        self.assertAlmostEqual(r1["dhat_mean"] / r0["dhat_mean"], 0.9, delta=0.02)
 
 
 if __name__ == "__main__":
