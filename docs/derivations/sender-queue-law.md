@@ -21,32 +21,35 @@
    hand a unit to leg i  ⇔  B_i < β_i ,   β_i = 1.25 · ν̂_i · (g_i + Δ_v) ;   else it waits in the intake, whose head expires  ⇔  a ≥ min( T − R , w(δ, x̄, t_ov) )
 ```
 
-- B_i is quinn's queue on leg i (hand − tx), ν̂_i the leg's windowed-max transmit rate, g_i the interval between hand-offs, Δ_v the transmit counter's staleness.
+- B_i is what the producer has staged for leg i and quinn has not yet transmitted (the producer's own staged count minus quinn's `tx`, so datagrams still in the owner's channel count), ν̂_i the leg's windowed-max transmit rate, g_i the interval between hand-offs, Δ_v the transmit counter's staleness.
 - w is Revision 4's wait limit (§13.3), taken by reference.
 - The `bbr_rs` window is unchanged and δ-free: W_i = 2·b̂_i·m̂_i + A_i.
 - The repair clamp reads the same quantity: spare_i = (β_i − B_i)⁺ / β_i.
 - The store cap is a resource bound, n ≤ N·P (P = 2 048 per path), and holds no δ.
 
-**The δ seat.** W1.2's store seat and the three-knob intake are not the same seat. W1.2's seat prices what the sender keeps *downstream* of its hand-off. It sits where three knobs' gate window would sit under Q31's alternative. The three-knob intake prices how long a unit waits *upstream*, and only under overload. **δ goes on the intake.** Three reasons, each sufficient alone (§4):
-1. Only the intake seat is inert at T = ∞ for every δ.
-2. Downstream of the pacer's next release the queue buys nothing at any δ.
-3. The shipped downstream seat is pinned (MD18).
+**The δ seat.** W1.2's store seat and the three-knob intake are not the same seat. W1.2's seat prices what the sender keeps *downstream* of its hand-off. It sits where three knobs' gate window would sit under Q31's alternative. The three-knob intake prices how long a unit waits *upstream*, and only under overload. **Recommended: δ on the intake, the store and gate δ-free** (§4). This is a recommendation for the owner, not a proof:
+- **Quinn's queue has nothing to price.** Above the pacer's next release it buys no throughput at any δ (§2.2). That removes the downstream seat's FIFO part only.
+- **What the downstream seat could still price** is a brake *below* the controller's window (W1.2 A: goodput for wire-queue delay). Keeping it would make two δ seats on one queue. The plan allows one, so it is given up unless the owner wants it back as one formula with the intake (Q-S5).
+- **T = ∞ does not decide it.** The three-knob identity is T = ∞ ≡ today's ρ = 1 at the same δ (`three-knobs.md`: "float-identical to ρ = 1"), which a δ-priced store also keeps. Only the stronger reading, the same sender at every δ, would rule the store seat out, and r(β(δ)) fails that reading too (Q-S1).
 
-W1.2's "δ on the store law" plan is withdrawn. Its other conclusion, a δ-free `bbr_rs` window, stands.
+If the owner accepts, W1.2's "δ on the store law" step is withdrawn. Its other conclusion, a δ-free `bbr_rs` window, stands.
 
 **Build order** (§5):
 1. Gauges.
 2. §48d as drafted.
 3. The δ-free hand-off gate on `bbr_rs`, with off-Bulk stages.
 4. Promotion.
-5. The three-knob engine build.
+5. The gate and the wait limit together, offline (never run together yet).
+6. The three-knob engine build.
 
-**The three-knob engine build depends on `bbr_rs`.** The intake can only shed, and the clamp can only see saturation, if the queue is in the sender. Quinn's BBR puts it on the link: c8's slow leg holds B ≈ 1 under a window of 1–2.4 MB against a 100 KB BDP. The engine's own anchors over-read 7–14× (§1.3), so no engine-side window can take the controller's place.
+**The three-knob engine build depends on `bbr_rs`.** The intake can only shed, and the clamp can only see saturation, if the queue is in the sender. The engine's own anchors over-read 7–14× (§1.3), so no engine-side window can take the controller's place.
+- **Fully, where quinn's window never binds.** On c8's slow lossy leg quinn's BBR puts the whole queue on the link: B ≈ 1 under a window of 1–2.4 MB against a 100 KB BDP.
+- **Partly, where it binds.** At c2 quinn's window binds (B = 840), so a gate on quinn's BBR would still move ≈ 40 % of the sender's queue into the intake. The other ≈ 1 100 datagrams (≈ 112 ms) stay on the link.
 
 **§48d** (`bbr_rs` with ring and one-round ProbeRtt, against main): **`REGRESSION` predicted again.**
 - The ProbeRtt fix should take c2's goodput deficit to about 0.8 % and c8's to about 2 %.
 - The ring should take about 0.7 points off c8 client CPU.
-- Neither touches c8 server CPU (+5.3 %), the c8 in-order delay (+46 %), or the c2 delivered delay (≈ 206 ms in both arms). Their cause is quinn's queue, which only the hand-off law removes (§6).
+- Neither touches c8 server CPU (+5.3 %, finer slow-leg I/O), the c8 in-order delay (+46 %), or the c2 delivered delay (≈ 206 ms in both arms). The two delay costs come from quinn's queue, which only the hand-off law removes (§6).
 
 ## 0. The formula first
 
@@ -64,7 +67,7 @@ W1.2's "δ on the store law" plan is withdrawn. Its other conclusion, a δ-free 
 
 | symbol | meaning | provenance |
 |---|---|---|
-| B_i | datagrams handed to leg i's quinn connection and not yet transmitted, `hand − tx` | measured: owner counters, the `dgq` gauge (`p0-dwell-diag.md`: within a few % of the queue) |
+| B_i | datagrams the producer has staged for leg i and quinn has not yet transmitted: the producer's own staged count minus quinn's `tx`. That includes what still sits in the owner's command channel, which `hand − tx` misses, so the producer cannot overfill by a batch | measured: the producer's count (new) and the owner's `tx` snapshot. Today's `dgq` gauge `hand − tx` reads the quinn part (`p0-dwell-diag.md`: within a few % of the queue) |
 | ν̂_i | the leg's transmit rate, windowed max over the last 10 of its rounds (round = its wire srtt) | measured; the filter form is BBR's BtlBw filter (cited: v1 `bbr_bw_rtts = 10`, paper §8.4) |
 | 1.25 | quinn's pacing gain on the window | cited: quinn-proto `pacing.rs:92` (paper §8.4, "The actuator") |
 | g_i | mean interval between hand-offs to leg i's owner while the intake holds units | measured: owner `tx_batches` per wall second |
@@ -80,7 +83,7 @@ W1.2's "δ on the store law" plan is withdrawn. Its other conclusion, a δ-free 
 - **In the dials.** No δ, ρ, T or hint enters β or spare, so both are identical at every preset (constant in each dial, which is trivially continuous and monotone). δ enters only y. T enters only c⁺ = max(T − R, 0).
 - **In N.** β is per leg. A second leg adds its own β and changes nothing on the first. The intake is pooled, as in three knobs.
 - **In the inputs.** β rises with ν̂ and with g. It does not read the controller's window or model, so it does not make the controller a store input (§2.8).
-- **T = ∞.** c⁺ = ∞, so w = ∞ and no head ever expires. The hand-off is the same as at the Bulk preset, at every δ (§4). This holds by arithmetic, as in Revision 4 §13.3.
+- **T = ∞.** c⁺ = ∞, so w = ∞ and no head ever expires, by arithmetic, as in Revision 4 §13.3. The hand-off does not read T, so the T = ∞ sender equals today's ρ = 1 sender at the same δ, apart from the gate's own deliberate change (§2.9).
 
 ## 1. Verification
 
@@ -184,12 +187,14 @@ W1.2's "δ on the store law" plan is withdrawn. Its other conclusion, a δ-free 
 
 **The §48d draft's host gate is stale.**
 - It requires T6's f = 1.25 mutation to be red. Round 2 recorded it not red and `#[ignore]`d it: the sim plateaus at m̂ ≈ 12.6 ms instead of growing ×1.3 per period.
-- **Why the ratchet prediction failed** (inference, consistent with the recorded plateau, not tested):
-  - W1r2's map assumed the drained round's minimum reads the window-limited loop time f·(b̂/L)·m̂. That holds only once the drained window exceeds the **mean** zero-queue loop R̄₀; below it no queue forms and the minimum reads the floor.
-  - Under the sim's in-order release with ±3 ms jitter per direction, R̄₀ sits near the jitter's top, ≈ 16 ms.
-  - So the onset is m̂·(f·b̂/L − 1) > R̄₀ − m_r, with m_r the one-round floor (8–12 ms in the f = 0.75 exits). That is ≈ 14 ms at f = 1.25, and the fixed point m̂* ≈ R̄₀/(f·b̂/L) ≈ 12.4 ms matches the recorded 12.55–12.75 ms.
-  - A mutation the gate can see needs the onset below the start: f ≈ 2 gives m̂′ ≈ 12 + 2.06·12.6 − 16 ≈ 22 ms.
-  - **The shipped f = 0.75 cannot ratchet:** f·b̂/L ≤ 0.8 < 1.
+- **The recorded reason** (the doc comment on `probe_rtt_ratchet_gate_sees_a_mutated_gain_of_1_25`, `cc_sim.rs` on `bbrrs-r4`): "the round's min is not the window-limited loop time, so the derivation's ×1.3 per period growth does not appear". The f = 1.25 exits read [12 750, 12 750, 12 650, 11 200, 12 550, 12 750] µs.
+- **The gate can see a ratchet on the shipped form.** On the pre-fix tree the same f = 1.25 mutation grows ×2 per period, 23.9 → 50.3 → 102.6 ms (`docs/l1-raw/bbrrs-r2/red.txt` on `bbrrs-r4`). The shipped form resets m̂ to the loaded r_e at expiry; the one-round form does not. So the plateau is evidence that the fix removed the ratchet path, not that the gate is blind in general.
+- **A mechanism consistent with the plateau** (inference with a fitted constant, not tested):
+  - W1r2's map assumed the drained round's minimum reads f·(b̂/L)·m̂. A queue forms only once the drained window exceeds the **mean** zero-queue loop R̄₀; below that, the minimum reads the floor.
+  - The onset is then m̂·(f·b̂/L − 1) > R̄₀ − m_r, with m_r the one-round floor (8–12 ms in the f = 0.75 exits), and the fixed point is m̂* ≈ R̄₀/(f·b̂/L).
+  - R̄₀ ≈ 16 ms reproduces the recorded 12.55–12.75 ms. **That value is fitted to the plateau, not measured**: the sim prints only the loaded mean loop (14.3–15.7 ms in the red run's ProbeBw), which is not R̄₀. So this reading is not independent evidence.
+  - On that reading, a mutation that ratchets on the fixed form needs a larger gain: f ≈ 2 gives m̂′ ≈ 12 + 2.06·12.6 − 16 ≈ 22 ms.
+  - **The shipped f = 0.75 cannot ratchet on either reading:** f·b̂/L ≤ 0.8 < 1 (W1r2 §1b).
 - The owner decides the gate's form (Q-S3).
 
 ## 2. The derivation
@@ -262,13 +267,15 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 | Copa's cwnd, priced by `copa_delta_for_hint` | `scheduler/copa.rs` | the send gate, the repair clamp and placement's load term | **Leaves the hand-off path:** the gate reads B, the clamp B/β, placement B/β (§2.7) |
 | r(β(δ)) | the rate law | how much repair to send | unchanged. It is the rate law's seat, passed through a δ-free clamp |
 | the wait limit's y | Revision 4 §13.3 (not in the engine) | upstream wait under overload | **the one seat** |
-| Q31's alternative gate `(1 + q(δ))·Σ bw·RTprop` | Revision 4 §11.4 | downstream occupancy | not adopted (below) |
+| Q31's alternative gate `(1 + q(δ))·Σ bw·RTprop` | Revision 4 §11.4 | downstream occupancy | not adopted (§2.5) |
 
-**The T = ∞ test at a non-Bulk δ** decides it. Take an object at T = ∞ (three knobs: objects are T = ∞ at every hint) priced at δ = 50.
-- **The store seat** gives q = 0.05 against Bulk's 0.10, so this T = ∞ sender differs from the Bulk one. **Fails** T = ∞ ≡ Bulk.
-- **Q31's gate seat** fails the same way. At δ ≥ 50 it also fails the link-busy check at 1.05 × BDP (§11.4).
-- **A window seat** (W1.2 B, δ in τ_w) fails the same way. It also contracts at Realtime (W1.2 §3 B).
-- **The intake seat** gives c⁺ = ∞, so w = ∞ at every δ. **Holds.**
+**What the T = ∞ identity does and does not decide.**
+- **The three-knob identity is at the same δ.** `three-knobs.md` states T = ∞ "float-identical to ρ = 1" in every cell. A δ-priced store or gate keeps that identity, because today's ρ = 1 sender carries the same q(δ). So T = ∞ does not rule out a downstream seat.
+- **The stronger reading** is "the T = ∞ sender is the same at every δ". Take an object at T = ∞ (three knobs: objects are T = ∞ at every hint) priced at δ = 50. That reading would rule out the store seat (q = 0.05 against Bulk's 0.10), Q31's gate seat, and a window seat. It would also rule out r(β(δ)), which the rate law keeps at every T. So it is not the model's reading, and it is not used here (Q-S1).
+- **The other faults of those seats stand on their own.**
+  - Q31's gate seat at δ ≥ 50 fails the link-busy check at 1.05 × BDP (§11.4).
+  - A window seat (W1.2 B, δ in τ_w) contracts at Realtime (W1.2 §3 B).
+  - The shipped store seat is pinned by over-reading inputs (§9). That is a defect of its inputs, not of the seat: W1.2 A assumed honest ones.
 
 ### 2.5 The store and the gate window become images
 
@@ -312,6 +319,7 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 | g_i | a blocked producer may hand less often | g up means β up, toward more reserve, never less. Bounded by the producer's wake sources; gauged |
 | R (srtt) in the wait limit | yes: the queue leaves the RTT | c = T − R grows, so less expiry. This is the intended effect, and it is not a loop on the gate |
 | the controller's W, b̂, m̂ | not read | §8.4's "the substrate window is not a store-law input" stands, and W1.2's candidate C (U1) is not reopened |
+| quinn's `app_limited` flag, and through it `bbr_rs`'s samples | yes, whenever quinn's queue empties with window room | quinn sets `app_limited = buf.is_empty() && !congestion_blocked` at each transmit poll (vendored `connection/mod.rs:941`). `bbr_rs` then admits rate samples raise-only (`bbr_rs.rs:370`) and does not leave Startup (`:938`). With β ≈ 2–5 ms of drain, the queue empties when a hand-off is late by more than that, and at window jumps: at ProbeRtt exit the window opens by ≈ 1.25·b̂·m̂ + A, ≈ 10 ms of data at c2, against β ≈ 4 ms, so the refill takes a few hand-offs. Raise-only samples err high, which is the safe side for b̂. A Startup held by app-limited polls keeps its bounded T(2.885) window (paper §8.4). Gauged as `app_limited_i` and qm = S occupancy |
 | Copa's RTprop and BtlBw, the store law's inputs | yes (they fall) | the store law is removed from the hand-off (§2.5) |
 
 ### 2.9 NO-MODE-SWITCH, continuity, inertness
@@ -324,7 +332,7 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 - β and spare are constant in δ, ρ and T.
 - The intake's continuity, ±2 % at every preset (|Δw|/w ≤ 2 %·y/(1 + y)), is Revision 4 §13.3's.
 
-**T = ∞.** No expiry, and a hand-off identical to Bulk's at every δ.
+**T = ∞.** No expiry, and the hand-off does not read T. The T = ∞ sender equals the ρ = 1 sender of the same law at the same δ, as three knobs requires.
 
 **It is not inert against today's engine at Bulk.** Quinn's queue moves into the engine's intake, so the release binary changes deliberately (`binid: expected-change`).
 
@@ -340,6 +348,8 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 | `den_bind`, `ov_frac`, `onset_bind`, `floor_bind`, `tov_resets`, `y_max`, `w_min_over_c` | the intake's clamps and edges | Revision 4 §13.3 |
 | `fifo_wait_resend_i` | B_i/ν̂_i at each resend's hand-off | ≈ β/x (≤ 5 ms) against today's 0.2–0.5 s |
 | `infl_vs_out` | the engine in-flight count against Σ(F/s + B) | the defect gauge (§9); reported |
+| `app_limited_i` | share of quinn transmit polls on leg i that end app-limited | small under saturation; a rise at ProbeRtt exits is expected (§2.8) |
+| `bbr_rs`'s own clamps: `wmin_bind` (W at W_min = 4 MTU), `wrec_bind` (min(W, w_rec) taking w_rec), `sfloor_bind` (sampler interval at its max(m̂, 1 ms) floor), the ring's overflow count | the controller's clamps, which the hand-off inherits | ≈ 0 outside loss recovery and the first round. `wrec_bind` is the recovery window, gauged with loss episodes. The ring's overflow counter already exists |
 
 ## 4. The δ-seat answer
 
@@ -347,14 +357,19 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 - **W1.2's store seat** is a downstream-occupancy seat. Candidate A: n = G·Σ L̂·(RTprop + S + τ_s(δ)), the store braking below the window. It prices what the sender keeps between its hand-off and delivery. It is the same position as three knobs' gate window under Q31's alternative.
 - **The three-knob intake** is an upstream-wait seat. It prices how long a unit may wait before hand-off, and only under overload (y = 0 at x̂ ≤ 1).
 
-**The intake holds δ, for three reasons (§2.2, §2.4, §1.3):**
-1. Only the intake is inert at T = ∞ for every δ.
-2. Downstream of the pacer's next release the queue buys nothing at any δ (U).
-3. The shipped downstream seat is pinned at N·P (MD18), so in today's cells δ already has no authority there.
+**Recommended: the intake holds δ.** This is a recommendation, resting on three points:
+1. **The free band** (§2.2). Quinn's queue above the pacer's next release buys no throughput at any δ, so the FIFO part of the downstream seat has nothing to price.
+2. **The one-seat rule.** What a downstream seat could still price is a brake below the controller's window. Keeping it next to the intake would make two δ seats acting on one queue.
+3. **The remaining trade is an owner call (Q-S5),** not a derivation result.
+
+T = ∞ does not decide it (§2.4), and the shipped store seat's pin is a fault of its inputs, not an argument against the seat.
 
 **Kept from W1.2:** the `bbr_rs` window stays δ-free.
 
-**What the law gives up.** Braking *below* the window: W1.2 A's c2 trade, −1.9 to −8.5 % goodput for Tp50 ≈ 16–20 ms. Under the law the wire's standing queue (≤ b̂·m̂ + A ≈ 12 ms at c2) is the controller's probing margin, with no δ. With the queue gone from quinn, the delivered delay at c2 is predicted at ≈ wrtt + β/x ≈ 25–35 ms against 206 ms, close to W1.2 C's 25–30 ms with no goodput cost by construction (§2.2). Owner question Q-S5.
+**What the law gives up.** Braking *below* the window: W1.2 A's c2 trade, −1.9 to −8.5 % goodput for Tp50 ≈ 16–20 ms.
+- Under the law the wire's standing queue (≤ b̂·m̂ + A ≈ 12 ms at c2) is the controller's probing margin, with no δ.
+- With the queue gone from quinn, the delivered delay at c2 is predicted at ≈ wrtt + β/x ≈ 25–35 ms against 206 ms, close to W1.2 C's 25–30 ms.
+- The queue itself costs no goodput to remove (§2.2). The residual costs are the refills after window jumps and the app-limited samples (§2.8), and they are gauged, not assumed away.
 
 **The intake seat is by reference and unconfirmed.** Revision 4 §13.3 carries Q24 (U read as a flow), Q33 (the ramp) and Q34 (false overload at x̂ → 1⁺), and its build B′ has not run. The δ-free part of this law (§0's hand-off, clamp and store) stands without it.
 
@@ -369,11 +384,12 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
    - **The risks are gauged:** `starve_i`, `batch_i`, `store_pin`.
    - **This is the step that removes `bbr_rs`'s queue-borne costs:** the in-order delay, the leg-1 hole clock, and the c8 tail through H0.
 4. **Promotion of `bbr_rs` with the gate:** a new ADR superseding ADR-0054's default (owner).
-5. **The three-knob engine build:**
+5. **Offline first: the gate and the wait limit together.** Revision 4 §12.1 ran no design with a send gate, and its toy has no controller. So gate plus wait limit has never run together. A toy stage with a controller window and §0's gate, on Revision 4's link cells, registered before its run, comes before any engine build of the intake.
+6. **The three-knob engine build:**
    - L1, L2 and the protected floor, with the wait limit as the δ seat;
    - the clamp's spare from §2.6;
-   - the store's δ term deleted.
-   - **It depends on 3 and on `bbr_rs`.** With quinn's BBR the queue sits on the link, where the sender can neither shed nor reorder it (§1.2: B1 ≈ 1, `wrtt1` 233–330 ms). The engine's anchors over-read 7–14×, so no engine-side window substitutes (§1.3).
+   - the store's δ term deleted (if Q-S4 is accepted).
+   - **It depends on 3 and on `bbr_rs`.** With quinn's BBR the queue sits on the link wherever quinn's window does not bind, and there the sender can neither shed nor reorder it (§1.2: c8's slow leg, B1 ≈ 1, `wrtt1` 233–330 ms). Where quinn's window binds (c2: B = 840) the dependence is partial: the gate would still move ≈ 40 % of the queue into the intake. The engine's anchors over-read 7–14×, so no engine-side window substitutes (§1.3).
    - **And on 3 for the lifetime itself.** At T = 0.4 with today's queue, c = T − R is ≈ 0.4 − 0.21 − (4·rttvar + ack delay) ≈ 0.1–0.19 s at c2. On c8's slow leg R ≈ 0.48–0.57 s in 4–16 s, so c⁺ = 0: every head expires (`den_bind` = 1) because of the sender's own queue. Under the gate, R ≈ 25–35 ms at c2 and ≈ 100 ms on c8's slow leg, so c ≈ 0.3–0.37 s.
    - Bulk caveat: these A_x are Bulk rows. At Realtime today the queue is the same 4 MiB FIFO with no source pause, and its residence is 0.65–0.70 s under overload (Revision 4 §3.3).
 
@@ -393,7 +409,7 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 
 | cell | readout | §48b CAND/BASE | §48d predicted CAND/BASE | mechanism |
 |---|---|---|---|---|
-| c1s | goodput (row-median) | 1.023 | **1.00–1.06**; CAND's lowest row ≥ 0.95 × its median; ≥ 1 BASE row < 0.5 × median with probability ≈ 0.6–0.8 | quinn's collapse is unchanged on main (4 of 12 rows in §48b); ProbeRtt's cost ≤ 0.05 % |
+| c1s | goodput (row-median) | 1.023 | **At 5 GB rows (v1 draft): 1.00–1.06**, CAND's lowest row ≥ 0.95 × its median, ≥ 1 BASE row < 0.5 × median with probability ≈ 0.6–0.8. **At guard-size rows (v2): 0.97–1.03**, and no BASE collapse expected (§64's guard-size c1s rows on main read 674–806 Mbit/s, share of qcwnd below BDP 0.000) | quinn's collapse is unchanged on main (4 of 12 rows at 5 GB in §48b) but needs long rows to show; ProbeRtt's cost ≤ 0.05 % |
 | c1s | cpu_cli/GB; cpu_srv/GB | 0.982; 0.982 | **0.95–0.99; 0.96–1.00** | the ring saves ≈ 300 ns × ≈ 90 k pkt/s ≈ 1.5 % of client CPU (inference from the host bench) |
 | c1s | wire RTT (mean of row medians) | 1.32 (5.0 against 3.8 ms) | **1.15–1.60**; CAND 4.6–5.8 ms | W ≈ 2·b̂·m̂ + A with m̂ 2.15–2.4 ms |
 | c1s | delivered delay A_x (p50 of row medians) | 0.94 (18.0 / 19.2 ms) | **0.80–1.05**; CAND 14–21 ms | the cap is at N·P on every c1s line, but the store is rarely full (CAND paused 0.1 %), so A_x is not n/x here |
@@ -432,22 +448,23 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
    - With the gate, B1 ≤ β1 + one batch on ≥ 99 % of polls, and `starve_1` ≤ 1 %.
    - Mutation: β × 100 must turn the bound red.
 5. **The resend's wait.** In the same sim, a resend handed to leg 1 waits ≤ β1/x1 + g in quinn. Red without the gate (≈ 0.5 s).
-6. **T = ∞ ≡ Bulk at every δ.** Intake decisions at T = ∞ are identical at δ ∈ {Bulk, Auto, Realtime, 50}.
+6. **T = ∞ is inert.** Intake decisions at T = ∞ expire nothing at δ ∈ {Bulk, Auto, Realtime, 50}, and the T = ∞ trace equals the ρ = 1 trace of the same build at the same δ.
 7. **The store image.** With the gate on and the store at N·P only, `store_pin` = 0 in the c2-like sim.
 
 ## 8. Open questions for the owner
 
-- **Q-S1. Is "T = ∞ ≡ Bulk at every δ" the intended reading?** That is: an object at a Realtime price keeps no δ-priced downstream queue. If not, the downstream reserve becomes priceable, and the store or gate seat returns. It would then have to be one formula with the intake's.
+- **Q-S1. What does "T = ∞ ≡ Bulk" mean?** The three-knob identity is T = ∞ ≡ today's ρ = 1 at the same δ, and this law keeps that. If the owner means the stronger "the same sender at every δ" (an object at a Realtime price behaves exactly like Bulk), then every downstream δ reader fails it, and so does r(β(δ)). That would decide the seat for the intake, but it is not the model's current reading.
 - **Q-S2. Which guard for §48d: v1 (the draft) or v2 (accepted in §41d, with the in-order clause)?** Under v2 the c8 in-order cost (+30 to +60 %) fails on its own.
-- **Q-S3. §48d's host gate requires T6's f = 1.25 mutation to be red, and it is not** (blind in sim, ignored). The options:
-  - accept T6 as a no-growth gate;
-  - re-derive the mutation above the ratchet onset (f ≈ 2, §1.4);
+- **Q-S3. §48d's host gate requires T6's f = 1.25 mutation to be red on the fixed tree, and it is not** (plateau, ignored). It is red on the shipped tree (×2 per period), so the gate can see a ratchet there. The options:
+  - require the mutation red on the shipped tree only, and T6 as a no-growth gate on the fixed one;
+  - find a mutation that ratchets on the fixed form (f ≈ 2 on §1.4's fitted reading, unverified);
   - drop the mutation requirement.
 - **Q-S4. Remove the store law's δ term?** The store becomes the resource bound N·P. This withdraws W1.2's "δ on the store" step, touches ADR-0072's multiplier, and needs a ledger verdict on the pin (MD18).
 - **Q-S5. Accept a δ-free wire standing queue under saturation** (≤ b̂·m̂ + A, the controller's margin), giving up W1.2 A's goodput-for-delay brake?
 - **Q-S6. Register `bbr_rs` together with the gate as the promotion candidate (§5 steps 3–4),** instead of promoting `bbr_rs` alone? Its delay costs are the queue's, and only the gate removes them.
 - **Q-S7. The engine in-flight count** reads ≈ 60× low at c2, and placement, the gate and the clamp read it today. Fix it, or retire it from those three sites with this law (§2.6, §2.7)?
 - **Q-S8. The δ seat rides on Revision 4 §13.3,** which is unconfirmed (Q24, Q33, Q34; B′ not run). This law's δ-free part ships without it.
+- **Q-S9. §48d's c1s row size.** The v1 draft uses 5 GB rows, where quinn's BASE collapses. Guard v2 uses guard-size rows, where §64 saw no collapse. The c1s predictions differ by that choice (§6).
 
 ## 9. Defect findings (MD18; ledger verdicts owed)
 
