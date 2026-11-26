@@ -367,6 +367,24 @@ class DHat:
         return max(max(s for s, _ in self.rounds), 1e-9)
 
 
+def floor_repeat_needed(s_cands, last_key, rx_key, carry_vals, carry_keys, t_newest, R, now):
+    """The repeat law of three-knobs-revision4.md 10.3 on one instant.  s_cands: the unresolved seqs in [A_known, F_ann), any order.  A standalone floor is sent iff some
+    s has loss evidence (a datagram sent after s's last send has arrived: last_key[s] < rx_key; or silence: now >= t_newest + R) and no datagram carrying a floor above s has
+    arrived (rx_key < carry_key(s), +inf if none yet).  carry_vals is the running maximum of the floor values carried, carry_keys the key of the first datagram carrying each.
+    Returns (fire, s_star, by_timeout), s_star the highest evidenced seq.  The keys are send ordinals; with send stamps the same predicate suppresses a burst for good."""
+    silent = now >= t_newest + R
+    star = None
+    for s in sorted(s_cands, reverse=True):
+        if last_key[s] < rx_key or silent:
+            star = s
+            break
+    if star is None:
+        return False, None, False
+    i = bisect.bisect_right(carry_vals, star)
+    ck = carry_keys[i] if i < len(carry_keys) else math.inf
+    return rx_key < ck, star, not (last_key[star] < rx_key)
+
+
 def engine_in_flight_horizon(srtt):
     """The engine's in-flight expiry horizon (scheduler/path.rs expire_in_flight, default): max(4 x SRTT, IN_FLIGHT_EXPIRY_MIN = 250 ms)."""
     return max(4.0 * srtt, 0.25)
@@ -471,6 +489,7 @@ class Cfg:
     dhat_bias: float = 0.0         # revision 4, step 1: D_hat is read as D_hat * (1 - dhat_bias) in the gauges (the bias rows of 5.3)
     clamp: bool = False            # revision 4 step 2 (3.3): repair accrues min(r, max(spare, 0)), spare = (cwnd_sim - in_flight) / in_flight
     wait_limit: bool = False       # revision 4 step 2 (3.1): the dequeue expiry reads tau = T - K / (T - R + o_hat) in place of T
+    floor_repeat: str = ""         # revision 4 section 10: "evidenced" = send a standalone floor only when the receiver may not know it (ordinals); "" = today's rule
     inflight_to_rule: str = ""     # revision 4 step 2: "engine" = in_flight expires at max(4 x SRTT, 250 ms) (scheduler/path.rs expire_in_flight, copa.rs:307); "" = off
     inflight_to: float = 0.0       # revision 4 step 2: a datagram unreported for inflight_to x R is declared lost and leaves in_flight (RFC 9002's time threshold is 9/8); 0 = reports only
     send_gate: bool = False        # revision 4 step 2 (3.3): no payload is staged while in_flight >= cwnd_sim (the engine's available() = cwnd - in_flight > 0)
@@ -761,6 +780,16 @@ class Sim:
         self.eps_est = beta_upper(1.0, 1.0)
         self.astar_cur = 1
         self.dh = DHat()                           # revision 4 step 1 (gauge only)
+        self.fr = c.floor_repeat == "evidenced" and c.floor_law == "protect"      # the new model's floor repeat (revision 4 section 10)
+        self.ord_ctr = 0                           # one ordinal per datagram sent (first sends, copies, repairs, floors): RFC 9002's packet number
+        self.ord_ps = {}                           # ps (the per-datagram index of data and floor sends) -> ordinal
+        self.ord_rep = {}                          # repair id -> ordinal
+        self.last_ord = {}                         # seq -> ordinal of its last send
+        self.rx_ord_cur = -1                       # receiver: the largest ordinal received, echoed in every report (rep[14])
+        self.rx_ord = -1                           # sender: the same, as last reported
+        self.carry_vals = []                       # the running maximum of the floor values carried, and the ordinal of the first datagram carrying each
+        self.carry_ords = []
+        self.t_newest = -math.inf                  # time of the newest non-floor send
         self.fq = deque() if c.eq else None        # today's Realtime behind the engine's front queue (revision 4 step 2)
         self.fq_busy = False
         self.sends_n = 0                           # every datagram sent (first sends, copies, repairs), in send order (gauge only)
@@ -812,6 +841,9 @@ class Sim:
         self.r0e_timer_t = math.inf
         self.ps_ctr = 0
         self.shed_budget = 0.0                      # proof stage 1: budget_frac, refreshed at each source emission (0 before the first estimate)
+        if self.fr:
+            for k in ("rep_suppressed", "rep_fired_by_timeout", "rep_fired_by_knowledge", "rep_supp_viol", "rep_checks"):
+                self.g[k] = 0
         if c.eq:
             self.g["fq_evict"] = 0
             self.g["fq_max"] = 0
@@ -1155,6 +1187,11 @@ class Sim:
         self.n_sent += 1
         self.sent_t[s] = t
         self.last_send[s] = t
+        ordv = None
+        if self.fr:
+            ordv = self.next_ord()
+            self.last_ord[s] = ordv
+            self.t_newest = t
         if self.cnt_on:
             self.send_idx.append(self.sends_n)
             self.send_times.append(t)
@@ -1185,12 +1222,16 @@ class Sim:
             self.trace.append((round(t, 9), s, 0, 0, 0))
         if c.floor_law == "protect":
             self.update_floor(t)
+            if self.fr:
+                self.note_carry(ordv)
             self.flag_sum += self.n_sent - self.F_ann
             self.flag_n += 1
 
         def fin_b(a, dep):
             ps = self.ps_ctr
             self.ps_ctr += 1
+            if self.fr:
+                self.ord_ps[ps] = ordv
             first_lost = a is None or self.lost(s, 0, dep, SALT_LOSS, pth)
             if not first_lost:
                 self.push(a, 0, (s, 0, t, ps, pth))
@@ -1296,6 +1337,11 @@ class Sim:
         k = self.copies[s] + 1
         self.copies[s] = k
         self.last_send[s] = now
+        ordv = None
+        if self.fr:
+            ordv = self.next_ord()
+            self.last_ord[s] = ordv
+            self.t_newest = now
         if self.cnt_on:
             self.send_times.append(now)
             self.sends_n += 1
@@ -1307,6 +1353,9 @@ class Sim:
                 self.fifo_note(a)
             ps = self.ps_ctr
             self.ps_ctr += 1
+            if self.fr:
+                self.ord_ps[ps] = ordv
+                self.note_carry(ordv)
             if a is not None and not self.lost(s, k, dep):
                 self.push(a, 0, (s, k, now, ps, 0))      # every copy goes on path A (17.7)
                 self.carry_floor(a)
@@ -1405,6 +1454,19 @@ class Sim:
         if w <= 0.0:
             return 0.0
         return (self.hand_count(t) - self.hand_count(t - w)) / w
+
+    def next_ord(self):
+        self.ord_ctr += 1
+        return self.ord_ctr
+
+    def note_carry(self, ordv, value=None):
+        """A datagram sent now carries F_ann when some unresolved seq lies below it (the header carrier); a floor datagram carries its own value."""
+        v = self.F_ann if value is None else value
+        if value is None and not self.F_ann > self.lu:
+            return
+        if not self.carry_vals or v > self.carry_vals[-1]:
+            self.carry_vals.append(v)
+            self.carry_ords.append(ordv)
 
     def tau_now(self, t):
         """The wait limit at t: (tau, K, x, t_ov, R, o_hat, den0, D_hat, mu_hat).  t_ov0 is a timestamp of state, set while x <= 1; no branch selects a law."""
@@ -1531,6 +1593,13 @@ class Sim:
         if self.trace is not None:
             self.trace.append((round(now, 9), lo, j, end, 3))        # kind 3: a repair over [lo, end) (the identity gates compare traces)
         self.wadd("repair", now)
+        ordv = None
+        if self.fr:
+            ordv = self.next_ord()
+            self.ord_rep[j] = ordv
+            self.t_newest = now
+            self.note_carry(ordv)
+
         def fin(a, dep):
             if a is not None:
                 self.fifo_note(a)
@@ -1568,6 +1637,10 @@ class Sim:
                 self.fifo_note(a, p)
             ps = self.ps_ctr
             self.ps_ctr += 1
+            if self.fr:
+                ordv = self.next_ord()
+                self.ord_ps[ps] = ordv
+                self.note_carry(ordv, f)
             if a is not None and not self.lost(f, rep, dep, SALT_FLOORLOSS, p):
                 self.push(a, 1, (f, ps))
 
@@ -1627,6 +1700,10 @@ class Sim:
     def on_data(self, now, s, c, tau, ps=None, path=0):
         """tau is None for a decoded unit (stage 3e): it carries no send stamp, no path and no delay sample."""
         got = self.got
+        if self.fr and ps is not None:
+            o = self.ord_ps.get(ps)
+            if o is not None and o > self.rx_ord_cur:
+                self.rx_ord_cur = o
         if tau is not None:
             if tau > self.tau_rx_recv:
                 self.tau_rx_recv = tau
@@ -1709,6 +1786,10 @@ class Sim:
     def on_repair(self, now, pl):
         j, lo, end, ts = pl
         g = self.g
+        if self.fr:
+            o = self.ord_rep.get(j)
+            if o is not None and o > self.rx_ord_cur:
+                self.rx_ord_cur = o
         if ts > self.tau_rx_recv:
             self.tau_rx_recv = ts                    # RACK counts every datagram
         U = {s for s in range(lo, end) if not self.got[s]}
@@ -1838,6 +1919,10 @@ class Sim:
                 self.decode(now, f)
 
     def on_floor(self, now, f, ps=None):
+        if self.fr and ps is not None:
+            o = self.ord_ps.get(ps)
+            if o is not None and o > self.rx_ord_cur:
+                self.rx_ord_cur = o
         self.floor_arrivals.append(now)
         if ps is not None:
             self.eps_trk.record(ps)
@@ -2031,7 +2116,7 @@ class Sim:
             m = self.min_hole()
             A = m if m is not None else self.rhi + 1
             rep = (now, A, self.G, self.rhi, tuple(sorted(self.holes)), tuple(self.passed_since_report), self.GF, self.tau_rx_recv)
-            rep = rep + ((tuple(self.rhi_path),) if self.paths is not None else (None,)) + (None, self.raw_rcv, self.raw_lost, self.qf, self.raw_new)
+            rep = rep + ((tuple(self.rhi_path),) if self.paths is not None else (None,)) + (None, self.raw_rcv, self.raw_lost, self.qf, self.raw_new, self.rx_ord_cur)
             self.raw_new = 0
             self.raw_rcv = 0
             self.raw_lost = 0
@@ -2091,6 +2176,8 @@ class Sim:
         self.srtt_sum += 0.333 if self.srtt is None else self.srtt
         self.rep_n += 1
         self.maybe_resume(now)
+        if self.fr and len(rep) > 14:
+            self.rx_ord = max(self.rx_ord, rep[14])
         if self.cnt_on:
             self.dhat_on_report(now, rep, rhi)
         self.trig = "report"
@@ -2274,6 +2361,9 @@ class Sim:
         """The floor is sent again at each tail-sweep fire while F > A_rx (7.2).  Protected floor (15.6.1 item 2): F_ann, no pending test."""
         if self.cfg.floor_law == "protect":
             if self.F_ann > self.A_known:
+                if self.fr:
+                    if not self.floor_repeat_evidenced(now):
+                        return
                 self.last_floor = max(self.last_floor, self.F_ann)
                 self.send_floor(now, self.F_ann)
             return
@@ -2283,6 +2373,26 @@ class Sim:
         if any(s < F for s in self.pending) and F > self.A_known:
             self.last_floor = max(self.last_floor, F)
             self.send_floor(now, F)
+
+    def floor_repeat_evidenced(self, now):
+        """Revision 4 section 10.3: repeat only when some unresolved s in [A_known, F_ann) has loss evidence and no datagram carrying a floor above s has arrived.
+        Gauges the repeat as fired by knowledge or by timeout, and every suppression is checked against the receiver's own floor (it must already be above s*)."""
+        g = self.g
+        Mk, rk = self.M_known, self.rhi_known
+        cands = [s for s in range(self.A_known, self.F_ann) if s in Mk or s > rk]
+        if not cands:
+            g["rep_suppressed"] += 1                 # today's rule would send (F_ann > A_known); nothing is unresolved below the floor
+            return False
+        fire, star, by_to = floor_repeat_needed(cands, self.last_ord, self.rx_ord, self.carry_vals, self.carry_ords, self.t_newest, self.R_now(), now)
+        if fire:
+            g["rep_fired_by_timeout" if by_to else "rep_fired_by_knowledge"] += 1
+        else:
+            g["rep_suppressed"] += 1                 # today's rule would send; either nothing is evidenced yet or the carrier has arrived
+            if star is not None:
+                g["rep_checks"] += 1
+                if not self.F_rx > star:             # the absolute check: the receiver already holds a floor above the highest evidenced hole
+                    g["rep_supp_viol"] += 1
+        return fire
 
     def arm_blocker(self, now):
         """17.3: the engine's sweep deadline, max(last_send(blocker), last fire) + clamp(2 srtt_pooled, 25 ms, 100 ms), recomputed from

@@ -2145,5 +2145,70 @@ class Rev4Step2(unittest.TestCase):
         self.assertGreater(eq["share_any"], st["share_any"])
 
 
+class Rev4FloorRepeat(unittest.TestCase):
+    """Revision 4 section 10: the floor repeat says only what the receiver may not know.  Default off."""
+
+    @staticmethod
+    def cell(name, n, **kw):
+        import batch3e
+        return batch3e.new_cfg(name, 0, 0.4, 0.0, 50.0, kw.pop("repair", None), n_total=n, floor_repeat="evidenced", **kw)
+
+    def test_defaults_and_fingerprint(self):
+        import batch3e
+        c = self.cell("K-OV", 300)
+        self.assertEqual(toy2.Cfg().floor_repeat, "")
+        self.assertEqual(batch3e.fingerprint(dataclasses.replace(c, floor_repeat="")), batch3e.fingerprint(dataclasses.replace(c, floor_repeat="")))
+        self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, floor_repeat="")))
+
+    def test_planted_equal_time_burst_needs_ordinals(self):
+        """A burst staged at one instant: its first member arrives, the rest are lost, nothing follows.  With ordinals the repeat fires once R has passed; with send
+        stamps (all equal) the same predicate suppresses it for good and the run would never finish."""
+        R = 0.1
+        ords = {100: 11, 101: 12, 102: 13, 103: 14, 104: 15}
+        carry_vals, carry_ords = [101, 105], [11, 15]               # the first member carried floor 101, the last carries 105
+        cands = [104, 103, 102, 101]
+        before = toy2.floor_repeat_needed(cands, ords, 11, carry_vals, carry_ords, 1.0, R, 1.0 + R - 0.01)
+        after = toy2.floor_repeat_needed(cands, ords, 11, carry_vals, carry_ords, 1.0, R, 1.0 + R)
+        self.assertFalse(before[0])
+        self.assertTrue(after[0])
+        self.assertEqual((after[1], after[2]), (104, True))          # by timeout, at the highest evidenced hole
+        stamps = {s: 1.0 for s in ords}
+        for now in (1.0, 1.0 + R, 5.0, 100.0):
+            self.assertFalse(toy2.floor_repeat_needed(cands, stamps, 1.0, carry_vals, [1.0, 1.0], 1.0, R, now)[0])   # red: stamps never fire
+        carried = toy2.floor_repeat_needed(cands, ords, 15, carry_vals, carry_ords, 1.0, R, 50.0)
+        self.assertFalse(carried[0])                                 # the carrier of floor 105 arrived: nothing to say
+
+    def test_suppressed_repeats_find_the_receiver_floor_already_above(self):
+        for cell, n, kw in (("K-OV", 1500, {}), ("OV", 24000, {})):
+            r = toy2.run(self.cell(cell, n, **kw))
+            g = r["gauges"]
+            self.assertGreater(g["rep_suppressed"], 0, cell)                 # execution witness
+            self.assertEqual(g["rep_supp_viol"], 0, cell)                    # the absolute: F_rx > s* at every suppressed repeat
+
+    def test_k_ov_floor_share_falls_to_a_few_percent(self):
+        import batch3e
+        base = batch3e.new_cfg("K-OV", 0, 0.4, 0.0, 50.0, None)
+        a = toy2.run(base)
+        b = toy2.run(dataclasses.replace(base, floor_repeat="evidenced"))
+        slots = lambda r: r["gauges"]["floors"] + r["gauges"]["repair_sends"] + r["gauges"]["rep_sent"] + 2400     # noqa: E731
+        self.assertGreater(a["gauges"]["floors"] / 2400.0, 0.2)                # today's rule: a quarter of the link
+        self.assertLessEqual(b["gauges"]["floors"] / 2400.0, 0.03)
+        self.assertGreater(b["share_any"], a["share_any"] + 0.1)
+
+    def test_outage_fires_by_timeout_and_the_run_finishes(self):
+        c = self.cell("CL", 30000, dead=(0, 0.5, 0.5))
+        r = toy2.run(c)
+        off = toy2.run(dataclasses.replace(c, floor_repeat=""))
+        self.assertGreater(r["gauges"]["rep_fired_by_timeout"], 0)
+        self.assertTrue(r["finished"])
+        self.assertLess(abs(r["share_any"] - off["share_any"]), 0.01)
+        self.assertEqual(r["gauges"]["rep_supp_viol"], 0)
+
+    def test_e_cells_finish(self):
+        for name in ("E-I2", "Ec"):
+            r = toy2.run(self.cell(name, 0) if False else dataclasses.replace(__import__("batch3e").new_cfg(name, 0, 0.4, 0.0, 50.0, None), floor_repeat="evidenced"))
+            self.assertTrue(r["finished"], name)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -39,7 +39,7 @@ def cfg_of(spec, seed):
     else:
         raise ValueError(spec["design"])
     return dataclasses.replace(cfg, rev4_gauge=spec["design"] == "new", clamp=spec.get("clamp", False), wait_limit=spec.get("wait", False),
-                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0), send_gate=spec.get("gate", False), inflight_to=spec.get("to", 0.0), inflight_to_rule=spec.get("rule", ""))
+                               eq=spec.get("eq", False), cwnd_sim=spec.get("cwnd", 0.0), send_gate=spec.get("gate", False), inflight_to=spec.get("to", 0.0), inflight_to_rule=spec.get("rule", ""), floor_repeat=spec.get("fr", ""))
 
 
 def specs():
@@ -146,11 +146,14 @@ def one(task):
     row.update({k: r.get(k) for k in keep})
     g = r.get("gauges", {})
     row["g"] = {k: g.get(k) for k in ("rep_sent", "repair_sends", "rep_qdrop", "rep_lost", "queue_drop", "first_qdrop", "fq_evict", "fq_max", "clamp_n", "r_eff_over_spare",
-                                       "dec_units_qdrop", "intake_expired_deq", "pause_events", "max_O")}
+                                       "dec_units_qdrop", "intake_expired_deq", "pause_events", "max_O",
+                                       "floors", "floor_rep", "bl_fires", "rep_suppressed", "rep_fired_by_timeout", "rep_fired_by_knowledge", "rep_supp_viol", "rep_checks")}
     row["rev4"] = r.get("rev4")
     if row["rev4"]:
         row["rev4"] = {k: v for k, v in row["rev4"].items() if k not in ("spare_bins",)}
     row["cwnd_sim"] = sm.B_sim
+    row["n_sent"] = sm.n_sent
+    row["t_end_run"] = sm.t_last
     row["link_busy_frac"] = sm.link_busy / max(sm.t_last, 1e-9)
     row["pause_time"] = r.get("pause_time")
     row["rep_link_share"] = (r.get("rep3e") or {}).get("rep_link_share")
