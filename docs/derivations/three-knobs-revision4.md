@@ -2,7 +2,7 @@
 
 **Status.** Design and derivation only. Nothing here has been run, and the offline simulation is unchanged.
 - **What it amends.** `three-knobs.md` §13.2 (the dequeue rule). It withdraws that section's paragraph "What cannot be fixed: delay pinned near T − R", and Q12's default ("no loss price").
-- **What it adds to the model of every design** (§3.3): the engine's spare-capacity clamp on repair, and the engine's send gate.
+- **What it adds to the model of every design** (§3.3): the engine's spare-capacity clamp on repair. It also adds the engine's send gate to the designs that pause in the engine, and a second arm for today's Realtime that models the engine's real send queue, settled by an engine read (Q30).
 - **What is unchanged:** L1, L2 (§2.1, and §2.2 as revised in §17.1), the protected floor (§17.1), the brake and the store pause.
 
 **Review.**
@@ -14,6 +14,12 @@
   4. δ's scale;
   5. the sizing run;
   6. a gauge-first step.
+- **The advisor's review of `ea56139c`** changed:
+  - the law's shape: expiry is now monotone in age (§2, §3.1);
+  - μ̂: it is now measured by the sender from its own reports, with no oracle (§3.2);
+  - the clamp: it gets a bind gauge per cell and an explicit spare in the cells with no store pause, and every repair-on row re-runs, DECIDE included (§3.3);
+  - the reading registered for the fresh cells (§4.3).
+- **An independent engine read** settled Q30 and added today's Realtime engine-queue arm (§3.3).
 
 **Inputs read.**
 - `docs/derivations/three-knobs.md` on `github/main` (`c326f489`): §1–§10, Revisions 1–3 (§13, §15, §17), the findings §18 (with its amendment) and §19.
@@ -50,26 +56,31 @@
   - The new model drops before a unit has a seq, so any r above ε/(1 − ε) displaces source.
   - The fix is the engine's own spare-capacity clamp, `r_eff = min(r, spare)`, applied to every design. The offline simulation lacks it because it has no cwnd (§3.3).
 
-**The revised law.** In the dequeue rule, T becomes τ, read per head:
+**The revised law.** In the dequeue rule, T becomes τ. τ is the same for every head, so expiry is monotone in age:
 
 ```text
-   expire the head u   ⇔   a(u) + R  ≥  τ(u)   ∧   a younger unit is waiting
-   τ(u)  =  T  −  δ · (λ̂/μ̂ − 1)⁺ · t_ov²  /  ( a(u) + ô )
-   μ̂     =  Ĉ / ( 1 + r_eff + ε̂/(1 − ε̂) )
+   expire the head u   ⇔   a(u) + R  ≥  τ   ∧   a younger unit is waiting
+   τ   =  T  −  δ · (λ̂/μ̂ − 1)⁺ · t_ov²  /  ( T − R + ô )
+   μ̂   =  D̂ ,   the sender's own windowed-max rate of source datagrams the receiver reports newly received
 ```
 
-- **Where it comes from.** It is derived from the paper's own utility `U = log(throughput) − δ·log(delay)`, applied to the bet "dropping the head now will be refunded by a drop the overload would force anyway". Gott's scale-free forecast (1993) gives both the odds and the horizon. The first draft's raw 1/δ odds bar is withdrawn (§2).
+**This head (2026-11-26, after the advisor's review of `ea56139c`) changes the law in one place.** The relative delay saving is now charged against `T − R + ô`, the delay §13.2 gives when the overload persists. Before, it was charged against `a(u) + ô`, the head's own delay. The old form made the expiry test `a + R + K/(a + ô) ≥ T` non-monotone in a: it falls in a until `a* = √K − ô`, where it takes its minimum `2√K − ô + R`, and rises after. So once √K > ô, a fresh head expired while a middle-aged one was held. That disagrees with the sentence the rule implements, §13.2's "give the oldest unit's slot to a younger one" (§2).
+
+μ̂ is now a measurement the sender makes from its own reports (§3.2). The earlier form, built on a wire capacity Ĉ, looked like it could read the cell's true link rate.
+
+- **Where it comes from.** It is derived from the paper's own utility `U = log(throughput) − δ·log(delay)`, applied to the bet "dropping the oldest unit now will be refunded by a drop the overload would force anyway". Gott's scale-free forecast (1993) gives both the odds and the horizon. The first draft's raw 1/δ odds bar is withdrawn (§2).
 - **λ̂** counts hand-overs.
-- **μ̂** is capacity for first sends:
-  - Ĉ is the wire capacity of qualifying rounds, a windowed maximum.
-  - The outage's one-off resend debt is excluded by construction (§3.2).
-  - With a margin of 9.8 % under RL, CL-long's drain cannot read as overload: about 11 000/s against 10 000 (§4.2).
+- **μ̂** is capacity for first sends, in the units λ̂ counts.
+  - At the steady resend share it equals the delivered source rate, whatever the repair rate (§3.2).
+  - Resends of the outage's one-off debt are source datagrams too, so they do not lower it.
+  - CL-long's drain reads about 12 100/s with the clamp, a 21 % margin, and about 11 000/s without it, a 9.8 % margin, against 10 000 offered.
+  - **A sustained under-read beyond the margin is the main risk** (§3.2).
 - **ô** is §17.1's one-way term.
 - **t_ov** is how long λ̂ has exceeded μ̂.
 - **Inert at T = ∞:** ∞ minus a finite term.
 - **Identical to Revision 3 wherever λ̂ ≤ μ̂:** the subtracted term is exactly 0.0.
 - **Continuous** in δ, T and the rates.
-- **The floor of τ** is reached when every unit but the newest expires. It gets a bind gauge, `floor_bind` (§3.1).
+- **The floor of τ** is reached when every unit but the newest expires, at `K ≥ (T − R)(T − R + ô)`. It gets a bind gauge, `floor_bind` (§3.1).
 
 **Predicted for OV at T = 0.4** (delivered / on time within 0.4 s / delay p50; derived in §4.1):
 
@@ -79,24 +90,25 @@
 | the clamp alone | 0.837 / 0.837 / 0.39 s |
 | the wait limit alone | 0.770 / 0.770 / 0.095 s |
 | Revision 4, both | 0.79–0.81 / 0.79–0.80 / 0.095–0.10 s |
-| today's Realtime behind the engine's gate, with a 500-packet front queue | about 0.808 / 0.80 / 0.15 s |
+| today's Realtime, the arm as stored (feeds the link's 125 ms buffer directly) | 0.8165 / 0.814 / 0.172 s |
+| today's Realtime, engine queue (new arm, §3.3) | 0.84–0.88 / 0.20–0.25 / 0.65–0.70 s |
 
-The last row assumes the Linux TUN default tail-drop queue of 500 packets (§3.3). With a front queue of depth 0 it would read 0.093 s, the link-queue floor both designs share. **It cannot fall below Revision 4's floor.** Without the gate, its 0.172 s is the 125 ms link buffer the arm fills.
+**The stored arm flatters the engine.** In the engine a Realtime first send is sent at once, with no source pause. It then waits in quinn's 4 MiB datagram queue, about 8 192 symbols, which evicts the oldest datagram when full and has no deadline. The new engine-queue arm models that, and both arms are run and reported (Fairness rule 4).
 
 **OV cannot confirm the law.**
 - OV is post-data.
-- At δ = 50 the intake collapses within about 50 ms of the overload being measured, so τ sits on its floor and every finite T gives one point.
+- At δ = 50 the intake collapses within 0.1–0.55 s of the overload being measured, so τ sits on its floor and every finite T gives one point.
 - A collapsed sweep is read as a single point by dominance, never interpolated (§3.1).
 - **The cells that can test it:**
   - OV-end (an overload that ends), which prices the bet;
   - OV-crit (load at capacity), the knife edge;
-  - OV at δ = 0.5, where at T = 2 the collapse comes about 2.8 s after the overload is measured, so the shape is visible;
+  - OV at δ = 0.5, where the collapse comes 1.0, 2.7 and 5.5 s after the overload is measured at T = 0.4, 1 and 2, so the shape is visible;
   - K-OV after a time-limit amendment.
 
 **δ's scale is open, stated honestly (Q24).**
 - The bar comes from U, with δ as the paper defines it: dimensionless, the marginal cost of a relative delay.
 - **The one step without provenance** is that U's throughput term is read over the forecast horizon t_ov. That is Gott's median: cited, but a choice. Nothing ships on it until Q24 is answered.
-- OV-end runs δ and δ/2 at T = 2 (δ = 0.5 and 0.25). The collapse instant is predicted to scale as δ^(−½).
+- OV-end runs δ and δ/2 at T = 2 (δ = 0.5 and 0.25). The reserve held when the overload ends is predicted short of Revision 3's by 1.57 s and 0.79 s: linear in δ (§4.3).
 
 **Before any run of the law:** a gauge-first step (§5.3).
 - It computes λ̂, μ̂, t_ov and τ as readouts only, on seed 0 of every stored new-model configuration, including μ̂ biased by −2, −5 and −10 % in CL-long's drain.
@@ -129,7 +141,7 @@ Requirement 1, read with "τ small at zero headroom", restricts τ's form before
 
 The first draft used δ as a raw odds bar (take the bet at odds ≥ 1/δ). That has no provenance and is **withdrawn**.
 
-**The bet.** At a dequeue under overload, x = λ̂/μ̂ > 1, drop the head u (age a) now instead of letting §13.2 send it.
+**The bet.** At a dequeue under overload, x = λ̂/μ̂ > 1, drop the head u now instead of letting §13.2 send it. The head is the oldest unit, of age a.
 - **If the overload persists** for `t_r = (T − R − a)/(x − 1)` more seconds, the queue would reach §13.2's margin and drop a unit anyway. The drop is then refunded: the throughput is unchanged, and every unit sent while the overload lasts is one service time, 1/μ̂, younger.
 - **If it ends earlier,** u would have been delivered, so one unit is lost.
 
@@ -140,22 +152,28 @@ The first draft used δ as a raw odds bar (take the bet at odds ≥ 1/δ). That 
 ```
 
 **The two outcomes in U.**
-- **Refund.** The delay of the units sent from the head falls by 1/μ̂, relative to their delay `a + ô`: the intake wait plus the one-way delay, which includes the forward queue (§17.1). So ΔU = +δ·(1/μ̂)/(a + ô).
+- **Refund.** The drop is compared with the status quo under persistence. There, §13.2 holds the queue at its margin, and every unit is delivered at `d₀ = (T − R) + ô`: the intake wait at the margin plus the one-way delay, which includes the forward queue (§17.1). The drop makes every unit sent during the persistence 1/μ̂ younger, so ΔU = +δ·(1/μ̂)/d₀.
+  - **Why d₀, and not the head's own delay `a + ô`.** The beneficiaries are the units behind the head, sent over the persistence. Their delay under the status quo is d₀, not the head's current age.
+  - Charging against a + ô made the expiry test `g(a) = a + R + K/(a + ô) ≥ T` non-monotone. It has its minimum at `a* = √K − ô`, of value `2√K − ô + R`, so for √K > ô a fresh head expired while a middle-aged one was held. That contradicts "give the oldest unit's slot to a younger one", the sentence §13.2 implements.
+  - With d₀ the test is a threshold in a, so expiry is monotone.
 - **Loss.** One unit leaves the throughput term. That term is averaged over the horizon the forecast speaks for, N = μ̂·t_h units, so ΔU = −1/(μ̂·t_h).
 
 **The horizon t_h.** Requirement 1 forces it to be independent of T.
-- With the refund horizon t_h = t_r, t_r cancels: the condition becomes δ·t_ov ≥ a + ô, and T is gone. At T = ∞, P = 0 and t_r = ∞, so the expected-value form is 0·∞. It drops at T = ∞.
+- With the refund horizon t_h = t_r, t_r cancels: the condition becomes δ·t_ov ≥ d₀. At T = ∞, P = 0 and t_r = ∞, so the expected-value form is 0·∞. It drops at T = ∞.
 - Requirement 4 forces t_h to be measured. The only measured scale of an overload is its age.
 - So **t_h = t_ov**, which is Gott's median remaining duration. This is the one step whose provenance is a choice and not a derivation (Q24).
 
 **The result.** Drop the head iff the expected ΔU ≥ 0:
 
 ```text
-   (t_ov/t_r) · δ/(a + ô)  ≥  1/t_ov      ⇔      (T − R − a)·(a + ô)  ≤  δ·(x − 1)·t_ov²      ⇔      a + R  ≥  T − δ·(x − 1)·t_ov² / (a + ô)
+   (t_ov/t_r) · δ/d₀  ≥  1/t_ov      ⇔      T − R − a  ≤  δ·(x − 1)·t_ov² / (T − R + ô)      ⇔      a + R  ≥  T − δ·(x − 1)·t_ov² / (T − R + ô)
 ```
 
-- **Units:** s² on both sides of the middle form.
-- **δ enters linearly, as the paper's price.** Halving δ multiplies every collapse instant by √2 (§4.3, OV-end).
+- **Units:** seconds on both sides of the middle form.
+- **δ enters linearly, as the paper's price.**
+  - The effective margin `T − R − K/(T − R + ô)` falls linearly in δ at a fixed t_ov, and halving δ multiplies every collapse instant by √2.
+  - OV-end reads the linear part directly (§4.3).
+- **Shape in a.** Expiry is a threshold on age: a ≥ `c − K/(c + ô)`, with c = T − R. So the oldest goes first, and the law is monotone in age.
 - **The factor is the overload's age squared:** once from the odds, and once from the horizon.
 
 **Why the intake needs no standing part.** Copa's 1/δ queue exists to keep the link busy. Here the store pause already holds about `B − λ·RTprop` ≈ 880 datagrams in the link buffer. So the intake's own floor can be 0 (§3.1), and dropping in the intake changes which units are sent, not how many. The exception is the reserve flushed when an overload ends, and that is exactly what the bet prices.
@@ -166,8 +184,8 @@ The first draft used δ as a raw odds bar (take the bet at odds ≥ 1/δ). That 
 
 ```text
    at each dequeue (toy2.py emit, after L1):
-      expire the head u   ⇔   a(u) + R  ≥  τ(u)   ∧   a younger unit is waiting                  (§13.2 with T → τ)
-      τ(u)  =  T  −  K / ( a(u) + ô ) ,        K  =  δ · (λ̂/μ̂ − 1)⁺ · t_ov²
+      expire the head u   ⇔   a(u) + R  ≥  τ   ∧   a younger unit is waiting                  (§13.2 with T → τ)
+      τ  =  T  −  K / ( T − R + ô ) ,        K  =  δ · (λ̂/μ̂ − 1)⁺ · t_ov²
 ```
 
 | symbol | provenance |
@@ -182,26 +200,32 @@ The first draft used δ as a raw odds bar (take the bet at odds ≥ 1/δ). That 
 | t_h = t_ov | Gott's median horizon (§2; Q24) |
 
 **Shape.**
-- **Units:** τ [s] = T [s] − K [s²] / (a + ô) [s].
-- **Monotonicity.** τ is non-decreasing in T. It is non-increasing in δ, x and t_ov. It is non-decreasing in a, because an older head is charged a smaller relative delay saving.
-- **T = ∞:** ∞ − finite = ∞, so the rule never expires and the trace is unchanged. No `isinf` test is used.
-- **x ≤ 1:** K = 0.0 exactly, and T − 0.0/(a + ô) = T exactly, so this is §13.2 **by identity**.
-- **δ → 0:** τ → T. At δ = 0.005 the collapse in OV comes after 5.5 s at T = 0.4 and after 28 s at T = 2 (§4.1).
+- **Units:** τ [s] = T [s] − K [s²] / (T − R + ô) [s].
+- **Monotonicity.**
+  - **In T:** dτ/dT = 1 + K/(T − R + ô)² > 0.
+  - **In δ, x and t_ov:** non-increasing.
+  - **In a:** τ does not depend on a, so expiry `a + R ≥ τ` is monotone in age.
+- **The denominator is positive** once R and ô are measured: T − R + ô > 0 whenever T > R − ô, and §13.2 already expires every unit at T ≤ R.
+  - Below that, τ = T − K/(non-positive) could misbehave. The test reads `K / max(T − R + ô, ô)`.
+  - That max is a clamp with its own gauge, `den_bind`, which is predicted 0 in every cell with T > R. Where T ≤ R, every head expires by §13.2 alone.
+- **T = ∞:** K/∞ = 0.0 and ∞ − 0.0 = ∞, so the rule never expires and the trace is unchanged. No `isinf` test is used, and no ∞·0 arises, because K is finite.
+- **x ≤ 1:** K = 0.0 exactly, and T − 0.0/(T − R + ô) = T exactly, so this is §13.2 **by identity**.
+- **δ → 0:** τ → T. At δ = 0.005 the collapse in OV comes 9.7 s after μ̂ is finite at T = 0.4, and 55 s after at T = 2, so not within the 10 s run (§4.1).
 - **δ → ∞** (a limit only): any x > 1 collapses at once at finite T. It is still inert at T = ∞.
-- **Continuity.** τ is continuous in δ, T, x and a, including through x = 1. A step in t_ov at a reset happens only where K = 0. τ ≤ R simply expires the head, so no clamp is needed.
+- **Continuity.** τ is continuous in δ, T and x, including through x = 1. A step in t_ov at a reset happens only where K = 0. τ ≤ R simply expires the head, so no clamp is needed.
 
-**The floor of τ.** τ has no lower bound. The **effective floor is the younger-waiting clause**: the intake keeps its newest unit, so the hold floors at 0, plus the wait until the next pause release. The law reaches that floor (it collapses) once K exceeds the largest value of `(T − R − a)(a + ô)`:
+**The floor of τ.** τ has no lower bound. The **effective floor is the younger-waiting clause**: the intake keeps its newest unit, so the hold floors at 0, plus the wait until the next pause release. The law reaches that floor (it collapses) once the effective margin `c − K/(c + ô)` reaches 0, with c = T − R:
 
 ```text
-   collapse  ⇔   K  ≥  f_max  =  ( (T − R + ô)/2 )²        (or  ≥ (T − R)·ô  when T − R < ô)
+   collapse  ⇔   K  ≥  K_c  =  (T − R) · (T − R + ô)
 ```
 
 **Bind gauges.**
 - **`floor_bind`:** the fraction of dequeues at which every unit but the newest is expired.
-- **`collapse_t`:** the first instant at which K ≥ f_max.
-- **`deq_early`:** expiries with `a + R < T ≤ a + R + K/(a + ô)`.
+- **`collapse_t`:** the first instant at which K ≥ K_c.
+- **`deq_early`:** expiries with `a + R < T ≤ a + R + K/(T − R + ô)`.
 
-Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower root of the parabola is also expired, so a collapsed intake stays collapsed while a standing one persists until f_max. That is history, not a mode bit. It is gauged as `band_hold`, the fraction of dequeues with K in that band.
+The first draft's hysteresis band, an artefact of the non-monotone form, is gone.
 
 **Reading a cell where the lifetime sweep collapses.** This rule is registered here, before any data. When `floor_bind ≥ 1 − (the A/A noise)` over the readable windows at every finite T of a sweep, T no longer reaches the decision.
 - **The finite-T rows must agree** within the A/A floor. If they do not, that is a finding.
@@ -211,40 +235,50 @@ Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower 
 
 **NO-MODE-SWITCH.** The law is one expression. No dial is compared with a constant. `λ̂ ≤ μ̂` sets a timestamp; the law is continuous across it.
 
-### 3.2 μ̂: capacity for first sends (units checked)
+### 3.2 μ̂: capacity for first sends, measured by the sender (units checked)
 
-λ̂ counts handed-over units, so μ̂ must count the same units: the first-send rate the path can sustain. It is **not** the wire rate, and **not** the current first-send rate. The current first-send rate falls during a resend burst, and an outage would make it 0.
+λ̂ counts handed-over units, so μ̂ must count the same units: the first-send rate the path can sustain. It is not the wire rate, not the current first-send rate (which falls during a resend burst and is 0 in an outage), and **never the cell's configured link rate**. An oracle would make the gauge-first step (§5.3) prove nothing.
 
 ```text
-   μ̂  =  Ĉ / ( 1 + r_eff + ε̂/(1 − ε̂) )
+   μ̂  =  D̂  =  max over the last 10 qualifying round trips of  ( source datagrams newly reported received in the round ) / ( the round's duration )
 ```
 
 | symbol | provenance |
 |---|---|
-| Ĉ | measured: wire capacity, the payload datagrams per second the path carries. It is the maximum over the last 10 completed round trips (BBR's window; Cardwell et al., *ACM Queue* 14(5), 2016) of each qualifying round's wire send rate |
-| a qualifying round | the sender was flow-limited in it (the store pause or the send gate bound), and no single pause in it lasted longer than R. A pause longer than R means acks were overdue, which is §13's meaning of R: the path stalled, which is no evidence of its capacity. **Ĉ = +∞ unless all of the last 10 completed rounds qualified**, so x = 0 then. Ĉ > 0 always |
-| r_eff | the repair rate actually staged, after the clamp of §3.3: sender state, read from the same accrual |
-| ε̂/(1 − ε̂) | the steady resend share: expected copies per first send to cover first-send loss ε̂. ε̂ is the loss the rate law already reads (`eps_for_law`: the true p0 in the offline simulation, the BOCD upper quantile in the engine) |
+| source datagrams newly reported received | measured by the sender from the receiver's reports: first sends and copies, counted once, from the report's frontier and hole list. It is BBR's delivery-rate sample (Cheng and Cardwell, IETF draft `draft-cheng-iccrg-delivery-rate-estimation`), restricted to source datagrams. Repairs are excluded because nothing acknowledges them individually |
+| a round | from the send of a datagram to the first report that covers it (BBR's round count). Rounds advance only on reports |
+| the window | the last 10 rounds (Cardwell et al., *ACM Queue* 14(5), 2016) |
+| qualifying | the sender was flow-limited in the round (the store pause or the send gate bound), and no single pause in it lasted longer than R. A longer pause means acks were overdue: the path stalled, which is no evidence of its capacity. **D̂ = +∞ unless all of the last 10 completed rounds qualified**, so x = 0 then |
 
-**Why this cannot read CL-long's drain as overload** (item 2).
-- **The wire is saturated** whenever the link holds a backlog. After the store pause releases, the sender puts up to B datagrams in the link at once, so a qualifying round reads Ĉ = C = 12 500/s whatever mix of first sends and resends it carried. The ramp the first draft worried about is a ramp in *first sends*, and μ̂ does not measure it.
-- **The outage's resend debt is a finite amount of work, not a rate.** It is the protected outage holes, resent at up to the 2 000/s budget, so first sends fall to about 9 300/s for a while.
-  - It delays the drain by about debt/C, and that delay is already priced per unit by §13.2's margin.
-  - It does not make the hand-over rate exceed the capacity, and μ̂ excludes it by construction, because only the steady share ε̂/(1 − ε̂) enters.
-  - Reading it as a rate, as "first sends per second" would, gives x = 10 000/9 300 = 1.075. At δ = 50 that collapses the backlog after about √(0.0382/(50·0.075)) ≈ 0.10 s at T = 0.4, and after 0.51 s at T = 2.
-- **Margins in CL-long** (C = 12 500, ε = 0.03):
+**Why the delivered source rate is the first-send capacity.** At the steady resend share, a first send costs `1/(1 − ε)` source datagrams on the wire, and each unit is delivered exactly once. So the delivered source rate is the first-send rate:
 
-  | arm | μ̂ | margin over λ = 10 000 |
-  |---|---|---|
-  | repair off | 12 500/1.031 = 12 124 | 21 % |
-  | RL, clamp off (r ≈ 0.107) | 12 500/1.138 = 10 984 | 9.8 % |
-  | RL, clamp on (r_eff ≈ 0 in the drain, §3.3) | 12 124 | 21 % |
+```text
+   wire  =  μ·(1/(1 − ε) + r) ,     source datagrams delivered per second  =  μ·(1/(1 − ε))·(1 − ε)  =  μ
+```
 
-  The gauge-first step (§5.3) biases μ̂ by −2, −5 and −10 % in the drain. Predicted: 0 ticks with τ < T, except RL with the clamp off at −10 %, which exceeds its 9.8 % margin and is therefore predicted non-zero.
-- **RE** (estimated loss) reads ε̂ ≈ 0.3 after the outage and r = 0.5, so μ̂ ≈ 12 500/1.93 ≈ 6 500 and x ≈ 1.5. The arm is overloaded by its own estimate, and the law treats it so. It is reported, not counted as headroom.
-- **In the engine:** Ĉ is the BtlBw anchor's delivery rate (paper §8.3). Its sampler has no app-limited flag, and its window form is unread. Both are prerequisites (Q26).
+This holds whatever r is, so no mix correction is needed.
+- **Under Revision 3's unprotected sends** there are no resends, and D̂ = μ(1 − ε) under-reads by ε (3 %). This affects only the gauge-first readouts of the stored rows. Under the law, units are young and resent, so the identity holds.
+- **The outage's resend debt does not lower D̂.** Those resends are source datagrams, and they are delivered at the same capacity. Taking μ̂ as first sends per second would read the drain at about 9 300/s, so x = 1.075 against 10 000 offered. At δ = 50 that collapses the backlog about √(0.1165/(50·0.075)) ≈ 0.18 s into the drain at T = 0.4, and about 1.0 s in at T = 2.
 
-### 3.3 The engine's repair clamp and send gate, applied to every design
+**CL-long's drain** (C = 12 500, ε = 0.03):
+
+| arm | D̂ | margin over λ = 10 000 |
+|---|---|---|
+| repair off, and RL with the clamp on (r_eff ≈ 0 in the drain) | 12 500/1.031 = 12 124 | 21 % |
+| RL with the clamp off (r ≈ 0.107) | 12 500/(1.031 + 0.107) = 10 984 | 9.8 % |
+
+**The main risk: a sustained under-read beyond the margin.**
+- **A 10 % under-read trips the clamp-off RL arm, and §5.3's bias row is predicted to show it.** With the clamp on, which is part of this revision, the margin is 21 %.
+- **What protects the estimate from reading low:**
+  - It is a **maximum** over 10 rounds, so per-round noise biases it upward. Report quantisation is 2 ms against rounds of 11–100 ms, so per-round noise is up to ±18 % at srtt 11 ms.
+  - Rounds where the link idled for longer than R are excluded.
+  - Lost or late reports delay counts into the next round, which raises that round's sample.
+- **What would make it read low:** the link idling in every one of 10 consecutive rounds while flow-limited. That happens only when the bound is the gate and not the link, so it is a risk only where cwnd_sim < BDP. That never happens here, since B ≫ λ·RTprop in every link cell.
+- **The gauge-first step reads D̂ against the oracle** `C/(1/(1 − ε) + r)`, as a readout only, in every link cell, and reports the ratio's distribution.
+- **RE** (estimated loss) is overloaded by its own repair after the outage (r = 0.5), so D̂ ≈ 12 500/1.531 ≈ 8 160 and x ≈ 1.23. It is reported, not counted as headroom.
+- **In the engine:** D̂ is the BtlBw anchor's delivery rate (paper §8.3). Its sampler has no app-limited flag, and its window form is unread. Both are prerequisites (Q26).
+
+### 3.3 The engine's repair clamp (every design), its send gate (the pausing designs), and today's Realtime queue
 
 **The engine's law, read.**
 
@@ -254,32 +288,49 @@ Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower 
 
 - It applies to the cadenced rate (`emit_source.rs:579`, `flat_rate = window_rate.min(spare.max(0.0))`) and to each taper grant (`fec_rate.rs:729`).
 - `spare` is `PathState::spare_capacity` (`path.rs:467–472`).
-- **The send gate:** data goes only on paths with `available() = cwnd − in_flight > 0` (`scheduler/mod.rs:229`). Every design in the engine, today's included, sits behind it.
+- **The send gate:** data is placed only on paths with `available() = cwnd − in_flight > 0` (`scheduler/mod.rs:229`).
+  - **This does not hold back a Realtime first send** (engine read, shipped default: quinn BBR; no `RWM_QUIC_CC`, `COPA_WIRE` or `CC_PACE`). With no path available, `best_source_path()` returns None and the send goes to path 0 (`net/mod.rs:1459`, `emit_source.rs:358–361`, `:432`).
+  - **There is no source pause at Realtime either.** `tx_paused = reliable && …` (`net/mod.rs:2473`), and reliable = false at Realtime (`config.rs:293–295`).
+  - The datagram then waits in quinn's send queue: 4 MiB (`quic.rs:944`), about 7 900–8 192 symbols of 512 B. When full it evicts the **oldest** queued datagrams silently (quinn-proto `connection/datagrams.rs:42–46`, documented at `io_owner.rs:135–139`). It has no deadline, sheds no first sends, and drains at BBR's rate.
+  - Under passthrough or the Copa wire (both non-default), a CC-rate token bucket pauses TUN reads at every hint, and the excess waits in the 4 096-packet TUN channel.
+  - **NO-MODE-SWITCH debt, recorded:** `tx_paused = reliable && …` is a ρ-selected branch (a bit derived from ρ selects whether the source pauses). It goes on the law ledger (paper §11.3) as an engine site to retire or bound with a test. Under the three knobs the store pause would apply at every T, and the intake rule does the shedding.
 
-**What the offline simulation lacks.** It has no cwnd. The new model's only in-flight bound is the store pause (O ≥ B seqs). Today's Realtime arm has no in-flight bound at all: it fills the 125 ms link buffer and the link drops the excess, which is where its 0.172 s comes from.
+**What the offline simulation lacks.** It has no cwnd. The new model's only in-flight bound is the store pause (O ≥ B seqs). Today's Realtime arm has no in-flight bound at all: it fills the 125 ms link buffer, and the link drops the excess. That is where its 0.172 s comes from, and it is not the engine's queue.
 
 **The offline simulation's form** (a deliberate model change of every design, with a `GOLDEN_CAPTURE` re-baseline of every repair row):
-- **cwnd_sim = B,** in payload datagrams. B is the existing store cap, a resource bound, so no new constant is added. The engine's cwnd is Copa's and is anchored at about BtlBw·RTprop; that is not modelled (Q22).
+- **cwnd_sim = B,** in payload datagrams. B is the cell's existing store cap (`pause_B`), a resource bound, so no new constant is added. The engine's cwnd is Copa's and is anchored at about BtlBw·RTprop; that is not modelled (Q22).
+  - **Cells with a configured pause:** the link cells, B = 1 000; K-OV, B = 8.
+  - **Cells with no configured pause:** RT, the call cell; the file cells; the E, M and K-I2/K-L10 cells. These run with the default `pause_B` = 2 048. In_flight there is at most λ·RTT plus the outstanding holes, about 5–30 datagrams in RT (50/s, 0.1 s), so spare ≥ 60 ≫ r ≤ 0.5. **The clamp cannot bind there,** and the rows stay bit-identical.
+  - That is a prediction, checked before any run: the gauge-first step reports, per cell, `in_flight_max` and `spare_bind`.
+  - **RT's PASS cannot change by accident:** the identity is tested (§5.2 item 9), not assumed.
 - **in_flight:** payload datagrams sent and not yet acknowledged, or declared lost by a report. This is the engine's accounting at report granularity.
 - **spare** = (B − in_flight)/in_flight, and +∞ at in_flight = 0, as in the engine.
-- **The gate:** no payload datagram is staged while in_flight ≥ B. It applies to every design.
+- **The gate:** no payload datagram is staged while in_flight ≥ B. It applies to the designs that pause in the engine: the new model, ADR-0084's sender and today's Bulk. It does not apply to today's Realtime, which has the two arms below.
 - **The clamp:** `owed += min(r, max(spare, 0))` per first send. At r = 0 nothing changes, so **repair-off rows stay bit-identical**.
 
 **Where it binds.**
 - **CL before an outage:** in_flight ≈ λ·RTT ≈ 110, so spare ≈ 8 ≫ r. Unchanged.
 - **The CL-long drain and OV:** in_flight ≈ B, so spare ≈ 0 to 0.02 and r_eff falls to about 0–0.02.
-- **Gauge `spare_bind`:** the fraction of first sends at which spare < r.
+- **Gauge `spare_bind`,** per cell and arm: the fraction of first sends at which spare < r.
+  - It must read ≈ 0 wherever the cell has headroom outside a drain: CL before its outage, RT, the file, E, M and K-I2/K-L10 cells, and CLw-long before its outage.
+  - It reads near 1 in OV and in the CL-long and CLw-long drains.
 - **The CL-long RL rows change.** Repair stops during the drain, so recovery moves toward the repair-off rows: in stage 3e, RL lengthened ADR-0084's recovery from 4.8 to 8.6 s. Those rows are re-baselined, not inherited.
+- **Every repair-on row re-runs under the clamp, DECIDE included,** for every design and every cell. The DECIDE row is CL-long under RL. Its stage 3e reading (UNDETERMINED with repair, PASS with repair off) is void for the repair modes until the re-run. Repair-off rows are bit-identical by arithmetic, and are checked, not assumed.
 
-**What today's sender does behind the gate.**
-- **Its link queue is bounded** by cwnd minus the BDP, about 880 datagrams or 88 ms here, the same as the new model's.
-- **The excess waits in front of the transport,** where today's sender has no age expiry: in the TUN queue, or in the application's blocked `write()` (paper §8.7).
-- So its delay is 0.093 s plus the front queue's depth over μ.
-- **The offline simulation models the front queue twice:**
-  - **depth 500 tail-drop:** the Linux TUN default `txqueuelen`, a cited resource bound. That reads about 0.093 + 500/9 700 ≈ 0.145 s.
-  - **unbounded:** application back-pressure. Delay then grows at (x − 1) seconds per second, and on time reads about 0.11, like the ADR-0084 rows.
-- **It cannot fall below the 0.093 s link-queue floor** that both designs share. A front queue of depth 0 would equal Revision 4's 0.095 s.
-- **Its share:** front-queue drops are off the wire, so the clamp takes its repair to about 0 as well. Its units are young enough to resend, so share ≈ C/((1 + ε/(1 − ε))·λ) ≈ 0.808.
+**Today's Realtime: two arms, both run and reported (Fairness rule 4; Q30 settled by the engine read).**
+
+1. **As stored:** first sends go straight into the link's 125 ms buffer, which tail-drops. It is kept for continuity with stage 3e, and it flatters the engine.
+2. **Engine queue (new):**
+   - **The queue:** a front FIFO of 4 MiB in symbols, so 8 192 symbols of 512 B, with every payload datagram counted as one symbol.
+   - **Eviction:** when full, the **oldest** queued datagram is evicted, silently.
+   - **No deadline.**
+   - **The drain:** at the link rate, so BBR's pacing is modelled as a drain at C and the link buffer stays about empty.
+   - **The same queue** takes first sends, copies and repairs.
+   - **in_flight** for the clamp counts datagrams handed to the queue and not yet acknowledged, so under overload spare → 0 and r_eff → 0.
+     - This assumes the engine counts in-flight at its own send, ahead of quinn's queue. That is not yet read, so it is flagged for the read-only engine check.
+   - **The residence time under a sustained overload** is `Q_f/λ_wire`, the queue over its arrival rate, because the head leaves by service or by eviction.
+
+**The predictions for both arms are in §4.1 and §4.3.**
 
 ### 3.4 What the clamp nets under saturation, from the measured mechanism
 
@@ -308,7 +359,7 @@ Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower 
 **Applied to the 2×2 of §4.1:**
 - **Wait limit off, clamp on:** 0.7929 + 0.044 = **0.837**, on time the same, p50 unchanged at 0.390 s. The units are still unprotected at T − R, so the lost ε stays lost.
 - **Wait limit on, clamp on:** the units are young, so the lost ε is recovered by resend, costing ρ = ε/(1 − ε) ≈ 0.030 of link sends instead of r = 0.087. The steady share is C/((1 + ρ)·λ) = **0.808**, on time 0.80, p50 ≈ 0.10 s. That is +0.038 against the wait limit alone (0.770), with no flush.
-- **Today's sender behind the gate:** the clamp removes the repairs its queue was dropping, so its share stays ≈ 0.81 (§3.3).
+- **Today's Realtime as stored:** the clamp removes the repairs its link queue was dropping, so its share stays ≈ 0.81. The engine-queue arm is in §4.1.
 
 **Revised prediction rows:** clamp alone 0.837 / 0.837 / 0.39 s; Revision 4 with both parts 0.80–0.81 / 0.79–0.80 / 0.095–0.10 s.
 
@@ -316,9 +367,9 @@ Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower 
 
 **Common numbers (OV).**
 - C = 10 000/s, λ = 12 000/s, R ≈ 0.102 s, ô ≈ 0.093 s, and the forward queue plus owd ≈ 0.093 s.
-- f_max = 0.0382 at T = 0.4, 0.246 at T = 1 and 0.991 at T = 2.
-- **Clamp off:** μ̂ = 10 000/(1.087 + 0.031) ≈ 8 950, so x ≈ 1.34. **Clamp on:** μ̂ ≈ 10 000/(1.01 + 0.031) ≈ 9 600, so x ≈ 1.25.
-- **μ̂ becomes finite after 10 qualifying rounds,** about 1 s at srtt ≈ 0.1 s. The collapse then follows after `t_ov* = √(f_max/(δ·(x − 1)))`.
+- The collapse threshold K_c = (T − R)(T − R + ô) is 0.1165 at T = 0.4, 0.890 at T = 1 and 3.78 at T = 2.
+- **Clamp off:** μ̂ = D̂ ≈ 10 000/(1.031 + 0.087) ≈ 8 950, so x ≈ 1.34. **Clamp on:** μ̂ ≈ 10 000/(1.031 + 0.01) ≈ 9 600, so x ≈ 1.25.
+- **μ̂ becomes finite after 10 qualifying rounds,** about 1 s at srtt ≈ 0.1 s. The collapse then follows after `t_ov* = √(K_c/(δ·(x − 1)))`. Before it, the queue wait is capped at `c − K/(c + ô)`, which falls from T − R.
 
 ### 4.1 OV (post-data: these rows cannot confirm the law)
 
@@ -331,24 +382,29 @@ Between `(T − R)·ô` and f_max, a queue whose head is younger than the lower 
 
 How each cell is derived:
 - **Clamp alone.** r_eff ≈ 0, so there is no displacement. Units are still sent unprotected at T − R, so first-send loss stays lost: `(C/λ)(1 − ε)` = 0.808, plus a flush of 0.298·9 700·0.97/120 000 = 0.024. That gives 0.832 from capacity, and 0.837 from the measured counts (§3.4); the counts are used.
-- **Wait limit alone.** `μ̂·10 s/N` with no flush, so 0.767–0.772. The collapse comes 47 ms after μ̂ becomes finite.
+- **Wait limit alone.** `μ̂·10 s/N` with no flush, so 0.767–0.772. The collapse comes 83 ms after μ̂ becomes finite.
 - **Both.** Units are young and so protected at birth (0.098 + 0.093 < 0.4). Loss is recovered by resend, at ρ ≈ ε/(1 − ε), and a resend arrives by about 0.3 s. The share is C/((1 + r_eff + ρ)·λ), which is 0.808 at r_eff = 0 and about 0.79 if r_eff stays near 0.02.
 
 **Against today's Realtime.**
-- **As stored, with no gate:** 0.8165 / 0.814 / 0.172 s.
-- **Behind the gate:** about 0.808 / 0.80 / 0.145 s with the 500-packet front queue. With the unbounded front queue it reads about 0.11 on time.
-- **Read by §3.1's dominance rule,** since the finite-T sweep is degenerate here: Revision 4 with both parts is equivalent in share and better in delay against the gated sender with the 500-packet front queue.
+- **The stored arm:** 0.8165 / 0.814 / 0.172 s. In the steady windows its share is 0.8085, level with Revision 4's 0.808.
+- **The engine-queue arm** (with the clamp, r_eff ≈ 0):
+  - The FIFO fills in 8 192/(12 000 − 10 000) ≈ 4.1 s. After that, survivors wait `8 192/12 000` ≈ 0.68 s, so p50 ≈ 0.65–0.70 s.
+  - On time within 0.4 s holds only while the queue is below about 3 950 symbols, the first ≈ 2.0 s, so ≈ 0.20–0.25.
+  - Whole-run delivered is the link's 10 s plus the queue's 0.82 s flush, times 1 − ε: ≈ 0.84–0.88.
+  - In the steady windows the share is 0.808 and on time is 0.
+- **Read by §3.1's dominance rule,** since the finite-T sweep is degenerate here:
+  - against the stored arm, Revision 4 with both parts is equivalent in steady share and better in delay;
+  - against the engine-queue arm, it is better on steady on-time share (0.80 against 0) and on delay.
 
 **The δ and T map with the clamp on** (x − 1 = 0.25):
 
 | δ | T | collapse after μ̂ is finite | delivered | on time ≤ 0.4 s | p50 |
 |---|---|---|---|---|---|
-| 50 | 0.4 / 1 / 2 | 55 ms / 0.14 s / 0.28 s | ≈ 0.80 | ≈ 0.80 / 0.79 / 0.79 | ≈ 0.10 s |
-| 0.5 | 0.4 | 0.55 s | ≈ 0.80 | ≈ 0.80 | ≈ 0.10 s |
-| 0.5 | 1 | 1.4 s | ≈ 0.80 | ≈ 0.73 | ≈ 0.10 s |
-| 0.5 | 2 | 2.8 s (the wait peaks at ≈ 0.95 s) | ≈ 0.80 | ≈ 0.62 | ≈ 0.10 s |
-| 0.005 | 0.4 | 5.5 s | ≈ 0.81 | ≈ 0.81 | ≈ 0.39 s |
-| 0.005 | 2 | 28 s (never in the run) | Revision 3 with the clamp | | |
+| 50 | 0.4 / 1 / 2 | 0.10 s / 0.27 s / 0.55 s | ≈ 0.80 | ≈ 0.80 / 0.80 / 0.79 | ≈ 0.10 s |
+| 0.5 | 0.4 | 0.97 s (the wait stays at the §13.2 cap of 0.30 s until then, so on time) | ≈ 0.80 | ≈ 0.80 | ≈ 0.10 s |
+| 0.5 | 1 | 2.7 s (the wait peaks at ≈ 0.6 s) | ≈ 0.80 | ≈ 0.63 | ≈ 0.10 s |
+| 0.5 | 2 | 5.5 s (the wait peaks at ≈ 1.1 s at ≈ 3.5 s) | ≈ 0.81 | ≈ 0.40 | ≈ 0.7 s |
+| 0.005 | 0.4 / 2 | 9.7 s / 55 s (neither within the run) | Revision 3 with the clamp: 0.837 / 0.837 / 0.39 s at T = 0.4 | | |
 
 - **Strict order (H = ∞) at δ = 50, T = 0.4,** re-derived:
   - Young units are protected, so the floor lags each lost seq until FEC or a resend fills it.
@@ -360,9 +416,9 @@ How each cell is derived:
 ### 4.2 CL-long, CL, CLw-long, RT, K-I2, K-L10
 
 **The wait limit.** x ≤ 1 at every dequeue:
-- before an outage, no round qualifies, so Ĉ = +∞;
+- before an outage, no round qualifies, so D̂ = +∞;
 - the round that straddles an outage fails the pause clause;
-- after it, Ĉ reads the saturated link, giving the margins of §3.2 (21 % or 9.8 %).
+- after it, D̂ reads the saturated link's delivered source rate, giving the margins of §3.2 (21 % or 9.8 %).
 
 So K = 0 and the rows are **identical to whatever the clamp makes them.** That covers:
 - **repair-off rows:** bit-identical to the stored ones, for example CL-long at T = 0.4, 94.14 % delivered with on-time recovery within 0.1 s (§18 amendment);
@@ -379,34 +435,65 @@ So K = 0 and the rows are **identical to whatever the clamp makes them.** That c
 **OV-end** (new): λ = 12 000/s for 0–6 s, then 8 000/s for 6–16 s, so 152 000 units; otherwise OV's settings, clamp on. It prices the bet.
 - **Revision 3** carries a reserve out of the overload, and delivers it on time:
   - μ̂·(T − R) ≈ 2 860 units at T = 0.4;
-  - at T = 2, the queue at 6 s, ≈ 0.25·5 s·9 600 ≈ 12 000 units, drained at the 1 600/s headroom, with every wait ≤ 1.25 s < T − R.
-- **Revision 4 at T = 0.4:** δ = 50 and δ = 25 both collapse within 0.1 s. Both lose the 2 860-unit reserve, −0.019 on time against Revision 3. The arms are indistinguishable, which checks that the cost equals the reserve.
-- **Revision 4 at T = 2, δ = 0.5 and δ = 0.25:**
-  - The collapse comes 2.8 s and 4.0 s after μ̂ is finite, at about 3.8 s and 5.0 s. **The ratio is √2, predicted from δ's linear seat.**
-  - Both collapse before 6 s, so both lose the reserve: −0.08 delivered within T against Revision 3.
-  - On time within 0.4 s gains about +0.4 at δ = 0.5 and +0.3 at δ = 0.25, from the fresh units between the collapse and 6 s and after it.
-- `collapse_t` is read directly. Its ratio between the δ and δ/2 arms is the test of the horizon step (Q24).
+  - at T = 2, the queue at 6 s, a wait of ≈ 0.25·6 = 1.5 s or ≈ 14 400 units, drained at the 1 600/s headroom, with every wait ≤ 1.5 s < T − R.
+- **Revision 4 at T = 0.4:** δ = 50 and δ = 25 collapse 0.10 s and 0.14 s after μ̂ is finite. Both lose the 2 860-unit reserve, −0.019 on time against Revision 3. The arms are indistinguishable, which checks that the cost equals the reserve.
+- **Revision 4 at T = 2, δ = 0.5 and δ = 0.25.** Neither collapses before the overload ends, at 5.5 s and 7.8 s after μ̂ is finite.
+  - At 6 s, with t_ov ≈ 5 s, the effective margin is `1.898 − δ·0.25·25/1.991`: 0.33 s at δ = 0.5 and 1.11 s at δ = 0.25.
+  - So the reserves are about 3 170 and 10 660 units, against Revision 3's 14 400. Delivered within T falls by 0.074 and 0.025.
+  - **The shortfall against Revision 3's margin, 1.57 s against 0.79 s, is linear in δ.** That ratio of 2, read from the reserve at the overload's end, is the direct test of δ's seat. The time at which each cap falls below 0.4 s, ∝ δ^(−½), tests the t_ov² horizon (Q24).
+  - On time within 0.4 s: Revision 4 gains only where its cap is below 0.307 s. That is from about 5.9 s at δ = 0.5, and never within the overload at δ = 0.25, so the gain is ≤ 0.01. This row tests the cost, not the gain.
+- `collapse_t`, the cap trace and the reserve at 6 s are read directly.
+- **Today's Realtime in OV-end:**
+  - **The stored arm:** about 0.81 share and on time in the overload windows [3, 5.5] s, at p50 ≈ 0.17 s, and ≈ 0.97–0.99 in [9, 15] s.
+  - **The engine-queue arm:**
+    - In [3, 5.5] s it is on time on ≈ 0: the wait passes 0.395 s at ≈ 2.0 s.
+    - At 6 s the queue is full at 8 192 symbols. It drains at 2 000/s and is on time again from ≈ 8.1 s, so [9, 15] s reads ≈ 0.97–0.99.
+    - Whole run: delivered ≈ 0.97 (about 3 800 evicted between 4.1 and 6 s), on time ≈ 0.57.
+  - **Revision 4 with the clamp (T = 0.4, δ = 50):** 0.808 / 0.80 in [3, 5.5] s and ≈ 0.99 in [9, 15] s, so it beats the engine-queue arm in the overload windows and equals it after.
 
 **OV-crit** (new): λ = 9 600/s, the first-send capacity with the clamp; otherwise OV, 10 s. The knife edge.
 - **Predicted:** `deq_early` ≤ 1 % of hand-overs, and Revision 4 equals Revision 3 within the A/A floor on all three readouts.
 - **Above that,** the knife edge bites: the law returns to derivation.
+- **Today's Realtime in OV-crit.** Unclamped, its wire load is 9 600·1.087 plus resends ≈ 10 700/s > C, overloaded by its own repair.
+  - **The stored arm:** the link buffer stays full and drops about 6 %. On time ≈ 0.91–0.95, p50 ≈ 0.13 s.
+  - **The engine-queue arm, with the clamp:**
+    - **The loop.** The queue grows, in_flight rises, spare falls and r falls; the wire then drops below C, the queue drains, spare rises and r rises again. So the clamp holds the wire near C.
+    - **Predicted:** p50 ≤ 0.1 s, on time ≈ 0.95–0.97.
+    - **Low confidence:** this is a feedback loop that may oscillate. `spare_bind` and the queue-length trace are read.
 
 **OV at δ = 0.5:** the δ = 0.5 rows of §4.1. Here T still matters, and the collapse instants are 0.55, 1.4 and 2.8 s.
 
 **K-OV** (λ = 50/s, C = 40/s, L10 loss, owd 50 ms, B = 8, 3 000 units). It was bounded at 10 s by TIME and never run, so it needs a time-limit amendment: one seed is timed first, and the bound is set from it.
-- **Inputs.** R ≈ 0.21 s and ô ≈ 0.15 s, so f_max = 0.0289. With the clamp on, μ̂ = 40/1.111 = 36, so x ≈ 1.39. μ̂ becomes finite after about 2 s, at rounds of 0.2 s. The collapse then follows in 38 ms.
+- **Inputs.** R ≈ 0.21 s and ô ≈ 0.15 s, so K_c = 0.19·0.34 = 0.0646. With the clamp on, μ̂ = 40·0.9/(1 − 0.1)·… = D̂ ≈ 36, so x ≈ 1.39. μ̂ becomes finite after about 2 s, at rounds of 0.2 s. The collapse then follows in 58 ms.
 - **Revision 4 at T = 0.4:**
   - delay p50 ≈ 0.16 s: the 0.1 s pause queue, plus the 50 ms owd, plus up to one ack gap;
   - delivered ≈ 0.72, on time 0.66–0.72. A resend arrives near 0.36 s, at the edge.
 - **Revision 3:** the registration's ≈ 0.72 on time at p50 ≈ 0.34 s.
 - **Today's Realtime:**
-  - without the gate, ≤ 0.1 on time;
-  - behind the gate with the 500-packet front queue (12.5 s at 40/s), ≈ 0 on time.
+  - **the stored arm:** ≤ 0.1 on time, because it fills the 1 s link queue;
+  - **the engine-queue arm:** 8 192 symbols at 40/s is 205 s, longer than the 60 s run, so nothing is evicted. The wait grows at (50 − 40)/40 = 0.25 s per s, giving p50 ≈ 7 s and on time ≈ 0.03 (the first ≈ 1.6 s). Delivered is ≈ 0.9–0.99 once the 15 s drain after hand-over is inside `t_limit`.
+
+**How the fresh cells are read (registered before any data).** This applies to OV-end, OV-crit, K-OV and OV at δ = 0.5.
+- **Primary readouts:** the steady-window share delivered and the steady-window share on time within 0.4 s. They are computed over hand-over windows (0.5 s wide, §17.4) inside a registered steady interval:
+
+  | cell | steady interval |
+  |---|---|
+  | OV | [3, 9] s |
+  | OV-end | [3, 5.5] s (overload) and [9, 15] s (after) |
+  | OV-crit | [2, 9] s |
+  | K-OV | [10, 55] s |
+
+- **Readouts only:** delay p50 from hand-over over every unit, and the whole-run delivered share. The whole-run gap is the end-of-run backlog (§3.4, the flush), which the steady windows exclude.
+- **A collapsed lifetime sweep** (`floor_bind` ≈ 1 at every finite T) is pooled and read by dominance (§3.1).
+- **The steady prediction is level, not a lead.**
+  - Revision 4 with the clamp predicts 0.808 in OV's steady windows. Today's Realtime's stored steady share is 0.8085: `(C − its carried repairs)·(1 − ε)/λ`.
+  - So the share reading is predicted **equivalent**. The delay p50 (≈ 0.10 s against the stored arm's 0.172 s, and the engine-queue arm's ≈ 0.68 s) is the readout where they differ. Against the engine-queue arm, the steady on-time share differs too (≈ 0.80 against ≈ 0).
+  - Today's higher whole-run delivered share (0.8165) is its own end-of-run flush of the 125 ms link buffer. It is not a steady-state difference.
 
 ### 4.4 Two paths
 
-- **μ̂ pools the paths:** Ĉ = Σ Ĉ_p, and x = λ̂/μ̂.
-- **A path in an outage** keeps its held Ĉ_p. That overstates the capacity, so x reads low: the safe side, at Revision 3.
+- **μ̂ pools the paths:** D̂ = Σ D̂_p, and x = λ̂/μ̂.
+- **A path in an outage** keeps its held D̂_p. That overstates the capacity, so x reads low: the safe side, at Revision 3.
 - **A path whose ô exceeds T** also counts at full capacity, again the safe side.
 - **The P2 cells** run below capacity, so they are predicted identical.
 
@@ -416,14 +503,14 @@ So K = 0 and the rows are **identical to whatever the clamp makes them.** That c
 
 - **The horizon step (Q24).** Every collapse time scales with √(t_h/t_ov). Nothing ships until the owner decides, and OV-end's δ against δ/2 rows read its consequence.
 - **The knife edge at x ≈ 1, amplified by δ.**
-  - K grows as δ·(x − 1)·t_ov². With μ̂ biased high it reads 0, the safe side. With μ̂ biased low by more than the margin, it collapses after `√(f_max/(δ·bias))`.
+  - K grows as δ·(x − 1)·t_ov². With μ̂ biased high it reads 0, the safe side. With μ̂ biased low by more than the margin, it collapses after `√(K_c/(δ·bias))`.
   - The engine prerequisite is the app-limited exclusion (Q26). OV-crit and the bias rows of §5.3 measure the edge.
-- **Hysteresis in the parabola band.** Gauged as `band_hold` (§3.1).
+- **The capacity estimate reading low (main risk).** See §3.2.
 - **Oscillation.**
-  - τ reads none of the quantities it moves. λ̂ is the application's rate. Ĉ changes only in qualifying rounds, and the sender stays flow-limited after a collapse. r_eff and ε̂ do not depend on the intake.
+  - τ reads none of the quantities it moves. λ̂ is the application's rate. D̂ changes only in qualifying rounds, and the sender stays flow-limited after a collapse. r_eff and ε̂ do not depend on the intake.
   - A collapse leaves srtt and R unchanged, because the link queue is set by B.
   - Noise near x = 1 only resets t_ov, which moves τ toward T.
-- **The store pause and the gate.** The rule runs only at a dequeue. Through an outage Ĉ holds, and the round that straddles it does not qualify.
+- **The store pause and the gate.** The rule runs only at a dequeue. Through an outage D̂ holds, and the round that straddles it does not qualify.
 - **The floor law.** Units sent young are protected, so resends return under overload (§4.1, strict order). The commitment and L1 tests are unchanged.
 - **The cost of the bet** when an overload ends, `μ̂·(T − R)` per episode at high δ. OV-end measures it.
 - **The clamp changes every repair row.** Every stage 3e repair baseline must be re-run under the clamp before it is compared. Repair-off rows are untouched by arithmetic.
@@ -436,12 +523,15 @@ FORMULA-FIRST: the law, §2's derivation and §3.3's clamp go into the paper fir
    - The source deny test forbids `isinf`, `isfinite` and any literal comparison of δ, T or x.
 2. **The identity at headroom.** τ == T exactly for every x ≤ 1.
 3. **Shape.**
-   - Monotone in T, δ, x, t_ov and a.
+   - Monotone in T, δ, x and t_ov.
+   - **The expiry predicate is monotone in age:** for every K ≥ 0 and every a₁ < a₂, if a₁ expires then so does a₂. This test is red against the first draft's `K/(a + ô)` form.
    - ±2 % continuity at each δ preset and at T = 0.4, and continuity through x = 1 ± 10⁻⁹.
-   - The collapse threshold equals f_max to 10⁻¹² for a grid of T and ô.
-4. **The units of μ̂.** In CL-long, with RL, clamp off, in the drain: μ̂ = Ĉ/(1 + r_eff + ε̂/(1 − ε̂)) with Ĉ = C to within one round's quantisation.
-   - With resends forced to their budget, μ̂ does not move. It is red against μ̂ taken as "first sends per second".
-5. **The sample rule.** A round with a pause longer than R never qualifies. Ĉ = +∞ until 10 rounds in a row have qualified, and Ĉ > 0 always.
+   - The collapse threshold equals K_c = (T − R)(T − R + ô) to 10⁻¹² for a grid of T and ô. `den_bind` = 0 wherever T > R.
+4. **The units of μ̂, and no oracle.**
+   - μ̂ is computed only from the sender's reports: a source deny test forbids reading the cell's link rate, `link_sv` or `p0` in the estimator.
+   - In CL-long, RL, clamp off, in the drain: D̂ ≈ C/(1/(1 − ε) + r) within the quantisation noise of §3.2.
+   - With resends forced to their budget, D̂ does not move. It is red against μ̂ taken as "first sends per second".
+5. **The sample rule.** A round with a pause longer than R never qualifies. D̂ = +∞ until 10 rounds in a row have qualified, and D̂ > 0 always.
 6. **CL-long identity with an execution witness.** S5, R0, RL and RS at T ∈ {0.4, 2, ∞}, clamp on, are trace-identical to the clamp-only rows, with `ov_frac` = 0 and `deq_early` = 0 in all 12 seeds.
    - Red against the instantaneous-rate μ̂, and against the sample rule without its pause clause.
 7. **OV executes.** At δ = 50 and T = 0.4, `deq_early` > 0 and `floor_bind` > 0.9 after `collapse_t` + one round.
@@ -451,7 +541,8 @@ FORMULA-FIRST: the law, §2's derivation and §3.3's clamp go into the paper fir
    - r_eff ≤ max(spare, 0) at every accrual.
    - At r = 0 the trace equals the unclamped trace.
    - No payload datagram is staged while in_flight ≥ B.
-   - In CL before the outage, `spare_bind` = 0.
+   - `spare_bind` = 0 in CL before the outage, and in RT, the file cells and E, M, K-I2 and K-L10.
+   - The RT, file and call-cell rows are trace-identical with the clamp on and off.
 10. **Starvation and the unchanged absolutes.**
     - With τ < R, first sends per round are greater than 0.
     - `l1_viol` = 0 and the commitment violations are 0.
@@ -459,7 +550,8 @@ FORMULA-FIRST: the law, §2's derivation and §3.3's clamp go into the paper fir
 
 ### 5.3 The gauge-first step (before any run of the law)
 
-The law is added as **readouts only**: λ̂, μ̂ (with Ĉ, r_eff and ε̂), t_ov, K and τ at every dequeue, plus the count `n_tau_lt_T` of dequeue ticks with τ < T. **No decision reads them.**
+The law is added as **readouts only**: λ̂, μ̂ = D̂ (from the sender's own reports, §3.2), t_ov, K and τ at every dequeue, plus the count `n_tau_lt_T` of dequeue ticks with τ < T. **No decision reads them.**
+- Also read: D̂ against the oracle `C/(1/(1 − ε) + r)`, and `in_flight_max` and `spare_bind` for the clamp. The clamp is not yet active either.
 - **What it runs on:** seed 0 of every stored stage 3e new-model configuration, clamp off, as stored. The traces must equal the stored digests, which shows the readouts are inert.
 - **The bias rows:** μ̂·(1 − b), for b ∈ {0.02, 0.05, 0.10}, in CL-long's drain (S5, R0, RL; T ∈ {0.4, 2}).
 
@@ -473,17 +565,17 @@ The law is added as **readouts only**: λ̂, μ̂ (with Ĉ, r_eff and ε̂), t_o
 
 **Cells and arms:**
 - **OV, the 2×2:** wait limit on or off × clamp on or off; S5 and RL; T ∈ {0.4, 2, ∞}; δ ∈ {0.5, 50}. That is 24 configurations. OV is post-data and confirms nothing; it is the calibration of the 2×2.
-- **Today's Realtime behind the gate,** with front queues of 500 and unbounded, at δ = 50: 2 configurations, in OV and OV-end.
+- **Today's Realtime,** both arms (as stored, and engine queue), each with the clamp on and off, at δ = 50, in OV, OV-end and OV-crit: 12 configurations.
 - **OV-end:** Revision 4 with the clamp, T = 0.4 at δ ∈ {50, 25}, and T = 2 at δ ∈ {0.5, 0.25}, plus Revision 3 with the clamp at both T: 6 configurations.
 - **OV-crit:** Revision 3 and Revision 4, both with the clamp, at T = 0.4 and δ = 50: 2 configurations.
-- **K-OV**, after its time-limit amendment: Revision 3 and Revision 4 with the clamp, plus today's Realtime gated and ungated, at T = 0.4: 4 configurations.
+- **K-OV**, after its time-limit amendment, which must cover the engine-queue arm's 15 s drain: Revision 3 and Revision 4 with the clamp, plus both of today's Realtime arms, at T = 0.4: 4 configurations.
 
-**Size:** 3 seeds each, about 40 configurations and 120 runs. At TIME's rates (7.7–34 s per run) that is under 15 min on 9 workers, plus K-OV's measured time.
+**Size:** 3 seeds each, about 50 configurations and 150 runs. At TIME's rates (7.7–34 s per run) that is under 15 min on 9 workers, plus K-OV's measured time.
 
 **Readouts:**
 - §4's three readouts;
-- the gauges `deq_early`, `floor_bind`, `collapse_t`, `band_hold`, `ov_frac` and `spare_bind`;
-- the fraction of rounds with Ĉ = +∞;
+- the gauges `deq_early`, `floor_bind`, `collapse_t`, `den_bind`, `ov_frac` and `spare_bind`, and the reserve at the end of an overload;
+- the fraction of rounds with D̂ = +∞, and D̂ against the oracle;
 - r_eff and the resend rate;
 - `dec_units_qdrop` and the queue drops of repairs, per design, to confirm §3.4's accounting under the clamp;
 - the Gott calibration: forecast persistence against realised persistence, per episode.
@@ -496,10 +588,13 @@ The law is added as **readouts only**: λ̂, μ̂ (with Ĉ, r_eff and ε̂), t_o
   - The first draft's raw 1/δ odds bar is withdrawn.
 - **Q25, the forecast.** Gott's scale-free prior, or a declared horizon. **Default: Gott**, with its calibration gauged.
 - **Q26, the capacity estimate in the engine.** The BtlBw sampler needs BBR's app-limited rule, a round-counted window and the pause clause of §3.2. **Default: prerequisites of the engine step.**
-- **Q27, the clamp in the offline simulation.** cwnd_sim = B and the send gate for every design (§3.3). **Default: yes**, as a deliberate model change with a re-baseline. It replaces the first draft's "register Q22 next": the clamp is the engine's law, so it is part of this revision.
+- **Q27, the clamp in the offline simulation.** cwnd_sim = B and the clamp for every design, and the send gate for the designs that pause in the engine (§3.3). **Default: yes**, as a deliberate model change with a re-baseline. It replaces the first draft's "register Q22 next": the clamp is the engine's law, so it is part of this revision.
 - **Q28, a standing part of the intake** (Copa's 1/δ). **Default: no.** The store pause keeps the link busy.
 - **Q29, the ledger verdict for a lifetime sweep that collapses under overload** (§3.1). **Proposed: "binds by design".**
-- **Q30, today's sender's front queue** in the gated model. **Default:** report both the TUN default (500, tail-drop) and the unbounded case. Do not pick one for the verdict until the owner says which consumer the comparison stands for.
+- **Q30, settled by an engine read:** today's Realtime first sends bypass the send gate and wait in quinn's 4 MiB evict-oldest datagram queue (§3.3).
+  - The offline simulation gains the arm "today's Realtime, engine queue". The stored arm is kept, and both are run and reported (Fairness rule 4).
+  - **Still open:** whether the engine counts in-flight ahead of quinn's queue, which the clamp in that arm assumes (read-only check).
+  - **Recorded debt:** the ρ-selected `tx_paused = reliable && …` (`net/mod.rs:2473`), for the law ledger.
 
 ## 7. Effect on the earlier sections
 
