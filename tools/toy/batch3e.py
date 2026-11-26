@@ -26,6 +26,8 @@ import os
 import sys
 import time
 
+import re
+
 import psutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -260,7 +262,7 @@ def row_delta(cell, key):
 
 
 PARTS = {}
-ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "EARLY", "RB", "REST", "ROBUST", "SMOOTH"]       # attribution of a fingerprint; TIME is timing only, AMEND = EARLY + REST
+ORDER = ["AA", "AA2", "DECIDE", "CROSS", "MAIN", "EARLY", "REST", "RB", "ROBUST", "SMOOTH"]       # attribution of a fingerprint; TIME is timing only, AMEND = EARLY + REST
 EARLY_CELLS = ("Ec", "RT", "OV", "CL-long-v")                                # one cell per use case (registration 14.6)
 FPS = {}
 
@@ -427,7 +429,7 @@ RB_CELLS = ("CL-long", "CLw-long", "CL-long-v")                              # t
 def rb_jobs():
     """Arm RB, for every design: r at the law's cap from the outage start until rb_A after its end, the law outside (amendment 3)."""
     for cell in RB_CELLS:
-        for mode in ("RB", "RB025"):                                         # rb_A = 3 s (the simulator's aftermath) and 0.25 s (about 4 900 symbols: the engine's forgetting time)
+        for mode in ("RB025",):                                              # rb_A = 0.25 s (about 4 900 symbols: the engine's forgetting time); the 3 s variant is cut
             for key in rows_of(cell):
                 add_row("RB", cell, key, mode, SEEDS)
 
@@ -624,19 +626,21 @@ def load(fp, seed):
 
 
 PRE = ["PASS-ident", "PASS-r0", "PASS-rttbug", "PASS-rate"]                              # PASS-reuse is optional: without it nothing is reused; PASS-simread gates MAIN only
-CHAIN = ["AA", "AA2", "TIME", "DECIDE", "EARLY", "RB", "MAIN", "REST", "ROBUST", "SMOOTH"]       # registration 14.6
+CHAIN = ["AA", "AA2", "TIME", "DECIDE", "EARLY", "MAIN", "REST", "ROBUST", "SMOOTH", "RB"]    # RB, ROBUST and SMOOTH follow a PASSES verdict       # registration 14.6
 DONE_MARK = {"TIME": "PASS-time"}
 
 
 def _need(part):
     if part == "CROSS":
         earlier = ["AA", "AA2", "DECIDE"]
+    elif part == "RB":
+        earlier = CHAIN[:CHAIN.index("REST") + 1]                            # reported only: after the verdict, independent of ROBUST and SMOOTH
     else:
         earlier = CHAIN[:CHAIN.index(part)]
     need = PRE + ([] if part in ("AA", "AA2") else ["PASS-aa"]) + [DONE_MARK.get(p, "DONE-" + p) for p in earlier]
     if part == "MAIN":
         need.insert(len(PRE), "PASS-simread")                                # the simulator read (registration 9 step 6) gates MAIN
-    if part in ("ROBUST", "SMOOTH"):
+    if part in ("ROBUST", "SMOOTH", "RB"):
         need.append("VERDICT-PASSES")                                        # written by the reader when the stage verdict reads PASSES (14.5)
     return need
 
@@ -659,14 +663,12 @@ def refusal(part, partial=False):
     return None
 
 
-def refusal_workers(light, heavy):
-    """Registration 14.7: light 6 to 8 workers in practice (at most 8), heavy 1 to 2."""
-    if light < 1 or heavy < 1:
-        return "at least one light and one heavy worker"
-    if light > 8:
-        return "at most 8 light workers"
-    if heavy > 2:
-        return "at most 2 heavy workers (about 1.5 GB each)"
+def refusal_workers(n):
+    """One pool of at most 9 workers (the owner's decision: the measured peaks are 146 to 431 MB, not 1.5 GB)."""
+    if n < 1:
+        return "at least one worker"
+    if n > 9:
+        return "at most 9 workers"
     return None
 
 
@@ -676,9 +678,28 @@ def is_heavy(cfg):
     return cfg.sender in ("S1c", "S1") and (cfg.rate, cfg.n_total) in sig
 
 
-def need_gb(heavy):
-    """Free memory a run needs before it starts: 1 GB of headroom plus 1.5 GB (heavy) or 0.15 GB (light)."""
-    return 1.0 + (1.5 if heavy else 0.15)
+MEM_MARGIN_GB = 1.0                                                          # free memory kept beyond a run's own peak
+DEFAULT_PEAK_MB = 450.0                                                      # an unmeasured class: above the largest measured peak (431 MB)
+PEAKS = {}                                                                   # (cell, design) -> peak MB, read from the TIME rows
+
+
+def need_gb(peak_mb):
+    """Free memory a run waits for before it starts: its measured peak plus the margin."""
+    return peak_mb / 1024.0 + MEM_MARGIN_GB
+
+
+def load_peaks():
+    path = os.path.join(OUT, "time.json")
+    PEAKS.clear()
+    if os.path.exists(path):
+        with open(path) as f:
+            for cell, design, sec, peak in json.load(f)["rows"]:
+                PEAKS[(cell, design)] = peak
+
+
+def need_for_fp(fp):
+    j = FPS[fp]["job"]
+    return need_gb(PEAKS.get((j.cell, j.design), DEFAULT_PEAK_MB))
 
 
 def free_gb():
@@ -764,7 +785,7 @@ def run_one(cfg, trace=False):
 def work(task):
     fp, seed = task
     e = FPS[fp]
-    wait_for_memory(need_gb(is_heavy(e["builder"](seed))))                  # each run waits for free memory (14.7)
+    wait_for_memory(need_for_fp(fp))                                         # each run waits for its measured peak plus a margin
     t = time.time()
     r = run_one(e["builder"](seed), e["trace"])
     r["wall_s"] = time.time() - t
@@ -794,7 +815,7 @@ def plan_classes():
     """Runs to execute before the verdict by class (cell, design, mode): the fingerprints of AA, AA2, DECIDE, EARLY, MAIN and REST, their seeds, less
     the seeds a re-baseline or proof stage 1 row already holds when reuse is on.  Doublings are not included."""
     out = {}
-    for p in ("AA", "AA2", "DECIDE", "EARLY", "RB", "MAIN", "REST"):
+    for p in ("AA", "AA2", "DECIDE", "EARLY", "MAIN", "REST"):
         for fp in attributed(p):
             j = FPS[fp]["job"]
             n = sum(1 for s in range(FPS[fp]["nseeds"]) if not (reuse_on() and _reused_path(fp, s) is not None))
@@ -804,22 +825,37 @@ def plan_classes():
     return out
 
 
-def time_total(times, classes, mem_mb=4096.0):
-    """Registration 14.7's one-pool-at-a-time sum.  times: (cell, design) -> (seconds of the RL run, peak MB); classes: (cell, design, mode) -> runs.
-    A repair-off class takes half its RL time (the ratio of 14.1).  Workers: at most 8 light and 2 heavy, as many as 4 GB holds at the peak.
-    Returns (hours, table)."""
+def time_total(times, classes, workers=9):
+    """Registration 14.7's sum for one pool of `workers`.  times: (cell, design) -> (seconds of the RL run, peak MB); classes: (cell, design, mode) -> runs.
+    A repair-off class takes half its RL time (the ratio of 14.1).  Returns (hours, table)."""
     rows, total = [], 0.0
-    for (cell, design, mode), n in sorted(classes.items()):
+    for (cell, design, mode), n in sorted(classes.items(), key=lambda kv: (kv[0][0], kv[0][1], str(kv[0][2]))):
         if n == 0 or (cell, design) not in times:
             continue
         sec, peak = times[(cell, design)]
         t = sec * (0.5 if mode == "OFF" else 1.0)
-        heavy = design != "new" and cell in HEAVY_CELLS
-        w = max(1, min(2 if heavy else 8, int(mem_mb // max(peak, 1.0))))
-        hours = n * t / w / 3600.0
+        hours = n * t / workers / 3600.0
         total += hours
-        rows.append(dict(cell=cell, design=design, mode=mode, runs=n, seconds_each=t, peak_mb=peak, pool="heavy" if heavy else "light", workers=w, hours=hours))
+        rows.append(dict(cell=cell, design=design, mode=mode, runs=n, seconds_each=t, peak_mb=peak, workers=workers, hours=hours))
     return total, rows
+
+
+_TIME_ROW = re.compile(r"^TIME\s+(\S+)\s+(\S+)\s+([0-9.]+) s\s+([0-9.]+) MB")
+
+
+def time_rows_from_log(text, bound_s=10.0):
+    """(cell, design) -> (seconds, peak MB) from `TIME cell design sec s MB MB` lines; a row not recorded is bounded at bound_s seconds and the largest
+    recorded peak.  Returns (rows, the recorded rows of a long cell that are missing)."""
+    rows = {}
+    for line in text.splitlines():
+        m = _TIME_ROW.match(line.strip())
+        if m:
+            rows[(m.group(1), m.group(2))] = (float(m.group(3)), float(m.group(4)))
+    worst = max([v[1] for v in rows.values()], default=DEFAULT_PEAK_MB)
+    missing = [(j.cell, j.design) for j in PARTS["TIME"] if j.cell in HEAVY_CELLS and (j.cell, j.design) not in rows]
+    for j in PARTS["TIME"]:
+        rows.setdefault((j.cell, j.design), (bound_s, worst))
+    return rows, missing
 
 
 def time_gate(total_h, table, limit_h=24.0):
@@ -833,42 +869,73 @@ def time_gate(total_h, table, limit_h=24.0):
     return False
 
 
-def run_time(results_path):
-    """Runs the TIME rows one at a time, slowest first, recording wall time and peak resident memory (sampled every 0.5 s); writes the table, the
-    total and PASS-time or STOP."""
+def run_time(results_path, from_log=""):
+    """TIME (registration 14.8).  Runs the rows one at a time, slowest first, recording wall time and peak resident memory (sampled every 0.5 s); each row is
+    appended to out3e/time_rows.jsonl as it finishes, so a restart skips the rows done.  With from_log the rows come from a TIME log and the ones missing are
+    bounded at 10 s (nothing is run).  Writes time.json, the table (results file), TIME_TOTAL.txt, and PASS-time or STOP."""
     import threading
-    jobs = sorted(PARTS["TIME"], key=lambda j: -(CELLS[base_of(j.cell)][1]["n_total"] * (3 if is_heavy(j.builder(0)) else 1)))
-    times, rows = {}, []
-    proc = psutil.Process()
-    for j in jobs:
-        peak, stop = [0.0], threading.Event()
-
-        def watch():
-            while not stop.is_set():
-                peak[0] = max(peak[0], proc.memory_info().rss / 2.0 ** 20)
-                stop.wait(0.5)
-        th = threading.Thread(target=watch, daemon=True)
-        th.start()
-        wait_for_memory(need_gb(is_heavy(j.builder(0))))
-        t0 = time.time()
-        run_one(j.builder(0), False)
-        sec = time.time() - t0
-        stop.set()
-        th.join()
-        peak[0] = max(peak[0], proc.memory_info().rss / 2.0 ** 20)
-        times[(j.cell, j.design)] = (sec, peak[0])
-        rows.append((j.cell, j.design, sec, peak[0]))
-        print("TIME %-10s %-5s %7.1f s %7.0f MB" % (j.cell, j.design, sec, peak[0]), flush=True)
-    total_h, table = time_total(times, plan_classes())
     os.makedirs(OUT, exist_ok=True)
+    jobs = sorted(PARTS["TIME"], key=lambda j: -(CELLS[base_of(j.cell)][1]["n_total"] * (3 if is_heavy(j.builder(0)) else 1)))
+    bounded = set()
+    if from_log:
+        with open(from_log, encoding="utf-8", errors="replace") as f:
+            times, missing = time_rows_from_log(f.read())
+        if missing:
+            print("TIME: long cells not covered by the log:", missing)
+            write_stop("TIME from log: rows missing for long cells %s" % missing)
+            return False
+        done = set()
+        with open(from_log, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = _TIME_ROW.match(line.strip())
+                if m:
+                    done.add((m.group(1), m.group(2)))
+        bounded = {(j.cell, j.design) for j in jobs} - done
+        rows = [(j.cell, j.design) + times[(j.cell, j.design)] for j in jobs]
+    else:
+        rowfile = os.path.join(OUT, "time_rows.jsonl")
+        times = {}
+        if os.path.exists(rowfile):
+            with open(rowfile) as f:
+                for line in f:
+                    r = json.loads(line)
+                    times[(r[0], r[1])] = (r[2], r[3])
+        proc = psutil.Process()
+        for j in jobs:
+            if (j.cell, j.design) in times:
+                continue
+            peak, stop = [0.0], threading.Event()
+
+            def watch():
+                while not stop.is_set():
+                    peak[0] = max(peak[0], proc.memory_info().rss / 2.0 ** 20)
+                    stop.wait(0.5)
+            th = threading.Thread(target=watch, daemon=True)
+            th.start()
+            wait_for_memory(need_gb(DEFAULT_PEAK_MB))
+            t0 = time.time()
+            run_one(j.builder(0), False)
+            sec = time.time() - t0
+            stop.set()
+            th.join()
+            peak[0] = max(peak[0], proc.memory_info().rss / 2.0 ** 20)
+            times[(j.cell, j.design)] = (sec, peak[0])
+            with open(rowfile, "a") as f:
+                f.write(json.dumps([j.cell, j.design, sec, peak[0]]) + "\n")
+            print("TIME %-10s %-5s %7.1f s %7.0f MB" % (j.cell, j.design, sec, peak[0]), flush=True)
+        rows = [(j.cell, j.design) + times[(j.cell, j.design)] for j in jobs]
+    total_h, table = time_total(times, plan_classes())
     with open(os.path.join(OUT, "time.json"), "w") as f:
-        json.dump(dict(rows=rows, total_hours=total_h, table=table), f)
+        json.dump(dict(rows=rows, total_hours=total_h, table=table, bounded=sorted(bounded)), f)
+    with open(os.path.join(OUT, "TIME_TOTAL.txt"), "w") as f:
+        f.write("TIME total, one pool of 9 workers: %.2f h (gate 24 h)\n" % total_h)
     md = ["", "## TIME (registration 14.8): one seed of each cell x design under repair RL, one process", "",
-          "| cell | design | wall (s) | peak RSS (MB) |", "|---|---|---|---|"] + ["| %s | %s | %.1f | %.0f |" % r for r in rows]
-    md += ["", "Total by 14.7's one-pool-at-a-time formula over the registered run counts: **%.1f h** (gate: 24 h) -> %s" % (total_h, "PASS-time" if total_h <= 24 else "STOP"), ""]
+          "| cell | design | wall (s) | peak RSS (MB) | |", "|---|---|---|---|---|"] + ["| %s | %s | %.1f | %.0f | %s |" % (r + ("bounded at 10 s, not run" if (r[0], r[1]) in bounded else "",)) for r in rows]
+    md += ["", "Total over the registered run counts before the verdict, one pool of 9 workers: **%.1f h** (gate: 24 h) -> %s" % (total_h, "PASS-time" if total_h <= 24 else "STOP"), ""]
     with open(results_path, "a", newline="\n") as f:
         f.write("\n".join(md))
     return time_gate(total_h, table)
+
 
 
 def write_joblist(part, jobs):
@@ -878,28 +945,20 @@ def write_joblist(part, jobs):
 
 
 class run_tasks:
-    """Runs the tasks in two pools at once (light and heavy, registration 14.7) and yields (fingerprint, seed, wall) as they finish; with one worker
-    in each pool the tasks run in this process, one at a time."""
+    """Runs the tasks in one pool of `workers` and yields (fingerprint, seed, wall) as they finish; with one worker they run in this process."""
 
-    def __init__(self, tasks, n_light, n_heavy):
+    def __init__(self, tasks, workers):
         import queue
-        self.q, self.n, self.pools = queue.Queue(), len(tasks), []
-        self.inline = n_light <= 1 and n_heavy <= 1
+        self.q, self.n, self.pool = queue.Queue(), len(tasks), None
         self.tasks = tasks
-        if self.inline:
+        if workers <= 1 or not tasks:
             return
-        heavy = [t for t in tasks if is_heavy(FPS[t[0]]["builder"](0))]
-        light = [t for t in tasks if t not in set(heavy)]
-        for ts, nw in ((light, n_light), (heavy, n_heavy)):
-            if not ts:
-                continue
-            pool = mp.Pool(nw, initializer=build)
-            self.pools.append(pool)
-            for t in ts:
-                pool.apply_async(work, (t,), callback=self.q.put, error_callback=self.q.put)
+        self.pool = mp.Pool(workers, initializer=build)
+        for t in tasks:
+            self.pool.apply_async(work, (t,), callback=self.q.put, error_callback=self.q.put)
 
     def __iter__(self):
-        if self.inline:
+        if self.pool is None:
             for t in self.tasks:
                 yield work(t)
             return
@@ -912,8 +971,8 @@ class run_tasks:
         self.close()
 
     def close(self):
-        for p in self.pools:
-            p.terminate()
+        if self.pool is not None:
+            self.pool.terminate()
 
 
 def smoke_pool():
@@ -923,7 +982,7 @@ def smoke_pool():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         env = dict(os.environ, BATCH3E_OUT=td, BATCH3E_SMOKE="1")
-        r = subprocess.run([sys.executable, os.path.abspath(__file__), "--part", "AA", "--light-workers", "2", "--heavy-workers", "1", "--seeds", "2"], env=env, cwd=HERE,
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), "--part", "AA", "--workers", "2", "--seeds", "2"], env=env, cwd=HERE,
                            capture_output=True, text=True)
         files = sorted(os.listdir(os.path.join(td, "runs"))) if os.path.isdir(os.path.join(td, "runs")) else []
         ok = r.returncode == 0 and len(files) == 4 and os.path.exists(os.path.join(td, "DONE-AA"))
@@ -941,16 +1000,13 @@ def main(argv=None):
     ap.add_argument("--seed0", type=int, default=0)
     ap.add_argument("--only", default="")
     ap.add_argument("--cells", default="")
-    ap.add_argument("--workers", type=int, default=None, help="alias of --light-workers")
-    ap.add_argument("--light-workers", type=int, default=1)
-    ap.add_argument("--heavy-workers", type=int, default=1)
+    ap.add_argument("--workers", type=int, default=1, help="one pool, at most 9")
+    ap.add_argument("--from-log", default="", help="TIME: take the rows from a TIME log instead of running them; rows missing are bounded at 10 s")
     ap.add_argument("--reuse-dirs", default="")
     ap.add_argument("--results", default=os.path.join(HERE, "results-stage3e.md"))
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--double-partial", action="store_true", help="DOUBLE of one cell while its part is still running cell by cell")
     a = ap.parse_args(argv)
-    if a.workers is not None:
-        a.light_workers = a.workers
     build()
     if a.reuse_dirs:
         set_reuse([x for x in a.reuse_dirs.split(",") if x])
@@ -973,7 +1029,7 @@ def main(argv=None):
         if why:
             print("REFUSED:", why)
             return 2
-        return 0 if run_time(a.results) else 1
+        return 0 if run_time(a.results, a.from_log) else 1
     double = a.part.startswith("DOUBLE:")
     base = a.part.split(":")[1] if double else a.part
     if base not in PARTS:
@@ -997,7 +1053,7 @@ def main(argv=None):
         seeds = range(a.seed0, a.seed0 + a.seeds)
         limit = None
     cellname = {j.fp: j for j in jobs}
-    why = refusal_workers(a.light_workers, a.heavy_workers)
+    why = refusal_workers(a.workers)
     if why:
         print("REFUSED:", why)
         return 2
@@ -1010,7 +1066,8 @@ def main(argv=None):
     print("%d runs to do (%d configurations)" % (len(tasks), len(fps)), flush=True)
     t0 = time.time()
     rc = 0
-    results = run_tasks(tasks, a.light_workers, a.heavy_workers)
+    load_peaks()
+    results = run_tasks(tasks, a.workers)
     for i, (fp, s, w) in enumerate(results, 1):
         r = load(fp, s)
         fails = after_run(cellname[fp].name, fp, s, r, FPS[fp]["edge"], FPS[fp]["partners"])

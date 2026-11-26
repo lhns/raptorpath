@@ -213,3 +213,92 @@ changed since); its PASS line stands for the sample.
 (`emit_source.rs`: `cadenced_repair_rate(..., st.encoder.window_size(), ...)` into `rate_snapshot(est, window)`).  Where the encoder's fill is below W*, which is the case at a finite lifetime
 (13.2 against a floor of 16 in the simulator's reading), the engine's r is higher: the simulation's repair is understated there against the engine, mostly in the new model's rows.
 Not changed; recorded as a threat.
+
+## TIME (registration 14.8): one seed of each cell x design under repair RL, one process
+
+| cell | design | wall (s) | peak RSS (MB) | |
+|---|---|---|---|---|
+| OV-long | adr | 30.7 | 146 |  |
+| OV-long | rt | 160.5 | 193 |  |
+| OV-long | bulk | 26.4 | 266 |  |
+| OV-long-v | adr | 609.3 | 278 |  |
+| OV-long-v | rt | 184.8 | 208 |  |
+| OV-long-v | bulk | 24.4 | 284 |  |
+| CL-long | adr | 21.4 | 302 |  |
+| CL-long | rt | 14.8 | 359 |  |
+| CL-long | bulk | 12.4 | 377 |  |
+| CL-long-v | adr | 44.2 | 419 |  |
+| CL-long-v | rt | 29.9 | 431 |  |
+| CL-long-v | bulk | 10.8 | 389 |  |
+| OV-long | new | 33.9 | 401 |  |
+| CLw-long | adr | 11.1 | 186 |  |
+| CLw-long | rt | 13.3 | 200 |  |
+| CLw-long | bulk | 10.7 | 216 |  |
+| OV-long-v | new | 28.6 | 285 |  |
+| CL-long | new | 14.6 | 209 |  |
+| CL-long-v | new | 14.7 | 214 |  |
+| CLw-long | new | 11.7 | 207 |  |
+| OV | new | 7.7 | 214 |  |
+| OV | adr | 8.4 | 239 |  |
+| OV | rt | 35.9 | 244 |  |
+| OV | bulk | 7.2 | 254 |  |
+| CL | new | 7.4 | 273 |  |
+| CL | adr | 7.4 | 290 |  |
+| CL | rt | 8.5 | 297 |  |
+| CL | bulk | 7.0 | 300 |  |
+| CLc | new | 8.4 | 313 |  |
+| CLc | adr | 7.4 | 324 |  |
+| CLc | rt | 10.0 | 327 |  |
+| CLc | bulk | 8.1 | 296 |  |
+| CLc-v | new | 10.0 | 305 |  |
+| CLc-v | adr | 10.0 | 431 | bounded at 10 s, not run |
+| CLc-v | rt | 10.0 | 431 | bounded at 10 s, not run |
+| CLc-v | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| CLs-long | new | 10.0 | 431 | bounded at 10 s, not run |
+| CLs-long | adr | 10.0 | 431 | bounded at 10 s, not run |
+| CLs-long | rt | 10.0 | 431 | bounded at 10 s, not run |
+| CLs-long | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| Ec | new | 10.0 | 431 | bounded at 10 s, not run |
+| Ec | adr | 10.0 | 431 | bounded at 10 s, not run |
+| Ec | rt | 10.0 | 431 | bounded at 10 s, not run |
+| Ec | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| E-I2 | new | 10.0 | 431 | bounded at 10 s, not run |
+| E-I2 | adr | 10.0 | 431 | bounded at 10 s, not run |
+| E-I2 | rt | 10.0 | 431 | bounded at 10 s, not run |
+| E-I2 | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| M-I2 | new | 10.0 | 431 | bounded at 10 s, not run |
+| M-I2 | adr | 10.0 | 431 | bounded at 10 s, not run |
+| M-I2 | rt | 10.0 | 431 | bounded at 10 s, not run |
+| M-I2 | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| RT | new | 10.0 | 431 | bounded at 10 s, not run |
+| RT | adr | 10.0 | 431 | bounded at 10 s, not run |
+| RT | rt | 10.0 | 431 | bounded at 10 s, not run |
+| RT | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| K-I2 | new | 10.0 | 431 | bounded at 10 s, not run |
+| K-I2 | adr | 10.0 | 431 | bounded at 10 s, not run |
+| K-I2 | rt | 10.0 | 431 | bounded at 10 s, not run |
+| K-I2 | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| K-L10 | new | 10.0 | 431 | bounded at 10 s, not run |
+| K-L10 | adr | 10.0 | 431 | bounded at 10 s, not run |
+| K-L10 | rt | 10.0 | 431 | bounded at 10 s, not run |
+| K-L10 | bulk | 10.0 | 431 | bounded at 10 s, not run |
+| K-OV | new | 10.0 | 431 | bounded at 10 s, not run |
+| K-OV | adr | 10.0 | 431 | bounded at 10 s, not run |
+| K-OV | rt | 10.0 | 431 | bounded at 10 s, not run |
+| K-OV | bulk | 10.0 | 431 | bounded at 10 s, not run |
+
+Total over the registered run counts before the verdict, one pool of 9 workers: **2.1 h** (gate: 24 h) -> PASS-time
+
+## 2026-11-26: cuts to the plan, recorded before DECIDE has any data
+
+The owner wants the run done as soon as possible.  Changes since the TIME step died, none of them touching a law, a cell, a readout or a reading rule:
+
+- **TIME.**  The first chain run stopped after 33 of 68 TIME rows (exit -1, no traceback).  The 34th configuration (CLc-v, ADR-0084 at rho 0.99, repair RL) alone takes 9.5 s, and rows 34 to 68 all
+  complete in a fresh process, so the exit was not the configuration; the cause is not found (an outside kill is the likeliest).  TIME now appends each row to `time_rows.jsonl` and a restart skips
+  the rows done (test `TimeResume`).  The recorded 33 rows cover every long cell (CL-long, CLw-long, CL-long-v, OV-long, OV-long-v: all four designs each); the 35 others are bounded at 10 s and the
+  largest recorded peak (431 MB) and marked so in the table above.
+- **Pools.**  The heavy rows peaked at 146 to 431 MB, not 1.5 GB (the largest, ADR-0084 in OV-long-v, 278 MB at 609 s).  Checked on one seed at each end of ADR-0084's rho dial in OV-long: rho 0.95
+  took 42 s and peaked at 152 MB, rho 1 took 42 s and 145 MB.  The two pools are replaced by one pool of at most 9 workers; each run waits until the free memory is its measured peak plus 1 GB.
+  The total by the 14.7 formula for one pool of 9 workers, over the registered runs before the verdict: 2.1 h.
+- **RB** is reported only (`ENGINE-CAP` says clamped), so it moves behind the verdict with ROBUST and SMOOTH, MAIN no longer waits for it, and only rb_A = 0.25 s is kept (72 configurations, 864 runs).
+- Each part now streams its output into its log while it runs.

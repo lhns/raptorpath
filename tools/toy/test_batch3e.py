@@ -6,6 +6,7 @@ import math
 import os
 import sys
 import tempfile
+import time
 import unittest
 
 import numpy as np
@@ -214,11 +215,11 @@ class Runner(unittest.TestCase):
         self.mark("DONE-DECIDE")
         self.assertEqual(B.missing_markers("CROSS"), [])
         self.assertEqual(B.missing_markers("EARLY"), [])
-        self.assertEqual(B.missing_markers("MAIN"), ["PASS-simread", "DONE-EARLY", "DONE-RB"])                  # the simulator read gates MAIN only
-        self.assertEqual(B.missing_markers("REST"), ["DONE-EARLY", "DONE-RB", "DONE-MAIN"])
-        self.assertEqual(B.missing_markers("DOUBLE:REST"), ["DONE-EARLY", "DONE-RB", "DONE-MAIN", "DONE-REST"])
-        self.assertEqual(B.missing_markers("DOUBLE:REST", partial=True), ["DONE-EARLY", "DONE-RB", "DONE-MAIN"])
-        self.mark("PASS-simread", "DONE-EARLY", "DONE-RB", "DONE-MAIN", "DONE-REST")
+        self.assertEqual(B.missing_markers("MAIN"), ["PASS-simread", "DONE-EARLY"])                  # the simulator read gates MAIN only
+        self.assertEqual(B.missing_markers("REST"), ["DONE-EARLY", "DONE-MAIN"])
+        self.assertEqual(B.missing_markers("DOUBLE:REST"), ["DONE-EARLY", "DONE-MAIN", "DONE-REST"])
+        self.assertEqual(B.missing_markers("DOUBLE:REST", partial=True), ["DONE-EARLY", "DONE-MAIN"])
+        self.mark("PASS-simread", "DONE-EARLY", "DONE-MAIN", "DONE-REST")
         self.assertEqual(B.missing_markers("ROBUST"), ["VERDICT-PASSES"])                 # blocked until the reader has written a PASSES verdict
         self.assertEqual(B.missing_markers("SMOOTH"), ["DONE-ROBUST", "VERDICT-PASSES"])
         self.mark("VERDICT-PASSES", "DONE-ROBUST")
@@ -234,12 +235,11 @@ class Runner(unittest.TestCase):
         self.assertIn("STOP", B.refusal("AA"))
         self.assertIn("STOP", B.refusal("CROSS"))
 
-    def test_two_pools_with_bounded_workers(self):
-        self.assertIsNone(B.refusal_workers(8, 2))
-        self.assertIsNone(B.refusal_workers(6, 1))
-        self.assertIn("light", B.refusal_workers(9, 2))
-        self.assertIn("heavy", B.refusal_workers(8, 3))
-        self.assertIn("at least one", B.refusal_workers(0, 1))
+    def test_one_pool_of_at_most_nine_workers(self):
+        self.assertIsNone(B.refusal_workers(9))
+        self.assertIsNone(B.refusal_workers(1))
+        self.assertIn("at most 9", B.refusal_workers(10))
+        self.assertIn("at least one", B.refusal_workers(0))
 
     def test_gate_failures(self):
         ok = dict(finished=True, gauges=dict(l1_viol=0, l1_viol_rep=0, commit_viol=0, worth_viol_rep=0))
@@ -422,24 +422,44 @@ class Amendment2(unittest.TestCase):
         self.assertFalse(B.is_heavy(B.bulk_cfg("OV", 0, 50.0, None)))
 
     def test_memory_wait(self):
-        self.assertEqual(B.need_gb(True), 2.5)
-        self.assertAlmostEqual(B.need_gb(False), 1.15)
+        self.assertAlmostEqual(B.need_gb(1024.0), 2.0)                                              # the measured peak plus a 1 GB margin
+        self.assertAlmostEqual(B.need_gb(146.0), 146.0 / 1024 + 1.0)
         seq = iter([0.5, 1.0, 1.2, 3.0])
         sleeps = []
         waited = B.wait_for_memory(1.15, avail=lambda: next(seq), sleep=sleeps.append)
         self.assertEqual((waited, len(sleeps)), (2, 2))                                            # two readings below the need, then it starts
         self.assertEqual(B.wait_for_memory(1.15, avail=lambda: 9.0, sleep=sleeps.append), 0)
 
+    def test_the_need_of_a_run_is_its_measured_peak(self):
+        old = dict(B.PEAKS)
+        try:
+            B.PEAKS.clear()
+            B.PEAKS[("OV-long", "adr")] = 300.0
+            fp = [fp for fp, e in B.FPS.items() if e["job"].cell == "OV-long" and e["job"].design == "adr"][0]
+            self.assertAlmostEqual(B.need_for_fp(fp), 300.0 / 1024 + 1.0)
+            other = [fp for fp, e in B.FPS.items() if e["job"].cell == "CL" and e["job"].design == "new"][0]
+            self.assertAlmostEqual(B.need_for_fp(other), B.DEFAULT_PEAK_MB / 1024 + 1.0)              # unmeasured: the default
+        finally:
+            B.PEAKS.clear()
+            B.PEAKS.update(old)
+
     def test_time_total_by_the_one_pool_formula_and_its_gate(self):
         classes = {("RT", "new", "RL"): 100, ("RT", "new", "OFF"): 40, ("CL-long", "adr", "RL"): 12}
-        times = {("RT", "new"): (2.0, 100.0), ("CL-long", "adr"): (60.0, 1500.0)}
-        total_h, table = B.time_total(times, classes)
-        light = (100 * 2.0 + 40 * 1.0) / 8                                                         # the repair-off class at half its RL time; 8 light workers
-        heavy = 12 * 60.0 / 2                                                                       # 4 GB holds two heavy runs
-        self.assertAlmostEqual(total_h, (light + heavy) / 3600.0)
-        self.assertEqual({r["pool"] for r in table}, {"light", "heavy"})
-        wide = {("RT", "new"): (2.0, 3000.0)}                                                       # a 3 GB run: one worker only
-        self.assertAlmostEqual(B.time_total(wide, {("RT", "new", "RL"): 10})[0], 10 * 2.0 / 3600.0)
+        times = {("RT", "new"): (2.0, 100.0), ("CL-long", "adr"): (60.0, 300.0)}
+        total_h, table = B.time_total(times, classes)                                              # one pool of 9 workers
+        seconds = 100 * 2.0 + 40 * 1.0 + 12 * 60.0                                                  # the repair-off class at half its RL time
+        self.assertAlmostEqual(total_h, seconds / 9 / 3600.0)
+        self.assertEqual({r["workers"] for r in table}, {9})
+        self.assertAlmostEqual(B.time_total(times, classes, workers=3)[0], seconds / 3 / 3600.0)
+
+    def test_time_from_the_recorded_rows_bounds_the_rest(self):
+        log = "\n".join(["TIME OV-long    adr      30.7 s     146 MB", "TIME OV-long    new      33.9 s     401 MB"])
+        rows, missing = B.time_rows_from_log(log, bound_s=10.0)
+        self.assertEqual(rows[("OV-long", "adr")], (30.7, 146.0))
+        self.assertEqual(rows[("OV-long", "new")], (33.9, 401.0))
+        self.assertEqual(rows[("CL", "new")], (10.0, 401.0))                                       # not recorded: bounded at 10 s, at the largest recorded peak
+        self.assertIn(("OV-long", "rt"), missing)                                                  # a long cell not covered is reported
+        self.assertEqual(len(rows), 68)
 
     def test_the_gate_passes_under_24_hours_and_stops_over(self):
         with tempfile.TemporaryDirectory() as td:
@@ -461,7 +481,7 @@ class Amendment2(unittest.TestCase):
     def test_the_plan_counts_only_runs_before_the_verdict(self):
         plan = B.plan_classes()
         n = sum(plan.values())
-        pre = sum(c["runs"] for p, c in B.counts().items() if p in ("AA", "AA2", "DECIDE", "EARLY", "RB", "MAIN", "REST"))
+        pre = sum(c["runs"] for p, c in B.counts().items() if p in ("AA", "AA2", "DECIDE", "EARLY", "MAIN", "REST"))
         self.assertEqual(n, pre)
         self.assertTrue(all(k[2] in ("OFF", "RL", "RE", "RB", "RB025") or isinstance(k[2], float) for k in plan))
 
@@ -471,27 +491,30 @@ class Bracket(unittest.TestCase):
     def setUpClass(cls):
         B.build()
 
+    def test_rb_is_after_the_verdict_and_main_does_not_wait_for_it(self):
+        self.assertNotIn("DONE-RB", B.missing_markers("MAIN"))
+        self.assertNotIn("DONE-RB", B.missing_markers("REST"))
+        miss = B.missing_markers("RB")
+        self.assertIn("VERDICT-PASSES", miss)
+        self.assertIn("DONE-REST", miss)
+        self.assertNotIn("DONE-ROBUST", miss)
+        self.assertNotIn("DONE-SMOOTH", miss)
+
     def test_rb_part_runs_every_design_in_the_long_outage_cells_at_12_seeds(self):
         rb = B.PARTS["RB"]
         self.assertEqual({j.cell for j in rb}, {"CL-long", "CLw-long", "CL-long-v"})                  # amendment 3: the video cell too
-        self.assertEqual({j.mode for j in rb}, {"RB", "RB025"})                                       # rb_A = 3 s and 0.25 s
+        self.assertEqual({j.mode for j in rb}, {"RB025"})                                             # rb_A = 0.25 s only (the engine's forgetting time)
         self.assertEqual({j.nseeds for j in rb}, {12})                                                # also the delta = 0.005 rows (no identity partner, no 3-seed rule)
         self.assertTrue(all(len(j.partners) == (1 if j.key == ("lt", INF, INF) else 0) for j in rb))  # only the T = inf, H = inf pair against today's Bulk; no delta = 0.005 identity
         self.assertEqual({j.design for j in rb}, {"new", "adr", "rt", "bulk"})
         self.assertEqual(len(B.rows_of("CL-long-v")), 18)
-        self.assertEqual(len(rb), 2 * (2 * len(B.rows_of("CL-long")) + 18))
-        self.assertEqual({j.mode: j.builder(0).rb_A for j in rb}, {"RB": 3.0, "RB025": 0.25})
+        self.assertEqual(len(rb), 2 * len(B.rows_of("CL-long")) + 18)                                 # 72 configurations, 864 runs
+        self.assertEqual({j.mode: j.builder(0).rb_A for j in rb}, {"RB025": 0.25})
         self.assertEqual({j.builder(0).rb_unit for j in rb}, {"s"})
         self.assertTrue(all(j.builder(0).repair["r"] == "rb" for j in rb))
         self.assertEqual({j.builder(0).repair["edge"] for j in rb if j.design == "new"}, {"worth"})
         self.assertEqual({j.builder(0).repair["edge"] for j in rb if j.design == "rt"}, {"evict"})
 
-    def test_rb_sits_between_early_and_main(self):
-        self.assertLess(B.CHAIN.index("EARLY"), B.CHAIN.index("RB"))
-        self.assertLess(B.CHAIN.index("RB"), B.CHAIN.index("MAIN"))
-        self.assertIn("DONE-RB", B.missing_markers("MAIN"))
-        self.assertNotIn("DONE-RB", B.missing_markers("RB"))
-        self.assertIn("DONE-EARLY", B.missing_markers("RB"))
 
     def test_rb_is_reported_only_without_the_cap_and_for_the_bulk_end_deltas(self):
         with tempfile.TemporaryDirectory() as td:
@@ -507,9 +530,68 @@ class Bracket(unittest.TestCase):
             self.assertTrue(S.rb_reported_only(td, "CL-long-v", ("lt", 2.0, 0.0)))
             self.assertFalse(S.rb_reported_only(td, "CL-long-v", ("rt", 50.0)))                       # today's Realtime at delta >= 0.5 follows the marker
 
-    def test_the_rb_rows_are_before_the_verdict_and_in_the_plan(self):
-        self.assertIn(("CL-long", "new", "RB"), B.plan_classes())
-        self.assertIn(("CL-long-v", "new", "RB025"), B.plan_classes())
+    def test_the_rb_rows_are_not_in_the_plan_before_the_verdict(self):
+        self.assertFalse([k for k in B.plan_classes() if k[2] in ("RB", "RB025")])
+
+
+class TimeResume(unittest.TestCase):
+    """TIME died after 33 of 68 rows (exit -1, no traceback, not reproducible in a fresh process); a restart must not repeat the rows done."""
+
+    def test_a_restart_runs_only_the_rows_not_recorded(self):
+        B.build()
+        jobs = sorted(B.PARTS["TIME"], key=lambda j: -(B.CELLS[B.base_of(j.cell)][1]["n_total"] * (3 if B.is_heavy(j.builder(0)) else 1)))
+        with tempfile.TemporaryDirectory() as td:
+            old_out, old_run = B.OUT, B.run_one
+            B.OUT = td
+            ran = []
+            B.run_one = lambda cfg, trace=False: ran.append(cfg) or {}
+            try:
+                with open(os.path.join(td, "time_rows.jsonl"), "w") as f:
+                    for j in jobs[:33]:
+                        f.write(json.dumps([j.cell, j.design, 20.0, 300.0]) + chr(10))
+                self.assertTrue(B.run_time(os.path.join(td, "results.md")))
+                self.assertEqual(len(ran), 35)                                                    # the 33 recorded rows are not run again
+                self.assertTrue(os.path.exists(os.path.join(td, "PASS-time")))
+                with open(os.path.join(td, "time_rows.jsonl")) as f:
+                    self.assertEqual(len(f.readlines()), 68)
+                ran.clear()
+                self.assertTrue(B.run_time(os.path.join(td, "results.md")))                      # a second restart runs nothing
+                self.assertEqual(ran, [])
+                with open(os.path.join(td, "TIME_TOTAL.txt")) as f:
+                    self.assertIn("one pool of 9 workers", f.read())
+            finally:
+                B.OUT, B.run_one = old_out, old_run
+
+
+class Streaming(unittest.TestCase):
+    def test_a_chain_call_writes_its_output_to_the_log_while_it_runs(self):
+        import run_chain3e as C
+        with tempfile.TemporaryDirectory() as td:
+            old = (C.LOGS, C.HERE, C.OUT)
+            C.LOGS = td
+            C.OUT = td
+            try:
+                script = os.path.join(td, "slow.py")
+                with open(script, "w") as f:
+                    f.write("import sys, time\nprint('first line', flush=True)\ntime.sleep(4)\nprint('second line', flush=True)\n")
+                C.HERE = td
+                import threading
+                res = {}
+                th = threading.Thread(target=lambda: res.update(r=C.call("slow.py", [], "slow")))
+                th.start()
+                deadline = time.time() + 3.0
+                seen = ""
+                while time.time() < deadline and "first line" not in seen:
+                    time.sleep(0.2)
+                    p = os.path.join(td, "slow.log")
+                    seen = open(p).read() if os.path.exists(p) else ""
+                self.assertIn("first line", seen)                                                  # visible before the process ends
+                self.assertTrue(th.is_alive())
+                th.join()
+                self.assertEqual(res["r"][0], 0)
+                self.assertIn("second line", res["r"][1])                                          # and the caller still gets the whole output
+            finally:
+                C.LOGS, C.HERE, C.OUT = old
 
 
 class Reuse(unittest.TestCase):

@@ -53,14 +53,20 @@ def call(script, args, tag, capture=False):
     if script == "summarize3e.py" and REUSE_ARG:
         cmd += ["--reuse-dirs", REUSE_ARG]
     log("run %s %s" % (script, " ".join(args)))
-    with open(os.path.join(LOGS, tag + ".log"), "a") as lf:
-        r = subprocess.run(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        lf.write(r.stdout)
-    return r.returncode, r.stdout
+    path = os.path.join(LOGS, tag + ".log")
+    env = dict(os.environ, PYTHONUNBUFFERED="1")
+    with open(path, "a") as lf:
+        start = lf.tell()
+        lf.flush()
+        r = subprocess.run(cmd, cwd=HERE, stdout=lf, stderr=subprocess.STDOUT, env=env)      # the child writes into its log while it runs
+    with open(path) as f:
+        f.seek(start)
+        out = f.read()
+    return r.returncode, out
 
 
 def batch(part, a, extra=(), tag=None):
-    args = ["--part", part, "--light-workers", str(a.light_workers), "--heavy-workers", str(a.heavy_workers), "--reuse-dirs", a.reuse_dirs] + list(extra)
+    args = ["--part", part, "--workers", str(a.workers), "--reuse-dirs", a.reuse_dirs] + list(extra)
     rc, out = call("batch3e.py", args, tag or part.replace(":", "-"))
     if rc != 0 or stopped():
         die("batch3e %s returned %d (see out3e/STOP and out3e/logs)" % (part, rc))
@@ -97,24 +103,22 @@ def read_cell(cell, modes, part, a, partial=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reuse-dirs", required=True)
-    ap.add_argument("--light-workers", type=int, default=4)
-    ap.add_argument("--heavy-workers", type=int, default=2)
+    ap.add_argument("--workers", type=int, default=9)
     a = ap.parse_args()
     import batch3e as B
     B.build()
     global REUSE_ARG
     REUSE_ARG = a.reuse_dirs
-    log("chain starts; reuse %s; workers %d light + %d heavy" % (a.reuse_dirs, a.light_workers, a.heavy_workers))
+    log("chain starts; reuse %s; one pool of %d workers" % (a.reuse_dirs, a.workers))
     batch("AA", a)
     batch("AA2", a)
     rc, _ = call("summarize3e.py", ["freeze"], "freeze")
     if rc != 0 or not os.path.exists(os.path.join(OUT, "PASS-aa")):
         die("the A/A freeze failed")
-    batch("TIME", a, ["--results", RESULTS])
+    if not os.path.exists(os.path.join(OUT, "PASS-time")):                   # TIME is resumable; PASS-time means it is done and under the gate
+        batch("TIME", a, ["--results", RESULTS])
     with open(os.path.join(OUT, "time.json")) as f:
         tj = json.load(f)
-    with open(os.path.join(OUT, "TIME_TOTAL.txt"), "w") as f:
-        f.write("TIME total by 14.7's one-pool formula: %.2f h (gate 24 h)\n" % tj["total_hours"])
     log("TIME total %.2f h" % tj["total_hours"])
     batch("DECIDE", a)
     o = read_cell("CL-long", ["OFF", "RL"], "DECIDE", a)
@@ -130,9 +134,6 @@ def main():
         if stopped():
             die("STOP while waiting for PASS-simread")
         time.sleep(60)
-    batch("RB", a)
-    for cell in B.RB_CELLS:
-        read_cell(cell, ["RB", "RB025"], "RB", a)
     batch("MAIN", a)
     verdict_file("MAIN", "MAIN done: every run finished, every gate held (the runner stops on a failure); predictions are read from the stored runs")
     cells = []
