@@ -1058,13 +1058,14 @@ So the steady window as registered includes a filling transient, and the arm's t
 
 ```text
    send the floor   ⇔   ∃ s ∈ [A_known, F_ann) :   s unresolved   ∧   loss_ev(s, now)   ∧   rx_ord < carry_ord(s)   ∧   now  ≥  t_newest_carrier(s) + R
-   t_newest_carrier(s)  =  the send instant of the newest datagram that carried a floor value > s        (−∞ if none has; then the clause holds)
+   t_newest_carrier(s)  =  the send instant of the newest DATA datagram (first send, copy or repair) that carried a floor value > s
+                           (−∞ if none has; then the clause holds; standalone floors do not count, so silence repeats keep the clock P)
 ```
 
 | symbol | provenance |
 |---|---|
 | R | the ack timeout already defined (§13; RFC 6298 §2 and RFC 9002 §6.2.1): the time after which an unacknowledged send is overdue. No new constant |
-| t_newest_carrier(s) | sender state. It is the send instant of the newest datagram whose carried floor exceeded s. Under flow it is the newest send, because the floor is a running maximum |
+| t_newest_carrier(s) | sender state. It is the send instant of the newest data datagram whose carried floor exceeded s. Under flow it is the newest send, because the floor is a running maximum. **Standalone floors are excluded.** Counted as carriers, they would space silence repeats by R instead of P, which breaks "the same clock as today" wherever R > P (the K cells with the cap binding; cold start, R = 1 s). The waste measured in K-OV came from data carriers |
 
 - **Why R, and not RFC 9002's 9/8 time threshold.** The 9/8 constant (RFC 9002 §6.1.2) is a reordering allowance for declaring a packet lost. Here the question is whether its report is overdue, which is R's job everywhere else in this design. It also adds no constant.
 - **Under flow:** the newest carrier is always younger than R, so no repeat fires. That is the 94 suppressed in K-OV.
@@ -1129,19 +1130,24 @@ So the steady window as registered includes a filling transient, and the arm's t
 ### 11.3 Predictions (written before any run)
 
 **K-OV, Revision 4 with the clamp and §10.7.**
-- **Repeats:** srtt ≈ 0.2 s, so R ≈ 0.21 s > P = 0.1 s, and every sweep resend now waits R. The original's report arrives within an RTT, which is below R whenever R is honest, so the duplicates fall from 126 to ≤ 15 (the jitter residual, gauged).
-- **Freed slots:** about 110 from resends and about 85 from floors.
-- **The arithmetic:** first sends ≈ 2 077 + 195 ≈ 2 270. Delivered ≈ (2 270 × 0.9, plus about 62 needed resends × 0.9, plus repair decodes)/3 000.
+- **P_reach also feeds `protected()`** (§17.1), so the new reach changes which seqs are resendable at all.
+  - The intake wait is ≈ 0.239 − ô ≈ 0.09 s.
+  - **Before**, the blocker's earliest resend was at 0.09 + P (0.1) + ô (0.15) = 0.34 < 0.4, so it was protected.
+  - **After**, it is 0.09 + max(P, R) (≈ 0.21) + 0.15 ≈ 0.45 > 0.4, so it is **not protected**.
+  - Non-blocker seqs already had d = srtt ≈ 0.2, so they were unprotected before too.
+- **So, if the 188 measured resends were blocker-reach resends,** resends fall to a handful and the floor passes those holes at birth.
+  - Registered band: **resends ≤ 20, duplicates ≤ 5.** The condition is checked from the stored trace's trigger field before the run is read.
+- **Freed slots:** about 180 from resends and about 85 from floors.
+- **The arithmetic:** first sends ≈ 2 077 + 265 ≈ 2 340, delivered at 90 %. Loss is no longer recovered by resend, and the clamp holds repair to about 0.
 - **Predicted:**
 
   | | delivered | on time | p50 |
   |---|---|---|---|
-  | Revision 4 | **0.69–0.72** | 0.66–0.71 | ≈ 0.24 s, unchanged |
+  | Revision 4 | **0.70–0.71** | equal to delivered | ≈ 0.24 s |
   | Revision 3 | 0.715–0.72 | the same | unchanged |
 
-  - On time can sit a little below delivered: a resend sent R after its original arrives near age 0.36–0.39 s, at the edge of 0.4 s.
   - **Revision 3 is unchanged by §11.2:** it never resends.
-- **Shortfall:** if delivered stays below 0.69, the remaining waste is read from `dup_arrivals` and the slot table, before any further law.
+- **If the resends were mostly report-driven instead,** §11.2 does not touch them. Then the band is void, and the miss is read from the slot table before any further law.
 
 **OV** (srtt ≈ 98 ms, P = 100 ms, R ≈ 102 ms):
 - R exceeds P by about 2 ms, so `elig_R_bind` is ≈ 1 under overload and the sweep fires 2 ms later.
@@ -1149,12 +1155,14 @@ So the steady window as registered includes a filling transient, and the arm's t
 
 **CL-long:**
 - Normal srtt is ≈ 11 ms, so P = 25 ms (the floor) > R ≈ 15 ms.
-- In the drain, srtt ≈ B/C + RTprop ≈ 0.09 s, so P = 0.1 s (the cap) > R ≈ 0.094 s.
-- **So `elig_R_bind` = 0, and the rows are predicted bit-identical** to the rows before §11.2. A trace-identity test checks it. If any blocker deadline in CL-long has R > P, for example from an srtt spike above 95 ms, the identity is not claimed, and the rows are compared within the A/A floor instead.
+- In the drain, srtt ≈ B/C + RTprop ≈ 0.09 s, so P = 0.1 s (the cap). R ≈ 0.094 s only if rttvar ≈ 0.
+  - At the outage end srtt steps from about 11 ms to about 90 ms, so 4·rttvar is briefly tens of ms, and R then exceeds the cap.
+- **The registered prediction is therefore "within the A/A floor" on every readout.** Bit identity is claimed only if the witness reads 0.
+- **The witness, `elig_R_bind`, is counted after the first RTT sample.** Before it, R is the 1.0 s seed against P ≤ 0.1 s in every cell, so the count would be non-zero by construction.
 
 **Tests (red first):**
 1. **No duplicate from the timer.** No timer-driven copy of s is staged before `last_send(s) + R`. This is absolute, from the trace.
-2. **Identity where P ≥ R.** CL, CL-long and the call cells are trace-identical with and without §11.2, with `elig_R_bind` = 0 as the execution witness.
+2. **Identity where P ≥ R.** CL, CL-long and the call cells are trace-identical with and without §11.2, wherever `elig_R_bind` (counted after the first RTT sample) reads 0. Cells where it reads > 0 are compared within the A/A floor.
 3. **K-OV executes.** `elig_R_bind` > 0, and the duplicates fall below 15.
 
 ### 11.4 The gate the new model should use
@@ -1167,30 +1175,41 @@ So the steady window as registered includes a filling transient, and the arm's t
 
 **NO-MODE-SWITCH debt, recorded.** The gate is selected by `reliable`, a bit derived from ρ, so it is ρ-selected. It goes on the law ledger with `tx_paused` (§3.3), as engine sites to retire or bound with a test.
 
-**What the new model's gate should use.** The new model has no ρ, so its gate cannot be selected by one. It applies at every T, as the store pause does.
+**What the new model's gate should use.** The new model has no ρ, so its gate cannot be selected by one. It applies at every T, as the store pause does. The default is the engine's existing law:
 
 ```text
-   in_flight  <  W_gate ,      W_gate  =  (1 + q(δ)) · Σ_p BtlBw_p · RTprop_p ,      q(δ) = (b(δ) + 1)/30          (paper §6.1, the pooled cap B's own law)
+   in_flight  <  W_gate ,      W_gate  =  1.5 · Σ_p BtlBw_p · RTprop_p          (RWM_INFL_BDP = 1.5, sender_policy.rs:756–766)
 ```
 
-**Why one bound, and not the engine's 1.5.**
-- The engine's 1.5 is a default (`RWM_INFL_BDP`) with no derivation in the paper. Under FORMULA-FIRST it cannot be adopted as a new law's constant.
-- Paper §6.1 already derives the pooled outstanding cap B from the same product, `(1 + q(δ))·Σ bwᵢ·RTpropᵢ`, with q(δ) from b(δ).
-- Using that law for the datagram gate gives one in-flight bound, with one provenance, for both the store pause (on seqs) and the gate (on datagrams), instead of two constants.
+**Its provenance.**
+- It is the engine's shipped window, with the same standing here as the spare clamp and the 250 ms in-flight expiry: the engine's law, carried as it is.
+- **The 1.5 has no derivation in the paper.** It is recorded as ledger debt beside the ρ-selection, not adopted as derived. Shipping it under the three knobs needs a derivation (Q31).
 
-**Its two known defects, carried and not hidden:**
-- B is PINNED at N·2 048 on real links (ledger F01), and its knee has no provenance.
-- b(δ) is clamped at ½ for δ ≥ 50, so q(δ) = 0.05 at the Realtime point and the window is about 1.05 × BDP. The clamp binds there; its bind gauge already exists (§2.4 of the derivation).
+**The link-busy check (the premise of §2 and Q28).** The gate must leave at least one report interval of drain in the link queue, or the link idles between reports.
+- In OV the BDP is about 100 datagrams, and about 20 leave per 2 ms tick.
+- At 1.5 × BDP the queue spare is 50 ≥ 20, so the link stays busy.
+- At 1.05 × BDP it would be 5, so the link idles. D̂ then becomes gate-bound and reads low, which is §3.2's main risk.
+- So the link-busy premise needs `(W/BDP − 1)·BDP ≥ C·g`, the drain in one report interval.
+
+**The alternative under Q31:** paper §6.1's pooled-cap law, `(1 + q(δ))·Σ bw·RTprop` with q(δ) = (b(δ) + 1)/30.
+- **For:** one bound with one provenance, shared with the store pause.
+- **Against:** at δ ≥ 50, b(δ) is clamped at ½, so q = 0.05 and the window is 1.05 × BDP. That fails the link-busy check in OV and in the K cells, and B's knee is PINNED (F01).
+- **Default: the engine's 1.5 × BDP,** with its debt recorded.
+
+**Scope: the gate's cap only.**
+- The repair clamp's spare (§3.3) reads the path's cwnd, which in the engine is the congestion window. The in-flight cap is `RWM_INFL_BDP`. They are two quantities unless an engine read shows them to be one.
+- So the offline simulation keeps cwnd_sim for the clamp's spare (§3.3: B, and its 200–1 400 range in CL-long), and uses W_gate for the gate.
+- Folding them together would put the clamp's cwnd at about 190 in CL-long, at the bottom edge of §3.3's range. The clamp would then bind in CL's steady state, and §9.1's met CL-long rows would be void.
 
 **The offline simulation:**
 - A cell's `pause_B` stays the seq bound.
-- The datagram gate takes W_gate from the measured D̂ (§3.2) and RTprop. This replaces §3.3's cwnd_sim = B, and it uses the engine's in-flight expiry of §9.3, max(4·SRTT, 250 ms), so it cannot deadlock.
-- **K-OV:** W_gate ≈ 1.05 × (36/s × 0.1 s) ≈ 4 datagrams, which is below the cell's B = 8. That would make K-OV gate-bound at the Realtime point.
-  - **Predicted:** the link underfills unless 1.05 × BDP covers the 0.1 s pause queue. It does not.
-  - So **at δ = 50 the gate costs share in K-OV.** That is a real consequence of b(δ)'s clamp at the Realtime point. It is reported, not tuned away.
+- The datagram gate takes W_gate = 1.5 × D̂ × RTprop from the sender's measurements. It uses the engine's in-flight expiry of §9.3, max(4·SRTT, 250 ms), so it cannot deadlock.
+- **K-OV:** W_gate ≈ 1.5 × 36/s × 0.1 s ≈ 5.4 datagrams on the propagation RTprop, below the cell's B = 8. So K-OV would be gate-bound.
   - The engine's 1.5 × BDP is about 12 on the coordinator's BDP. That implies RTprop ≈ 0.2 s, the queued RTT: a windowed minimum under a standing queue reads the queue (the RTprop limit recorded under Q18).
   - On the propagation RTprop of 0.1 s (2·owd) the engine's window would be about 6, which binds too.
-  - Owner question **Q31:** whether the gate's window is the §6.1 law (one bound, derived) or the engine's 1.5 × BDP (an undocumented constant). **Default: §6.1's law, with K-OV's share cost reported.** If the owner prefers 1.5, it needs a derivation first.
-- **CL-long and OV:** W_gate ≈ 1.05 × 12 500 × 0.01 ≈ 130 and ≈ 1.05 × 10 000 × 0.01 ≈ 105 datagrams.
-  - That is far below the in-flight levels of 880–1 460 measured with B = 1 000. The gate would hold the link queue near the BDP: a large model change, with srtt near RTprop, and R, ô, D̂ and the clamp's spare all moving.
+  - Owner question **Q31:** whether the gate's window is the engine's 1.5 × BDP or the §6.1 law. **Default: the engine's 1.5 × BDP, with its debt recorded.** Either needs a derivation before it ships under the three knobs.
+- **CL-long and OV:** W_gate ≈ 1.5 × 12 500 × 0.01 ≈ 190 and ≈ 1.5 × 10 000 × 0.01 ≈ 150 datagrams.
+  - That is far below the in-flight levels of 880–1 460 measured with B = 1 000.
+  - **Either window cuts the link cells' forward queue from about 88 ms to about 5 ms** (0.5 × BDP).
+  - So §4's p50, R, ô and D̂ all move, and so do the readouts that depend on them.
   - **Not predicted here.** It needs its own registration before any run, which is the reason to decide Q31 first.
