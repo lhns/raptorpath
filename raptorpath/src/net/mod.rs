@@ -17,6 +17,7 @@ pub mod control_msg;
 pub(crate) mod delivery;
 pub mod cpuprof;
 pub mod diag;
+pub mod hoff;
 pub mod emit_source;
 pub mod eta;
 pub mod framing;
@@ -2844,7 +2845,9 @@ async fn run_window_sender(
         let (await_start_us, body_us) = if pol.diag_on || pol.walldiag_on {
             let t = now_us();
             let body = if pol.diag_on {
-                dg.wait_enter_await(t)
+                let b = dg.wait_enter_await(t);
+                dg.hoff.iter_work(b);
+                b
             } else {
                 t.saturating_sub(wall_resolved_us)
             };
@@ -3100,6 +3103,9 @@ async fn run_window_sender(
             // The await only: the body before it went to `busy` above.
             let dt = dg.wait_resolve(resolved_us);
             dg.wait_us[wait_arm] += dt;
+            if wait_arm == 1 {
+                dg.hoff.paused_wait(dt);
+            }
             dg.wait_n += 1;
             // `wake[..]` (P1, D1): which arm woke the loop, as a cumulative
             // COUNT (the wait shares above are time). `timer_acked`
@@ -3502,6 +3508,9 @@ async fn run_window_sender(
                         // `[DIAG] retx=` counts source retransmits only; a
                         // coded answer is `cod=`.
                         dg.diag_retx += 1;
+                        if pol.diag_on {
+                            dg.hoff.resend_on(path as u32);
+                        }
                     } else {
                         reqs_coded += 1;
                     }

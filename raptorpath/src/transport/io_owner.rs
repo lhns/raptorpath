@@ -173,6 +173,67 @@ pub struct DatagramQueueAudit {
     pub space: AtomicU64,
 }
 
+/// The `[HOFF]` gauge's raw inputs on one path view (reported only).
+///
+/// `staged`/`staged_bytes`: datagrams (and bytes) the producers handed to this
+/// path's owner channel, counted in [`TxBatch::flush`] only when `on`
+/// (`RWM_DIAG` at construction), so B_i = `staged` − quinn's `tx` includes the
+/// owner's command channel. `qinfl`, `end_acks`, `app_limited_acks`: quinn's
+/// bytes in flight and the `app_limited` flag at each `on_end_acks`, published
+/// by the [`RouteProbe`] wrapper (never `congestion_state()`, which clones the
+/// controller).
+#[derive(Default)]
+pub struct HoffCounters {
+    pub on: bool,
+    pub staged: AtomicU64,
+    pub staged_bytes: AtomicU64,
+    pub qinfl: AtomicU64,
+    pub end_acks: AtomicU64,
+    pub app_limited_acks: AtomicU64,
+    /// The inner controller's `window()` at the last `on_end_acks` (for
+    /// `bbr_rs`, min(cwnd, w_rec)).
+    pub qwin: AtomicU64,
+    /// The owner's work per data-drain poll, ns (log-spaced histogram).
+    pub work: WorkHist,
+}
+
+/// Log-spaced (two buckets per octave) histogram of ns durations.
+pub struct WorkHist {
+    b: [AtomicU64; WORK_BUCKETS],
+}
+pub const WORK_BUCKETS: usize = 64;
+
+impl Default for WorkHist {
+    fn default() -> Self {
+        Self { b: std::array::from_fn(|_| AtomicU64::new(0)) }
+    }
+}
+
+impl WorkHist {
+    fn bucket(ns: u64) -> usize {
+        let ns = ns.max(1);
+        let e = 63 - ns.leading_zeros() as usize;
+        let half = if e > 0 { ((ns >> (e - 1)) & 1) as usize } else { 0 };
+        (2 * e + half).min(WORK_BUCKETS - 1)
+    }
+    /// Upper edge of bucket `k`, ns.
+    pub fn upper_ns(k: usize) -> f64 {
+        2f64.powf((k as f64 + 1.0) / 2.0)
+    }
+    pub fn record(&self, ns: u64) {
+        self.b[Self::bucket(ns)].fetch_add(1, Relaxed);
+    }
+    pub fn snapshot(&self) -> [u64; WORK_BUCKETS] {
+        std::array::from_fn(|k| self.b[k].load(Relaxed))
+    }
+}
+
+impl HoffCounters {
+    pub fn new(on: bool) -> Self {
+        Self { on, ..Self::default() }
+    }
+}
+
 /// The owner's own counters. Each is written by the owner task only (no
 /// cache line is shared with a producer's hot path); readers sum them at
 /// report time.
@@ -287,6 +348,8 @@ pub struct PathView {
     qcc_ns_sum: AtomicU64,
     /// The `RWM_DIAG` send-queue audit.
     pub audit: DatagramQueueAudit,
+    /// The `[HOFF]` gauge inputs (`RWM_DIAG`; see `net::hoff`).
+    pub hoff: HoffCounters,
     /// `RWM_DIAG` receive audit: datagrams the owner read from quinn.
     pub app_read: AtomicU64,
     /// Whether the readers were started (the receive audit's off value).
@@ -333,6 +396,7 @@ impl PathView {
             qcc_reads: AtomicU64::new(0),
             qcc_ns_sum: AtomicU64::new(0),
             audit: DatagramQueueAudit::default(),
+            hoff: HoffCounters::new(crate::gates::get().diag),
             app_read: AtomicU64::new(0),
             readers_started: AtomicBool::new(false),
             ctr: OwnerCounters::default(),
@@ -518,6 +582,15 @@ impl quinn::congestion::Controller for RouteProbe {
         app_limited: bool,
         largest_packet_num_acked: Option<u64>,
     ) {
+        let h = &self.view.hoff;
+        if h.on {
+            h.qinfl.store(in_flight, Relaxed);
+            h.qwin.store(self.inner.window(), Relaxed);
+            h.end_acks.fetch_add(1, Relaxed);
+            if app_limited {
+                h.app_limited_acks.fetch_add(1, Relaxed);
+            }
+        }
         self.inner
             .on_end_acks(now, in_flight, app_limited, largest_packet_num_acked)
     }
@@ -1105,12 +1178,15 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
         }
         let reading = readers.is_some() && !reader_dead && inbound.is_empty() && inbound_tx.is_empty();
         let mut close = false;
+        // `[HOFF]` ℓ̂_o: the data-drain arm's work (start stamp, real clock).
+        let mut t_work: Option<Instant> = None;
         tokio::select! {
             n = a.cmd_rx.recv_many(&mut cmds, IO_CHANNEL_DEPTH) => {
                 if n == 0 {
                     break; // every producer handle is gone
                 }
                 ctr.drains.fetch_add(1, Relaxed);
+                t_work = view.hoff.on.then(Instant::now);
                 if a.deep {
                     ctr.cmdq.record((n + a.cmd_rx.len()) as u64);
                 }
@@ -1316,6 +1392,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
             publish(conn, &view, full, copa_wire);
             section_end(ctr, sec);
             deep_end(&ctr.k_pub, dsec);
+        }
+        if let Some(t) = t_work {
+            view.hoff.work.record(t.elapsed().as_nanos() as u64);
         }
         if full {
             last_full = now;
@@ -1559,6 +1638,11 @@ impl TxBatch {
                 let fresh = s.io.view.take_vec();
                 let dgrams = std::mem::replace(v, fresh);
                 let n = dgrams.len() as u64;
+                let h = &s.io.view.hoff;
+                if h.on {
+                    h.staged.fetch_add(n, Relaxed);
+                    h.staged_bytes.fetch_add(dgrams.iter().map(|b| b.len() as u64).sum(), Relaxed);
+                }
                 let cmd = IoCmd::Send { lane, dgrams };
                 let res = if crate::task_obs::deep() {
                     // The outbound back-pressure witness (`RWM_RTOBS=2`): the

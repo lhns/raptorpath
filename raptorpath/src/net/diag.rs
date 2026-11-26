@@ -52,6 +52,8 @@ const SIDLE_GAP_MIN_US: u64 = 3_000;
 /// Behaviour-inert by construction: nothing here is read by an emission,
 /// admission, pacing or recovery decision.
 pub(crate) struct DiagState {
+    /// The `[HOFF]` gauge (reported only; see `net::hoff`).
+    pub hoff: super::hoff::HoffGauge,
     // ── GDIAG ─────────────────────────────────────────────────────────────
     // Time-weighted attribution of the generation-mode sender loop to the
     // gate that is binding its wire emission each instant. In coded-wire
@@ -343,6 +345,7 @@ impl DiagState {
             sidle2_n: 0,
             sidle2_max_us: 0,
             wnd2_relgap_max_us: 0,
+            hoff: super::hoff::HoffGauge::new(diag_start_us),
             eb: Default::default(),
         }
     }
@@ -390,6 +393,16 @@ pub(crate) struct DiagCtx<'a> {
     pub window_ack_seq: &'a Arc<AtomicU64>,
 }
 
+/// The registered paths' views, sorted by id (the `[HOFF]` gauge's inputs).
+fn hoff_views(
+    scheduler: &crate::scheduler::Scheduler,
+    transport: &Arc<QuicTransport>,
+) -> Vec<(u32, Arc<crate::transport::io_owner::PathView>)> {
+    let mut ids = scheduler.all_path_ids();
+    ids.sort_unstable();
+    ids.into_iter().filter_map(|id| transport.view(id).map(|v| (id, v))).collect()
+}
+
 /// Emit the periodic `[DIAG]` / `[C8CONV-S]` report.
 ///
 /// Called once per sender-loop iteration under the caller's `if pol.diag_on`
@@ -435,6 +448,11 @@ pub(crate) fn report(
         dg.diag_paused_iters += 1;
     }
     let dnow = now_us();
+    // `[HOFF]` (reported only): one sample per loop iteration, every path.
+    if dg.hoff.no_views() {
+        dg.hoff.set_views(hoff_views(scheduler, transport));
+    }
+    dg.hoff.turn_views(dnow, store_len > 0, store_len >= effective_store_cap);
     // Emission-gap gauge (see `SIDLE_GAP_MIN_US`): observe the
     // cumulative wire handoff count (src + coded + source copies) once per
     // iteration; a change closes the current gap — accumulate it when
@@ -1027,6 +1045,11 @@ pub(crate) fn report(
                 }
                 crate::readout!("[C8CONV-S]{}", s);
             }
+        }
+        // `[HOFF]`: the hand-off reserve's gauges, `gate=off` (nothing gates).
+        {
+            dg.hoff.set_views(hoff_views(scheduler, transport));
+            crate::readout!("{}", dg.hoff.line_from_views(dnow, fl, store_len >= effective_store_cap));
         }
         dg.diag_last_us = dnow; #[cfg(any(debug_assertions, feature = "test-seams"))] { let (ws, _) = st.encoder.window_span(); crate::readout!("{}", st.acct.line(&st.retransmit_buffer, ws, false)); }
         dg.diag_last_ack = ack_now;
