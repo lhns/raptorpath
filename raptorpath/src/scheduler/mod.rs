@@ -518,6 +518,18 @@ impl Scheduler {
                 cost_a.partial_cmp(&cost_b).unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|p| p.id)
+            .or_else(|| {
+                // An admitted path without Copa room still has room at the hand-off.
+                self.paths
+                    .values()
+                    .filter(|p| p.active && allow(p.id))
+                    .min_by(|a, b| {
+                        let cost_a = self.path_cost(a);
+                        let cost_b = self.path_cost(b);
+                        cost_a.partial_cmp(&cost_b).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|p| p.id)
+            })
             .or_else(|| self.best_source_path())
     }
 
@@ -533,6 +545,17 @@ impl Scheduler {
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|p| p.id)
+            .or_else(|| {
+                self.paths
+                    .values()
+                    .filter(|p| p.active && allow(p.id))
+                    .max_by(|a, b| {
+                        a.effective_goodput()
+                            .partial_cmp(&b.effective_goodput())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|p| p.id)
+            })
             .or_else(|| self.best_repair_path())
     }
 

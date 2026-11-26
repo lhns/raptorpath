@@ -188,7 +188,6 @@ pub(crate) struct HandoffGate {
     store_ended: bool,
     turn_open: bool,
     views: Vec<(u32, Arc<PathView>)>,
-    views_n: usize,
     buf: Vec<(u32, PathIn)>,
     /// Test seam: terms fixed by the caller (no rolling measurement).
     fixed: Option<Terms>,
@@ -364,9 +363,14 @@ impl HandoffGate {
 
     fn sync_views(&mut self, sched: &crate::scheduler::Scheduler, transport: &Arc<crate::transport::QuicTransport>) -> Vec<u32> {
         let ids = sched.active_ids();
-        if self.views_n != ids.len() || self.views.iter().map(|(i, _)| *i).ne(ids.iter().copied()) {
-            self.views = ids.iter().filter_map(|id| transport.view(*id).map(|v| (*id, v))).collect();
-            self.views_n = ids.len();
+        // A path id can come back on a new connection (a new `PathView`): compare the
+        // views themselves, not only the ids, or a reconnected path reads a dead view.
+        let fresh: Vec<(u32, Arc<PathView>)> =
+            ids.iter().filter_map(|id| transport.view(*id).map(|v| (*id, v))).collect();
+        let same = fresh.len() == self.views.len()
+            && fresh.iter().zip(&self.views).all(|(a, b)| a.0 == b.0 && Arc::ptr_eq(&a.1, &b.1));
+        if !same {
+            self.views = fresh;
         }
         ids
     }

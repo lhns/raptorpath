@@ -104,7 +104,7 @@ fn no_dial_is_read_and_the_seams_are_wired() {
     assert!(m.contains("lettx_paused=reliable&&(store_len>=effective_store_cap||cwnd_full);"), "tx_paused is untouched");
     assert!(e.contains("ctx.hg.on()") && e.contains("place_symbol_among(false") && e.contains("place_symbol_among(true"));
     assert!(e.contains("ctx.hg.spare_all()"), "the clamp reads the predicate at the repair seam");
-    assert!(o.contains("owner_republishes(") && o.contains("republish_sleep"), "the owner republishes while it holds unsent data");
+    assert!(o.contains("owner_republishes(") && o.contains("republish=Some((Instant::now()"), "the owner republishes while it holds unsent data");
     assert!(q.contains("g.hoff_gate"), "the arm arms the RouteProbe");
 }
 
@@ -518,4 +518,22 @@ fn hoff_line_prints_gate_on_when_armed() {
     off.turn(1000, true, false, &ins);
     let l = off.line_gated(300_000, 40, false, None);
     assert!(l.contains(" gate=off ") && l.contains("(assumed)"), "{l}");
+}
+
+// ── restricted picks ────────────────────────────────────────────────────────
+
+/// An admitted path without Copa room (in flight at cwnd) still has room at
+/// the hand-off: the restricted picks take it rather than an unadmitted path.
+#[test]
+fn restricted_picks_prefer_an_admitted_path_without_copa_room() {
+    let mut s = Scheduler::new(Arc::new(WallClock));
+    s.add_path(0);
+    s.add_path(1);
+    {
+        let p = s.path_mut(1).unwrap();
+        p.in_flight = p.cwnd;
+    }
+    assert_eq!(s.best_source_path_among(&|id| id == 1), Some(1));
+    assert_eq!(s.best_repair_path_among(&|id| id == 1), Some(1));
+    assert_eq!(s.best_source_path_among(&|_| false), s.best_source_path(), "no admitted path: the unrestricted pick");
 }

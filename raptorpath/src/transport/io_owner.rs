@@ -1163,10 +1163,12 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     // unsent data (what it handed to quinn exceeds quinn's `tx` at its last
     // publish) it republishes every `VIEW_REFRESH`, so a closed gate reopens
     // without inbound traffic. Off unless `RWM_HOFF_GATE`: an idle owner never wakes.
+    // It shares the shim's timer arm (below): a further `select!` branch would
+    // change tokio's seeded start draw, and with it every sim trace, arm off
+    // (`docs/derivations/sim-engine.md`).
     let hoff_gate = crate::gates::get().hoff_gate;
-    let republish_sleep = tokio::time::sleep_until(far);
-    tokio::pin!(republish_sleep);
-    let mut republish_at: Option<Instant> = None;
+    let mut republish: Option<(Instant, tokio::time::Instant)> = None;
+    let mut sleep_for_republish: Option<tokio::time::Instant> = None;
     publish(conn, &view, true, copa_wire);
 
     loop {
@@ -1190,6 +1192,17 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     .as_mut()
                     .reset(tokio::time::Instant::from_std(shim.deadline(rel)));
                 shim_armed = Some(rel);
+            }
+        }
+        if let Some((_, dl)) = republish {
+            let shim_dl = match (a.shim.as_ref(), shim_q.front()) {
+                (Some(shim), Some(&(rel, _))) => Some(tokio::time::Instant::from_std(shim.deadline(rel))),
+                _ => None,
+            };
+            let d = shim_dl.map_or(dl, |s| s.min(dl));
+            if sleep_for_republish != Some(d) {
+                shim_sleep.as_mut().reset(d);
+                sleep_for_republish = Some(d);
             }
         }
         let reading = readers.is_some() && !reader_dead && inbound.is_empty() && inbound_tx.is_empty();
@@ -1377,14 +1390,14 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     let _ = reply.send(r);
                 }
             }
-            _ = &mut republish_sleep, if republish_at.is_some() => {
-                view.hoff.timer_wakes.fetch_add(1, Relaxed);
-                if let Some(t0) = republish_at.take() {
+            _ = &mut shim_sleep, if !shim_q.is_empty() || republish.is_some() => {
+                if republish.is_some_and(|(_, dl)| tokio::time::Instant::now() >= dl) {
+                    // The hand-off gate's republish timer (paper §6.8) fired: publish below.
+                    let (t0, _) = republish.take().expect("checked");
+                    view.hoff.timer_wakes.fetch_add(1, Relaxed);
                     view.hoff.timer_wait.record(t0.elapsed().as_nanos() as u64);
                 }
-                dirty = true;
-            }
-            _ = &mut shim_sleep, if !shim_q.is_empty() => {
+                sleep_for_republish = None;
                 if let Some(shim) = a.shim.as_ref() {
                     let now = shim.now_us();
                     while shim_q.front().is_some_and(|(rel, _)| *rel <= now) {
@@ -1424,7 +1437,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
             dirty = false;
         }
         if hoff_gate
-            && republish_at.is_none()
+            && republish.is_none()
             && crate::net::hoff_gate::owner_republishes(
                 true,
                 ctr.tx_dgrams.load(Relaxed) + ctr.ctrl_dgrams.load(Relaxed),
@@ -1432,8 +1445,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 view.frame_tx_dgram.load(Relaxed),
             )
         {
-            republish_sleep.as_mut().reset(tokio::time::Instant::from_std(last_full + VIEW_REFRESH));
-            republish_at = Some(Instant::now());
+            republish = Some((Instant::now(), tokio::time::Instant::from_std(last_full + VIEW_REFRESH)));
         }
         if close {
             break;
