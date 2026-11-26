@@ -1,6 +1,6 @@
 # Three knobs, Revision 4: a sender-side wait limit under sustained overload, and the engine's repair clamp (derivation, no runs)
 
-**Status.** Design and derivation only. Nothing here has been run, and the offline simulation is unchanged.
+**Status.** Design and derivation. §1–§8 were written before any run. §9 (2026-11-26) reports the step 2 sizing run, reported only, and amends §3.3.
 - **What it amends.** `three-knobs.md` §13.2 (the dequeue rule). It withdraws that section's paragraph "What cannot be fixed: delay pinned near T − R", and Q12's default ("no loss price").
 - **What it adds to the model of every design** (§3.3): the engine's spare-capacity clamp on repair. It also adds the engine's send gate to the designs that pause in the engine, and a second arm for today's Realtime that models the engine's real send queue, settled by an engine read (Q30).
 - **What is unchanged:** L1, L2 (§2.1, and §2.2 as revised in §17.1), the protected floor (§17.1), the brake and the store pause.
@@ -781,3 +781,115 @@ It meets requirements 1 to 3 and 5:
 - **requirement 5,** sender-only.
 
 **Requirement 4 is met except for one step.** "The throughput term is read over the overload's age" (Q24) is the open step, and it blocks shipping.
+
+## 9. Sizing results (reported only, 2026-11-26)
+
+**Source.** Branch `toy-stage3e` at `d605afa2`: `tools/toy/results-stage3e.md`, the step 2 sizing run and items 3–8. 3 seeds, no verdict. The build sits behind config fields that default off, and with them off it reproduces the stage 3e identity sample. Readouts below are delivered / on time within 0.4 s / delay p50.
+
+### 9.1 Predictions met and missed
+
+**CL-long, clamp on, RL (§3.3; registered before the run):**
+
+| T | repair off | RL, clamp off | clamp on, B = 1 000 | clamp on, 2 048 |
+|---|---|---|---|---|
+| 0.4 | 0.9406 / 0.9406 / recovery 0 | 0.9392 / 0.9392 / 0 | 0.9399 / 0.9399 / 0 | = clamp off |
+| 2 | 0.9993 / 0.655 / 5.6 s | 0.9990 / 0.463 / 9.27 s | 0.9990 / 0.638 / 5.87 s | = clamp off |
+| ∞ | 1.000 / 0.652 / 5.6 s | 1.000 / 0.453 / 9.47 s | 1.000 / 0.633 / 6.00 s | = clamp off |
+
+- **Met:**
+  - the clamp-on rows lie between repair-off and RL;
+  - on time 0.633–0.638, inside the predicted 0.62–0.65;
+  - recovery 1.05× and 1.07× repair-off, inside the predicted 1.0–1.1×;
+  - at 2 048 the clamp never binds, and the rows equal RL;
+  - T = 0.4 shows no change;
+  - the wait limit is inert in CL-long (0 ticks with τ < T).
+- **Missed:** the §3.3 version before the B correction had predicted 1.15–1.25× and on time 0.58–0.61. It was superseded before the data.
+
+**OV, the 2×2 at T = 0.4, δ = 50, RL:**
+
+| | measured | predicted |
+|---|---|---|
+| wait limit off, clamp off | 0.793 / 0.793 / 0.390 s | stored 0.7929 |
+| wait limit off, clamp on | 0.833 / 0.833 / 0.390 s | 0.837 / 0.837 / 0.39 s, met |
+| wait limit on, clamp off | 0.756 / 0.756 / 0.105 s | 0.770 / 0.770 / 0.095 s, **missed by −0.014** |
+| both | 0.809 / 0.809 / 0.094 s; steady window 0.803 / 0.803 | 0.79–0.81 / 0.79–0.80 / 0.095–0.10 s, met |
+
+- **The cause of the miss, inferred and not yet gauged.** The prediction for the wait limit alone took ρ ≈ 0. But the units it sends are young, so they are protected and get resent. Those resends add on top of the unclamped repair: `C/((1 + r + ρ)·λ)` = 10 000/(1.087 + 0.031)/12 000 ≈ 0.745, plus the start-up, which gives 0.756. The arithmetic matches.
+- **Other OV rows:**
+  - T = 2, δ = 50: 0.809 / 0.808 / 0.094 s. Met.
+  - δ = 0.5 at T = 0.4: 0.809 / 0.809 / 0.094 s. Met.
+  - δ = 0.5 at T = 2: 0.809 / 0.439 / 0.512 s, against 0.81 / 0.40 / 0.7 s. The delay is lower than predicted, the same direction as the OV-end miss below.
+  - T = ∞: inert. Met.
+- `collapse_t`: 1.34–1.41 s at T = 0.4 (δ = 50), 1.76 s at T = 2 (δ = 50), and 6.0 s at T = 2 (δ = 0.5).
+
+**OV-end:**
+- **T = 0.4:**
+  - Revision 3 with the clamp: 0.929 / 0.929 / 0.156 s.
+  - Revision 4 at δ = 50 and at δ = 25: 0.911 / 0.911 / 0.028 s, indistinguishable, as predicted.
+  - The cost is 0.018, against a predicted 0.019. Met.
+- **T = 2, δ = 0.25:** 1.000 / 0.310 / 0.697 s, against Revision 3's 1.000 / 0.308 / 0.701 s. The predicted gain of at most 0.01 holds. Met.
+- **T = 2, δ = 0.5: missed.**
+  - Measured: 0.956 / 0.522 / 0.365 s. In the [9, 15] s window on time is 0.999, against Revision 3's 0.426.
+  - Predicted: a loss of 0.074 delivered and a gain of at most 0.01 on time. Measured: a loss of 0.044 and **a gain of +0.21**.
+  - The cap cleared the backlog before the overload ended: there was no `collapse_t`, and τ < T on 50 030 ticks.
+- **A δ sweep at T = 2 is smooth and monotone,** with no step at 0.5. The predicted "gain ≤ 0.01" holds only up to δ ≈ 0.3.
+
+**OV-crit:**
+- Revision 3 and Revision 4 with the clamp are identical: 1.000 / 1.000 / 0.093 s, with 0 ticks of τ < T. Met.
+- Today's Realtime:
+  - stored arm, unclamped: 0.999 / 0.999 / 0.131 s, higher than the predicted 0.91–0.95;
+  - with the clamp, both arms: 0.999 / 0.999 / 0.091 s.
+
+**K-OV (B = 8): missed for both revisions.**
+- Revision 3: 0.539 / 0.539 / 0.307 s.
+- Revision 4: 0.540 / 0.539 / 0.239 s.
+- Predicted 0.72 delivered and 0.66–0.72 on time.
+- **Repair is not the cause.** The clamp cut repairs from 503 to 20, and delivered returned to the repair-off value.
+- **The miss is in the base arithmetic** `(C/λ)(1 − ε)`, which assumes the link is saturated. 0.54·50 = 27 units/s delivered, against 36 available. The inference is that the 8-seq store pause, with holes held in the outstanding count across an RTT of about 0.2 s, underfills the 40/s link. That is a B-sizing question for the cell, not a Revision 4 one. It is unconfirmed; `link_util_w` is the gauge to read.
+- **Today's Realtime in K-OV:** the stored arm reads 0.740 / 0.007 / 1.52 s, and the ≤ 0.1 on-time prediction is met. The engine-queue arm reads 0.917 / 0.007 / 10.3 s: delivered met, on time near the predicted 0.03, p50 higher than the predicted ≈ 7 s.
+
+**Today's Realtime, other cells (clamp on, B = 1 000):**
+- **OV, stored arm:** 0.817 / 0.815 / 0.171 s; steady window 0.808. Met.
+- **OV, engine-queue arm:** 0.873 / 0.160 / 0.724 s; steady window 0.815 / 0.
+  - Delivered is inside the predicted range. On time (predicted 0.20–0.25) and p50 (predicted 0.65–0.70 s) are slightly outside.
+- **OV-end, stored arm:** 0.916 overall, 0.808 in the overload window and 1.000 after.
+- **OV-end, engine-queue arm:** 0.955 / 0.529 / 0.355 s; the overload window reads 0.837 / 0 and the window after 0.997 / 0.997.
+  - On time 0 in the overload window: met. The share there (0.837 against a predicted 0.808) was missed.
+- **The engine-queue arm with the clamp off is not run.** The engine has the clamp, so that arm has no engine counterpart (coordinator's amendment).
+- **Also not run:** the strict-order (H = ∞) row of §4.1.
+
+### 9.2 What the OV-end miss implies for Q24
+
+The OV-end prediction and Q24's horizon step rest on the same arithmetic, `K = δ·(x − 1)·t_ov²`, with x and the onset of t_ov taken from §4's estimates.
+- The miss: the cap fell below the on-time line well before predicted. Equivalently, the "≤ 0.01" boundary sat at δ ≈ 0.3 instead of above 0.5.
+- That means the effective K was about 1.7 times the estimate at the same δ. The cause is not identified. Candidates:
+  - x read higher than 1.25, for example D̂ under-reading by ε under unprotected sends (§3.2);
+  - μ̂ became finite earlier than the assumed ≈ 1 s;
+  - a different exponent on t_ov.
+- **So the sizing run supports the law's shape** (continuous, monotone in δ, no step at a preset, inert where it should be) **but not its scale.**
+- Q24 asks whether "horizon = the overload's age", that is, the t_ov² term, is right. A factor of about 1.7 in K that nobody has explained cannot be counted as evidence for it. It could equally come from the inputs or from the exponent.
+- **Q24 therefore stays open, with its evidence status: shape confirmed, scale unexplained.**
+- **The next step, registered before any rerun.** From the stored OV-end δ-sweep rows, fit the logged τ, K, x and t_ov per tick against `δ·(x − 1)·t_ov^k`. Read k and the input bias separately. Only a fit with k = 2 and an identified input bias would restore the prediction's standing.
+
+### 9.3 Amendments to §3.3 (dated 2026-11-26)
+
+1. **The send gate as written deadlocks after an outage.** "No payload staged while in_flight ≥ B" never reopens. Datagrams lost in the outage are never reported, so they stay counted in flight.
+   - The frozen build uses **the engine's in-flight expiry** (`scheduler/path.rs:1169–1184`): an unreported datagram leaves in_flight after max(4·SRTT, 250 ms).
+   - That is the engine's existing rule, not a new constant. Its 250 ms floor keeps whatever ledger standing it has in the engine.
+   - The sizing run itself did not build the gate; the store pause on outstanding seqs gated alone.
+2. **The clamp on each taper grant** (`fec_rate.rs:729`) has nothing to apply to in the offline simulation, which has no taper stage. Only the cadenced accrual is clamped. The engine's taper clamp is recorded as not modelled.
+
+### 9.4 Dominance under overload against today's Realtime, engine-queue arm
+
+The comparison uses the registered rule (§3.1, §4.3), in OV's steady window, Revision 4 with the clamp against the engine-queue arm with the clamp:
+
+| readout | Revision 4 minus the engine-queue arm |
+|---|---|
+| on time within 0.4 s | +0.65 |
+| delay p50 | −0.63 s |
+| delivered | −0.012, against a bar of 0.009 |
+
+- **As registered, this reads "not dominated": it is a trade, not a win.** Revision 4 gives up 1.2 points of steady delivered share, beyond the bar, for 0.65 of on-time share and 0.63 s of delay.
+- The delivered deficit matches the engine-queue arm's steady share of 0.815 against Revision 4's 0.803.
+- **The likely source of the 1.2 points** is the young units' resends plus residual repair (§9.1, OV). That is an inference and is not gauged here.
+- **Against the stored arm** the steady delivered share is 0.803 against 0.808 (−0.005, inside the bar), and the delay is better.
