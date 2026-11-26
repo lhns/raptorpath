@@ -99,6 +99,18 @@ impl Scheduler {
         probs.last().map(|(pid, _)| *pid)
     }
 
+    /// [`Self::place_symbol`] over the candidates `allow` admits (the hand-off
+    /// gate's open paths for a first send, its spare paths for a repair).
+    /// INERT SCAFFOLDING: ignores `allow`.
+    pub fn place_symbol_among(
+        &self,
+        is_repair: bool,
+        covered_paths: &[PathId],
+        _allow: &dyn Fn(PathId) -> bool,
+    ) -> Option<PathId> {
+        self.place_symbol(is_repair, covered_paths)
+    }
+
     /// Cross-path repair placement ("repair rides the spare path"; env
     /// `RWM_XPATH_REPAIR`).
     ///

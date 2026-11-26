@@ -18,6 +18,7 @@ pub(crate) mod delivery;
 pub mod cpuprof;
 pub mod diag;
 pub mod hoff;
+pub mod hoff_gate;
 pub mod emit_source;
 pub mod eta;
 pub mod framing;
@@ -3837,6 +3838,8 @@ mod tests;
 mod sack_memo_tests;
 #[cfg(test)]
 mod hotpath_pin;
+#[cfg(test)]
+mod hoff_gate_tests;
 #[cfg(test)]
 mod decision_trace_pin;
 

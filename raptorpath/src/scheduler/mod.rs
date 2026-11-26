@@ -231,6 +231,13 @@ impl Scheduler {
             .collect()
     }
 
+    /// The ids of the paths that are up, sorted (the hand-off gate's path set).
+    pub fn active_ids(&self) -> Vec<PathId> {
+        let mut v: Vec<PathId> = self.paths.iter().filter(|(_, p)| p.active).map(|(id, _)| *id).collect();
+        v.sort_unstable();
+        v
+    }
+
     /// Paths that are up, regardless of remaining cwnd budget.
     ///
     /// Use for control-plane traffic (reports, pings, BlockStart) and

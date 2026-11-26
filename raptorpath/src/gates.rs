@@ -228,6 +228,11 @@ pub struct RuntimeGates {
     // ── Instruments (ADR-0052; observation only) ──
     /// `RWM_DIAG` (off): the transport-ceiling / recovery-plane `[DIAG]`.
     pub diag: bool,
+    /// `RWM_HOFF_GATE` (off): the sender hand-off gate (paper §6.8) -- a
+    /// default-off EXPERIMENT ARM, not a dial: nothing in the gate reads a
+    /// hint, δ or ρ. Arms the `RouteProbe` window read, the owner's republish
+    /// timer and the producer's gate-pause poll (`net::hoff_gate`).
+    pub hoff_gate: bool,
     /// `RWM_ACKDIAG` (off): per-path ack-cadence gauge (`[ACKDIAG]`).
     pub ackdiag: bool,
     /// `RWM_RTT_DUMP` (off): raw RTT sample stream (`[RTTDUMP]`).
@@ -376,6 +381,7 @@ impl RuntimeGates {
             recv_request_law: env_flag("RWM_RECV_REQUEST_LAW", false),
             rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
             diag: env_flag("RWM_DIAG", false),
+            hoff_gate: env_flag("RWM_HOFF_GATE", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             rtt_dump: env_flag("RWM_RTT_DUMP", false),
             succ_dump: env_flag("RWM_SUCC_DUMP", false),
@@ -449,7 +455,7 @@ impl RuntimeGates {
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
-             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
+             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={} RWM_HOFF_GATE={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor),
             b(self.honest_anchor),
@@ -484,7 +490,7 @@ impl RuntimeGates {
             b(self.succ_dump), self.succ_dump_max,
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             if self.rtobs_deep { "2" } else { b(self.rtobs) },
-            b(self.fdiag), b(self.trace), b(self.pfrac),
+            b(self.fdiag), b(self.trace), b(self.pfrac), b(self.hoff_gate),
         )
     }
 

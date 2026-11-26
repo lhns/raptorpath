@@ -89,7 +89,7 @@ fn quantile<T: Copy + Default>(sorted: &[T], q: f64) -> T {
 }
 
 /// p99 (upper bucket edge, s) of the window delta of a cumulative histogram.
-fn hist_p99_s(now: &[u64], prev: &[u64]) -> f64 {
+pub(crate) fn hist_p99_s(now: &[u64], prev: &[u64]) -> f64 {
     let d: Vec<u64> = now.iter().zip(prev).map(|(a, b)| a.saturating_sub(*b)).collect();
     let tot: u64 = d.iter().sum();
     if tot == 0 {
@@ -126,19 +126,21 @@ pub(crate) struct PathIn {
     pub polls: u64,
     pub tx_batches: u64,
     pub tx_dgrams: u64,
+    /// Datagrams the owner discarded before quinn (send errors, shim loss).
+    pub dropped: u64,
 }
 
 impl PathIn {
-    fn backlog(&self) -> u64 {
+    pub(crate) fn backlog(&self) -> u64 {
         self.staged.saturating_sub(self.tx)
     }
-    fn dgram_size(&self) -> f64 {
+    pub(crate) fn dgram_size(&self) -> f64 {
         if self.staged > 0 { self.staged_bytes as f64 / self.staged as f64 } else { 0.0 }
     }
     fn window(&self) -> u64 {
         if self.qwin > 0 { self.qwin } else { self.cwnd }
     }
-    fn rate(&self) -> f64 {
+    pub(crate) fn rate(&self) -> f64 {
         pacer_rate(self.window() as f64, self.srtt_us as f64 / 1e6)
     }
 }
@@ -317,6 +319,17 @@ impl HoffGauge {
         self.line(now_us, engine_infl, store_full)
     }
 
+    /// [`Self::line`] reading the hand-off gate's real state when one is given.
+    pub(crate) fn line_gated(
+        &mut self,
+        now_us: u64,
+        engine_infl: u64,
+        store_full: bool,
+        _gate: Option<&mut super::hoff_gate::HandoffGate>,
+    ) -> String {
+        self.line(now_us, engine_infl, store_full)
+    }
+
     /// Close the window and render the `[HOFF]` line. `engine_infl` is the
     /// engine's `in_flight` (datagrams), `store_full` whether `n ≥ N·P`.
     pub(crate) fn line(&mut self, now_us: u64, engine_infl: u64, store_full: bool) -> String {
@@ -450,6 +463,7 @@ impl HoffGauge {
             polls: c.polls.load(Relaxed),
             tx_batches: c.tx_batches.load(Relaxed),
             tx_dgrams: c.tx_dgrams.load(Relaxed),
+            dropped: h.dropped.load(Relaxed),
         }
     }
 }
@@ -510,6 +524,7 @@ mod tests {
             polls: 100,
             tx_batches: 50,
             tx_dgrams: 500,
+            dropped: 0,
         }
     }
 

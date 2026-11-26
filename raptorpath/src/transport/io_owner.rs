@@ -195,6 +195,13 @@ pub struct HoffCounters {
     pub qwin: AtomicU64,
     /// The owner's work per data-drain poll, ns (log-spaced histogram).
     pub work: WorkHist,
+    /// The owner's realized wait on its republish timer, ns (hand-off gate).
+    pub timer_wait: WorkHist,
+    /// Republish-timer wakes (the `owner_timer_wakes` gauge).
+    pub timer_wakes: AtomicU64,
+    /// Datagrams the owner discarded before quinn (send errors, shim loss,
+    /// orphaned batches): netted out of B_i.
+    pub dropped: AtomicU64,
 }
 
 /// Log-spaced (two buckets per octave) histogram of ns durations.
