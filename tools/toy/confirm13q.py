@@ -144,7 +144,7 @@ def part_jobs():
     return {
         "AA-q": aa_q(),
         "OV-long-q": [j for j in q_jobs() if not (j.design in ("adr", "bulk") and j.fp in stored)],
-        "RESEND-GAUGE": gauge_jobs(),
+        "RESEND-GAUGE": gauge_jobs() + ([sj for sj, _ in stored_pairs()] if C.SMOKE else []),      # a smoke run has no stored rows: it runs them, so the identity check executes
     }
 
 
@@ -487,16 +487,19 @@ def read_gauge(jobs):
          "late (arrived after its hole was passed; floor is the floor's share), other (the unit was not yet a hole: ahead of the receiver's highest seq), open (still in flight at the end). "
          "The classes sum to the resend count (the gauge's own n, equal to the stored `repair_sends`).\n"]
     stored = stored_pairs()
-    bad = []
+    bad, compared = [], 0
     for sj, gj in stored:
         for s in range(gj.nseeds):
             rs, rg = C.load(sj.fp, s), C.load(gj.fp, s)
             if rs is None or rg is None:
                 continue
+            compared += 1
             d = C.ident_diff(rs, rg)
             if d:
                 bad.append("%s seed %d: %s" % (sj.name, s, d))
-    L.append("Identity of each rerun with its stored run (every id3e key; the gauge adds only its own block): %s\n" % ("identical in every pair" if not bad else "DIFFERENT: " + "; ".join(bad[:10])))
+    L.append("Identity of each rerun with its stored run (every id3e key; the gauge adds only its own block): %d of %d runs compared (a stored run missing from the store is not compared): %s" % (
+        compared, sum(gj.nseeds for _, gj in stored), "identical" if not bad and compared else ("NOTHING COMPARED" if not bad else "DIFFERENT: " + "; ".join(bad[:10]))))
+    L.append("")
     L += ["| cell | T | build | seeds | resends | filled | dup | lost (qdrop) | late (floor) | other | open | filled / n | dup / n | lost / n | late / n | repairs sent | never delivered |",
           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     by = {}
@@ -595,7 +598,7 @@ def run_chain13q(workers, only=None):
             finish("OV-long-q", ["\n## OV-long-q: build B' at delta = 0.118 (13.9.6)\n"] + lines)
         if todo("RESEND-GAUGE"):
             jobs = gauge_jobs()
-            tasks = C.tasks_of(jobs)
+            tasks = C.tasks_of(pj["RESEND-GAUGE"])
             print("[%s] resend gauge: %d runs" % (time.strftime("%H:%M:%S"), len(tasks)), flush=True)
             C.run_pool(pool, tasks, "RESEND-GAUGE")
             lines = K.reading(read_gauge, jobs)
