@@ -1,6 +1,6 @@
 # Three knobs, Revision 4: a sender-side wait limit under sustained overload, and the engine's repair clamp (derivation, no runs)
 
-**Status.** Design and derivation. §1–§8 were written before any run. §9 (2026-11-26) reports the step 2 sizing run, reported only, and amends §3.3. §10 (2026-11-26, derivation) adds the floor-repeat addendum. §11 (2026-11-26, derivation) adds resend eligibility and the new model's gate.
+**Status.** Design and derivation. §1–§8 were written before any run. §9 (2026-11-26) reports the step 2 sizing run, reported only, and amends §3.3. §10 (2026-11-26, derivation) adds the floor-repeat addendum. §11 (2026-11-26, derivation) adds resend eligibility and the new model's gate. §12 (2026-11-26) is the confirmation registration, written before any data of its cells.
 - **What it amends.** `three-knobs.md` §13.2 (the dequeue rule). It withdraws that section's paragraph "What cannot be fixed: delay pinned near T − R", and Q12's default ("no loss price").
 - **What it adds to the model of every design** (§3.3): the engine's spare-capacity clamp on repair. It also adds the engine's send gate to the designs that pause in the engine, and a second arm for today's Realtime that models the engine's real send queue, settled by an engine read (Q30).
 - **What is unchanged:** L1, L2 (§2.1, and §2.2 as revised in §17.1), the protected floor (§17.1), the brake and the store pause.
@@ -1213,3 +1213,159 @@ So the steady window as registered includes a filling transient, and the arm's t
   - **Either window cuts the link cells' forward queue from about 88 ms to about 5 ms** (0.5 × BDP).
   - So §4's p50, R, ô and D̂ all move, and so do the readouts that depend on them.
   - **Not predicted here.** It needs its own registration before any run, which is the reason to decide Q31 first.
+
+## 12. Confirmation registration (2026-11-26; written before any data of this part)
+
+**Base.**
+- The offline simulation on `toy-stage3e` at `8c743f0f`, the build that carries §3.3's clamp, §10.7 and §11.2 behind config fields.
+- The sizing result it records: K-OV with §10.7 and §11.2 reads 0.716 for Revision 3 at p50 0.32 s, and 0.720 for Revision 4 with no gate at p50 0.166 s.
+  - Revision 4 had 189 resends and 2 duplicates. The "≤ 20 resends" band of §11.3 was missed: the resends now come after R, and they recover real losses.
+  - Every other cell was within the A/A floor, and P2 finished with identical readouts.
+- **The cells below have not been read under any Revision 4 build.** This registration is written before any of their data.
+
+### 12.1 Builds and baselines
+
+| code | build |
+|---|---|
+| **A** | Revision 3 (S5) + the repair clamp (§3.3, cwnd_sim = the cell's pause B) + the floor repeat of §10.3 with §10.7 + the resend eligibility of §11.2 |
+| **B** | A + the wait limit (§3.1, μ̂ = D̂ of §3.2) + the send gate as frozen: in_flight < the cell's pause B, with the engine's in-flight expiry max(4·SRTT, 250 ms) (§9.3) |
+| ADR-0084 at ρ ∈ {0.95, 0.98, 0.99, 0.995, 1} | with the clamp |
+| today's Realtime, stored arm, at δ ∈ {0.5, 5, 50} plus the cell's δ | with the clamp |
+| today's Realtime, engine-queue arm (§3.3), at the same δ | with the clamp |
+| today's Bulk | with the clamp |
+
+- **Every row has the clamp, because the engine has it.**
+- **Repair mode:** RL. At δ = 0.005, r = 0 exactly, so RL is the repair-off row by arithmetic and the clamp is inert.
+- **The new builds sweep T as in registration §13.2:**
+  - CL, CL-long, CLw-long: 15 points, plus H = ∞ at {0.4, 1.4, ∞};
+  - OV-long: {0.4, 0.6, 1, 2, ∞}, plus H = ∞ at {0.4, 2, ∞};
+  - the video cells: {1, 1.5, 2, 3, ∞}, plus H = ∞ at {1, 2, ∞};
+  - CLc: {0.4, 1, ∞} × H ∈ {0, ∞}.
+- **In the cells with headroom,** B differs from A only where λ̂ > μ̂ (§3.1). So B runs there at 3 seeds as an **identity check** against A at T ∈ {0.4, 2, ∞}: traces equal, `n_tau_lt_T` = 0. It runs the full sweep only in the two overload cells.
+- **Gates** (stop rules, as in registration §13.6):
+  - S5 at T = ∞, H = ∞ (A and B) equals today's Bulk with the clamp, on every key and trace;
+  - every new-model run finishes. Today's Realtime is read with `unfinished` and `delivered_by_t_limit`, per the dated amendment;
+  - §10.5's and §11.3's absolute tests hold in every run.
+
+### 12.2 Readouts and the steady window
+
+- **The readouts:**
+  - the steady share delivered;
+  - the steady share on time within the cell's τ (0.4 s, or 2 s in the video cells);
+  - delay p50 from hand-over.
+  - The outage cells also keep their registered recovery time.
+- **The steady window, per arm, from its own queue gauge.** Its start is `max(fill, first RTT sample) + 1 s`. Its end is the last hand-over minus τ. "fill" is:
+  - for the new builds, the first dequeue expiry (the intake at its cap);
+  - for the engine-queue arm, the first instant its 4 MiB FIFO is full;
+  - for the stored arm, the first link-queue drop;
+  - for ADR-0084 and Bulk, the first store pause.
+
+  If an arm's queue never fills (a cell with headroom), the window starts one second after the first RTT sample. That is the one rule, with no declared second.
+- **In outage cells** the steady window excludes [outage start, recovery end]. The outage is read through the registered recovery time and the whole-run share by τ, as in stage 3e.
+
+### 12.3 The reading rule
+
+- **Matched share** (registration §13.3) applies where a build's T sweep spans a range of steady delivered shares: the outage and headroom cells.
+- **Dominance** (§3.1) applies where the sweep collapses (`floor_bind` ≈ 1 at every finite T). It also applies wherever the steady delivered share does not vary with T, as in every overload cell, where it is the capacity share at every T.
+  - Each baseline point is compared with the build's best finite-T point on the three readouts.
+  - "Dominates" means not worse beyond the bar on any readout and better beyond it on at least one. Otherwise the result is "not dominated", a trade, and it is reported as such.
+- **Bars, NF and seeds** follow amendment 2 (§14.3):
+  - 12 paired seeds in CL, CL-long, CLw-long, CLc, CLc-v and CL-long-v;
+  - 6 in OV-long and OV-long-v, with the old senders there at 3 seeds at their dial ends (§14.4): ADR-0084 at ρ ∈ {0.95, 1}, today's Realtime at δ ∈ {0.5, 50} (or {0.005, 50} in OV-long-v), and Bulk;
+  - one doubling.
+- **A/A rows are re-frozen under build A,** one per cell at 12 seeds, before any comparison is read. The stage 3e floors were measured without the clamp, and are not reused.
+
+### 12.4 Predictions (derived, with bands)
+
+**The deciding case: CL-long against the old designs under the clamp** (λ 10 000, C 12 500, 1.5 s outage; δ = 50).
+- **The clamp takes every design's drain-time repair to about 0** (§3.3: spare < r for most of the drain). So every row moves toward its repair-off reading, and the leads move toward the repair-off leads (stage 3e DECIDE, repair off):
+  - **ADR-0084 at ρ ∈ {0.99, 0.995, 1}:** A's on-time lead is **+0.015 to +0.03** (repair off: +0.027) and its recovery lead **0.2 to 0.4 s** (repair off: 0.37). Read against bars of about 0.016 and 0.24, this is "shown better", or "undetermined" at the low end of the band. That is the registered risk.
+  - **ADR-0084 at ρ ∈ {0.95, 0.98}:** **+0.04 to +0.06**, shown better.
+  - **Today's Realtime** (both arms; the FIFO never fills at λ < C, so they are the same within A/A): **+0.035 to +0.05** on on-time share at matched share, shown better. Recovery is equivalent, as stored.
+  - **Today's Bulk and the object API:** identity.
+- **A's own rows:** T = 0.4 at 0.939–0.941 delivered and on time; T = 2 and T = ∞ on time at 0.63–0.645, with recovery 5.7–6.1 s. These are §9.1's measured clamp-on rows ± the A/A floor, because §10.7 and §11.2 are predicted within A/A here.
+- **B ≡ A** (identity check).
+
+**CL** (the same as CL-long, but 10 s): the outage costs twice the share of a 20 s run.
+- **A at T = 0.4:** delivered and on time ≈ 1 − (L − (T − R))·λ/N ≈ **0.88–0.90**.
+- **Leads** over ADR-0084 and today's Realtime are in the same direction as CL-long, and **up to twice as large**, since the outage is the same and N is half. Bands: +0.02 to +0.06 against ADR-0084 at ρ ≥ 0.99, and +0.04 to +0.09 against today's Realtime.
+- **B ≡ A.**
+
+**CLw-long** (λ 8 000, C 12 500, 3 s outage):
+- The headroom is 12 124 − 8 000 ≈ 4 100/s with the clamp, so x ≤ 1 and B ≡ A.
+- **A's recovery at T = ∞:** the backlog λ·L = 24 000 over that headroom, on the on-time form of §19, gives **4.5–6.0 s**. At T = 0.4 it is within the 0.1 s resolution.
+- **On-time leads** over ADR-0084 and today's Realtime: **+0.03 to +0.08**, shown better. Bulk is the identity.
+
+**CLc** (CL with no outage):
+- No queue builds, `spare_bind` ≈ 0 and x ≤ 1. So A equals stage 3e's RL rows within A/A, and B ≡ A.
+- Every design delivers ≈ 1 − ε·(1 − P_dec) ≈ 0.995–1.000 on time at p50 ≈ 6–10 ms.
+- **Predicted: equivalent to every baseline, on all three readouts.** This is the null cell.
+
+**CLc-v, CL-long-v** (δ = 0.005, τ = 2 s): r = 0, so the clamp is inert for the new builds and for ADR-0084 and Bulk.
+- **A** equals the repair-off rows; **B ≡ A**.
+- **CLc-v:** equivalent across the board.
+- **CL-long-v:** with τ = 2 s the backlog is delivered within τ at T ≥ 2, so the new model's lead over ADR-0084 comes from the floor's commitment, as in stage 3d. Band: **+0.00 to +0.04** on time within 2 s, "equivalent" or "shown better".
+- **Today's Realtime at δ ∈ {0.5, 5, 50}** has r > 0, so the clamp moves those rows toward their repair-off readings.
+
+**OV-long** (480 000 units, λ 12 000, C 10 000, δ = 50, τ = 0.4 s):
+- **A:**
+  - steady share **0.805–0.810**, which is `(C/λ)(1 − ε)` with r_eff ≈ 0: units sent at T − R are unprotected, so loss stays lost;
+  - on time 0.805–0.810 at T = 0.4, and **< 0.02** at T ≥ 0.6, where the intake wait T − R exceeds 0.307 s;
+  - p50 = T − R + 0.093 (0.39 s at T = 0.4).
+- **B:**
+  - it collapses at every finite T within about 0.6 s of μ̂ becoming finite (§4.1), so the sweep is degenerate and the cell is read by dominance;
+  - steady share **0.800–0.810** (C/((1 + ρ)·λ); OV measured 0.803–0.809), on time equal to the share within 0.005, p50 **0.090–0.100 s** at every finite T.
+- **Baselines:**
+  - **the stored arm:** steady share 0.808, on time ≈ 0.806, p50 ≈ 0.17 s;
+  - **the engine-queue arm:** steady 0.809 / 0 / 0.68–0.73 s;
+  - **ADR-0084 and Bulk:** the intake grows without expiry, so on time is ≈ 0 and p50 is many seconds; share_any → 1 by t_limit.
+
+| comparison | predicted reading |
+|---|---|
+| B against the stored arm | **B dominates**: share and on time within the bar, p50 better by about 0.075 s |
+| B against the engine-queue arm | **B dominates**: share within the bar on the arm's own steady window (§10.6), on time +0.8, p50 about 0.6 s better |
+| B against ADR-0084 and Bulk | **not dominated**, a trade: on time +0.8 and p50 better by seconds, but share_any lower (0.81 against 1.0 by t_limit) |
+| A against the stored arm | **not dominated**: equal share and on time, p50 worse by about 0.22 s |
+
+**OV-long-v** (δ = 0.005, τ = 2 s): r = 0, and x ≈ 1.24.
+- **A at T = 2:** steady share 0.805–0.810, on time within 2 s equal to the share (arrival at about 1.99 s), p50 ≈ 1.99 s. At T = 3, on time is ≈ 0.
+- **B:**
+  - K = 0.005·0.24·t_ov², against K_c = 3.78 at T = 2. So the cap falls slowly, from 1.90 s to about 0.99 s at 40 s, and **no collapse occurs within the run**.
+  - Steady share and on time as A; **p50 1.6–1.8 s** at T = 2.
+  - At T = 1 it collapses at about 27 s, and at T ≥ 1.5 not within the run.
+- **Baselines:** the stored arm reads 0.808 / 0.808 / ≈ 0.17 s, and the engine-queue arm 0.809 / 0.809 / ≈ 0.69 s (its 0.68 s residence is within 2 s).
+- **Predicted reading: both arms of today's Realtime dominate A and B,** with equal share and on time and far lower delay. **This is a predicted loss for the new model,** and it follows from δ's meaning in §2.
+  - At δ = 0.005 the bet prices delay so cheaply that the intake keeps most of its standing queue, though a standing queue buys nothing (§2) at any δ.
+  - **Recorded as open question Q32:** whether the bet's δ-scaling is the right scaling at the video point, or whether a standing queue that is pure waste should be shed at every δ.
+- **ADR-0084 and Bulk:** on time ≈ 0 within 2 s, a trade as in OV-long.
+
+### 12.5 Run count and time
+
+**Configurations × seeds:**
+
+| cell | build A | build B | baselines | runs |
+|---|---|---|---|---|
+| CL | 18 × 12 | 3 × 3 | 12 × 12 | 369 |
+| CL-long | 18 × 12 | 3 × 3 | 12 × 12 | 369 |
+| CLw-long | 18 × 12 | 3 × 3 | 12 × 12 | 369 |
+| CLc | 6 × 12 | 3 × 3 | 12 × 12 | 225 |
+| CLc-v | 8 × 12 | 3 × 3 | 14 × 12 | 273 |
+| CL-long-v | 8 × 12 | 3 × 3 | 14 × 12 | 273 |
+| OV-long | 8 × 6 | 8 × 6 | 7 × 3 | 117 |
+| OV-long-v | 8 × 6 | 8 × 6 | 7 × 3 | 117 |
+| A/A, re-frozen | | | 8 cells × 12 | 96 |
+| **total** | | | | **2 208** |
+
+- **No reuse.** §10.7 and §11.2 change every new-model trace, and the clamp changes every repair-on row.
+- **Time** (TIME's measured per-design wall times, one process each: 7–15 s for most rows; ADR-0084 44 s in CL-long-v; in OV-long 31–34 s, today's Realtime 160 s and Bulk 26 s; in OV-long-v 29 s for the new model, ADR-0084 609 s, today's Realtime 185 s and Bulk 24 s):
+  - about 40 000 CPU-seconds in all, so **about 75 min on 9 workers**;
+  - **about 1.5–2 h** with the one doubling;
+  - the critical path is ADR-0084 in OV-long-v, about 10 min per run.
+  - The clamp makes today's Realtime rows faster where repair was the decoder's load, so these are upper bounds.
+- **Order:**
+  1. the A/A rows;
+  2. CL-long, the deciding case;
+  3. then CL, CLw-long, CLc, CLc-v and CL-long-v;
+  4. then OV-long and OV-long-v.
+  - Each cell is read when it finishes, and its doubling runs before the next cell.
+- **Stop rules:** as §12.1's gates. A failed identity check of B against A in a headroom cell is a STOP, and sends the wait limit back to derivation.
