@@ -18,7 +18,7 @@
 **The law, on one line** (per leg i; the derivation is §2):
 
 ```text
-   hand a first send or repair to leg i  ⇔  B_i < β_i ,   β_i = R_i·(g_i + Δ_v,i)/s_i ,  R_i = 1.25·cwnd_i/srtt_i ,  Δ_v,i = VIEW_REFRESH + p̂_i ;   else it waits in the intake, whose head expires  ⇔  a ≥ min( T − R , w(δ, x̄, t_ov) )
+   hand a unit (first send + owed repair) to leg i  ⇔  B_i < β_i ,   β_i = R_i·L_i/s_i ,  R_i = 1.25·cwnd_i/srtt_i ,  L_i = VIEW_REFRESH + ℓ̂_o + P_poll + ℓ̂_p ;   else it waits in the intake, whose head expires  ⇔  a ≥ min( T − R , w(δ, x̄, t_ov) )
 ```
 
 - B_i is what the producer has staged for leg i and quinn has not yet transmitted (the producer's own staged count minus quinn's `tx`, so datagrams still in the owner's channel count), R_i quinn's pacer refill rate (RFC 9002 §7.7, N = 1.25; the controller's rate under `RWM_BBR_PACE`), g_i the interval between hand-offs, Δ_v,i the bound on the `tx` snapshot's lag, derived from the owner's publish rule (one `VIEW_REFRESH` plus one measured owner poll interval p̂_i), s_i the datagram size. Revised 2026-11-26 (§2.3a): this replaces the first form 1.25·ν̂_i·(g_i + Δ_v), whose ν̂ filter would throttle Startup and whose Δ_v was an unmeasured code constant. Resends and control datagrams are staged first and are exempt from the bound, though they count in B_i (§2.3b).
@@ -52,6 +52,22 @@ If the owner accepts, W1.2's "δ on the store law" step is withdrawn. Its other 
 - Neither touches c8 server CPU (+5.3 %, finer slow-leg I/O), the c8 in-order delay (+46 %), or the c2 delivered delay (≈ 206 ms in both arms). The two delay costs come from quinn's queue, which only the hand-off law removes (§6).
 
 ## 0. The formula first
+
+**Revision 3 (2026-11-26, after the coordinator's check of `e0561809`).** Paper §6.8 is now the authority for the law. It supersedes the forms in this section, §2.3 and §2.6 wherever they differ.
+
+- **g_i is replaced by a bounded reopen latency.** The measured hand-off interval grew without bound in an outage or with the gate closed, so β opened to the backlog: the same fault as the snapshot age. β_i = R_i·L_i/s_i, with L_i = VIEW_REFRESH + ℓ̂_o + P_poll + ℓ̂_p:
+  - two cited loop periods: the owner's republish, 1 ms, and the producer's backpressure poll `poll_1ms`, 1 ms;
+  - two measured per-iteration work times, as p99 values: owner ≈ 10–20 µs (0.12 ms at c1s), producer 96 µs at c2, 557 µs at c8, 504 µs at c1s.
+  - Silence cannot raise any of the four terms.
+- **The reopen event is new.** While its last published queue was non-empty, the owner republishes every VIEW_REFRESH. Today it publishes only on a poll that did I/O, so with the gate closed, no inbound traffic and an idle owner, B could read high until the next inbound datagram: at best one RTT per batch, at worst never.
+  - With the rule, a closed gate reopens within L_i: ≈ 2.1 ms at c2, ≈ 2.6 ms at c8 and c1s.
+  - β is exactly the pacer's release in that time.
+- **The clamp reads the window.** spare_i = (cwnd_i − F_i − s·B_i)⁺/(F_i + s·B_i). This is the engine's `spare_capacity` form fed with quinn's window and in-flight, from atomics the `RouteProbe` wrapper publishes.
+  - The B/β form clamped repair to 0 at call rates (β < 1), where one staged datagram read the path as full.
+  - Repair is decided at a unit's admission and rides with its source.
+- **Sizes.** β ≈ 27 at c2, 34 and 6.8 on c8's legs, 380 at c1s, and ≈ 0.2–0.3 at a 36/s call. That is only 1.2–1.3× today's batch at c2 and c8, so the finer-I/O risk is read in the session's diagnostic step.
+- **§8.4 is amended in §6.8.** Its sentence that the substrate window "is not a store-law input" because laws that read it inherit its steps in time applies. §6.8 allows the read for the hand-off reserve and the clamp only, through the atomics, and gauges the inherited steps. Until the amendment is accepted, the read runs behind a default-off diagnostic environment arm.
+- **ρ < 1 stays blocked.** Its missing shedding law is the three-knob lifetime T. No interim law is added.
 
 **The sentence.** Hand quinn no more than its pacer will send before the next hand-off. Everything else waits in the engine's intake, where it can be shed by age at a δ price, overtaken by resends, and seen by placement and the repair clamp.
 
@@ -472,20 +488,20 @@ The original order follows for the record.
 
 ## 7. Tests the law carries (red first, absolute; for the build in §5 step 3)
 
-1. **Gate decision, absolute.** All anchors use s = 1 233 B.
-   - At cwnd = 280 000 B, srtt = 22 ms, g = 2.30 ms and p̂ = 0.81 ms (Δ_v = 1.81 ms): R = 15 909 091 B/s and β = 15 909 091·0.00411/1 233 = 53.03. So the gate hands at B = 53, not at 54.
-   - At N = 2 the second leg (cwnd = 230 000 B, srtt = 88 ms, g = 2.86 ms, p̂ = 1.30 ms) has R = 3 267 045 B/s and β = 13.67. It hands at 13, not at 14. Each leg is decided on its own inputs.
-   - With `RWM_BBR_PACE` and r = 12 500 000 B/s on the first leg, β = 41.67.
-   - At B ≥ β a resend is still staged (it is exempt), and a first send is not.
+1. **Gate decision, absolute** (paper §6.8 form; s = 1 233 B). At cwnd = 280 000 B, srtt = 22 ms, VIEW_REFRESH = P_poll = 1 ms, ℓ̂_o = 16 µs and ℓ̂_p = 96 µs, L = 2.112 ms, R = 15 909 091 B/s and β = 27.25: hand at B = 27, not at 28. The second leg (cwnd = 230 000 B, srtt = 88 ms, ℓ̂_o = 10 µs, ℓ̂_p = 557 µs; L = 2.567 ms; R = 3 267 045 B/s) has β = 6.80 and hands at 6, not at 7. At B ≥ β a resend is still staged (it is exempt), and a first send is not.
 2. **No dial is read.** Decision traces are byte-identical across Bulk, Auto and Realtime, across ±2 % δ nudges at each preset, and at ρ < 1. This is the NO-MODE-SWITCH routing witness, extending the `test_visualizer_ui` pattern to the engine.
-3. **Clamp.** spare(B = 0) = 1, spare(B = β) = 0, spare(B > β) = 0. r_eff ≡ r_law at B = 0, and repair-off traces are identical.
+3. **Clamp (window form), absolute.** At cwnd = 13 563 B (11 datagrams), F = 4 932 B (4), B = 0: spare = 1.75. With r_law = 0.25, a steady 36/s stretch of 1 000 sources sends exactly 250 repairs. With r_law = 2.0, it sends exactly 1 750. At F = cwnd, spare = 0 and no repair is sent. At F + s·B = 0, spare = +∞. Repair-off traces are identical.
 4. **The leg-1 burst, red first.** In `cc_sim` or the engine sim: two legs at 100 and 20 Mbit, a store-cap step of +2 000 seqs, `bbr_rs`.
    - Without the gate, B1 > 400 for ≥ 2 s. This reproduces §1.2, and it is the red.
    - With the gate, B1 ≤ β1 + one batch on ≥ 99 % of polls, and `starve_1` ≤ 1 %.
    - Mutation: β × 100 must turn the bound red.
 5. **The resend's wait.** In the same sim, a resend handed to leg 1 waits ≤ β1/x1 + g in quinn. Red without the gate (≈ 0.5 s).
 6. **T = ∞ is inert.** Intake decisions at T = ∞ expire nothing at δ ∈ {Bulk, Auto, Realtime, 50}, and the T = ∞ trace equals the ρ = 1 trace of the same build at the same δ.
-7. **The store image.** With the gate on and the store at N·P only, `store_pin` = 0 in the c2-like sim.
+7. **The store image.** With the gate on, `store_pin` = 0 in the c2-like sim.
+8. **Bounded β across silence, red first.** At c2's inputs (item 1), a 1.5 s silence (no hand-off, no ack, no inbound) is followed by β within ±10 % of its steady 27.25, so in [24.5, 30.0]. Red on the measured-interval form, where β ≈ 12 900/s × 1.5 s ≈ 19 000.
+9. **Reopen without inbound traffic, red first.** On a host loopback with paused time: the gate closes on a view published 0.5 ms before the owner's last I/O; the owner then idles, with no inbound datagram, while quinn drains. The producer must hand again within VIEW_REFRESH + P_poll + one owner poll + one producer iteration, ≤ 2.2 ms of virtual time. Red on today's owner, whose view stays stale for ≥ 100 ms.
+10. **Repair at β < 1.** A 36/s call (cwnd 11 datagrams, srtt 100 ms, L = 2.1 ms, so β = 1.25·13 563/0.1·0.0021/1 233 ≈ 0.29) over 1 000 sources with r_law = 0.25 sends exactly 250 repairs, each in its source's hand-off. A second source staged before quinn has sent the first waits no longer than L.
+11. **Post-outage drain witness (three-knob verdict).** In the L0 netem loopback (`RWM_L0_NETEM`, as `gate_c9_outage_recovery` uses): one path, Auto (repair on), a 1.5 s full outage, GATE. Over the drain after the outage, `spare_bind` ≥ 0.5 of admitted units, and the coded share in the drain ≤ 0.2 × its pre-outage value. This is the §12.4 bracket's binding side, asserted on the host because the VM harness cannot cut a link.
 
 ## 8. Open questions for the owner
 
@@ -500,8 +516,8 @@ The original order follows for the record.
 - **Q-S6. Register `bbr_rs` together with the gate as the promotion candidate (§5 steps 3–4),** instead of promoting `bbr_rs` alone? Its delay costs are the queue's, and only the gate removes them.
 - **Q-S7. The engine in-flight count** reads ≈ 60× low at c2, and placement, the gate and the clamp read it today. Fix it, or retire it from those three sites with this law (§2.6, §2.7)?
 - **Q-S8. The δ seat rides on Revision 4 §13.3,** which is unconfirmed (Q24, Q33, Q34; B′ not run). This law's δ-free part ships without it.
-- **Q-S10. The gate reads quinn's cwnd and srtt** (the pacer's inputs) to size β. Is that admissible under paper §8.4's "the substrate window is not an engine input"? The alternative, a filter on past transmissions, throttles Startup (§2.3a).
-- **Q-S11. At ρ < 1 the gate adds a source pause** where today there is none, and no shedding law exists until the three-knob intake is built. Promotion at ρ < 1 is blocked on this, unless the owner rules that the source's own queue (the TUN channel, then kernel tail drop) may hold it meanwhile.
+- **Q-S10 (ruled 2026-11-26).** Reading cwnd and in-flight is allowed for the diagnostic, behind its default-off environment arm, from `RouteProbe` atomics and never from `congestion_state()`. Paper §6.8 states the §8.4 amendment the law needs; accepting it is the owner's call before any scored session.
+- **Q-S11 (stays blocked).** At ρ < 1 the gate adds a source pause where today there is none. The missing shedding law is the three-knob lifetime T (L1 and the wait limit), so promotion at ρ < 1 depends on the three-knob intake. No interim law is added.
 - **Q-S9. §48d's c1s row size.** The v1 draft uses 5 GB rows, where quinn's BASE collapses. Guard v2 uses guard-size rows, where §64 saw no collapse. The c1s predictions differ by that choice (§6).
 
 ## 9. Defect findings (MD18; ledger verdicts owed)

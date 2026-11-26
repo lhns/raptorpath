@@ -1,164 +1,135 @@
-# DRAFT: the hand-off gate on `bbr_rs` against main: guard v2 with off-Bulk stages (pre-registration draft)
+# DRAFT: the hand-off gate on `bbr_rs` against main, in two steps (pre-registration draft)
 
-**Status.** A draft for the coordinator to register as its own status section. No row has run, and nothing in it has been built.
-- It replaces the §48d draft (`reg-48d-draft.md` on `w1r2`), which will not run as a scored session: it is predicted `REGRESSION`, its in-order delay fails guard v2 by itself, and its host gate is stale (`sender-queue-law.md` §1.4, §6).
-- Ruling (coordinator and Fable, 2026-11-26): the promotion candidate is `bbrrs-r4` plus the hand-off gate. `bbrrs-r4` alone runs in the same session as a reported-only arm.
-- The law is paper §6.8. Its derivation and the §48b evidence are in `docs/derivations/sender-queue-law.md`.
-- **The δ seat stays open** (Q-S4, Q-S5). The gate is built δ-free, and the store law is unchanged.
+**Status.** A draft for the coordinator to register as status sections. No row has run, and nothing in it is built.
+- It replaces the §48d draft (`reg-48d-draft.md` on `w1r2`), which does not run as a scored session (`sender-queue-law.md` §1.4, §6).
+- Rulings (coordinator and Fable, 2026-11-26):
+  - The promotion candidate is `bbrrs-r4` plus the hand-off gate.
+  - The session runs in two steps: a reported-only diagnostic first, then a scored two-arm session.
+  - The δ seat stays open, so the gate is δ-free and the store law is unchanged.
+  - Reading cwnd and in-flight is allowed for the diagnostic, behind a default-off environment arm (Q-S10).
+  - Promotion at ρ < 1 is blocked on the three-knob lifetime (Q-S11).
+- The law is paper §6.8, revision 3. Its derivation and the §48b evidence are in `docs/derivations/sender-queue-law.md`.
 
-## 1. Arms
+## 1. Arms and trees
 
 | arm | tree | env | role |
 |---|---|---|---|
-| **BASE** | main at launch plus the gauge commit of §2 item 1 (a session tree, pinned by amendment with both shas; main itself has no `[HOFF]` line). The gauge commit reaches main later under its own instrument rule (binid note, ADR-0082) | default (quinn's BBR) | the baseline |
-| **R4** | `bbrrs-r4` (`fa9947dd`: §48 window law, `[QCC]`, one-round ProbeRtt, send-record ring) merged with BASE | `RWM_QUIC_CC=bbr_rs`; `RWM_BBR_PROBERTT_ROUNDS` and `RWM_BBR_PACE` unset | **reported only**. It attributes what the controller does alone |
-| **GATE** | R4 plus the build items of §2 | as R4 | **the promotion candidate, scored** |
+| **BASE** | main at launch, plus the gauge commit (§2 item 1), as a session tree pinned by amendment with both shas. The gauge commit reaches main later under its own instrument rule (binid note, ADR-0082) | default (quinn's BBR) | baseline |
+| **R4** | `bbrrs-r4` (`fa9947dd`: §48 window law, `[QCC]`, one-round ProbeRtt, send-record ring), merged with BASE, plus the gate commit (§2 item 2) | `RWM_QUIC_CC=bbr_rs`, the gate's arm **off** | `bbr_rs` alone. Step 1 only |
+| **GATE** | the same binary as R4 | `RWM_QUIC_CC=bbr_rs`, the gate's arm **on** | the candidate |
 
+- R4 and GATE share one binary, so the gate's effect is one environment arm wide.
 - **Pre-launch diff checks.**
-  - `git diff --stat BASE R4 -- raptorpath/src` lists only §48b's file list.
-  - `git diff --stat R4 GATE -- raptorpath/src` lists only the gate's files (§2).
-  - No pacing seam in any arm.
-- **Release binary.** GATE changes it deliberately: `binid: expected-change hand-off reserve (paper §6.8)`. R4 changes it as §48b's CAND did.
+  - `git diff --stat BASE R4tree -- raptorpath/src` lists §48b's file list plus the gate's files.
+  - With the arm off, R4's decision traces equal `bbrrs-r4`'s, byte for byte, on the host sims. That is the arm's identity check.
+- **No pacing seam** in any arm. `RWM_BBR_PROBERTT_ROUNDS` is unset.
 
-## 2. What must be built first (in this order, each its own commit, red first where marked)
+## 2. What must be built first (each its own commit, red first where marked)
 
-1. **Gauges, reported only, on all three trees** (so BASE carries them). They go on a new `[HOFF]` line at the `[DIAG]` cadence.
-   - **Sources.** quinn's bytes in flight and its `app_limited` flag are not in `PathStats`. They are read in the `RouteProbe` wrapper (`io_owner.rs:446–500`), which wraps every controller's factory and sees each `on_end_acks(now, in_flight, app_limited, …)`. So they exist on BASE under quinn's BBR as well. The rest come from the owner's view (cwnd, rtt, `tx`) and the producer's own counters.
-   - **The hand-off backlog B_i:** the producer's own count of datagrams staged for path i, minus quinn's `tx`. That includes the owner's command channel. Printed as p50, p95 and max per tick window.
-   - **Quinn's queue depth:** `hand − tx`, the existing `dgq`, beside B_i, so the channel part is visible.
-   - **The owner poll interval p̂_i** (`[IOWN]` wall/polls, per tick window). This gives Δ_v,i = `VIEW_REFRESH` + p̂_i. A measured snapshot age is not used: it would open β after an idle owner (`sender-queue-law.md` §2.3a).
-   - **The cadence and the pacer rate:** g_i (hand-off interval), the pacer rate R_i = 1.25·cwnd_i/srtt_i, and β_i.
-   - **In-flight against outstanding:** `infl_vs_out`, the engine's `in_flight` beside Σ(quinn bytes in flight/s + B_i).
-   - **Each resend's wait:** `fifo_wait_resend_i`, B_i·s_i/R_i at each resend's hand-off.
-   - **The witnesses and bind gauges** of §4, computed in every arm. On BASE and R4 they read what the gate would have done.
-   - **Witness of absence:** BASE and R4 print `gate=off`, GATE prints `gate=on`. The line is the execution witness (MD rule 1).
-2. **The gate**, paper §6.8:
-   - hand a first send or a proactive repair to path i only while B_i < β_i, with β_i = R_i·(g_i + Δ_v,i)/s_i, at every hint and ρ;
-   - stage control first and resends second, each turn; both are exempt from the bound and count in B_i (§2.3b of the derivation);
-   - pause the source when no path has room, or when the store is full (the store law unchanged);
-   - the repair clamp's spare becomes (β_i − B_i)⁺/β_i.
-   - **Not in this build:** placement's load term substitution (paper §6.8 names it; deferred so the gate's effect is attributable) and any change to the store law or a δ input.
-3. **The red-first tests** (`sender-queue-law.md` §7). The anchors are the absolute numbers given there.
-   - **Gate decision at N = 1 and N = 2:**
-     - β = 53.03: hand at 53, not at 54.
-     - β = 13.67: hand at 13, not at 14.
-     - At r = 12.5 MB/s, β = 41.67.
-     - At B ≥ β a resend is still staged and a first send is not.
-   - **Idle owner:** after 1.5 s without owner I/O, β is unchanged (it is not a snapshot-age term), and the first hand-off after the idle refreshes `tx` within one poll.
-   - **No dial read:** byte-identical decision traces across hints, ±2 % δ and ρ < 1.
-   - **Clamp values** at B = 0, B = β and B > β; repair-off traces identical.
-   - **The two-leg burst in the engine sim:** without the gate B1 > 400 for ≥ 2 s, which is the red. With it B1 ≤ β1 + one batch on ≥ 99 % of polls. The mutation β × 100 must turn it red.
-   - **The resend's wait** ≤ β1·s/R1 + g.
-   - **T-free:** the gate reads no T.
-4. **Suites** on GATE and R4, as in §48b item 5. Then the host gate `GATE-HO PASS` (all of item 3 green on GATE, and the reds red on R4) before any VM contact.
+1. **Gauges, reported only, in every arm**, on a new `[HOFF]` line at the `[DIAG]` cadence.
+   - **The hand-off backlog B_i:** the producer's staged count minus quinn's `tx`. Printed as p50, p95 and max, beside quinn's queue depth (`hand − tx`).
+   - **The gate's inputs:** β_i, R_i, L_i and its four terms (VIEW_REFRESH, ℓ̂_o p99, P_poll, ℓ̂_p p99).
+   - **Quinn's in-flight F_i and window cwnd_i,** as atomics published by the `RouteProbe` wrapper from `on_end_acks` and the inner controller's `window()`. They exist under quinn's BBR too. A read counter shows that `congestion_state()` is not used.
+   - **Its `app_limited` share,** also from `RouteProbe`.
+   - **`infl_vs_out`:** the engine's `in_flight` against Σ(F_i/s + B_i).
+   - **The rest:** `fifo_wait_resend_i`, `reopen_i`, `starve_i`, `batch_i`, `hand_bind_i`, `spare_bind_i`, `store_pin`.
+   - **A `gate=on/off` token,** the execution witness.
+2. **The gate commit** (paper §6.8), behind its default-off environment arm, which is an experiment arm and not a dial. It contains:
+   - unit admission (a first send and its owed repair) while B_i < β_i, at every hint and ρ, with control and resends staged first and exempt;
+   - the owner's republish every VIEW_REFRESH while its last published queue was non-empty;
+   - the clamp's window form, spare_i = (cwnd_i − F_i − s·B_i)⁺/(F_i + s·B_i).
+   - **Not in it:** placement's load term, any store-law or δ change, any ρ < 1 law.
+3. **Red-first tests,** with the absolute anchors of `sender-queue-law.md` §7:
+   - gate decision (β = 27.25, hand at 27, not at 28; second leg 6.80, hand at 6, not at 7);
+   - no dial is read;
+   - the clamp's window form (spare = 1.75; 250 and 1 750 repairs per 1 000 sources; 0 at F = cwnd);
+   - the two-leg burst;
+   - the resend's wait;
+   - **β bounded across a 1.5 s silence:** [24.5, 30.0], against ≈ 19 000 on the measured-interval form;
+   - **reopen without inbound traffic,** within 2.2 ms of virtual time, against ≥ 100 ms on today's owner;
+   - **repair at β < 1:** exactly 250 repairs per 1 000 sources;
+   - **the post-outage drain witness** in the L0 netem loopback: `spare_bind` ≥ 0.5 and drain coded share ≤ 0.2 × pre-outage;
+   - **the arm-off identity.**
+4. **Suites** on the R4/GATE binary, as §48b item 5. The host gate `GATE-HO PASS` requires every item-3 test green, and every red-first test red on the pre-gate tree, before any VM contact.
 
-## 3. Stages (guard v2 plus the off-Bulk stages; plan to be numbered)
+## 3. Step 1: diagnostic (reported only, no label)
 
-### Stage G, the guard (scored): plan 41d's cells, sizes, clause set and statistic, run with three arms
-- **Cells.** c1s and c1d at guard size, c2 and c8 at 600 MB, Bulk, `--window-reliable`.
-- **Rows.** 12 per arm and cell (seeds 42 and 7 × 6), three arms interleaved rep-major (BASE, R4, GATE, rotating the start per rep): 144 rows.
-  - This is not plan 41d unchanged. The third arm and the interleave are new harness work.
-  - The scored statistic sees only the BASE and GATE rows. Its replacement rule (≤ 4 witness-voided slots) applies to them.
-- **Scored:** GATE against BASE, by §41d's rank-minp (v2 clause set, 10 000 relabellings, seed 4141, PASS iff p > 0.05, the DNF rule, the VOID-SHORT rule).
-- **Reported:** the same statistic for R4 against BASE and for GATE against R4, with no label.
+| cell | hint | size | rows per arm |
+|---|---|---|---|
+| c2-100 | Bulk | 600 MB | 3 |
+| c8-100 | Bulk | 600 MB | 3 |
+| c2-100 | Auto | 600 MB | 3 |
+| c2-100, low rate | Auto, the source paced at a call rate (≈ 36 datagrams/s) with §51 Block E's pacing mechanism | 60 s | 3 |
 
-### Stage A, Auto (reported; off-Bulk, so the repair clamp executes)
-- **Cells.** c2 and c8 at 600 MB, Auto hint, 12 per arm and cell: 72 rows.
-- **Repair witness:** cod > 0 on every BASE and R4 row (proactive repair is sent). A cell without it reads `VOID-NOREPAIR`.
-- **Clamp witness on GATE:** `spare_bind` is reported per row. A GATE row whose `[HOFF]` line shows `hand_bind` = 0 while the path is window-limited reads `VOID-INERT`.
+- **Rows.** 4 cells × 3 arms × 3 rows (seed 42 × 3) = 36, interleaved.
+  - If the harness has no source pacing at that rate, the low-rate cell reads `UNBUILT`. The host test of §2 (repair at β < 1) is then the only witness, and step 2 waits for the owner.
+- **Cost.** About 30 min of rows plus builds and suites.
 
-### Stage R, Realtime (reported; its own ledger after G and A, plan 64's stage R pattern)
-- **Cell.** c2 at 100 MB, Realtime hint, ρ = 1 witnessed by `window_reliable: true` on both ends, `RWM_PERF_TIMEOUT_S=150`, 12 per arm: 36 rows.
-- ρ < 1 rows are run in stage E, not here.
+**What step 1 reads, with a rule before step 2 for each.**
 
-### Stage P, paced headroom (reported; the clamp's "inert with headroom" claim)
-- **Cell.** c2, Auto, ρ = 1, the source paced at ≈ 70 % of the link, using the pacing mechanism of §51's Block E. That mechanism is confirmed in the harness brief; if no Bulk-side source pacing exists, the stage reads `UNBUILT` and the claim stays unverified.
-- **Rows.** 6 per arm, 18 in all.
-- **Predicted:** GATE's `spare_bind` ≤ 0.05; coded share within A/A of R4's; B_i p95 ≤ one batch.
-
-### Stage E, Realtime ρ < 1 (reported; the gate's one unguarded change)
-- **Cell.** §51's Block E paced evicting cell, copied at registration time, 6 per arm.
-- **What it reads.** Where the queue waits. On BASE it waits in quinn's FIFO, which drops the oldest. On GATE it waits in the TUN channel and the kernel queue, which tail-drop.
-- **Readouts:** Block E's own (delivered share, lateness), B_i, and drops by site.
-- **Predicted:** GATE's delay p50 within ±30 % of BASE's; drops move from quinn evictions to kernel tail drops. No sign is predicted for the delivered share.
-- **Promotion at ρ < 1 is blocked** until the three-knob intake (the shedding law) is built, or the owner rules that the source's queue may hold it meanwhile (Q-S11). Stage E informs that ruling and decides nothing.
-
-**Cost.**
-- **Rows:** G ≈ 144 × 65 s ≈ 2.6 h; A ≈ 72 × 60 s ≈ 1.2 h; R ≈ 36 × 20 s ≈ 12 min; P ≈ 18 × 60 s ≈ 18 min; E ≈ 18 rows at Block E's length.
-- **Also:** builds, suites, smoke, and a rehearsal first (a check row per new arm at c8).
-- **In all,** about 5 h of rows. Set `LD_HARD` at launch + 7 h.
-
-## 4. Witnesses and bind gauges (GATE; the same quantities printed on BASE and R4)
-
-| gauge | GATE prediction | void or flag rule |
+| item | reading | before step 2 |
 |---|---|---|
-| `hand_bind_i` (share of turns with B_i ≥ β_i) | c2 0.6–1.0; c8 legs 0.5–1.0; c1s 0.1–0.6 (store rarely full there); stage P ≤ 0.05 | 0 on a window-limited path: `VOID-INERT` |
-| B_i p95 against β_i + one batch | ≤ on ≥ 99 % of ticks | above: `GATE-LEAK` (reported, read before the label) |
-| `starve_i` (B_i = 0 with units waiting and quinn's window open) | ≤ 2 % of time | above 5 %: `STARVE` flag |
-| `app_limited_i` | ≤ 10 % of quinn's transmit polls in steady state, with spikes at ProbeRtt exits | reported |
-| `batch_i` (datagrams per hand-off) | ≥ 0.9 × R4's per path | below: `FINER-IO` flag, the c8 CPU mechanism |
-| `spare_bind_i` | Stage G ≈ the `hand_bind` share (no repair at Bulk, so moot); Stage A 0.5–1.0 under saturation | reported |
-| `store_pin` | c2 ≈ 0: occupancy ≈ handed + holes ≈ 300, against a cap of ≈ 1 700–2 048. Copa's RTprop falls with the FIFO, but its BtlBw over-read (7–14×) keeps the cap high. c8: 0–0.3, from holes during recovery backlogs | GATE store-limited lines (paused, B < β) > 10 % at c2: `STORE-LIMITED` flag (W1.2's H1) |
-| `fifo_wait_resend_i` | ≤ 10 ms p95 on every path | reported |
-| `infl_vs_out` | ≈ 60× low at c2 in every arm (the defect, unchanged) | reported |
+| **c8 server CPU** (predicted failure) | `cpu_srv/GB` GATE/BASE and R4/BASE; `batch_i` and tx batches per leg; `[IOWN]` per-leg polls and drains | GATE/BASE > 1.03, or `batch_i` < 0.9 × R4's on a leg: diagnose (finer I/O from admission, or the window's pacer bursts as in §48b), then fix or register the cost as priced, with its own number |
+| **c2 goodput** (predicted failure) | goodput GATE/BASE and R4/BASE; `starve_i`; `reopen_i` (p99 ≤ L + one owner poll); ProbeRtt counters (`qrn`, `qrus`, `qrb`, `qab`); `app_limited_i` | GATE/BASE < 0.995: attribute it to starvation, reopen latency, ProbeRtt or the unattributed rest, then fix or price it |
+| **Gate executes** | `gate=on` on GATE rows; `hand_bind` > 0.5 at c2 Bulk; B p95 ≤ β + one batch; RouteProbe reads > 0 and `congestion_state()` reads = 0 | any failure: harness or build fault; stop |
+| **Clamp at Auto** | `spare_bind`; coded share GATE against R4 | reported; a coded share on GATE ≥ R4's while `hand_bind` > 0.5 means the clamp is inert, so stop |
+| **Low rate** | repairs per source against the rate law's r (from the `[DIAG]` rate echo); B max; first-send delay against R4 | repairs per source outside r ± 5 % or B max > 1: the β < 1 handling fails, so stop |
+| **§8.4 step in time** | β and spare across ProbeRtt episodes (`qm = R`) | reported, for the amendment decision |
 
-## 5. Predictions (before any row). Ratios against BASE; the R4 column is the §48d prediction of `sender-queue-law.md` §6
+**Step 1 predictions (ratios against BASE).**
 
-**Stage G (Bulk).**
+| cell | readout | R4 / BASE | GATE / BASE |
+|---|---|---|---|
+| c2 Bulk | goodput | 0.987–0.995 | 0.985–0.998 |
+| c2 Bulk | A_x | 0.97–1.04 (≈ 206 ms) | 0.12–0.17 (≈ 25–34 ms) |
+| c2 Bulk | in-order delay mean | 0.98–1.06 | 0.15–0.40 |
+| c2 Bulk | cpu_cli/GB, cpu_srv/GB | 0.96–1.00, 0.94–1.00 | 0.96–1.04, 0.94–1.04 |
+| c8 Bulk | goodput | 0.974–0.988 | 0.985–1.05 |
+| c8 Bulk | A_x fast; slow | 0.55–0.80; 0.90–1.15 | 0.13–0.20; 0.36–0.47 |
+| c8 Bulk | in-order delay mean | 1.30–1.60 | 0.30–0.90 |
+| c8 Bulk | cpu_srv/GB | 1.035–1.065 | 1.03–1.08 (finer admission at β ≈ 1.3 × batch is the added risk) |
+| c2 Auto | coded share | as BASE ± 30 % | ≤ 0.3 × R4's |
+| low rate | repairs per source | = r | = r (±5 %); B max ≤ 1 |
 
-| cell | readout | R4 / BASE (reported) | GATE / BASE (scored clauses in bold) | mechanism |
-|---|---|---|---|---|
-| c1s | **goodput** | 0.97–1.03 at guard size | **0.97–1.03** | no collapse at guard size on main (§64) |
-| c1s | **cpu_cli/GB, cpu_srv/GB** | 0.95–0.99; 0.96–1.00 | **0.95–1.01; 0.96–1.02** | ring; the gate adds a per-turn comparison |
-| c1s | wire RTT | 1.15–1.60 | 1.15–1.60 | the controller's window, unchanged by the gate |
-| c1s | delivered delay A_x | 0.80–1.05 | **0.35–0.65** (≈ 7–11 ms) | wrtt + β/x, with β ≈ 3 ms at c1s |
-| c1d | **goodput** | 0.98–1.06 | **0.98–1.06** | as §48b (CAND better through BASE's tail rows) |
-| c2 | **goodput** | 0.987–0.995 | **0.985–0.998** | the residual is the controller's (ProbeRtt 0.13–0.23 %, unattributed ≈ 0.6 %); the gate's refill after window jumps costs ≤ 0.1 % |
-| c2 | **cpu_cli/GB, cpu_srv/GB** | 0.96–1.00; 0.94–1.00 | **0.96–1.03; 0.94–1.03** | fewer queued datagrams against more producer comparisons |
-| c2 | wire RTT | 0.17–0.29 | 0.17–0.29 | unchanged |
-| c2 | delivered delay A_x | 0.97–1.04 (≈ 206 ms) | **0.12–0.18** (≈ 26–37 ms) | the 1 800-datagram FIFO is gone: wrtt + β/x |
-| c2 | **in-order delay mean** | 0.98–1.06 (≈ 345 ms) | **0.15–0.40** (≈ 50–140 ms) | the sojourn falls ≈ 180 ms, and holes recover on a ≈ 30 ms loop instead of ≈ 210 ms |
-| c8 | **goodput** | 0.974–0.988 | **0.985–1.05** | the leg-1 hole clock falls from ≈ 0.57 s to ≈ 0.1 s, so H0 and the 3.9 s main tail shrink (§48b tail law tail ≈ H0/μ) |
-| c8 | **cpu_cli/GB, cpu_srv/GB** | 1.015–1.035; 1.035–1.065 | **1.00–1.035; 1.03–1.065** | the server's finer slow-leg I/O is the window's, so it stays |
-| c8 | wire RTT, fast; slow | 0.17–0.28; 0.35–0.45 | the same | unchanged |
-| c8 | A_x, fast; slow | 0.55–0.80; 0.90–1.15 | **0.13–0.25; 0.35–0.50** | B0 and B1 → β |
-| c8 | **in-order delay mean** | 1.30–1.60 | **0.30–0.90** | resends no longer wait 0.24–0.49 s in leg 1's FIFO; the 20-gap horizon's hold falls with the clock |
-| c8 | B1, median over 4–16 s | R4 450–1 100; BASE ≤ 10 | GATE ≤ 15 | the cap-step bursts wait in the intake (back-pressure) instead |
+With n = 3 these are directional readings, not tests.
 
-- **Delay readout definition, stated.** The in-order delay is measured from the source-sent curve. Under the gate, emission happens at hand-off, so the time a unit spends held back before hand-off is not counted.
-  - For the perf source that time is zero: it is back-pressured and holds no queued data, just as BASE's store pause blocks it before emission. So the arms compare fairly here.
-  - That would not hold for a source that queues ahead of the sender, such as a TUN channel. No row here has one.
-- **Label (stage G).**
-  - **PASS ≈ 0.35.**
-  - **FAIL ≈ 0.65,** most likely through c8 `cpu_srv/GB` (+3 to +6.5 % against an A/A q95 of 4.7 %) or c2 goodput (−0.2 to −1.5 % against d80 1 %).
-  - A FAIL with the delay clauses better goes to the owner as a trade, not as a regression of the gate. GATE against R4 isolates the gate's own effect.
+## 4. Step 2: the scored session, two arms (GATE against BASE)
 
-**Stage A (Auto, reported).**
-- **GATE against R4:**
-  - coded share ≤ 0.3 × R4's at both cells (the clamp takes repair to ≈ 0 while saturated);
-  - goodput 1.00–1.05;
-  - A_x as in stage G;
-  - in-order delay: no sign predicted (less FEC means more holes for ARQ, but a much shorter loop).
-- **R4 against BASE:** as in stage G within A/A.
-- **Witnesses:** cod > 0 on BASE and R4 rows; `spare_bind` 0.5–1.0 on GATE rows.
+Step 2 is registered only after step 1's rules are cleared, and with any priced cost written in.
 
-**Stage R (Realtime ρ = 1, reported).**
-- **GATE against BASE:** c2 A_x 0.12–0.20; goodput 0.97–1.03; completion on every row where BASE completes.
-- **R4 against BASE:** A_x 0.95–1.05.
+| stage | cells | rows | role |
+|---|---|---|---|
+| **G, the guard** | plan 41d exactly: c1s and c1d at guard size, c2 and c8 at 600 MB, Bulk, `--window-reliable`, 12 + 12, rank-minp v2, 10 000 relabellings, seed 4141, PASS iff p > 0.05 | 96 | scored |
+| **A, Auto** | c2 and c8 at 600 MB | 12 + 12 per cell, 48 | reported. Witnesses: cod > 0 on BASE (`VOID-NOREPAIR` otherwise); `hand_bind` > 0 on GATE (`VOID-INERT` otherwise) |
+| **R, Realtime** | c2 at 100 MB, ρ = 1 witnessed by `window_reliable: true` on both ends (plan 64's stage R pattern) | 12 + 12, 24 | reported |
+| **L, low rate** | step 1's low-rate cell | 6 + 6, 12 | reported. A witness of the β < 1 handling |
 
-## 6. Decision rule
+- **ρ < 1 is not run.** Promotion there is blocked on the three-knob lifetime (Q-S11).
+- **Post-outage drain.** The VM harness cannot cut a link, so the three-knob verdict's witness (`spare_bind` in a post-outage drain with repair on) is the host L0 netem test of §2, re-run on the pinned binary. A VM stage is added if the harness gains a link cut.
+- **Cost.** About 3 h of rows. Set `LD_HARD` at launch + 5 h.
 
-1. **NO VERDICT** if a stage is incomplete or `GATE-HO` failed.
-2. **VOID-INERT or VOID-NOREPAIR** rows are replaced once, at most 4 per stage. More than that reads NO VERDICT for the stage.
-3. **Stage G PASS, with no `GATE-LEAK` or `STORE-LIMITED` flag:** the merge question goes to the owner, with stage A and R readings beside it. The question is GATE as the new default, an ADR superseding ADR-0054's default and deleting quinn's BBR path unless kept as a reference arm (ADR-0073).
-4. **Anything else** goes to the owner with GATE against R4 printed, so the gate's own effect is separated from the controller's.
-5. **Nothing merges to main automatically,** and the gate does not merge on stage G alone (`meas-guard-bulk-blind`).
+**Step 2 predictions.**
 
-## 7. Open before registration
+| cell | scored clause (GATE / BASE) | band |
+|---|---|---|
+| c1s | goodput; cpu_cli/GB; cpu_srv/GB | 0.97–1.03; 0.95–1.01; 0.96–1.02 |
+| c1d | goodput | 0.98–1.06 |
+| c2 | goodput; cpu_cli/GB; cpu_srv/GB; in-order delay mean | 0.985–0.998; 0.96–1.04; 0.94–1.04; 0.15–0.40 |
+| c8 | goodput; cpu_cli/GB; cpu_srv/GB; in-order delay mean | 0.985–1.05; 1.00–1.035; 1.03–1.08; 0.30–0.90 |
 
-- **Plan number and harness work.** Three-arm interleave, the `[HOFF]` parser, stage A's witnesses, and the R4 and GATE builds. Sonnet harness brief, as for §64.
-- **The A/A resolution for the new readouts:** A_x is not a v2 clause; the in-order delay is.
-- **Q-S10:** the gate reads quinn's cwnd and srtt (its pacer's inputs). The owner rules whether that is admissible under paper §8.4.
-- **Q-S2 is settled by this draft as v2.** The c1s row size is therefore guard size.
-- **Q-S11:** promotion at ρ < 1 (stage E).
-- **Gate scope, stated:** first sends and proactive repair are gated; control and resends are exempt and staged first. The c8 in-order and goodput bands assume that resends overtake.
+- **Reported:** A_x per leg as in step 1; wire RTT 0.17–0.29 at c2, 0.17–0.28 and 0.35–0.45 on c8's legs, 1.15–1.60 at c1s; stage A's coded share ≤ 0.3 × BASE's under saturation; stage R's A_x 0.12–0.20.
+- **The label, as predicted now:** PASS ≈ 0.35, through c8 `cpu_srv/GB` or c2 goodput. Step 1 exists to move this before scoring.
+- **Witnesses and bind gauges** are as in step 1, with the same stop rules.
+
+## 5. Decision rule (step 2)
+
+1. **NO VERDICT** if `GATE-HO` failed, a stage is incomplete, or more than 4 witness-voided slots occur in a stage.
+2. **Stage G PASS**, with no step-1 stop rule firing in step 2 and stage L's witness holding: the merge question goes to the owner. The question is GATE as the new default (`bbr_rs` with the gate on), by an ADR superseding ADR-0054's default and amending paper §8.4. Promotion holds at ρ = 1 only.
+3. **Anything else** goes to the owner, with step 1's R4 readings beside it.
+4. **Nothing merges automatically,** and nothing merges on stage G alone (`meas-guard-bulk-blind`).
+
+## 6. Open before registration
+
+- **Harness work:** the plan number, the `[HOFF]` parser, step 1's three-arm interleave, stage L's pacing, and step 2's stage A and L witnesses.
+- **The owner's acceptance of the §8.4 amendment** before step 2.
+- **The A/A resolution** of the new readouts (A_x, `[HOFF]`).

@@ -3148,81 +3148,98 @@ needs a per-path-account arm at the same geometry.
 
 That band is free in the sense of the three-knob derivation's Revision 4 §13.1. The law is δ-free by U = log x − δ·log d, not by assumption.
 
-**The law** (per path i, at each producer turn):
+**The law** (per path i; revised 2026-11-26 after review: the reopen latency L_i replaces the measured hand-off interval, the owner republishes while its queue is non-empty, and the clamp reads the window). Let F_i be quinn's bytes in flight on path i.
 
 ```text
-   hand the next gated unit to path i  ⇔  B_i < β_i        (and the store's pause is open, Section 6.1)
-   β_i      =  R_i · ( g_i + Δ_v,i ) / s_i ,     Δ_v,i = VIEW_REFRESH + p̂_i
-   R_i      =  1.25 · cwnd_i / srtt_i          (quinn's pacer refill; the controller's rate r_i when it supplies one)
-   spare_i  =  ( β_i − B_i )⁺ / β_i ,    r_eff,i = min( r_law , spare_i )      (replaces (cwnd − in_flight)/in_flight)
+   a unit = one first send plus the repair it is owed; it is handed to path i  ⇔  B_i < β_i   (and the store's pause is open, Section 6.1)
+   β_i      =  R_i · L_i / s_i
+   R_i      =  1.25 · cwnd_i / srtt_i                      quinn's pacer refill (the controller's r_i when it supplies one)
+   L_i      =  VIEW_REFRESH + ℓ̂_o,i + P_poll + ℓ̂_p           the worst-case time from quinn draining to the producer handing again
+   spare_i  =  ( cwnd_i − F_i − s_i·B_i )⁺ / ( F_i + s_i·B_i ) ,   r_eff,i = min( r_law , spare_i )      (+∞ when F_i + s_i·B_i = 0)
+   owner:   while hand_i − tx_i > 0 at its last publish, republish every VIEW_REFRESH (new)
 ```
+
+The units:
+- **First sends, with their owed repair, are gated.** The repair a source is owed is decided at that unit's admission, on the B_i the gate saw, and rides in the same hand-off.
+- **Control datagrams and resends are exempt.** They are staged first in each producer turn and counted in B_i.
 
 | symbol | meaning | provenance |
 |---|---|---|
-| B_i | datagrams the producer has staged for path i that quinn has not transmitted (the producer's own staged count minus quinn's `tx`, so the owner's command channel is included) | measured |
-| R_i | the refill rate of quinn's pacer token bucket, bytes/s | cited: RFC 9002 §7.7, rate = N·cwnd/smoothed_rtt with N = 1.25 ("ensures that variations in RTT do not result in underutilization of the congestion window"), quoted from the RFC as fetched; quinn-proto implements it as `new_tokens = window · 1.25 · elapsed_rtts` (`pacing.rs:110` in the vendored copy on `pacing-seam-2`, `:92` upstream in 0.11.14 as Section 8.4 cites, the offset being the seam's added lines). Under `RWM_BBR_PACE` the bucket refills at the controller's r_i (ADR-0075). cwnd_i and srtt_i are quinn's own `PathStats`, already published by the owner |
-| g_i | mean interval between hand-offs to path i's owner while units wait | measured: owner `tx_batches` per wall second while the intake is non-empty |
-| Δ_v,i | the most the `tx` snapshot can lag while the owner is active | derived from the publish rule: the owner publishes on a poll that did I/O once the last publish is ≥ `VIEW_REFRESH` = 1 ms old (`io_owner.rs`, `full = dirty && ≥ VIEW_REFRESH`), so the snapshot is at most one refresh period plus one poll interval old. p̂_i is that interval, measured (`[IOWN]` wall_s/polls: 0.26 ms at c1s, 0.81 ms at c2, 0.86 and 1.30 ms on c8's legs). After an idle owner the snapshot is older, but a stale `tx` only reads B too high, so the gate errs tight and the producer's next command refreshes it within one poll; a measured age is not used, because after an idle second it would open β to the whole backlog (c2: 12 900/s × 1.5 s ≈ 19 000 datagrams) |
+| B_i | datagrams the producer has staged for path i that quinn has not transmitted: the producer's own staged count minus quinn's `tx`, so the owner's command channel is included | measured |
+| R_i | the refill rate of quinn's pacer token bucket, bytes/s | cited: RFC 9002 §7.7, "rate = N * congestion_window / smoothed_rtt", with N = 1.25 given as the example of "a value for N that is small, but at least 1" so that "variations in RTT do not result in underutilization of the congestion window" (quoted from the RFC as fetched). quinn-proto implements it as `new_tokens = window · 1.25 · elapsed_rtts` (`pacing.rs:110` in the vendored copy on `pacing-seam-2`; `:92` upstream in 0.11.14, as Section 8.4 cites; the offset is the seam's added lines). Under `RWM_BBR_PACE` the bucket refills at the controller's r_i (ADR-0075) |
+| cwnd_i, F_i | quinn's congestion window and bytes in flight | measured: atomics the `RouteProbe` wrapper publishes from each `on_end_acks(now, in_flight, …)` and its inner controller's `window()`. Never `congestion_state()`, which clones the controller |
+| srtt_i | quinn's smoothed RTT | measured: the owner's view (`PathStats.rtt`) |
+| VIEW_REFRESH | the owner's republish period | cited code constant, 1 ms (`io_owner.rs:91`). It is bounded here because the owner republishes on that period whenever its last published queue was non-empty (new). Today it publishes only on a poll that did I/O, so after an owner goes idle a stale view can last until the next inbound datagram |
+| ℓ̂_o,i | the owner's work per poll | measured: the p99 over the last second of `[IOWN]` per-poll busy time (≈ 10–20 µs at c2 and c8, ≈ 0.12 ms at c1s on §48b) |
+| P_poll | the interval at which a producer with no room looks again | cited code constant: the 1 ms backpressure poll (`net/mod.rs`, `poll_1ms`, armed while the source is paused). It is the reason a closed gate is re-read without any event |
+| ℓ̂_p | the producer's work per loop iteration | measured: the p99 over the last second of `[DIAG]` busy_us/n (96 µs at c2, 557 µs at c8, 504 µs at c1s on §48b) |
 | s_i | the path's datagram size | measured |
-| N·P | the store bound | resource bound (Section 6.1) |
 | r_law | the rate law r(β(δ)) | Section 4; passed through unchanged |
 
-**What is gated, and in what order.** A producer turn stages a path's datagrams in this order: control, resends (gap and margin), then the gated kinds while B_i < β_i.
-- **Gated:** first sends and proactive repair, which is also clamped by spare_i.
-- **Exempt from the bound, but counted in B_i:** resends and control datagrams.
-  - They are bounded by their own laws: the resend budget, and the deficit-recovery exemption the engine already keeps so a full window cannot deadlock a frontier hole.
-  - So a resend waits behind at most β_i plus the exempt traffic already staged, never behind the store's surplus.
-  - This is a choice by datagram kind, not by a dial.
-- **At every ρ.** At ρ < 1 the gate adds a source pause where today there is none (`tx_paused = reliable && …`). Without the three-knob intake's shedding, the units then wait in the source's own queue: the TUN channel and the kernel's, which tail-drops. Today they wait in quinn's FIFO, which drops the oldest. Under this law that is the one behaviour change with no shedding law behind it.
+**Why L_i, and not a measured hand-off interval.**
+- An interval measured between hand-offs grows without bound when nothing is handed: in an outage, or with the gate closed. It would then open β to the whole backlog in the post-outage drain. A measured snapshot age has the same fault.
+- L_i is built from two loop periods, both cited constants, and two per-iteration work times. Silence lowers the work times (idle polls do less), never raises them. So β can only shrink in an outage, never grow.
+- **The reopen event.** When quinn drains below β_i, the owner republishes within VIEW_REFRESH + ℓ̂_o, by the non-empty republish rule. The paused producer then re-reads B within P_poll + ℓ̂_p and hands. So a closed gate reopens within L_i (≈ 2.1 ms at c2, ≈ 2.6 ms at c8 and c1s) with no inbound traffic.
+- β_i = R_i·L_i is exactly what the pacer can release at its refill rate in that time, so the pacer is not left idle by the reopen.
+- A full bucket can add up to its capacity (10–256 MTU) at once. β does not cover that burst, and `starve_i` gauges whether it ever empties the queue with the window open.
 
-**Why the pacer's rate, and not a gain of our own.** β is a staging bound, not a control target. Its job is to leave the pacer something to send for as long as the pacer can send.
-- The bucket refills at exactly R_i, so R_i·(g + Δ_v) is what the pacer can release *at its refill rate* before the producer looks again. A full bucket can release up to its capacity (10–256 MTU) at once on top; β does not cover that burst, and `starve_i` gauges whether it ever empties the queue while the window is open.
-- So the 1.25 is neither BBR's ProbeBw pacing gain nor a choice made here. It is quinn's pacer law (RFC 9002 §7.7), read through to the bound.
-- R_i tracks the controller's window as it grows, so the bound never throttles Startup or ProbeBw. A filter on past transmit rates would cap growth at its own headroom per filter window.
+**Why the pacer's rate, and not a gain of our own.**
+- β is a staging bound, not a control target. The 1.25 is neither BBR's ProbeBw pacing gain nor a choice made here: it is quinn's pacer law, read through to the bound.
+- R_i follows the controller's window as it grows, so the bound never throttles Startup or ProbeBw. A filter on past transmit rates would cap growth at its own headroom per filter window.
+
+**Why the clamp reads the window.**
+- The spare is the engine's existing form, `(cwnd − in_flight)/in_flight` (`PathState::spare_capacity`), with honest inputs. Quinn's window replaces Copa's cwnd. Quinn's in-flight plus the hand-off backlog replaces the engine count, which §48b measures 60× low.
+- A form on B and β alone fails at call rates, where β < 1. One staged datagram would read the path as full, so proactive repair would be clamped away exactly where it matters most.
+- The window form reads saturation directly:
+  - **c2 saturated:** F ≈ cwnd and B ≈ β, so spare = 0.
+  - **A 36/s call at srtt 100 ms with headroom:** cwnd ≈ 11 datagrams, F ≈ 4, B = 0 at admission, so spare = 1.75, and every r ≤ 1.75 passes unclamped.
+  - **The same call under overload:** F → cwnd, so spare → 0.
 
 **Shape.**
-- **Units.** β_i is [B/s]·[s]/[B], datagrams. spare_i is in [0, 1].
-- **Paths.** β_i is per path, and N enters only through the store bound.
-- **Dials.** No δ, ρ, T or hint enters β_i or spare_i: both are constant in every dial and identical at every preset.
-- **Inputs.** β_i increases with cwnd, g and p̂, and decreases with srtt.
+- **Units.** β_i is [B/s]·[s]/[B], datagrams. spare_i is [B]/[B].
+- **Per path.** N enters only through the store bound.
+- **Dials.** No δ, ρ, T or hint enters β_i or spare_i. Both are constant in every dial and identical at every preset.
+- **Monotone.** β_i rises with cwnd, falls with srtt, and rises with the two work times. spare_i falls as F_i or B_i rises.
 
-**Size, on the §48b CAND rows** (quinn's cwnd and srtt from `[DIAG]`, g and p̂ from `[IOWN]`):
+**Size, on the §48b CAND rows** (quinn's cwnd and srtt from `[DIAG]`, the work times from `[DIAG]` and `[IOWN]`):
 
-| cell | β (datagrams) | at the path rate | FIFO today |
-|---|---|---|---|
-| c2 | ≈ 53 | ≈ 5.5 ms | ≈ 1 800 |
-| c8 fast leg | ≈ 63 | ≈ 7 ms | ≈ 970 |
-| c8 slow leg | ≈ 14 | ≈ 7.5 ms | 480–990 |
-| c1s | ≈ 270 | ≈ 3 ms | ≈ 715 |
+| cell | L (ms) | β (datagrams) | at the path's rate | measured batch (datagrams per hand-off) | FIFO today |
+|---|---|---|---|---|---|
+| c2 | 2.11 | ≈ 27 | ≈ 2.8 ms | 22 | ≈ 1 800 |
+| c8 fast leg | 2.57 | ≈ 34 | ≈ 3.8 ms | 25.6 | ≈ 970 |
+| c8 slow leg | 2.57 | ≈ 6.8 | ≈ 3.8 ms | 5.2 | 480–990 |
+| c1s | 2.63 | ≈ 380 | ≈ 4.1 ms | 57 | ≈ 715 |
+| a 36/s call, ProbeBw (cwnd 7–11 datagrams) | ≈ 2.1 | ≈ 0.2–0.3 | — | 1 | — |
 
-β exceeds each path's measured datagrams per hand-off (5–57), so it forces no finer I/O.
-
-**At a call rate** β depends on where the controller's window sits, because R reads cwnd:
-- In ProbeBw on a 36/s path with srtt 100 ms, W ≈ 2·b̂·m̂ + A ≈ 7 datagrams, so R ≈ 90/s and β ≈ 0.4: "hand only when the FIFO is empty".
-- In Startup at W_init (200 × 1 200 B), which `bbr_rs` does not leave while app-limited, R ≈ 3 MB/s and β ≈ 12 datagrams, about 0.33 s of a 36/s call.
-- Under quinn's BBR, β follows its window: tens of datagrams.
-
-With headroom this does not matter, because quinn sends each datagram on hand-off and B ≈ 0. Under a sustained overload the path is not app-limited, so `bbr_rs` leaves Startup and β falls to below one datagram. The Startup transient and quinn's BBR are the cases where up to ≈ 12 datagrams can wait in quinn.
+- **β sits only 1.2–1.3× above today's batch at c2 and c8.** If admission held batches below today's sizes, hand-offs would get finer, which is the c8 CPU mechanism. `batch_i` gauges it, and the session's diagnostic step reads it before any scoring.
+- **At a call rate β < 1.** A unit is handed when quinn's queue is empty, which at 36/s it is within microseconds of each send. With the non-empty republish the view is fresh by the next source 28 ms later, so no unit waits. Its repair rides with it at spare ≥ r.
+- **In Startup at W_init** (200 × 1 200 B), which `bbr_rs` does not leave while app-limited, β ≈ 12. Under quinn's BBR β is tens of datagrams. Under a sustained overload `bbr_rs` leaves Startup.
 
 **What it changes, and what it does not.**
-- **Send gate and repair clamp.** Today both read Copa's cwnd and an engine in-flight count that §48b measures at 33–37 at c2, against ≈ 2 000 outstanding. Neither binds at c2 or c8. Under the law they read B_i and β_i.
-- **Placement.** Its load term I_i/W_i (Section 5.7) becomes B_i/β_i.
-- **The store.** The store law is unchanged by this law; its δ term is the open seat below. With the FIFO empty, Copa's echo-clock RTprop no longer reads the FIFO, so the cap can fall from its pin, and `store_pin` and a store-limited share are gauged.
+- **Send gate and repair clamp.** Today both read Copa's cwnd and an engine in-flight count that §48b measures at 33–37 at c2 against ≈ 2 000 outstanding, and neither binds at c2 or c8. Under this law the gate reads B_i against β_i, and the clamp reads quinn's window and in-flight.
+- **Placement.** Its load term I_i/W_i (Section 5.7) would become (F_i + s·B_i)/(s·W_i). This is not part of the first build.
+- **The store.** The store law is unchanged; its δ term is the open seat below. With the FIFO empty, Copa's echo-clock RTprop no longer reads the FIFO, so the cap can fall from its pin. `store_pin` and a store-limited share are gauged.
 - **No ρ bit selects the gate,** unlike today's `tx_paused = reliable && …`.
-- **Nothing from the controller's model or the dials is read.** The gate reads quinn's pacer inputs, cwnd and srtt, as every pacer does. Whether that counts as "the substrate window as an engine input" in the sense of Section 8.4 is an owner question.
+- **At ρ < 1** the gate adds a source pause where today there is none. Units then wait in the source's queue (the TUN channel, then the kernel's tail drop) instead of quinn's drop-oldest FIFO. The shedding law that belongs there is the three-knob lifetime T (the intake's L1 and wait limit). Promotion at ρ < 1 depends on it, and no interim law is added.
 
-**Gauges.**
-- **Bind gauges, one per clamp:**
-  - `hand_bind_i`, the share of producer turns with B_i ≥ β_i. It should read the path's window-limited share, and is reported with the quantiles of β_i and B_i.
-  - `spare_bind_i`, the share of first sends with spare_i < r_law.
-  - `store_pin`, the share of lines with n ≥ N·P.
-- **Premise gauges:**
-  - `starve_i`, the share of time B_i = 0 while units wait and quinn's window has room.
-  - `app_limited_i`: quinn sets `app_limited` when its queue is empty with window room, and `bbr_rs` then takes samples raise-only.
-  - `batch_i`, datagrams per hand-off.
+**Amendment to Section 8.4.** Section 8.4 says that "any of our laws that reads the substrate's window or its RTT reads them too" (the authority handover and the ProbeRtt dip), and that this is "one more reason the substrate window is not a store-law input". This law reads the window in two places: R_i, and the clamp's spare.
+- That is not a store-law input. But the sentence's reasoning applies: the ProbeRtt dip passes into β and the spare as a step in time, about one round after W1r2's fix.
+- So this section **amends** Section 8.4 for the hand-off reserve and the repair clamp only. They may read the substrate's window and in-flight through the `RouteProbe` atomics, because they bound what the actuator will take. Every step in time they inherit is gauged: β and spare are read across ProbeRtt episodes.
+- **Until the amendment is accepted,** the read runs only in the diagnostic, behind a default-off environment arm (an experiment arm, not a dial).
+
+**Bind gauges, one per clamp.**
+- `hand_bind_i`: the share of producer turns with B_i ≥ β_i. It should read the path's window-limited share. Reported with the quantiles of β_i and B_i.
+- `spare_bind_i`: the share of admitted units with spare_i < r_law.
+- `store_pin`: the share of lines with n ≥ N·P.
+
+**Premise gauges.**
+- `reopen_i`: the time from quinn's queue falling below β_i to the next hand-off. It must be ≤ L_i + one owner poll.
+- `starve_i`: the share of time with B_i = 0 while units wait and quinn's window is open.
+- `app_limited_i`: quinn sets `app_limited` when its queue is empty with window room, and `bbr_rs` then takes samples raise-only.
+- `batch_i`: datagrams per hand-off.
+- The `RouteProbe` atomics' read count, to show that `congestion_state()` is not called.
 
 **Open: the δ seat.** The law keeps δ out of the hand-off. Where δ sits for the queue that now waits in the sender is open. The candidates are the three-knob intake's wait limit, and a δ-priced brake below the controller's window (Section 6.1's q(δ), W1.2's candidate A).
-
 
 ---
 
@@ -5226,7 +5243,7 @@ engine.
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s
    pause        ⇔  (H + 1 − F − |released|) ≥ cap  ∨  cwnd_full   (every ρ)   ADR-0084, pending; main: store_len ≥ cap ∨ cwnd_full, at ρ = 1 only
    burst b      =  emit_burst   (every N; no path-count input; RWM_EMIT_BATCH, on)  emit_burst_bound
-   β_i          =  1.25·cwnd_i/srtt_i · (g_i + VIEW_REFRESH + p̂_i)/s_i ;  hand a first send or repair ⇔ B_i < β_i ;  spare_i = (β_i − B_i)⁺/β_i   (Section 6.8, proposed)  —
+   β_i          =  1.25·cwnd_i/srtt_i · (VIEW_REFRESH + ℓ̂_o + P_poll + ℓ̂_p)/s_i ;  hand a unit (first send + owed repair) ⇔ B_i < β_i ;  spare_i = (cwnd_i − F_i − s·B_i)⁺/(F_i + s·B_i)   (Section 6.8, proposed)  —
 ```
 
 ### A.6 The recovery decision (Section 7)
