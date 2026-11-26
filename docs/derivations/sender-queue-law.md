@@ -18,10 +18,10 @@
 **The law, on one line** (per leg i; the derivation is §2):
 
 ```text
-   hand a unit to leg i  ⇔  B_i < β_i ,   β_i = 1.25 · ν̂_i · (g_i + Δ_v) ;   else it waits in the intake, whose head expires  ⇔  a ≥ min( T − R , w(δ, x̄, t_ov) )
+   hand a unit to leg i  ⇔  B_i < β_i ,   β_i = R_i·(g_i + a_i)/s_i ,  R_i = 1.25·cwnd_i/srtt_i ;   else it waits in the intake, whose head expires  ⇔  a ≥ min( T − R , w(δ, x̄, t_ov) )
 ```
 
-- B_i is what the producer has staged for leg i and quinn has not yet transmitted (the producer's own staged count minus quinn's `tx`, so datagrams still in the owner's channel count), ν̂_i the leg's windowed-max transmit rate, g_i the interval between hand-offs, Δ_v the transmit counter's staleness.
+- B_i is what the producer has staged for leg i and quinn has not yet transmitted (the producer's own staged count minus quinn's `tx`, so datagrams still in the owner's channel count), R_i quinn's pacer refill rate (RFC 9002 §7.7, N = 1.25; the controller's rate under `RWM_BBR_PACE`), g_i the interval between hand-offs, a_i the measured age of the `tx` snapshot, s_i the datagram size. Revised 2026-11-26 (§2.3a): this replaces the first form 1.25·ν̂_i·(g_i + Δ_v), whose ν̂ filter would throttle Startup and whose Δ_v was an unmeasured code constant.
 - w is Revision 4's wait limit (§13.3), taken by reference.
 - The `bbr_rs` window is unchanged and δ-free: W_i = 2·b̂_i·m̂_i + A_i.
 - The repair clamp reads the same quantity: spare_i = (β_i − B_i)⁺ / β_i.
@@ -58,7 +58,7 @@ If the owner accepts, W1.2's "δ on the store law" step is withdrawn. Its other 
 ```text
    per leg i, at each producer turn:
       hand the next unit to leg i   ⇔   B_i < β_i        (and n < N·P)
-      β_i      =  1.25 · ν̂_i · ( g_i + Δ_v )                                   [datagrams]
+      β_i      =  R_i · ( g_i + a_i ) / s_i ,   R_i = 1.25 · cwnd_i / srtt_i      [datagrams]
       spare_i  =  ( β_i − B_i )⁺ / β_i ,      r_eff,i = min( r_law , spare_i )
    intake (pooled over legs), at each dequeue with a younger unit waiting:
       expire the head u  ⇔  a(u) ≥ min( T − R , w ) ,   w = (c⁺/x̄) · min(1, 2/(1 + y)) ,  y = δ·t_ov/(c⁺ + x̄·ô)   (Revision 4 §13.3)
@@ -68,10 +68,10 @@ If the owner accepts, W1.2's "δ on the store law" step is withdrawn. Its other 
 | symbol | meaning | provenance |
 |---|---|---|
 | B_i | datagrams the producer has staged for leg i and quinn has not yet transmitted: the producer's own staged count minus quinn's `tx`. That includes what still sits in the owner's command channel, which `hand − tx` misses, so the producer cannot overfill by a batch | measured: the producer's count (new) and the owner's `tx` snapshot. Today's `dgq` gauge `hand − tx` reads the quinn part (`p0-dwell-diag.md`: within a few % of the queue) |
-| ν̂_i | the leg's transmit rate, windowed max over the last 10 of its rounds (round = its wire srtt) | measured; the filter form is BBR's BtlBw filter (cited: v1 `bbr_bw_rtts = 10`, paper §8.4) |
-| 1.25 | quinn's pacing gain on the window | cited: quinn-proto `pacing.rs:92` (paper §8.4, "The actuator") |
+| R_i | quinn's pacer refill rate, bytes/s: 1.25·cwnd_i/srtt_i, or the controller's rate r_i when it supplies one | cited: RFC 9002 §7.7 (rate = N·cwnd/smoothed_rtt, N = 1.25), quinn-proto `pacing.rs:110`; ADR-0075 for r_i. cwnd_i, srtt_i: quinn `PathStats`, already in the owner's view |
+| s_i | the leg's datagram size | measured |
 | g_i | mean interval between hand-offs to leg i's owner while the intake holds units | measured: owner `tx_batches` per wall second |
-| Δ_v | staleness of the `tx` snapshot | cited code constant: `VIEW_REFRESH` = 1 ms (`io_owner.rs:91`) |
+| a_i | age of the `tx` snapshot when the producer reads B_i | measured: a stamp on the owner's view (new; the view carries none today). `VIEW_REFRESH` = 1 ms is only the refresh period while the owner is active |
 | N·P | the store bound on outstanding seqs, holes included | resource bound, stated outside the law (status §1: per-path pool 2 048, shipped) |
 | r_law | the repair rate law r(β(δ)) | outside this law (the rate law's own seat); passed through the clamp unchanged |
 | T, a, R, ô, λ̂, D̂, t_ov, c⁺, x̄, the ramp | the three-knob intake | `three-knobs.md`, Revision 4 §3.1, §3.2, §13.3 (by reference; see §4 for its open items) |
@@ -82,7 +82,7 @@ If the owner accepts, W1.2's "δ on the store law" step is withdrawn. Its other 
 - **Units.** β is [1/s]·[s], datagrams. spare is a pure number in [0, 1].
 - **In the dials.** No δ, ρ, T or hint enters β or spare, so both are identical at every preset (constant in each dial, which is trivially continuous and monotone). δ enters only y. T enters only c⁺ = max(T − R, 0).
 - **In N.** β is per leg. A second leg adds its own β and changes nothing on the first. The intake is pooled, as in three knobs.
-- **In the inputs.** β rises with ν̂ and with g. It does not read the controller's window or model, so it does not make the controller a store input (§2.8).
+- **In the inputs.** β rises with cwnd, g and a, and falls with srtt. It reads quinn's pacer inputs (cwnd, srtt), not the controller's model (b̂, m̂); whether reading cwnd counts as §8.4's "substrate window as an input" is Q-S10.
 - **T = ∞.** c⁺ = ∞, so w = ∞ and no head ever expires, by arithmetic, as in Revision 4 §13.3. The hand-off does not read T, so the T = ∞ sender equals today's ρ = 1 sender at the same δ, apart from the gate's own deliberate change (§2.9).
 
 ## 1. Verification
@@ -232,24 +232,29 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 
 ### 2.3 The reserve β, sized
 
-**The queue must cover what the pacer can release before the next hand-off, as read through a stale counter.**
-- Window-limited, quinn paces at 1.25·W/srtt ≈ 1.25·x.
-- The next hand-off comes g later.
-- The `tx` counter is up to Δ_v old, so B is over-read by ≤ x·Δ_v.
+**The queue must cover what the pacer can release before the producer looks again.**
+- quinn's pacer bucket refills at R_i = 1.25·cwnd_i/srtt_i (RFC 9002 §7.7; quinn `pacing.rs:110`), or at the controller's r_i under `RWM_BBR_PACE`.
+- The next look comes g_i later, through a snapshot a_i old, so the pacer can release up to R_i·(g_i + a_i) bytes before B_i is seen again.
 
 ```text
-   β_i = 1.25 · ν̂_i · ( g_i + Δ_v )
+   β_i = R_i · ( g_i + a_i ) / s_i
 ```
 
-**Size check against the recorded cadence** (`[IOWN]` `tx_batches`, `tx_dg`, `wall_s`, s42 r1 rows):
+**§2.3a Provenance of the two constants of the first form (revised 2026-11-26).**
+- **The 1.25** is not BBR's ProbeBw pacing gain and not ours. It is the N of RFC 9002 §7.7's pacer ("using a value for N that is small, but at least 1 (for example, 1.25) ensures that variations in RTT do not result in underutilization of the congestion window"), which quinn implements as `new_tokens = window · 1.25 · elapsed_rtts`. It applies to a staging bound because the bound's job is to cover the actuator's release between two looks, and that release is exactly the bucket's refill. So the bound now reads the refill rate itself, R_i, and carries no constant of its own.
+- **The first form's ν̂ (a windowed-max transmit rate) is dropped.** A bound tied to past transmissions caps the controller's growth at 1.25× per filter window, so it would slow Startup (×2.885 per round) to ×1.25. R_i follows cwnd as it grows.
+- **Δ_v = 1 ms** was `VIEW_REFRESH`, a code constant with no sweep: the view refreshes every 1 ms of owner activity, and not at all while the owner idles, so its staleness is max(1 ms, the gap since the owner's last I/O). It is replaced by a_i, the snapshot's measured age at read. That needs a stamp on the view (a build prerequisite, §5).
 
-| cell, leg | x (dgr/s) | g (ms) | β (datagrams) | β in time at x | today's batch size (dgr per hand-off) | today's B (CAND) |
-|---|---|---|---|---|---|---|
-| c1s | ≈ 92 000 | 0.62 | ≈ 186 | 2.0 ms | 57 | 715 |
-| c2 | ≈ 9 650 | 2.30 | ≈ 40 | 4.1 ms | 22 | 1 804 |
-| c8 leg 0 | ≈ 8 800 | 2.92 | ≈ 43 | 4.9 ms | 25.6 | 970 |
-| c8 leg 1 | ≈ 1 810 | 2.86 | ≈ 8.7 | 4.8 ms | 5.2 (BASE 7.5) | 327 (p50 4–16 s: 480–990) |
-| a 36/s call | 36 | ≈ 3 | ≈ 0.2 | — | 1 | — |
+**Size check** (§48b CAND, s42 r1; cwnd and srtt from `[DIAG]` `qcwnd`/`wrtt`, g from `[IOWN]` `tx_batches`/`wall_s`, a ≈ 1 ms assumed until stamped):
+
+| cell, leg | cwnd (dgr) | srtt (ms) | R (dgr/s) | g (ms) | β (datagrams) | β in time at the rate x | today's batch size (dgr per hand-off) | today's B (CAND) |
+|---|---|---|---|---|---|---|---|---|
+| c1s | ≈ 580 | 5.0 | ≈ 145 000 | 0.62 | ≈ 240 | 2.6 ms | 57 | 715 |
+| c2 | ≈ 227 | 22 | ≈ 12 900 | 2.30 | ≈ 43 | 4.4 ms | 22 | 1 804 |
+| c8 leg 0 | ≈ 220 | 21 | ≈ 13 100 | 2.92 | ≈ 51 | 5.8 ms | 25.6 | 970 |
+| c8 leg 1 | ≈ 186 | 88 | ≈ 2 640 | 2.86 | ≈ 10.2 | 5.6 ms | 5.2 (BASE 7.5) | 327 (p50 4–16 s: 480–990) |
+| a 36/s call | — | 100 | ≥ 36 | ≈ 3 | < 1 at the call's own rate | — | 1 | — |
+| c8 leg 1 under quinn's BBR (BASE) | ≈ 1 400 | 250 | ≈ 7 000 | 4.16 | ≈ 36 | — | 7.5 | ≈ 1 |
 
 - **β exceeds today's per-hand-off batch on every leg**, so the gate does not force finer hand-offs. It is not a floor in disguise, and it predicts no extra I/O cost; that is the c8 CPU diagnosis's mechanism, checked by gauge (§3).
 - **β is above the counter's staleness term by construction.**
@@ -315,7 +320,8 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 | input | moved by the law? | direction and bound |
 |---|---|---|
 | B_i | it is the regulated state, as in_flight is to cwnd | held near β_i |
-| ν̂_i | only if the gate starves the queue while the controller has room | the supply is 1.25 ν̂ per interval, so ν̂′ = min(capacity, 1.25·ν̂) ≥ ν̂. This is BBR's own up-probe, so there is no contraction, and a rising capacity is found at ×1.25 per filter window |
+| R_i (cwnd, srtt) | cwnd is the controller's; the gate moves it only through app-limited samples (next rows); srtt is quinn's wire srtt, which the FIFO does not enter | none from B; the bound follows the window up, so it cannot throttle growth |
+| a_i | a blocked producer looks less often only if it parks | a up means β up, never less |
 | g_i | a blocked producer may hand less often | g up means β up, toward more reserve, never less. Bounded by the producer's wake sources; gauged |
 | R (srtt) in the wait limit | yes: the queue leaves the RTT | c = T − R grows, so less expiry. This is the intended effect, and it is not a loop on the gate |
 | the controller's W, b̂, m̂ | not read | §8.4's "the substrate window is not a store-law input" stands, and W1.2's candidate C (U1) is not reopened |
@@ -346,7 +352,7 @@ This is Revision 4 §13.1's free-band argument applied downstream: the band abov
 | `spare_bind_i` | share of first sends with spare_i < r_law | ≈ 0 with headroom; binds in overload and drain |
 | `store_pin` | share of lines with n ≥ N·P | ≈ 0 except during recovery backlogs (today the cap is at N·P on 0.80–0.82 of c2 lines with the store full) |
 | `den_bind`, `ov_frac`, `onset_bind`, `floor_bind`, `tov_resets`, `y_max`, `w_min_over_c` | the intake's clamps and edges | Revision 4 §13.3 |
-| `fifo_wait_resend_i` | B_i/ν̂_i at each resend's hand-off | ≈ β/x (≤ 5 ms) against today's 0.2–0.5 s |
+| `fifo_wait_resend_i` | B_i·s_i/R_i at each resend's hand-off | ≈ β/x (≤ 5 ms) against today's 0.2–0.5 s |
 | `infl_vs_out` | the engine in-flight count against Σ(F/s + B) | the defect gauge (§9); reported |
 | `app_limited_i` | share of quinn transmit polls on leg i that end app-limited | small under saturation; a rise at ProbeRtt exits is expected (§2.8) |
 | `bbr_rs`'s own clamps: `wmin_bind` (W at W_min = 4 MTU), `wrec_bind` (min(W, w_rec) taking w_rec), `sfloor_bind` (sampler interval at its max(m̂, 1 ms) floor), the ring's overflow count | the controller's clamps, which the hand-off inherits | ≈ 0 outside loss recovery and the first round. `wrec_bind` is the recovery window, gauged with loss episodes. The ring's overflow counter already exists |
@@ -375,7 +381,15 @@ T = ∞ does not decide it (§2.4), and the shipped store seat's pin is a fault 
 
 ## 5. Build order
 
-1. **Gauges first** (engine instrument, reported only, its own commit): ν̂_i, g_i, B_i quantiles, `fifo_wait_resend_i`, `infl_vs_out`.
+**Ruling, 2026-11-26 (coordinator and Fable, after this report).**
+- Step 2 (§48d as drafted) does not run as a scored session.
+- Steps 2 and 3 merge into one session (`reg-handoff-gate.md`): `bbrrs-r4` plus the gate is the scored promotion candidate on guard v2 with off-Bulk stages, and `bbrrs-r4` alone is a reported-only arm.
+- The δ seat (Q-S4, Q-S5) stays open, so the gate is built δ-free and the store law is unchanged.
+- The law is written in paper §6.8.
+
+The original order follows for the record.
+
+1. **Gauges first** (engine instrument, reported only, its own commit): the view's snapshot stamp a_i, g_i, R_i, B_i quantiles (producer-staged count), `fifo_wait_resend_i`, `infl_vs_out`.
 2. **§48d as drafted** (§6). It answers whether the δ-free controller fixes work in vivo. Bulk only: it cannot test the intake or the clamp.
 3. **The hand-off gate on `bbr_rs`** (δ-free, T-free, ρ-free), its own registration.
    - **Against main, and against step 2's CAND.**
@@ -440,7 +454,7 @@ T = ∞ does not decide it (§2.4), and the shipped store seat's pin is a fault 
 
 ## 7. Tests the law carries (red first, absolute; for the build in §5 step 3)
 
-1. **Gate decision, absolute.** At ν̂ = 9 650/s, g = 2.30 ms and Δ_v = 1 ms, β = 39.8: hand at B = 39, not at B = 40. At N = 1 and at N = 2 (leg 1 at ν̂ = 1 810, g = 2.86 ms: β = 8.73, hand at 8, not at 9), each leg decided on its own inputs.
+1. **Gate decision, absolute.** At cwnd = 280 000 B, srtt = 22 ms, s = 1 233 B, g = 2.30 ms and a = 1.00 ms: R = 1.25·280 000/0.022 = 15 909 091 B/s and β = 15 909 091·0.0033/1 233 = 42.58, so hand at B = 42, not at B = 43. At N = 2 the second leg (cwnd = 230 000 B, srtt = 88 ms, g = 2.86 ms, a = 1.00 ms: R = 3 267 045 B/s, β = 10.23) hands at B = 10 and not at 11, each leg on its own inputs. With `RWM_BBR_PACE` and r = 12 500 000 B/s on the first leg, β = 12 500 000·0.0033/1 233 = 33.45.
 2. **No dial is read.** Decision traces are byte-identical across Bulk, Auto and Realtime, across ±2 % δ nudges at each preset, and at ρ < 1. This is the NO-MODE-SWITCH routing witness, extending the `test_visualizer_ui` pattern to the engine.
 3. **Clamp.** spare(B = 0) = 1, spare(B = β) = 0, spare(B > β) = 0. r_eff ≡ r_law at B = 0, and repair-off traces are identical.
 4. **The leg-1 burst, red first.** In `cc_sim` or the engine sim: two legs at 100 and 20 Mbit, a store-cap step of +2 000 seqs, `bbr_rs`.
@@ -472,4 +486,10 @@ T = ∞ does not decide it (§2.4), and the shipped store seat's pin is a fault 
 2. **The engine in-flight count is not the outstanding count.** 33–37 at c2 against ≈ 2 000. The send gate, the repair clamp and placement's load term read it. Cause unidentified.
 3. **Quinn's datagram queue is unmanaged.** It is a 4 MiB FIFO with drop-oldest, shared by first sends, resends, repair and control, and invisible to every engine law. Under `bbr_rs` it holds 0.2–0.5 s.
 
-**Owed with this result:** a roadmap node for this law (`docs/roadmap/nodes.yaml`, with `build.py` and `check.py`) and the paper text for §0's formula and §2's derivation (formula-first, before any code). Neither is done in this commit.
+**Roadmap lines** (one node each, each owing a ledger verdict):
+- *Store law operates as a constant:* the shipped cap (1 + q(δ))·Σ bw·RTprop sits at its N·P clamp on 100 % of c1s, 80–82 % of c2 and 71–72 % of c8 lines in §48b under both controllers, because its inputs over-read 7–15×, so its δ term has no authority.
+- *Engine in-flight is not the outstanding count:* per-path `in_flight` reads 33–37 at c2 against ≈ 2 000 outstanding, yet the send gate, the repair clamp's spare and placement's I/W term read it; the cause is unidentified (candidate: the ack arms' expected − received release).
+- *Quinn's datagram queue is unmanaged:* one 4 MiB drop-oldest FIFO per path, with no priority or deadline, holds the store's surplus (840 under quinn's BBR and 1 800 under `bbr_rs` at c2; 480–990 on c8's slow leg) in front of every resend and control datagram; fix proposed in paper §6.8.
+- *Placement is blind to quinn's queue:* its price reads the wire RTT and a near-zero I/W, so under `bbr_rs` it over-offers c8's saturated slow leg at each store-cap step, and the bursts wait there 0.24–0.49 s.
+
+**Paper text: done** (§6.8 and an Appendix A.5 line; `tools/build_paper.sh` builds). **Owed:** the roadmap nodes above and a node for this law (`docs/roadmap/nodes.yaml`, with `build.py` and `check.py`).
