@@ -2842,6 +2842,9 @@ async fn run_window_sender(
         // channel back-pressures here (charged to `busy`, as the quinn
         // handoff it replaces was). Nothing is staged across a wait.
         txp.sec(TxSec::Flush);
+        if hg.on() {
+            hg.end_turn_live();
+        }
         transport.flush(&mut st.tx).await;
         txp.sec(TxSec::Select);
         // Wait attribution: which `select!` arm woke this iteration. Every arm below writes its
@@ -3067,12 +3070,18 @@ async fn run_window_sender(
                 // Flush any remaining packed data before shutdown
                 if pol.use_packing {
                     if let Some(packed) = packer.flush() {
+                        if hg.on() {
+                            hg.set_bypass(Some(hoff_gate::Bypass::Shutdown));
+                        }
                         emit_source(
                     packed.into(),
                     &mut st,
                     &pol,
                     &mut sctx!(),
                 );
+                        if hg.on() {
+                            hg.set_bypass(None);
+                        }
                     }
                 }
                 // Send Shutdown on all paths (the path set is collected first).
@@ -3097,12 +3106,18 @@ async fn run_window_sender(
                 txp.sec(TxSec::ArmPack);
                 // Flush timeout expired — emit partial packed symbol
                 if let Some(packed) = packer.flush() {
+                    if hg.on() {
+                        hg.set_bypass(Some(hoff_gate::Bypass::Timer));
+                    }
                     emit_source(
                     packed.into(),
                     &mut st,
                     &pol,
                     &mut sctx!(),
                 );
+                    if hg.on() {
+                        hg.set_bypass(None);
+                    }
                 }
                 None
             }
@@ -3176,6 +3191,8 @@ async fn run_window_sender(
             if hg.on() {
                 // The packet read from the intake is a first send waiting: a closed path refuses it.
                 let _ = hg.check_live(true);
+                // The first emission below passes without asking the gate again.
+                hg.set_bypass(Some(hoff_gate::Bypass::Defer));
             }
             let pkt = match packet {
                 Some(p) => {
@@ -3190,12 +3207,18 @@ async fn run_window_sender(
                     // Flush remaining packed data before exit
                     if pol.use_packing {
                         if let Some(packed) = packer.flush() {
+                            if hg.on() {
+                                hg.set_bypass(Some(hoff_gate::Bypass::Shutdown));
+                            }
                             emit_source(
                     packed.into(),
                     &mut st,
                     &pol,
                     &mut sctx!(),
                 );
+                            if hg.on() {
+                                hg.set_bypass(None);
+                            }
                         }
                     }
                     // `[WALL]`/`[CCAP]`: see the shutdown arm above — emitted
@@ -3218,6 +3241,9 @@ async fn run_window_sender(
                     &mut sctx!(),
                 );
                 }
+                if hg.on() {
+                    hg.set_bypass(None);
+                }
             } else {
                 // Legacy: one packet per symbol (padded)
                 let framed = framing::frame_window_packet(&pkt, symbol_size);
@@ -3234,6 +3260,10 @@ async fn run_window_sender(
                 );
                 if eb_gauge {
                     dg.eb.on_symbol(st.last_source_path);
+                }
+                if hg.on() {
+                    // The burst below re-checks the gate before every first send.
+                    hg.set_bypass(None);
                 }
                 // ── RWM_EMIT_BATCH pacer-quantum burst intake ─────────────
                 // Drain already-queued TUN packets without re-arming the
@@ -3507,6 +3537,9 @@ async fn run_window_sender(
                     let now_r = now_us();
                     let seqs = batch_counter.next(path);
                     let batch = SymbolBatch::new(vec![sym], now_r, seqs, path);
+                    if copy_seq.is_some() {
+                        st.tx.mark(crate::transport::io_owner::SendKind::Resend);
+                    }
                     let sent = match transport.send_symbols(&mut st.tx, path, batch) {
                         Ok(()) => true,
                         Err(e) => {

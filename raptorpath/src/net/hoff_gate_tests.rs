@@ -10,7 +10,11 @@
 //! call-site invariant.
 
 use super::hoff::{HoffGauge, PathIn};
-use super::hoff_gate::{admits, owner_republishes, poll_armed, quinn_discards_found, r_eff, HandoffGate, Terms};
+use super::hoff_gate::{
+    admits, classify_first_send, owner_republishes, poll_armed, quinn_discards_found, r_eff, Bypass, FsClass,
+    HandoffGate, Terms,
+};
+use crate::transport::io_owner::{own_gap_us, SendKind};
 use crate::scheduler::{Scheduler, WallClock};
 use crate::transport::io_owner::WorkHist;
 use std::sync::Arc;
@@ -157,7 +161,7 @@ fn no_dial_is_read_and_the_seams_are_wired() {
     assert!(m.contains("lettx_paused=reliable&&(store_len>=effective_store_cap||cwnd_full);"), "tx_paused is untouched");
     assert!(e.contains("ctx.hg.on()") && e.contains("place_symbol_among(false") && e.contains("place_symbol_among(true"));
     assert!(e.contains("ctx.hg.spare_all()"), "the clamp reads the predicate at the repair seam");
-    assert!(o.contains("owner_republishes(") && o.contains("republish=Some((Instant::now()"), "the owner republishes while it holds unsent data");
+    assert!(o.contains("owner_republishes(") && o.contains("republish=Some((crate::clock::now()"), "the owner republishes while it holds unsent data");
     assert!(q.contains("g.hoff_gate"), "the arm arms the RouteProbe");
 }
 
@@ -589,4 +593,177 @@ fn restricted_picks_prefer_an_admitted_path_without_copa_room() {
     assert_eq!(s.best_source_path_among(&|id| id == 1), Some(1));
     assert_eq!(s.best_repair_path_among(&|id| id == 1), Some(1));
     assert_eq!(s.best_source_path_among(&|_| false), s.best_source_path(), "no admitted path: the unrestricted pick");
+}
+
+// ── witness counters: what lets a first send past the bound ─────────────────
+
+/// The classes at the anchor β = 53.83: below it the gate's own admit, at or
+/// above it a leak unless a bypass site is tagged, and an undefined β is the
+/// cold-start admit under any tag.
+#[test]
+fn first_send_classes_absolute() {
+    let be = Some(53.83);
+    assert_eq!(classify_first_send(53, be, None), FsClass::Gated);
+    assert_eq!(classify_first_send(54, be, None), FsClass::Over);
+    assert_eq!(classify_first_send(54, be, Some(Bypass::Defer)), FsClass::Bypass(Bypass::Defer));
+    assert_eq!(classify_first_send(0, be, Some(Bypass::Timer)), FsClass::Gated, "a tag alone is not a leak");
+    assert_eq!(classify_first_send(500, None, None), FsClass::Cold);
+    assert_eq!(classify_first_send(500, None, Some(Bypass::Shutdown)), FsClass::Cold);
+}
+
+/// A turn in virtual time: the loop top opens the gate, a resend burst closes
+/// it, then the deferred intake packet is staged anyway. The witness counts it
+/// as a defer bypass, counts a gated first send as nothing, an untagged one
+/// past the bound as `fs_over`, and resets with the row.
+#[test]
+fn deferred_packet_past_a_resend_burst_is_counted_as_a_bypass() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let open = [(0u32, pin(10, 280_000, 22_000))];
+    assert!(!g.begin_turn(1000, true, false, &open));
+    g.note_first_send_at(0, &open[0].1); // B = 10 < 53.83
+    let burst = pin(90, 280_000, 22_000); // resends staged: B = 90
+    g.set_bypass(Some(Bypass::Defer));
+    g.note_first_send_at(0, &burst);
+    g.set_bypass(None);
+    g.note_first_send_at(0, &burst); // untagged, past the bound
+    g.note_first_send_at(0, &pin(500, 280_000, 0)); // no RTT: β undefined
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.fs_over, r.fs_bypass), (1, [1, 0, 0, 1]), "{r:?}");
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.fs_over, r.fs_bypass), (0, [0; 4]), "the window resets");
+}
+
+/// `ex_max` is the window's largest end-of-turn B − β with what was staged since
+/// the gate last admitted on the path, as `(total, first sends, exempt)`: the
+/// rest of the excess is carry-in or drain, never booked to a kind. `ex_n` counts
+/// the window's exempt datagrams by kind (control, resend, repair).
+#[test]
+fn end_of_turn_excess_splits_into_first_and_exempt_parts() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let at = |b: u64, kinds: [u64; 4]| [(0u32, PathIn { kinds, ..pin(b, 280_000, 22_000) })];
+    g.begin_turn(1000, true, false, &at(40, [0; 4])); // open: B = 40 < 53.83
+    // This turn staged 5 first sends, 2 resends, 3 repairs, 4 control: B = 100.
+    g.end_turn(&at(100, [5, 2, 3, 4]));
+    let (t, f, x) = g.take_row(0).unwrap().ex_max.unwrap();
+    assert!((t - 46.17).abs() < 0.01 && f == 5.0 && x == 9.0, "{t} {f} {x}");
+    // Closed turns follow; a resend burst lands three turns after the last open one.
+    g.begin_turn(2000, true, false, &at(100, [5, 2, 3, 4]));
+    g.end_turn(&at(100, [5, 2, 3, 4]));
+    g.begin_turn(3000, true, false, &at(120, [5, 12, 3, 4]));
+    g.end_turn(&at(140, [5, 12, 3, 4]));
+    let r = g.take_row(0).unwrap();
+    let (t, f, x) = r.ex_max.unwrap();
+    // Booked since the last OPEN turn's start (kinds [0; 4]): 5 first sends and 19 exempt;
+    // the burst is not read as first sends, and the carry-in (86.17 - 24) stays unbooked.
+    assert!((t - 86.17).abs() < 0.01 && f == 5.0 && x == 19.0, "{r:?}");
+    assert_eq!((r.ex_n, r.fs_n), ([0, 10, 0], 0), "control, resend, repair; first sends");
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.ex_max, r.ex_n), (None, [0; 3]), "the window resets");
+}
+
+/// β's spread over the window's per-turn values, not the one end sample: β is
+/// proportional to cwnd here, 20 turns at cwnd k·10 000 → p5 the 1st, p50 the
+/// 10th, p95 the 19th.
+#[test]
+fn beta_spread_covers_every_turn_of_the_window() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    for k in 1..=20u64 {
+        g.begin_turn(k * 1000, false, false, &[(0, pin(0, k * 10_000, 22_000))]);
+    }
+    let r = g.take_row(0).unwrap();
+    let b = |k: u64| g.beta(0, &pin(0, k * 10_000, 22_000)).unwrap();
+    let (p5, p50, p95) = r.beta_q.unwrap();
+    assert!((p5 - b(1)).abs() < 1e-9 && (p50 - b(10)).abs() < 1e-9 && (p95 - b(19)).abs() < 1e-9, "{r:?}");
+    assert_eq!(r.beta, Some(b(20)), "the end sample is still the last turn's");
+}
+
+/// `pend_max` = staged − handed to quinn − dropped, at turn starts; `own_gap_max`
+/// is the owner's longest drain gap the end-of-turn readings carried.
+#[test]
+fn pending_and_owner_gap_maxima() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let at = |staged: u64, handed: u64, dropped: u64, gap: u64| {
+        [(0u32, PathIn { staged, handed, dropped, own_gap_us: gap, ..pin(0, 280_000, 22_000) })]
+    };
+    g.begin_turn(1000, false, false, &at(100, 90, 4, 0)); // pending 6
+    g.end_turn(&at(100, 90, 4, 3_000));
+    g.begin_turn(2000, false, false, &at(300, 100, 0, 0)); // pending 200
+    g.end_turn(&at(300, 100, 0, 18_000));
+    g.begin_turn(3000, false, false, &at(310, 305, 0, 0)); // pending 5
+    g.end_turn(&at(310, 305, 0, 500));
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.pend_max, r.own_gap_max_us), (200, 18_000), "{r:?}");
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.pend_max, r.own_gap_max_us), (0, 0));
+}
+
+/// The owner's gap is read between two `crate::clock` instants: absolute at
+/// 3.5 ms and 0 for the first drain.
+#[test]
+fn owner_gap_is_an_interval_between_clock_reads() {
+    let t0 = crate::clock::now();
+    assert_eq!(own_gap_us(None, t0), 0);
+    assert_eq!(own_gap_us(Some(t0), t0 + std::time::Duration::from_micros(3500)), 3500);
+    assert_eq!(own_gap_us(Some(t0 + std::time::Duration::from_secs(1)), t0), 0, "never negative");
+}
+
+/// The staged-by-kind index is the `[HOFF]` mapping: a data datagram defaults
+/// to repair, and the engine seams label first sends and resends.
+#[test]
+fn send_kinds_and_their_labels_at_the_seams() {
+    assert_eq!(SendKind::default(), SendKind::Repair);
+    assert_eq!(
+        [SendKind::First as usize, SendKind::Resend as usize, SendKind::Repair as usize, SendKind::Ctrl as usize],
+        [0, 1, 2, 3]
+    );
+    let m = flat(include_str!("mod.rs"));
+    let e = flat(include_str!("emit_source.rs"));
+    let p = flat(include_str!("sender_phases.rs"));
+    let o = flat(include_str!("../transport/io_owner.rs"));
+    assert!(e.contains("st.tx.mark(crate::transport::io_owner::SendKind::First)") && e.contains("note_first_send_live(source_path)"));
+    assert!(p.contains("st.tx.mark(crate::transport::io_owner::SendKind::Resend)"));
+    assert!(m.contains("st.tx.mark(crate::transport::io_owner::SendKind::Resend)"));
+    for b in ["Defer", "Timer", "Shutdown"] {
+        assert!(m.contains(&format!("set_bypass(Some(hoff_gate::Bypass::{b}))")), "{b} site is tagged");
+    }
+    assert!(m.contains("hg.end_turn_live()"), "the turn ends with the sample");
+    assert!(o.contains("own_gap_max_us.fetch_max(own_gap_us(last_drain,t),Relaxed)"), "the owner records its gap");
+    assert!(!o.contains("last_drain=Some(Instant::now())"), "owner timing reads go through crate::clock");
+}
+
+/// With the gate on the line carries the witness fields; with it off it does
+/// not (arm-off output is unchanged).
+#[test]
+fn hoff_line_prints_the_witness_fields_only_when_armed() {
+    let mut gauge = HoffGauge::new(0);
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let ins = [(0u32, PathIn { kinds: [0, 1, 2, 3], ..pin(10, 280_000, 22_000) })];
+    g.begin_turn(1000, true, false, &ins);
+    gauge.turn(1000, true, false, &ins);
+    g.set_bypass(Some(Bypass::Timer));
+    g.note_first_send_at(0, &pin(90, 280_000, 22_000));
+    g.end_turn(&[(0u32, PathIn { kinds: [0, 1, 2, 3], own_gap_us: 7_000, ..pin(100, 280_000, 22_000) })]);
+    let l = gauge.line_gated(300_000, 40, false, Some(&mut g));
+    for f in [
+        " fs_over=0 ",
+        " fs_bypass=0/1/0/0 ",
+        " ex_max=46/0/0 ",
+        " ex_n=0/0/0 fs_n=0 ",
+        " beta_q=53.83/53.83/53.83 ",
+        " own_gap_max=7000us ",
+        " pend_max=1010]",
+    ] {
+        assert!(l.contains(f), "missing {f}: {l}");
+    }
+    let mut off = HoffGauge::new(0);
+    off.turn(1000, true, false, &ins);
+    let l = off.line_gated(300_000, 40, false, None);
+    for f in ["fs_over=", "fs_bypass=", "ex_max=", "ex_n=", "beta_q=", "own_gap_max=", "pend_max="] {
+        assert!(!l.contains(f), "{f} printed with the gate off: {l}");
+    }
 }
