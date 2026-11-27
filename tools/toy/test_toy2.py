@@ -1,6 +1,8 @@
 """Unit tests for the stage-2 toy (docs/derivations/skip-rule-efficiency.md 7.8).
 Run from tools/toy:  python -m unittest test_toy2   (stage 1's test_toy.py must still pass as well)."""
 import ast
+import dataclasses
+import json
 import math
 import os
 import random
@@ -333,12 +335,18 @@ class Receivers(unittest.TestCase):
                 self.assertGreaterEqual(r["tail_verdicts"] + r["gauges"]["refusals"] // 100000, 0)
 
 
-DIALS = {"rho", "delta", "hint", "T", "Hk", "Te"}        # Te: stage 3d, T_eff = plant_T(cfg, T), the knob under another name
+DIALS = {"rho", "delta", "hint", "T", "Hk", "Te", "r_fec", "evict_window", "r0e_max"}        # Te: stage 3d, T_eff = plant_T(cfg, T), the knob under another name
 # HZ, STEP/SPIKE/KINK, R0e (7.3, 7.9); the two stage-3 law functions (three-knobs.md 9.2) and the share_T readout are the only places T is compared
-EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime",
+EXEMPT = {"plant_scale", "hz_hold", "r0e_buffer", "on_r0e_expiry", "intake_expired_fn", "resend_admissible", "within_lifetime", "staged_past_lifetime",
           "dequeue_expired",      # dequeue_expired: three-knobs.md 13.2 (stage 3b)
           "protected",            # protected: three-knobs.md 15.3 and 15.6.1 item 1 (stage 3c)
-          "plant_T"}              # plant_T: three-knobs.md 17.5 (stage 3d), the planted controls routed through T
+          "plant_T",              # plant_T: three-knobs.md 17.5 (stage 3d), the planted controls routed through T
+          "p_fec_normal",         # proof stage 1: the shipped p_fec cut (W22, recorded debt), bounded by test_p_fec_normal_port_and_its_cut
+          "evict_unservable", "force_drain_due", "force_drain_keep",       # proof stage 1: today's Realtime branches, modelled as shipped (plan 2.3 and 8)
+          # stage 3e (three-knobs-stage3e-build.md 2): the repair laws as shipped and the two lifetime comparisons of the repair span; by name only
+          "normal_survival_as", "normal_quantile_as", "p_fec_normal_as", "z_for_tail_target", "r_star_with_z", "r_saturation", "soft_saturate",
+          "controller_rate_parts", "derive_window_parts", "bulkness", "t_tail_of", "rate_law", "beta_upper", "span_edge_ok", "decoded_late",
+          "saturation_pressure", "rb_hold", "wait_limit_tau", "wait_limit_K", "wait_limit_Kc", "tau_below_t"}
 
 
 def _names(node):
@@ -368,6 +376,11 @@ def deny_scan(src):
 
 
 class DenyTest(unittest.TestCase):
+    def test_proof_s1_fields_are_covered(self):
+        for f in ("evict_window", "r0e_max", "r_fec"):
+            self.assertTrue(deny_scan("def f(c, n):\n    return n > c.%s\n" % f), f)
+        self.assertFalse(deny_scan("def p_fec_normal(r_fec):\n    return r_fec <= 0\n"))        # the shipped cut, named debt W22
+
     def test_no_branch_on_a_dial_outside_the_named_exceptions(self):
         with open(os.path.join(HERE, "toy2.py"), encoding="utf-8") as f:
             src = f.read()
@@ -1107,6 +1120,1372 @@ class Stage3d(unittest.TestCase):
         b = fab(True)                                                  # control: the same report on an arrived seq samples
         self.assertAlmostEqual(b.srtt, 1.0 - b.sent_t[9])
         self.assertEqual(b.rhi_known, 9)
+
+
+# ---- proof stage 1 (three-knobs-proof-plan.md 2.3): the arm "today's Realtime" ------------------------------------
+ENGINE_LIKE = dict(sweep_form="blocker", rx_refresh=True, rtt_est="rfc", src_model="wc", resend_gate="cooldown", resend_brake="engine", J=0.001)
+
+
+def rt_cfg(**kw):
+    """Today's Realtime on a short object cell with an outage (no link): the sender S1 (a shed sends no copy), the early-skip receiver R0e,
+    the derived budget, the smoothed-RTT deadline, no floor, the 200-symbol window, no source pause."""
+    d = dict(cell="I2", sender="S1", recv="R0e", seed=1, n_total=20000, dead=(0, 0.5, 0.3), delta=50.0, rho=1.0, check_p1=False,
+             d_arm="EWMA", budget="resid", floor_send=False, evict_window=200, pause_B=10 ** 9, **ENGINE_LIKE)
+    d.update(kw)
+    return toy2.Cfg(**d)
+
+
+class ProofS1TodaysRealtime(unittest.TestCase):
+    def test_budget_reads_zero_cold_then_the_cells_loss(self):
+        sm = toy2.Sim(rt_cfg())
+        self.assertEqual(sm.shed_budget, 0.0)                              # no estimate yet: nothing is sheddable
+        r = sm.run()
+        self.assertEqual(r["gauges"]["seed_verdicts"], 0)                  # nothing was shed before the first RTT sample
+        self.assertAlmostEqual(sm.shed_budget, 0.03)                       # eps_hat (1 - P_fec) with r = 0: the cell's first-send loss (Q21)
+
+    def test_p_fec_normal_port_and_its_cut(self):
+        self.assertEqual(toy2.p_fec_normal(0.0, 0.03, 100.0, 1.0), 0.0)           # r <= 0 (W22)
+        self.assertEqual(toy2.p_fec_normal(0.03, 0.03, 100.0, 1.0), 0.0)          # r (1 - eps) <= eps: the 0 -> 1/2 step
+        r, e, w, s2 = 0.2, 0.03, 100.0, 1.0
+        z = math.sqrt(w) * (r * (1 - e) - e) / math.sqrt(e * (1 - e) * (r + s2))
+        self.assertAlmostEqual(toy2.p_fec_normal(r, e, w, s2), 0.5 * math.erfc(-z / math.sqrt(2.0)), places=12)
+        self.assertEqual(toy2.residual_loss(0.03, 0.0, 100.0, 1.0), 0.03)         # repair off: the budget is eps_hat
+        self.assertLess(toy2.residual_loss(0.03, 0.2, 100.0, 1.0), 0.03)
+
+    def test_a_hole_past_the_window_is_never_served(self):
+        def gaps(window):
+            r = toy2.run(rt_cfg(evict_window=window, want_trace=True))
+            n, worst = 0, 0
+            for (t, s, k, _, kind) in r["_trace"]:
+                if kind == 0:
+                    n += 1
+                elif kind == 1:
+                    worst = max(worst, n - s)
+            return r, worst
+        r, worst = gaps(200)
+        self.assertLessEqual(worst, 200)
+        self.assertGreater(r["gauges"]["evict_skip"], 0)                   # the window bound something
+        r2, worst2 = gaps(math.inf)
+        self.assertGreater(worst2, 200)                                    # control: without the window the same cell does serve them
+        self.assertEqual(r2["gauges"]["evict_skip"], 0)
+
+    def test_a_shed_sends_nothing(self):
+        r = toy2.run(rt_cfg(want_trace=True))
+        g = r["gauges"]
+        self.assertGreater(g["verdicts"], 0)                               # it shed
+        self.assertEqual(g["verdict_copies"], 0)
+        self.assertEqual(g["floors"], 0)
+        self.assertFalse([e for e in r["_trace"] if e[4] == 2])
+        c = toy2.run(rt_cfg(sender="S1c", floor_send=True, want_trace=True))   # control: ADR-0084's sender sends both
+        self.assertGreater(c["gauges"]["verdict_copies"], 0)
+        self.assertGreater(c["gauges"]["floors"], 0)
+
+    def test_no_source_pause_equals_the_pause_build_where_the_pause_never_binds(self):
+        a = toy2.run(rt_cfg(dead=None, n_total=10000, pause_B=10 ** 9, want_trace=True))
+        b = toy2.run(rt_cfg(dead=None, n_total=10000, pause_B=2048, want_trace=True))
+        self.assertEqual(a["_trace"], b["_trace"])
+        self.assertEqual(a["gauges"]["pause_events"], 0)
+
+    def test_no_source_pause_lets_the_queue_drop_instead(self):
+        lk = dict(link=dict(C=10000.0, Q=1250.0), rate=12000.0, n_total=12000, dead=None, t_limit=6.0)
+        a = toy2.run(rt_cfg(**lk))
+        b = toy2.run(rt_cfg(pause_B=64, **lk))
+        self.assertEqual(a["pause_events"], 0)
+        self.assertGreater(a["queue_drop"], 0)
+        self.assertGreater(b["pause_events"], 0)                            # control: a small B pauses the source
+
+    def test_two_paths_duplicate_the_first_send(self):
+        lc, d = batch3d.base("P2")
+        d.update(n_total=3000, sender="S1")
+        kw = dict(cell=lc, recv="R0e", seed=1, delta=50.0, rho=1.0, check_p1=False, d_arm="EWMA", budget="resid", floor_send=False,
+                  evict_window=200, pause_B=10 ** 9)
+        kw.update({k: v for k, v in d.items() if k not in kw})
+        dup = toy2.run(toy2.Cfg(place="dup", **kw))
+        self.assertEqual(dup["gauges"]["dup_first"], dup["n_src"])
+        self.assertGreater(dup["gauges"]["dup"], 0.5 * dup["n_src"])      # both copies arrive for most units
+        one = toy2.run(toy2.Cfg(**kw))
+        self.assertEqual(one["gauges"]["dup_first"], 0)
+
+    def test_the_receiver_force_drains_at_its_buffer_cap(self):
+        peak = []
+
+        class Probe(toy2.Sim):
+            def r0e_arrival(self, now, s):
+                super().r0e_arrival(now, s)
+                peak.append(len(self.r0e_buf))
+        sm = Probe(rt_cfg(r0e_max=20, dead=None, n_total=20000))
+        r = sm.run()
+        self.assertGreater(r["gauges"]["force_drains"], 0)
+        self.assertLessEqual(max(peak), 20)
+        sm0 = toy2.Sim(rt_cfg(dead=None, n_total=20000))
+        self.assertEqual(sm0.run()["gauges"]["force_drains"], 0)           # control: no cap, no drain
+
+    def test_taken_apart_it_equals_adr_0084s_sender_at_the_derived_allowance(self):
+        """budget "resid", EWMA deadline, no copy, no floor, no window, no pause == S1 at rho = 1 - eps_hat, no floor.  The receiver is strict
+        (R1) with no floor so that nothing passes.  Every resend is lost (pc = 1), so no shed hole is ever filled: then ADR-0084's
+        outstanding count (passes + pending) equals the shipped cumulative shed count.  Where a shed hole is filled later the two differ by design."""
+        toy2.CELLS["T-pc1"] = dict(kind="iid", p0=0.03, pc=1.0)
+        self.addCleanup(toy2.CELLS.pop, "T-pc1")
+        common = dict(cell="T-pc1", recv="R1", evict_window=math.inf, n_total=5000, dead=(0, 0.15, 0.05), t_limit=3.0)
+        a = toy2.run(rt_cfg(want_trace=True, **common))
+        b = toy2.run(rt_cfg(want_trace=True, budget="rho", rho=1.0 - 0.03, **common))
+        self.assertGreater(a["gauges"]["verdicts"], 0)
+        self.assertEqual(a["_trace"], b["_trace"])
+        for k in ("n_src", "delivered", "share_any", "verdicts", "orig_lost", "stall_total"):
+            self.assertEqual(a[k], b[k], k)
+
+    def test_a_silent_shed_of_the_open_tail_leaves_the_object_unfinished(self):
+        """Shipped behaviour, pinned and not patched (plan 2.3): with no floor the receiver never learns of a lost tail, so an object
+        whose last units are shed does not complete.  A datagram stream that continues past its outage is unaffected."""
+        n = 12147
+        tail = dict(n_total=n, dead=(n - 347, (n - 347) / 10000.0, 1.5), t_limit=20.0, evict_window=math.inf)
+        silent = toy2.run(rt_cfg(**tail))
+        self.assertFalse(silent["finished"])
+        self.assertGreater(silent["gauges"]["verdicts"], 0)
+        loud = toy2.run(rt_cfg(sender="S1c", floor_send=True, **tail))          # control: with ADR-0084's floor the object completes
+        self.assertTrue(loud["finished"])
+
+    def test_defaults_are_the_old_arm(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.budget, c.floor_send, c.evict_window, c.place, c.r0e_max), ("rho", True, math.inf, "stripe", math.inf))
+
+    def test_l1_gauge_is_zero_in_the_new_model(self):
+        r = toy2.run(small_s5("CL", 0, 0.4, 0.0))
+        self.assertEqual(r["gauges"]["l1_viol"], 0)
+
+
+# ---- stage 3e (three-knobs-stage3e-build.md 7): repair, the decoder, the span edges, the estimated-loss arm -------------
+import ident3e_cfgs  # noqa: E402
+
+RATE_REF = os.path.join(HERE, "rate_ref3e.json")
+
+
+def e_cfg(cell="K-L10", seed=0, T=0.12, H=0.0, repair=None, **kw):
+    """The new model (S5) on one of the batch cells, with the stage 3e fields."""
+    return batch3d.s5_cfg(cell, seed, T, H, repair=repair, **kw)
+
+
+def rt_e(seed=0, T=0.12, repair=None, **kw):
+    """RT: K-L10 without its outage, short."""
+    kw.setdefault("dead", None)
+    kw.setdefault("n_total", 600)
+    return e_cfg("K-L10", seed, T, 0.0, repair, **kw)
+
+
+def id3e_t(a, b):
+    import batch3e
+    return batch3e.id3e(a, b)
+
+
+class SpanSim(toy2.Sim):
+    """A sender with a pinned rate_hat and a recording forward path, to call stage_repair on constructed state."""
+
+    def __init__(self, cfg, rh=1000.0):
+        super().__init__(cfg)
+        self._rh = rh
+        self.fwd_calls = []
+
+    def rate_hat(self, now):
+        return self._rh
+
+    def fwd(self, t, path=0):
+        self.fwd_calls.append(t)
+        return t + 0.005, t
+
+
+def span_sim(edge="worth", T=0.4, n_sent=500, srtt=0.05, **kw):
+    """S5 with a repair arm, n_sent first sends at 1 ms spacing (h(s) = s ms), srtt as given: o_hat = srtt - RTprop/2 = srtt - 0.005,
+    D = srtt/2 so A* = ceil(1000 srtt / 2), Delta = 1."""
+    rep = kw.pop("repair", dict(r=0.3, edge=edge))
+    c = toy2.Cfg(cell="I2", sender="S5", recv="RH", seed=1, rate=1000.0, n_total=3000, delta=50.0, rho=1.0, check_p1=False, T=T, Hk=0.0,
+                 rtt_est="rfc", trigger_law="trigger", owd_est="fwd", floor_law="protect", repair=rep, **kw)
+    sm = SpanSim(c)
+    sm.n_sent = n_sent
+    for s in range(n_sent):
+        sm.h_seq[s] = s * 0.001
+    sm.srtt = srtt
+    sm.W_cur = 200.0
+    return sm
+
+
+class Stage3e(unittest.TestCase):
+    # -- 1 defaults ---------------------------------------------------------------------------------------------
+    def test_1_defaults_and_old_senders_reproduce_the_base(self):
+        c = toy2.Cfg()
+        self.assertIsNone(c.repair)
+        self.assertIsNone(c.repair_seam)
+        self.assertEqual((c.o_bias, c.R_bias, c.rev_q, c.tau_extra), (0.0, 0.0, 0.0, ()))
+        with open(os.path.join(HERE, "ident3e_ref.json")) as f:
+            ref = json.load(f)
+        built = ident3e_cfgs.cfgs(toy2, batch3d, batch3c)
+        self.assertEqual(sorted(built), sorted(ref))
+        for nm, cf in built.items():
+            d = ident3e_cfgs.digest(toy2.run(cf))
+            for k, v in ref[nm].items():
+                if k == "gauges":
+                    for g, x in v.items():
+                        self.assertEqual(d["gauges"][g], x, (nm, "gauge", g))
+                else:
+                    self.assertEqual(d[k], v, (nm, k))
+
+    # -- 2 the rate law against raptorpath-math ---------------------------------------------------------------
+    def test_2_rate_law_matches_raptorpath_math(self):
+        with open(RATE_REF) as f:
+            ref = json.load(f)
+        self.assertGreaterEqual(len(ref["grid"]), 500)
+        for e in ref["grid"]:
+            L = toy2.rate_law(e["eps"], e["srtt"], e["rate"], e["delta"])
+            self.assertEqual(L["W"], e["W"], e)
+            self.assertAlmostEqual(L["r"], e["r"], delta=1e-9, msg=str(e))
+            self.assertAlmostEqual(L["beta"], e["beta"], delta=1e-12)
+            self.assertAlmostEqual(min(max(L["W_pre"], 16.0), 512.0), e["W_clamped"], delta=1e-9, msg=str(e))
+            self.assertAlmostEqual(L["r_sat"], e["r_sat"], delta=1e-9, msg=str(e))
+
+    def test_2_registration_table(self):
+        import check_rate3e
+        for eps, srtt, rate, W, r in check_rate3e.TABLE:
+            L = toy2.rate_law(eps, srtt, rate, 50.0)
+            self.assertEqual(L["W"], W, (eps, srtt, rate))
+            self.assertAlmostEqual(L["r"], r, delta=1e-5, msg=str((eps, srtt, rate)))
+        self.assertEqual(check_rate3e.check(), [])
+        self.assertAlmostEqual(toy2.rate_law(0.03, 0.0115, 10000.0, 50.0)["r_sat"], 0.135, delta=1e-9)
+        self.assertAlmostEqual(toy2.rate_law(0.10, 0.101, 50.0, 50.0)["r_sat"], 0.385, delta=1e-9)
+
+    def test_2_delta_continuity_at_the_call_point(self):
+        r0 = toy2.rate_law(0.10, 0.101, 50.0, 50.0)["r"]
+        for x in (0.98, 0.99, 1.01, 1.02):
+            self.assertAlmostEqual(toy2.rate_law(0.10, 0.101, 50.0, 50.0 * x)["r"], r0, delta=3e-5)
+
+    # -- 3 the A&S ports ------------------------------------------------------------------------------------------
+    def test_3_as_ports_match_the_reference(self):
+        with open(RATE_REF) as f:
+            ref = json.load(f)
+        self.assertEqual(len(ref["survival"]), 8)
+        for z, v in ref["survival"]:
+            self.assertAlmostEqual(toy2.normal_survival_as(z), v, delta=1e-12, msg=str(z))
+        self.assertEqual(len(ref["quantile"]), 6)
+        for p, v in ref["quantile"]:
+            self.assertAlmostEqual(toy2.normal_quantile_as(p), v, delta=1e-9, msg=str(p))
+        for r, e, w, s2, v in ref["p_fec"]:
+            self.assertAlmostEqual(toy2.p_fec_normal_as(r, e, w, s2), v, delta=1e-12, msg=str((r, e, w)))
+        self.assertAlmostEqual(toy2.p_fec_normal_as(0.2, 0.03, 100.0, 1.0), toy2.p_fec_normal(0.2, 0.03, 100.0, 1.0), delta=2e-7)   # the declared erfc difference
+
+    # -- 4 delta = 0.005 gives r = 0 exactly ----------------------------------------------------------------------
+    def test_4_bulk_delta_gives_r_zero_and_rl_equals_off(self):
+        self.assertEqual(toy2.rate_law(0.03, 0.0115, 10000.0, 0.005)["r"], 0.0)
+        for seed in range(3):
+            def mk(rp):
+                c = e_cfg("CL@b", seed, 0.4, 0.0, repair=rp, n_total=3000, dead=(0, 0.1, 0.1))
+                c.delta = 0.005
+                c.want_trace = True
+                return c
+            a = toy2.run(mk(None))
+            b = toy2.run(mk(dict(r="law", edge="worth")))
+            self.assertEqual(id3e_t(a, b), [], seed)
+            self.assertEqual(a["_trace"], b["_trace"], seed)
+            self.assertEqual(b["gauges"]["rep_credits"], 0)
+            self.assertGreater(b["gauges"]["law_reads"], 0)                         # control: the law was read
+
+    # -- 5 the span on constructed state -----------------------------------------------------------------------
+    def test_5_span_no_bind(self):
+        sm = span_sim("worth")
+        sm.stage_repair(0.5005)
+        self.assertEqual(sm.astar_cur, 25)
+        self.assertEqual(sm.g["rep_members_sum"], 25)                              # [474, 499)
+        self.assertEqual((sm.g["rep_sent"], sm.g["rep_cut_edge"], sm.g["l1_viol_rep"], sm.g["worth_viol_rep"]), (1, 0, 0, 0))
+
+    def test_5_span_worth_cut(self):
+        sm = span_sim("worth", T=0.07)                                             # age + 0.045 < 0.07: age < 0.025, h > 0.4755: s >= 476
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 476, 1))
+        self.assertEqual(sm.g["worth_viol_rep"], 0)
+
+    def test_5_span_age_cut(self):
+        sm = span_sim("age", T=0.02)                                               # age < 0.02: h > 0.4805: s >= 481
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 481, 1))
+        self.assertGreater(sm.g["worth_viol_rep"], 0)                               # the age edge carries members the worth test refuses
+
+    def test_5_span_floor_cut(self):
+        sm = span_sim("floor")
+        sm.F_ann = 490
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 490, 1))
+
+    def test_5_span_evict_cut(self):
+        sm = span_sim("evict", evict_window=20)
+        sm.verdicted = {480, 481}
+        sm.stage_repair(0.5005)                                                    # n_sent - lo = 26 > 20: lo = 480, then past the sheds: 482
+        self.assertEqual((sm.g["rep_members_sum"], sm.g["rep_cut_edge"]), (499 - 482, 1))
+        sm2 = span_sim("evict", evict_window=math.inf)
+        sm2.verdicted = {474}
+        sm2.stage_repair(0.5005)
+        self.assertEqual(sm2.g["rep_members_sum"], 499 - 475)                      # an infinite window never binds; the shed seq at the low end does
+
+    def test_5_empty_span_counted_by_cause(self):
+        young = span_sim("worth", n_sent=1)
+        young.stage_repair(0.0005)
+        self.assertEqual((young.g["rep_drop_young"], young.g["rep_drop_edge"], young.g["rep_sent"]), (1, 0, 0))
+        edge = span_sim("worth", T=0.001)
+        edge.stage_repair(0.5005)
+        self.assertEqual((edge.g["rep_drop_edge"], edge.g["rep_drop_young"], edge.g["rep_sent"]), (1, 0, 0))
+        self.assertEqual(edge.fwd_calls, [])                                       # nothing was staged, no draw taken
+
+    def test_5_astar_is_one_before_the_first_rtt_sample(self):
+        sm = span_sim("worth")
+        sm.srtt = None
+        sm.stage_repair(0.5005)
+        self.assertEqual((sm.astar_cur, sm.g["rep_members_sum"]), (1, 1))
+        self.assertGreaterEqual(sm.g["astar_floor_bind"], 1)
+
+    def test_5_span_never_starts_below_the_encoder_window(self):
+        sm = span_sim("worth")
+        sm.A_known = 500
+        sm.W_cur = 25.0                                                            # A* = 25 = W, ws = 475 > end - A* = 474
+        sm.stage_repair(0.5005)
+        self.assertEqual(sm.g["rep_members_sum"], 499 - 475)
+
+    # -- 6 the L1 control ----------------------------------------------------------------------------------------
+    def test_6_l1_control(self):
+        rp = dict(r=0.3835, edge="worth")
+        broken = toy2.run(rt_e(T=0.04, repair=rp, repair_seam="no_edge"))
+        self.assertGreater(broken["gauges"]["l1_viol_rep"], 0)
+        fixed = toy2.run(rt_e(T=0.04, repair=rp))
+        self.assertEqual(fixed["gauges"]["l1_viol_rep"], 0)
+
+    # -- 7 the worth gauge --------------------------------------------------------------------------------------
+    def test_7_worth_gauge(self):
+        def run_ov(edge):
+            c = e_cfg("OV", 0, 0.03, 0.0, repair=dict(r=0.3, edge=edge), n_total=3000)
+            return toy2.run(c)
+        self.assertGreater(run_ov("age")["gauges"]["worth_viol_rep"], 0)           # the age edge carries members that cannot arrive in time
+        self.assertEqual(run_ov("worth")["gauges"]["worth_viol_rep"], 0)
+
+    # -- 8 the decoder on constructed systems ---------------------------------------------------------------
+    @staticmethod
+    def rx(missing, n=12, T=0.4, **kw):
+        """A receiver that has seen every seq below n except `missing`, with the holes open and nothing released."""
+        c = toy2.Cfg(cell="I2", sender="S5", recv="RH", seed=1, n_total=max(100, n), delta=50.0, rho=1.0, check_p1=False, T=T, Hk=math.inf,
+                     repair=dict(r=0.3, edge="worth"), **kw)
+        sm = toy2.Sim(c)
+        sm.n_sent = n
+        for s in range(n):
+            sm.h_seq[s] = s * 0.01
+        for s in range(n):
+            if s not in missing:
+                sm.on_data(s * 0.01 + 0.005, s, 0, s * 0.01)
+        return sm
+
+    def test_8_peeling(self):
+        sm = self.rx({5})
+        sm.on_repair(0.2, (0, 5, 6, 0.19))
+        g = sm.g
+        self.assertEqual((g["dec_units"], g["rep_used"], g["rep_innov"], g["dup"]), (1, 1, 1, 0))
+        self.assertTrue(sm.got[5])
+        self.assertGreaterEqual(sm.dlv[5], 0)
+        self.assertEqual(sm.dec_flag[5], 1)
+
+    def test_8_two_by_two_block(self):
+        sm = self.rx({3, 4})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))
+        self.assertEqual(sm.g["dec_units"], 0)                                     # one equation, two unknowns
+        sm.on_repair(0.21, (1, 3, 5, 0.2))
+        self.assertEqual((sm.g["dec_units"], sm.g["rep_used"], sm.g["dup"]), (2, 2, 0))        # test 17 as well
+        self.assertTrue(sm.got[3] and sm.got[4])
+
+    def test_8_over_determined_block_decodes_only_what_it_determines(self):
+        sm = self.rx({3, 4, 5, 6})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {h1,h2}
+        sm.on_repair(0.21, (1, 3, 7, 0.2))                                         # {h1,h2,h3,h4}
+        self.assertEqual(sm.g["dec_units"], 0)
+        sm.on_repair(0.22, (2, 3, 5, 0.21))                                        # {h1,h2} again
+        self.assertEqual(sm.g["dec_units"], 2)
+        self.assertTrue(sm.got[3] and sm.got[4] and not sm.got[5] and not sm.got[6])
+
+    def test_8_chain_decodes_nothing(self):
+        sm = self.rx({3, 4, 5})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {h1,h2}
+        sm.on_repair(0.21, (1, 4, 6, 0.2))                                         # {h2,h3}
+        self.assertEqual(sm.g["dec_units"], 0)
+        self.assertFalse(sm.got[3] or sm.got[4] or sm.got[5])
+
+    def test_8_redundant_equation(self):
+        sm = self.rx({5})
+        sm.on_repair(0.2, (0, 0, 3, 0.19))                                         # every member already held
+        self.assertEqual((sm.g["rep_redundant"], sm.g["rep_innov"], sm.g["dec_units"]), (1, 0, 0))
+
+    def test_8_cascade_through_an_older_equation_on_a_later_arrival(self):
+        sm = self.rx({3, 4})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {h3,h4}: undetermined
+        self.assertEqual(sm.g["dec_units"], 0)
+        sm.on_data(0.25, 3, 0, 0.03)                                               # h3 arrives as data: the equation now determines h4
+        self.assertEqual(sm.g["dec_units"], 1)
+        self.assertTrue(sm.got[4])
+        self.assertEqual(sm.dec_flag[4], 1)
+        self.assertEqual(sm.g["dup"], 0)
+
+    def test_8_decode_after_a_release(self):
+        sm = self.rx({5})
+        sm.on_release(0.2, 5)
+        self.assertIn(5, sm.released)
+        sm.on_repair(0.21, (0, 5, 6, 0.2))
+        self.assertEqual((sm.g["dec_units"], sm.g["dec_after_release"]), (1, 1))
+
+    def test_8_decode_after_a_floor_pass(self):
+        sm = self.rx({5})
+        sm.apply_floor(0.2, 6, 0.2)
+        self.assertIn(5, sm.passed)
+        sm.on_repair(0.21, (0, 5, 6, 0.2))
+        self.assertEqual((sm.g["dec_units"], sm.g["late_floor_dec"], sm.g["late_floor"]), (1, 1, 1))
+
+    def test_8_decode_after_the_lifetime(self):
+        sm = self.rx({5}, T=0.4)
+        sm.on_repair(1.0, (0, 5, 6, 0.99))                                         # age 0.95 > T
+        self.assertEqual((sm.g["dec_late"], sm.g["rep_late_only"], sm.g["dec_on_time"]), (1, 1, 0))
+        ok = self.rx({5}, T=0.4)
+        ok.on_repair(0.2, (0, 5, 6, 0.19))                                         # age 0.15 <= T
+        self.assertEqual((ok.g["dec_late"], ok.g["rep_late_only"], ok.g["dec_on_time"]), (0, 0, 1))
+
+    @staticmethod
+    def determined_ref(adj_of, X, E):
+        """The brief's recursive form of the matching, for the differential test."""
+        adj = {x: sorted(f for f in adj_of[x] if f in E) for x in X}
+        meq, mx = {}, {}
+
+        def aug(x, seen):
+            for f in adj[x]:
+                if f in seen:
+                    continue
+                seen.add(f)
+                if f not in meq or aug(meq[f], seen):
+                    meq[f] = x
+                    mx[x] = f
+                    return True
+            return False
+        for x in sorted(X):
+            aug(x, set())
+        bad = {x for x in X if x not in mx}
+        st = list(bad)
+        while st:
+            x = st.pop()
+            for f in adj[x]:
+                y = meq.get(f)
+                if y is not None and y not in bad:
+                    bad.add(y)
+                    st.append(y)
+        return sorted(X - bad), meq
+
+    def test_8_the_matching_matches_the_recursive_form_and_survives_a_deep_chain(self):
+        rnd = random.Random(3)
+        sm = self.rx(set(), n=20)
+        for _ in range(300):
+            nx, ne = rnd.randint(1, 9), rnd.randint(1, 9)
+            X = set(range(nx))
+            eq_of = {x: set() for x in X}
+            for e in range(ne):
+                for x in rnd.sample(sorted(X), rnd.randint(1, nx)):
+                    eq_of[x].add(e)
+            E = set(range(ne))
+            sm.eq_of = {x: v for x, v in eq_of.items() if v}
+            X2 = set(sm.eq_of)
+            self.assertEqual(sm.determined(E, X2), self.determined_ref(eq_of, X2, E))
+        n = 1500                                                                   # unknown k in equations k - 1 and k: augmenting paths of length k
+        sm.eq_of = {k: {e for e in (k - 1, k) if 0 <= e < n} for k in range(n + 1)}
+        dec, _ = sm.determined(set(range(n)), set(range(n + 1)))                   # beyond Python's recursion limit
+        self.assertEqual(dec, [])
+
+    # -- 9 emission ------------------------------------------------------------------------------------------------
+    def test_9_emission_accounting(self):
+        r = 0.2
+        sm = toy2.Sim(rt_e(T=0.4, repair=dict(r=r, edge="worth")))
+        out = sm.run()
+        g = out["gauges"]
+        n = out["n_src"]
+        self.assertIn(g["rep_credits"], (math.floor(n * r), math.floor(n * r) - 1))
+        self.assertEqual(g["rep_sent"] + g["rep_drop_edge"] + g["rep_drop_young"], g["rep_credits"])
+        self.assertLess(g["owed_max"], 1.0 + r)
+        self.assertGreater(g["rep_sent"], 0)
+
+    def test_9_none_while_paused(self):
+        calls = []
+
+        class P(toy2.Sim):
+            def stage_repair(self, now):
+                calls.append(self.paused)
+                super().stage_repair(now)
+        c = e_cfg("OV", 0, 0.4, 0.0, repair=dict(r=0.2, edge="worth"), n_total=6000, pause_B=60)
+        out = P(c).run()
+        self.assertGreater(out["pause_events"], 0)
+        self.assertGreater(len(calls), 0)
+        self.assertFalse(any(calls))
+
+    def test_9_r_zero_pushes_nothing(self):
+        a = toy2.Sim(rt_e(repair=None))
+        b = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth")))
+        a.run()
+        ob = b.run()
+        self.assertEqual((a.ctr, a.ps_ctr), (b.ctr, b.ps_ctr))
+        self.assertEqual(ob["gauges"]["rep_credits"], 0)
+        self.assertEqual(ob["gauges"]["owed_max"], 0.0)
+
+    # -- 10 the loss draw ---------------------------------------------------------------------------------------
+    def test_10_loss_draw_uses_salt_repair_and_p0(self):
+        self.assertEqual(toy2.SALT_REPAIR, 7)
+        sm = span_sim("worth")
+        n = 200
+        for i in range(n):
+            sm.stage_repair(0.5005 + 1e-6 * i)
+        kept = sorted(pl[0] for (_, _, k, pl) in sm.heap if k == 11)
+        want = [j for j in range(n) if not toy2.u01(sm.cfg.seed, j, 0, 0, toy2.SALT_REPAIR) < sm.p0]
+        self.assertEqual(kept, want)
+        self.assertEqual(sm.g["rep_lost"], n - len(want))
+        self.assertGreater(sm.g["rep_lost"], 0)
+
+    def test_10_the_outage_drops_repairs(self):
+        sm = span_sim("worth", dead=(0, 0.4, 0.2))                                 # the window [0.4, 0.6) covers dep
+        for i in range(20):
+            sm.stage_repair(0.5005 + 1e-6 * i)
+        self.assertEqual(sm.g["rep_lost"], 20)
+        self.assertEqual([1 for (_, _, k, _) in sm.heap if k == 11], [])
+
+    # -- 11 the estimated loss -----------------------------------------------------------------------------------
+    def test_11_beta_upper_matches_estimator_rs(self):
+        def beta_quantile(a, b, p):                                                # raptorpath-math/src/estimator.rs, transcribed
+            mean = a / (a + b)
+            var = (a * b) / ((a + b) ** 2 * (a + b + 1.0))
+            return min(max(mean + toy2.normal_quantile_as(p) * math.sqrt(var), 0.0), 1.0)
+        rnd = random.Random(7)
+        for _ in range(20):
+            a, b = rnd.uniform(0.5, 5000.0), rnd.uniform(0.5, 800.0)               # a received, b lost
+            self.assertAlmostEqual(toy2.beta_upper(a, b), beta_quantile(b, a, 0.95), delta=1e-12)
+
+    def test_11_cold_value_and_a_burst_of_new_holes(self):
+        sm = toy2.Sim(rt_e(repair=dict(r="est", edge="worth")))
+        self.assertEqual(sm.eps_est, toy2.beta_upper(1.0, 1.0))
+        rep = (0.1, 0, 0, -1, (), (), 0, 0.0, None, None, 4000, 1000, 0.0)
+        sm.on_report(0.2, rep)
+        self.assertGreater(sm.eps_est, 0.15)
+        self.assertAlmostEqual(sm.beta_a, 0.995 + 4000)
+        self.assertAlmostEqual(sm.beta_b, 0.995 + 1000)
+
+    def test_11_a_dequeue_expiry_is_not_a_fate(self):
+        tot = [0, 0]
+
+        class P(toy2.Sim):
+            def on_report(self, now, rep):
+                tot[0] += rep[10]
+                tot[1] += rep[11]
+                super().on_report(now, rep)
+        c = e_cfg("OV", 0, 0.1, 0.0, repair=dict(r="est", edge="worth"), n_total=24000)
+        sm = P(c)
+        out = sm.run()
+        self.assertGreater(out["intake_expired_deq"] + out["intake_expired"], 0)
+        self.assertLess(out["n_src"], out["units"])
+        self.assertLessEqual(tot[0] + tot[1] + sm.raw_rcv + sm.raw_lost, out["n_src"])    # expired units get no seq, so they are in no batch
+
+    # -- 12 today's Realtime with repair ------------------------------------------------------------------------
+    def test_12_budget_with_repair(self):
+        seen = []
+
+        class P(toy2.Sim):
+            def refresh_shed_budget(self):
+                super().refresh_shed_budget()
+                if self.srtt is not None:
+                    rp = self.cfg.repair
+                    eps = self.eps_est if rp["r"] == "est" else self.p0
+                    seen.append((self.shed_budget, toy2.residual_loss(eps, self.r_cur, float(self.astar_cur), 1.0), self.p0))
+        sm = P(rt_cfg(repair=dict(r="law", edge="evict"), dead=(0, 0.5, 0.3)))
+        sm.run()
+        self.assertTrue(seen)
+        self.assertTrue(all(a == b for a, b, _ in seen))
+        self.assertLess(min(a for a, _, _ in seen), seen[0][2])                    # repair lowers the budget below p0
+        off = toy2.Sim(rt_cfg())
+        off.run()
+        self.assertAlmostEqual(off.shed_budget, 0.03)                              # repair off: eps_hat, as proof-s1
+
+    # -- 13 RTT sampling -------------------------------------------------------------------------------------------
+    def test_13_rtt_sampling_ignores_a_decoded_seq(self):
+        def sample(dec):
+            sm = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth")))
+            sm.n_sent = 10
+            for s in range(10):
+                sm.sent_t[s] = s * 0.02
+            sm.got[7] = 1
+            sm.arr[7] = 0.2
+            sm.dec_flag[7] = 1 if dec else 0
+            sm.on_report(0.3, (0.25, 0, 0, 7, (), (), 0, 0.0, None, None, 0, 0, 0.0))
+            return sm.srtt
+        self.assertIsNone(sample(True))
+        self.assertAlmostEqual(sample(False), 0.3 - 7 * 0.02)
+
+    # -- 14 T = inf identity under repair -----------------------------------------------------------------------
+    def test_14_t_inf_identity_under_repair(self):
+        for cell, kw in (("OV", dict(n_total=3000)), ("CL", dict(n_total=3000, dead=(0, 0.1, 0.1)))):
+            for seed in range(3):
+                a = e_cfg(cell, seed, INF, INF, repair=dict(r="law", edge="worth"), **kw)
+                lc, d = batch3d.base(cell, **kw)
+                b = toy2.Cfg(cell=lc, sender="S1c", recv="R1", seed=seed, delta=50.0, rho=1.0, repair=dict(r="law", edge="none"), **d)
+                a.want_trace = b.want_trace = True
+                ra, rb = toy2.run(a), toy2.run(b)
+                self.assertEqual(id3e_t(rb, ra), [], (cell, seed))
+                self.assertEqual(ra["_trace"], rb["_trace"], (cell, seed))
+                self.assertGreater(ra["gauges"]["rep_sent"], 0)
+
+    # -- 15 robustness hooks --------------------------------------------------------------------------------------
+    def test_15_o_bias_and_r_bias(self):
+        a = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth")))
+        b = toy2.Sim(rt_e(repair=dict(r=0.0, edge="worth"), o_bias=0.01))
+        for sm in (a, b):
+            sm.srtt = 0.1
+        self.assertAlmostEqual(b.o_hat() - a.o_hat(), 0.01, delta=1e-12)
+        self.assertEqual(a.R_now(), b.R_now())
+
+        def deq_m(rb):
+            seen = []
+            orig = toy2.dequeue_expired
+            toy2.dequeue_expired = lambda T, age, m: (seen.append(m), False)[1]
+            try:
+                c = e_cfg("OV", 0, 0.4, 0.0, repair=dict(r=0.0, edge="worth"), n_total=3000, R_bias=rb)
+                sm = toy2.Sim(c)
+                sm.emit(0.5)                                                       # a backlog: unit 1 is already due at t = 0.5
+            finally:
+                toy2.dequeue_expired = orig
+            return seen[0], sm.R_now()
+        m0, R0 = deq_m(0.0)
+        m1, R1 = deq_m(0.01)
+        self.assertAlmostEqual(m1 - m0, 0.01, delta=1e-12)
+        self.assertEqual(R0, R1)
+
+    def test_15_rev_q_raises_the_mean_srtt(self):
+        def srtt_mean(rq):
+            c = e_cfg("CL", 0, 0.4, 0.0, n_total=10000, dead=None, rev_q=rq)
+            return toy2.run(c)["srtt_mean"]
+        self.assertAlmostEqual(srtt_mean(0.1) - srtt_mean(0.0), 0.1, delta=0.01)
+
+    def test_15_rel_owd(self):
+        def o_value(rq, mode):
+            c = e_cfg("K-I2", 0, 0.4, 0.0, repair=dict(r=0.0, edge="worth"), dead=None, n_total=600, J=0.0, rev_q=rq, owd_est=mode)
+            sm = toy2.Sim(c)
+            sm.run()
+            return sm.o_hat()
+        fwd0, rel0 = o_value(0.0, "fwd"), o_value(0.0, "rel")
+        self.assertAlmostEqual(rel0, 0.005, delta=1e-9)                            # the one-way delay: no queue anywhere
+        self.assertAlmostEqual(fwd0, rel0, delta=0.002)                            # srtt carries up to one report tick of waiting (reported: not 1e-9)
+        fwd1, rel1 = o_value(0.1, "fwd"), o_value(0.1, "rel")
+        self.assertAlmostEqual(rel1, 0.005, delta=0.001)
+        self.assertGreater(fwd1 - rel1, 0.09)                                      # the reverse queue reads as forward delay
+
+    # -- 16 the deny test ---------------------------------------------------------------------------------------------
+    def test_16_deny_test_with_the_new_names(self):
+        for nm in ("rate_law", "span_edge_ok", "decoded_late", "beta_upper", "p_fec_normal_as", "bulkness", "controller_rate_parts"):
+            self.assertIn(nm, EXEMPT)
+        with open(os.path.join(HERE, "toy2.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertEqual(deny_scan(src), [])
+        self.assertIn("def span_edge_ok", src)
+        self.assertFalse(deny_scan("def span_edge_ok(edge, T, age, o):\n    return age + o < T\n"))
+        self.assertFalse(deny_scan("def decoded_late(T, age):\n    return age > T\n"))
+        self.assertTrue(deny_scan("def stage(c, age):\n    return age > c.T\n"))                     # control: the same comparison elsewhere is flagged
+        self.assertTrue(deny_scan("def decode(T, age):\n    return age > T\n"))
+        self.assertTrue(deny_scan("def stage(c):\n    return c.delta < 1\n"))
+
+    # -- 17 the decoder counts each unit once ---------------------------------------------------------------------------
+    def test_17_each_unit_once(self):
+        sm = self.rx({3, 4, 5})
+        sm.on_repair(0.2, (0, 3, 5, 0.19))                                         # {3,4}
+        sm.on_repair(0.21, (1, 4, 6, 0.2))                                         # {4,5}
+        sm.on_repair(0.22, (2, 5, 6, 0.21))                                        # {5}: decodes 5, then 4 through (1), then 3 through (0)
+        self.assertEqual(sm.g["dec_units"], 3)
+        self.assertEqual(sm.g["dup"], 0)
+        self.assertTrue(all(sm.dlv[s] >= 0 for s in (3, 4, 5)))
+        self.assertEqual(sm.g["rep_used"], 3)
+        self.assertEqual(len(sm.eqs), 0)
+
+    # -- readouts ----------------------------------------------------------------------------------------------------
+    def test_rep3e_block_exists_with_repair_off_and_survives_json(self):
+        out = toy2.run(rt_e(repair=None, tau_extra=(0.12,), want_trace=True))
+        self.assertIn("rep3e", out)
+        r3 = out["rep3e"]
+        for k in ("r_mean", "W_mean", "sat_pressure", "W_floor_bind_frac", "W_cap_bind_frac", "eps_est_mean", "p_dec_meas", "p_fec_law",
+                  "rep_link_share", "rep_members_mean", "recovery_time_0p15", "mu_eff_hat", "share_by"):
+            self.assertIn(k, r3)
+        self.assertEqual(r3["r_mean"], 0.0)
+        back = json.loads(json.dumps(r3))
+        self.assertAlmostEqual(back["share_by"]["0.12"], r3["share_by"][0.12])
+        n = out["n_src"]
+        dl = np.asarray(out["_dlv"][:n])
+        age = dl - np.asarray(out["_h"][:n])
+        self.assertAlmostEqual(r3["share_by"][0.12], float(((dl >= 0) & (age <= 0.12)).sum()) / out["units"], places=12)
+
+    def test_rep3e_with_repair_reads_the_law(self):
+        out = toy2.run(rt_e(repair=dict(r="law", edge="worth")))
+        r3 = out["rep3e"]
+        self.assertAlmostEqual(r3["r_mean"], 0.3835, delta=0.01)
+        self.assertGreater(r3["W_floor_bind_frac"], 0.9)                           # all but the readings before the first RTT sample
+        self.assertGreater(r3["sat_pressure"], 0.5)
+        self.assertGreater(r3["p_dec_meas"], 0.3)
+
+    def test_recovery_time_at_0p15_on_a_synthetic_run(self):
+        dt = 0.001
+        ages = np.full(20000, 0.01)
+        ages[3000:5000] = 0.2                                                      # late for 0.15 s but within 0.4 s, from 3.0 s to 5.0 s
+        r4 = toy2.recovery_time(ages, dt, 0.4, 2.0, 3.0)
+        r15 = toy2.recovery_time(ages, dt, 0.15, 2.0, 3.0)
+        self.assertEqual(r4[1], "ok")
+        self.assertAlmostEqual(r4[0], 0.0, delta=0.11)
+        self.assertEqual(r15[1], "ok")
+        self.assertAlmostEqual(r15[0], 2.0, delta=0.6)
+
+
+class Stage3eBracket(unittest.TestCase):
+    """Arm RB (amendment 3): r held at the law's cap r_max from the outage start until rb_A after its end, the law outside."""
+
+    def test_default_and_the_window(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.rb_A, c.rb_unit), (3.0, "s"))
+
+    def test_r_is_the_cap_inside_the_window_and_the_law_outside(self):
+        seen = []
+
+        class P(toy2.Sim):
+            def read_law(self, now):
+                before = self.t_eval
+                super().read_law(now)
+                if self.t_eval == now and self.law_last is not None:
+                    seen.append((now, self.r_cur, self.law_last["r"]))
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="rb", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rb_A=0.5)
+        P(c).run()
+        inside = [x for x in seen if 0.5 <= x[0] < 1.5]
+        outside = [x for x in seen if x[0] < 0.5 or x[0] >= 1.5]
+        self.assertTrue(inside and outside)
+        self.assertTrue(all(r == toy2.R_MAX for _, r, _ in inside))
+        self.assertTrue(all(r == law for _, r, law in outside))
+        self.assertTrue(any(law < toy2.R_MAX for _, _, law in inside))                      # control: the law itself was below the cap there
+
+    def test_the_symbol_unit_counts_first_sends_after_the_outage(self):
+        seen = []
+
+        class P(toy2.Sim):
+            def read_law(self, now):
+                super().read_law(now)
+                if self.t_eval == now and self.law_last is not None:
+                    seen.append((now, self.r_cur, self.law_last["r"], self.fs_after_outage))
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="rb", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rb_A=2000.0, rb_unit="sym")
+        P(c).run()
+        held = [x for x in seen if x[0] >= 1.0 and x[3] < 2000]
+        free = [x for x in seen if x[0] >= 1.0 and x[3] >= 2000]
+        self.assertTrue(held and free)
+        self.assertTrue(all(r == toy2.R_MAX for _, r, _, _ in held))
+        self.assertTrue(all(r == law for _, r, law, _ in free))
+        self.assertTrue(all(x[3] == 0 for x in seen if x[0] < 1.0))                           # nothing counted before the outage end
+
+    def test_an_empty_window_equals_rl(self):
+        for seed in range(2):
+            a = e_cfg("K-L10", seed, 0.12, 0.0, repair=dict(r="law", edge="worth"), dead=None, n_total=600)
+            b = e_cfg("K-L10", seed, 0.12, 0.0, repair=dict(r="rb", edge="worth"), dead=None, n_total=600)
+            a.want_trace = b.want_trace = True
+            ra, rb = toy2.run(a), toy2.run(b)
+            self.assertEqual(id3e_t(ra, rb), [])
+            self.assertEqual(ra["_trace"], rb["_trace"])
+            self.assertEqual(ra["gauges"]["rep_sent"], rb["gauges"]["rep_sent"])
+
+
+class Stage3eDecodedByCause(unittest.TestCase):
+    """Gauges that split the decoded units by why their first send was missing (read-only: no behaviour changes)."""
+
+    def test_a_decoded_unit_whose_first_send_the_link_queue_dropped_is_counted(self):
+        sm = Stage3e.rx({5, 6})
+        sm.qd_first[5] = 1                                                                     # the link queue dropped seq 5's first send
+        sm.on_repair(0.2, (0, 5, 6, 0.19))
+        sm.on_repair(0.21, (1, 6, 7, 0.2))
+        self.assertEqual(sm.g["dec_units"], 2)
+        self.assertEqual(sm.g["dec_units_qdrop"], 1)
+
+    def test_the_queue_drop_of_a_first_send_is_counted_once_per_unit_on_an_overloaded_link(self):
+        lk = dict(link=dict(C=10000.0, Q=1250.0), rate=12000.0, n_total=12000, dead=None, t_limit=6.0)
+        out = toy2.run(rt_cfg(repair=dict(r="law", edge="evict"), **lk))
+        g = out["gauges"]
+        self.assertGreater(g["first_qdrop"], 0)
+        self.assertLessEqual(g["first_qdrop"], g["queue_drop"])
+        self.assertLessEqual(g["dec_units_qdrop"], min(g["dec_units"], g["first_qdrop"]))
+        off = toy2.run(rt_cfg(**lk))
+        self.assertEqual(off["gauges"]["dec_units_qdrop"], 0)                                  # nothing decodes without repair
+
+
+class Rev4Gauge(unittest.TestCase):
+    """Revision 4, step 1 (three-knobs-revision4.md 3.1, 3.2, 5.3): the wait limit's inputs as readouts only.  No decision reads them."""
+
+    def test_defaults(self):
+        c = toy2.Cfg()
+        self.assertEqual((c.rev4_gauge, c.dhat_bias), (False, 0.0))
+
+    def test_tau_is_inert_at_t_inf_and_never_nan(self):
+        for delta in (0.005, 0.5, 50.0, 1e6):
+            for x in (0.0, 1.0, 1.3, 100.0):
+                for t_ov in (0.0, 1e6):
+                    K = toy2.wait_limit_K(delta, x, t_ov)
+                    tau = toy2.wait_limit_tau(math.inf, K, math.inf)
+                    self.assertEqual(tau, math.inf)
+                    self.assertFalse(math.isnan(tau))
+
+    def test_tau_is_t_exactly_at_headroom(self):
+        for T in (0.1, 0.4, 2.0, 1e9):
+            for x in (0.0, 0.5, 1.0):
+                self.assertEqual(toy2.wait_limit_tau(T, toy2.wait_limit_K(50.0, x, 1e3), T - 0.1 + 0.09), T)
+
+    def test_shape_monotone_and_the_collapse_threshold(self):
+        R, o = 0.102, 0.093
+        den = lambda T: max(T - R + o, o)                                    # noqa: E731
+        prev = -math.inf
+        for T in (0.2, 0.4, 0.8, 2.0):
+            tau = toy2.wait_limit_tau(T, 0.05, den(T))
+            self.assertGreater(tau, prev)
+            prev = tau
+        for a, b in (((0.5, 1.3, 2.0), (50.0, 1.3, 2.0)), ((50.0, 1.3, 2.0), (50.0, 2.0, 2.0)), ((50.0, 1.3, 2.0), (50.0, 1.3, 3.0))):
+            self.assertGreaterEqual(toy2.wait_limit_tau(0.4, toy2.wait_limit_K(*a), den(0.4)), toy2.wait_limit_tau(0.4, toy2.wait_limit_K(*b), den(0.4)))
+        for T, o_ in ((0.4, 0.093), (1.0, 0.05), (2.0, 0.2)):
+            Kc = toy2.wait_limit_Kc(T, R, o_)
+            self.assertAlmostEqual(Kc, (T - R) * (T - R + o_), delta=1e-12)
+            c = T - R
+            self.assertAlmostEqual(c - Kc / (c + o_), 0.0, delta=1e-12)     # the effective margin reaches 0 at K_c
+        K = toy2.wait_limit_K(50.0, 1.25, 1.0)
+        self.assertAlmostEqual(K, 12.5, delta=1e-12)
+
+    def test_dhat_needs_ten_qualifying_rounds_and_a_short_pause(self):
+        d = toy2.DHat()
+        self.assertEqual(d.value(), math.inf)
+        for i in range(9):
+            d.add_round(100, 0.1, True, 0.0, 0.1)
+        self.assertEqual(d.value(), math.inf)                                    # nine rounds: not enough
+        d.add_round(120, 0.1, True, 0.05, 0.1)
+        self.assertEqual(d.value(), 1200.0)                                       # the maximum over the ten
+        d.add_round(500, 0.1, True, 0.5, 0.1)                                     # a pause longer than R: the round does not qualify
+        self.assertEqual(d.value(), math.inf)
+        for i in range(10):
+            d.add_round(100, 0.1, True, 0.0, 0.1)
+        self.assertEqual(d.value(), 1000.0)                                       # ten clean rounds later it is back, the bad one forgotten
+        d.add_round(100, 0.1, False, 0.0, 0.1)                                    # not flow-limited: the link may have idled
+        self.assertEqual(d.value(), math.inf)
+        z = toy2.DHat()
+        for i in range(10):
+            z.add_round(0, 0.1, True, 0.0, 0.1)
+        self.assertGreater(z.value(), 0.0)                                        # D-hat > 0 always
+
+    def test_the_estimator_cannot_read_the_cells_link(self):
+        import inspect
+        src = inspect.getsource(toy2.DHat) + inspect.getsource(toy2.Sim.dhat_close_round) + inspect.getsource(toy2.Sim.dhat_note_pause)
+        for forbidden in ("link", "p0", "pc", "link_sv", "cell"):
+            self.assertNotIn(forbidden, src)
+
+    def test_gauges_change_nothing(self):
+        for cell, kw in (("CL", dict(n_total=6000, dead=(0, 0.1, 0.1))), ("OV", dict(n_total=6000))):
+            a = e_cfg(cell, 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), **kw)
+            b = e_cfg(cell, 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), rev4_gauge=True, **kw)
+            a.want_trace = b.want_trace = True
+            ra, rb = toy2.run(a), toy2.run(b)
+            import batch3e
+            self.assertEqual(batch3e.id3e(ra, rb), [], cell)
+            self.assertEqual(ra["_trace"], rb["_trace"], cell)
+            self.assertNotIn("rev4", ra)
+            self.assertIn("rev4", rb)
+
+    def test_no_tick_is_below_t_with_headroom_and_overload_shows(self):
+        ok = toy2.run(e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), rev4_gauge=True))["rev4"]
+        self.assertGreater(ok["n_ticks"], 0)
+        self.assertEqual(ok["n_tau_lt_T"], 0)
+        ov = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True))["rev4"]
+        self.assertGreater(ov["ov_frac"], 0.1)
+        self.assertGreater(ov["n_tau_lt_T"], 0)
+        self.assertIsNotNone(ov["collapse_t"])
+        self.assertGreater(ov["in_flight_max"], 0)
+
+    def test_in_flight_counts_copies_and_repairs(self):
+        cfg = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=20000, dead=(0, 0.5, 0.5), rev4_gauge=True)
+        sim = toy2.Sim(cfg)
+        seen = []
+        orig = sim.in_flight_now
+        sim.in_flight_now = lambda now: seen.append((orig(now), max(0, sim.n_sent - 1 - sim.rhi_known))) or seen[-1][0]
+        sim.run()
+        self.assertTrue(seen)
+        self.assertTrue(all(a >= b for a, b in seen))                    # never below the unreported first-send tail
+        self.assertTrue(any(a > b for a, b in seen))                     # copies or repairs in flight raise it somewhere
+
+    def test_a_biased_dhat_reads_lower(self):
+        r0 = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True))["rev4"]
+        r1 = toy2.run(e_cfg("OV", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=36000, rev4_gauge=True, dhat_bias=0.10))["rev4"]
+        self.assertGreaterEqual(r1["n_tau_lt_T"], r0["n_tau_lt_T"])
+        self.assertAlmostEqual(r1["dhat_mean"] / r0["dhat_mean"], 0.9, delta=0.02)
+
+
+class Rev4Step2(unittest.TestCase):
+    """Revision 4 step 2 (three-knobs-revision4.md 3.1, 3.3, 5.2): the wait limit, the spare-capacity clamp and today's Realtime behind an engine queue.  All off by default."""
+
+    @staticmethod
+    def ov(design, n=24000, **kw):
+        import batch3e
+        n = kw.pop("n_total", n)
+        rp = batch3e.rp("RL")
+        if design == "new":
+            return batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, rp, n_total=n, **kw)
+        return batch3e.rt_cfg("OV", 0, 50.0, rp, n_total=n, **kw)
+
+    def test_defaults_off_and_fingerprint_stable(self):
+        import batch3e
+        c = toy2.Cfg()
+        self.assertEqual((c.clamp, c.wait_limit, c.eq, c.cwnd_sim, c.rate2, c.rate2_t, c.eq_cap), (False, False, False, 0.0, 0.0, 0.0, 8192))
+        a = self.ov("new")
+        self.assertEqual(batch3e.fingerprint(a), batch3e.fingerprint(dataclasses.replace(a, clamp=False, wait_limit=False)))
+        self.assertNotEqual(batch3e.fingerprint(a), batch3e.fingerprint(dataclasses.replace(a, clamp=True)))
+        self.assertNotEqual(batch3e.fingerprint(a), batch3e.fingerprint(dataclasses.replace(a, cwnd_sim=2048.0)))
+
+    def test_hand_over_clock_is_piecewise(self):
+        sim = toy2.Sim(self.ov("new", rate2=8000.0, rate2_t=0.5, n_total=12000))
+        self.assertAlmostEqual(sim.ht(0), 0.0, delta=1e-12)
+        self.assertAlmostEqual(sim.ht(6000), 0.5, delta=1e-9)
+        self.assertAlmostEqual(sim.ht(6000 + 8000), 1.5, delta=1e-9)
+        for u in (0, 1, 5999, 6000, 6001, 11999):
+            self.assertEqual(sim.hand_count(sim.ht(u)) - 1, u)                # the inverse hands over unit u at ht(u)
+
+    def test_clamp_bounds_r_eff_and_changes_only_where_it_binds(self):
+        import batch3e
+        a = toy2.run(dataclasses.replace(self.ov("new"), rev4_gauge=True))
+        b = toy2.run(dataclasses.replace(self.ov("new"), rev4_gauge=True, clamp=True))
+        self.assertGreater(a["rev4"]["spare_bind"], 0.5)                       # OV: in_flight near B
+        self.assertGreater(b["gauges"]["clamp_n"], 0)
+        self.assertLessEqual(b["gauges"]["r_eff_over_spare"], 0)                # r_eff <= max(spare, 0) at every accrual
+        self.assertLess(b["gauges"]["repair_sends"] + b["gauges"]["rep_sent"], a["gauges"]["repair_sends"] + a["gauges"]["rep_sent"] + 1)
+        self.assertEqual(b["rev4"]["cwnd_sim"], 1000.0)
+
+    def test_clamp_is_identity_without_repair_and_where_there_is_headroom(self):
+        import batch3e
+        for kw in (dict(), ):
+            off = dataclasses.replace(batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, None, n_total=12000), want_trace=True)
+            on = dataclasses.replace(off, clamp=True)
+            self.assertEqual(batch3e.id3e(toy2.run(off), toy2.run(on)), [])        # r = 0: nothing changes
+        c = rt_e(repair=dict(r="law", edge="worth"), n_total=3000, want_trace=True)
+        on = dataclasses.replace(c, clamp=True)
+        ra, rb = toy2.run(c), toy2.run(on)
+        self.assertEqual(ra["_trace"], rb["_trace"])                               # RT-like cell: in_flight is tens, spare >> r
+        self.assertEqual(batch3e.id3e(ra, rb), [])
+
+    def test_wait_limit_is_inert_at_headroom_and_at_t_inf_and_acts_in_overload(self):
+        import batch3e
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), want_trace=True)
+        on = dataclasses.replace(c, wait_limit=True)
+        self.assertEqual(batch3e.id3e(toy2.run(c), toy2.run(on)), [])
+        inf = dataclasses.replace(self.ov("new", n=24000), T=math.inf, want_trace=True)
+        self.assertEqual(batch3e.id3e(toy2.run(inf), toy2.run(dataclasses.replace(inf, wait_limit=True))), [])
+        a = toy2.run(dataclasses.replace(self.ov("new", n=60000), rev4_gauge=True))
+        b = toy2.run(dataclasses.replace(self.ov("new", n=60000), rev4_gauge=True, wait_limit=True))
+        self.assertGreater(b["rev4"]["deq_early_would"] + b["rev4"]["n_tau_lt_T"], 0)
+        self.assertLess(b["dh_p50"], a["dh_p50"])                                   # the wait cap lowers the delay in overload
+
+    def test_send_gate_default_off_and_never_stages_while_in_flight_is_at_cwnd(self):
+        import batch3e
+        self.assertFalse(toy2.Cfg().send_gate)
+        a = toy2.run(dataclasses.replace(self.ov("new", n=36000), rev4_gauge=True))
+        b = toy2.run(dataclasses.replace(self.ov("new", n=36000), rev4_gauge=True, send_gate=True))
+        self.assertGreater(a["rev4"]["emit_over_B"], 0)                       # in_flight passes B without the gate (the store pause counts outstanding seqs)
+        self.assertEqual(b["rev4"]["emit_over_B"], 0)                         # no payload staged while in_flight >= cwnd_sim
+        self.assertLess(b["rev4"]["in_flight_max"], a["rev4"]["in_flight_max"])
+        self.assertEqual(batch3e.fingerprint(self.ov("new")), batch3e.fingerprint(dataclasses.replace(self.ov("new"), send_gate=False)))
+        self.assertNotEqual(batch3e.fingerprint(self.ov("new")), batch3e.fingerprint(dataclasses.replace(self.ov("new"), send_gate=True)))
+
+    def test_send_gate_is_identity_where_in_flight_stays_below_cwnd(self):
+        import batch3e
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=20000, dead=(0, 0.5, 0.5), want_trace=True)
+        on = dataclasses.replace(c, send_gate=True, cwnd_sim=1e6)
+        self.assertEqual(batch3e.id3e(toy2.run(c), toy2.run(on)), [])
+
+    def test_send_gate_needs_loss_declaration_to_survive_an_outage(self):
+        """Reports alone never declare the datagrams lost into a dead link (no data arrives, so no report): the gate then holds the sender for good.
+        RFC 9002's time threshold (a send unreported for 9/8 of the round trip is lost) is the engine's loss detection, and frees it."""
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=None, n_total=20000, dead=(0, 0.3, 0.5), send_gate=True, rev4_gauge=True)
+        self.assertEqual(toy2.Cfg().inflight_to, 0.0)
+        stall = toy2.run(c)
+        free = toy2.run(dataclasses.replace(c, inflight_to=1.125))
+        self.assertLess(stall["share_any"], 0.5)
+        self.assertGreater(free["share_any"], 0.9)
+        self.assertEqual(free["rev4"]["emit_over_B"], 0)
+
+    def test_engine_in_flight_horizon_and_the_gate_under_it(self):
+        """scheduler/path.rs expire_in_flight: the charge log is swept at max(4 x SRTT, IN_FLIGHT_EXPIRY_MIN = 250 ms) (copa.rs:307)."""
+        self.assertEqual(toy2.engine_in_flight_horizon(0.05), 0.25)
+        self.assertEqual(toy2.engine_in_flight_horizon(0.1), 0.4)
+        self.assertEqual(toy2.engine_in_flight_horizon(0.0625), 0.25)
+        self.assertEqual(toy2.Cfg().inflight_to_rule, "")
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=None, n_total=20000, dead=(0, 0.3, 0.5), send_gate=True, rev4_gauge=True)
+        free = toy2.run(dataclasses.replace(c, inflight_to_rule="engine"))
+        self.assertGreater(free["share_any"], 0.9)                                    # no deadlock after the outage
+        self.assertEqual(free["rev4"]["emit_over_B"], 0)
+        a = toy2.run(dataclasses.replace(c, inflight_to_rule="engine", n_total=6000, dead=None, want_trace=True, rev4_gauge=False))
+        b = toy2.run(dataclasses.replace(c, send_gate=False, n_total=6000, dead=None, want_trace=True, rev4_gauge=False))
+        import batch3e
+        self.assertEqual(batch3e.id3e(a, b), [])                                      # headroom: the gate with the engine rule never binds
+
+    def test_engine_queue_evicts_the_oldest_and_is_inert_without_overload(self):
+        import batch3e
+        base = self.ov("rt", n=4000, dead=None)
+        calm = dataclasses.replace(base, rate=5000.0, eq=True, want_trace=True)       # below C = 10 000: the queue stays empty
+        ref = dataclasses.replace(calm, eq=False)
+        ra, rb = toy2.run(ref), toy2.run(calm)
+        self.assertEqual(rb["gauges"]["fq_evict"], 0)
+        self.assertEqual(ra["delivered"], rb["delivered"])
+        over = dataclasses.replace(self.ov("rt", n=3000, dead=None), eq=True, eq_cap=100)
+        r = toy2.run(over)
+        self.assertGreater(r["gauges"]["fq_evict"], 0)
+        self.assertLessEqual(r["gauges"]["fq_max"], 100)
+        self.assertEqual(r["gauges"]["queue_drop"], 0)                                 # drained at the link rate: the link buffer stays empty
+
+    def test_engine_queue_adds_residence_under_sustained_overload(self):
+        eq = toy2.run(dataclasses.replace(self.ov("rt", n=9000, dead=None), eq=True, eq_cap=4000))
+        st = toy2.run(self.ov("rt", n=9000, dead=None))
+        self.assertGreater(eq["w_p50"], st["w_p50"])                                      # delivered units wait in the queue instead of being dropped at the link
+        self.assertEqual(eq["gauges"]["queue_drop"], 0)
+        self.assertGreater(st["gauges"]["queue_drop"], 0)
+        self.assertGreater(eq["share_any"], st["share_any"])
+
+
+class Rev4FloorRepeat(unittest.TestCase):
+    """Revision 4 section 10: the floor repeat says only what the receiver may not know.  Default off."""
+
+    @staticmethod
+    def cell(name, n, **kw):
+        import batch3e
+        return batch3e.new_cfg(name, 0, 0.4, 0.0, 50.0, kw.pop("repair", None), n_total=n, floor_repeat="evidenced", **kw)
+
+    def test_defaults_and_fingerprint(self):
+        import batch3e
+        c = self.cell("K-OV", 300)
+        self.assertEqual(toy2.Cfg().floor_repeat, "")
+        self.assertEqual(batch3e.fingerprint(dataclasses.replace(c, floor_repeat="")), batch3e.fingerprint(dataclasses.replace(c, floor_repeat="")))
+        self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, floor_repeat="")))
+
+    def test_planted_equal_time_burst_needs_ordinals(self):
+        """A burst staged at one instant: its first member arrives, the rest are lost, nothing follows.  With ordinals the repeat fires once R has passed; with send
+        stamps (all equal) the same predicate suppresses it for good and the run would never finish."""
+        R = 0.1
+        ords = {100: 11, 101: 12, 102: 13, 103: 14, 104: 15}
+        carry_vals, carry_ords = [101, 105], [11, 15]               # the first member carried floor 101, the last carries 105
+        cands = [104, 103, 102, 101]
+        before = toy2.floor_repeat_needed(cands, ords, 11, carry_vals, carry_ords, 1.0, R, 1.0 + R - 0.01)
+        after = toy2.floor_repeat_needed(cands, ords, 11, carry_vals, carry_ords, 1.0, R, 1.0 + R)
+        self.assertFalse(before[0])
+        self.assertTrue(after[0])
+        self.assertEqual((after[1], after[2]), (104, True))          # by timeout, at the highest evidenced hole
+        stamps = {s: 1.0 for s in ords}
+        for now in (1.0, 1.0 + R, 5.0, 100.0):
+            self.assertFalse(toy2.floor_repeat_needed(cands, stamps, 1.0, carry_vals, [1.0, 1.0], 1.0, R, now)[0])   # red: stamps never fire
+        carried = toy2.floor_repeat_needed(cands, ords, 15, carry_vals, carry_ords, 1.0, R, 50.0)
+        self.assertFalse(carried[0])                                 # the carrier of floor 105 arrived: nothing to say
+
+    def test_suppressed_repeats_find_the_receiver_floor_already_above(self):
+        for cell, n, kw in (("K-OV", 1500, {}), ("OV", 24000, {})):
+            r = toy2.run(self.cell(cell, n, **kw))
+            g = r["gauges"]
+            self.assertGreater(g["rep_suppressed"], 0, cell)                 # execution witness
+            self.assertEqual(g["rep_supp_viol"], 0, cell)                    # the absolute: F_rx > s* at every suppressed repeat
+
+    def test_k_ov_floor_share_falls_to_a_few_percent(self):
+        import batch3e
+        base = batch3e.new_cfg("K-OV", 0, 0.4, 0.0, 50.0, None)
+        a = toy2.run(base)
+        b = toy2.run(dataclasses.replace(base, floor_repeat="evidenced"))
+        slots = lambda r: r["gauges"]["floors"] + r["gauges"]["repair_sends"] + r["gauges"]["rep_sent"] + 2400     # noqa: E731
+        self.assertGreater(a["gauges"]["floors"] / 2400.0, 0.2)                # today's rule: a quarter of the link
+        self.assertLessEqual(b["gauges"]["floors"] / 2400.0, 0.03)
+        self.assertGreater(b["share_any"], a["share_any"] + 0.1)
+
+    def test_outage_fires_by_timeout_and_the_run_finishes(self):
+        c = self.cell("CL", 30000, dead=(0, 0.5, 0.5))
+        r = toy2.run(c)
+        off = toy2.run(dataclasses.replace(c, floor_repeat=""))
+        self.assertGreater(r["gauges"]["rep_fired_by_timeout"], 0)
+        self.assertTrue(r["finished"])
+        self.assertLess(abs(r["share_any"] - off["share_any"]), 0.01)
+        self.assertEqual(r["gauges"]["rep_supp_viol"], 0)
+
+    def test_e_cells_finish(self):
+        for name in ("E-I2", "Ec"):
+            r = toy2.run(self.cell(name, 0) if False else dataclasses.replace(__import__("batch3e").new_cfg(name, 0, 0.4, 0.0, 50.0, None), floor_repeat="evidenced"))
+            self.assertTrue(r["finished"], name)
+
+
+class Rev4OverdueAndElig(unittest.TestCase):
+    """Revision 4 sections 10.7 and 11.2: the repeat waits for the newest covering data carrier to be overdue; the blocker sweep resends only an overdue last send."""
+
+    @staticmethod
+    def kov(**kw):
+        import batch3e
+        base = dict(floor_repeat="evidenced_overdue", elig="rack", wait_limit=True, clamp=True, rev4_gauge=True)
+        base.update(kw)
+        return dataclasses.replace(batch3e.new_cfg("K-OV", 0, 0.4, 0.0, 50.0, batch3e.rp("RL")), **base)
+
+    def test_defaults_and_fingerprint(self):
+        import batch3e
+        c = toy2.Cfg()
+        self.assertEqual((c.floor_repeat, c.elig), ("", ""))
+        base = batch3e.new_cfg("K-OV", 0, 0.4, 0.0, 50.0, None)
+        self.assertEqual(batch3e.fingerprint(base), batch3e.fingerprint(dataclasses.replace(base, elig="", floor_repeat="")))
+        self.assertNotEqual(batch3e.fingerprint(base), batch3e.fingerprint(dataclasses.replace(base, elig="rack")))
+        self.assertNotEqual(batch3e.fingerprint(dataclasses.replace(base, floor_repeat="evidenced")), batch3e.fingerprint(dataclasses.replace(base, floor_repeat="evidenced_overdue")))
+
+    def test_overdue_clause_waits_for_the_newest_data_carrier(self):
+        R = 0.1
+        last = {100: 11, 101: 12}
+        cv, ck = [102], [11]                                           # a floor of 102 was first carried by ordinal 11
+        # a hole 101 sent at ordinal 12 never reported; silence already evidences it; the covering datagram (a data carrier, sent t = 1.0) is young
+        young = toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + 0.5 * R, overdue=(102, 1.0))
+        old = toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + R, overdue=(102, 1.0))
+        self.assertFalse(young[0])
+        self.assertTrue(old[0])
+        self.assertTrue(toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + 0.5 * R, overdue=None)[0])   # 10.3 alone fires at once
+        self.assertTrue(toy2.floor_repeat_needed([101], last, -1, cv, ck, 0.0, R, 1.0 + 0.5 * R, overdue=(101, 1.0))[0])  # nothing carried above 101: the clause holds
+        # the planted lost-tail burst of 10.5 test 2 still finishes: first member arrived, the rest lost, nothing follows
+        ords = {100: 11, 101: 12, 102: 13, 103: 14, 104: 15}
+        burst = toy2.floor_repeat_needed([104, 103, 102, 101], ords, 11, [101, 105], [11, 15], 1.0, R, 1.0 + R, overdue=(105, 1.0))
+        self.assertTrue(burst[0])
+
+    def test_k_ov_repeats_fall_and_every_repeat_is_at_least_r_after_the_carrier(self):
+        a = toy2.run(self.kov(floor_repeat="evidenced", elig=""))
+        b = toy2.run(self.kov(elig=""))
+        self.assertEqual(b["gauges"]["rep_fire_viol_carrier"], 0)
+        fires = lambda r: r["gauges"]["rep_fired_by_knowledge"] + r["gauges"]["rep_fired_by_timeout"]      # noqa: E731
+        self.assertLess(fires(b), fires(a))
+        self.assertLessEqual(fires(b), 10)                                              # 95 -> at most 10 in 60 s (10.7)
+
+    def test_outage_still_fires_by_timeout_and_finishes(self):
+        import batch3e
+        c = dataclasses.replace(batch3e.new_cfg("CL", 0, 0.4, 0.0, 50.0, None, n_total=30000, dead=(0, 0.5, 0.5)), floor_repeat="evidenced_overdue")
+        r = toy2.run(c)
+        self.assertGreater(r["gauges"]["rep_fired_by_timeout"], 0)
+        self.assertTrue(r["finished"])
+
+    def test_overdue_absolute_check_counts_arrived_carriers(self):
+        """Under evidenced_overdue a suppression whose covering carrier is reported arrived is checked against the receiver's floor (it must already be above s*)."""
+        r = toy2.run(self.kov())
+        self.assertEqual(r["gauges"]["rep_supp_viol"], 0)                       # note: rep_checks reads 0 in K-OV, OV, CL and CL-long (a suppression whose carrier is reported arrived
+        self.assertGreaterEqual(r["gauges"]["rep_checks"], 0)                   # does not occur there), so this absolute has no witness in the cells; liveness carries the guarantee
+
+    def test_queue_gauges_are_timestamps_in_the_rev4_block(self):
+        import batch3e
+        c = dataclasses.replace(batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, batch3e.rp("RL"), n_total=24000), rev4_gauge=True, wait_limit=False)
+        r = toy2.run(c)["rev4"]
+        self.assertIsNotNone(r["first_rtt_t"])
+        self.assertGreater(r["first_rtt_t"], 0.0)
+        self.assertIsNotNone(r["first_deq_exp"])                        # the new build's intake reaches its cap
+        rt = toy2.run(dataclasses.replace(batch3e.rt_cfg("OV", 0, 50.0, batch3e.rp("RL"), n_total=24000), rev4_gauge=True))["rev4"]
+        self.assertIsNotNone(rt["first_qdrop_t"])                       # the stored arm: the link queue drops
+        eq = toy2.run(dataclasses.replace(batch3e.rt_cfg("OV", 0, 50.0, batch3e.rp("RL"), n_total=3000, ), rev4_gauge=True, eq=True, eq_cap=100, clamp=True, cwnd_sim=1000.0))["rev4"]
+        self.assertIsNotNone(eq["fq_full_t"])                           # the engine-queue arm: the FIFO fills
+        ad = toy2.run(dataclasses.replace(batch3e.adr_cfg("OV", 0, 0.99, 50.0, batch3e.rp("RL"), n_total=24000), rev4_gauge=True))["rev4"]
+        self.assertIsNotNone(ad["first_pause_t"])                       # ADR-0084: the store pauses
+
+    def test_elig_rack_stops_the_early_blocker_resends(self):
+        off = toy2.run(self.kov(elig=""))
+        on = toy2.run(self.kov())
+        self.assertGreater(on["rev4"]["elig_R_bind"], 0)                                # K-OV executes the clause: R exceeds P
+        self.assertEqual(on["rev4"]["elig_viol"], 0)                                    # no timer-driven copy of the blocker before its last send + max(P, R)
+        self.assertLess(on["gauges"]["dup"], 15)
+        self.assertLess(on["gauges"]["repair_sends"], off["gauges"]["repair_sends"])
+
+    def test_elig_rack_is_identity_where_r_never_exceeds_p(self):
+        import batch3e
+        c = dataclasses.replace(batch3e.new_cfg("CL", 0, 0.4, 0.0, 50.0, None, n_total=20000, dead=(0, 0.5, 0.5)), rev4_gauge=True, want_trace=True)
+        on = dataclasses.replace(c, elig="rack")
+        a, b = toy2.run(c), toy2.run(on)
+        if b["rev4"]["elig_R_bind"] == 0:
+            self.assertEqual(a["_trace"], b["_trace"])
+        else:
+            self.assertLess(abs(a["share_any"] - b["share_any"]), 0.01)
+
+
+class Rev4bLaw(unittest.TestCase):
+    """Revision 4 section 13.3 and 13.7: build B' (wait_limit_form = "rev4b"), the wait cap w = (c / xb) * min(1, 2 / (1 + y))."""
+
+    R, O = 0.104, 0.095
+    PRESETS = (0.005, 0.1, 0.5, 5.0, 50.0)
+
+    def w(self, T=0.4, delta=50.0, x=1.24, t_ov=1.0, R=None, o=None):
+        return toy2.wait_limit_w(T, self.R if R is None else R, self.O if o is None else o, delta, x, t_ov)
+
+    def test_default_form_is_build_b_and_the_selector_is_validated(self):
+        import batch3e
+        c = batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, None, wait_limit=True)
+        self.assertEqual(c.wait_limit_form, "k_t2")
+        self.assertEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, wait_limit_form="k_t2")))
+        self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, wait_limit_form="rev4b")))
+        with self.assertRaises(ValueError):
+            toy2.Sim(dataclasses.replace(c, wait_limit_form="rev4"))
+
+    def test_inert_at_t_inf_and_never_nan(self):
+        for delta in (0.005, 0.1, 0.5, 50.0, 1e6):
+            for x in (0.0, 1.0, 1.3, 100.0):
+                for t_ov in (0.0, 1e6):
+                    w = toy2.wait_limit_w(math.inf, self.R, self.O, delta, x, t_ov)
+                    self.assertEqual(w, math.inf, (delta, x, t_ov))
+
+    def test_never_nan_over_the_grid(self):
+        for T in (0.0, 0.05, 0.4, 2.0, math.inf):
+            for x in (0.0, 0.5, 1.0, 1.3, 1e6, math.nan):
+                for t_ov in (0.0, 1.0, 1e6):
+                    for delta in (0.005, 50.0, 1e6):
+                        self.assertFalse(math.isnan(self.w(T=T, delta=delta, x=x, t_ov=t_ov)), (T, x, t_ov, delta))
+
+    def test_exact_at_headroom(self):
+        for T in (0.05, 0.4, 1.0, 2.0, 1e9):
+            for x in (0.0, 0.5, 1.0):
+                for delta in self.PRESETS:
+                    self.assertEqual(self.w(T=T, delta=delta, x=x, t_ov=0.0), max(T - self.R, 0.0), (T, x, delta))
+        self.assertEqual(self.w(T=0.1, x=2.0, t_ov=5.0), 0.0)                    # T <= R: the cap is 0, as 13.2 already expires every head
+
+    def test_the_law_is_branch_free(self):
+        import inspect
+        body = inspect.getsource(toy2.wait_limit_w).split('"""')[2]
+        for bad in ("isinf", "isfinite", "if ", "else", "while"):
+            self.assertNotIn(bad, body)
+
+    def test_monotone_in_delta_t_ov_x_and_in_T(self):
+        for T in (0.4, 1.0, 2.0):
+            for x in (1.0, 1.24, 3.0):
+                for t_ov in (0.0, 0.01, 1.0, 40.0):
+                    ds = [self.w(T=T, delta=d, x=x, t_ov=t_ov) for d in (0.005, 0.1, 0.5, 5.0, 50.0, 1e3)]
+                    self.assertTrue(all(a >= b for a, b in zip(ds, ds[1:])), (T, x, t_ov))
+        for d in self.PRESETS:
+            ts = [self.w(delta=d, t_ov=t) for t in (0.0, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0)]
+            self.assertTrue(all(a >= b for a, b in zip(ts, ts[1:])), d)
+            xs = [self.w(delta=d, x=x, t_ov=2.0) for x in (0.5, 1.0, 1.1, 1.5, 3.0, 30.0)]
+            self.assertTrue(all(a >= b for a, b in zip(xs, xs[1:])), d)
+            Ts = [self.w(T=T, delta=d, t_ov=2.0) for T in (0.1, 0.2, 0.4, 1.0, 2.0, 5.0)]
+            self.assertTrue(all(a <= b for a, b in zip(Ts, Ts[1:])), d)
+
+    def test_continuity_within_2_percent_at_each_preset_and_at_y_1(self):
+        for d in self.PRESETS:
+            for T in (0.4, 2.0):
+                for x in (1.226, 1.39):
+                    c = T - self.R
+                    sb = (c + x * self.O) / d                                        # y = t_ov / s_b: the onset
+                    for t_ov in (0.2 * sb, 0.99 * sb, sb, 1.01 * sb, 5.0 * sb):
+                        w0 = self.w(T=T, delta=d, x=x, t_ov=t_ov)
+                        y = d * t_ov / (c + x * self.O)
+                        for k in (0.98, 1.02):
+                            self.assertLessEqual(abs(self.w(T=T, delta=d * k, x=x, t_ov=t_ov) - w0) / w0, 0.02 * y / (1.0 + 0.98 * y) + 1e-12, (d, T, x, t_ov))        # the spec's first-order bound 2 % * y / (1 + y), exact for a 2 % step
+                            self.assertLessEqual(abs(self.w(T=T, delta=d, x=x, t_ov=t_ov * k) - w0) / w0, 0.02 + 1e-12, (d, T, x, t_ov))
+                    self.assertAlmostEqual(self.w(T=T, delta=d, x=x, t_ov=sb), c / x, delta=1e-12)         # y = 1: the ramp starts where min(1, 2/(1+y)) = 1
+
+    def test_the_free_band_and_the_fluid_bill_identity(self):
+        """Fluid toy (13.1): A - B = mu * (c - x * w_end)+ ; a cap held at c / x leaves x * w_end = c, so the bill is 0; below it, the bill is the missing stretch."""
+        mu = 9786.0
+        bill = lambda c, x, w_end: mu * max(c - x * w_end, 0.0)                    # noqa: E731
+        for T in (1.0, 1.5, 2.0, 3.0):
+            c, x = T - self.R, 1.226
+            w_free = self.w(T=T, delta=0.005, x=x, t_ov=0.0)                         # y = 0: the free band only
+            self.assertAlmostEqual(w_free, c / x, delta=1e-12)
+            self.assertAlmostEqual(x * w_free, c, delta=1e-12)
+            self.assertEqual(bill(c, x, w_free), 0.0)
+            w_low = self.w(T=T, delta=50.0, x=x, t_ov=5.0)                           # deep in the priced band
+            self.assertLess(w_low, c / x)
+            self.assertAlmostEqual(bill(c, x, w_low), mu * (c - x * w_low), delta=1e-6)
+            self.assertGreater(bill(c, x, w_low), 0.0)
+
+    def test_headroom_trace_identity_with_a_and_the_gauges_in_overload(self):
+        import batch3e
+        for T in (0.4, 2.0):
+            c = e_cfg("CL", 0, T, 0.0, repair=dict(r="law", edge="worth"), n_total=30000, dead=(0, 0.5, 0.5), want_trace=True, rev4_gauge=True)
+            a, b = toy2.run(c), toy2.run(dataclasses.replace(c, wait_limit=True, wait_limit_form="rev4b"))
+            self.assertEqual(batch3e.id3e({k: v for k, v in a.items() if k != "rev4"}, {k: v for k, v in b.items() if k != "rev4"}), [], T)      # the rev4 block echoes the build's flags
+            self.assertEqual(a["_trace"], b["_trace"], T)
+            r = b["rev4"]
+            self.assertEqual(r["n_cap_lt_c"], 0)
+            self.assertEqual(r["tov_resets"], 0)
+            self.assertEqual(r["w_min_over_c"], 1.0)
+        base = dataclasses.replace(Rev4Step2.ov("new", n=60000), rev4_gauge=True)
+        a = toy2.run(base)
+        b = toy2.run(dataclasses.replace(base, wait_limit=True, wait_limit_form="rev4b"))
+        r = b["rev4"]
+        self.assertGreater(r["n_cap_lt_c"], 0)
+        self.assertLess(b["dh_p50"], a["dh_p50"])
+        self.assertGreater(r["ov_frac"], 0.5)
+        self.assertIsNotNone(r["onset_bind"])
+        self.assertTrue(r["cap_series"] and len(r["cap_series"][0]) == 8)
+        self.assertGreater(r["y_max"], 1.0)                                          # delta 50: the onset is passed within the run
+        self.assertIsNotNone(r["onset_t"])
+        self.assertLess(r["w_min_over_c"], 1.0 / 1.2)
+        self.assertEqual(r["wait_limit_form"], "rev4b")
+        self.assertNotIn("onset_bind", a["rev4"])                                    # build A's gauge block is unchanged
+
+    def test_inert_at_t_inf_in_the_simulation(self):
+        import batch3e
+        inf = dataclasses.replace(Rev4Step2.ov("new", n=24000), T=math.inf, want_trace=True)
+        self.assertEqual(batch3e.id3e(toy2.run(inf), toy2.run(dataclasses.replace(inf, wait_limit=True, wait_limit_form="rev4b"))), [])
+
+
+class ResendGauge(unittest.TestCase):
+    """Revision 4 section 13.9: the per-resend outcome gauge (resend_gauge).  Reads only: off by default, bit-identical when on, and every resend is classed exactly once."""
+
+    @staticmethod
+    def cfgs():
+        import batch3e
+        cl = dataclasses.replace(batch3e.new_cfg("CL", 0, 0.4, 0.0, 50.0, None, n_total=30000, dead=(0, 0.5, 0.5)), floor_repeat="evidenced_overdue")
+        ov = dataclasses.replace(Rev4Step2.ov("new", n=24000), rev4_gauge=True, wait_limit=True, wait_limit_form="rev4b")
+        return dict(cl=cl, ov=ov)
+
+    def test_off_by_default_and_the_fingerprint_is_stable(self):
+        import batch3e
+        self.assertFalse(toy2.Cfg().resend_gauge)
+        for c in self.cfgs().values():
+            self.assertEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, resend_gauge=False)))
+            self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, resend_gauge=True)))
+            self.assertNotIn("resend_outcome", toy2.run(c))
+
+    def test_on_changes_no_decision(self):
+        """Every id3e key and the sender trace are identical with the gauge on; only the new block and nothing else is added."""
+        import batch3e
+        for name, c in self.cfgs().items():
+            c = dataclasses.replace(c, want_trace=True)
+            a, b = toy2.run(c), toy2.run(dataclasses.replace(c, resend_gauge=True))
+            self.assertEqual(batch3e.id3e(a, b), [], name)
+            self.assertEqual(a["_trace"], b["_trace"], name)
+            self.assertEqual(set(b) - set(a), {"resend_outcome"}, name)
+            self.assertEqual(json.dumps(a["gauges"], sort_keys=True), json.dumps(b["gauges"], sort_keys=True), name)
+
+    def test_every_resend_is_classed_once_and_the_series_tie_to_the_gauges(self):
+        seen = set()
+        for name, c in self.cfgs().items():
+            sm = toy2.Sim(dataclasses.replace(c, resend_gauge=True))
+            r = sm.run()
+            ro, g = r["resend_outcome"], r["gauges"]
+            classes = ("filled", "dup", "lost", "late", "other", "open")
+            self.assertEqual(ro["n"], g["repair_sends"], name)
+            self.assertEqual(sum(ro[k] for k in classes), ro["n"], name)                       # the classes close
+            self.assertTrue(all(ro[k] >= 0 for k in classes), name)
+            self.assertLessEqual(ro["qdrop"], ro["lost"])
+            self.assertLessEqual(ro["late_floor"], ro["late"])
+            self.assertEqual(ro["open"], sum(1 for e in sm.heap if e[2] == 0 and e[3][1] >= 1), name)      # still open = copies still in the event queue (no engine queue here)
+            self.assertEqual(sum(x[1] for x in ro["series"]), ro["n"], name)
+            self.assertEqual(sum(x[2] for x in ro["series"]), g["dup"], name)
+            self.assertEqual(sum(x[3] for x in ro["series"]), g["rep_sent"], name)
+            self.assertGreaterEqual(ro["dup"], 0)
+            seen |= {k for k in classes if ro[k] > 0}
+        self.assertTrue({"filled", "dup", "lost"} <= seen, seen)                                 # each of these executes in a real run
+
+    def test_each_class_branch_by_construction(self):
+        """The arrival classifier on a synthetic receiver state: a copy of a hole fills it, of a received unit duplicates, of a passed hole is late, of an unseen unit is other."""
+        sm = toy2.Sim(dataclasses.replace(self.cfgs()["cl"], resend_gauge=True))
+        for _ in range(5):
+            sm.ro_sent(1.0)
+        sm.holes[10] = 0.5
+        sm.got[11] = 1
+        sm.passed.add(12)
+        sm.passed_by[12] = "floor"
+        for s in (10, 11, 12, 13):
+            sm.ro_arrival(1.2, s, 1)
+        sm.ro_lost(True)
+        ro = sm.ro
+        self.assertEqual((ro["filled"], ro["dup"], ro["late"], ro["late_floor"], ro["other"], ro["lost"], ro["qdrop"], ro["open"]), (1, 1, 1, 1, 1, 1, 1, 0))
+        self.assertEqual(ro["series"][2][1], 1)                                                   # the duplicate arrival at 1.2 s is in window 2 (1.0-1.5 s)
+        sm.ro_arrival(1.3, 11, 0)                                                                  # a first copy of a received unit: a duplicate in the series, not a resend class
+        self.assertEqual((ro["series"][2][1], ro["dup"]), (2, 1))
 
 
 if __name__ == "__main__":
