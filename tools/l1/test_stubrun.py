@@ -118,9 +118,26 @@ case "$1" in
       echo 'exit 0'; } > "$T/release/raptorpath"
     chmod +x "$T/release/raptorpath" ;;
   test)
+    # as cargo does: a target named with --test whose required-features are off is an error, before anything builds (raptorpath/Cargo.toml: s06_reactive needs test-seams, sim_* need sim and test-seams);
+    # the sim targets also need RUSTFLAGS="--cfg tokio_unstable" (ADR-0082), here a build error without it
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--test" ]; then
+        case "$a" in
+          s06_reactive) case " $* " in *" --features test-seams "*|*" --features sim,test-seams "*) ;; *) echo "error: target \`$a\` in package \`raptorpath\` requires the features: \`test-seams\`" >&2; exit 101 ;; esac ;;
+          sim_nack_test) ;;
+          sim_*) case " $* " in *" --features sim,test-seams "*) ;; *) echo "error: target \`$a\` in package \`raptorpath\` requires the features: \`sim\`, \`test-seams\`" >&2; exit 101 ;; esac
+                 case "${RUSTFLAGS:-}" in *tokio_unstable*) ;; *) echo "error: could not compile raptorpath (stub: sim without --cfg tokio_unstable)" >&2; exit 101 ;; esac ;;
+        esac
+      fi
+      prev="$a"
+    done
+    running() { local p="" a; for a in "$@"; do [ "$p" = "--test" ] && echo "     Running tests/$a.rs (target/release/deps/$a-0)"; [ "$a" = "--lib" ] && echo "     Running unittests src/lib.rs (target/release/deps/raptorpath-0)"; p="$a"; done; }
     case " $* " in
       *" --no-run "*) ;;
-      *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test
+      *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test; STUB_REPEAT_ZERO=1: every run passes zero tests (a filter or build that ran nothing)
+        running "$@"
+        if [ -n "${STUB_REPEAT_ZERO:-}" ]; then echo "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out"; exit 0; fi
         echo "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
         if [ -n "${STUB_REPEAT_FAIL:-}" ]; then
           n=$(cat "$STUB_REPEAT_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_REPEAT_DIR/n"
@@ -160,7 +177,8 @@ case "$1" in
           [ "$seen" = 1 ] && case "$a" in -*) ;; *) [ "$a" = "$gf" ] || echo "test $a ... ok" ;; esac
           [ "$a" = "--" ] && seen=1
         done ;;
-      *) echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+      *) running "$@"
+          echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
           seen=0      # plan 51's dial pins name their tests after `--`: one `test <name> ... ok` line each (STUB_FAIL_PIN: that one FAILS; STUB_SKIP_PIN: that one prints nothing, a filter that matched no test)
           for a in "$@"; do
             if [ "$seen" = 1 ]; then
@@ -3388,7 +3406,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
 
 
 # ── plan 67's session-0 steps that are scripts of their own: the repeat run (repeat67_run.sh: N gating runs per seat, zero failures, ABORT-REPEAT) and binid on three seats (binid67_run.sh) ──
-EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut")
+EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut", "repeat-zero-tests")
 EXTRA_BINID = ("binid-pass", "binid-same")
 EXTRA67_DONE = set()
 
@@ -3417,6 +3435,8 @@ def extra_repeat(kind):
         env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": "4" if kind == "repeat-cut" else "3600", "STUB_REPEAT_DIR": px(rd), "R67_T1_S": "1"}
         if kind == "repeat-one-failure":
             env["STUB_REPEAT_FAIL"] = "3"
+        if kind == "repeat-zero-tests":
+            env["STUB_REPEAT_ZERO"] = "1"
         rc, out, cargo = script67(sb, root, "repeat67_run.sh", env)
         rep = txt67(root, "out", "REPEAT67.txt")
         s06 = [c for c in cargo if "|test " in c and "--test s06_no_copy" in c and "--no-run" not in c]
@@ -3424,9 +3444,15 @@ def extra_repeat(kind):
         if kind == "repeat-pass":
             check(f"{tag}: zero failures: rc 0, both seats read 4 of 4 with no failing run, the S2 gating tests ran 4 times, the sim tests twice, REPEAT67-DONE bad=0",
                   rc == 0 and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "REPEAT67 seat=S2 reached=4 of 4 failing_runs=0" in rep and len(s06) == 4 and len(sims) == 2 and "REPEAT67-DONE bad=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep, len(s06), len(sims)))
+            check(f"{tag}: the S2 gating tests run with --features test-seams (s06_reactive requires it); the sim list runs with --features sim,test-seams and includes T2's port sim_s06_nack, as ci.yml's sim job",
+                  len(s06) == 4 and len(sims) == 2 and all("--features test-seams --test s06_no_copy --test s06_reactive --test holeclass_reachability" in c for c in s06)
+                  and all("--features sim,test-seams" in c and "--test sim_s06_nack" in c and "--release" not in c for c in sims), (s06, sims))
         elif kind == "repeat-one-failure":
             check(f"{tag}: one failing run in 4 of S2's gating tests: ABORT-REPEAT seat=S2 (guard 2 does not launch), the failing test named, rc 5; S1 read zero failures and is not aborted",
                   rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=1 failures=[s06_no_copy::t_one]" in rep and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        elif kind == "repeat-zero-tests":
+            check(f"{tag}: every S2 run exits 0 with zero passed tests: each run is a failure (ZERO-TESTS), ABORT-REPEAT seat=S2, rc 5; S1 is not aborted",
+                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
         else:
             check(f"{tag}: a budget of 4 s (2 s per seat) fits two timed runs: REPEAT-CUT with the reached N is on record (for the second amendment), the seats read that N with zero failures, rc 0",
                   rc == 0 and rep.count("REPEAT-CUT seat=") == 2 and "reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))

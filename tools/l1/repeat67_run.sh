@@ -5,10 +5,12 @@
 #
 # Per seat (trees at $R67_SEATS/<S1|S2>/src, built with the harness's own commands; no seat is built or run twice in parallel):
 #   S1: `cargo test -p raptorpath --release --lib -- config::` x N                                   (the tunnel guard's config tests)
-#   S2: `cargo test -p raptorpath --release --test s06_no_copy --test s06_reactive --test holeclass_reachability --no-fail-fast` x N
-#       (every non-ignored test of those three targets; T2 is a sim test and runs below)
-#   sim tests (deterministic): once each seat's list (R67_SIM, default sim_shed_reach sim_lost_tail sim_nack_test place_arms_reachability) TWICE, the two result digests must be equal
-#       (digest = the sorted `test <name> ... <ok|FAILED|ignored>` lines, timings stripped).
+#   S2: `cargo test -p raptorpath --release --features test-seams --test s06_no_copy --test s06_reactive --test holeclass_reachability --no-fail-fast` x N
+#       (every non-ignored test of those three targets; s06_reactive requires test-seams, and cargo refuses a named target whose required features are off; T2 is a sim test and runs below)
+#   sim tests (deterministic): once each seat's list (R67_SIM, default sim_shed_reach sim_lost_tail sim_s06_nack sim_nack_test place_arms_reachability) TWICE, the two result digests must be equal
+#       (digest = the sorted `test <name> ... <ok|FAILED|ignored>` lines, timings stripped). As ci.yml's sim job runs them: RUSTFLAGS="--cfg tokio_unstable", --features sim,test-seams,
+#       debug profile, in a target dir of their own (RUSTFLAGS would rebuild the repeat's). sim_s06_nack is T2's deterministic port (registration 2.1 item 3).
+# Every run must show a `Running` line for each named target and at least one passed test (ZERO-TESTS / TARGET-MISSING otherwise), so a target that did not run never reads as zero failures.
 # Zero failures means zero: a test named FAILED, a run with no `test result` line, or a non-zero exit with no named test is a failure (no quarantine here: ADR-0080's rule applies to the suites, this is the
 # flake detector). Any failure: `ABORT-REPEAT seat=<S>`, that seat's guard does not launch (S1: guard 1 and guard 2's BASE; S2: guard 2); exit 5. The budget (R67_BUDGET_S, registered 60 min for both seats)
 # is split equally between the seats: each seat's N is cut to what the first timed run says fits, `REPEAT-CUT seat=<S> reached=<n>` is written (the cut goes into the second amendment, never silently). Exit 0 only if every seat read N
@@ -21,7 +23,7 @@ ROOT="${R67_ROOT:?R67_ROOT}"
 SEATS_DIR="${R67_SEATS:?R67_SEATS}"
 N="${R67_N:-30}"
 BUDGET="${R67_BUDGET_S:-3600}"
-SIM="${R67_SIM:-sim_shed_reach sim_lost_tail sim_nack_test place_arms_reachability}"
+SIM="${R67_SIM:-sim_shed_reach sim_lost_tail sim_s06_nack sim_nack_test place_arms_reachability}"
 TGT="${R67_TGT:-$ROOT}"      # where the per-seat target dirs go (plan 67pre passes a disk path: its R67_ROOT is on tmpfs)
 [ "$#" -gt 0 ] || set -- S1 S2
 mkdir -p "$ROOT"
@@ -43,6 +45,17 @@ NSEATS=$#
 BAD=0
 
 digest() { grep -aE '^test .* \.\.\. (ok|FAILED|ignored)' "$1" | LC_ALL=C sort; }
+# ran <log> <target...>: what is missing from a run that exited cleanly: TARGET-MISSING(<t>) per named target with no `Running` line, ZERO-TESTS when no `test result` line reports a passed test.
+ran() {
+  local log="$1" t re miss="" npass; shift
+  for t in "$@"; do
+    if [ "$t" = lib ]; then re='unittests src/lib\.rs'; else re="tests/$t\.rs"; fi
+    grep -aqE "^ +Running $re" "$log" || miss="${miss}TARGET-MISSING($t) "
+  done
+  npass=$(grep -aoE '^test result: [A-Za-z]+\. [0-9]+ passed' "$log" | awk '{s += $4} END {print s + 0}')
+  [ "$npass" -gt 0 ] || miss="${miss}ZERO-TESTS "
+  echo "$miss"
+}
 
 for seat in "$@"; do
   src="$SEATS_DIR/$seat/src"
@@ -50,8 +63,9 @@ for seat in "$@"; do
   export CARGO_TARGET_DIR="$TGT/tgt-$seat"
   rm -rf "$CARGO_TARGET_DIR"
   case "$seat" in
-    S1) cmd=("$CARGO" test -p raptorpath --release --lib) ; filt=(-- config::) ; sims="" ;;
-    S2) cmd=("$CARGO" test -p raptorpath --release --test s06_no_copy --test s06_reactive --test holeclass_reachability --no-fail-fast) ; filt=() ; sims="$SIM" ;;
+    S1) cmd=("$CARGO" test -p raptorpath --release --lib) ; filt=(-- config::) ; sims="" ; tgts=(lib) ;;
+    S2) cmd=("$CARGO" test -p raptorpath --release --features test-seams --test s06_no_copy --test s06_reactive --test holeclass_reachability --no-fail-fast) ; filt=() ; sims="$SIM"
+        tgts=(s06_no_copy s06_reactive holeclass_reachability) ;;
     *) echo "ABORT-REPEAT seat=$seat (unknown seat)" >> "$OUT"; BAD=1; continue ;;
   esac
   ( cd "$src" && "${cmd[@]}" --no-run ) > "$ROOT/build-$seat.log" 2>&1 || { echo "ABORT-REPEAT seat=$seat (build: $ROOT/build-$seat.log)" >> "$OUT"; era "ABORT-REPEAT seat=$seat build"; BAD=1; continue; }
@@ -67,7 +81,11 @@ for seat in "$@"; do
     reached=$i
     named="$(grep -aE '^test .* FAILED$' "$ROOT/run-$seat.log" | awk '{print $2}' | sort -u | tr '\n' ' ')"
     if [ -n "$named" ]; then fails="$fails$named"; nfail=$(( nfail + 1 ))
-    elif ! grep -aq '^test result' "$ROOT/run-$seat.log" || [ "$rc" != 0 ]; then fails="${fails}NO-RESULT(rc=$rc) "; nfail=$(( nfail + 1 )); fi
+    elif ! grep -aq '^test result' "$ROOT/run-$seat.log" || [ "$rc" != 0 ]; then fails="${fails}NO-RESULT(rc=$rc) "; nfail=$(( nfail + 1 ))
+    else
+      miss="$(ran "$ROOT/run-$seat.log" "${tgts[@]}")"
+      [ -z "$miss" ] || { fails="$fails$miss"; nfail=$(( nfail + 1 )); }
+    fi
     if [ "$i" = 1 ]; then
       t1=$dt
       fit=$(( left / t1 ))
@@ -84,11 +102,17 @@ for seat in "$@"; do
   simbad=""
   if [ -n "$sims" ] && [ "$reached" -ge 1 ]; then
     args=(); for t in $sims; do args+=(--test "$t"); done
-    ( cd "$src" && "$CARGO" test -p raptorpath --release "${args[@]}" --no-fail-fast ) > "$ROOT/sim1-$seat.log" 2>&1
-    ( cd "$src" && "$CARGO" test -p raptorpath --release "${args[@]}" --no-fail-fast ) > "$ROOT/sim2-$seat.log" 2>&1
-    [ "$(digest "$ROOT/sim1-$seat.log")" = "$(digest "$ROOT/sim2-$seat.log")" ] || simbad="SIM-DIGEST-DIFFERS "
+    for k in 1 2; do
+      ( cd "$src" && CARGO_TARGET_DIR="$CARGO_TARGET_DIR-sim" RUSTFLAGS="--cfg tokio_unstable" "$CARGO" test -p raptorpath --features sim,test-seams "${args[@]}" --no-fail-fast ) > "$ROOT/sim$k-$seat.log" 2>&1
+      src_rc=$?
+      [ "$src_rc" = 0 ] || simbad="${simbad}SIM-RC$k=$src_rc "
+      grep -aq '^test result' "$ROOT/sim$k-$seat.log" || simbad="${simbad}SIM-NO-RESULT$k "
+      miss="$(ran "$ROOT/sim$k-$seat.log" $sims)"
+      [ -z "$miss" ] || simbad="${simbad}SIM$k:$miss"
+    done
+    [ "$(digest "$ROOT/sim1-$seat.log")" = "$(digest "$ROOT/sim2-$seat.log")" ] || simbad="${simbad}SIM-DIGEST-DIFFERS "
     grep -aqE '^test .* FAILED$' "$ROOT/sim1-$seat.log" "$ROOT/sim2-$seat.log" && simbad="${simbad}SIM-FAILED "
-    grep -aq '^test result' "$ROOT/sim1-$seat.log" || simbad="${simbad}SIM-NO-RESULT "
+    rm -rf "$CARGO_TARGET_DIR-sim"
   fi
   echo "REPEAT67 seat=$seat reached=$reached of $N failing_runs=$nfail failures=[${fails% }] sim=[${simbad% }]" >> "$OUT"
   era "REPEAT67 seat=$seat reached=$reached failing_runs=$nfail sim=[${simbad% }]"
