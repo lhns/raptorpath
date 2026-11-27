@@ -89,8 +89,10 @@ pub(crate) enum Grant {
     Admit,
     /// Admitted while β was undefined (cold start).
     Cold,
-    /// Closed by the newest decision, or the decision was already spent.
+    /// Closed by the newest decision.
     Closed,
+    /// The decision's one first send was already staged; no new decision since.
+    Spent,
 }
 
 /// How one first send stood against the gate when it was staged.
@@ -112,7 +114,7 @@ pub(crate) fn classify_first_send(grant: Option<Grant>, bypass: Option<Bypass>) 
     match grant {
         Some(Grant::Admit) => FsClass::Gated,
         None | Some(Grant::Cold) => FsClass::Cold,
-        Some(Grant::Closed) => bypass.map_or(FsClass::Over, FsClass::Bypass),
+        Some(Grant::Closed | Grant::Spent) => bypass.map_or(FsClass::Over, FsClass::Bypass),
     }
 }
 
@@ -245,6 +247,8 @@ struct PathGate {
     grant: Option<Grant>,
     // `[HOFF]` witness counters (see `GateRow`).
     fs_over: u64,
+    /// `fs_over` by why: [closed by the newest decision, decision already spent].
+    fs_over_cs: [u64; 2],
     fs_byp: [u64; 4],
     beta_s: Vec<f64>,
     ex_max: Option<(f64, f64, f64)>,
@@ -276,6 +280,9 @@ pub(crate) struct GateRow {
     /// First sends staged with no admit from the gate's newest decision and through
     /// no tagged bypass site (a logic witness: see [`Grant`]).
     pub fs_over: u64,
+    /// `fs_over` split by why there was no admit: the newest decision closed the
+    /// path, or it had already paid for an earlier send (no new decision).
+    pub fs_over_cs: [u64; 2],
     /// First sends staged with no admit through a tagged site (defer, timer,
     /// shutdown), then those staged under a cold-start admit or on a path no
     /// decision covered (cold).
@@ -465,6 +472,30 @@ impl HandoffGate {
         any_open
     }
 
+    /// The newest decision's candidate set, read-free: the paths it admitted
+    /// (an admit, or a cold-start admit). The emission spends THIS, not a second
+    /// read of the views, so what it places on is what the site decided.
+    pub(crate) fn granted(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self
+            .paths
+            .iter()
+            .filter(|(_, p)| matches!(p.grant, Some(Grant::Admit | Grant::Cold)))
+            .map(|(id, _)| *id)
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// Whether the gate reads any path view yet (a decision over no view admits nothing and refuses nothing).
+    pub(crate) fn has_views(&self) -> bool {
+        !self.views.is_empty()
+    }
+
+    /// The bypass site in force, if any.
+    pub(crate) fn bypass(&self) -> Option<Bypass> {
+        self.bypass
+    }
+
     /// Paths with room now (placement's candidate set for a first send). Empty
     /// only when every path is closed. The newest decision: it grants (or
     /// revokes) the token of every path it covers.
@@ -500,16 +531,20 @@ impl HandoffGate {
     /// (An `fs_late` field, the old fresh-read comparison, is dropped: its only
     /// reading without a per-send view read is the one the decision already used.)
     pub(crate) fn stage_first_send(&mut self, path: u32) {
-        let class = classify_first_send(self.paths.get(&path).and_then(|p| p.grant), self.bypass);
+        let grant = self.paths.get(&path).and_then(|p| p.grant);
+        let class = classify_first_send(grant, self.bypass);
         for p in self.paths.values_mut() {
             if p.grant.is_some() {
-                p.grant = Some(Grant::Closed);
+                p.grant = Some(Grant::Spent);
             }
         }
         let p = self.paths.entry(path).or_default();
         match class {
             FsClass::Gated => {}
-            FsClass::Over => p.fs_over += 1,
+            FsClass::Over => {
+                p.fs_over += 1;
+                p.fs_over_cs[(grant == Some(Grant::Spent)) as usize] += 1;
+            }
             FsClass::Bypass(b) => p.fs_byp[b as usize] += 1,
             FsClass::Cold => p.fs_byp[3] += 1,
         }
@@ -554,6 +589,7 @@ impl HandoffGate {
             spare_zero,
             spare_bind: p.cut_sends as f64 / p.sends.max(1) as f64,
             fs_over: p.fs_over,
+            fs_over_cs: p.fs_over_cs,
             fs_bypass: p.fs_byp,
             ex_max: p.ex_max,
             ex_n: [3usize, 1, 2].map(|k| p.kinds_last[k].saturating_sub(p.kinds_start.unwrap_or(p.kinds_last)[k])),
@@ -569,6 +605,7 @@ impl HandoffGate {
             pend_max: p.pend_max,
         };
         p.fs_over = 0;
+        p.fs_over_cs = [0; 2];
         p.fs_byp = [0; 4];
         p.beta_s.clear();
         p.ex_max = None;

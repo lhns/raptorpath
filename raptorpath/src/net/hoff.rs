@@ -514,8 +514,9 @@ fn witness_fields(r: &super::hoff_gate::GateRow) -> String {
     let bq = r.beta_q.map_or("-/-/-".to_string(), |(a, b, c)| format!("{}/{}/{}", f1(a), f1(b), f1(c)));
     let [d, t, s, c] = r.fs_bypass;
     let [xc, xr, xp] = r.ex_n;
+    let [oc, os] = r.fs_over_cs;
     format!(
-        " fs_over={} fs_bypass={d}/{t}/{s}/{c} ex_max={ex} ex_n={xc}/{xr}/{xp} fs_n={} beta_q={bq} own_gap_max={}us pend_max={}",
+        " fs_over={} fs_over_cs={oc}/{os} fs_bypass={d}/{t}/{s}/{c} ex_max={ex} ex_n={xc}/{xr}/{xp} fs_n={} beta_q={bq} own_gap_max={}us pend_max={}",
         r.fs_over, r.fs_n, r.own_gap_max_us, r.pend_max
     )
 }

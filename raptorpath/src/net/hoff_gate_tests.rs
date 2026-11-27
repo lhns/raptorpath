@@ -9,6 +9,7 @@
 //! `emit_source.rs`, the owner) is pinned by source, the repo's form for a
 //! call-site invariant.
 
+use super::emit_source::place_first_send;
 use super::hoff::{HoffGauge, PathIn};
 use super::hoff_gate::{
     admits, classify_first_send, owner_republishes, poll_armed, quinn_discards_found, r_eff, Bypass, FsClass, Grant,
@@ -605,6 +606,8 @@ fn first_send_classes_absolute() {
     assert_eq!(classify_first_send(Some(Grant::Admit), None), FsClass::Gated);
     assert_eq!(classify_first_send(Some(Grant::Admit), Some(Bypass::Timer)), FsClass::Gated, "a tag alone is not a leak");
     assert_eq!(classify_first_send(Some(Grant::Closed), None), FsClass::Over);
+    assert_eq!(classify_first_send(Some(Grant::Spent), None), FsClass::Over);
+    assert_eq!(classify_first_send(Some(Grant::Spent), Some(Bypass::Timer)), FsClass::Bypass(Bypass::Timer));
     assert_eq!(classify_first_send(Some(Grant::Closed), Some(Bypass::Defer)), FsClass::Bypass(Bypass::Defer));
     assert_eq!(classify_first_send(Some(Grant::Cold), None), FsClass::Cold);
     assert_eq!(classify_first_send(Some(Grant::Cold), Some(Bypass::Shutdown)), FsClass::Cold);
@@ -754,7 +757,7 @@ fn hoff_line_prints_the_witness_fields_only_when_armed() {
     g.end_turn(&[(0u32, PathIn { kinds: [0, 1, 2, 3], own_gap_us: 7_000, ..pin(100, 280_000, 22_000) })]);
     let l = gauge.line_gated(300_000, 40, false, Some(&mut g));
     for f in [
-        " fs_over=0 ",
+        " fs_over=0 fs_over_cs=0/0 ",
         " fs_bypass=0/1/0/0 ",
         " ex_max=46/0/0 ",
         " ex_n=0/0/0 fs_n=0 ",
@@ -881,4 +884,62 @@ fn a_decision_pays_for_one_send_on_one_path_only() {
     g.stage_first_send(1); // no new decision
     assert_eq!(g.take_row(0).unwrap().fs_over, 0);
     assert_eq!(g.take_row(1).unwrap().fs_over, 1);
+}
+
+// ── the site decides, the emission spends that decision ─────────────────────
+
+/// Path 0 is the only admitted path (and the one without Copa room); the
+/// unrestricted pick would be path 1, which the gate closed. The placement obeys
+/// the decision that admitted the packet: it never re-reads, so a reading that
+/// drifted since (a host gate has no views at all) cannot send it elsewhere.
+#[test]
+fn placement_obeys_the_sites_decision_not_a_second_read() {
+    let mut s = Scheduler::new(Arc::new(WallClock));
+    s.add_path(0);
+    s.add_path(1);
+    {
+        let p = s.path_mut(0).unwrap();
+        p.in_flight = p.cwnd;
+    }
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let ins = [(0u32, pin(50, 280_000, 22_000)), (1u32, pin(90, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &ins);
+    assert!(g.check(true, &ins), "path 0 admitted at B = 50 < 53.83");
+    assert_eq!(place_first_send(&mut g, &s, false), 0);
+    for id in [0u32, 1] {
+        let r = g.take_row(id).unwrap();
+        assert_eq!((r.fs_over, r.fs_bypass), (0, [0; 4]), "path {id}: {r:?}");
+    }
+}
+
+/// `fs_over` splits by why: the newest decision closed the path, or it had
+/// already paid for an earlier send.
+#[test]
+fn fs_over_splits_into_closed_and_spent() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let open = [(0u32, pin(10, 280_000, 22_000))];
+    let shut = [(0u32, pin(90, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &shut);
+    g.stage_first_send(0); // closed
+    g.begin_turn(2000, true, false, &open);
+    g.stage_first_send(0); // paid
+    g.stage_first_send(0); // spent
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.fs_over, r.fs_over_cs), (2, [1, 1]), "{r:?}");
+}
+
+/// Wiring pins: the emission spends the site's decision (no second read), the
+/// burst loop always decides before it reads, and the tagged flushes decide too.
+#[test]
+fn the_site_decides_and_emit_source_spends_that_decision() {
+    let e = flat(include_str!("emit_source.rs"));
+    let m = flat(include_str!("mod.rs"));
+    assert!(!e.contains("open_live()"), "emit_source re-reads the views");
+    assert!(e.contains("hg.granted()"));
+    assert!(m.contains("ifhg.on()&&!hg.check_live(tun.has_queued())"), "the burst loop decides before it reads");
+    assert!(!m.contains("tun.has_queued()&&!hg.check_live"), "the burst-loop check is skipped on an empty-looking intake");
+    assert!(m.contains("let _ = hg.check_live(false); hg.set_bypass(Some(hoff_gate::Bypass::Timer))".replace(' ', "").as_str()));
+    assert_eq!(m.matches("let_=hg.check_live(false);hg.set_bypass(Some(hoff_gate::Bypass::Shutdown))").count(), 2);
 }
