@@ -468,6 +468,11 @@ flowchart TB
 | The most efficient give-up rule below ρ = 1 | ⛔ blocked | Which lost packets a ρ < 1 stream should give up on, when, and on which side. Every give-up should still send one last copy; whether the receiver may stop waiting on its own depends on whether a packet that arrives after its successors counts as delivered; the owner decided it does (2026-11-21). |
 | Offline simulation stage 2: plan | ▶ in progress | Rewrite the plan for the second run of the offline simulation, which compares receiver rules (how long to hold out-of-order packets), fixing the weak spots stage 1 exposed before anything runs. |
 | Fix the lost tail; re-derive the hold | ▶ in progress | The owner rejected two parts of the sender-first plan: a lost packet at the end of a transfer may wait without limit once the receiver's old early skips have used up the allowance, and the receiver waits a fixed-window delay before honouring the sender's skip message. This derivation prices the ways to fix the first before the sender build ships, and re-derives the second without the borrowed 10 s window. |
+| Store law sits at its clamp | ⚠ open | The store law's cap is pinned at its resource bound most of the time, because its inputs over-read 7 to 15 times, so its delay-price term has no effect. |
+| Engine in-flight count reads low | ⚠ open | The engine's per-path in-flight count, read by the send gate, the repair clamp and placement, is about 60 times below what is actually outstanding, so those three never see the real load. |
+| Network library queue unmanaged | ⚠ open | Everything the sender hands over waits in one first-in first-out queue in the network library, with no priority and no deadline, so resends and control messages wait behind hundreds of new datagrams. |
+| Placement blind to the send queue | ⚠ open | Placement chooses a path by its network round trip and an in-flight count that reads near zero, so it cannot see data already waiting in the send queue and overloads the slow path. |
+| Sender hand-off gate | ▶ in progress | Everything the sender hands to the network waits in one unmanaged first-in first-out queue in the network library, so with our own BBR controller the waiting data moved from the link into the sender instead of going away. A hand-off gate keeps only a few milliseconds staged per path, so data waits in the sender's own queue where the lifetime and delay price can act on it. |
 | Three application knobs (lifetime T, delay price, order hold H) | ▶ in progress | Replace the delivery share as a setting with three numbers the application states: how long data stays worth sending (lifetime, in seconds), how much each millisecond costs, and how long the receiver may hold data behind a gap. The share delivered becomes a reported result, never a promise. |
 | Burst estimate explodes after a long outage | ⚠ open | Open problem, found in the simulator, which uses the engine's shared burst estimator: after a long total outage at a high send rate the estimator's memory of good-after-bad transitions decays to nearly zero, so the first good packet makes the estimated burst length about a hundred million and the loss variance about 2 000. The repair rate then sits at its cap until the estimate settles (about 3 s at 1 000/s, 0.1 s at 10 000/s). Whether the engine reaches this state depends on how it feeds the estimator after an outage (one lump on the first ack). |
 | Repair rate sized for a wider window than each repair covers | ⚠ open | Open problem, found while planning the repair stage and confirmed by an independent read: the repair rate is sized as if each repair protects a whole window, but each repair only covers about half of it (3 units against a window floor of 16 at call rates), so the promised protection (99.7 %) is far above what the coding delivers (about 80 %). The window floor of 16 and the saturation knee also bind over the operating range; each needs a ledger verdict. |
@@ -526,6 +531,10 @@ flowchart TB
 - `rec-retx-behind-source`: Do re-sends wait behind new data
 - `model-fix-paper-p2`: Paper fixes: path choice, our BBR
 - `perf-fix-burst-bound`: Deriving the send-burst size
+- `model-defect-store-law-constant`: Store law sits at its clamp
+- `model-defect-inflight-count`: Engine in-flight count reads low
+- `model-defect-quinn-queue`: Network library queue unmanaged
+- `model-defect-placement-blind`: Placement blind to the send queue
 - `model-defect-ge-after-outage`: Burst estimate explodes after a long outage
 - `model-defect-rate-vs-span`: Repair rate sized for a wider window than each repair covers
 
@@ -555,6 +564,7 @@ flowchart TB
 - `model-rho-step-sites`: Make all twelve ρ splits continuous
 - `model-toy-stage2-plan`: Offline simulation stage 2: plan
 - `model-tail-and-hold`: Fix the lost tail; re-derive the hold
+- `model-sender-queue-law`: Sender hand-off gate
 - `model-three-knobs`: Three application knobs (lifetime T, delay price, order hold H)
 - `model-viz-three-knobs`: The interactive simulator on the three-knob model
 - `model-floor-hold`: How long the floor pass waits
@@ -646,7 +656,7 @@ flowchart TB
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated on 2026-11-26.
+Generated on 2026-11-27.
 <!-- END GENERATED: timeline -->
 
 History before November 2026 is reconstructed from commits, status sections and ADRs, plus a few items from the session record (each says so in its notes); dates marked as placeholders in a node's notes are approximate. May and June 2026 have no commits, so no node starts or ends in them.
@@ -1237,7 +1247,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 68 nodes (49 done, 6 in progress, 7 next, 5 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 48 nodes (27 done, 13 in progress, 4 next, 3 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 53 nodes (27 done, 14 in progress, 8 next, 3 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 30 nodes (21 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->
