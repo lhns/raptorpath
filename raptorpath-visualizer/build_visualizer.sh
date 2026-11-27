@@ -1,11 +1,25 @@
 #!/bin/bash
-# Build the interactive visualizer with embedded WASM.
+# Build the interactive visualizer (and the three-knobs proposal page) with embedded WASM.
 # Produces a single self-contained HTML file that works from file://.
 #
 # Usage: bash raptorpath-visualizer/build_visualizer.sh
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# Keep the user's home directory out of the embedded wasm (panic locations and
+# debug paths name the cargo registry under it): remap every form of the home
+# this host has to "~". Derived at build time, never written here; appended to
+# any flags the caller already set. A home path with a space is not supported
+# by this space-separated variable.
+REMAP=""
+for h in "${USERPROFILE:-}" "${HOME:-}"; do
+  if [ -n "$h" ]; then REMAP="$REMAP --remap-path-prefix=$h=~"; fi
+done
+if command -v cygpath > /dev/null 2>&1 && [ -n "${HOME:-}" ]; then
+  REMAP="$REMAP --remap-path-prefix=$(cygpath -w "$HOME")=~"
+fi
+export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="${CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS:-}$REMAP"
 
 echo "Building WASM..."
 wasm-pack build raptorpath-wasm --target web --out-dir ../raptorpath-visualizer/wasm 2>&1 | tail -3
@@ -25,7 +39,7 @@ TMPFILE=$(mktemp)
 cat > "$TMPFILE" <<PYEOF
 import re
 
-html = open('raptorpath-visualizer/interactive-visualizer.html', encoding='utf-8').read()
+PAGES = ['interactive-visualizer', 'knobs-visualizer']
 
 # Read glue JS, strip export keywords but keep function names
 glue = open('raptorpath-visualizer/wasm/raptorpath_wasm.js', encoding='utf-8').read()
@@ -82,19 +96,36 @@ const SMOOTH_WINDOW = 6;
 // Resets and topology flips never recompute them.
 const BASELINE_CACHE = new Map();
 
+// The knob values main's page runs at: every knob inert (T = H = lambda =
+// infinity, no outage). IEEE arithmetic makes the three-knob laws inert there
+// (plan 3.1), so new SimWrapper(params) is main's model bit for bit.
+const MAIN_KNOBS = {
+  lifetimeS: Infinity, holdS: Infinity, sourceRate: Infinity,
+  numSource: 2000, outageStartS: Infinity, outageLenS: 0,
+};
+// The forward leg and the resend budget main's page runs at (addendum 1 A2,
+// A5): no bottleneck (service 0 s), no queue limit, no propagation split, no
+// budget. Values, not absent fields: the leg is the send instant there.
+const MAIN_LINK = { serviceS: 0, queueS: Infinity, propS: 0, resendLimit: Infinity };
+
+// The model's unit class codes (CLASS_* in raptorpath-wasm, addendum 1 A1):
+// 0 pending, 1 on time, 2 late, 3 out of order, 4 undelivered, 5 expired.
+const UNIT_CLASS_DELIVERED = [false, true, true, true, false, false];
+
 class SimWrapper {
-  constructor(params) {
+  // ONE construction path: the second argument defaults to MAIN_KNOBS, and
+  // the knobs page passes its own through SimWrapper.withKnobs. Nothing
+  // here inspects a knob value.
+  constructor(params, knobs = MAIN_KNOBS, link = MAIN_LINK) {
     const fixedR = params.fixedR;
     // Accept both shapes: params.paths array (new) or flat single-path
     // params (compat shim for any old caller).
     const paths = params.paths && params.paths.length
       ? params.paths
       : [{ eps: params.eps, q: params.q, rttMs: params.rttMs, cap: 4 }];
-    this.inner = Simulation.multipath(
-      paths.map(c => c.eps), paths.map(c => c.q),
-      new Uint32Array(paths.map(c => c.rttMs)),
-      new Uint32Array(paths.map(c => c.cap)),
-      params.W, params.hint, fixedR, params.customDelta, params.customRho);
+    this.knobs = knobs;
+    this.link = link;
+    this.inner = SimWrapper._build(paths, params, fixedR, knobs, link);
     this.rateHistory = [];
     // Per-path channel-state traces (the strip shows the selected path).
     this.channelStates = paths.map(() => []);
@@ -106,6 +137,14 @@ class SimWrapper {
     this.hint = params.hint;
     this.sigma2True = this.inner.get_sigma2();
     this.srcDoneTick = null;  // tick of the last source symbol (tail FEC starts here)
+    // Unit classes (addendum 1 A1): each unit's latest (hand-over s, delay s,
+    // class code), filled only by pullUnitEvents from the model's events.
+    const nu = this.inner.get_num_source();
+    this.unitStore = { n: nu, h: new Float64Array(nu), delay: new Float64Array(nu).fill(Infinity),
+                       cls: new Uint8Array(nu), hMax: 0, dMax: 0 };
+    // The forward leg's per-tick backlog per path (addendum 1 A4), filled
+    // only by pullQueueSamples.
+    this.queueRows = paths.map(() => []);
     // Single-path baseline (§5.5), measured-vs-measured: run each path alone through
     // the same engine (same hint, same W, that path's own channel) and take
     // the best completion goodput. The aggregation factor compares the
@@ -124,21 +163,39 @@ class SimWrapper {
     this.onBaselineReady = null;
     this._dead = false;
     if (paths.length > 1) {
+      // String(): JSON.stringify would turn Infinity into null.
       const key = JSON.stringify([paths, params.hint, params.W,
-                                  fixedR, params.customDelta, params.customRho]);
+                                  fixedR, params.customDelta, params.customRho])
+        + '|' + Object.values(knobs).map(String).join(',')
+        + '|' + Object.values(link).map(String).join(',');
       const hit = BASELINE_CACHE.get(key);
       if (hit !== undefined) {
         this.bestSingleMeasured = hit;
         this.baselineReady = true;
       } else {
-        this._measureBaseline(paths, params, fixedR, key);
+        this._measureBaseline(paths, params, fixedR, key, knobs, link);
       }
     }
   }
-  _measureBaseline(paths, params, fixedR, key) {
-    const sims = paths.map(c => Simulation.multipath(
-      [c.eps], [c.q], new Uint32Array([c.rttMs]), new Uint32Array([c.cap]),
-      params.W, params.hint, fixedR, params.customDelta, params.customRho));
+  // The one wasm constructor call, for the run and for each baseline path.
+  // The outage window applies to every path it builds.
+  static _build(paths, params, fixedR, knobs, link) {
+    return Simulation.multipath_link(
+      paths.map(c => c.eps), paths.map(c => c.q),
+      new Uint32Array(paths.map(c => c.rttMs)),
+      new Uint32Array(paths.map(c => c.cap)),
+      params.W, params.hint, fixedR, params.customDelta, params.customRho,
+      knobs.lifetimeS, knobs.holdS, knobs.sourceRate, knobs.numSource,
+      new Float64Array(paths.map(() => knobs.outageStartS)),
+      new Float64Array(paths.map(() => knobs.outageLenS)),
+      new Float64Array(paths.map(() => link.serviceS)),
+      new Float64Array(paths.map(() => link.queueS)),
+      new Float64Array(paths.map(() => link.propS)),
+      link.resendLimit);
+  }
+  static withKnobs(params, knobs, link = MAIN_LINK) { return new SimWrapper(params, knobs, link); }
+  _measureBaseline(paths, params, fixedR, key, knobs, link) {
+    const sims = paths.map(c => SimWrapper._build([c], params, fixedR, knobs, link));
     const wrapper = this;
     let idx = 0, guard = 0, best = 0;
     function slice() {
@@ -225,6 +282,83 @@ class SimWrapper {
   get overheadFloor()         { return this.inner.get_overhead_floor(); }
   get overheadFloorRealized() { return this.inner.get_overhead_floor_realized(); }
   get excessOverhead()        { return this.inner.get_excess_overhead(); }
+  // --- Three-knob readouts (proposal; inert on main's page) ---
+  get lifetimeS()   { return this.inner.get_lifetime_s(); }
+  get holdS()       { return this.inner.get_hold_s(); }
+  get sourceRate()  { return this.inner.get_source_rate(); }
+  get intakeExpired()    { return this.inner.get_intake_expired(); }
+  get intakeExpiredDeq() { return this.inner.get_intake_expired_deq(); }
+  get unitsOut()    { return this.inner.get_units_out(); }
+  get fAnn()        { return this.inner.get_f_ann(); }
+  get aKnown()      { return this.inner.get_a_known(); }
+  get fRx()         { return this.inner.get_f_rx(); }
+  get passedUndelivered() { return this.inner.get_passed_undelivered(); }
+  get commitViol()  { return this.inner.get_commit_viol(); }
+  get l1Viol()      { return this.inner.get_l1_viol(); }
+  get skipBelowFloor() { return this.inner.get_skip_below_floor(); }
+  get floors()      { return this.inner.get_floors(); }
+  get floorCarried() { return this.inner.get_floor_carried(); }
+  get spanCutByT()  { return this.inner.get_span_cut_by_t(); }
+  get shareAny()    { return this.inner.get_share_any(); }
+  get shareT()      { return this.inner.get_share_t(); }
+  get shareByRef()  { return this.inner.get_share_by_ref(); }
+  delayQuantile(p)  { return this.inner.get_delay_quantile(p); }
+  get ooo()         { return this.inner.get_ooo(); }
+  get oooShare()    { return this.inner.get_ooo_share(); }
+  get oooUnits()    { return this.inner.get_ooo_units(); }
+  get unitDelays()  { return this.inner.get_unit_delays(); }
+  get deliveredUnits() { return this.inner.get_delivered_units(); }
+  // The ONE drain of the model's class events (addendum 1 A1): append them to
+  // the store and return it; a superseding event overwrites its unit. dMax
+  // spans the delivered classes only (an undelivered unit has no delay).
+  pullUnitEvents() {
+    const ev = this.inner.take_unit_events(), st = this.unitStore;
+    for (let i = 0; i < ev.length; i += 4) {
+      const u = ev[i], c = ev[i + 3];
+      st.h[u] = ev[i + 1]; st.delay[u] = ev[i + 2]; st.cls[u] = c;
+      st.hMax = Math.max(st.hMax, ev[i + 1]);
+      if (UNIT_CLASS_DELIVERED[c]) st.dMax = Math.max(st.dMax, ev[i + 2]);
+    }
+    return st;
+  }
+  get unitClasses() { return this.inner.get_unit_classes(); }
+  get classCounts() { return this.inner.get_class_counts(); }
+  get lateShare()   { return this.inner.get_late_share(); }
+  get oooLate()     { return this.inner.get_ooo_late(); }
+  get lateFills()   { return this.inner.get_late_fills(); }
+  // --- The forward leg (addendum 1 A2): routing witnesses and gauges ---
+  linkServiceS(i) { return this.inner.get_link_service_s(i); }
+  linkQueueS(i)   { return this.inner.get_link_queue_s(i); }
+  linkPropS(i)    { return this.inner.get_link_prop_s(i); }
+  pathQdrop(i)    { return this.inner.get_path_qdrop(i); }
+  get resendLimit() { return this.inner.get_resend_limit(); }
+  // --- The queue (addendum 1 A4): the ONE drain of take_queue_samples
+  // (tick-major, one value per path) into one row per path; and readouts.
+  pullQueueSamples() {
+    const v = this.inner.take_queue_samples(), n = this.queueRows.length;
+    for (let i = 0; i < v.length; i++) this.queueRows[i % n].push(v[i]);
+    return this.queueRows;
+  }
+  pathQdropIn(i)  { return this.inner.get_path_qdrop_in(i); }
+  pathQdropOut(i) { return this.inner.get_path_qdrop_out(i); }
+  pathOwdLastMs(i) { return this.inner.get_path_owd_last_ms(i); }
+  pathOwdQuantileMs(i, q) { return this.inner.get_path_owd_quantile_ms(i, q); }
+  pathLinkUse(i)  { return this.inner.get_path_link_use(i); }
+  get crossPathReorder() { return this.inner.get_cross_path_reorder(); }
+  // --- The resend budget (addendum 1 A5) ---
+  get budgetUsed()  { return this.inner.get_budget_used(); }
+  get resendBrakedUnits()    { return this.inner.get_resend_braked_units(); }
+  get resendBrakedAttempts() { return this.inner.get_resend_braked_attempts(); }
+  get dup()         { return this.inner.get_dup(); }
+  get inFlight()    { return this.inner.get_in_flight(); }
+  get knowledgeLeadMeanMs() { return this.inner.get_knowledge_lead_mean_ms(); }
+  get knowledgeLeadMaxMs()  { return this.inner.get_knowledge_lead_max_ms(); }
+  get relByHold()   { return this.inner.get_rel_by_hold(); }
+  get relByFloor()  { return this.inner.get_rel_by_floor(); }
+  get releasedHoles() { return this.inner.get_released_holes(); }
+  get recoveryTime() { return this.inner.get_recovery_time(); }
+  get strictStallBeyondOutage() { return this.inner.get_strict_stall_beyond_outage(); }
+  get knobLawRevision() { return this.inner.get_knob_law_revision(); }
   get totalSrc() { return this.inner.get_total_src(); }
   get totalFec() { return this.inner.get_total_fec(); }
   get totalArq() { return this.inner.get_total_arq(); }
@@ -274,22 +408,55 @@ class SimWrapper {
 
 '''
 
-# Change module script to regular script
-html = html.replace('<script type="module">', '<script>')
-
-# Replace everything from "WASM MODULE" to just before "UI" section
-pattern = r'// =+\n// WASM MODULE.*?(?=// =+\n// UI)'
-html = re.sub(pattern, init_block, html, flags=re.DOTALL)
-
-# No wasm.xxx -> xxx replacement needed: the source HTML already uses direct calls.
-# The glue code's internal wasm.xxx references must NOT be touched.
-
-open('raptorpath-visualizer/interactive-visualizer.html', 'w', encoding='utf-8', newline='\n').write(html)
-print(f"HTML size: {len(html)} bytes")
+# Both pages get the SAME init block (plan 3.2): main's page script is
+# untouched, the knobs page is built from its own source.
+for name in PAGES:
+    path = 'raptorpath-visualizer/' + name + '.html'
+    html = open(path, encoding='utf-8').read()
+    # Change module script to regular script
+    html = html.replace('<script type="module">', '<script>')
+    # Replace everything from "WASM MODULE" to just before "UI" section
+    pattern = r'// =+\n// WASM MODULE.*?(?=// =+\n// UI)'
+    # A callable replacement: init_block has backslashes that re.sub would
+    # otherwise read as escapes.
+    html, n = re.subn(pattern, lambda m: init_block, html, flags=re.DOTALL)
+    assert n == 1, name + ': engine block markers not found'
+    open(path, 'w', encoding='utf-8', newline='\n').write(html)
+    print(name + f": HTML size: {len(html)} bytes")
 PYEOF
 
 python3 "$TMPFILE"
 rm -f "$TMPFILE"
+
+# The embedded wasm of both pages must not name the home directory (the remap
+# above). The home comes from the environment at build time; a planted blob
+# proves the check can fail.
+echo "Checking the embedded wasm for the home path..."
+HOMECHECK=$(mktemp)
+cat > "$HOMECHECK" <<'PYEOF'
+import base64, os, re, sys
+homes = set()
+for v in (os.environ.get("USERPROFILE"), os.environ.get("HOME"), os.environ.get("HOME_WIN")):
+    if v and len(v) > 3:
+        for f in (v, v.replace("\\", "/"), v.replace("/", "\\")):
+            homes.add(f.encode().lower())
+assert homes, "no home directory in the environment"
+def leaks(blob):
+    low = blob.lower()
+    return [h for h in homes if h in low]
+planted = b"panicked at " + sorted(homes)[0] + b"/.cargo/registry/src/x.rs"
+assert leaks(planted), "the home-path check cannot fail"
+bad = 0
+for name in ("interactive-visualizer", "knobs-visualizer"):
+    html = open("raptorpath-visualizer/%s.html" % name, encoding="utf-8").read()
+    wasm = base64.b64decode(re.search(r'const WASM_B64 = "([^"]*)"', html).group(1))
+    hits = leaks(wasm)
+    print("  %s: %d bytes of wasm, %d home-path forms found" % (name, len(wasm), len(hits)))
+    bad += len(hits)
+sys.exit(1 if bad else 0)
+PYEOF
+HOME_WIN="$(command -v cygpath > /dev/null 2>&1 && cygpath -w "${HOME:-/}" || true)" python3 "$HOMECHECK"
+rm -f "$HOMECHECK"
 
 echo "Running engine tests against the built file..."
 node raptorpath-visualizer/test_visualizer.mjs
@@ -299,5 +466,14 @@ echo "Running UI-layer tests (stub DOM) against the built file..."
 node raptorpath-visualizer/test_visualizer_ui.mjs
 echo "UI tests passed."
 
-echo "Done! Visualizer updated: raptorpath-visualizer/interactive-visualizer.html"
+echo "Running knobs-page engine tests (three-knob laws, plan 5.4 item 10)..."
+node raptorpath-visualizer/test_knobs.mjs
+echo "Knobs engine tests passed."
+
+echo "Running knobs-page UI tests (stub DOM, plan 5.4 item 11)..."
+node raptorpath-visualizer/test_knobs_ui.mjs
+echo "Knobs UI tests passed."
+
+echo "Done! Visualizers updated: raptorpath-visualizer/interactive-visualizer.html"
+echo "  and the three-knobs proposal page raptorpath-visualizer/knobs-visualizer.html"
 echo "Open it directly in a browser (file:// works)."
