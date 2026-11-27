@@ -360,6 +360,7 @@ gantt
     Gate limit capped by the acknowledgemen… :model_handoff_rev5, 2026-11-27, 2026-11-27
     Sender hand-off gate :active, model_sender_queue_law, 2026-11-26, 2026-11-27
     Three application knobs (lifetime T, de… :active, model_three_knobs, 2026-11-23, 2026-11-27
+    Three-knob Revision 5 slower at low-mid… :model_defect_three_knobs_delta_band, 2026-11-27, 2026-11-27
     Burst estimate explodes after a long ou… :model_defect_ge_after_outage, 2026-11-25, 2026-11-27
     Repair rate sized for a wider window th… :model_defect_rate_vs_span, 2026-11-24, 2026-11-27
     The interactive simulator on the three-… :active, model_viz_three_knobs, 2026-11-24, 2026-11-27
