@@ -712,10 +712,13 @@ Defaults taken:
 - **No seats or token for the G1 bisection or a pool-only session: default chosen (§5.2 says "pre-pinned at the second amendment"; coordinator to confirm).** They are cut only if G1 fails or session 3 runs long, under their own amendment; no row runs on an unpinned seat (Proposed text, G1 bisection). Coordinator level (advisor review 2).
 - **A1 and S2's minimum:** resolved at `3092dc96` (Proposed text #59).
 
-Open for the owner:
-- **#135, the launch smoke:** the waiver request above.
-- **P0, Ceph.** No session (0 included) launches before the owner says the Ceph instability is over.
-- **S06's merge on its own guard-2 PASS after the ADR-0084 review.** ADR-0084 (which records the lifted hold, Amendment 1 item 3) is under owner review since 2026-11-23. Guard 2 runs as registered; its merge waits for the owner's word that the own-PASS decision of 2026-11-20 stands.
+Owner answers (2026-11-27, verbatim; the owner delegated the S06 judgement to Fable):
+- **P0, Ceph: cleared.** "i dont think i have any ceph instability." Sessions may launch; session 1's A/A rows are the witness that the VM is stable, and a failed A/A stops the batch.
+- **#135, the launch smoke: waiver granted.** "i accept the rehearsals smoke rows." The launches rest on the rehearsal's smoke of the same sha-checked binaries plus the block-1 rule; the gaps listed above (T and the dump twins have no block-1) are accepted with it.
+- **S06's merge on its own guard-2 PASS: stands, conditionally.** "the merge approval does stand if fable is confident on the fix." Fable's conditions (2026-11-27); if all three hold, S06 merges on guard-2 PASS without a further question:
+  1. T2 red on S1 in both invocations with matching traces, and green on S2 with the slot witness (`pslot=Some(n)`, n > 0): met at the VM pre-pin check below, as amended in §2.1 item 3;
+  2. the harness67d S2 gating command, run once on the VM, prints a `Running` line and a non-zero passed count for every target;
+  3. guard 2 passes with its off-Bulk stages carrying their execution witnesses (A, R1, R2 as registered), not on Bulk rows alone.
 
 ### Seat heads at the 2026-11-27 main merge (pins, full shas)
 
@@ -767,6 +770,7 @@ Each item replaces or extends the registration text named. Since `9bc656bf`, har
 - **#130 (§5.4, order).** Add: "In practice ABORT-SEAM fires first, then ABORT-PRECONDITION, the session budget (ABORT-BUDGET) and the tools-test gate (ABORT-TESTS); then commit pin (ABORT-SEAT); in session 0 its steps follow (inside step 4, ABORT-REPEAT with its cause); otherwise build and sha (ABORT-BUILD), identity strings and tools witness (ABORT-SEAT), suite reuse (ABORT-SUITES), tools tests (ABORT-TESTS). The Result lists the first one that fired."
 - **#132 (§9 item 5).** Replace "parsed with `verify4_parse.py tun`" with "parsed by `s67_score.py`'s T parser, which reads the bring-up lines; `test_s67.py` checks that it and `verify4_parse.py tun` agree on a fixture".
 - **G1 bisection seats (§5.2).** Replace "These seats, `vmb-c8` and `vmb-tun`, are pre-pinned at the second amendment" with "These seats, `vmb-c8` and `vmb-tun`, are cut and pinned by their own amendment after a G1 FAIL, before the bisection session, on this batch's pinned B0 (not on main at that time). The harness has no bisection token yet either, so the bisection runs in the first session after both exist, not necessarily the next one."
+- **§2.1 item 3 (T2's red, Fable 2026-11-27).** Replace "It must be shown red on S1's engine (copies of k sent through a proactive slot) and green on S2." with "It must be shown red on S1's engine and green on S2. The red is the run-wide `taper` assertion (`taper = 0`): S1's copy branch sends proactive-slot copies in T2's scenario (`taper > 0`), S2 sends none while taking slots (`pslot > 0`). The k-specific assertion (no copy of k through a proactive slot) is kept, but it is not a discriminating red: at the 2026-11-27 check it passed on S1 too, so the record claims a taper red only, not that k is slot-copied on S1."
 - **§2.2, the S2 repeat.** Replace "S2: every non-ignored test in `s06_no_copy` and `s06_reactive` (T2 runs as a sim test, §2.1 item 3); `holeclass_reachability`" with "S2: every non-ignored test in `s06_no_copy` and `holeclass_reachability`. `s06_reactive` holds no non-ignored test (T2 runs as the sim test `sim_s06_nack`, T3 records only, §2.1 item 3), so it is not repeated. Each run must pass at least one test in each named target."
 - **§2.2, the touched-target list (#156).** Replace "inside the suites run; listed so a seat-specific failure is named" with "`holeclass_reachability`, `recovery_bench`, `sim_nack_test`, `place_arms_reachability` and `s06_no_copy` inside the suites run; `sim_shed_reach`, `sim_lost_tail` and `sim_s06_nack` in the repeat's sim step (#29); `s06_reactive` holds only record-only `#[ignore]` tests and runs nowhere in this batch. Session 0's TARGETS line reports what the suites saw, and gates nothing."
 
@@ -782,7 +786,7 @@ Trees: git archives of S1 `507fb836ae1afa62a7cbcbb6679e0aca0ea0e712` and S2 `90a
 **2. T2 red on S1, green on S2 (§2.1 item 3).** `sim_s06_nack.rs` from S2, with its `[[test]]` stanza, on an S1 tree; each tree run twice.
 - **S1 (red, on the run-wide assertion only):** both runs rc 101; `[s06 T2 sim] sends of k: 3 (copies via slot path 0, NACK/sweep resends before fill 1), taper=127 pslot=None, stall 37000 us`, then the panic at `sim_s06_nack.rs:120:5`, which is `assert_eq!(taper, 0, "taper={taper}")` (taper = 127). The k-specific assertion before it (`copies == 0`: no copy of k through a proactive slot) PASSED on S1: k was not slot-copied; the copy branch sent 127 copies of other seqs. The slot witness held (taper > 0; S1 has no `pslot=`). The two invocations agree line for line (the test panics inside its first scenario, so this is its two-run digest).
 - **S2 (green):** both runs rc 0; `taper=0 pslot=Some(192)` (slots taken, none a copy); the test's own two-seed-run trace equality holds.
-- **Open (coordinator / owner):** §2.1 item 3 registers the red as "copies of k sent through a proactive slot". That did not happen on S1: the red comes from the run-wide `taper` assertion. T2's port is a hard precondition of guard 2's pin, so whether a taper-only red satisfies it, or the scenario must be changed until k itself is slot-copied on S1, is not settled here.
+- **Ruling (Fable, 2026-11-27, owner-delegated): the taper-only red counts, with the claim narrowed.** The red shows that S1's copy branch acts in T2's scenario (127 proactive-slot copies, `taper=127`) and S2's does not (`taper=0` with 192 slots taken). It does not show that the stalled blocker k itself is slot-copied on S1: the k-specific assertion (`copies == 0`) passed on both seats, so it did not discriminate. The record claims "taper red" only. §2.1 item 3 is amended to match (Proposed text, §2.1 item 3).
 
 ### B0 and the binid runs (2026-11-21)
 
