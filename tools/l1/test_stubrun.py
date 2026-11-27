@@ -2796,7 +2796,7 @@ def case68(plan, path):
         else:
             gate_rows = [r for r in led if r["arm"].startswith(("G", "Q", "T"))]
             check(f"{tag}: the GATE (and Q) rows print gate=on, bind (hand_bind 0.62) and refuse first sends (witness total > 0); BASE and R4 print gate=off; the [HOFF] parser read the unknown qdisc= field and the witness fields (fs_over 0) without harm; no STOP68 fired",
-                  gate_rows and all(r["t68"]["hoff"]["gate"] == "on" and r["t68"]["hoff"]["refusals"] > 0 and r["t68"]["hoff"]["paths"]["0"]["fs_over"] == 0 for r in gate_rows) and all(r["t68"]["hoff"]["gate"] == "off" for r in led if not r["arm"].startswith(("G", "Q")))
+                  gate_rows and all(r["t68"]["hoff"]["gate"] == "on" and r["t68"]["hoff"]["refusals"] > 0 and r["t68"]["hoff"]["paths"]["0"]["fs_over"] == 0 for r in gate_rows) and all(r["t68"]["hoff"]["gate"] == "off" for r in led if not r["arm"].startswith(("G", "Q", "T")))
                   and "STOP68" not in score and re.search(r"total=[1-9]\d*", score) is not None, score[-1800:])
         check(f"{tag}: DONE-ALL and score.txt", os.path.exists(os.path.join(run_dir, "DONE-ALL")) and os.path.exists(os.path.join(run_dir, "score.txt")), tail(e, 12))
         EXECUTED.add((plan, path))

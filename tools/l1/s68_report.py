@@ -349,7 +349,8 @@ def report(path, out=print, raw=None, ref=None):
     groups = _by(cnt)
     rgroups = _by(cnt + refrows)      # the per-cell lines and ratios; the stop rules and witnesses read this ledger's rows only
     out("CELLS68 built=" + ",".join(plan68.built_in()) + " unbuilt=" + ",".join(plan68.unbuilt_in()))
-    for code in plan68.cells_of(plan68.plan_name()):
+    shown = plan68.cells_of(plan68.plan_name())
+    for code in shown + tuple(c for c in plan68.unbuilt_in() if c not in shown):      # an UNBUILT cell outside the table is still named
         if code in plan68.unbuilt_in():
             out(f"UNBUILT68 {code} ({plan68.CELLS[code][1]}): {plan68.UNBUILT_WHY[code]}; no row ran, nothing read, nothing cleared")
             continue
