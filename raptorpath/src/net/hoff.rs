@@ -60,6 +60,7 @@
 //!     `own_gap_max` = the owner's longest interval between data drains (µs; includes idle gaps,
 //!     read it beside `pend_max`); `pend_max` = max of staged − handed to quinn − dropped, at turn starts;
 //!   * `owner_timer_wakes` = the owner's republish-timer wakes (0 with the gate off);
+//!     `owner_timer_idle` (gate on only) = those wakes after which the owner published nothing;
 //!     with `RWM_HOFF_GATE` the line prints `gate=on` and the gate's own β, τ̂_o
 //!     (`(meas)`), hand_bind and predicate instead of the shadow model's.
 
@@ -392,6 +393,7 @@ impl HoffGauge {
         let mut outstanding = 0.0;
         let gate_on = gate.as_deref().is_some_and(|g| g.on());
         let wakes = gate.as_deref().map_or(0, |g| g.owner_timer_wakes());
+        let idle = if gate_on { format!(" owner_timer_idle={}", gate.as_deref().map_or(0, |g| g.owner_timer_idle())) } else { String::new() };
         for id in ids {
             let st = self.paths.get_mut(&id).expect("id from keys");
             let (cur, prev) = (st.last, st.prev);
@@ -490,10 +492,11 @@ impl HoffGauge {
         let ratio = if outstanding > 0.0 { engine_infl as f64 / outstanding } else { f64::NAN };
         let probe_acks: u64 = self.paths.values().map(|p| p.last.end_acks).sum();
         let l = format!(
-            "[HOFF] t={:.1}s gate={} owner_timer_wakes={} probe_acks={} tau_floor_bind={:.2}{} infl_vs_out={}/{:.0}/x{} store_pin={:.2}",
+            "[HOFF] t={:.1}s gate={} owner_timer_wakes={}{} probe_acks={} tau_floor_bind={:.2}{} infl_vs_out={}/{:.0}/x{} store_pin={:.2}",
             now_us.saturating_sub(self.start_us) as f64 / 1e6,
             if gate_on { "on" } else { "off" },
             wakes,
+            idle,
             probe_acks,
             self.floor_binds as f64 / self.floor_reads as f64,
             out,

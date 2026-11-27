@@ -205,6 +205,8 @@ pub struct HoffCounters {
     pub timer_wait: WorkHist,
     /// Republish-timer wakes (the `owner_timer_wakes` gauge).
     pub timer_wakes: AtomicU64,
+    /// Timer wakes that published nothing (`owner_timer_idle`, reported only).
+    pub timer_idle: AtomicU64,
     /// Datagrams the owner discarded before quinn (send errors, shim loss,
     /// orphaned batches): netted out of B_i.
     pub dropped: AtomicU64,
@@ -1220,6 +1222,8 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     // (`docs/derivations/sim-engine.md`).
     let hoff_gate = crate::gates::get().hoff_gate;
     let mut republish: Option<(Instant, tokio::time::Instant)> = None;
+    // The republish timer fired in this loop pass (for the idle-wake gauge).
+    let mut timer_fired = false;
     let mut sleep_for_republish: Option<tokio::time::Instant> = None;
     publish(conn, &view, true, copa_wire);
 
@@ -1452,6 +1456,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     // The hand-off gate's republish timer (paper §6.8) fired: publish below.
                     let (t0, _) = republish.take().expect("checked");
                     view.hoff.timer_wakes.fetch_add(1, Relaxed);
+                    timer_fired = true;
                     view.hoff.timer_wait.record(t0.clock_elapsed().as_nanos() as u64);
                 }
                 sleep_for_republish = None;
@@ -1482,6 +1487,10 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
         // what a fresh one would, up to quinn-internal packets.
         let now = crate::clock::now();
         let full = dirty && now.duration_since(last_full) >= VIEW_REFRESH;
+        if crate::net::hoff_gate::timer_wake_idle(timer_fired, full) {
+            view.hoff.timer_idle.fetch_add(1, Relaxed);
+        }
+        timer_fired = false;
         if full || copa_wire {
             let sec = section_begin(a.gauge && full);
             let dsec = deep_begin(a.deep && full);

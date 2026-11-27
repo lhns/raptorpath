@@ -58,6 +58,14 @@ fn grant_of(open: bool, beta: Option<f64>) -> Grant {
     }
 }
 
+/// An owner timer wake is idle when the timer fired and the poll after it published no
+/// full snapshot: an ordinary poll had published inside the refresh interval, so the
+/// armed deadline (set from the earlier publish) came due with nothing left to do.
+/// Reported only (`owner_timer_idle`): it prices a deadline that follows the last publish.
+pub(crate) fn timer_wake_idle(fired: bool, full: bool) -> bool {
+    fired && !full
+}
+
 /// The sites that stage a first send without asking the gate (witness tags;
 /// no decision reads them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -784,6 +792,11 @@ impl HandoffGate {
     }
 
     /// The views' cumulative owner-timer wake count (the gauge).
+    pub(crate) fn owner_timer_idle(&self) -> u64 {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.views.iter().map(|(_, v)| v.hoff.timer_idle.load(Relaxed)).sum()
+    }
+
     pub(crate) fn owner_timer_wakes(&self) -> u64 {
         use std::sync::atomic::Ordering::Relaxed;
         self.views.iter().map(|(_, v)| v.hoff.timer_wakes.load(Relaxed)).sum()

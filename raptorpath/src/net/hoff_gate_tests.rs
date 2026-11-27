@@ -1117,3 +1117,41 @@ fn ns_per_read_decision_against_full() {
     let lean = t.elapsed().as_nanos() as f64 / n as f64;
     println!("read ns: full {full:.1}, decision {lean:.1} ({s})");
 }
+
+// ── owner_timer_idle: republish-timer fires that published nothing ──────────
+
+/// A timer wake is idle when it fired and the poll after it did not publish a full
+/// snapshot (an ordinary poll had published inside the refresh interval).
+#[test]
+fn a_timer_wake_that_published_nothing_is_idle() {
+    assert!(super::hoff_gate::timer_wake_idle(true, false));
+    assert!(!super::hoff_gate::timer_wake_idle(true, true));
+    assert!(!super::hoff_gate::timer_wake_idle(false, false), "no timer fired: nothing to count");
+    assert!(!super::hoff_gate::timer_wake_idle(false, true));
+}
+
+/// The line carries `owner_timer_idle` next to `owner_timer_wakes` with the gate armed
+/// only; with it off the line is unchanged.
+#[test]
+fn hoff_line_prints_owner_timer_idle_only_when_armed() {
+    let mut gauge = HoffGauge::new(0);
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let ins = [(0u32, pin(10, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &ins);
+    gauge.turn(1000, true, false, &ins);
+    let l = gauge.line_gated(300_000, 40, false, Some(&mut g));
+    assert!(l.contains(" owner_timer_wakes=0 owner_timer_idle=0 probe_acks="), "{l}");
+    let mut off = HoffGauge::new(0);
+    off.turn(1000, true, false, &ins);
+    let l = off.line_gated(300_000, 40, false, None);
+    assert!(l.contains(" owner_timer_wakes=0 probe_acks=") && !l.contains("owner_timer_idle"), "{l}");
+}
+
+/// The owner counts the idle wake through the rule, on the timer's own branch.
+#[test]
+fn the_owner_counts_idle_timer_wakes_through_the_rule() {
+    let o = flat(include_str!("../transport/io_owner.rs"));
+    assert!(o.contains("timer_wake_idle(timer_fired,full)"));
+    assert!(o.contains("timer_idle.fetch_add(1,Relaxed)"));
+}
