@@ -133,12 +133,22 @@ case "$1" in
       prev="$a"
     done
     running() { local p="" a; for a in "$@"; do [ "$p" = "--test" ] && echo "     Running tests/$a.rs (target/release/deps/$a-0)"; [ "$a" = "--lib" ] && echo "     Running unittests src/lib.rs (target/release/deps/raptorpath-0)"; p="$a"; done; }
+    per_target() { # <passed> <cargo args...>: one Running line and one result line per --test target, as cargo prints them; STUB_REPEAT_IGNORED=<t>: that target's tests are all #[ignore]
+      local n="$1" p="" a; shift
+      for a in "$@"; do
+        if [ "$p" = "--test" ]; then
+          echo "     Running tests/$a.rs (target/release/deps/$a-0)"
+          if [ "$a" = "${STUB_REPEAT_IGNORED:-}" ]; then echo "test result: ok. 0 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out"
+          else echo "test result: ok. $n passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"; fi
+        fi
+        p="$a"
+      done
+    }
     case " $* " in
       *" --no-run "*) ;;
       *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test; STUB_REPEAT_ZERO=1: every run passes zero tests (a filter or build that ran nothing)
-        running "$@"
-        if [ -n "${STUB_REPEAT_ZERO:-}" ]; then echo "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out"; exit 0; fi
-        echo "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+        if [ -n "${STUB_REPEAT_ZERO:-}" ]; then per_target 0 "$@"; exit 0; fi
+        per_target 3 "$@"
         if [ -n "${STUB_REPEAT_FAIL:-}" ]; then
           n=$(cat "$STUB_REPEAT_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_REPEAT_DIR/n"
           if [ "$n" = "$STUB_REPEAT_FAIL" ]; then echo "test s06_no_copy::t_one ... FAILED"; echo "test result: FAILED. 2 passed; 1 failed; 0 ignored"; exit 101; fi
@@ -177,6 +187,8 @@ case "$1" in
           [ "$seen" = 1 ] && case "$a" in -*) ;; *) [ "$a" = "$gf" ] || echo "test $a ... ok" ;; esac
           [ "$a" = "--" ] && seen=1
         done ;;
+      *" --test sim_shed_reach "*|*" --test sim_nack_test "*)      # plan 67's repeat: the sim / deterministic lists, one result line per target
+        per_target 1 "$@" ;;
       *) running "$@"
           echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
           seen=0      # plan 51's dial pins name their tests after `--`: one `test <name> ... ok` line each (STUB_FAIL_PIN: that one FAILS; STUB_SKIP_PIN: that one prints nothing, a filter that matched no test)
@@ -3056,7 +3068,7 @@ def case67pre(plan, path):
                     return next((i for i, c in enumerate(cargo) if pred(c)), -1)
                 order = [idx(lambda c: "/seats/S1/src|check "in c), idx(lambda c: "/seats/S2/src|check " in c), idx(lambda c: c.endswith("|test -p raptorpath --lib gates")),
                          idx(lambda c: "/seats/S1/src|test -p raptorpath -p raptorpath-math --release --no-fail-fast" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath -p raptorpath-math --release --no-fail-fast" in c),
-                         idx(lambda c: "/seats/S1/src|test -p raptorpath --release --lib --no-run" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath --release --features test-seams --test s06_no_copy" in c),
+                         idx(lambda c: "/seats/S1/src|test -p raptorpath --release --lib --no-run" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath --release --test s06_no_copy" in c),
                          idx(lambda c: "|build_visualizer" in c), idx(lambda c: c.endswith("|test -p raptorpath-wasm golden")), idx(lambda c: "/b67work/src/raptorpath|build " in c)]
                 check(f"{tag}: the steps ran in the registered order: check S1, check S2, gates on B0, suites S1, suites S2, repeat S1, repeat S2, visualizer, golden, binid", order == sorted(order) and min(order) >= 0 and len(set(order)) == len(order), order)
             check(f"{tag}: no release build of a seat (the only builds are binid's, at its one work path), no binary installed or kept (no BINSHA.txt, no bins67), no battery: no ledger, no row-parser call, no driver call",
@@ -3408,7 +3420,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
 
 
 # ── plan 67's session-0 steps that are scripts of their own: the repeat run (repeat67_run.sh: N gating runs per seat, zero failures, ABORT-REPEAT) and binid on three seats (binid67_run.sh) ──
-EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut", "repeat-zero-tests")
+EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut", "repeat-zero-tests", "repeat-all-ignored")
 EXTRA_BINID = ("binid-pass", "binid-same")
 EXTRA67_DONE = set()
 
@@ -3439,6 +3451,8 @@ def extra_repeat(kind):
             env["STUB_REPEAT_FAIL"] = "3"
         if kind == "repeat-zero-tests":
             env["STUB_REPEAT_ZERO"] = "1"
+        if kind == "repeat-all-ignored":      # one gating target runs, but every test in it is #[ignore] (s06_reactive's shape, VM 2026-11-27): the others pass
+            env["STUB_REPEAT_IGNORED"] = "holeclass_reachability"
         rc, out, cargo = script67(sb, root, "repeat67_run.sh", env)
         rep = txt67(root, "out", "REPEAT67.txt")
         s06 = [c for c in cargo if "|test " in c and "--test s06_no_copy" in c and "--no-run" not in c]
@@ -3447,16 +3461,19 @@ def extra_repeat(kind):
         if kind == "repeat-pass":
             check(f"{tag}: zero failures: rc 0, both seats read 4 of 4 with no failing run, the S2 gating tests ran 4 times, the sim tests twice, REPEAT67-DONE bad=0",
                   rc == 0 and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "REPEAT67 seat=S2 reached=4 of 4 failing_runs=0" in rep and len(s06) == 4 and len(sims) == 2 and "REPEAT67-DONE bad=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep, len(s06), len(sims)))
-            check(f"{tag}: the S2 gating tests run with --features test-seams (s06_reactive requires it); the sim-feature targets (by the seat's [[test]] stanzas) run with --features sim,test-seams and include T2's port sim_s06_nack, as ci.yml's sim job; the plain ones run --release with no feature",
-                  len(s06) == 4 and len(sims) == 2 and len(dets) == 2 and all("--features test-seams --test s06_no_copy --test s06_reactive --test holeclass_reachability" in c for c in s06)
+            check(f"{tag}: the S2 gating tests are s06_no_copy and holeclass_reachability, with no feature (s06_reactive is all #[ignore]: not named); the sim-feature targets (by the seat's [[test]] stanzas) run with --features sim,test-seams and include T2's port sim_s06_nack, as ci.yml's sim job; the plain ones run --release with no feature",
+                  len(s06) == 4 and len(sims) == 2 and len(dets) == 2 and all(c.endswith("|test -p raptorpath --release --test s06_no_copy --test holeclass_reachability --no-fail-fast") for c in s06)
                   and all("--features sim,test-seams" in c and "--test sim_s06_nack" in c and "--release" not in c and "--test sim_nack_test" not in c for c in sims)
                   and all("--release" in c and "--features" not in c and "--test place_arms_reachability" in c for c in dets), (s06, sims, dets))
         elif kind == "repeat-one-failure":
             check(f"{tag}: one failing run in 4 of S2's gating tests: ABORT-REPEAT seat=S2 (guard 2 does not launch), the failing test named, rc 5; S1 read zero failures and is not aborted",
                   rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=1 failures=[s06_no_copy::t_one]" in rep and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
         elif kind == "repeat-zero-tests":
-            check(f"{tag}: every S2 run exits 0 with zero passed tests: each run is a failure (ZERO-TESTS), ABORT-REPEAT seat=S2, rc 5; S1 is not aborted",
-                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+            check(f"{tag}: every S2 run exits 0 with zero passed tests: each run is a failure (ZERO-TESTS per target), ABORT-REPEAT seat=S2, rc 5; S1 is not aborted",
+                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS(s06_no_copy) ZERO-TESTS(holeclass_reachability)" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        elif kind == "repeat-all-ignored":
+            check(f"{tag}: one gating target passes nothing (all its tests ignored) while the other passes: the per-target rule fails every S2 run (ZERO-TESTS(holeclass_reachability)), ABORT-REPEAT seat=S2, rc 5",
+                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS(holeclass_reachability)" in rep and "ZERO-TESTS(s06_no_copy)" not in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
         else:
             check(f"{tag}: a budget of 4 s (2 s per seat) fits two timed runs: REPEAT-CUT with the reached N is on record (for the second amendment), the seats read that N with zero failures, rc 0",
                   rc == 0 and rep.count("REPEAT-CUT seat=") == 2 and "reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
