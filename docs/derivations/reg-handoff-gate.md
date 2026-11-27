@@ -147,3 +147,35 @@ Step 2 is registered only after step 1's rules are cleared, and with any priced 
 - **Harness work:** the plan number, the `[HOFF]` parser, step 1's three-arm interleave, stage L's pacing, and step 2's stage A and L witnesses.
 - **The owner's acceptance of the §8.4 amendment** before step 2.
 - **The A/A resolution** of the new readouts (A_x, `[HOFF]`).
+
+## 7. Step 1 result and Amendment 1 (2026-11-27, post-data)
+
+**Step 1 ran** as plan 68 on the VM: 27 of 54 rows (K2, K8, A2 at 3 rows per arm; LR, PC, BU unbuilt, because the pacer was not in either tree). Ledger in `docs/l1-raw/hoff68/`. Reported only. Readouts, GATE against BASE (medians, n = 3, one seed):
+
+| cell | in-order delay | goodput | client CPU/GB | server CPU/GB | coded share |
+|---|---|---|---|---|---|
+| c2 Bulk | 344 → 41 ms | −1.0 % | +7 % | +11 % | 0.004 → 0.004 |
+| c8 Bulk | 4.23 → 0.12 s | +10.1 % | +7 % | −16 % | 0.005 → 0.004 |
+| c2 Auto | 392 → 45 ms | +17.5 % | −23 % | −20 % | 0.064 → 0.005 |
+
+- **R4 alone** (`bbr_rs`, gate off) is within ±1.5 % of BASE on goodput at every cell; c8 in-order delay is +45 %.
+- **Auto's goodput gain is repair switched off.** The predicate cuts proactive repair on a saturated path (§6.8, the registered "saturating transfers lose proactive repair"). So GATE at Auto equals GATE at Bulk (89.6 against 89.4 Mbit).
+- **Execution witness:** 721 620 first-send refusals on GATE rows; `gate=on` and the `[GATES]` echo are 1 on both ends.
+- **Reopen latency:** the maximum is 17–56 ms against L ≈ 6.2 ms, not within L as §6.8 claims. Open.
+- **DIAG68 items** (registered "diagnose before step 2"):
+  - c2 Bulk goodput GATE/BASE 0.990 < 0.995;
+  - c8 leg-0 batch 16.7 < 0.9 × R4's 25.7.
+
+**The stop rule "B p95 ≤ β + one batch" fired on all 9 GATE rows.** The excess is 75–170 datagrams, in 16–30 % of 0.25 s windows. The worst windows sit near t ≈ x0.3 s, where β (one end-of-window sample) is back near 100, quinn's queue `dgq` holds about 90, and B p95 reads up to 285. The current gauge cannot separate the four candidate causes:
+- exempt traffic;
+- β moving within the window;
+- first sends past the bound (the bypass paths, or `admits` at B = 0 or an undefined β);
+- an owner stall (staged but not yet handed to quinn).
+
+Step 2 does not run on this.
+
+**Amendment 1** (post-data, so labelled):
+- **(a)** The B-over-β line is reported, not a stop. As worded, it compares a window p95 against one end sample of a moving bound, and would fire on every step-2 row.
+- **(b)** The law's own witness replaces it: `fs_over`, first sends staged while B ≥ β, must be 0 on every GATE row (`STOP68` otherwise). The bypass paths are counted separately (`fs_bypass`). The exempt part of the excess, β p5/p50/p95, the owner's longest drain gap and the staged-but-unhanded maximum are reported beside it.
+- **(c)** A rerun, plan 68r, carries these counters on the 9 GATE rows plus LR and PC at three arms, with the pacer restored in both trees (4ee1df9b ported).
+- **(d)** Step 2 waits for 68r. If 68r shows `fs_over` > 0, the gate is at fault and is fixed before step 2. If the excess is exempt traffic or an owner stall, it goes to the derivation (§6.8's bound on exempt traffic) before step 2.
