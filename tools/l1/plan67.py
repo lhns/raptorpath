@@ -2,7 +2,8 @@
 """Plan 67: VM batch 1 (docs/derivations/vm-batch-1-registration.md, section 9). The seat table, the stage tables, the row specs, the pins and the budgets; the row parser, witnesses,
 clauses and readouts are s67_score.py; the shell side (loopdiag_run_all.sh -> loopdiag_p67.sh, loopdiag_battery.sh, tun67_battery.sh) reads this file through the CLI below.
 
-Sessions (LD_PLAN):   67  the rehearsal (needs LD_REHEARSE=1: builds, tools tests, one smoke per stage; no scored row)
+Sessions (LD_PLAN):   67pre session 0: the pre-flight with no battery (cargo check, the gates reference, the suites and the repeat runs on S1 and S2, the visualizer, binid; loopdiag_p67pre.sh; refuses LD_REHEARSE=1)
+                      67  the rehearsal (needs LD_REHEARSE=1: builds, tools tests, one smoke per stage; no scored row)
                       67g session 2: G1 then G2 (plan 41d twice, the BIN / BASE seats rebound)
                       67x session 3: A (with A1), R1 (with A1-R), T, R2 (with the twins), the dump twins (LD_DUMP67=1 only), the pool block
 Battery plans:        41d (stage G, LD_WITNESS67=g1|g2)  67a (stage A)  67r (stage R1)  67p (stage R2)  67o (the pool block)  67d (the dump twins); stage T is tun67_battery.sh
@@ -12,11 +13,13 @@ Battery plans:        41d (stage G, LD_WITNESS67=g1|g2)  67a (stage A)  67r (sta
     plan67.py armspec <plan> <cell> <arm>    `BYTES TIMEOUT_S HINT ENV...` (ENV tokens are KEY=VALUE); rc 1 on an unknown slot
     plan67.py seat <arm>                     the seat whose binary the arm runs
     plan67.py strings <seat>                 `need <s>` / `forbid <s>` lines: the strings that identify the seat's binary (ABORT-SEAT)
-    plan67.py pin <seat>                     the commit pin env name and its registered default (S1, S2 only; B0, P1 and P2 have none: the amendment names them)
-    plan67.py budget <67|67g|67x>            the registered worst-case seconds the session needs before LD_HARD
+    plan67.py pin <seat>                     the commit pin env name (LD_PIN_<SEAT>); every seat's pin is REQUIRED environment, none has a default (the second amendment names them: ABORT-SEAT when unset)
+    plan67.py seams [<G_ROWS67>]             the test seams that differ from the registered design, space separated (env: LD_HARD_MIN_S R67_T1_S LD_ROW_BYTES LD_BLOCK_ROW_S R67_N R67_BUDGET_S R67_SIM; source: the constants of REGISTERED and G_ROWS67 as the
+                                             shell passes it); prints nothing when none is active. A plan-67 session aborts ABORT-SEAM on any of them unless LD_TEST_SEAMS=1 (the explicit stub marker)
+    plan67.py budget <67pre|67|67g|67x>      the registered worst-case seconds the session needs before LD_HARD
     plan67.py check <plan> <ledger>          rc 0 iff the battery finished and the ledger holds a row for every slot (and no other)
     plan67.py replace <plan> <ledger> <cell> <arm> <seed> <rep>   battery helper: prints the reason, rc 0 iff the slot's one row is a VOID-WITNESS (or another replaceable void) and the stage's cap is not used up
-    plan67.py stages <67|67g|67x>            the session's stage names in run order (LD_DROP_S2=1: the S2 stages and arms dropped; LD_DUMP67=1: the dump twins)
+    plan67.py stages <67pre|67|67g|67x>      the session's stage names in run order (LD_DROP_S2=1: the S2 stages and arms dropped; LD_DUMP67=1: the dump twins)
 
 Arms. A, R1, G: the seat names (B0, S1, S2). R2: the pacer seats and their test-seams twins (P1, P2, P1T, P2T). The pool block: S1P<pool> / S2P<pool>. The dump twins: S1D / S2D.
 Replacement (registration 4.2): a row failing a PRECONDITION witness is VOID-WITNESS and is re-run once, at most MAX_REPLACED_A slots per stage; an OUTCOME witness failure on an S2 row (taper > 0 or
@@ -27,14 +30,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# ── seats (registration 1.2). need / forbid are strings the release binary must (not) contain: ABORT-SEAT before any row. B0, P1 and P2 have NO registered commit (the pin amendment names
-#    them), so their pins are required environment (LD_PIN_<SEAT>) with no default, like plan 51e's LD_BIN_SHA_EXPECT. ──
+# ── seats (registration 1.2). need / forbid are strings the release binary must (not) contain: ABORT-SEAT before any row. NO seat has a default commit pin (a main merge moves the seat heads, a default goes stale
+#    silently): every pin is required environment (LD_PIN_<SEAT>, the second amendment names it), a launch without it is ABORT-SEAT, like plan 51e's LD_BIN_SHA_EXPECT. ──
 GAUGES = ("rlaw=", "pfec=")                                   # the c8 gauges (c8-gauges + c8-gauges-pfec): S1 and S2 carry them, B0 not
 GUARD_MSG = "is a perf/native-object mode"                      # the tunnel guard's refusal text (config.rs tunnel_config)
 SEATS = {
     "B0": {"tree": "B0", "features": "", "pin_env": "LD_PIN_B0", "pin": None, "need": (), "forbid": GAUGES + (GUARD_MSG, "pslot=", "[ACCT-RX]")},
-    "S1": {"tree": "S1", "features": "", "pin_env": "LD_PIN_S1", "pin": "2d590cdc", "need": GAUGES + (GUARD_MSG,), "forbid": ("pslot=", "[ACCT-RX]")},
-    "S2": {"tree": "S2", "features": "", "pin_env": "LD_PIN_S2", "pin": "1953abd1", "need": GAUGES + (GUARD_MSG, "pslot="), "forbid": ("[ACCT-RX]",)},
+    "S1": {"tree": "S1", "features": "", "pin_env": "LD_PIN_S1", "pin": None, "need": GAUGES + (GUARD_MSG,), "forbid": ("pslot=", "[ACCT-RX]")},
+    "S2": {"tree": "S2", "features": "", "pin_env": "LD_PIN_S2", "pin": None, "need": GAUGES + (GUARD_MSG, "pslot="), "forbid": ("[ACCT-RX]",)},
     "P1": {"tree": "P1", "features": "", "pin_env": "LD_PIN_P1", "pin": None, "need": GAUGES + (GUARD_MSG, "RWM_PERF_RATE_MBIT", "offered-load pacing ACTIVE"), "forbid": ("pslot=", "[ACCT-RX]")},
     "P2": {"tree": "P2", "features": "", "pin_env": "LD_PIN_P2", "pin": None, "need": GAUGES + (GUARD_MSG, "pslot=", "RWM_PERF_RATE_MBIT", "offered-load pacing ACTIVE"), "forbid": ("[ACCT-RX]",)},
     "P1T": {"tree": "P1", "features": "test-seams", "pin_env": "LD_PIN_P1", "pin": None, "need": GAUGES + (GUARD_MSG, "RWM_PERF_RATE_MBIT", "offered-load pacing ACTIVE", "[ACCT-RX]"), "forbid": ("pslot=",)},
@@ -45,7 +48,7 @@ TREES = ("B0", "S1", "S2", "P1", "P2")                          # the five sourc
 S2_SEATS = ("S2", "P2", "P2T")                                  # dropped by LD_DROP_S2=1 (a seat abort on S2 stops guard 2 only)
 ACCT_MARKERS = ("[ACCT]", "[ACCT-RX]")                          # the twins' kept-line filter (the section 64 [SYMSZ] lesson): both must reach the battery's kept log
 PACER_LINE = "RWM_PERF_RATE_MBIT"                               # the one lib.sh forward line the pacer seats' own tools tree carries and the harness's does not (registration 1.2)
-REGISTERED_SHAS = {"S1": "2d590cdc", "S2": "1953abd1", "PACER": "4ee1df9b"}      # vmb-s1, vmb-s2, the pacer commit (informational: the commit pins are read from LD_PIN_<SEAT>)
+# (informational, not read: the pacer commit is 4ee1df9b; every pin comes from LD_PIN_<SEAT> only)
 
 # ── stage tables ──
 C2, C8 = "c2-100", "c8-100"
@@ -64,17 +67,37 @@ BYTES_A, TIMEOUT_A = 600_000_000, 200
 BYTES_R1, TIMEOUT_R1 = 100_000_000, 150
 PACE_MBIT = "35"
 SMOKE_ARMS_A = ("S1", "S2", "B0")
-BUDGET_S = {"67": 7500, "67g": 10000, "67x": 15600}               # section 6 worst cases under LD_HARD = launch + 2.25 h / 3 h / 4.5 h (the registration's 15.5 h worst total is the sum of re-runs); LD_HARD_MIN_S is a test seam
+# the registered design: the constants above as the registration states them. test_stubrun's fast mode shrinks them (source edits) and so does any hand edit: `plan67.py seams` reports a constant that differs.
+REGISTERED = {"N_BLOCKS": 6, "N_TWIN_REPS": 3, "N_POOL_REPS": 3, "MIN_LIVE_A": 10, "MIN_LIVE_B0": 4, "MIN_TWIN": 5, "G_ROWS67": 96}
+SEAM_ENV = ("LD_HARD_MIN_S", "R67_T1_S", "LD_ROW_BYTES", "LD_BLOCK_ROW_S", "R67_N", "R67_BUDGET_S", "R67_SIM", "LD_DEVSHM", "LD_PROCFS", "LD_LOCK_VM", "LD_LOCK_RP", "LD_TMPD")
+# R67_N / R67_BUDGET_S / R67_SIM shrink session 0's repeat and binid. LD_DEVSHM / LD_PROCFS / LD_LOCK_VM / LD_LOCK_RP / LD_TMPD redirect /dev/shm, /proc, the two operator locks and the per-row /tmp logs into a stub sandbox:
+# a real session never sets them (run_all / the batteries default to /dev/shm, /proc, /tmp/rwm-vm.lock, $HOME/rp.lock, /tmp), so on a plan-67 session they are seams too.
+BUDGET_S = {"67pre": 17040, "67": 7500, "67g": 10000, "67x": 15600}               # section 6 worst cases under LD_HARD = launch + 4.9 h (17 640 s, less the 600 s slack the others keep) / 2.25 h / 3 h / 4.5 h (the registration's 15.5 h worst total is the sum of re-runs); LD_HARD_MIN_S is a test seam
 
 PLANS = ("41d", "67a", "67r", "67p", "67o", "67d")
 STAGE_PLAN = {"g1": "41d", "g2": "41d", "a": "67a", "r1": "67r", "r2": "67p", "pool": "67o", "dump": "67d"}
 STAGE_DIR = {"g1": "g1", "g2": "g2", "a": "sa", "r1": "r1", "r2": "r2", "pool": "pool", "dump": "dump", "t": "tun"}
-SESSION = {"67": ("g1", "g2", "a", "r1", "t", "r2"), "67g": ("g1", "g2"), "67x": ("a", "r1", "t", "r2", "dump", "pool")}
+SESSION = {"67pre": (), "67": ("g1", "g2", "a", "r1", "t", "r2"), "67g": ("g1", "g2"), "67x": ("a", "r1", "t", "r2", "dump", "pool")}
 G_SEATS = {"g1": ("S1", "B0"), "g2": ("S2", "S1")}                  # stage -> (CAND, BASE)
 
 
+_DROP_S2 = [None]      # set by drop_s2_as(): a scorer reading a pulled ledger takes the drop state from the ledger's LD-PLAN67 line, not from the host's environment
+
+
 def drop_s2():
-    return os.environ.get("LD_DROP_S2") == "1"
+    return _DROP_S2[0] if _DROP_S2[0] is not None else os.environ.get("LD_DROP_S2") == "1"
+
+
+class drop_s2_as:
+    """`with drop_s2_as(True | False | None):` the tables below read that drop state (None = the environment)."""
+    def __init__(self, v):
+        self.v = v
+
+    def __enter__(self):
+        self.old, _DROP_S2[0] = _DROP_S2[0], self.v
+
+    def __exit__(self, *a):
+        _DROP_S2[0] = self.old
 
 
 def dump_on():
@@ -206,7 +229,7 @@ def replace_cap(plan_id):
 
 
 # a status that the battery re-runs once (stage-wide cap above). S06-FAIL, BASE rows' DNF and R2's twin rows without any [ACCT] line are handled by the scorer's own labels.
-REPLACEABLE = ("VOID-WITNESS", "VOID-RHO", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK", "WITNESS-FAIL", "VOID-SHORT", "NO_DATA", "VOID-RC")
+REPLACEABLE = ("VOID-WITNESS", "VOID-RHO", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK", "WITNESS-FAIL", "VOID-SHORT", "NO_DATA")
 
 
 def slot_rows(rows):
@@ -227,6 +250,14 @@ def replace(plan_id, ledger, cell, arm, seed, rep):
         print(mine[0]["status"].lower())
         return 0
     return 1
+
+
+def seams(g_rows=None):
+    """The active test seams: the env ones (non-empty) and every constant of REGISTERED that is not its registered value (G_ROWS67 is the shell's, passed in; None = not asked)."""
+    out = [k for k in SEAM_ENV if os.environ.get(k)]
+    cur = dict(globals(), G_ROWS67=g_rows)
+    out += [f"{k}={cur[k]}(registered {v})" for k, v in REGISTERED.items() if cur[k] is not None and int(cur[k]) != v]
+    return out
 
 
 def check(plan_id, path):
@@ -300,6 +331,9 @@ def main(argv):
     if cmd == "pin":
         s = SEATS[a[0]]
         print(s["pin_env"], s["pin"] or "")
+        return 0
+    if cmd == "seams":
+        print(" ".join(seams(int(a[0]) if a and a[0].isdigit() else None)))
         return 0
     if cmd == "budget":
         print(BUDGET_S[a[0]])

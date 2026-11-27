@@ -1,0 +1,54 @@
+{
+ "E-I2n": {},
+ "skipped": [
+  [
+   0,
+   "ramp too wide: min 0.0134, 0.99p + 2 ms = 1.5652, p = 1.579"
+  ],
+  [
+   1,
+   "ramp too wide: min 0.0159, 0.99p + 2 ms = 1.5434, p = 1.557"
+  ],
+  [
+   2,
+   "ramp too wide: min 0.0454, 0.99p + 2 ms = 1.5207, p = 1.534"
+  ],
+  [
+   3,
+   "ramp too wide: min 0.0172, 0.99p + 2 ms = 1.5464, p = 1.560"
+  ],
+  [
+   4,
+   "ramp too wide: min 0.0151, 0.99p + 2 ms = 1.5266, p = 1.540"
+  ],
+  [
+   5,
+   "ramp too wide: min 0.0179, 0.99p + 2 ms = 1.5672, p = 1.581"
+  ],
+  [
+   6,
+   "ramp too wide: min 1.5157, 0.99p + 2 ms = 1.5157, p = 1.529"
+  ],
+  [
+   7,
+   "ramp too wide: min 0.0163, 0.99p + 2 ms = 1.5088, p = 1.522"
+  ],
+  [
+   8,
+   "ramp too wide: min 0.0112, 0.99p + 2 ms = 1.5078, p = 1.521"
+  ],
+  [
+   9,
+   "ramp too wide: min 0.0116, 0.99p + 2 ms = 1.5236, p = 1.537"
+  ],
+  [
+   10,
+   "ramp too wide: min 0.0163, 0.99p + 2 ms = 1.5088, p = 1.522"
+  ],
+  [
+   11,
+   "ramp too wide: min 0.0104, 0.99p + 2 ms = 1.5563, p = 1.570"
+  ]
+ ],
+ "usable": 0
+}

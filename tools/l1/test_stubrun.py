@@ -84,7 +84,15 @@ exec env -i "${keep[@]}" "$@"
     "ip": "#!/bin/bash\nexit 0\n",
     "cargo": r'''#!/bin/bash
 echo "$PWD|$*" >> "$STUB_CARGO_LOG"
+echo "$PWD|$1|${CARGO_TARGET_DIR:-}" >> "$STUB_CARGO_LOG.tgt"      # plan 67pre: which target dir each call used (fresh, one per step)
+gates_fail() {      # plan 67pre: STUB_GATES_FAIL=<seat,seat>:<name>: the gates test `gates::<name>` fails in those seats' trees (the cwd is .../seats/<seat>/src)
+  [ -n "${STUB_GATES_FAIL:-}" ] || return 0
+  local seats="${STUB_GATES_FAIL%%:*}" seat="${PWD%/src}"; seat="${seat##*/}"
+  case ",$seats," in *",$seat,"*) echo "gates::${STUB_GATES_FAIL#*:}" ;; esac
+}
 case "$1" in
+  check)      # plan 67pre: cargo check --all-targets; STUB_CHECK_FAIL=<seat> fails it in that seat's tree
+    [ -n "${STUB_CHECK_FAIL:-}" ] && case "$PWD" in */seats/$STUB_CHECK_FAIL/src) echo "error: stub cargo check failure" >&2; exit 101 ;; esac ;;
   build)
     T="${CARGO_TARGET_DIR:?}"; mkdir -p "$T/release"
     if [ -n "${STUB_BIN_FILE:-}" ]; then cp "$STUB_BIN_FILE" "$T/release/raptorpath"; chmod +x "$T/release/raptorpath"; exit 0; fi      # plans 60a / 60b: the test knows the sha it registers
@@ -121,15 +129,35 @@ case "$1" in
       *" framing_ns "*)      # plan 64's rehearsal: one run of the framing bench per call, the STUB_BENCH_DIR blocks b1..b3 in rotation
         n=$(cat "$STUB_BENCH_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_BENCH_DIR/n"
         cat "$STUB_BENCH_DIR/b$(( (n - 1) % 3 + 1 )).txt" ;;
+      *" -p raptorpath --lib gates "*)      # plan 67pre: the gates reference (B0); STUB_GATES_NORESULT=1: a build error, no `test result` line
+        [ -z "${STUB_GATES_NORESULT:-}" ] || { echo "error: could not compile raptorpath (stub)" >&2; exit 101; }
+        echo "test gates::stub_ok ... ok"
+        g="$(gates_fail)"
+        if [ -n "$g" ]; then echo "test $g ... FAILED"; echo "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"; exit 101; fi
+        echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out" ;;
+      *" -p raptorpath-wasm golden "*)      # plan 67pre: the native golden test; STUB_GOLDEN_FAIL=1 fails it
+        [ -z "${STUB_GOLDEN_FAIL:-}" ] || { echo "test golden_fingerprint ... FAILED"; echo "test result: FAILED. 0 passed; 1 failed; 0 ignored"; exit 101; }
+        echo "test golden_fingerprint ... ok"; echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out" ;;
       *" -p raptorpath-math "*)      # the main suite call. STUB_FLAKE=<test>: it fails once; the solo re-run (`-- <test> --exact`, the default branch below) passes: the ADR-0080 flake
+        gf="$(gates_fail)"      # plan 67pre: a gates failure on this seat's tree fails the solo re-run too (REAL), STUB_FLAKE passes it (FLAKE)
         case " $* " in
           *" --exact "*) ;;
-          *) [ -n "${STUB_FLAKE:-}" ] && { echo "test $STUB_FLAKE ... FAILED"; echo "test result: FAILED. 0 passed; 1 failed; 0 ignored"; exit 101; } ;;
+          *) if [ -n "${STUB_TARGETS:-}" ]; then      # plan 67pre: the registered touched-integration-test targets show in the suite log
+               for tg in holeclass_reachability recovery_bench sim_nack_test place_arms_reachability s06_no_copy s06_reactive sim_shed_reach sim_lost_tail; do echo "     Running tests/$tg.rs (target/release/deps/$tg-0)"; done
+               echo "test config::stub_ok ... ok"
+             fi
+             bad=0
+             [ -z "${STUB_FLAKE:-}" ] || { echo "test $STUB_FLAKE ... FAILED"; bad=1; }
+             [ -z "$gf" ] || { echo "test $gf ... FAILED"; bad=1; }
+             if [ -n "${STUB_BINTEST_FAIL:-}" ] && [ -f "$PWD/COMMIT" ]; then      # plan 67pre's binid: STUB_BINTEST_FAIL=<commit,commit>:<name>: the math + wasm tests of the tree with that COMMIT (binid_run.sh's $WORK/src) fail it
+               case ",${STUB_BINTEST_FAIL%%:*}," in *",$(cat "$PWD/COMMIT"),"*) echo "test binid_math::${STUB_BINTEST_FAIL#*:} ... FAILED"; bad=1 ;; esac
+             fi
+             [ "$bad" = 0 ] || { echo "test result: FAILED. 0 passed; 1 failed; 0 ignored"; exit 101; } ;;
         esac
         echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
         seen=0
         for a in "$@"; do
-          [ "$seen" = 1 ] && case "$a" in -*) ;; *) echo "test $a ... ok" ;; esac
+          [ "$seen" = 1 ] && case "$a" in -*) ;; *) [ "$a" = "$gf" ] || echo "test $a ... ok" ;; esac
           [ "$a" = "--" ] && seen=1
         done ;;
       *) echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
@@ -146,6 +174,17 @@ case "$1" in
     esac ;;
 esac
 exit 0
+''',
+    "timeout": r'''#!/bin/bash
+# stub timeout: STUB_TRUNC=<plan token> (plan 67 `truncated`): the envelope's battery call of that plan (LD_PLAN=<token> LD_TAG=ld) runs to its end and then returns rc 124, what the real timeout returns when LD_HARD cut the
+# battery. Every other call is the real timeout (the first `timeout` on PATH that is not this script).
+d="$1"; shift
+if [ -n "${STUB_TRUNC:-}" ] && [[ " $* " == *" LD_PLAN=$STUB_TRUNC "* ]] && [[ " $* " == *" LD_TAG=ld "* ]]; then "$@"; exit 124; fi
+real=""
+IFS=: read -ra _dirs <<< "$PATH"
+for _x in "${_dirs[@]}"; do [ -x "$_x/timeout" ] && ! [ "$_x/timeout" -ef "$0" ] && { real="$_x/timeout"; break; }; done
+[ -n "$real" ] || { "$@"; exit $?; }
+exec "$real" "$d" "$@"
 ''',
     "taskset": '#!/bin/bash\n[ "$1" = "-c" ] && { echo "taskset $*" >> "${STUB_TASKSET_LOG:-/dev/null}"; shift 2; }\nexec "$@"\n',
     "python3": r'''#!/bin/bash
@@ -2658,9 +2697,10 @@ def case63(plan, path):
 import plan67  # noqa: E402
 
 REH67 = {}          # the rehearsal's persisted run dir
+TRUNC_EXIT67 = 7   # the session exit of a non-pass that is not a failure (loopdiag_p67.sh P67_EXIT_NONPASS): TRUNCATED-ALL and the rehearsal's R2 void; every assertion of it reads this one constant
 TREES67 = ("B0", "S1", "S2", "P1", "P2")
 COMMIT67 = {"B0": "b0" * 20, "S1": "2d590cdc" + "0" * 32, "S2": "1953abd1" + "0" * 32, "P1": "a1" * 20, "P2": "a2" * 20}
-ALL67 = tuple(p for p in ("67", "67g", "67x"))
+ALL67 = tuple(p for p in ("67pre", "67", "67g", "67x"))
 KEYS67 = ("window_out_of_order", "window_coded_only", "window_generation_coding", "window_systematic_repair")
 BIN_COMMON67 = r'''
 cfg=""; cmd=""
@@ -2691,6 +2731,12 @@ TUN_STUB67 = r'''#!/bin/bash
 cell="$1"; hint="$2"; bytes="$3"; reps="$4"; label="${5:-$hint}"
 echo "TUNARM label=$label cell=$cell hint=$hint bytes=$bytes reps=$reps seed=${SEED:-42} bin=$RWM_BIN start=$(date -u +%FT%TZ)"
 echo "TUNSHA $(sha256sum "$RWM_BIN" | cut -d' ' -f1)"
+if [ "${STUB_TUN_BRINGUP_FAIL:-}" = "$label" ]; then      # STUB_TUN_BRINGUP_FAIL=<seat>-<hint>: the three bring-up attempts fail, exactly the lines tun_bulk.sh writes
+  for a in 1 2 3; do echo "TUN-BRINGUP-RETRY label=$label attempt=$a"; done
+  echo "TUN-BRINGUP-FAIL label=$label"
+  echo "TUNARM-DONE label=$label reps=0 $(date -u +%FT%TZ)"
+  exit 0
+fi
 echo "TUNMTU cli=1196 srv=1196"
 echo "TUNPIPE cli=window/Rlc/$hint srv=window/Rlc/$hint"
 echo "TUNCAD cli=ACTIVE srv=ACTIVE"
@@ -2700,6 +2746,17 @@ for r in $(seq 1 "$reps"); do
   echo "TUNREP label=$label rep=$r rc=0 {\"bytes\": $bytes, \"mbps\": 90.0, \"run\": 1, \"seconds\": 8.9}"
 done
 echo "TUNARM-DONE label=$label reps=$reps $(date -u +%FT%TZ)"
+exit 0
+'''
+
+
+VIS_STUB67 = r'''#!/bin/bash
+# stub raptorpath-visualizer/build_visualizer.sh (plan 67pre, S2): logs the tree and the target dir it ran with, writes wasm/ like the real one; STUB_VIS_FAIL=1 fails it
+cd "$(dirname "$0")/.." || exit 1
+echo "$PWD|build_visualizer CTD=${CARGO_TARGET_DIR:-} wasm_before=$([ -e raptorpath-visualizer/wasm ] && echo yes || echo no)" >> "$STUB_CARGO_LOG"
+[ -z "${STUB_VIS_FAIL:-}" ] || { echo "stub wasm-pack: build failed" >&2; exit 1; }
+mkdir -p raptorpath-visualizer/wasm && echo wasm > raptorpath-visualizer/wasm/raptorpath_wasm_bg.wasm
+echo "// rewritten" >> raptorpath-visualizer/interactive-visualizer.html
 exit 0
 '''
 
@@ -2734,6 +2791,12 @@ def make67(root, plan, path):
         with open(os.path.join(sd, seat + ".bin"), "w", newline="\n") as fh:
             fh.write(bin_text67(seat, st))
     sb["seatdir"] = sd
+    vis = os.path.join(sb["repo"], "raptorpath-visualizer")
+    os.makedirs(vis, exist_ok=True)
+    with open(os.path.join(vis, "build_visualizer.sh"), "w", newline="\n") as fh:
+        fh.write(VIS_STUB67)
+    with open(os.path.join(vis, "interactive-visualizer.html"), "w", newline="\n") as fh:
+        fh.write("<html></html>\n")
     for tree in TREES67:
         dst = os.path.join(sb["root"], "seats", tree, "src")
         shutil.copytree(sb["repo"], dst)
@@ -2799,23 +2862,239 @@ def binshas67(run_dir):
     return d
 
 
+def cargo67pre(cargo):
+    """The cargo log of a 67pre run: [(seat, dir, args)] from `PWD|args`; the seat is the one of a .../seats/<seat>/src cwd (None elsewhere), dir the cwd's last component."""
+    out = []
+    for c in cargo:
+        pwd, _, args = c.partition("|")
+        m = re.search(r"/seats/(\w+)/src$", pwd)
+        out.append((m.group(1) if m else None, pwd.rsplit("/", 1)[-1], args))
+    return out
+
+
+def tgt67pre(sb):
+    """[(seat or dir, verb, target dir)] from the cargo stub's .tgt log (every call: cwd, verb, CARGO_TARGET_DIR)."""
+    p = os.path.join(sb["logs"], "cargo.log.tgt")
+    out = []
+    for ln in (open(p).read().splitlines() if os.path.exists(p) else []):
+        pwd, verb, ctd = (ln.split("|") + ["", ""])[:3]
+        m = re.search(r"/seats/(\w+)/src$", pwd)
+        out.append((m.group(1) if m else pwd.rsplit("/", 1)[-1], verb, ctd))
+    return out
+
+
+def case67pre(plan, path):
+    """Plan 67pre (session 0 of VM batch 1: loopdiag_p67pre.sh) on the stubs: the pre-flight with no battery. `full` is the whole session; every other path breaks ONE input and shows its abort, what ran before it and what did not."""
+    tag = "%s/%s" % (plan, path)
+    root = tempfile.mkdtemp(prefix="stubrun-")
+    try:
+        sb = make67(root, plan, path)
+        rd = os.path.join(sb["logs"], "repeat")
+        os.makedirs(rd)
+        open(os.path.join(sb["logs"], "drv7.log"), "w").close()
+        extra = {"STUB_SEATDIR": px(sb["seatdir"]), "LD_PIN_B0": COMMIT67["B0"], "LD_PIN_S1": COMMIT67["S1"], "LD_PIN_S2": COMMIT67["S2"], "LD_PIN_P1": COMMIT67["P1"], "LD_PIN_P2": COMMIT67["P2"],
+                 "STUB_DRVLOG7": px(sb["logs"]) + "/drv7.log", "LD_TEST_SEAMS": "1", "STUB_TARGETS": "1", "R67_N": "3", "R67_T1_S": "1", "STUB_REPEAT_DIR": px(rd)}      # R67_N / R67_T1_S: the repeat's test seams (N = 3 on the stub), reaching it under the marker only
+        envs = {"check-fail-s1": {"STUB_CHECK_FAIL": "S1"}, "check-fail-s2": {"STUB_CHECK_FAIL": "S2"}, "gates-mismatch": {"STUB_GATES_FAIL": "S1:g_one"}, "gates-equal-b0": {"STUB_GATES_FAIL": "B0,S1:g_one"},
+                "gates-and-flake": {"STUB_GATES_FAIL": "S1:g_one", "STUB_FLAKE": FLAKE_TEST}, "gates-no-result": {"STUB_GATES_NORESULT": "1"}, "flake-not-quarantined": {"STUB_FLAKE": FLAKE_TEST},
+                "repeat-one-failure": {"STUB_REPEAT_FAIL": "2"}, "s2-dropped": {"LD_DROP_S2": "1"}, "visualizer-fail": {"STUB_VIS_FAIL": "1"}, "golden-fail": {"STUB_GOLDEN_FAIL": "1"},
+                "budget": {"LD_HARD_MIN_S": "99999999"}, "budget-step": {"LD_HARD_MIN_S": "1", "LD_HARD": str(int(time.time()) + 300)},
+                "lock-inherit-fail": {"STUB_LOCK_PARENT": "1"}, "binid-test-mismatch": {"STUB_BINTEST_FAIL": COMMIT67["S1"] + ":t_one"},
+                "binid-test-equal-b0": {"STUB_BINTEST_FAIL": COMMIT67["B0"] + "," + COMMIT67["S1"] + ":t_one"}}
+        extra.update(envs.get(path, {}))
+        if path == "seam-r67-n":      # a session-0 seam without the stub marker: R67_N alone (R67_T1_S is a seam too, so it goes with the marker)
+            for k in ("LD_TEST_SEAMS", "R67_T1_S"):
+                extra.pop(k, None)
+        rc, out, rows, cargo = run_launch(sb, plan, None, rehearse=(path == "rehearse-refused"), extra_env=extra)
+        e = era(sb)
+        run_dir = os.path.join(sb["root"], "run")
+        failed = os.path.exists(os.path.join(run_dir, "FAILED-ALL"))
+        cl = cargo67pre(cargo)
+        tg = tgt67pre(sb)
+        drv = open(os.path.join(sb["logs"], "drv.log")).read()
+        by_seat = {s: [a for sd, _, a in cl if sd == s] for s in ("B0", "S1", "S2", "P1", "P2")}
+        all_calls = [a for _, _, a in cl]
+        sessf = os.path.join(run_dir, "SESSION0.txt")
+
+        def pre(*p):
+            return txt67(run_dir, "pre", *p)
+
+        stage_dirs = [os.path.join(run_dir, d) for d in plan67.STAGE_DIR.values()]
+        no_ledger = rows == [] and drv == "" and not any(f in ("ld.log", "smoke.log") for _, _, fs in os.walk(run_dir) for f in fs) and not any(os.path.exists(d) for d in stage_dirs)
+        no_record = not os.path.exists(sessf) and not any(f.startswith("REF-MANIFEST-") for f in (os.listdir(run_dir) if os.path.isdir(run_dir) else []))
+        builds = [c for c in cargo if "|build " in c]
+        done = "LD-ALL-SESSION0-DONE" in out
+        gone = not any(n.startswith(("target67pre-", "b67work", "vis67pre-")) for n in os.listdir(os.path.join(root, "root")))
+        n_checks = all_calls.count("check --all-targets")
+        n_vis = sum(1 for a in all_calls if a.startswith("build_visualizer"))
+        n_golden = all_calls.count("test -p raptorpath-wasm golden")
+        n_binid = sum(1 for sd, d, a in cl if a.startswith("build ") and sd is None)
+        ran_s = [s for s in ("S1", "S2") if any(a.startswith("test -p raptorpath -p raptorpath-math --release --no-fail-fast") and "--exact" not in a for a in by_seat[s])]
+        gates_n = by_seat["B0"].count("test -p raptorpath --lib gates")
+
+        def refused(text, checks, gates, suites, more=()):
+            """an abort: rc 5, the exact text on record, FAILED-ALL, no SESSION0 record, no reference manifest, nothing measured, no build, and exactly the steps that ran before it."""
+            check(f"{tag}: rc 5, `{text}` on record, FAILED-ALL, no SESSION0 record and no reference manifest, no ledger / row / driver call, no build; ran before it: check on {checks or 'none'}, gates on B0 {'yes' if gates else 'no'}, suites on {suites or 'none'}; nothing after it (no repeat, visualizer, golden, binid)",
+                  rc == 5 and failed and text in e and all(x in e for x in more) and no_record and no_ledger and builds == [] and not done and [sd for sd, _, a in cl if a == "check --all-targets"] == checks
+                  and gates_n == (1 if gates else 0) and ran_s == suites and n_vis == (1 if path in ("visualizer-fail", "golden-fail") else 0) and n_golden == (1 if path == "golden-fail" else 0) and n_binid == 0
+                  and not any("--no-run" in a for a in all_calls), (rc, tail(e, 8), cl[:14], ran_s))
+
+        if path == "rehearse-refused":
+            check(f"{tag}: LD_REHEARSE=1 on session 0: rc 3, ABORT-REHEARSE (67pre is not in run_all's REHEARSE list), nothing run (no cargo call)",
+                  rc == 3 and "ABORT-REHEARSE LD_REHEARSE=1 is defined for plans" in out and "not 67pre; NOTHING WAS RUN" in out and cl == [] and not failed and not done, (rc, out[-300:]))
+        elif path == "budget":
+            check(f"{tag}: less than the registered worst case (17 040 s) before LD_HARD: rc 3, ABORT-BUDGET plan 67pre, NOTHING WAS RUN (no cargo call)", rc == 3 and "ABORT-BUDGET plan 67pre:" in out and "NOTHING WAS RUN" in out and cl == [] and not done, (rc, tail(out, 4)))
+        elif path == "seam-r67-n":
+            check(f"{tag}: R67_N set without LD_TEST_SEAMS=1: rc 3, `ABORT-SEAM plan 67pre: test seam(s) active without LD_TEST_SEAMS=1: R67_N` before the locks, nothing ran (no cargo call, no child, no ledger)",
+                  rc == 3 and "ABORT-SEAM plan 67pre: test seam(s) active without LD_TEST_SEAMS=1: R67_N" in out + e and cl == [] and not done and not os.path.exists(os.path.join(run_dir, "pre")) and out.count("LOCK-TAKEN") == 0, (rc, tail(out, 6), cl[:3]))
+        elif path == "lock-inherit-fail":
+            check(f"{tag}: step 0: a child that sees another parent pid cannot inherit the locks: rc 5, `ABORT-PREFLIGHT plan 67pre step locks: a child cannot inherit the session's locks` on record, FAILED-ALL, nothing after it (no cargo call, no repeat / binid output, no record), no LOCK-INHERITED in the child's log",
+                  rc == 5 and failed and "ABORT-PREFLIGHT plan 67pre step locks: a child cannot inherit the session's locks" in e and cl == [] and not done and no_record and no_ledger and not os.path.exists(os.path.join(run_dir, "pre", "repeat.out"))
+                  and "LOCK-INHERITED" not in pre("lockcheck.log"), (rc, tail(e, 4), pre("lockcheck.log"), pre("lockcheck.out")))
+        elif path == "binid-test-mismatch":
+            check(f"{tag}: S1's math + wasm tests fail a test B0 passes: rc 5, `ABORT-PREFLIGHT plan 67pre binid: BINTEST S1 binid_math::t_one not equal on B0`, FAILED-ALL, the earlier steps ran (3 binid builds, REPEAT, visualizer), no SESSION0 record; S1 is not the S2 family: no relaunch hint",
+                  rc == 5 and failed and "ABORT-PREFLIGHT plan 67pre binid: BINTEST S1 binid_math::t_one not equal on B0" in e and "relaunch with LD_DROP_S2=1" not in e and n_binid == 3 and n_vis == 1 and not os.path.exists(sessf) and not done and no_ledger,
+                  (rc, tail(e, 6), n_binid, pre("binid", "BINID.txt")))
+            check(f"{tag}: both reference manifests were already written (each seat's own steps had passed) and persist in the run: REF-MANIFEST-S1 and -S2 exist, byte-equal to the manifest of the pristine tree",
+                  all(txt67(run_dir, "REF-MANIFEST-%s.sha256" % x) == manifest67_py(sb["repo"]) != "" for x in ("S1", "S2")), os.listdir(run_dir))
+        elif path == "budget-step":
+            check(f"{tag}: under 600 s left when the first step would start: rc 5, FAILED-ALL, `ABORT-BUDGET plan 67pre step check-S1`, nothing ran (no cargo call), no record",
+                  rc == 5 and failed and "ABORT-BUDGET plan 67pre step check-S1:" in e and cl == [] and not done and no_record, (rc, tail(e, 4)))
+        elif path == "check-fail-s1":
+            refused("ABORT-PREFLIGHT plan 67pre seat S1: cargo check --all-targets failed (", ["S1"], False, [])
+            check(f"{tag}: S1 failing stops the session (no guard 1 to run alone): no relaunch hint, and the only cargo call is S1's check", "relaunch with LD_DROP_S2=1" not in e and all_calls == ["check --all-targets"], (all_calls, tail(e, 3)))
+        elif path == "check-fail-s2":
+            refused("ABORT-PREFLIGHT plan 67pre seat S2: cargo check --all-targets failed (", ["S1", "S2"], False, [], ["guard 2 stops; relaunch with LD_DROP_S2=1"])
+        elif path == "gates-no-result":
+            refused("ABORT-PREFLIGHT plan 67pre seat B0: the gates reference did not run (no test result line", ["S1", "S2"], True, [])
+        elif path == "gates-mismatch":
+            refused("ABORT-PREFLIGHT plan 67pre seat S1: gates failure not equal on B0: gates::g_one", ["S1", "S2"], True, ["S1"], ["LD-ALL FAILED: ABORT-PREFLIGHT"])
+            check(f"{tag}: B0's reference is empty and S1's gates failure (REAL: the solo re-run fails too) is named in S1's TESTS.txt", pre("GATES-B0.txt") == "" and "REAL-FAILURE main gates::g_one" in pre("suites-S1", "TESTS.txt"), pre("suites-S1", "TESTS.txt")[-400:])
+        elif path == "gates-and-flake":
+            refused("ABORT-PREFLIGHT plan 67pre seat S1: gates failure not equal on B0: gates::g_one", ["S1", "S2"], True, ["S1"], ["ABORT-TESTS plan 67pre seat S1: stub::flaky_one (ADR-0080: REAL or non-quarantined FLAKE)"])
+            check(f"{tag}: both lines are printed and the abort is ABORT-PREFLIGHT (5.4's order): the ABORT-TESTS line is on record first, the FAILED-ALL line carries ABORT-PREFLIGHT",
+                  e.index("ABORT-TESTS plan 67pre seat S1") < e.index("LD-ALL FAILED: ABORT-PREFLIGHT plan 67pre seat S1"), tail(e, 4))
+        elif path == "flake-not-quarantined":
+            refused("ABORT-TESTS plan 67pre seat S1: stub::flaky_one (ADR-0080: REAL or non-quarantined FLAKE)", ["S1", "S2"], True, ["S1"], ["LD-ALL FAILED: ABORT-TESTS"])
+            tx = pre("suites-S1", "TESTS.txt")
+            check(f"{tag}: the test failed once and passed its solo re-run (FLAKE), is not on quarantine.txt (FLAKE-FAILURE, not QUARANTINED): a failure is a failure", "FLAKE main stub::flaky_one" in tx and "FLAKE-FAILURE main stub::flaky_one" in tx and "QUARANTINED" not in tx, tx[-400:])
+        elif path == "repeat-one-failure":
+            check(f"{tag}: one failing run in 3 of S2's gating tests: rc 5, `ABORT-REPEAT plan 67pre seat S2` through guard 2's stop (LD_DROP_S2=1), S1's repeat read zero failures; the checks, gates and both suites ran, the visualizer, binid and the record did not",
+                  rc == 5 and failed and "ABORT-REPEAT plan 67pre seat S2 (ABORT-REPEAT seat=S2" in e and "relaunch with LD_DROP_S2=1" in e and "REPEAT67 seat=S1 reached=3 of 3 failing_runs=0" in pre("repeat", "REPEAT67.txt")
+                  and "failing_runs=1 failures=[s06_no_copy::t_one]" in pre("repeat", "REPEAT67.txt") and n_checks == 2 and gates_n == 1 and ran_s == ["S1", "S2"] and n_vis == 0 and n_binid == 0 and not os.path.exists(sessf) and no_ledger and not done and gone,
+                  (rc, tail(e, 5), pre("repeat", "REPEAT67.txt")))
+            check(f"{tag}: S1's reference manifest is already in the persisted run (written when S1's check, suites and repeat had passed, before S2's failure aborted the session) and equals the pristine tree's; S2's is not there",
+                  txt67(run_dir, "REF-MANIFEST-S1.sha256") == manifest67_py(sb["repo"]) != "" and not os.path.exists(os.path.join(run_dir, "REF-MANIFEST-S2.sha256")) and "REF-MANIFEST seat=S1 written" in pre("NOTES.txt")
+                  and "REF-MANIFEST seat=S2" not in pre("NOTES.txt"), (os.listdir(run_dir), pre("NOTES.txt")[-400:]))
+        elif path in ("visualizer-fail", "golden-fail"):
+            what = "visualizer build failed" if path == "visualizer-fail" else "golden test failed"
+            check(f"{tag}: S2's {what.split(' ')[0]} step failing: rc 5, `ABORT-PREFLIGHT plan 67pre seat S2: {what}` through guard 2's stop; checks, gates, suites and repeats ran before it, binid and the record did not; the scratch copy is gone and S2's own tree has no wasm",
+                  rc == 5 and failed and f"ABORT-PREFLIGHT plan 67pre seat S2: {what} (" in e and "relaunch with LD_DROP_S2=1" in e and n_checks == 2 and n_vis == 1 and n_golden == (1 if path == "golden-fail" else 0) and n_binid == 0 and not os.path.exists(sessf) and not done and gone
+                  and os.path.exists(os.path.join(run_dir, "REF-MANIFEST-S1.sha256")) and not os.path.exists(os.path.join(run_dir, "REF-MANIFEST-S2.sha256"))
+                  and not os.path.exists(tree67(root, "S2", "raptorpath-visualizer/wasm")) and "REPEAT67 seat=S2 reached=3 of 3 failing_runs=0" in pre("repeat", "REPEAT67.txt"), (rc, tail(e, 4), cl[-6:]))
+        else:
+            # ── full, gates-equal-b0, s2-dropped: the session runs to LD-ALL-SESSION0-DONE ──
+            dropped = path == "s2-dropped"
+            seats = ["B0", "S1"] if dropped else ["B0", "S1", "S2"]
+            sess = txt67(run_dir, "SESSION0.txt")
+            check(f"{tag}: rc 0, LD-ALL-SESSION0-DONE, DONE-ALL, no FAILED-ALL; the budget guard ran and both locks were taken and released by run_all alone",
+                  rc == 0 and done and not failed and os.path.exists(os.path.join(run_dir, "DONE-ALL")) and "budget:" in e and out.count("LOCK-TAKEN") == 2 and out.count("LOCK-RELEASED") == 2 and not os.path.exists(os.path.join(sb["locks"], "vm.lock")), (rc, tail(e, 8), tail(out, 6)))
+            suite_kinds = ("test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2", "test --doc -p raptorpath --release", "test -p raptorpath-wasm", "test -p raptorpath-core", "test -p raptorpath --no-fail-fast -- --test-threads=2")
+            check(f"{tag}: cargo check --all-targets ran on {'S1 only' if dropped else 'S1 and S2'} (not B0), the gates reference on B0 only, the suites (release, doc, wasm, core, debug) on {'S1' if dropped else 'S1 and S2'}, each in its own tree; B0's tree saw nothing else",
+                  [sd for sd, _, a in cl if a == "check --all-targets"] == (["S1"] if dropped else ["S1", "S2"]) and by_seat["B0"] == ["test -p raptorpath --lib gates"]
+                  and all(sum(1 for a in by_seat[s] if a == k) == 1 for s in seats[1:] for k in suite_kinds), {s: by_seat[s][:14] for s in ("B0", "S1")})
+            suite_ct = {s: {c.rsplit("/", 1)[-1] for sd, v, c in tg if sd == s and "suites" in c} for s in ("S1", "S2")}
+            want = {("S1", "check"): "target67pre-check-S1", ("S2", "check"): "target67pre-check-S2", ("B0", "test"): "target67pre-gates-B0"}
+            check(f"{tag}: every step used its own fresh target dir under $ROOT (check S1 / S2, gates B0, suites S1 / S2, the repeats, the visualizer, the golden test) and none is left behind; a tree's suites ran with that tree's target only",
+                  all(any(sd == s and v == k and c.endswith("/" + n) for sd, v, c in tg) for (s, k), n in want.items() if not (dropped and s == "S2"))
+                  and suite_ct["S1"] == {"target67pre-suites-S1"} and suite_ct["S2"] == (set() if dropped else {"target67pre-suites-S2"}) and gone
+                  and all(("target67pre-suites-S1" in c) == (sd == "S1") for sd, v, c in tg if "suites" in c), (tg[:6], suite_ct))
+            tx = {s: pre("suites-" + s, "TESTS.txt") for s in seats[1:]}
+            check(f"{tag}: each seat's suites wrote their own output dir ($RUN/pre/suites-<S>), the engine suites ran, the tools tests were skipped (session 1 runs them)",
+                  all("TEST main rc=" in tx[s] and "TEST debug-witness rc=" in tx[s] and "TOOLS-TESTS-SKIPPED" in tx[s] and "TEST parsers" not in tx[s] and "TEST bashtests" not in tx[s] for s in seats[1:]), {s: tx[s][-300:] for s in tx})
+            s2list = "holeclass_reachability recovery_bench sim_nack_test place_arms_reachability s06_no_copy s06_reactive sim_shed_reach sim_lost_tail"
+            check(f"{tag}: the registered touched-integration-test targets are reported per seat as seen in the suite logs (S2: the eight sim / recovery / s06 / holeclass targets; S1: config::), no gate",
+                  "SESSION0 TARGETS seat=S1 seen=[config::] not-seen=[]" in e and (dropped or ("SESSION0 TARGETS seat=S2 seen=[%s] not-seen=[]" % s2list) in e), tail(e, 14))
+            rp = pre("repeat", "REPEAT67.txt")
+            check(f"{tag}: the repeat runs ran on {'S1' if dropped else 'S1 and S2'} (REPEAT67 lines, zero failing runs; the sim tests twice on S2) and the children inherited run_all's locks (LOCK-INHERITED twice each, never released by them)",
+                  "REPEAT67 seat=S1 reached=3 of 3 failing_runs=0" in rp and (dropped or "REPEAT67 seat=S2 reached=3 of 3 failing_runs=0" in rp) and "REPEAT67-DONE bad=0" in rp and (dropped or sum(1 for a in by_seat["S2"] if "--test sim_shed_reach" in a and "--no-run" not in a) == 2)
+                  and pre("repeat", "era.txt").count("LOCK-INHERITED") == 2 and "LOCK-RELEASED" not in pre("repeat", "era.txt") and pre("binid", "era.txt").count("LOCK-INHERITED") == 2 and "LOCK-RELEASED" not in pre("binid", "era.txt"),
+                  (rp, pre("repeat", "era.txt")[-300:]))
+            parts = [(c.partition("|")[0], c.partition("|")[2]) for c in cargo]
+            vis = [(p, a) for p, a in parts if a.startswith("build_visualizer")]
+            gold = [p for p, a in parts if a == "test -p raptorpath-wasm golden"]
+            if dropped:
+                check(f"{tag}: LD_DROP_S2=1: no S2 step ran (no check, suites, repeat, visualizer or golden in S2's tree or anywhere), binid ran on B0 and S1 only (2 builds, two shas, BINID67 PASS), REF-MANIFEST-S1 only",
+                      by_seat["S2"] == [] and vis == [] and gold == [] and n_binid == 2 and re.search(r"^BINID67 B0=[0-9a-f]{64} S1=[0-9a-f]{64}$", pre("binid", "BINID.txt"), re.M) and "BINID67 PASS" in pre("binid", "BINID.txt")
+                      and os.path.exists(os.path.join(run_dir, "REF-MANIFEST-S1.sha256")) and not os.path.exists(os.path.join(run_dir, "REF-MANIFEST-S2.sha256")) and "LD_REF_MANIFEST_S2" not in sess and "seat=S2" not in sess, (cl[-5:], pre("binid", "BINID.txt")))
+            else:
+                check(f"{tag}: the visualizer ran on S2 only, once, in a scratch copy with no pre-existing wasm and its own fresh target, then the native golden test (no GOLDEN_CAPTURE) in that copy; S2's own tree has no wasm; then binid on B0, S1, S2 (3 builds at the one fixed path, 3 distinct shas, BINID67 PASS)",
+                      len(vis) == 1 and vis[0][0].endswith("/vis67pre-S2") and "wasm_before=no" in vis[0][1] and "target67pre-vis-S2" in vis[0][1] and len(gold) == 1 and gold[0].endswith("/vis67pre-S2")
+                      and not os.path.exists(tree67(root, "S2", "raptorpath-visualizer/wasm")) and n_binid == 3 and len({p for p, a in parts if a.startswith("build ")}) == 1
+                      and re.search(r"^BINID67 B0=[0-9a-f]{64} S1=[0-9a-f]{64} S2=[0-9a-f]{64}$", pre("binid", "BINID.txt"), re.M) and "BINID67 PASS" in pre("binid", "BINID.txt"), (vis, gold, cl[-6:]))
+
+                def idx(pred):
+                    return next((i for i, c in enumerate(cargo) if pred(c)), -1)
+                order = [idx(lambda c: "/seats/S1/src|check "in c), idx(lambda c: "/seats/S2/src|check " in c), idx(lambda c: c.endswith("|test -p raptorpath --lib gates")),
+                         idx(lambda c: "/seats/S1/src|test -p raptorpath -p raptorpath-math --release --no-fail-fast" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath -p raptorpath-math --release --no-fail-fast" in c),
+                         idx(lambda c: "/seats/S1/src|test -p raptorpath --release --lib --no-run" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath --release --test s06_no_copy" in c),
+                         idx(lambda c: "|build_visualizer" in c), idx(lambda c: c.endswith("|test -p raptorpath-wasm golden")), idx(lambda c: "/b67work/src/raptorpath|build " in c)]
+                check(f"{tag}: the steps ran in the registered order: check S1, check S2, gates on B0, suites S1, suites S2, repeat S1, repeat S2, visualizer, golden, binid", order == sorted(order) and min(order) >= 0 and len(set(order)) == len(order), order)
+            check(f"{tag}: no release build of a seat (the only builds are binid's, at its one work path), no binary installed or kept (no BINSHA.txt, no bins67), no battery: no ledger, no row-parser call, no driver call",
+                  no_ledger and not os.path.exists(os.path.join(run_dir, "BINSHA.txt")) and not os.path.exists(os.path.join(run_dir, "bins67")) and all("/b67work/src/raptorpath|" in b for b in builds) and not any(sd and a.startswith("build ") for sd, _, a in cl), (builds[:3], rows[:2]))
+            ref_ok = all(txt67(run_dir, "REF-MANIFEST-%s.sha256" % s) == manifest67_py(sb["repo"]) for s in seats[1:])
+            check(f"{tag}: REF-MANIFEST-{'S1' if dropped else 'S1 and S2'} are written by src_manifest67 (byte-equal to the manifest of the pristine tree, the form loopdiag_p67.sh section 5 compares), and SESSION0.txt records the commit pins, the check / suites / repeat / binid results and the LD_REF_MANIFEST_<S> lines",
+                  ref_ok and all(("SEAT %s commit=%s" % (s, COMMIT67[s])) in sess for s in seats) and all(("LD_REF_MANIFEST_%s=%s/run/REF-MANIFEST-%s.sha256" % (s, px(os.path.join(root, "root")), s)) in sess for s in seats[1:])
+                  and "CHECK seat=S1 ok" in sess and "SUITES seat=S1 ok" in sess and "REPEAT67 seat=S1 reached=3 of 3" in sess and "BINID67 B0=" in sess and "BINID-WORK" in sess and "BINID67 PASS" in sess, sess[-900:])
+            if path == "binid-test-equal-b0":
+                check(f"{tag}: the same math / wasm test fails on B0 and on S1: `BINTEST-FINDING-ON-MAIN seat=B0 binid_math::t_one` and `seat=S1` on record and in SESSION0.txt, no abort: the session completes (LD-ALL-SESSION0-DONE)",
+                      "BINTEST-FINDING-ON-MAIN seat=B0 binid_math::t_one" in e and "BINTEST-FINDING-ON-MAIN seat=S1 binid_math::t_one (the same failure on B0)" in e and "BINTEST-FINDING-ON-MAIN seat=S1 binid_math::t_one" in sess
+                      and "BINTEST-FINDING-ON-MAIN seat=S2" not in e and "BINTEST B0 rc=101" in pre("binid", "BINID.txt") and "BINTEST S2 rc=0" in pre("binid", "BINID.txt"), (tail(e, 8), sess[-600:]))
+            if path == "gates-equal-b0":
+                check(f"{tag}: the same gates failure on B0 and S1: GATES-B0-FINDING and GATES-FINDING-ON-MAIN seat=S1 on record (and in SESSION0.txt), the guard runs: S1's suites count as passed (the repeats and binid ran), S2's suites show none",
+                      "GATES-B0-FINDING gates::g_one" in e and "GATES-FINDING-ON-MAIN seat=S1 gates::g_one" in e and "GATES-FINDING-ON-MAIN seat=S1 gates::g_one" in sess and "GATES-B0-FINDING gates::g_one" in sess
+                      and "GATES-FINDING-ON-MAIN seat=S2" not in e and pre("GATES-B0.txt").split() == ["gates::g_one"] and "REAL-FAILURE main gates::g_one" in pre("suites-S1", "TESTS.txt"), (tail(e, 8), sess[-500:]))
+            if path == "full":
+                # the wiring: session 0's REF-MANIFEST-S1 / S2 are the ones session 1 (the rehearsal, plan 67) reads: a HIT on both seats
+                kept = {s: os.path.join(root, "s0-REF-MANIFEST-%s.sha256" % s) for s in ("S1", "S2")}
+                for s in kept:
+                    shutil.copyfile(os.path.join(run_dir, "REF-MANIFEST-%s.sha256" % s), kept[s])
+                extra2 = dict(extra)
+                extra2.update({"LD_REF_MANIFEST_S1": px(kept["S1"]), "LD_REF_MANIFEST_S2": px(kept["S2"])})
+                rc2, out2, rows2, cargo2 = run_launch(sb, "67", None, rehearse=True, extra_env=extra2)
+                e2 = era(sb)      # run_all clears all-era.txt at its start: this is the rehearsal's alone
+                check(f"{tag}: wiring: session 0's REF-MANIFEST-S1 / S2 fed as LD_REF_MANIFEST_S1 / _S2 into the same sandbox's plan-67 rehearsal give `suite-reuse HIT seat S1` and `seat S2` (the manifest session 0 writes is the one session 1 reads), and the rehearsal passes",
+                      rc2 == 0 and "LD-ALL-REHEARSAL-DONE" in out2 and "suite-reuse HIT seat S1" in e2 and "suite-reuse HIT seat S2" in e2 and "suite-reuse MISS" not in e2 and "suite-reuse HIT" not in e, (rc2, tail(e2, 10)))
+        EXECUTED.add((plan, path))
+    finally:
+        if os.environ.get("STUBRUN_KEEP"):
+            print("     kept sandbox", root)
+        else:
+            shutil.rmtree(root, ignore_errors=True)
+
+
 def case67(plan, path):
-    """Plan 67 on the stubs. `rehearse` (plan 67) is the registered rehearsal and leaves the artifacts the launches (67g, 67x) consume; every other path breaks ONE input or injects ONE defect."""
+    """Plan 67 on the stubs. `rehearse` (plan 67) is the registered rehearsal and leaves the artifacts the launches (67g, 67x) consume; every other path breaks ONE input or injects ONE defect. Session 0 (67pre) is case67pre."""
+    if plan == "67pre":
+        return case67pre(plan, path)
     tag = "%s/%s" % (plan, path)
     root = tempfile.mkdtemp(prefix="stubrun-")
     try:
         sb = make67(root, plan, path)
         reh_run = REH67.get("run")
-        extra = {"STUB_SEATDIR": px(sb["seatdir"]), "LD_PIN_B0": COMMIT67["B0"], "LD_PIN_P1": COMMIT67["P1"], "LD_PIN_P2": COMMIT67["P2"], "STUB_DRVLOG7": px(sb["logs"]) + "/drv7.log"}
+        extra = {"STUB_SEATDIR": px(sb["seatdir"]), "LD_PIN_B0": COMMIT67["B0"], "LD_PIN_S1": COMMIT67["S1"], "LD_PIN_S2": COMMIT67["S2"], "LD_PIN_P1": COMMIT67["P1"], "LD_PIN_P2": COMMIT67["P2"],
+                 "STUB_DRVLOG7": px(sb["logs"]) + "/drv7.log", "LD_TEST_SEAMS": "1"}      # LD_TEST_SEAMS=1: the stub marker (fast mode shrinks the design, LD_HARD_MIN_S / LD_BLOCK_ROW_S are seams); seam-without-marker drops it
         open(os.path.join(sb["logs"], "drv7.log"), "w").close()
         extra.update(ref67_files(root, sb))
         rehearse = plan == "67" and path != "not-rehearsal"
         bad = {"s2-taper-nonzero": "s2-taper-nonzero", "s2-no-pslot": "s2-no-pslot@2:c2-100", "s2-belowfloor-high": "s2-belowfloor-high", "r1-blind": "r1-blind", "twin-no-final": "twin-no-final", "twin-worse": "twin-worse",
-               "twin-under-min": "twin-under-min@1-99", "twin-no-kept-acct": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-no-gauge@1-7:c2-100", "block1-fail": "s1-no-gauge@0:c2-100"}
+               "twin-under-min": "twin-under-min@1-99", "rehearsal-r2-smoke-fail": "twin-no-acct", "dump-needed": "no-succ-times", "a-under-min": "s1-crash@1-3:c2-100", "block1-fail": "s1-no-gauge@0:c2-100",
+               "s2-taper-cotenant": "s2-taper-cotenant@2:c2-100", "r1-b0-gauge": "b0-gauge@2-99:c2-100", "r2-blind": "r2-blind", "twin-missing-field": "twin-missing-field"}
         if plan == "67g":
-            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@0", "s1-no-gauge": "s1-no-gauge@1", "g1-fail": "s1-no-gauge@0-99"})
+            # the defects sit PAST block 1 (the first 8 rows of each guard: the block-1 rule would stop the stage there): the 5th invocation of the seat on (@4); g1-fail counts over the whole session (@@), the replacement run included
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@4", "s1-no-gauge": "s1-no-gauge@4", "g1-fail": "s1-no-gauge@@4-99", "g-block1-fail": "s1-no-gauge@0", "g2-taper-replaced": "g2-taper-no-pslot@4"})
         if plan == "67x":
-            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100"})
+            bad.update({"s2-taper-nonzero": "s2-taper-nonzero@2:c2-100", "truncated-s06-fail": "s2-taper-nonzero@2:c2-100",
+                        "a-crash-partial": "s2-crash@@0:c8-100,s2-no-pslot@@1-6:c8-100", "truncated-candidate-crash": "s2-crash@@0-2:c8-100"})      # S2 in c8 (not the block-1 row): one crash and every other slot (its replacement included) VOID-WITNESS / three crashes
         if path in bad:
             extra["STUB_BAD67"] = bad[path]
         # per-path breakages of the trees / the environment
@@ -2824,6 +3103,20 @@ def case67(plan, path):
                 fh.write("deadbeef" + "0" * 32 + "\n")
         if path == "pin-missing-b0":
             del extra["LD_PIN_B0"]
+        if path == "pin-missing-s1":
+            del extra["LD_PIN_S1"]
+        if path == "seam-without-marker":
+            del extra["LD_TEST_SEAMS"]
+            extra["LD_HARD_MIN_S"] = "1"
+        if path == "t-bringup-fail":
+            extra["STUB_TUN_BRINGUP_FAIL"] = "B0-realtime"
+        if path == "t-refusal-and-void":
+            extra["STUB_NOREFUSE_KEY"] = "window_coded_only"
+            extra["STUB_B0_KEYFALSE"] = "1"
+        if path == "truncated":
+            extra["STUB_TRUNC"] = "67r"
+        if path in ("truncated-s06-fail", "truncated-candidate-crash"):
+            extra["STUB_TRUNC"] = "67a"      # stage A is the cut stage: its S2 finding must stay on record
         if path == "tools-diff":
             append67(root, "S2", "tools/l1/l1common.py", "# one more byte: this seat's tools tree is not the harness's\n")
         if path == "manifest-miss":
@@ -2871,6 +3164,8 @@ def case67(plan, path):
             "seat-b0-has-gauge": (5, "ABORT-SEAT plan 67 seat B0: the binary carries 'rlaw='", 7),
             "seat-commit-mismatch": (5, "ABORT-SEAT plan 67 seat S1:", 0),
             "pin-missing-b0": (5, "ABORT-SEAT plan 67 seat B0: LD_PIN_B0 is unset", 0),
+            "pin-missing-s1": (5, "ABORT-SEAT plan 67 seat S1: LD_PIN_S1 is unset", 0),
+            "seam-without-marker": (3, "ABORT-SEAM plan 67g: test seam(s) active without LD_TEST_SEAMS=1: LD_HARD_MIN_S", 0),
             "s2-seat-abort": (5, "relaunch with LD_DROP_S2=1", 7),
             "tools-diff": (5, "ABORT-SEAT plan 67 tools-diff witness", 7),
             "manifest-miss": (5, "ABORT-SUITES plan 67 suite-reuse MISS: seat S1's tree", 7),
@@ -2931,7 +3226,17 @@ def case67(plan, path):
                 EXECUTED.add((plan, path))
                 return
             # the remaining rehearsal paths: one finding / one broken input stops the rehearsal (rc 5, ABORT-SMOKE of the stage)
-            stage_of = {"twin-no-kept-acct": "r2", "t-base-refuses": "t", "s2-taper-nonzero": "g2"}[path]
+            if path == "rehearsal-r2-smoke-fail":
+                am = txt67(run_dir, "AMENDMENT2.txt")
+                others = ["g1", "g2", "a", "r1", "t"]
+                check(f"{tag}: an R2-only smoke failure makes R2 VOID, it does not stop the rehearsal: the R2-VOID marker and ABORT-SMOKE in the r2 dir, every other stage's smoke passed ({' '.join(others)}: REHEARSAL-PASS), AMENDMENT2.txt carries `R2 VOID (rehearsal smoke failed: guard 2 waits for an R2 re-run)`, the sentinel REHEARSAL-R2-VOID, rc {TRUNC_EXIT67} and the token LD-ALL-REHEARSAL-R2-VOID (not -DONE, no FAILED-ALL)",
+                      rc == TRUNC_EXIT67 and "LD-ALL-REHEARSAL-R2-VOID" in out and "LD-ALL-REHEARSAL-DONE" not in out and not failed and os.path.exists(os.path.join(run_dir, "REHEARSAL-R2-VOID"))
+                      and os.path.exists(os.path.join(stage_dirs["r2"], "R2-VOID")) and os.path.exists(os.path.join(stage_dirs["r2"], "ABORT-SMOKE")) and not os.path.exists(os.path.join(stage_dirs["r2"], "REHEARSAL-PASS"))
+                      and all(os.path.exists(os.path.join(stage_dirs[s], "REHEARSAL-PASS")) for s in others) and "R2 VOID (rehearsal smoke failed: guard 2 waits for an R2 re-run)" in am and "BINSHA S1 " in am,
+                      (rc, tail(e, 8), tail(out, 6), am[-300:]))
+                EXECUTED.add((plan, path))
+                return
+            stage_of = {"t-base-refuses": "t", "s2-taper-nonzero": "g2"}[path]
             check(f"{tag}: the rehearsal stops: rc 5, FAILED-ALL, ABORT-SMOKE of stage {stage_of} (a defect or a finding is never a pass), no LD-ALL-REHEARSAL-DONE",
                   rc == 5 and failed and os.path.exists(os.path.join(stage_dirs[stage_of], "ABORT-SMOKE")) and "LD-ALL-REHEARSAL-DONE" not in out, (rc, tail(e, 8), tail(txt67(stage_dirs[stage_of], "smoke-check.txt"), 8)))
             if path == "t-base-refuses":
@@ -2965,6 +3270,13 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         g1, g2 = led56(stage_dirs["g1"]), led56(stage_dirs["g2"])
         gate1 = re.search(r"^GATE-67G1 (PASS|FAIL)", sc["g1"], re.M)
         gate2 = re.search(r"^GATE-67G2 (PASS|FAIL)", sc["g2"], re.M)
+        if path == "g-block1-fail":
+            check(f"{tag}: S1's first G1 row lacks the gauge prints: the block-1 rule stops G1 after 8 rows (FAILED-STAGE67 in its ledger, FAILED-g1 marker, BLOCK1-FAIL naming the row, exit 6, no score), G2 still ran to the end and printed its gate; the session is not DONE-ALL",
+                  os.path.exists(os.path.join(stage_dirs["g1"], "FAILED-g1")) and "FAILED-STAGE67" in txt67(stage_dirs["g1"], "ld.log") and "BLOCK1-FAIL CAND" in txt67(stage_dirs["g1"], "ld.log") and len(g1) == 8
+                  and not os.path.exists(os.path.join(stage_dirs["g1"], "DONE")) and not os.path.exists(os.path.join(stage_dirs["g1"], "score.txt")) and gate2 is not None and os.path.exists(os.path.join(stage_dirs["g2"], "DONE"))
+                  and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, len(g1), tail(e, 8)))
+            EXECUTED.add((plan, path))
+            return
         n = 16 if not FULL else 96
         check(f"{tag}: both guards ran to the end on the right seats (G1 rows on bin-S1 / bin-B0, G2 rows on bin-S2 / bin-S1: the stage's own plan-41d ledger holds {n} slots each) and printed their gate",
               len(g1) >= n and len(g2) >= n and gate1 is not None and gate2 is not None and {c.split("bin=")[1].split()[0] for c in calls} == {"bin-B0", "bin-S1", "bin-S2"}
@@ -2976,9 +3288,14 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         if path == "s1-no-gauge":
             rp = led56(stage_dirs["g1"], "repl.log")
             check(f"{tag}: an S1 row without the gauge prints is WITNESS-FAIL in G1 and re-run once (repl.log holds its replacement), and the gate still reads", any(r["status"] == "WITNESS-FAIL" for r in g1) and len(rp) >= 1 and gate1 is not None, ([r["status"] for r in g1], len(rp)))
+        if path == "g2-taper-replaced":
+            rp = led56(stage_dirs["g2"], "repl.log")
+            check(f"{tag}: an S2 row printing taper > 0 without pslot= (not S06-FAIL) is replaced once by a clean row (repl.log), and GATE-67G2 still FAILs on G2-TAPER-NONZERO (a replacement never clears it); guard 1 is unaffected",
+                  len(rp) >= 1 and not any(r["status"] == "S06-FAIL" for r in g2 + rp) and "G2-TAPER-NONZERO c" in sc["g2"] and re.search(r"^GATE-67G2 FAIL .*G2-TAPER-NONZERO row\(s\)", sc["g2"], re.M) is not None and gate1.group(1) == "PASS",
+                  (tail(sc["g2"], 8), [r["status"] for r in g2], len(rp)))
         if path == "s2-taper-nonzero":
             rp = led56(stage_dirs["g2"], "repl.log")
-            check(f"{tag}: an S2 row printing taper > 0 is S06-FAIL, never replaced, GATE-67G2 FAIL; guard 1 is unaffected (GATE-67G1 PASS)",
+            check(f"{tag}: an S2 row printing taper > 0 (pslot= printed; Bulk, rr = 0) is S06-FAIL, never replaced, GATE-67G2 FAIL; guard 1 is unaffected (GATE-67G1 PASS)",
                   any(r["status"] == "S06-FAIL" for r in g2) and not any(r["status"] == "S06-FAIL" for r in rp) and gate2.group(1) == "FAIL" and gate1.group(1) == "PASS", ([r["status"] for r in g2], gate2.group(0), gate1.group(0)))
         EXECUTED.add((plan, path))
         return
@@ -2998,17 +3315,59 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
               and (path == "g2-fail" or (verdicts["AS"].group(1) == "PASS" and re.search(r"^R1 PASS", sc["r1"], re.M) and re.search(r"^R2-HOLD CLEAR", sc["r2"], re.M))), {k: (v.group(0) if v else None) for k, v in verdicts.items()} | {"t": tail(sc["t"], 4), "r2": tail(sc["r2"], 4)})
         if path == "g2-fail":
             check(f"{tag}: LD_G2_FAIL67=1 (a G2 FAIL): no S2, P2 or P2T row anywhere, no R2 / pool / dump stage dirs, A1, A1-R and T kept", not any(("bin=bin-S2" in c or "bin=bin-P" in c) for c in calls) and not any(os.path.exists(stage_dirs[s]) for s in ("r2", "pool", "dump")), calls[:5])
+            env_nov = {k: v for k, v in os.environ.items() if k != "LD_DROP_S2"}
+            cp = subprocess.run([sys.executable, os.path.join(sb["repo"], "tools", "l1", "s67_score.py"), "score", "67r", os.path.join(stage_dirs["r1"], "ld.log")], env=env_nov, capture_output=True, text=True, errors="replace")      # the sandbox's own scorer (fast mode shrinks its tables), no VM environment
+            lines_r1 = cp.stdout.splitlines()
+            check(f"{tag}: R1 runs dropped (no S2 arm): its ledger carries `LD-PLAN67 plan=67r drop_s2=1` and the pulled ledger re-scored on the host WITHOUT LD_DROP_S2 reads A1-R PASS, not INCOMPLETE (the drop state is the ledger's, not the environment's)",
+                  "LD-PLAN67 plan=67r drop_s2=1" in txt67(stage_dirs["r1"], "ld.log") and any(x.startswith("A1-R PASS") for x in lines_r1) and not any("INCOMPLETE" in x for x in lines_r1), lines_r1[-4:])
         EXECUTED.add((plan, path))
         return
     if path == "s2-taper-nonzero":
         check(f"{tag}: an S2 row of stage A printing taper > 0 is S06-FAIL, never replaced (no REPLACE67 for it), and the stage score counts it (S06-FAIL-ROWS 1: the merge condition of 4.5 reads it, AS is its own clause)", any(r["status"] == "S06-FAIL" and r["arm"] == "S2" for r in a_rows) and "S06-FAIL-ROWS 1" in sc["a"]
               and not re.search(r"REPLACE67 \S+ S2 .*s06", txt67(stage_dirs["a"], "ld.log")), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"], tail(sc["a"], 5)))
+    elif path == "s2-taper-cotenant":
+        check(f"{tag}: an S2 row of stage A with taper > 0 that is also a crash void (driver rc 1) reads S06-FAIL (underlying label VOID-RC), is never replaced (no REPLACE67 for that slot) and is counted (S06-FAIL-ROWS 1)",
+              any(r["status"] == "S06-FAIL" and r["arm"] == "S2" and r.get("status_41d") == "VOID-RC" for r in a_rows) and "S06-FAIL-ROWS 1" in sc["a"] and "REPLACE67 c2-100 S2" not in txt67(stage_dirs["a"], "ld.log"),
+              ([(r["arm"], r["status"], r.get("status_41d")) for r in a_rows if r["arm"] == "S2"], tail(sc["a"], 5)))
+    elif path == "r1-b0-gauge":
+        check(f"{tag}: R1's B0 rows carry gauge prints: they stay LIVE (no VOID-WITNESS, no REPLACE67 for B0) and A1-R reads FAIL",
+              any(r["arm"] == "B0" and r["status"] == "LIVE" and r["w67"]["g_any"] for r in r1_rows) and "REPLACE67 c2-100 B0" not in txt67(stage_dirs["r1"], "ld.log") and re.search(r"^A1-R FAIL", sc["r1"], re.M) is not None,
+              ([(r["arm"], r["status"]) for r in r1_rows if r["arm"] == "B0"], tail(sc["r1"], 5)))
+    elif path == "r2-blind":
+        check(f"{tag}: P1 prints taper = 0 and P2 pslot = 0 on every scored R2 row: R2-BLIND P1 and P2 on record, R2-HOLD UNSCOREABLE (R2 VOID, guard 2 waits for an R2 re-run), never CLEAR",
+              "R2-BLIND P1" in sc["r2"] and "R2-BLIND P2" in sc["r2"] and re.search(r"^R2-HOLD UNSCOREABLE", sc["r2"], re.M) is not None and "R2 VOID" in sc["r2"] and "R2-HOLD CLEAR" not in sc["r2"], tail(sc["r2"], 6))
+    elif path == "twin-missing-field":
+        check(f"{tag}: P2T's [ACCT] line lacks oldest_unchanged_max: R2-HOLD UNSCOREABLE naming the field, never CLEAR", re.search(r"^R2-HOLD UNSCOREABLE .*oldest_unchanged_max", sc["r2"], re.M) is not None and "R2-HOLD CLEAR" not in sc["r2"], tail(sc["r2"], 6))
+    elif path == "t-refusal-and-void":
+        check(f"{tag}: an S1 refusal failure together with B0's key reading false: T FAIL (a finding before a void), not T VOID", re.search(r"^T FAIL", sc["t"], re.M) is not None and re.search(r"^T VOID", sc["t"], re.M) is None, tail(sc["t"], 6))
+    elif path == "t-bringup-fail":
+        check(f"{tag}: tun_bulk.sh's TUN-BRINGUP-FAIL (B0, realtime) is kept in the T ledger and read: ABORT-BRINGUP-T seat=B0 hint=realtime, no T PASS / FAIL / VOID line, the T stage is not ok (no DONE), the session is not DONE-ALL",
+              "TUN-BRINGUP-FAIL label=B0-realtime" in txt67(stage_dirs["t"], "ld.log") and "ABORT-BRINGUP-T seat=B0 hint=realtime" in sc["t"] and re.search(r"^T (PASS|FAIL|VOID)", sc["t"], re.M) is None
+              and not os.path.exists(os.path.join(stage_dirs["t"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(sc["t"], 6)))
+    elif path == "truncated":
+        check(f"{tag}: the R1 battery returned timeout's rc 124: LD-BATTERY-TRUNCATED in its ledger, the TRUNCATED marker, A1-R and R1 read TRUNCATED (never PASS), the stage is not ok, the session ends TRUNCATED-ALL (rc 7: not DONE-ALL, not FAILED-ALL), the other stages ran",
+              "LD-BATTERY-TRUNCATED at LD_HARD" in txt67(stage_dirs["r1"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "TRUNCATED")) and re.search(r"^A1-R TRUNCATED", sc["r1"], re.M) is not None
+              and re.search(r"^R1 TRUNCATED", sc["r1"], re.M) is not None and "PASS" not in sc["r1"].split("VERDICT-67R")[-1] and not os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and os.path.exists(os.path.join(stage_dirs["a"], "DONE"))
+              and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and not failed and os.path.exists(os.path.join(run_dir, "TRUNCATED-ALL")) and rc == TRUNC_EXIT67 and "LD-ALL-TRUNCATED" in out, (rc, tail(sc["r1"], 5), tail(e, 6)))
+    elif path in ("truncated-s06-fail", "truncated-candidate-crash"):
+        runsc = txt67(run_dir, "score.txt")
+        tline = next((ln for ln in e.splitlines() if "LD-ALL TRUNCATED" in ln), "")
+        want = "S06-FAIL rows: 1" if path == "truncated-s06-fail" else "AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 in c8-100: a finding to investigate, not cleared by a plain re-run)"
+        va = next((ln for ln in sc["a"].splitlines() if ln.startswith("VERDICT-67A")), "")
+        label_ok = (re.search(r"^S06-FAIL rows: 1", sc["a"], re.M) is not None and "S06-FAIL rows 1" in va) if path == "truncated-s06-fail" else (re.search(r"^AS UNSCOREABLE \(CANDIDATE-CRASH S2 n=3 in c8-100", sc["a"], re.M) is not None and "AS UNSCOREABLE" in va)
+        check(f"{tag}: stage A is cut (rc 124 from the stub timeout): its own outcome label stays on the verdict line ({'S06-FAIL rows 1' if path == 'truncated-s06-fail' else 'AS UNSCOREABLE (CANDIDATE-CRASH S2 n=3 ...)'}, never TRUNCATED), the TRUNCATED marker, the stage returns the cut (not DONE), the session ends TRUNCATED-ALL (rc {TRUNC_EXIT67}, not FAILED-ALL), the era line `LD-ALL TRUNCATED` and $RUN/score.txt list the non-pass line `{want[:40]}...`",
+              "LD-BATTERY-TRUNCATED at LD_HARD" in txt67(stage_dirs["a"], "ld.log") and os.path.exists(os.path.join(stage_dirs["a"], "TRUNCATED")) and label_ok and (path == "truncated-s06-fail" or "AS TRUNCATED" not in sc["a"].split("VERDICT-67A")[-1].split(";")[0])
+              and not os.path.exists(os.path.join(stage_dirs["a"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and not failed and os.path.exists(os.path.join(run_dir, "TRUNCATED-ALL")) and rc == TRUNC_EXIT67 and "LD-ALL-TRUNCATED" in out
+              and ("a: " + want) in tline and ("NONPASS-IN-CUT-STAGE a: " + want) in runsc, (rc, va, tail(sc["a"], 6), tline[-400:], tail(runsc, 6)))
+    elif path == "a-crash-partial":
+        check(f"{tag}: S2 in c8 has one crash and every other slot void (live + crashes under the minimum): AS UNSCOREABLE names CANDIDATE-CRASH S2 n=1 in c8-100 with `live + crashes 1 < minimum 2: other voids also short`, never the plain `fewer live rows`",
+              "AS UNSCOREABLE (CANDIDATE-CRASH S2 n=1 in c8-100: a finding to investigate, not cleared by a plain re-run (live + crashes 1 < minimum 2: other voids also short))" in sc["a"] and re.search(r"^AS UNSCOREABLE \(fewer live", sc["a"], re.M) is None, (tail(sc["a"], 10),))
     elif path == "s2-no-pslot":
         check(f"{tag}: an S2 row of stage A without pslot is VOID-WITNESS and re-run once (REPLACE67 on record, a second row of that slot); the stage still scores", any(r["status"] == "VOID-WITNESS" and r["arm"] == "S2" for r in a_rows) and "REPLACE67 c2-100 S2" in txt67(stage_dirs["a"], "ld.log"), ([(r["arm"], r["status"]) for r in a_rows if r["arm"] == "S2"],))
     elif path == "s2-belowfloor-high":
         check(f"{tag}: S2's below-floor count far above S1's and fill_coded: BELOW-FLOOR-HOLD YES in the score, every S2 row LIVE, no S06-FAIL, no FAIL label from it", "BELOW-FLOOR-HOLD YES" in sc["a"] and all(r["status"] == "LIVE" for r in a_rows if r["arm"] == "S2") and not any(r["status"] == "S06-FAIL" for r in a_rows), tail(sc["a"], 8))
     elif path == "a-under-min":
-        check(f"{tag}: S1 rows of a cell voided (and replaced void again) and fewer live than the minimum: AS and A1 read UNSCOREABLE, never PASS", re.search(r"^AS UNSCOREABLE", sc["a"], re.M) is not None and re.search(r"^A1 UNSCOREABLE", sc["a"], re.M) is not None, tail(sc["a"], 8))
+        check(f"{tag}: S1 rows of a cell crashed (VOID-RC: never replaced, not counted) and fewer LIVE than the minimum (the old LIVE + crash count would have scored): AS and A1 read UNSCOREABLE, never PASS", re.search(r"^AS UNSCOREABLE", sc["a"], re.M) is not None and re.search(r"^A1 UNSCOREABLE", sc["a"], re.M) is not None, tail(sc["a"], 8))
     elif path == "block1-fail":
         check(f"{tag}: S1's first A row is void: the block-1 rule stops the stage (FAILED-STAGE67 in its ledger, FAILED-a marker, exit 6) and the NEXT stage (R1) still ran to the end; the session is not DONE-ALL",
               os.path.exists(os.path.join(stage_dirs["a"], "FAILED-a")) and "FAILED-STAGE67" in txt67(stage_dirs["a"], "ld.log") and os.path.exists(os.path.join(stage_dirs["r1"], "DONE")) and not os.path.exists(os.path.join(run_dir, "DONE-ALL")) and rc == 5, (rc, tail(e, 8)))
@@ -3323,7 +3682,7 @@ def want(name):
     return sel is None or name in sel
 
 
-all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x") for v in hp.HARNESS_PATHS[p]]
+all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67pre", "67", "67g", "67x") for v in hp.HARNESS_PATHS[p]]
 phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests") and not (p == "64" and v in P64_AFTER) and not (p == "65" and v in P65_AFTER) and p not in ("67g", "67x")]
 phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests") or (p == "64" and v in P64_AFTER) or (p == "65" and v in P65_AFTER) or p in ("67g", "67x")]      # plan 67's launches (67g, 67x) consume the rehearsal's binaries and tools result (REH67); plan 64's launch cases consume the rehearsal's binaries and tools result (REH64)
 t_all = time.time()
@@ -3452,6 +3811,6 @@ if not only:
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
     check("ADR-0080's flake rule runs in run_suites: a flake outside quarantine.txt aborts (flake-not-quarantined), one on it is recorded and passes (flake-quarantined)", FLAKE_DONE == set(EXTRA_FLAKE), set(EXTRA_FLAKE) ^ FLAKE_DONE)
     check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65, whose reuse is the reference manifest or none)",
-          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x"})
+          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67pre", "67", "67g", "67x"})
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

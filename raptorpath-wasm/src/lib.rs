@@ -2,6 +2,66 @@ use raptorpath_math as math;
 use wasm_bindgen::prelude::*;
 
 mod warm_tail;
+pub mod knobs;
+pub mod consumer;
+pub mod link;
+pub mod budget;
+
+// =========================================================================
+// Three-knob laws (proposal; docs/derivations/visualizer-three-knobs-plan.md
+// §5.1): thin forwarding wrappers over `knobs.rs`, which holds every law.
+// Prefixed `knob_` (`protected` is a reserved word in JavaScript).
+// =========================================================================
+
+#[wasm_bindgen]
+pub fn knob_law_revision() -> String {
+    knobs::KNOB_LAW_REVISION.to_string()
+}
+
+#[wasm_bindgen]
+pub fn knob_intake_expired(lifetime_s: f64, age: f64) -> bool {
+    knobs::intake_expired(lifetime_s, age)
+}
+
+#[wasm_bindgen]
+pub fn knob_resend_admissible(lifetime_s: f64, age: f64, x: f64) -> bool {
+    knobs::resend_admissible(lifetime_s, age, x)
+}
+
+#[wasm_bindgen]
+pub fn knob_within_lifetime(lifetime_s: f64, age: f64) -> bool {
+    knobs::within_lifetime(lifetime_s, age)
+}
+
+#[wasm_bindgen]
+pub fn knob_dequeue_expired(lifetime_s: f64, age: f64, m: f64) -> bool {
+    knobs::dequeue_expired(lifetime_s, age, m)
+}
+
+#[wasm_bindgen]
+pub fn knob_protected(lifetime_s: f64, now: f64, last_send: f64, d: f64, h: f64, o_hat: f64) -> bool {
+    knobs::protected(lifetime_s, now, last_send, d, h, o_hat)
+}
+
+#[wasm_bindgen]
+pub fn knob_trigger_delay(resent: bool, c: f64, srtt_path: f64, p_reach: f64) -> f64 {
+    knobs::trigger_delay(resent, c, srtt_path, p_reach)
+}
+
+#[wasm_bindgen]
+pub fn knob_one_way_fwd(srtt: f64, rtprop: f64) -> f64 {
+    knobs::one_way_fwd(srtt, rtprop)
+}
+
+#[wasm_bindgen]
+pub fn knob_release_at(t_detect: f64, hold_s: f64, t_floor: f64, h_f: f64) -> f64 {
+    knobs::release_at(t_detect, hold_s, t_floor, h_f)
+}
+
+#[wasm_bindgen]
+pub fn knob_ack_timeout(srtt: f64, rttvar: f64, g: f64, ack_delay: f64) -> f64 {
+    knobs::ack_timeout(srtt, rttvar, g, ack_delay)
+}
 
 // =========================================================================
 // Pure math functions — thin wasm-bindgen wrappers
@@ -360,6 +420,57 @@ const TICK_SECS: f64 = 0.001;
 /// c8 preset) and binds only when the BDP is cranked past it (1 path, RTT
 /// ≥ 200 at cap 8). The derived store law is unshipped and NOT modeled.
 const STORE_PER_PATH: u32 = 512;
+/// The reference deadline τ for comparing T = ∞ runs with finite-T ones
+/// (three-knobs §13.6; plan Q-V3 default), seconds.
+const REF_DEADLINE_S: f64 = 0.4;
+
+/// The class of one handed-over unit (addendum 1 A1), decided in the model
+/// by this precedence: expired at the intake (no seq); undelivered (passed by
+/// the floor or given up, never delivered); out of order (delivered after a
+/// higher-numbered unit); late (delivered, delay from hand-over > T); on
+/// time; pending (not yet resolved). The page draws these codes and nothing
+/// else.
+pub const CLASS_PENDING: u8 = 0;
+pub const CLASS_ON_TIME: u8 = 1;
+pub const CLASS_LATE: u8 = 2;
+pub const CLASS_OUT_OF_ORDER: u8 = 3;
+pub const CLASS_UNDELIVERED: u8 = 4;
+pub const CLASS_EXPIRED: u8 = 5;
+/// Decoded at the receiver but still held at the consumer when the run
+/// ended (behind a hole whose floor the receiver never got); never mixed with
+/// `undelivered`. Reachable only with a forward delay.
+pub const CLASS_HELD: u8 = 6;
+const N_CLASSES: usize = 7;
+/// A unit without a seq (not sent yet, or expired at the intake).
+const NO_SEQ: u32 = u32::MAX;
+
+/// What a datagram on the forward leg carries (addendum 1 A2).
+enum DgKind {
+    /// A source symbol's first copy; it holds a store slot until its SACK.
+    Source,
+    /// A resend of a lost source symbol.
+    Resend,
+    /// A repair with its coded data.
+    Repair { start: u64, count: u16, index: u32, data: Vec<u8> },
+    /// A floor-repeat datagram (no payload, no feedback entry).
+    Floor,
+}
+
+/// One datagram in flight on a path's forward leg (addendum 1 A2). Its loss
+/// outcome and its arrival time are decided at send; `deliver` does every
+/// receiver-side effect at the arrival, keyed by seq.
+struct Datagram {
+    kind: DgKind,
+    seq: u64,
+    send_tick: u32,
+    path: usize,
+    /// F_ann at the send (the header carrier, read by the receiver at arrival).
+    floor: u32,
+    /// Lost on the wire: it still rides the leg as a ghost so its feedback
+    /// entry is due at the arrival it would have had.
+    lost: bool,
+    arrive_s: f64,
+}
 
 /// Per-path state (§5.5): an independent GE channel with its own
 /// capacity, RTT (feedback delay), estimator feed and traffic counters.
@@ -375,11 +486,50 @@ struct PathState {
     wire_idx: usize,
     estimator: math::LossEstimator,
     /// Wire outcomes awaiting THIS path's ACK round-trip:
-    /// (send_tick, arrived, holds_store_slot). The third flag marks SOURCE
-    /// sends, whose retention-store slot is released when this entry pops
-    /// with arrived = true — the SACK-clocked release (§6.3): the slot
-    /// frees on the selective ack, NOT on the cumulative frontier.
-    feedback_queue: std::collections::VecDeque<(u32, bool, bool)>,
+    /// (due tick, send tick, arrived, holds_store_slot). The due tick is the arrival
+    /// (or would-be arrival) plus the reverse leg (addendum 1 A2). The third
+    /// flag marks SOURCE sends, whose retention-store slot is released when
+    /// this entry pops with arrived = true — the SACK-clocked release (§6.3):
+    /// the slot frees on the selective ack, NOT on the cumulative frontier.
+    feedback_queue: std::collections::VecDeque<(u32, u32, bool, bool)>,
+    /// The forward leg (addendum 1 A2): datagrams in flight, FIFO.
+    leg: std::collections::VecDeque<Datagram>,
+    /// The reverse leg in ticks: feedback is due this long after an arrival,
+    /// the first whole tick count ≥ rtt − d (addendum 1 A2).
+    reverse_ticks: u32,
+    /// The forward leg's service time, queue limit (both s) and propagation
+    /// delay d (s, within rtt/2), and the instant its server is free.
+    link_sv: f64,
+    link_q: f64,
+    link_d: f64,
+    link_free: f64,
+    /// Data datagrams the leg's queue dropped (no channel state, no loss
+    /// draw), those of them sent inside the outage window, the server's busy
+    /// time (s), floor-repeat datagrams sent, lost, dropped and arrived (kept
+    /// apart: they are in no other counter), the one-way delay of every
+    /// arrived data datagram (arrival − send + rtt/2 − d, ms) and the highest
+    /// seq that arrived on this path.
+    qdrop: u32,
+    qdrop_in: u32,
+    link_busy: f64,
+    floor_sent: u32,
+    floor_lost: u32,
+    floor_dropped: u32,
+    floor_arrived: u32,
+    owd_ms: Vec<f64>,
+    max_seq_arrived: Option<u64>,
+    /// The RTT the sender believes (addendum 1 A3): RFC 6298 (α = 1/8,
+    /// β = 1/4) in ticks, seeded at the base (srtt = rtt_ticks, rttvar =
+    /// rtt_ticks/8), sampled at each feedback pop of an arrived source symbol
+    /// (never resent: Karn) as pop tick − send tick. Without a queue every
+    /// sample is rtt_ticks and srtt stays bit-equal to it.
+    srtt_meas: f64,
+    rttvar_meas: f64,
+    rtt_samples: u32,
+    /// Test-only: extra forward delay added to every arrival on this path,
+    /// to drive the duplicate and late-fill rules (addendum 1 A2).
+    #[cfg(test)]
+    test_extra_s: f64,
     last_flush_tick: u32,
     pending_sent: u32,
     pending_ok: u32,
@@ -392,6 +542,10 @@ struct PathState {
     lost: u32,
     /// Smooth weighted-round-robin credit for goodput-proportional striping.
     stripe_credit: f64,
+    /// Outage window [start, start + len) in seconds (three-knobs plan §4.1,
+    /// Q-V7): every datagram sent inside it is lost. [∞, ∞) is empty.
+    outage_start_s: f64,
+    outage_len_s: f64,
 }
 
 impl PathState {
@@ -405,6 +559,23 @@ impl PathState {
     /// and the aggregation-factor denominator only, never for decisions.
     fn goodput_true(&self) -> f64 {
         self.capacity as f64 * (1.0 - self.eps)
+    }
+    /// The retry timer, the estimator's flush period and `protected`'s
+    /// cooldown, in ticks (addendum 1 A3): the believed srtt, rounded.
+    fn retry_delay(&self) -> u32 {
+        self.srtt_meas.round() as u32
+    }
+    /// The believed srtt in seconds: the configured base plus the measured
+    /// excess, so exactly `srtt_secs` while srtt_meas = rtt_ticks (also at
+    /// the rtt = 1 ms clamp, where rtt_ticks = 2).
+    fn srtt_belief_s(&self) -> f64 {
+        self.srtt_secs + (self.srtt_meas - self.rtt_ticks as f64) * TICK_SECS
+    }
+    /// One RFC 6298 sample, in ticks.
+    fn rtt_sample(&mut self, r: f64) {
+        self.rttvar_meas = 0.75 * self.rttvar_meas + 0.25 * (self.srtt_meas - r).abs();
+        self.srtt_meas = 0.875 * self.srtt_meas + 0.125 * r;
+        self.rtt_samples += 1;
     }
 }
 
@@ -534,6 +705,144 @@ pub struct Simulation {
     phantom_avoided: u32,
 
     rng_state: u64,
+
+    // --- Three knobs (proposal; docs/derivations/visualizer-three-knobs-plan.md
+    // §3.1, §7). Every field below is inert at T = ∞, H = ∞, λ = ∞ by IEEE
+    // arithmetic; the laws live in `knobs.rs`. ---
+    /// Lifetime T, seconds (∞ = never give up).
+    lifetime_s: f64,
+    /// Order hold H, seconds (0 = any order, ∞ = strict).
+    hold_s: f64,
+    /// Application hand-over rate λ, units per second (∞ = the object:
+    /// everything handed over at t = 0). Unit u is handed over at u / λ.
+    source_rate: f64,
+    /// Next unit to leave the intake (sent or expired). Units expired at
+    /// the intake never get a seq, so this runs ahead of `next_seq`.
+    u_next: u32,
+    /// Units dropped at the intake by L1 (age ≥ T) and by the dequeue rule
+    /// (§13.2: age + R ≥ T while a younger unit waits).
+    intake_expired: u32,
+    intake_expired_deq: u32,
+    /// Per-seq sender state (indexed by seq; `symbols` is pruned): the
+    /// hand-over time (s), the last send tick of any copy, the path of the
+    /// last copy, and whether s was ever resent.
+    h_seq: Vec<f64>,
+    last_send_seq: Vec<u32>,
+    path_seq: Vec<usize>,
+    resent_seq: Vec<bool>,
+    /// `acked_seq[s]`: the sender knows the receiver holds s or has passed
+    /// it. Set at exactly five points (plan §7, sender-state rules): (1) the
+    /// ack of an arrived source after its own path's RTT; (2) a resend's
+    /// arrival; (3) a decode recovery; (4) a ρ give-up; (5) the receiver's
+    /// floor pass of s plus the RTT of the path of s's last copy.
+    acked_seq: Vec<bool>,
+    /// The sender's ack frontier A_known: the first s with !acked_seq[s].
+    a_known: u32,
+    /// The floor F_ann (§17.1/§15.3): the lowest seq the sender still means
+    /// to deliver, a running maximum.
+    f_ann: u32,
+    /// The floor the receiver holds (carried free on every arrival; a floor
+    /// repeat datagram on the sweep clock while F_ann > A_known).
+    f_rx: u32,
+    /// Lost holes below F_ann, resolved at the sender by the commitment and
+    /// not (yet) decoded. A later decode moves the unit to `cum_decoded`.
+    committed_seq: Vec<bool>,
+    /// Per seq: ever committed (never cleared; `committed_seq` clears at a
+    /// later decode). The unit class reads it: a passed unit stays
+    /// `undelivered` until the consumer delivers it.
+    passed_seq: Vec<bool>,
+    passed_undelivered: u32,
+    /// A committed hole keeps its store slot until feedback (set-point 3 or
+    /// 5) releases it: the brake (§15.4).
+    slot_owed: Vec<bool>,
+    /// Set-point 1 and 5 clocks, per path: (due tick, seq).
+    ack_due: Vec<std::collections::VecDeque<(u32, u32)>>,
+    floor_ack_due: Vec<std::collections::VecDeque<(u32, u32)>>,
+    last_sweep_tick: u32,
+    /// Readouts: copies staged below the floor (must be 0), candidates the
+    /// re-check before a copy skipped, payload datagrams with age ≥ T (must
+    /// be 0), floor-repeat datagrams, arrivals that raised the receiver's
+    /// floor, and repairs whose window the L1 age edge cut.
+    commit_viol: u32,
+    skip_below_floor: u32,
+    l1_viol: u32,
+    floors: u32,
+    floor_carried: u32,
+    span_cut_pending: bool,
+    span_cut_repairs: u32,
+    /// The receiver's consumer stage under the hold H (L6; output only) and
+    /// the seqs the decoder released this tick, its input.
+    consumer: consumer::Consumer,
+    decoded_this_tick: Vec<u64>,
+    /// The unit index of each seq (units expired at the intake have none).
+    seq_unit: Vec<u32>,
+    /// Per unit: its seq (NO_SEQ until sent; forever for an intake expiry),
+    /// the class last handed out by `take_unit_events`, and the units whose
+    /// class may have changed since then (addendum 1 A1).
+    unit_seq: Vec<u32>,
+    unit_emitted: Vec<u8>,
+    unit_dirty: Vec<u32>,
+    /// Copies that reached a receiver already holding their seq (addendum 1
+    /// A2): counted, with no decode work, slot release or class change.
+    dup: u32,
+    /// The lead the sender takes by learning a resend's arrival at the
+    /// arrival tick rather than one reverse leg later (addendum 1 A2 gauge):
+    /// count, sum and maximum, in ticks.
+    lead_n: u32,
+    lead_sum: u64,
+    lead_max: u32,
+    /// Arrivals below a seq that already arrived on another path (A4).
+    cross_reorder: u32,
+    /// Ticks the receiver-side drain ran after the sender finished.
+    drain_ticks: u32,
+    /// Each path's backlog (ms of queued work) at the end of every tick,
+    /// tick-major, since the last `take_queue_samples` (A4; the page's strip).
+    queue_pending: Vec<f64>,
+    /// Test-only: sends that left a backlog above the queue limit plus one
+    /// service time (must stay 0).
+    #[cfg(test)]
+    backlog_over: u32,
+    /// Resends that arrived, and those of them later than T (L2's outcome).
+    resends_arrived: u32,
+    l2_late: u32,
+    /// Test-only: every resend at its send (seq, path, send s, arrival s or
+    /// NaN if lost or dropped, ô then, hand-over s, ô of its path then).
+    #[cfg(test)]
+    resend_log: Vec<(u64, usize, f64, f64, f64, f64, f64)>,
+    /// The resend budget per 5-tick window (addendum 1 A5; ∞ = unlimited),
+    /// the resends each window carried, the distinct seqs held back at least
+    /// once, and the refusals (a seq refused at several slots counts each).
+    resend_limit: f64,
+    budget_used: Vec<u32>,
+    braked_seq: Vec<bool>,
+    braked_units: u32,
+    braked_attempts: u32,
+    /// Test-only: every delivered datagram (send tick, deliver tick, path,
+    /// kind 0 source / 1 resend / 2 repair / 3 floor, lost), each resend's
+    /// lead (seq, path, ticks), every decoder feed in order (seq or window
+    /// start, u16::MAX for a source or the window count, repair index,
+    /// data), and sends that found the leg's server busy past the send.
+    #[cfg(test)]
+    leg_log: Vec<(u32, u32, usize, u8, bool, u64, f64)>,
+    #[cfg(test)]
+    lead_log: Vec<(u64, usize, u32)>,
+    #[cfg(test)]
+    feed_log: Vec<(u64, u16, u32, Vec<u8>)>,
+    #[cfg(test)]
+    free_after_now: u32,
+    /// Test-only: the decode tick of every delivered seq.
+    #[cfg(test)]
+    decode_log: Vec<(u64, u32)>,
+    /// Test-only: commitments (tick, seq) and committed-slot releases
+    /// (tick, seq, 3 = decode | 5 = floor pass + RTT).
+    #[cfg(test)]
+    commit_log: Vec<(u32, u64)>,
+    #[cfg(test)]
+    slot_release_log: Vec<(u32, u64, u8)>,
+    /// Test-only staging log of every payload-bearing datagram: (tick,
+    /// kind 0 = source / 1 = resend / 2 = repair-window member, seq, age s).
+    #[cfg(test)]
+    payload_log: Vec<(u32, u8, u64, f64)>,
 }
 
 struct Symbol {
@@ -542,10 +851,28 @@ struct Symbol {
     lost: bool,
     recovered: bool,
     last_retx_tick: i64,
+    /// The tick its arrival's ack lands (arrival + reverse leg); u32::MAX
+    /// until it arrives. Drives only the pruning of arrived symbols.
+    ack_at: u32,
     /// Path the symbol was LAST sent on (original send, then updated per
     /// retransmit): its RTT gates the retry timer and the SACK ack, its
     /// estimator feeds the P_lost retransmit decision.
     path: usize,
+}
+
+/// The float guard of an arrival's dueness (s): far below a tick, far above
+/// the rounding of a sum of seconds.
+const DUE_GUARD_S: f64 = 1e-9;
+
+/// The reverse leg in whole ticks: the first k with k·TICK ≥ rtt − d, so
+/// exactly `rtt_ticks` at d = 0 (no division by TICK, which can be an ulp off).
+fn reverse_ticks(rtt_ticks: u32, d: f64) -> u32 {
+    let target = rtt_ticks as f64 * TICK_SECS - d;
+    let mut k = rtt_ticks;
+    while k > 0 && (k - 1) as f64 * TICK_SECS >= target {
+        k -= 1;
+    }
+    k
 }
 
 fn xorshift64(state: &mut u64) -> f64 {
@@ -594,12 +921,299 @@ impl Simulation {
         xorshift64(&mut self.rng_state)
     }
 
-    /// Consume the next wire-slot channel outcome on path `pi`. true = lost.
-    fn wire_lost(&mut self, pi: usize) -> bool {
+    /// Consume the next wire-slot channel outcome on path `pi` for a datagram
+    /// departing at `at` (s; the outage is tested there, addendum 1 A2).
+    /// true = lost.
+    fn wire_lost(&mut self, pi: usize, at: f64) -> bool {
+        let now = at;
         let p = &mut self.paths[pi];
         let lost = p.channel_states.get(p.wire_idx).copied().unwrap_or(false);
         p.wire_idx += 1;
-        lost
+        // The outage still consumes the channel state, so the pattern after
+        // it stays aligned with the run without one.
+        let in_outage = now >= p.outage_start_s && now < p.outage_start_s + p.outage_len_s;
+        lost || in_outage
+    }
+
+    /// The current tick in seconds (the knobs are seconds; ticks convert
+    /// to seconds, never the knobs to ticks).
+    fn now_s(&self) -> f64 {
+        self.tick as f64 * TICK_SECS
+    }
+
+    /// Hand-over time of unit u: u / λ (0 for every unit at λ = ∞).
+    fn handover_s(&self, u: u32) -> f64 {
+        u as f64 / self.source_rate
+    }
+
+    /// The ack timeout R (§13; RFC 6298 with g = ack delay = one tick, as
+    /// in the toy's tick), from the measured srtt and, for now, the FIXED
+    /// rttvar. Addendum 1 A3 has R read the measured rttvar; that switch is
+    /// held for the coordinator: the measured rttvar decays to 0 without a
+    /// queue, R falls from 76 to 52 ms at RTT 50 ms, the §13.2 dequeue stops
+    /// firing near T = 0.4 and the T-continuity gate fails on its binding
+    /// cell. `ack_timeout_meas_s` is the A3 form, reported.
+    fn ack_timeout_s(&self) -> f64 {
+        knobs::ack_timeout(self.agg_srtt(), self.agg_rttvar(), TICK_SECS, TICK_SECS)
+    }
+    /// R as addendum 1 A3 states it (measured srtt and measured rttvar): a
+    /// readout only while the switch is held.
+    fn ack_timeout_meas_s(&self) -> f64 {
+        knobs::ack_timeout(self.agg_srtt(), self.agg_rttvar_meas(), TICK_SECS, TICK_SECS)
+    }
+
+    /// ô, the one-way term of L2 and `protected` (§17.1: srtt − RTprop/2):
+    /// the measured aggregate srtt minus the configured aggregate RTprop/2,
+    /// the resend path pinned as the capacity-weighted aggregate (addendum 1
+    /// A3). Without a queue srtt = RTprop and ô is the RTT/2 the delay
+    /// accounting adds. Read only by L2 and `protected`.
+    fn one_way_s(&self) -> f64 {
+        knobs::one_way_fwd(self.agg_srtt(), self.agg_srtt_base())
+    }
+
+    /// `protected(s)` (§17.1) with the model's bindings: the cooldown c and
+    /// the never-resent trigger are both the retry timer, the RTT of the
+    /// path of s's last copy (the model's oracle loss notice arrives then);
+    /// no data sweep reaches s (P_reach = ∞).
+    fn seq_protected(&self, i: usize, now: f64, o_hat: f64) -> bool {
+        let c = self.paths[self.path_seq[i]].retry_delay() as f64 * TICK_SECS;
+        let d = knobs::trigger_delay(self.resent_seq[i], c, c, f64::INFINITY);
+        let last = self.last_send_seq[i] as f64 * TICK_SECS;
+        knobs::protected(self.lifetime_s, now, last, d, self.h_seq[i], o_hat)
+    }
+
+    /// Recompute A_known and the floor F_ann (plan §7): scan up from
+    /// max(F_ann, A_known) past every acked or unprotected seq, stop at the
+    /// first unacked protected seq or at next_seq. At T = ∞ every seq is
+    /// protected, so F_ann = A_known and nothing below it is unresolved.
+    fn update_floor(&mut self) {
+        let n = self.next_seq;
+        while self.a_known < n && self.acked_seq[self.a_known as usize] {
+            self.a_known += 1;
+        }
+        let now = self.now_s();
+        let o_hat = self.one_way_s();
+        let mut s = self.f_ann.max(self.a_known);
+        while s < n {
+            let i = s as usize;
+            if !self.acked_seq[i] && self.seq_protected(i, now, o_hat) {
+                break;
+            }
+            s += 1;
+        }
+        if s > self.f_ann {
+            self.f_ann = s;
+            self.commit_below_floor();
+        }
+    }
+
+    /// The commitment (plan §7): a lost, unrecovered hole below F_ann is
+    /// never resent; it is resolved at the sender (out of `lost_pending`,
+    /// into `passed_undelivered`). Its store slot stays held until feedback.
+    fn commit_below_floor(&mut self) {
+        let f = self.f_ann as u64;
+        for sym in &mut self.symbols {
+            if sym.lost && !sym.recovered && sym.seq < f {
+                sym.recovered = true;
+                self.lost_pending = self.lost_pending.saturating_sub(1);
+                self.passed_undelivered += 1;
+                self.committed_seq[sym.seq as usize] = true;
+                self.passed_seq[sym.seq as usize] = true;
+                self.slot_owed[sym.seq as usize] = true;
+                self.unit_dirty.push(self.seq_unit[sym.seq as usize]);
+                #[cfg(test)]
+                self.commit_log.push((self.tick, sym.seq));
+            }
+        }
+    }
+
+    /// Mark s acked; a committed hole's store slot is released here, by
+    /// feedback only (cause 3 = decode, 5 = floor pass + RTT).
+    fn ack_seq(&mut self, s: usize, _cause: u8) {
+        self.acked_seq[s] = true;
+        if self.slot_owed[s] {
+            self.slot_owed[s] = false;
+            self.store_occupancy = self.store_occupancy.saturating_sub(1);
+            #[cfg(test)]
+            self.slot_release_log.push((self.tick, s as u64, _cause));
+        }
+    }
+
+    /// The receiver learns floor f. Every undelivered, unacked seq it now
+    /// passes is acked one RTT (of its last copy's path) later: set-point 5.
+    fn receive_floor(&mut self, f: u32) {
+        if f <= self.f_rx {
+            return;
+        }
+        for s in self.f_rx..f {
+            let i = s as usize;
+            if !self.acked_seq[i] && self.lat_by_seq[i].is_nan() {
+                let p = self.path_seq[i];
+                self.floor_ack_due[p].push_back((self.tick + self.paths[p].reverse_ticks, s));
+            }
+        }
+        self.f_rx = f;
+    }
+
+    /// Header carrier (Q-V6 default): every arriving datagram carries the
+    /// F_ann stamped at its send.
+    fn carry_floor(&mut self, f: u32) {
+        if f > self.f_rx {
+            self.floor_carried += 1;
+            self.receive_floor(f);
+        }
+    }
+
+    /// The re-check immediately before a copy is staged (§17.1): a candidate
+    /// below the current floor is skipped and counted.
+    fn floor_recheck(&mut self, i: usize) -> bool {
+        if self.symbols[i].seq < self.f_ann as u64 {
+            self.skip_below_floor += 1;
+            return false;
+        }
+        true
+    }
+
+    /// The resend budget (addendum 1 A5), at the point of sending: a refusal
+    /// leaves the candidate as a failed P_lost draw does (no `last_retx`
+    /// change; the next slot that picks it tries again).
+    fn budget_admits(&mut self, i: usize) -> bool {
+        let w = budget::window(self.tick);
+        if self.budget_used.len() <= w {
+            self.budget_used.resize(w + 1, 0);
+        }
+        if budget::admits(self.budget_used[w], self.resend_limit) {
+            self.budget_used[w] += 1;
+            return true;
+        }
+        self.braked_attempts += 1;
+        let s = self.symbols[i].seq as usize;
+        if self.braked_seq.len() <= s {
+            self.braked_seq.resize(s + 1, false);
+        }
+        if !self.braked_seq[s] {
+            self.braked_seq[s] = true;
+            self.braked_units += 1;
+        }
+        false
+    }
+
+    /// The L1 age edge of the repair window (plan §7 P3): no window member
+    /// with a ≥ T. Ages fall with seq, so the edge is a window start. True
+    /// when it cut a member.
+    fn apply_age_edge(&mut self) -> bool {
+        let next = self.encoder.next_seq();
+        let start = next - self.encoder.window_size() as u64;
+        let now = self.now_s();
+        let mut s = start;
+        while s < next && knobs::intake_expired(self.lifetime_s, now - self.h_seq[s as usize]) {
+            s += 1;
+        }
+        if s > start {
+            self.encoder.advance(s);
+        }
+        s > start
+    }
+
+    /// Count a payload datagram for seq s that left with age ≥ T (must stay 0).
+    fn check_l1(&mut self, s: usize, _kind: u8) {
+        let age = self.now_s() - self.h_seq[s];
+        if knobs::intake_expired(self.lifetime_s, age) {
+            self.l1_viol += 1;
+        }
+        #[cfg(test)]
+        self.payload_log.push((self.tick, _kind, s as u64, age));
+    }
+
+    /// Per unit: consumer delivery time − hand-over + the one-way accounting
+    /// term ô (s); ∞ for a unit not delivered (expired, passed, or pending).
+    fn unit_delays(&self) -> Vec<f64> {
+        let mut d = vec![f64::INFINITY; self.num_source as usize];
+        let o = self.acc_s();
+        for (s, &u) in self.seq_unit.iter().enumerate() {
+            let t = self.consumer.delivered_at(s);
+            if !t.is_nan() {
+                d[u as usize] = t - self.h_seq[s] + o;
+            }
+        }
+        d
+    }
+
+    /// The share of all units delivered within `deadline` of hand-over (L3).
+    fn share_within(&self, deadline: f64) -> f64 {
+        // Delivered units only: an undelivered unit's delay is ∞, and
+        // within_lifetime(∞, ∞) is true, so the delay alone cannot say it.
+        let o = self.acc_s();
+        let n = (0..self.seq_unit.len())
+            .filter(|&s| {
+                let t = self.consumer.delivered_at(s);
+                !t.is_nan() && knobs::within_lifetime(deadline, t - self.h_seq[s] + o)
+            })
+            .count();
+        n as f64 / self.num_source as f64
+    }
+
+    /// The class of unit u and its delay from hand-over (s; ∞ when not
+    /// delivered), by A1's precedence. Late is L3's readout `within_lifetime`.
+    fn unit_class(&self, u: usize) -> (u8, f64) {
+        let s = self.unit_seq[u];
+        if s == NO_SEQ {
+            let expired = (u as u32) < self.u_next;
+            return ([CLASS_PENDING, CLASS_EXPIRED][expired as usize], f64::INFINITY);
+        }
+        let s = s as usize;
+        let t = self.consumer.delivered_at(s);
+        if t.is_nan() {
+            if self.finished && self.receiver_holds(s as u64) {
+                return (CLASS_HELD, f64::INFINITY);
+            }
+            let passed = self.passed_seq[s] || self.given_up_seqs.contains(&(s as u64));
+            return ([CLASS_PENDING, CLASS_UNDELIVERED][passed as usize], f64::INFINITY);
+        }
+        let delay = t - self.h_seq[s] + self.acc_s();
+        let class = if self.consumer.out_of_order(s) {
+            CLASS_OUT_OF_ORDER
+        } else if knobs::within_lifetime(self.lifetime_s, delay) {
+            CLASS_ON_TIME
+        } else {
+            CLASS_LATE
+        };
+        (class, delay)
+    }
+
+    /// The intake (L1, then the §13.2 dequeue rule, oldest first): drops
+    /// the head while it has outlived T, or while it can no longer arrive
+    /// in time and a younger unit waits. True when the head unit is handed
+    /// over and may be sent now. Ends the source when the intake drains.
+    fn intake_head_ready(&mut self) -> bool {
+        let now = self.now_s();
+        let r = self.ack_timeout_s();
+        loop {
+            if self.u_next >= self.num_source {
+                self.source_done = true;
+                return false;
+            }
+            let h = self.handover_s(self.u_next);
+            if h > now {
+                return false; // not handed over yet
+            }
+            let age = now - h;
+            if knobs::intake_expired(self.lifetime_s, age) {
+                self.intake_expired += 1;
+                self.unit_dirty.push(self.u_next);
+                self.u_next += 1;
+                continue;
+            }
+            let younger_waiting =
+                self.u_next + 1 < self.num_source && self.handover_s(self.u_next + 1) <= now;
+            if younger_waiting && knobs::dequeue_expired(self.lifetime_s, age, r) {
+                self.intake_expired_deq += 1;
+                self.unit_dirty.push(self.u_next);
+                self.u_next += 1;
+                continue;
+            }
+            return true;
+        }
     }
 
     // --- Capacity-weighted aggregates over paths (§5.5: the shared
@@ -616,14 +1230,33 @@ impl Simulation {
     fn agg_eps(&self) -> f64 {
         self.agg(|p| p.eps)
     }
+    /// The believed srtt (s), capacity-weighted (addendum 1 A3).
     fn agg_srtt(&self) -> f64 {
+        self.agg(|p| p.srtt_belief_s())
+    }
+    /// The configured base RTT, RTprop (s), capacity-weighted.
+    fn agg_srtt_base(&self) -> f64 {
         self.agg(|p| p.srtt_secs)
     }
+    /// The fixed rttvar main's laws read (P_lost, completion): rtt/8, a
+    /// declared model constant (addendum 1 A3; Q-V10 bounds it).
     fn agg_rttvar(&self) -> f64 {
         self.agg(|p| p.rttvar_secs)
     }
+    /// The measured RFC rttvar (s), which R reads.
+    fn agg_rttvar_meas(&self) -> f64 {
+        self.agg(|p| p.rttvar_meas * TICK_SECS)
+    }
+    /// The believed srtt in ticks, rounded (the aggregate clocks).
     fn agg_rtt_ticks(&self) -> u32 {
-        self.agg(|p| p.rtt_ticks as f64).round() as u32
+        self.agg(|p| p.srtt_meas).round() as u32
+    }
+    /// The delay accounting's one physical term (addendum 1 A2): the part of
+    /// the one-way delay the forward leg does not model, rtt/2 − d per path,
+    /// from the configured values; never the belief (the arrival tick
+    /// already holds any queueing).
+    fn acc_s(&self) -> f64 {
+        self.agg(|p| p.srtt_secs / 2.0 - p.link_d)
     }
     fn agg_loss_est(&self) -> f64 {
         self.agg(|p| p.estimator.loss_rate())
@@ -686,7 +1319,7 @@ impl Simulation {
     /// nearly all source). Computed for EVERY hint — mid-stream it is 0, and
     /// over the final ~1.5 SRTT it ramps to 1 (Phi_bar of the RTT tail).
     fn completion_chi_raw(&self) -> f64 {
-        let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
+        let remaining = self.num_source.saturating_sub(self.u_next) as f64;
         let t_rem_secs = remaining / self.total_capacity() as f64 * TICK_SECS;
         math::completion_exposure(t_rem_secs, self.agg_srtt(), self.agg_rttvar())
     }
@@ -735,7 +1368,7 @@ impl Simulation {
         if self.fixed_r.is_some() {
             return 0.0;
         }
-        let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
+        let remaining = self.num_source.saturating_sub(self.u_next) as f64;
         let w = self.w as f64;
         let chi_trunc = math::normal_survival((remaining - 0.5 * w) / (0.25 * w));
         let dchi = (chi_trunc - self.prev_completion_chi).max(0.0);
@@ -869,7 +1502,7 @@ impl Simulation {
             .iter()
             .map(|p| {
                 if p.estimator.ge_estimator().is_valid() {
-                    p.rtt_ticks as f64 * p.capacity as f64
+                    p.srtt_meas * p.capacity as f64
                 } else {
                     0.0
                 }
@@ -957,34 +1590,26 @@ impl Simulation {
     /// Send one repair symbol on path `pi`. Returns whether it survived.
     fn send_repair(&mut self, pi: usize) -> bool {
         let repair = self.encoder.generate_repair();
-        let lost = self.wire_lost(pi);
+        for m in repair.window_start..repair.window_start + repair.window_count as u64 {
+            self.check_l1(m as usize, 2);
+        }
+        if self.span_cut_pending {
+            self.span_cut_pending = false;
+            self.span_cut_repairs += 1;
+        }
+        let kind = DgKind::Repair {
+            start: repair.window_start, count: repair.window_count,
+            index: repair.repair_index, data: repair.coded_data,
+        };
+        let lost = self.send_datagram(kind, 0, pi);
         self.total_fec += 1;
         self.cum_sent += 1;
-        let tick = self.tick;
         {
             let p = &mut self.paths[pi];
             p.sent += 1;
             p.fec += 1;
-            p.feedback_queue.push_back((tick, !lost, false));
-            if lost {
-                p.lost += 1;
-            } else {
-                p.arrived += 1;
-            }
         }
-        if !lost {
-            self.cum_arrived += 1;
-            let recovered = self.decoder.feed_repair(
-                repair.window_start, repair.window_count,
-                repair.repair_index, &repair.coded_data,
-            );
-            self.mark_recovered(&recovered);
-            self.record_delivery(&recovered);
-            self.cum_decoded += recovered
-                .iter()
-                .filter(|q| !self.given_up_seqs.contains(q))
-                .count() as u32;
-        }
+        self.deliver_due();
         !lost
     }
 
@@ -993,7 +1618,7 @@ impl Simulation {
     /// (arrived symbols decode at their send tick, so their latency is the
     /// one-way delay; recovered symbols add the recovery wait).
     fn record_delivery(&mut self, seqs: &[u64]) {
-        let one_way = self.agg_srtt() * 500.0; // ms: RTT/2 (capacity-weighted)
+        let one_way = self.acc_s() * 1000.0; // ms: the physical accounting term (RTT/2 − d)
         for q in seqs {
             if self.given_up_seqs.contains(q) {
                 continue;
@@ -1006,10 +1631,306 @@ impl Simulation {
             }
             self.prev_lat_ms = lat;
             self.delivered_lat_ms.push(lat);
+            self.decoded_this_tick.push(*q);
+            #[cfg(test)]
+            self.decode_log.push((*q, self.tick));
             if let Some(slot) = self.lat_by_seq.get_mut(*q as usize) {
                 if slot.is_nan() {
                     *slot = lat;
                 }
+            }
+        }
+    }
+
+    /// Put a datagram on its path's forward leg (addendum 1 A2). Its loss
+    /// outcome is drawn here, at the send, in send order. The default leg
+    /// delivers at the send instant.
+    fn send_datagram(&mut self, kind: DgKind, seq: u64, pi: usize) -> bool {
+        let t = self.now_s();
+        #[cfg(test)]
+        {
+            if self.paths[pi].link_free > t {
+                self.free_after_now += 1;
+            }
+        }
+        let floor = matches!(kind, DgKind::Floor);
+        let p = &mut self.paths[pi];
+        let leg = link::leg_send(&mut p.link_free, t, p.link_sv, p.link_q, p.link_d);
+        let (lost, arrive_s) = match leg {
+            Some((depart, arrive)) => {
+                self.paths[pi].link_busy += self.paths[pi].link_sv;
+                #[cfg(test)]
+                {
+                    let p = &self.paths[pi];
+                    if p.link_free - t > p.link_q + p.link_sv {
+                        self.backlog_over += 1;
+                    }
+                }
+                let lost = self.wire_lost(pi, depart);
+                let p = &mut self.paths[pi];
+                if floor {
+                    p.floor_sent += 1;
+                    p.floor_lost += lost as u32;
+                } else {
+                    p.lost += lost as u32;
+                }
+                (lost, arrive)
+            }
+            None => {
+                // Dropped at the queue: no channel state, no loss draw; it
+                // rides the leg as a ghost to its would-be arrival.
+                let p = &mut self.paths[pi];
+                let in_outage = t >= p.outage_start_s && t < p.outage_start_s + p.outage_len_s;
+                if floor {
+                    p.floor_sent += 1;
+                    p.floor_dropped += 1;
+                } else {
+                    p.qdrop += 1;
+                    p.qdrop_in += in_outage as u32;
+                }
+                (true, link::would_arrive(p.link_free, t, p.link_sv, p.link_d))
+            }
+        };
+        #[cfg(test)]
+        let arrive_s = arrive_s + self.paths[pi].test_extra_s;
+        #[cfg(test)]
+        if matches!(kind, DgKind::Resend) {
+            let o = self.one_way_s();
+            let p = &self.paths[pi];
+            let o_p = p.srtt_belief_s() - p.srtt_secs / 2.0;
+            let arr = [arrive_s, f64::NAN][lost as usize];
+            self.resend_log.push((seq, pi, t, arr, o, self.h_seq[seq as usize], o_p));
+        }
+        let dg = Datagram { kind, seq, send_tick: self.tick, path: pi, floor: self.f_ann, lost, arrive_s };
+        self.paths[pi].leg.push_back(dg);
+        lost
+    }
+
+    /// Deliver every datagram whose arrival is due, across paths by arrival
+    /// time, ties by path index, then send order (each leg is FIFO). Due =
+    /// arrival at or before this tick's instant, with a 1 ns guard so that an
+    /// arrival on the tick grid (t + d summed in float seconds can land an ulp
+    /// after it) is processed on its own tick. The default leg's arrival is
+    /// the send instant itself.
+    fn deliver_due(&mut self) {
+        let now = self.now_s() + DUE_GUARD_S;
+        loop {
+            let mut best: Option<(usize, f64)> = None;
+            for (pi, p) in self.paths.iter().enumerate() {
+                if let Some(dg) = p.leg.front() {
+                    if dg.arrive_s <= now && best.is_none_or(|(_, a)| dg.arrive_s < a) {
+                        best = Some((pi, dg.arrive_s));
+                    }
+                }
+            }
+            let Some((pi, _)) = best else { break };
+            let dg = self.paths[pi].leg.pop_front().expect("front");
+            self.deliver(dg);
+        }
+    }
+
+    /// The receiver-side drain after the sender finishes (the offline
+    /// simulation's end of run: it stops once the receiver holds no hole, plus
+    /// a grace): while the consumer still holds decoded units, the forward leg
+    /// delivers, the acks of set-points 1 and 5 land, the floor repeat runs on
+    /// its sweep clock and the consumer steps. The sender sends no data and
+    /// decides nothing; its finish tick (`get_tick`) and every sender counter
+    /// stay as they were. With the default leg the consumer holds nothing at
+    /// the finish, so the drain does not run (inert). Bounded by the tick cap.
+    /// Units still held when it ends are classed `held`.
+    fn drain(&mut self) {
+        let finish_tick = self.tick;
+        while self.consumer.held() > 0 && self.tick <= 20_000 {
+            let now = self.now_s();
+            self.deliver_due();
+            for pi in 0..self.paths.len() {
+                while let Some(&(due, s)) = self.ack_due[pi].front() {
+                    if due > self.tick {
+                        break;
+                    }
+                    self.ack_due[pi].pop_front();
+                    self.acked_seq[s as usize] = true;
+                }
+                while let Some(&(due, s)) = self.floor_ack_due[pi].front() {
+                    if due > self.tick {
+                        break;
+                    }
+                    self.floor_ack_due[pi].pop_front();
+                    self.ack_seq(s as usize, 5);
+                }
+            }
+            while self.a_known < self.next_seq && self.acked_seq[self.a_known as usize] {
+                self.a_known += 1;
+            }
+            let sweep_ticks = ((2.0 * self.agg_srtt()).clamp(0.025, 0.1) / TICK_SECS).round() as u32;
+            if self.tick.saturating_sub(self.last_sweep_tick) >= sweep_ticks && self.f_ann > self.a_known {
+                self.last_sweep_tick = self.tick;
+                let free: Vec<u32> = self.paths.iter().map(|p| p.capacity).collect();
+                let dest = self.best_correction_path(&free);
+                self.floors += 1;
+                self.send_datagram(DgKind::Floor, 0, dest);
+                self.deliver_due();
+            }
+            let decoded = std::mem::take(&mut self.decoded_this_tick);
+            self.consumer.step(now, &decoded, self.f_rx);
+            for s in std::mem::take(&mut self.consumer.delivered_now) {
+                self.unit_dirty.push(self.seq_unit[s]);
+            }
+            self.tick += 1;
+            self.drain_ticks += 1;
+        }
+        // The class of every unit still held now reads `held`.
+        for s in 0..self.next_seq as usize {
+            if self.receiver_holds(s as u64) && self.consumer.delivered_at(s).is_nan() {
+                self.unit_dirty.push(self.seq_unit[s]);
+            }
+        }
+        self.tick = finish_tick;
+    }
+
+    /// Datagrams in flight on every leg.
+    fn in_flight(&self) -> usize {
+        self.paths.iter().map(|p| p.leg.len()).sum()
+    }
+
+    /// The receiver holds seq s (decoded, given-up seqs excepted).
+    fn receiver_holds(&self, s: u64) -> bool {
+        !self.lat_by_seq[s as usize].is_nan()
+    }
+
+    /// Every receiver-side effect of one datagram, at its arrival (addendum 1
+    /// A2), keyed by seq. Transport effects (the feedback entry, the arrival
+    /// counters, the header floor, an original's set-point-1 ack) always
+    /// happen; a copy for a seq the receiver already holds is a duplicate and
+    /// does no decode work, no slot release and no class change.
+    fn deliver(&mut self, dg: Datagram) {
+        let pi = dg.path;
+        let due = self.tick + self.paths[pi].reverse_ticks;
+        #[cfg(test)]
+        self.leg_log.push((dg.send_tick, self.tick, pi, match dg.kind {
+            DgKind::Source => 0, DgKind::Resend => 1, DgKind::Repair { .. } => 2, DgKind::Floor => 3,
+        }, dg.lost, dg.seq, dg.arrive_s));
+        let is_source = matches!(dg.kind, DgKind::Source);
+        if !matches!(dg.kind, DgKind::Floor) {
+            self.paths[pi].feedback_queue.push_back((due, dg.send_tick, !dg.lost, is_source));
+        }
+        if dg.lost {
+            return;
+        }
+        let seq = dg.seq;
+        {
+            let p = &mut self.paths[pi];
+            if !matches!(dg.kind, DgKind::Floor) {
+                let owd = dg.arrive_s - dg.send_tick as f64 * TICK_SECS + p.srtt_secs / 2.0 - p.link_d;
+                p.owd_ms.push(owd * 1000.0);
+            }
+        }
+        if matches!(dg.kind, DgKind::Source | DgKind::Resend) {
+            // Cross-path reordering (addendum 1 A4): a seq arriving below one
+            // that already arrived on another path.
+            let behind = self.paths.iter().enumerate()
+                .any(|(j, q)| j != pi && q.max_seq_arrived.is_some_and(|m| m > seq));
+            self.cross_reorder += behind as u32;
+            let p = &mut self.paths[pi];
+            p.max_seq_arrived = Some(p.max_seq_arrived.map_or(seq, |m| m.max(seq)));
+        }
+        match dg.kind {
+            DgKind::Floor => {
+                self.paths[pi].floor_arrived += 1;
+                self.receive_floor(dg.floor);
+            }
+            DgKind::Source => {
+                self.paths[pi].arrived += 1;
+                self.cum_arrived += 1;
+                self.carry_floor(dg.floor);
+                // Set-point 1: the ack lands one reverse leg after the arrival.
+                self.ack_due[pi].push_back((due, seq as u32));
+                if let Some(sym) = self.symbols.iter_mut().rev().find(|x| x.seq == seq) {
+                    sym.ack_at = due;
+                }
+                if self.receiver_holds(seq) {
+                    self.dup += 1;
+                    return;
+                }
+                let data = self.source_store[seq as usize].clone();
+                #[cfg(test)]
+                self.feed_log.push((seq, u16::MAX, 0, data.clone()));
+                let rec = self.decoder.feed_source(seq, &data);
+                // Cascade outputs may resolve OTHER lost symbols.
+                self.mark_recovered(&rec);
+                self.record_delivery(&rec);
+                self.cum_decoded += rec
+                    .iter()
+                    .filter(|q| !self.given_up_seqs.contains(q))
+                    .count() as u32;
+            }
+            DgKind::Resend => {
+                self.paths[pi].arrived += 1;
+                self.cum_arrived += 1;
+                self.carry_floor(dg.floor);
+                // The sender learns this arrival now, at the arrival tick,
+                // one reverse leg before its feedback could land (coordinator
+                // default, addendum 1 A2): the lead it takes.
+                let lead = due - self.tick;
+                // L2's outcome (addendum 1 A3): an admitted resend that
+                // arrives later than T after hand-over.
+                self.resends_arrived += 1;
+                let age_at_arrival = dg.arrive_s - self.h_seq[seq as usize] + self.acc_s();
+                self.l2_late += !knobs::within_lifetime(self.lifetime_s, age_at_arrival) as u32;
+                self.lead_n += 1;
+                self.lead_sum += lead as u64;
+                self.lead_max = self.lead_max.max(lead);
+                #[cfg(test)]
+                self.lead_log.push((seq, pi, lead));
+                if self.receiver_holds(seq) {
+                    self.dup += 1;
+                    return;
+                }
+                // The sender's bookkeeping below runs only for a hole still
+                // open at its arrival (always so when the copy arrives at its
+                // send); a hole the floor committed meanwhile is a late fill,
+                // resolved by `mark_recovered` alone.
+                let open = self.symbols.iter().position(|x| x.seq == seq && x.lost && !x.recovered);
+                let data = self.source_store[seq as usize].clone();
+                #[cfg(test)]
+                self.feed_log.push((seq, u16::MAX, 0, data.clone()));
+                let rec = self.decoder.feed_source(seq, &data);
+                // Cascade outputs may resolve OTHER lost symbols;
+                // pruned (given-up) seqs are discarded, not counted.
+                self.mark_recovered(&rec);
+                self.record_delivery(&rec);
+                self.cum_decoded += rec
+                    .iter()
+                    .filter(|q| !self.given_up_seqs.contains(q))
+                    .count() as u32;
+                if let Some(i) = open {
+                    // Recovery releases the lost original's store slot —
+                    // exactly once: mark_recovered above may already have
+                    // resolved this seq (the fed source is in the
+                    // decoder's output) and released it there.
+                    if !self.symbols[i].recovered {
+                        self.store_occupancy = self.store_occupancy.saturating_sub(1);
+                    }
+                    self.symbols[i].recovered = true;
+                    // NOTE (kept bit for bit): this decrements again after
+                    // mark_recovered already did for the same seq.
+                    self.lost_pending = self.lost_pending.saturating_sub(1);
+                    self.acked_seq[seq as usize] = true; // set-point 2
+                }
+            }
+            DgKind::Repair { start, count, index, data } => {
+                self.paths[pi].arrived += 1;
+                self.cum_arrived += 1;
+                self.carry_floor(dg.floor);
+                #[cfg(test)]
+                self.feed_log.push((start, count, index, data.clone()));
+                let recovered = self.decoder.feed_repair(start, count, index, &data);
+                self.mark_recovered(&recovered);
+                self.record_delivery(&recovered);
+                self.cum_decoded += recovered
+                    .iter()
+                    .filter(|q| !self.given_up_seqs.contains(q))
+                    .count() as u32;
             }
         }
     }
@@ -1024,7 +1945,16 @@ impl Simulation {
                     // (its SACK never came — the slot was held for exactly
                     // the recovery span; §6.3 semantics).
                     self.store_occupancy = self.store_occupancy.saturating_sub(1);
+                    self.acked_seq[*rseq as usize] = true; // set-point 3
                 }
+            }
+            // A committed hole decoded later: out of passed_undelivered here,
+            // into cum_decoded at the caller (the same decoder output).
+            let i = *rseq as usize;
+            if self.committed_seq.get(i).copied().unwrap_or(false) {
+                self.committed_seq[i] = false;
+                self.passed_undelivered -= 1;
+                self.ack_seq(i, 3);
             }
         }
     }
@@ -1062,10 +1992,70 @@ impl Simulation {
         fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
     ) -> Self {
         let n = eps.len().max(1).min(8);
+        // The three knobs at their inert values (plan §3.1): T = H = λ = ∞,
+        // 2 000 units, an empty outage window on every path.
+        let inf = f64::INFINITY;
+        Self::multipath_knobs(
+            eps, q, rtt_ms, capacity, w, hint, fixed_r, custom_delta, custom_rho,
+            inf, inf, inf, 2000, vec![inf; n], vec![0.0; n],
+        )
+        .expect("the inert knobs are in the domain")
+    }
+
+    /// The three knobs with the default forward leg (no bottleneck, no
+    /// propagation split) and no resend budget: `multipath_link` at
+    /// service 0, queue ∞, propagation 0 per path and limit ∞.
+    #[allow(clippy::too_many_arguments)]
+    pub fn multipath_knobs(
+        eps: Vec<f64>, q: Vec<f64>, rtt_ms: Vec<u32>, capacity: Vec<u32>,
+        w: u32, hint: String,
+        fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
+        lifetime_s: f64, hold_s: f64, source_rate: f64, num_source: u32,
+        outage_start_s: Vec<f64>, outage_len_s: Vec<f64>,
+    ) -> Result<Simulation, String> {
+        let n = eps.len().max(1).min(8);
+        let inf = f64::INFINITY;
+        Self::multipath_link(
+            eps, q, rtt_ms, capacity, w, hint, fixed_r, custom_delta, custom_rho,
+            lifetime_s, hold_s, source_rate, num_source, outage_start_s, outage_len_s,
+            vec![0.0; n], vec![inf; n], vec![0.0; n], inf,
+        )
+    }
+
+    /// The one constructor (three-knobs plan §3.1, addendum 1 A2). `lifetime_s`
+    /// = T ∈ (0, ∞], `hold_s` = H ∈ [0, ∞], `source_rate` = λ in units/s (∞ =
+    /// the object), `num_source` units, a per-path outage window [start,
+    /// start + len) in seconds; per path the forward leg's service time and
+    /// queue limit (s) and propagation delay (s, ≤ rtt/2); and the resend
+    /// budget per 5-tick window. `multipath_knobs`, `multipath` and `new`
+    /// delegate here with the inert values; at those values the run is main's
+    /// model bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn multipath_link(
+        eps: Vec<f64>, q: Vec<f64>, rtt_ms: Vec<u32>, capacity: Vec<u32>,
+        w: u32, hint: String,
+        fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
+        lifetime_s: f64, hold_s: f64, source_rate: f64, num_source: u32,
+        outage_start_s: Vec<f64>, outage_len_s: Vec<f64>,
+        service_s: Vec<f64>, queue_s: Vec<f64>, prop_s: Vec<f64>, resend_limit: f64,
+    ) -> Result<Simulation, String> {
+        knobs::validate_knobs(lifetime_s, hold_s)?;
+        if !(source_rate > 0.0) {
+            return Err(format!("source rate must be in (0, inf], got {source_rate}"));
+        }
+        if !(resend_limit >= 0.0) {
+            return Err(format!("resend limit must be in [0, inf], got {resend_limit}"));
+        }
+        let n = eps.len().max(1).min(8);
         assert!(
-            q.len() >= n && rtt_ms.len() >= n && capacity.len() >= n,
+            q.len() >= n && rtt_ms.len() >= n && capacity.len() >= n
+                && outage_start_s.len() >= n && outage_len_s.len() >= n
+                && service_s.len() >= n && queue_s.len() >= n && prop_s.len() >= n,
             "per-path parameter arrays must have equal length"
         );
+        for i in 0..n {
+            link::validate_link(service_s[i], queue_s[i], prop_s[i], rtt_ms[i] as f64 / 1000.0)?;
+        }
 
         // Hint -> δ price, then ONE construction path for every hint.
         //
@@ -1094,7 +2084,6 @@ impl Simulation {
         // ρ = 1).
         let rho = custom_rho.unwrap_or(1.0).clamp(0.9, 1.0);
 
-        let num_source = 2000u32;
         let mut paths = Vec::with_capacity(n);
         for i in 0..n {
             let (e, qq) = (eps[i], q[i]);
@@ -1119,6 +2108,26 @@ impl Simulation {
                 wire_idx: 0,
                 estimator: math::LossEstimator::new(),
                 feedback_queue: std::collections::VecDeque::new(),
+                leg: std::collections::VecDeque::new(),
+                reverse_ticks: reverse_ticks(rtt.max(2), prop_s[i]),
+                link_sv: service_s[i],
+                link_q: queue_s[i],
+                link_d: prop_s[i],
+                link_free: 0.0,
+                qdrop: 0,
+                qdrop_in: 0,
+                link_busy: 0.0,
+                floor_sent: 0,
+                floor_lost: 0,
+                floor_dropped: 0,
+                floor_arrived: 0,
+                owd_ms: Vec::new(),
+                max_seq_arrived: None,
+                srtt_meas: rtt.max(2) as f64,
+                rttvar_meas: rtt.max(2) as f64 / 8.0,
+                rtt_samples: 0,
+                #[cfg(test)]
+                test_extra_s: 0.0,
                 last_flush_tick: 0,
                 pending_sent: 0,
                 pending_ok: 0,
@@ -1129,6 +2138,8 @@ impl Simulation {
                 arq: 0,
                 lost: 0,
                 stripe_credit: 0.0,
+                outage_start_s: outage_start_s[i],
+                outage_len_s: outage_len_s[i],
             });
         }
         let tot_cap: f64 = paths.iter().map(|p| p.capacity as f64).sum();
@@ -1140,7 +2151,7 @@ impl Simulation {
             })
             .sum();
 
-        Self {
+        Ok(Self {
             paths,
             sigma2_true,
             tail_target, bulkness, fixed_r,
@@ -1195,7 +2206,75 @@ impl Simulation {
             phantom_held: 0,
             phantom_avoided: 0,
             rng_state: 0xdeadbeef12345678,
-        }
+            lifetime_s,
+            hold_s,
+            source_rate,
+            u_next: 0,
+            intake_expired: 0,
+            intake_expired_deq: 0,
+            h_seq: Vec::new(),
+            last_send_seq: Vec::new(),
+            path_seq: Vec::new(),
+            resent_seq: Vec::new(),
+            acked_seq: Vec::new(),
+            a_known: 0,
+            f_ann: 0,
+            f_rx: 0,
+            committed_seq: Vec::new(),
+            passed_seq: Vec::new(),
+            passed_undelivered: 0,
+            slot_owed: Vec::new(),
+            ack_due: vec![std::collections::VecDeque::new(); n],
+            floor_ack_due: vec![std::collections::VecDeque::new(); n],
+            last_sweep_tick: 0,
+            commit_viol: 0,
+            skip_below_floor: 0,
+            l1_viol: 0,
+            floors: 0,
+            floor_carried: 0,
+            span_cut_pending: false,
+            span_cut_repairs: 0,
+            consumer: consumer::Consumer::new(hold_s),
+            decoded_this_tick: Vec::new(),
+            seq_unit: Vec::new(),
+            unit_seq: vec![NO_SEQ; num_source as usize],
+            unit_emitted: vec![CLASS_PENDING; num_source as usize],
+            unit_dirty: Vec::new(),
+            dup: 0,
+            lead_n: 0,
+            lead_sum: 0,
+            lead_max: 0,
+            cross_reorder: 0,
+            drain_ticks: 0,
+            queue_pending: Vec::new(),
+            #[cfg(test)]
+            backlog_over: 0,
+            resends_arrived: 0,
+            l2_late: 0,
+            #[cfg(test)]
+            resend_log: Vec::new(),
+            resend_limit,
+            budget_used: Vec::new(),
+            braked_seq: Vec::new(),
+            braked_units: 0,
+            braked_attempts: 0,
+            #[cfg(test)]
+            leg_log: Vec::new(),
+            #[cfg(test)]
+            lead_log: Vec::new(),
+            #[cfg(test)]
+            feed_log: Vec::new(),
+            #[cfg(test)]
+            free_after_now: 0,
+            #[cfg(test)]
+            decode_log: Vec::new(),
+            #[cfg(test)]
+            commit_log: Vec::new(),
+            #[cfg(test)]
+            slot_release_log: Vec::new(),
+            #[cfg(test)]
+            payload_log: Vec::new(),
+        })
     }
 
     pub fn step(&mut self) {
@@ -1211,17 +2290,24 @@ impl Simulation {
         // PATH (each path has its own ACK delay and its own estimator). Fed
         // with the true per-symbol pattern (§2.6); flushed once per
         // that path's RTT — each estimator honestly lags its own path.
+        // Arrivals due by now (addendum 1 A2), before the feedback pop.
+        self.deliver_due();
         let mut sack_released = 0u32;
         for pi in 0..self.paths.len() {
             let tick = self.tick;
             let p = &mut self.paths[pi];
-            while let Some(&(t, ok, src_slot)) = p.feedback_queue.front() {
-                if tick.saturating_sub(t) < p.rtt_ticks {
+            while let Some(&(due, sent, ok, src_slot)) = p.feedback_queue.front() {
+                if tick < due {
                     break;
                 }
                 p.feedback_queue.pop_front();
                 p.estimator.record_symbol(ok);
                 p.pending_sent += 1;
+                if ok && src_slot {
+                    // An arrived original (a source symbol is never resent
+                    // while its original arrived: Karn holds by construction).
+                    p.rtt_sample((tick - sent) as f64);
+                }
                 if ok {
                     p.pending_ok += 1;
                     // SACK-clocked store release (§6.3, wall #9): the
@@ -1232,7 +2318,7 @@ impl Simulation {
                     }
                 }
             }
-            if tick.saturating_sub(p.last_flush_tick) >= p.rtt_ticks && p.pending_sent > 0 {
+            if tick.saturating_sub(p.last_flush_tick) >= p.retry_delay() && p.pending_sent > 0 {
                 p.estimator.record_counts(p.pending_sent, p.pending_ok, tick as u64);
                 p.pending_sent = 0;
                 p.pending_ok = 0;
@@ -1262,18 +2348,44 @@ impl Simulation {
         // g_i (smooth WRR). With N = 1 every choice is path 0 and the loop
         // is exactly the single-path loop.
         let mut free: Vec<u32> = self.paths.iter().map(|p| p.capacity).collect();
+        // Floor repeat (plan §7 P3; toy `floor_repeat`): on the sweep clock
+        // clamp(2·srtt, 25, 100 ms), while F_ann > A_known, one datagram
+        // carrying F_ann takes one slot and one loss draw. Never at T = ∞
+        // (F_ann = A_known there).
+        let sweep_ticks = ((2.0 * self.agg_srtt()).clamp(0.025, 0.1) / TICK_SECS).round() as u32;
+        if self.tick.saturating_sub(self.last_sweep_tick) >= sweep_ticks {
+            self.last_sweep_tick = self.tick;
+            self.update_floor();
+            if self.f_ann > self.a_known {
+                let dest = self.best_correction_path(&free);
+                free[dest] -= 1;
+                self.floors += 1;
+                self.send_datagram(DgKind::Floor, 0, dest);
+                self.deliver_due();
+            }
+        }
         let total_slots: u32 = free.iter().sum();
         for _ in 0..total_slots {
+            // F_ann is current at every slot: recomputed after every send
+            // (and once per tick below).
+            self.update_floor();
             // (1) P_lost-gated retransmit across all candidates. Retry timer
             // and loss belief come from the path the symbol was LAST sent on
             // (that is where its feedback lives).
             let mut did_retx = false;
             let mut cand: Option<usize> = None;
+            // Three knobs: no candidate below the floor (the commitment), and
+            // L2 — a resend only if it can arrive before T (§2.2, ô of §17.1).
+            let (now_s, o_hat) = (self.now_s(), self.one_way_s());
             for (i, sym) in self.symbols.iter().enumerate() {
                 if sym.lost
                     && !sym.recovered
                     && (self.tick as i64 - sym.last_retx_tick)
-                        >= self.paths[sym.path].rtt_ticks as i64
+                        >= self.paths[sym.path].retry_delay() as i64
+                    && sym.seq >= self.f_ann as u64
+                    && knobs::resend_admissible(
+                        self.lifetime_s, now_s - self.h_seq[sym.seq as usize], o_hat,
+                    )
                 {
                     cand = Some(i);
                     break;
@@ -1285,10 +2397,10 @@ impl Simulation {
                 let pl = math::p_lost(
                     age_ticks as f64 * TICK_SECS,
                     self.paths[sp].estimator.loss_rate().clamp(1e-4, 0.99),
-                    self.paths[sp].srtt_secs,
+                    self.paths[sp].srtt_belief_s(),
                     self.paths[sp].rttvar_secs,
                 );
-                if self.rng() < pl {
+                if self.rng() < pl && self.floor_recheck(i) && self.budget_admits(i) {
                     // Cross-path recovery: resend the EXACT stored bytes on
                     // the best currently-available path, not necessarily the
                     // one that lost them.
@@ -1296,7 +2408,16 @@ impl Simulation {
                     let seq = self.symbols[i].seq;
                     self.symbols[i].last_retx_tick = self.tick as i64;
                     self.symbols[i].path = dest;
-                    let lost = self.wire_lost(dest);
+                    self.last_send_seq[seq as usize] = self.tick;
+                    self.path_seq[seq as usize] = dest;
+                    self.resent_seq[seq as usize] = true;
+                    if seq < self.f_ann as u64 {
+                        self.commit_viol += 1; // a copy below the floor (must stay 0)
+                    }
+                    self.check_l1(seq as usize, 1);
+                    // A retransmit holds no NEW store slot: the lost
+                    // original's slot is still held (until recovery).
+                    let lost = self.send_datagram(DgKind::Resend, seq, dest);
                     free[dest] -= 1;
                     self.total_arq += 1;
                     arq_n += 1;
@@ -1305,39 +2426,11 @@ impl Simulation {
                         let p = &mut self.paths[dest];
                         p.sent += 1;
                         p.arq += 1;
-                        // A retransmit holds no NEW store slot: the lost
-                        // original's slot is still held (until recovery).
-                        p.feedback_queue.push_back((self.tick, !lost, false));
-                        if lost {
-                            p.lost += 1;
-                        } else {
-                            p.arrived += 1;
-                        }
                     }
                     if lost {
                         lost_n += 1;
-                    } else {
-                        self.cum_arrived += 1;
-                        let data = self.source_store[seq as usize].clone();
-                        let rec = self.decoder.feed_source(seq, &data);
-                        // Cascade outputs may resolve OTHER lost symbols;
-                        // pruned (given-up) seqs are discarded, not counted.
-                        self.mark_recovered(&rec);
-                        self.record_delivery(&rec);
-                        self.cum_decoded += rec
-                            .iter()
-                            .filter(|q| !self.given_up_seqs.contains(q))
-                            .count() as u32;
-                        // Recovery releases the lost original's store slot —
-                        // exactly once: mark_recovered above may already have
-                        // resolved this seq (the fed source is in the
-                        // decoder's output) and released it there.
-                        if !self.symbols[i].recovered {
-                            self.store_occupancy = self.store_occupancy.saturating_sub(1);
-                        }
-                        self.symbols[i].recovered = true;
-                        self.lost_pending = self.lost_pending.saturating_sub(1);
                     }
+                    self.deliver_due();
                     did_retx = true;
                 }
             }
@@ -1348,6 +2441,11 @@ impl Simulation {
             // (2) Repair when the taper debt says one is due — on the best
             // available path (repairs are path-agnostic: ANY path's arrival
             // advances the shared window decode).
+            // The L1 age edge (P3), before the arm's window test so an emptied
+            // window cannot take the repair arm.
+            if self.apply_age_edge() {
+                self.span_cut_pending = true;
+            }
             if self.debt >= 1.0 && self.encoder.window_size() > 0 {
                 let dest = self.best_correction_path(&free);
                 self.debt -= 1.0;
@@ -1357,7 +2455,7 @@ impl Simulation {
                 if !ok {
                     lost_n += 1;
                 }
-            } else if !self.source_done {
+            } else if !self.source_done && self.intake_head_ready() {
                 // Path-scaled outstanding pool (wall #7, §6.1): a new
                 // source symbol needs a retention-store slot; the pool is
                 // STORE_PER_PATH × n_paths. When cap·RTT outgrows it the
@@ -1372,24 +2470,29 @@ impl Simulation {
                 let seq = self.encoder.add_source(&data);
                 self.source_store.push(data.clone());
                 self.send_tick.push(self.tick);
+                self.h_seq.push(self.handover_s(self.u_next));
+                self.last_send_seq.push(self.tick);
+                self.path_seq.push(dest);
+                self.resent_seq.push(false);
+                self.acked_seq.push(false);
+                self.committed_seq.push(false);
+                self.passed_seq.push(false);
+                self.slot_owed.push(false);
+                self.seq_unit.push(self.u_next);
+                self.unit_seq[self.u_next as usize] = seq as u32;
+                self.check_l1(seq as usize, 0);
                 // Slide the encoder window (paper W).
                 if self.encoder.window_size() > self.w as usize {
                     let oldest = self.encoder.next_seq().saturating_sub(self.w as u64);
                     self.encoder.advance(oldest);
                 }
-                let lost = self.wire_lost(dest);
+                let lost = self.send_datagram(DgKind::Source, seq, dest);
                 free[dest] -= 1;
                 self.store_occupancy += 1; // slot taken at send (§6.3)
                 {
                     let p = &mut self.paths[dest];
                     p.sent += 1;
                     p.src += 1;
-                    p.feedback_queue.push_back((self.tick, !lost, true));
-                    if lost {
-                        p.lost += 1;
-                    } else {
-                        p.arrived += 1;
-                    }
                 }
                 self.symbols.push(Symbol {
                     tick: self.tick,
@@ -1404,6 +2507,7 @@ impl Simulation {
                     // (immediate P_lost-gated firing would produce phantom
                     // retransmits).
                     last_retx_tick: self.tick as i64,
+                    ack_at: u32::MAX,
                     path: dest,
                 });
                 self.total_src += 1;
@@ -1422,19 +2526,11 @@ impl Simulation {
                     lost_n += 1;
                     self.total_lost += 1;
                     self.lost_pending += 1;
-                } else {
-                    self.cum_arrived += 1;
-                    let rec = self.decoder.feed_source(seq, &data);
-                    // Cascade outputs may resolve OTHER lost symbols.
-                    self.mark_recovered(&rec);
-                    self.record_delivery(&rec);
-                    self.cum_decoded += rec
-                        .iter()
-                        .filter(|q| !self.given_up_seqs.contains(q))
-                        .count() as u32;
                 }
+                self.deliver_due();
                 self.next_seq += 1;
-                if self.next_seq >= self.num_source {
+                self.u_next += 1;
+                if self.u_next >= self.num_source {
                     self.source_done = true;
                     // One-shot completion-tail burst (the limiting case of
                     // §4.6's ramp): kept only for the test-only ablation arms
@@ -1485,6 +2581,8 @@ impl Simulation {
                         cap,
                     ));
                     self.given_up_seqs.insert(sym.seq);
+                    self.unit_dirty.push(self.seq_unit[sym.seq as usize]);
+                    self.acked_seq[sym.seq as usize] = true; // set-point 4
                     self.lost_pending = self.lost_pending.saturating_sub(1);
                     // Give-up resolves the slot too (§6.3 semantics).
                     self.store_occupancy = self.store_occupancy.saturating_sub(1);
@@ -1492,29 +2590,58 @@ impl Simulation {
             }
         }
 
-        // ACK arrived-but-unmarked symbols after one RTT of THEIR path
-        // (SACK view; per-path ack delay).
+        // ACK arrived-but-unmarked symbols when their arrival's ack lands
+        // (SACK view; arrival + reverse leg, addendum 1 A2).
         let tick = self.tick;
-        {
-            let paths = &self.paths;
-            for sym in &mut self.symbols {
-                if !sym.lost
-                    && !sym.recovered
-                    && tick.saturating_sub(sym.tick) >= paths[sym.path].rtt_ticks
-                {
-                    sym.recovered = true;
-                }
+        for sym in &mut self.symbols {
+            if !sym.lost && !sym.recovered && tick >= sym.ack_at {
+                sym.recovered = true;
             }
+        }
+
+        // Three knobs, set-points 1 and 5 (per seq: `symbols` is pruned
+        // before most acks land), then the once-per-tick floor.
+        for pi in 0..self.paths.len() {
+            while let Some(&(due, s)) = self.ack_due[pi].front() {
+                if due > tick {
+                    break;
+                }
+                self.ack_due[pi].pop_front();
+                self.acked_seq[s as usize] = true;
+            }
+            while let Some(&(due, s)) = self.floor_ack_due[pi].front() {
+                if due > tick {
+                    break;
+                }
+                self.floor_ack_due[pi].pop_front();
+                self.ack_seq(s as usize, 5);
+            }
+        }
+        self.update_floor();
+        // The consumer stage (L6), output only: this tick's decodes, then
+        // the floor the receiver holds.
+        let decoded = std::mem::take(&mut self.decoded_this_tick);
+        self.consumer.step(self.now_s(), &decoded, self.f_rx);
+        for s in std::mem::take(&mut self.consumer.delivered_now) {
+            self.unit_dirty.push(self.seq_unit[s]);
         }
 
         // Finish conditions (rho = 100%: retransmit until everything is in;
         // rho < 100%: given-up symbols count as resolved, not delivered).
-        if self.source_done && self.cum_decoded + self.given_up >= self.num_source {
+        // Every unit is in exactly one class: decoded, given up, expired at
+        // the intake, or passed by the floor undelivered (0 at T = ∞).
+        let resolved = self.cum_decoded + self.given_up + self.intake_expired
+            + self.intake_expired_deq + self.passed_undelivered;
+        // Nothing may still be in flight (addendum 1 A2; always so with the
+        // default leg, which delivers at the send).
+        let drained = self.in_flight() == 0;
+        if self.source_done && resolved >= self.num_source && drained {
             self.finished = true;
         }
         if self.source_done
             && self.lost_pending == 0
             && !self.symbols.iter().any(|s| s.lost && !s.recovered)
+            && drained
         {
             self.finished = true;
         }
@@ -1536,7 +2663,7 @@ impl Simulation {
             let mut crossings = 0u32;
             for sym in &self.symbols {
                 if sym.lost && !sym.recovered {
-                    let own = self.paths[sym.path].rtt_ticks;
+                    let own = self.paths[sym.path].retry_delay();
                     if own > global_clock {
                         let base = if sym.last_retx_tick >= 0 {
                             sym.last_retx_tick as u32
@@ -1565,7 +2692,8 @@ impl Simulation {
         // SACK-clocked gauge (§6.3) is compared with.
         while (self.frontier as usize) < self.lat_by_seq.len()
             && (!self.lat_by_seq[self.frontier as usize].is_nan()
-                || self.given_up_seqs.contains(&(self.frontier as u64)))
+                || self.given_up_seqs.contains(&(self.frontier as u64))
+                || self.committed_seq.get(self.frontier as usize).copied().unwrap_or(false))
         {
             self.frontier += 1;
         }
@@ -1589,7 +2717,14 @@ impl Simulation {
         self.last_fec = fec_n;
         self.last_arq = arq_n;
         self.last_lost = lost_n;
+        let now = self.now_s();
+        for p in &self.paths {
+            self.queue_pending.push((p.link_free - now).max(0.0) * 1000.0);
+        }
         self.tick += 1;
+        if self.finished {
+            self.drain();
+        }
     }
 
     // --- Accessors (superset of the old API; UI-compatible names) ---
@@ -1611,6 +2746,17 @@ impl Simulation {
     }
     pub fn get_path_rtt_ms(&self, i: usize) -> u32 {
         self.paths.get(i).map_or(0, |p| p.rtt_ticks)
+    }
+    /// The RTT path i's sender believes (addendum 1 A3): measured srtt and
+    /// rttvar, ms; and the number of samples taken.
+    pub fn get_path_srtt_meas_ms(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(f64::NAN, |p| p.srtt_meas * TICK_SECS * 1000.0)
+    }
+    pub fn get_path_rttvar_meas_ms(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(f64::NAN, |p| p.rttvar_meas * TICK_SECS * 1000.0)
+    }
+    pub fn get_path_rtt_samples(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.rtt_samples)
     }
     /// Estimated per-path loss eps_hat_i (the striping input).
     pub fn get_path_eps_hat(&self, i: usize) -> f64 {
@@ -1820,6 +2966,242 @@ impl Simulation {
     }
     /// Configured reliability target rho.
     pub fn get_rho(&self) -> f64 { self.rho }
+    // --- Three knobs (proposal; plan §4.3). Readouts only, none fed back. ---
+    /// The declared lifetime T, seconds (routing witness for the page gate).
+    pub fn get_lifetime_s(&self) -> f64 { self.lifetime_s }
+    /// The declared order hold H, seconds.
+    pub fn get_hold_s(&self) -> f64 { self.hold_s }
+    /// The application hand-over rate λ, units/s.
+    pub fn get_source_rate(&self) -> f64 { self.source_rate }
+    /// Units dropped at the intake by L1 (age ≥ T).
+    pub fn get_intake_expired(&self) -> u32 { self.intake_expired }
+    /// Units dropped at the dequeue (§13.2: age + R ≥ T, a younger unit waits).
+    pub fn get_intake_expired_deq(&self) -> u32 { self.intake_expired_deq }
+    /// Units that have left the intake (sent or expired).
+    pub fn get_units_out(&self) -> u32 { self.u_next }
+    /// The floor F_ann, the sender's ack frontier A_known, and the floor the
+    /// receiver holds.
+    pub fn get_f_ann(&self) -> u32 { self.f_ann }
+    pub fn get_a_known(&self) -> u32 { self.a_known }
+    pub fn get_f_rx(&self) -> u32 { self.f_rx }
+    /// Lost units passed by the floor and never decoded.
+    pub fn get_passed_undelivered(&self) -> u32 { self.passed_undelivered }
+    /// Copies staged below the floor and payload datagrams with age ≥ T:
+    /// both must read 0 (the absolute tests read the same counters).
+    pub fn get_commit_viol(&self) -> u32 { self.commit_viol }
+    pub fn get_l1_viol(&self) -> u32 { self.l1_viol }
+    /// Candidates the re-check before a copy skipped (§17.1).
+    pub fn get_skip_below_floor(&self) -> u32 { self.skip_below_floor }
+    /// Floor-repeat datagrams, and arrivals that raised the receiver's floor.
+    pub fn get_floors(&self) -> u32 { self.floors }
+    pub fn get_floor_carried(&self) -> u32 { self.floor_carried }
+    /// Bind gauge of the L1 age edge: the fraction of repairs whose window
+    /// it cut (§2.4 of the derivation).
+    pub fn get_span_cut_by_t(&self) -> f64 {
+        self.span_cut_repairs as f64 / self.total_fec.max(1) as f64
+    }
+    /// Delivered units over all units (intake expiries in the denominator):
+    /// "delivered at all", the reported ρ.
+    pub fn get_share_any(&self) -> f64 {
+        let n = (0..self.seq_unit.len())
+            .filter(|&s| !self.consumer.delivered_at(s).is_nan())
+            .count();
+        n as f64 / self.num_source as f64
+    }
+    /// Units delivered within T of hand-over (L3), over all units.
+    pub fn get_share_t(&self) -> f64 {
+        self.share_within(self.lifetime_s)
+    }
+    /// The same at the reference deadline τ = 0.4 s (§13.6; Q-V3).
+    pub fn get_share_by_ref(&self) -> f64 {
+        self.share_within(REF_DEADLINE_S)
+    }
+    /// Delay from hand-over at the consumer (s), over all units: an
+    /// undelivered unit's delay is ∞, so a quantile past the delivered
+    /// share reads ∞.
+    pub fn get_delay_quantile(&self, p: f64) -> f64 {
+        consumer::quantile(&self.unit_delays(), p)
+    }
+    /// Units delivered after a higher seq was delivered (the toy's `ooo_loss`).
+    pub fn get_ooo(&self) -> u32 { self.consumer.ooo }
+    /// Out-of-order deliveries over delivered units (0 when none delivered).
+    pub fn get_ooo_share(&self) -> f64 {
+        let delivered = (0..self.seq_unit.len())
+            .filter(|&s| !self.consumer.delivered_at(s).is_nan())
+            .count();
+        self.consumer.ooo as f64 / delivered.max(1) as f64
+    }
+    /// Per-unit out-of-order marker for drawing (the toy's definition: the
+    /// unit reached the consumer after a higher-numbered one), indexed by
+    /// unit; units with no seq (intake expiries) read false.
+    pub fn get_ooo_units(&self) -> Vec<u8> {
+        let mut v = vec![0u8; self.num_source as usize];
+        for (s, &u) in self.seq_unit.iter().enumerate() {
+            v[u as usize] = self.consumer.out_of_order(s) as u8;
+        }
+        v
+    }
+    /// Per-unit consumer delivery time minus hand-over plus ô (s), ∞ when
+    /// not delivered: the drawing's companion to `get_ooo_units`.
+    pub fn get_unit_delays(&self) -> Vec<f64> { self.unit_delays() }
+    /// Per-unit delivered marker (1 = the consumer delivered it), so the
+    /// page classifies units without testing for ∞.
+    pub fn get_delivered_units(&self) -> Vec<u8> {
+        let mut v = vec![0u8; self.num_source as usize];
+        for (s, &u) in self.seq_unit.iter().enumerate() {
+            v[u as usize] = (!self.consumer.delivered_at(s).is_nan()) as u8;
+        }
+        v
+    }
+    /// The class of every unit (CLASS_* codes), the full array for tests.
+    pub fn get_unit_classes(&self) -> Vec<u8> {
+        (0..self.num_source as usize).map(|u| self.unit_class(u).0).collect()
+    }
+    /// Units per class, indexed by the CLASS_* code.
+    pub fn get_class_counts(&self) -> Vec<u32> {
+        let mut n = vec![0u32; N_CLASSES];
+        for u in 0..self.num_source as usize {
+            n[self.unit_class(u).0 as usize] += 1;
+        }
+        n
+    }
+    /// Units both out of order and late: classed out of order (A1's
+    /// precedence), counted here so nothing is hidden.
+    pub fn get_ooo_late(&self) -> u32 {
+        (0..self.num_source as usize)
+            .filter(|&u| {
+                let (c, d) = self.unit_class(u);
+                c == CLASS_OUT_OF_ORDER && !knobs::within_lifetime(self.lifetime_s, d)
+            })
+            .count() as u32
+    }
+    /// Delivered units with delay from hand-over > T (out of order or not),
+    /// over delivered units (0 when none delivered).
+    pub fn get_late_share(&self) -> f64 {
+        let (mut late, mut delivered) = (0u32, 0u32);
+        for u in 0..self.num_source as usize {
+            let (c, d) = self.unit_class(u);
+            if c == CLASS_ON_TIME || c == CLASS_LATE || c == CLASS_OUT_OF_ORDER {
+                delivered += 1;
+                late += !knobs::within_lifetime(self.lifetime_s, d) as u32;
+            }
+        }
+        late as f64 / delivered.max(1) as f64
+    }
+    /// Holes the consumer released and that were filled later (delivered out
+    /// of order at once, O3 = yes).
+    pub fn get_late_fills(&self) -> u32 { self.consumer.late_fills }
+    /// Copies that reached a receiver already holding their seq (addendum 1 A2).
+    pub fn get_dup(&self) -> u32 { self.dup }
+    /// The forward leg of path i (addendum 1 A2; routing witnesses): service
+    /// time, queue limit and propagation delay, seconds.
+    pub fn get_link_service_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_sv) }
+    pub fn get_link_queue_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_q) }
+    pub fn get_link_prop_s(&self, i: usize) -> f64 { self.paths.get(i).map_or(f64::NAN, |p| p.link_d) }
+    /// Data datagrams path i's queue dropped, those sent inside the outage
+    /// window and outside it (addendum 1 A4).
+    pub fn get_path_qdrop(&self, i: usize) -> u32 { self.paths.get(i).map_or(0, |p| p.qdrop) }
+    pub fn get_path_qdrop_in(&self, i: usize) -> u32 { self.paths.get(i).map_or(0, |p| p.qdrop_in) }
+    pub fn get_path_qdrop_out(&self, i: usize) -> u32 { self.paths.get(i).map_or(0, |p| p.qdrop - p.qdrop_in) }
+    /// Path i's one-way delay of arrived data datagrams (arrival − send +
+    /// rtt/2 − d, ms): the last value and a quantile (NaN before any).
+    pub fn get_path_owd_last_ms(&self, i: usize) -> f64 {
+        self.paths.get(i).and_then(|p| p.owd_ms.last().copied()).unwrap_or(f64::NAN)
+    }
+    pub fn get_path_owd_quantile_ms(&self, i: usize, q: f64) -> f64 {
+        self.paths.get(i).map_or(f64::NAN, |p| consumer::quantile(&p.owd_ms, q))
+    }
+    /// Path i's link use: the server's busy time over the elapsed time.
+    pub fn get_path_link_use(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(0.0, |p| p.link_busy / (self.tick.max(1) as f64 * TICK_SECS))
+    }
+    /// Arrivals below a seq that already arrived on another path.
+    pub fn get_cross_path_reorder(&self) -> u32 { self.cross_reorder }
+    /// Ticks the receiver-side drain ran after the sender finished (0 when
+    /// the consumer held nothing at the finish), and units the consumer still
+    /// holds (the `held` class at the end).
+    pub fn get_drain_ticks(&self) -> u32 { self.drain_ticks }
+    pub fn get_consumer_held(&self) -> u32 { self.consumer.held() as u32 }
+    /// Each path's backlog (ms) at the end of every tick since the last call,
+    /// tick-major (`get_num_paths` values per tick): the page appends them.
+    pub fn take_queue_samples(&mut self) -> Vec<f64> { std::mem::take(&mut self.queue_pending) }
+    /// Datagrams in flight on every forward leg now.
+    pub fn get_in_flight(&self) -> u32 { self.in_flight() as u32 }
+    /// The resend budget per 5 ms window (∞ = unlimited).
+    pub fn get_resend_limit(&self) -> f64 { self.resend_limit }
+    /// Resends per 5 ms window, from tick 0 (addendum 1 A5; the page's bars).
+    pub fn get_budget_used(&self) -> Vec<u32> { self.budget_used.clone() }
+    /// Distinct seqs the budget held back at least once (the headline), and
+    /// the refusals (every slot that picked a held-back seq again).
+    pub fn get_resend_braked_units(&self) -> u32 { self.braked_units }
+    pub fn get_resend_braked_attempts(&self) -> u32 { self.braked_attempts }
+    /// The knowledge lead (addendum 1 A2 gauge): the reverse-leg delay the
+    /// sender skips by learning a resend's arrival at the arrival tick, mean
+    /// and maximum over resends, ms (0 before any resend arrived).
+    pub fn get_knowledge_lead_mean_ms(&self) -> f64 {
+        self.lead_sum as f64 / self.lead_n.max(1) as f64 * TICK_SECS * 1000.0
+    }
+    pub fn get_knowledge_lead_max_ms(&self) -> f64 { self.lead_max as f64 * TICK_SECS * 1000.0 }
+    /// ô (s), the one-way term L2 and `protected` read, and the delay
+    /// accounting's physical term (s) every delay readout adds (addendum 1 A3).
+    pub fn get_o_hat_s(&self) -> f64 { self.one_way_s() }
+    /// The ack timeout R the model runs (s), and R with the measured rttvar
+    /// (addendum 1 A3's form, held; see `ack_timeout_s`).
+    pub fn get_ack_timeout_s(&self) -> f64 { self.ack_timeout_s() }
+    pub fn get_ack_timeout_meas_s(&self) -> f64 { self.ack_timeout_meas_s() }
+    pub fn get_acc_s(&self) -> f64 { self.acc_s() }
+    /// L2's outcome: the share of arrived resends that arrived later than T
+    /// after hand-over (0 before any arrived).
+    pub fn get_l2_late_share(&self) -> f64 {
+        self.l2_late as f64 / self.resends_arrived.max(1) as f64
+    }
+    /// The units whose class changed since the last call, as flat quadruples
+    /// `[unit, hand-over s, delay s (∞ when not delivered), class]`. A unit
+    /// appears when it is delivered, expires at the intake, or is passed or
+    /// given up; an undelivered unit filled later appears once more. The page
+    /// appends these and derives nothing.
+    pub fn take_unit_events(&mut self) -> Vec<f64> {
+        let dirty = std::mem::take(&mut self.unit_dirty);
+        let mut out = Vec::new();
+        for u in dirty {
+            let u = u as usize;
+            let (c, d) = self.unit_class(u);
+            if c != self.unit_emitted[u] {
+                self.unit_emitted[u] = c;
+                out.extend([u as f64, self.handover_s(u as u32), d, c as f64]);
+            }
+        }
+        out
+    }
+    /// L6's bind gauge: holes released by the hold term and by the floor term.
+    pub fn get_rel_by_hold(&self) -> u32 { self.consumer.rel_by_hold }
+    pub fn get_rel_by_floor(&self) -> u32 { self.consumer.rel_by_floor }
+    pub fn get_released_holes(&self) -> u32 { self.consumer.released_holes() }
+    /// Recovery time after the outage (§17.4 windows over hand-over time,
+    /// on time = within τ), seconds after the outage end; NaN = not within
+    /// the run (also when the run is too short to read).
+    pub fn get_recovery_time(&self) -> f64 {
+        let delays = self.unit_delays();
+        let h: Vec<f64> = (0..self.num_source).map(|u| self.handover_s(u)).collect();
+        let on: Vec<bool> =
+            delays.iter().map(|&d| knobs::within_lifetime(REF_DEADLINE_S, d)).collect();
+        let p = &self.paths[0];
+        consumer::recovery_time(&h, &on, p.outage_start_s, p.outage_start_s + p.outage_len_s)
+    }
+    /// The longest consumer stall that overlaps the outage, minus the
+    /// outage length (§13.5), seconds; NaN when no stall overlaps it.
+    pub fn get_strict_stall_beyond_outage(&self) -> f64 {
+        let p = &self.paths[0];
+        let (os, oe) = (p.outage_start_s, p.outage_start_s + p.outage_len_s);
+        self.consumer
+            .stall_episodes(self.now_s())
+            .iter()
+            .filter(|(t0, len)| *t0 < oe && t0 + len > os)
+            .map(|(_, len)| len - p.outage_len_s)
+            .fold(f64::NAN, f64::max)
+    }
+    /// The law revision the model implements.
+    pub fn get_knob_law_revision(&self) -> String { knobs::KNOB_LAW_REVISION.to_string() }
     /// The residual R after in-window FEC at the live operating point, over
     /// the sim's own window W (`shed_budget_residual`; provisional until the
     /// sliding per-loss P_fec lands, W22).
@@ -1897,6 +3279,9 @@ impl Simulation {
 
 #[cfg(test)]
 mod warm_scan;
+
+#[cfg(test)]
+mod knob_sim_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2314,6 +3699,34 @@ mod tests {
         run_to_end(&mut br);
         assert_eq!(br.get_cum_decoded() + br.get_given_up(), br.get_num_source());
         assert!(br.get_reliability() >= 0.90);
+
+        // Three knobs (plan §5.4 item 7): at the three δ presets the knobs
+        // constructor at T = H = λ = ∞ is the dial's point exactly ...
+        for d in [0.005, 0.5, 50.0] {
+            let mut a = Simulation::new(0.05, 0.5, 50, 64, "continuum".into(), None, Some(d), None);
+            let mut b = Simulation::multipath_knobs(
+                vec![0.05], vec![0.5], vec![50], vec![4], 64, "continuum".into(), None, Some(d),
+                None, f64::INFINITY, f64::INFINITY, f64::INFINITY, 2000,
+                vec![f64::INFINITY], vec![0.0],
+            )
+            .unwrap();
+            run_to_end(&mut a);
+            run_to_end(&mut b);
+            assert_eq!(
+                (a.get_tick(), a.get_total_fec(), a.get_total_arq(), a.get_cum_decoded()),
+                (b.get_tick(), b.get_total_fec(), b.get_total_arq(), b.get_cum_decoded()),
+                "T = ∞ identity at δ = {d}"
+            );
+        }
+        // ... and the Realtime-call point (T = 0.4, δ = 50, H = 0) has no
+        // behaviour step under a ±2 % T nudge (the derived bound of item 5).
+        let call = crate::knob_sim_tests::Knobs {
+            h: 0.0, load: 0.5, ..crate::knob_sim_tests::OBJECT
+        };
+        crate::knob_sim_tests::t_nudge_within_bound(
+            &[crate::knob_sim_tests::Cell { eps: 0.05, q: 0.5, rtt: 50, cap: 4 }],
+            "continuum", Some(50.0), call, 0.4,
+        );
     }
 
     /// F1/F2 (docs/derivations/wasm-modeswitch-audit.md): the classic hint
