@@ -377,7 +377,7 @@ flowchart TB
 | In-flight limit: derived factor replaces doubling | ✔ done · very-successful ⚠ | Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput. |
 | One in-flight limit, any path count | ✔ done · successful ⚠ | Made one in-flight data limit rule apply to any number of paths, removing a special case for single-path links. |
 | Self-tuning in-flight limit | ✖ dead end | Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work. |
-| What enforces the latency setting | ⏳ waiting | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
+| What enforces the latency setting | ▶ in progress | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. |
 | Deriving the in-flight data limit | ▶ in progress | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. |
 | Readout for the in-flight limit | ⏳ waiting | Engine logging that shows, per window, the inputs and outputs of the in-flight data limit, so the session can read its floors. |
 | Slow link measured without jitter | ✔ done · mixed | Measured the slow link with its delay jitter switched off: the delay floor still depended on how many samples were counted, so the point where throughput tops out (the knee) could not be read. |
@@ -562,6 +562,7 @@ flowchart TB
 **no-cargo**
 
 - `meas-w1-bracket-fix`: Repair-share bound counts every slot
+- `store-w1-who-limits`: What enforces the latency setting
 - `store-law-derivation`: Deriving the in-flight data limit
 - `model-rho-step-sites`: Make all twelve ρ splits continuous
 - `model-toy-stage2-plan`: Offline simulation stage 2: plan
@@ -586,10 +587,6 @@ flowchart TB
 **the evicting-seat test's measured rows**
 
 - `rate-pfec-oracle`: Reference test of repair success
-
-**merge to main**
-
-- `store-w1-who-limits`: What enforces the latency setting
 
 **the owner's call: reach main through a stacked merge guard, or be dropped**
 
