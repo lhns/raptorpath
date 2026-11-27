@@ -19,7 +19,11 @@ Every cell has both arms; no cell lacks a no-queue arm. ADR-0084 and Bulk lines 
 | OV-long | dominance: share / on time / p50, best point T = 0.4 | dominates (share -0.0059, on time +0.803, p50 0.635 s better) | **dominates** (share -0.0051, on time -0.0051, both within bar; p50 0.078 s better) | no, but against the no-queue arm the word rests on p50 alone |
 | OV-long-v | dominance on share / on time within 2 s, p50 reported only, T = 1 | equivalent (share -0.0017; p50 0.09 s worse, reported only) | equivalent (share -0.0017; p50 0.65 s worse, reported only) | no |
 
-**Count.** Against the no-queue arm alone: equivalent or better in 7 of 8 cells, the same cells as before (8 of 8 if CL-long-v is read on its post-data supplementary set). No "better" verdict among the eight rested only on the engine-queue arm. The only word that shrinks is OV-long's "dominates", which against the no-queue arm is carried by delay p50 (0.078 s) alone; the +0.80 on time and the 0.6 s delay lead exist only against the engine-queue arm.
+**Count.** It depends on which mapping "7 of 8" stands for; the per-cell words above hold under any of them.
+- B' over the eight 12 cells (headroom cells by identity with A): 7 of 8 equivalent or better against the no-queue arm alone, as against both arms; the cell that is not is CL-long-v (registered recovery "shown worse"; 8 of 8 on its post-data supplementary set). This is an inference: `results-confirm3e.md` item 3 names misses for A (OV-long) and B (OV-long-v), not CL-long-v. Under this mapping no "better" word rests only on the engine-queue arm, and the count "unchanged" in the commit title holds only for it.
+- If the count includes build A in the OV cells, or OV-long-m / OV-long-q, words do move (table below): A's OV-long "dominates" exists only against the engine-queue arm, and B''s "trade" in OV-long-m and OV-long-q becomes "worse".
+- Under any mapping: OV-long's "dominates" for B' rests, against the no-queue arm, on 0.078 s of delay p50 alone (share and on time within their bars). The +0.80 on time and the 0.6 s delay lead exist only against the engine-queue arm.
+- The CL re-read also reads ADR-0084 at rho = 1 "undetermined" on whole-run on time; a doubling of that arm is owed by the registered rule (not run here).
 
 **Outside the eight (the 13.x cells and build A), the words that do rest on the engine-queue arm:**
 
@@ -54,18 +58,19 @@ Every cell has both arms; no cell lacks a no-queue arm. ADR-0084 and Bulk lines 
 
 ### The read (after the rerun)
 
-48 runs, 707 s wall at 4 workers on this host (`python d1310/deq_item2.py run OUTDIR --workers 4`, then `read OUTDIR`). Every run reproduced its stored `delivered`, and the hand-over item 2 from its per-seq arrays equals the stored series' reading, at 6 of 6 seeds in every row.
+48 runs, 707 s wall at 4 workers on this host (`python d1310/deq_item2.py run OUTDIR --workers 4`, then `read OUTDIR`; OUTDIR is scratch, not committed). Every run reproduced its stored `delivered`, and the hand-over item 2 from its per-seq arrays equals the stored series' reading at 6 of 6 seeds in every row; on these window ids the 6-seed hand-over means are 0.00096 / 0.00078 / 0.00466 / 0.00759, reproducing 13.10.3.
 
-| T | windows (dequeue time) | primary (dequeue binning) | 2 se | d_ss (predicted) | hand-over reading | share form (+ dequeue-count term) | word |
-|---|---|---|---|---|---|---|---|
-| 0.4 | [3.0, 4.5] s, 3 | 0.00080 | 0.00009 | 0.0009 (closed form 0.00087) | 0.0010 | 0.0007 (-0.0001) | control; fail by 0.00001 against the rounded 0.0009, within the bar against 0.00087 |
-| 0.6 | [4.0, 6.0] s, 4 | 0.00135 | 0.00056 | 0.0011 | 0.0008 | 0.0007 (-0.0007) | no power (control) |
-| 1 | [6.0, 9.5] s, 7 | 0.00105 | 0.00035 | 0.0011 | 0.0047 | 0.0013 (+0.0003) | **pass** |
-| 2 | [11.5, 18.0] s, 13 | 0.00165 | 0.00019 | 0.0017 | 0.0077 | 0.0008 (-0.0008) | **pass** |
+**Correction after the read: the registered primary readout is blind to the alternative.** Under overload the link is full, so B''s delivered count per dequeue window is set by C and the hole account (in seed 0 at T = 2 it equals B''s sends per window in every window), not by how much is shed. An extra pre-onset shed would show only in B''s dequeue count, never in its delivered count. So the primary (delivered difference over lambda W) tests only that the hole account closes; the binning claim is tested by the share form (delivered/dequeued, which carries the dequeue count) and by the dequeue surplus directly. The row words below are moved to the share form after the read, with its own 2 se; the primary is kept as the hole-account check.
 
-Per-seed primary values: T = 0.4: 0.00094 0.00083 0.00072 0.00067 0.00072 0.00089; T = 0.6: 0.00246 0.00054 0.00163 0.00104 0.00088 0.00154; T = 1: 0.00083 0.00150 0.00081 0.00110 0.00157 0.00048; T = 2: 0.00178 0.00131 0.00185 0.00141 0.00182 0.00172.
+| T | windows (dequeue time) | share form (2 se) | dequeue surplus sum(n_B' - n_A), seed mean (per seed) | surplus an early shed would need | d_ss (predicted) | hand-over reading | word (share form) | primary, hole account (2 se) |
+|---|---|---|---|---|---|---|---|---|
+| 0.4 | [3.0, 4.5] s, 3 | 0.00072 (0.00052) | -2 (5 12 11 -21 -3 -14) | 0 (no band) | 0.0009 | 0.00096 | no power (control) | 0.00080 (0.00009): fail, marginal (0.0009 rounded; 0.00089 from the row's rates, the miss equals the bar) |
+| 0.6 | [4.0, 6.0] s, 4 | 0.00067 (0.00057) | -20 (-19 -21 -25 -17 -20 -18) | 0 (no band) | 0.0011 | 0.00078 | no power (control) | 0.00135 (0.00056) |
+| 1 | [6.0, 9.5] s, 7 | 0.00131 (0.00066) | +15 (26 9 -17 35 44 -8) | about +150 | 0.0011 | 0.00466 | **pass** | 0.00105 (0.00035) |
+| 2 | [11.5, 18.0] s, 13 | 0.00085 (0.00145) | -62 (115 -210 -202 -94 171 -152) | about +470 | 0.0017 | 0.00759 | **pass** | 0.00165 (0.00019) |
 
-**Outcome.** The falsifier does not fire. At T = 1 and 2, the rows that can tell the two explanations apart, item 2 binned by dequeue time falls from 0.0047 and 0.0077 to 0.00105 and 0.00165, within two seed errors of the steady term (0.0011, 0.0017) and far outside the hand-over readings. 13.10.1's mechanism holds: the cap sheds nothing extra before the onset in dequeue time, and the hand-over excess was the binning.
-- The share form (delivered/dequeued) is noisier, because B''s dequeue count per window moves with its cap (x-hat noise). It reads 0.0013 and 0.0008 at T = 1 and 2, also far below the hand-over excess.
-- T = 0.4, a control: 0.00080 against the rounded 0.0009 misses its bar of 0.00009 by 0.00001, and is inside it against 13.10.2's closed form 0.00087. This is recorded, not tuned.
+"Surplus an early shed would need" = (hand-over reading - d_ss) x lambda x the windows' span.
+
+**Outcome.** The falsifier does not fire. At T = 1 and 2, the rows that can tell the two explanations apart, item 2 binned by dequeue time reads 0.0013 and 0.0009 (share form), within two seed errors of the steady term and far outside the hand-over readings (0.0047, 0.0076). B' dequeues no more units than A before the onset (+15 and -62 against the +150 and +470 an early shed would need). 13.10.1's mechanism holds: in dequeue time the cap sheds nothing extra before the onset, and the hand-over excess was the binning. The primary readout closes on d_ss at T = 0.6, 1 and 2, and misses marginally at T = 0.4 (a control, hole account only; recorded, not tuned).
+- The prediction block above and this read were committed together; the share-form words were chosen after the read (see the correction).
 - Scope: OV-long-q only. OV-long-m was not rerun (another 48 runs, about 12 min here).
