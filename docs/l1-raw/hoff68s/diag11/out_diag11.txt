@@ -1,0 +1,170 @@
+=== decomp.py
+GA2 r1 p0: n=206 beta med=82.5 sd(logb)=0.146 shares win/srtt/L=0.41/0.21/0.37 corr(lw,ls)=0.65 | (win/srtt)/qbw med=0.95 p95=1.11 | F/win med=0.95 | spikes(end>1.5med)=2
+     t= 44.9 beta= 125.6 win/med=1.05 srtt/med=0.66 L/med=0.97 F/win=0.98 qm=B srtt=17.0ms m=8.0
+     t= 51.9 beta= 127.0 win/med=1.01 srtt/med=0.86 L/med=1.33 F/win=0.94 qm=B srtt=21.9ms m=7.6
+GA2 r2 p0: n=206 beta med=81.4 sd(logb)=0.108 shares win/srtt/L=0.47/0.21/0.32 corr(lw,ls)=0.83 | (win/srtt)/qbw med=0.95 p95=1.15 | F/win med=0.95 | spikes(end>1.5med)=1
+     t= 35.8 beta= 134.8 win/med=1.36 srtt/med=1.17 L/med=1.43 F/win=0.63 qm=B srtt=29.4ms m=11.2
+GA2 r3 p0: n=206 beta med=82.3 sd(logb)=0.215 shares win/srtt/L=0.66/0.03/0.31 corr(lw,ls)=0.71 | (win/srtt)/qbw med=0.94 p95=1.17 | F/win med=0.94 | spikes(end>1.5med)=5
+     t=  4.3 beta= 124.2 win/med=1.11 srtt/med=0.97 L/med=1.35 F/win=0.94 qm=B srtt=22.5ms m=9.1
+     t= 29.6 beta= 125.4 win/med=1.05 srtt/med=0.73 L/med=1.09 F/win=0.69 qm=B srtt=17.0ms m=8.7
+     t= 44.9 beta= 160.3 win/med=0.51 srtt/med=0.70 L/med=2.72 F/win=0.58 qm=B srtt=16.3ms m=10.7
+     t= 45.1 beta= 339.7 win/med=2.07 srtt/med=1.33 L/med=2.71 F/win=0.63 qm=B srtt=30.9ms m=10.7
+     t= 45.6 beta= 130.1 win/med=1.49 srtt/med=1.30 L/med=1.40 F/win=0.78 qm=B srtt=30.0ms m=10.7
+GK2 r1 p0: n=206 beta med=81.2 sd(logb)=0.157 shares win/srtt/L=0.75/0.11/0.14 corr(lw,ls)=0.78 | (win/srtt)/qbw med=0.95 p95=1.15 | F/win med=0.95 | spikes(end>1.5med)=2
+     t= 25.8 beta= 125.7 win/med=0.95 srtt/med=0.74 L/med=1.21 F/win=0.96 qm=B srtt=19.0ms m=9.4
+     t= 45.4 beta= 177.9 win/med=1.56 srtt/med=0.72 L/med=1.02 F/win=0.97 qm=B srtt=18.6ms m=12.1
+GK2 r2 p0: n=206 beta med=79.7 sd(logb)=0.123 shares win/srtt/L=0.72/0.09/0.19 corr(lw,ls)=0.83 | (win/srtt)/qbw med=0.94 p95=1.08 | F/win med=0.95 | spikes(end>1.5med)=1
+     t= 33.8 beta= 124.8 win/med=1.29 srtt/med=0.95 L/med=1.13 F/win=0.99 qm=B srtt=23.1ms m=11.0
+GK2 r3 p0: n=206 beta med=82.3 sd(logb)=0.165 shares win/srtt/L=0.60/0.22/0.18 corr(lw,ls)=0.81 | (win/srtt)/qbw med=0.96 p95=1.13 | F/win med=0.94 | spikes(end>1.5med)=1
+     t= 50.4 beta= 156.4 win/med=1.56 srtt/med=0.77 L/med=0.96 F/win=0.97 qm=B srtt=18.4ms m=11.0
+GPH r1 p0: n=232 beta med=83.1 sd(logb)=0.236 shares win/srtt/L=0.48/0.02/0.50 corr(lw,ls)=0.68 | (win/srtt)/qbw med=0.96 p95=1.21 | F/win med=0.95 | spikes(end>1.5med)=17
+     t=  2.0 beta= 124.8 win/med=0.85 srtt/med=0.66 L/med=1.20 F/win=0.96 qm=B srtt=16.4ms m=7.7
+     t= 10.8 beta= 125.7 win/med=1.02 srtt/med=0.82 L/med=1.26 F/win=0.99 qm=B srtt=20.3ms m=9.5
+     t= 12.5 beta= 135.1 win/med=1.00 srtt/med=0.85 L/med=1.43 F/win=0.97 qm=B srtt=21.1ms m=9.5
+     t= 19.6 beta= 127.4 win/med=1.05 srtt/med=0.90 L/med=1.34 F/win=0.86 qm=B srtt=22.3ms m=9.5
+     t= 51.4 beta= 140.0 win/med=1.78 srtt/med=1.79 L/med=1.74 F/win=0.94 qm=B srtt=44.3ms m=10.0
+     t= 51.6 beta= 182.8 win/med=1.83 srtt/med=1.41 L/med=1.74 F/win=0.81 qm=B srtt=34.9ms m=10.0
+GPH r2 p0: n=233 beta med=81.3 sd(logb)=0.172 shares win/srtt/L=0.29/0.08/0.63 corr(lw,ls)=0.82 | (win/srtt)/qbw med=0.94 p95=1.06 | F/win med=0.95 | spikes(end>1.5med)=7
+     t=  2.8 beta= 136.1 win/med=1.17 srtt/med=1.03 L/med=1.49 F/win=0.97 qm=B srtt=25.9ms m=10.3
+     t=  3.3 beta= 128.9 win/med=1.09 srtt/med=0.99 L/med=1.47 F/win=0.96 qm=B srtt=25.0ms m=10.3
+     t= 33.3 beta= 160.5 win/med=1.14 srtt/med=1.16 L/med=2.04 F/win=0.98 qm=B srtt=29.3ms m=9.4
+     t= 33.6 beta= 124.8 win/med=0.81 srtt/med=1.06 L/med=2.04 F/win=0.98 qm=B srtt=26.8ms m=9.4
+     t= 33.8 beta= 140.6 win/med=1.02 srtt/med=1.07 L/med=1.85 F/win=0.95 qm=B srtt=27.1ms m=9.4
+     t= 34.1 beta= 146.0 win/med=0.94 srtt/med=0.96 L/med=1.85 F/win=0.96 qm=B srtt=24.2ms m=9.4
+GPH r3 p0: n=233 beta med=83.5 sd(logb)=0.148 shares win/srtt/L=0.20/0.22/0.60 corr(lw,ls)=0.84 | (win/srtt)/qbw med=0.95 p95=1.12 | F/win med=0.95 | spikes(end>1.5med)=4
+     t= 48.9 beta= 131.0 win/med=0.94 srtt/med=0.74 L/med=1.24 F/win=0.99 qm=B srtt=17.8ms m=9.0
+     t= 50.6 beta= 145.9 win/med=1.29 srtt/med=1.00 L/med=1.55 F/win=0.80 qm=B srtt=24.2ms m=11.2
+     t= 55.1 beta= 134.3 win/med=1.50 srtt/med=0.88 L/med=0.96 F/win=0.86 qm=B srtt=21.4ms m=9.3
+     t= 55.9 beta= 141.7 win/med=1.09 srtt/med=0.67 L/med=1.05 F/win=0.57 qm=B srtt=16.2ms m=9.3
+GK8 r1 p0: n=171 beta med=84.9 sd(logb)=0.153 shares win/srtt/L=0.83/-0.14/0.30 corr(lw,ls)=0.86 | (win/srtt)/qbw med=0.95 p95=1.16 | F/win med=0.94 | spikes(end>1.5med)=2
+     t= 36.8 beta= 170.4 win/med=1.35 srtt/med=0.89 L/med=1.35 F/win=0.98 qm=B srtt=24.3ms m=11.9
+     t= 44.6 beta= 140.1 win/med=0.97 srtt/med=0.62 L/med=1.07 F/win=0.00 qm=B srtt=16.8ms m=9.8
+GK8 r1 p1: n=171 beta med=16.5 sd(logb)=0.165 shares win/srtt/L=0.51/0.27/0.22 corr(lw,ls)=0.31 | (win/srtt)/qbw med=0.97 p95=1.15 | F/win med=0.97 | spikes(end>1.5med)=5
+     t= 10.3 beta=  26.4 win/med=1.01 srtt/med=0.62 L/med=0.99 F/win=0.56 qm=B srtt=53.5ms m=34.3
+     t= 30.6 beta=  32.2 win/med=0.99 srtt/med=0.55 L/med=1.10 F/win=0.83 qm=B srtt=47.7ms m=39.4
+     t= 31.8 beta=  25.0 win/med=1.00 srtt/med=0.73 L/med=1.12 F/win=0.92 qm=B srtt=63.6ms m=37.3
+     t= 38.8 beta=  25.8 win/med=0.99 srtt/med=0.81 L/med=1.28 F/win=0.96 qm=B srtt=70.0ms m=37.3
+     t= 39.1 beta=  25.1 win/med=0.99 srtt/med=0.64 L/med=1.00 F/win=0.96 qm=B srtt=55.9ms m=37.3
+GK8 r2 p0: n=170 beta med=81.1 sd(logb)=0.151 shares win/srtt/L=0.73/-0.00/0.27 corr(lw,ls)=0.68 | (win/srtt)/qbw med=0.95 p95=1.10 | F/win med=0.96 | spikes(end>1.5med)=1
+     t=  8.0 beta= 133.7 win/med=0.94 srtt/med=0.78 L/med=1.37 F/win=0.97 qm=B srtt=19.8ms m=9.0
+GK8 r2 p1: n=170 beta med=16.0 sd(logb)=0.193 shares win/srtt/L=0.72/0.11/0.17 corr(lw,ls)=0.58 | (win/srtt)/qbw med=0.98 p95=1.20 | F/win med=0.97 | spikes(end>1.5med)=2
+     t= 25.1 beta=  26.2 win/med=1.40 srtt/med=1.01 L/med=1.17 F/win=0.77 qm=B srtt=93.2ms m=37.7
+     t= 30.8 beta=  33.2 win/med=1.05 srtt/med=0.51 L/med=0.99 F/win=0.86 qm=B srtt=47.1ms m=37.7
+GK8 r3 p0: n=171 beta med=81.6 sd(logb)=0.206 shares win/srtt/L=0.47/0.18/0.35 corr(lw,ls)=0.50 | (win/srtt)/qbw med=0.95 p95=1.27 | F/win med=0.94 | spikes(end>1.5med)=7
+     t= 20.0 beta= 134.7 win/med=1.03 srtt/med=0.64 L/med=1.00 F/win=0.58 qm=B srtt=15.2ms m=10.6
+     t= 20.5 beta= 138.6 win/med=1.19 srtt/med=0.81 L/med=1.13 F/win=0.96 qm=B srtt=19.2ms m=8.0
+     t= 28.3 beta= 127.3 win/med=1.02 srtt/med=0.83 L/med=1.23 F/win=0.79 qm=B srtt=19.6ms m=8.0
+     t= 36.3 beta= 251.2 win/med=1.32 srtt/med=0.79 L/med=1.79 F/win=0.84 qm=B srtt=18.8ms m=8.7
+     t= 36.6 beta= 153.2 win/med=1.39 srtt/med=1.40 L/med=1.84 F/win=0.94 qm=B srtt=33.3ms m=8.7
+     t= 36.8 beta= 147.3 win/med=1.40 srtt/med=1.48 L/med=1.86 F/win=0.96 qm=B srtt=35.0ms m=8.7
+GK8 r3 p1: n=171 beta med=16.0 sd(logb)=0.210 shares win/srtt/L=0.60/0.12/0.28 corr(lw,ls)=0.30 | (win/srtt)/qbw med=0.97 p95=1.16 | F/win med=0.97 | spikes(end>1.5med)=7
+     t= 11.0 beta=  36.6 win/med=1.36 srtt/med=0.58 L/med=0.99 F/win=0.21 qm=B srtt=53.1ms m=39.1
+     t= 20.8 beta=  25.2 win/med=0.97 srtt/med=0.76 L/med=1.25 F/win=0.94 qm=B srtt=69.4ms m=36.8
+     t= 36.3 beta=  38.3 win/med=1.21 srtt/med=0.90 L/med=1.79 F/win=0.79 qm=B srtt=82.0ms m=41.2
+     t= 36.6 beta=  31.3 win/med=1.24 srtt/med=1.16 L/med=1.84 F/win=0.97 qm=B srtt=105.8ms m=41.2
+     t= 36.8 beta=  30.0 win/med=1.25 srtt/med=1.23 L/med=1.84 F/win=0.95 qm=B srtt=111.5ms m=41.2
+     t= 37.1 beta=  32.7 win/med=1.25 srtt/med=1.14 L/med=1.87 F/win=0.91 qm=B srtt=103.9ms m=41.2
+=== spikes.py
+GA2 r1 p0: win=206 over=67 srtt_med=25.6ms m=9.8ms srtt/m=2.60 ratio_max=2.13 ratio>1.5: n=15 near_probertt=4 | excess near ProbeRtt=0.26 | excess by ratio band [0,1.2):0.09/n132 [1.2,1.5):0.42/n59 [1.5,2.0):0.42/n14 [2.0,99):0.07/n1
+GA2 r2 p0: win=206 over=50 srtt_med=25.1ms m=9.7ms srtt/m=2.59 ratio_max=2.57 ratio>1.5: n=11 near_probertt=5 | excess near ProbeRtt=0.37 | excess by ratio band [0,1.2):0.07/n144 [1.2,1.5):0.43/n51 [1.5,2.0):0.36/n9 [2.0,99):0.14/n2
+GA2 r3 p0: win=206 over=66 srtt_med=23.2ms m=8.7ms srtt/m=2.66 ratio_max=2.75 ratio>1.5: n=14 near_probertt=5 | excess near ProbeRtt=0.26 | excess by ratio band [0,1.2):0.12/n132 [1.2,1.5):0.26/n60 [1.5,2.0):0.32/n9 [2.0,99):0.31/n5
+GK2 r1 p0: win=206 over=70 srtt_med=25.7ms m=9.5ms srtt/m=2.70 ratio_max=2.68 ratio>1.5: n=16 near_probertt=5 | excess near ProbeRtt=0.37 | excess by ratio band [0,1.2):0.03/n128 [1.2,1.5):0.35/n62 [1.5,2.0):0.30/n10 [2.0,99):0.32/n6
+GK2 r2 p0: win=206 over=48 srtt_med=24.5ms m=9.7ms srtt/m=2.52 ratio_max=1.98 ratio>1.5: n=8 near_probertt=4 | excess near ProbeRtt=0.36 | excess by ratio band [0,1.2):0.17/n144 [1.2,1.5):0.44/n54 [1.5,2.0):0.39/n8 [2.0,99):0.00/n0
+GK2 r3 p0: win=206 over=53 srtt_med=23.8ms m=8.7ms srtt/m=2.74 ratio_max=2.04 ratio>1.5: n=8 near_probertt=4 | excess near ProbeRtt=0.26 | excess by ratio band [0,1.2):0.05/n141 [1.2,1.5):0.65/n57 [1.5,2.0):0.30/n7 [2.0,99):0.00/n1
+GPH r1 p0: win=232 over=62 srtt_med=24.7ms m=9.5ms srtt/m=2.62 ratio_max=2.24 ratio>1.5: n=16 near_probertt=5 | excess near ProbeRtt=0.22 | excess by ratio band [0,1.2):0.18/n144 [1.2,1.5):0.38/n72 [1.5,2.0):0.25/n13 [2.0,99):0.18/n3
+GPH r2 p0: win=233 over=70 srtt_med=25.3ms m=9.4ms srtt/m=2.68 ratio_max=2.83 ratio>1.5: n=13 near_probertt=5 | excess near ProbeRtt=0.28 | excess by ratio band [0,1.2):0.28/n168 [1.2,1.5):0.27/n52 [1.5,2.0):0.19/n9 [2.0,99):0.26/n4
+GPH r3 p0: win=233 over=65 srtt_med=24.2ms m=9.3ms srtt/m=2.59 ratio_max=2.34 ratio>1.5: n=12 near_probertt=4 | excess near ProbeRtt=0.35 | excess by ratio band [0,1.2):0.31/n159 [1.2,1.5):0.38/n62 [1.5,2.0):0.23/n10 [2.0,99):0.08/n2
+GK8 r1 p0: win=171 over=61 srtt_med=27.3ms m=9.8ms srtt/m=2.77 ratio_max=2.38 ratio>1.5: n=12 near_probertt=3 | excess near ProbeRtt=0.21 | excess by ratio band [0,1.2):0.12/n109 [1.2,1.5):0.35/n50 [1.5,2.0):0.25/n8 [2.0,99):0.28/n4
+GK8 r1 p1: win=171 over=43 srtt_med=86.7ms m=37.3ms srtt/m=2.32 ratio_max=3.44 ratio>1.5: n=7 near_probertt=6 | excess near ProbeRtt=0.58 | excess by ratio band [0,1.2):0.78/n151 [1.2,1.5):0.05/n13 [1.5,2.0):0.17/n5 [2.0,99):0.00/n2
+GK8 r2 p0: win=170 over=39 srtt_med=25.6ms m=9.0ms srtt/m=2.83 ratio_max=2.04 ratio>1.5: n=6 near_probertt=3 | excess near ProbeRtt=0.20 | excess by ratio band [0,1.2):0.20/n122 [1.2,1.5):0.43/n42 [1.5,2.0):0.31/n5 [2.0,99):0.06/n1
+GK8 r2 p1: win=170 over=36 srtt_med=92.4ms m=37.7ms srtt/m=2.45 ratio_max=3.95 ratio>1.5: n=7 near_probertt=5 | excess near ProbeRtt=0.52 | excess by ratio band [0,1.2):0.38/n138 [1.2,1.5):0.17/n25 [1.5,2.0):0.30/n5 [2.0,99):0.15/n2
+GK8 r3 p0: win=171 over=59 srtt_med=23.7ms m=8.4ms srtt/m=2.81 ratio_max=2.46 ratio>1.5: n=13 near_probertt=5 | excess near ProbeRtt=0.34 | excess by ratio band [0,1.2):0.12/n109 [1.2,1.5):0.36/n49 [1.5,2.0):0.46/n11 [2.0,99):0.06/n2
+GK8 r3 p1: win=171 over=36 srtt_med=90.9ms m=39.1ms srtt/m=2.32 ratio_max=4.27 ratio>1.5: n=7 near_probertt=6 | excess near ProbeRtt=0.73 | excess by ratio band [0,1.2):0.23/n146 [1.2,1.5):0.52/n18 [1.5,2.0):0.15/n3 [2.0,99):0.10/n4
+=== prtt.py
+GA2 r1 p0: t=10.3 spread=2.13 bound=2.50 p95=187 B=179/212 | t=10.5 spread=1.43 bound=2.43 p95=132 B=132/150 | t=20.6 spread=1.25 bound=2.32 p95=102 B=103/110 | t=20.8 spread=1.97 bound=2.32 p95=167 B=160/202 | t=31.1 spread=1.21 bound=3.91 p95=99 B=97/114 | t=31.3 spread=1.11 bound=3.91 p95=89 B=88/96 | t=41.1 spread=1.07 bound=3.35 p95=92 B=91/97 | t=41.4 spread=1.18 bound=3.35 p95=98 B=96/102 | t=51.1 spread=1.23 bound=3.75 p95=101 B=99/102 | t=51.4 spread=1.09 bound=3.75 p95=90 B=91/99
+GA2 r2 p0: t=10.8 spread=1.12 bound=2.77 p95=88 B=88/101 | t=11.0 spread=1.59 bound=2.77 p95=128 B=122/133 | t=20.8 spread=1.17 bound=2.62 p95=93 B=93/96 | t=21.0 spread=1.07 bound=2.62 p95=84 B=83/85 | t=30.8 spread=1.49 bound=1.99 p95=136 B=134/141 | t=31.1 spread=1.26 bound=1.99 p95=108 B=107/112 | t=40.9 spread=1.07 bound=2.98 p95=95 B=96/100 | t=41.1 spread=1.14 bound=2.98 p95=93 B=92/95 | t=50.9 spread=1.13 bound=3.26 p95=100 B=99/116 | t=51.1 spread=1.28 bound=3.26 p95=112 B=114/115
+GA2 r3 p0: t=10.3 spread=1.65 bound=2.66 p95=147 B=147/190 | t=10.5 spread=1.10 bound=2.88 p95=101 B=104/114 | t=20.3 spread=2.12 bound=2.78 p95=169 B=161/194 | t=20.6 spread=1.30 bound=2.69 p95=101 B=101/107 | t=30.3 spread=1.63 bound=2.70 p95=178 B=163/181 | t=30.6 spread=1.14 bound=3.06 p95=102 B=103/104 | t=40.6 spread=1.08 bound=1.87 p95=108 B=109/116 | t=40.9 spread=1.36 bound=1.87 p95=124 B=123/127 | t=50.6 spread=1.10 bound=4.09 p95=94 B=95/104 | t=50.9 spread=1.28 bound=4.09 p95=109 B=108/119
+GK2 r1 p0: t=10.3 spread=2.12 bound=2.46 p95=214 B=213/234 | t=10.5 spread=1.15 bound=1.85 p95=98 B=99/125 | t=20.3 spread=1.59 bound=2.36 p95=136 B=130/150 | t=20.6 spread=1.10 bound=2.47 p95=92 B=93/99 | t=30.6 spread=1.08 bound=2.75 p95=101 B=100/113 | t=30.8 spread=1.33 bound=2.75 p95=104 B=104/108 | t=40.6 spread=1.04 bound=2.07 p95=80 B=80/87 | t=40.9 spread=1.35 bound=2.07 p95=112 B=109/115 | t=50.6 spread=1.16 bound=3.06 p95=97 B=97/98 | t=50.9 spread=1.06 bound=3.06 p95=90 B=91/98
+GK2 r2 p0: t=10.3 spread=1.55 bound=2.93 p95=127 B=117/169 | t=10.5 spread=1.23 bound=2.54 p95=104 B=101/117 | t=20.5 spread=1.31 bound=1.67 p95=109 B=109/121 | t=20.8 spread=1.40 bound=1.67 p95=112 B=112/114 | t=30.6 spread=1.48 bound=2.34 p95=113 B=111/130 | t=30.8 spread=1.32 bound=2.34 p95=132 B=127/137 | t=40.6 spread=1.05 bound=2.51 p95=88 B=88/92 | t=40.9 spread=1.05 bound=2.51 p95=87 B=88/95 | t=50.6 spread=1.07 bound=2.44 p95=94 B=94/97 | t=50.9 spread=1.09 bound=2.44 p95=99 B=100/102
+GK2 r3 p0: t=10.3 spread=1.50 bound=4.12 p95=150 B=144/184 | t=10.5 spread=1.05 bound=3.82 p95=80 B=81/87 | t=20.6 spread=1.13 bound=3.39 p95=91 B=91/94 | t=20.8 spread=1.04 bound=3.39 p95=84 B=84/86 | t=30.6 spread=1.06 bound=1.97 p95=81 B=81/84 | t=30.8 spread=1.09 bound=1.97 p95=86 B=86/93 | t=40.6 spread=1.05 bound=2.10 p95=82 B=81/89 | t=40.9 spread=1.14 bound=2.10 p95=96 B=96/103 | t=50.6 spread=1.59 bound=3.48 p95=122 B=123/157 | t=50.9 spread=1.50 bound=3.48 p95=116 B=116/128
+GPH r1 p0: t=10.3 spread=1.68 bound=2.54 p95=151 B=149/185 | t=10.5 spread=1.10 bound=2.08 p95=110 B=109/113 | t=20.6 spread=1.30 bound=2.72 p95=108 B=98/109 | t=20.8 spread=1.30 bound=2.72 p95=102 B=98/105 | t=30.6 spread=1.02 bound=2.10 p95=97 B=97/105 | t=30.8 spread=1.85 bound=2.10 p95=190 B=177/203 | t=40.6 spread=1.04 bound=2.36 p95=79 B=78/86 | t=40.8 spread=1.34 bound=2.36 p95=106 B=98/103 | t=50.6 spread=1.10 bound=2.40 p95=91 B=84/87 | t=50.9 spread=1.32 bound=2.40 p95=112 B=108/113
+GPH r2 p0: t=10.5 spread=1.52 bound=2.22 p95=131 B=128/136 | t=10.8 spread=1.13 bound=2.22 p95=106 B=105/115 | t=30.6 spread=1.26 bound=2.27 p95=96 B=97/98 | t=30.8 spread=1.05 bound=2.27 p95=85 B=84/88 | t=40.6 spread=1.61 bound=2.27 p95=127 B=118/133 | t=40.8 spread=1.14 bound=2.27 p95=85 B=85/94 | t=50.6 spread=1.06 bound=3.10 p95=81 B=80/87 | t=50.9 spread=1.29 bound=3.10 p95=104 B=99/116
+GPH r3 p0: t=10.5 spread=1.12 bound=2.07 p95=90 B=90/100 | t=10.8 spread=1.10 bound=2.07 p95=86 B=86/88 | t=20.5 spread=1.24 bound=2.10 p95=116 B=115/119 | t=20.8 spread=1.43 bound=2.10 p95=112 B=109/113 | t=30.6 spread=1.10 bound=2.70 p95=87 B=87/89 | t=30.8 spread=1.42 bound=2.70 p95=111 B=109/114 | t=40.6 spread=1.12 bound=2.83 p95=99 B=99/109 | t=40.8 spread=1.17 bound=2.83 p95=95 B=94/99 | t=50.6 spread=2.15 bound=2.30 p95=192 B=193/227 | t=50.9 spread=1.22 bound=2.76 p95=172 B=172/196
+GK8 r1 p0: t=10.3 spread=2.22 bound=2.50 p95=173 B=164/189 | t=10.5 spread=1.16 bound=1.59 p95=95 B=95/96 | t=20.5 spread=1.20 bound=3.50 p95=96 B=96/103 | t=20.8 spread=1.23 bound=3.50 p95=99 B=99/105 | t=30.6 spread=1.36 bound=2.04 p95=120 B=103/126 | t=30.8 spread=1.28 bound=2.04 p95=115 B=112/122 | t=40.6 spread=1.14 bound=3.14 p95=93 B=93/94 | t=40.8 spread=1.11 bound=3.14 p95=88 B=87/91
+GK8 r1 p1: t=10.5 spread=1.15 bound=2.16 p95=21 B=30/36 | t=10.8 spread=1.06 bound=2.16 p95=18 B=24/34 | t=20.5 spread=1.62 bound=2.44 p95=30 B=36/41 | t=20.8 spread=1.03 bound=2.30 p95=17 B=17/19 | t=30.8 spread=1.74 bound=2.56 p95=32 B=36/42 | t=31.1 spread=1.08 bound=2.56 p95=19 B=19/20 | t=40.8 spread=1.58 bound=2.32 p95=30 B=31/31 | t=41.1 spread=1.05 bound=2.14 p95=16 B=17/17
+GK8 r2 p0: t=10.3 spread=2.04 bound=2.76 p95=175 B=158/178 | t=10.5 spread=1.20 bound=2.27 p95=106 B=106/109 | t=20.3 spread=1.79 bound=2.78 p95=157 B=147/162 | t=20.5 spread=1.11 bound=2.60 p95=90 B=90/94 | t=30.6 spread=1.18 bound=3.14 p95=92 B=93/105 | t=30.8 spread=1.08 bound=3.14 p95=83 B=83/88 | t=40.6 spread=1.11 bound=2.96 p95=88 B=89/94 | t=40.8 spread=1.04 bound=2.96 p95=84 B=84/92
+GK8 r2 p1: t=10.5 spread=1.62 bound=2.33 p95=40 B=44/56 | t=10.8 spread=1.05 bound=2.33 p95=17 B=20/23 | t=20.8 spread=1.47 bound=2.30 p95=35 B=35/37 | t=21.0 spread=1.22 bound=2.43 p95=23 B=23/27 | t=31.1 spread=1.61 bound=1.50 p95=31 B=32/44 | t=31.3 spread=1.13 bound=1.50 p95=19 B=20/23 | t=41.1 spread=1.64 bound=2.07 p95=36 B=36/40 | t=41.3 spread=1.31 bound=2.18 p95=21 B=22/22
+GK8 r3 p0: t=10.3 spread=1.08 bound=1.98 p95=79 B=79/85 | t=10.5 spread=1.12 bound=1.98 p95=85 B=86/89 | t=20.3 spread=1.52 bound=3.12 p95=135 B=135/140 | t=20.5 spread=1.68 bound=3.12 p95=133 B=108/145 | t=30.3 spread=2.00 bound=3.40 p95=163 B=148/172 | t=30.6 spread=1.19 bound=3.15 p95=93 B=93/102 | t=40.6 spread=1.39 bound=2.88 p95=109 B=109/115 | t=40.8 spread=1.08 bound=2.88 p95=84 B=84/99
+GK8 r3 p1: t=11.3 spread=1.80 bound=3.44 p95=38 B=39/41 | t=11.5 spread=1.12 bound=3.44 p95=19 B=19/20 | t=21.3 spread=3.91 bound=1.88 p95=23 B=24/25 | t=21.5 spread=1.24 bound=1.77 p95=30 B=28/31 | t=31.6 spread=1.86 bound=2.41 p95=36 B=36/43 | t=31.8 spread=1.24 bound=2.29 p95=23 B=26/39 | t=41.8 spread=2.05 bound=2.35 p95=34 B=35/39 | t=42.1 spread=1.30 bound=2.74 p95=24 B=25/26
+=== lsplit.py
+GA2 p0 L same: n=403 ratio p50=1.14 p90=1.39 excess share=0.54 | L moved: n=215 ratio p50=1.17 p90=1.49 excess share=0.46
+GK2 p0 L same: n=402 ratio p50=1.13 p90=1.32 excess share=0.42 | L moved: n=216 ratio p50=1.16 p90=1.42 excess share=0.58
+GK8 p0 L same: n=320 ratio p50=1.14 p90=1.38 excess share=0.57 | L moved: n=192 ratio p50=1.15 p90=1.41 excess share=0.43
+GK8 p1 L same: n=319 ratio p50=1.07 p90=1.23 excess share=0.64 | L moved: n=193 ratio p50=1.09 p90=1.28 excess share=0.36
+GPH p0 L same: n=443 ratio p50=1.14 p90=1.33 excess share=0.45 | L moved: n=255 ratio p50=1.18 p90=1.48 excess share=0.55
+=== recjoin.py
+GA2 p0: n=618 dce/window med=5.0 | spikes n=40 dce med=6.0 F/win med=0.96 | calm dce med=5.0 F/win=0.95 | excess in dce>med windows=0.62 (294/618) | windows with zero dce=6
+    L term that moved most: {'tau_p': (224, 0.41), 'none': (366, 0.52), 'l_o': (9, 0.03), 'tau_o': (19, 0.04)}
+GK2 p0: n=618 dce/window med=6.0 | spikes n=32 dce med=6.0 F/win med=0.97 | calm dce med=5 F/win=0.94 | excess in dce>med windows=0.50 (237/618) | windows with zero dce=3
+    L term that moved most: {'tau_p': (221, 0.5), 'none': (380, 0.42), 'tau_o': (16, 0.06), 'l_o': (1, 0.02)}
+GK8 p0: n=512 dce/window med=5.0 | spikes n=31 dce med=7 F/win med=0.96 | calm dce med=5.0 F/win=0.95 | excess in dce>med windows=0.60 (255/512) | windows with zero dce=4
+    L term that moved most: {'tau_p': (196, 0.4), 'none': (302, 0.48), 'tau_o': (9, 0.07), 'l_o': (3, 0.03), 'l_p': (2, 0.01)}
+GK8 p1: n=512 dce/window med=3.0 | spikes n=21 dce med=4 F/win med=0.95 | calm dce med=3 F/win=0.97 | excess in dce>med windows=0.59 (199/512) | windows with zero dce=43
+    L term that moved most: {'tau_p': (195, 0.36), 'none': (303, 0.61), 'tau_o': (9, 0.02), 'l_o': (3, 0.0), 'l_p': (2, 0.01)}
+GPH p0: n=698 dce/window med=6.0 | spikes n=41 dce med=5 F/win med=0.96 | calm dce med=6 F/win=0.95 | excess in dce>med windows=0.40 (342/698) | windows with zero dce=2
+    L term that moved most: {'tau_p': (251, 0.55), 'tau_o': (21, 0.04), 'none': (408, 0.37), 'l_o': (14, 0.02), 'l_p': (4, 0.02)}
+=== steps.py
+GA2 p0: |dlogL| p50/p90/max=0.011/0.080/1.029  |dlogR| p50/p90/max=0.064/0.217/1.243  L p5/50/95=6.00/6.32/7.74  tau_p p5/50/95=2.46/2.76/3.60  tau_o values=[2.97, 4.19]
+GK2 p0: |dlogL| p50/p90/max=0.011/0.072/0.276  |dlogR| p50/p90/max=0.061/0.189/1.820  L p5/50/95=5.92/6.26/7.30  tau_p p5/50/95=2.43/2.73/3.55  tau_o values=[2.97, 4.19]
+GK8 p0: |dlogL| p50/p90/max=0.012/0.112/0.644  |dlogR| p50/p90/max=0.061/0.232/1.315  L p5/50/95=5.94/6.33/7.52  tau_p p5/50/95=2.39/2.75/3.91  tau_o values=[2.97, 4.19, 5.93]
+GK8 p1: |dlogL| p50/p90/max=0.010/0.109/0.646  |dlogR| p50/p90/max=0.048/0.223/1.575  L p5/50/95=5.80/6.21/7.41  tau_p p5/50/95=2.39/2.75/3.91  tau_o values=[2.97, 4.19, 5.93]
+GPH p0: |dlogL| p50/p90/max=0.010/0.176/0.585  |dlogR| p50/p90/max=0.055/0.200/1.337  L p5/50/95=5.89/6.32/8.46  tau_p p5/50/95=2.40/2.73/4.62  tau_o values=[2.97, 4.19, 5.93]
+=== ackclock.py
+GA2 p0 run: n=618 bq50/ack p10/50/90=0.81/1.16/1.28  bq95/ack p50/90/max=1.30/1.64/4.59  (W/srtt)/xdot p50/90=1.09/1.34  room p50/90=13/38  fix/now(end) p10/50=0.89/1.00
+GA2 p0 startup: n=15 bq50/ack p10/50/90=0.81/1.20/1.24  bq95/ack p50/90/max=1.32/1.44/1.72  (W/srtt)/xdot p50/90=1.19/1.28  room p50/90=11/14  fix/now(end) p10/50=0.86/1.00
+GK2 p0 run: n=618 bq50/ack p10/50/90=0.81/1.15/1.29  bq95/ack p50/90/max=1.29/1.61/3.26  (W/srtt)/xdot p50/90=1.09/1.34  room p50/90=13/32  fix/now(end) p10/50=0.88/1.00
+GK2 p0 startup: n=15 bq50/ack p10/50/90=0.82/1.23/1.35  bq95/ack p50/90/max=1.43/1.57/2.32  (W/srtt)/xdot p50/90=1.23/1.34  room p50/90=19/63  fix/now(end) p10/50=0.93/1.00
+GK8 p0 run: n=512 bq50/ack p10/50/90=0.81/1.04/1.30  bq95/ack p50/90/max=1.28/1.67/2.85  (W/srtt)/xdot p50/90=1.12/1.36  room p50/90=12/37  fix/now(end) p10/50=0.88/1.00
+GK8 p0 startup: n=15 bq50/ack p10/50/90=0.80/1.25/1.36  bq95/ack p50/90/max=1.40/1.60/1.94  (W/srtt)/xdot p50/90=1.20/1.28  room p50/90=10/12  fix/now(end) p10/50=0.78/0.97
+GK8 p1 run: n=512 bq50/ack p10/50/90=0.80/1.11/1.34  bq95/ack p50/90/max=1.23/1.54/3.82  (W/srtt)/xdot p50/90=1.17/1.35  room p50/90=6/12  fix/now(end) p10/50=1.00/1.00
+GK8 p1 startup: n=15 bq50/ack p10/50/90=0.80/1.25/1.42  bq95/ack p50/90/max=1.39/1.90/2.23  (W/srtt)/xdot p50/90=1.10/1.29  room p50/90=7/9  fix/now(end) p10/50=1.00/1.00
+GPH p0 run: n=698 bq50/ack p10/50/90=0.81/1.12/1.30  bq95/ack p50/90/max=1.29/1.67/3.48  (W/srtt)/xdot p50/90=1.12/1.35  room p50/90=12/31  fix/now(end) p10/50=0.88/1.00
+GPH p0 startup: n=15 bq50/ack p10/50/90=0.81/1.17/1.24  bq95/ack p50/90/max=1.39/1.90/2.13  (W/srtt)/xdot p50/90=1.19/1.37  room p50/90=13/22  fix/now(end) p10/50=0.89/1.00
+=== replay2.py
+GA2 p0: n=618 E p50/p90/max 11/37/332 -> 4/24/88 | over-batch 183 -> 99 | E>50 34 -> 7 | B p95 med 95 -> 88, p90 125 -> 109 | B max p99/max 202/727 -> 152/407 | beta p50 med 82 -> 80
+GK2 p0: n=618 E p50/p90/max 11/29/119 -> 3/21/81 | over-batch 171 -> 85 | E>50 21 -> 3 | B p95 med 93 -> 85, p90 114 -> 103 | B max p99/max 183/235 -> 137/183 | beta p50 med 81 -> 79
+GK8 p0: n=512 E p50/p90/max 12/34/137 -> 4/23/69 | over-batch 159 -> 84 | E>50 26 -> 3 | B p95 med 96 -> 88, p90 120 -> 108 | B max p99/max 189/289 -> 152/279 | beta p50 med 82 -> 80
+GK8 p1: n=512 E p50/p90/max 3/9/56 -> 2/8/56 | over-batch 115 -> 91 | E>50 1 -> 1 | B p95 med 19 -> 19, p90 27 -> 25 | B max p99/max 45/70 -> 44/70 | beta p50 med 16 -> 16
+GPH p0: n=698 E p50/p90/max 7/23/137 -> -1/14/67 | over-batch 197 -> 89 | E>50 17 -> 3 | B p95 med 92 -> 82, p90 117 -> 107 | B max p99/max 217/257 -> 183/238 | beta p50 med 82 -> 80
+=== capcheck.py
+GA2 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GA2 2 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GA2 3 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GBU 1 windows 228 modes {'S': 56, 'B': 172} cap<beta(end) in 3 min cap/beta=0.66
+GBU 2 windows 227 modes {'S': 227} cap<beta(end) in 0 min cap/beta=1.11
+GBU 3 windows 226 modes {'S': 226} cap<beta(end) in 12 min cap/beta=0.43
+GK2 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GK2 2 windows 1 modes {'S': 1} cap<beta(end) in 1 min cap/beta=0.92
+GK2 3 windows 38 modes {'S': 38} cap<beta(end) in 0 min cap/beta=1.07
+GPH 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GPH 2 windows 1 modes {'S': 1} cap<beta(end) in 1 min cap/beta=0.89
+GPH 3 windows 1 modes {'S': 1} cap<beta(end) in 1 min cap/beta=0.74
+GK8 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GK8 2 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GK8 3 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+=== exmax.py
+GA2 p0: over-batch n=183 ex_max total p50/p90/max=18/49/178 booked first=3403 exempt=1526 total=4686 | windows the cap cuts: 125, their ex_max total=3306 first=2507
+GK2 p0: over-batch n=171 ex_max total p50/p90/max=17/45/102 booked first=3293 exempt=1612 total=3778 | windows the cap cuts: 110, their ex_max total=2638 first=2048
+GK8 p0: over-batch n=159 ex_max total p50/p90/max=14/38/126 booked first=2957 exempt=979 total=3226 | windows the cap cuts: 104, their ex_max total=2313 first=1955
+GK8 p1: over-batch n=115 ex_max total p50/p90/max=12/20/64 booked first=900 exempt=1594 total=1588 | windows the cap cuts: 46, their ex_max total=562 first=372
+GPH p0: over-batch n=197 ex_max total p50/p90/max=15/34/84 booked first=2005 exempt=1566 total=3908 | windows the cap cuts: 132, their ex_max total=2844 first=1343
+=== series.py GBU r1 52.7-54.7
+t= 52.7 B=   4/  15/  15 beta=  15.8 bq=   9.5/  13.7/  16.0 win=  14.3k F=   1.1k srtt= 12.3 L=5.81 qm=B m= 8.1 qbw= 0.35 qrn=3 hb=0.058 dgq=0.0 ex=[2.0, 2.0, 1.0]
+t= 52.9 B=   6/  15/  15 beta=  18.8 bq=  12.3/  18.5/  20.7 win=  18.2k F=   1.1k srtt= 13.1 L=5.81 qm=B m= 7.6 qbw= 0.39 qrn=3 hb=0.019 dgq=0.0 ex=[3.0, 2.0, 1.0]
+t= 53.2 B=   7/  24/  24 beta=  18.7 bq=  18.2/  18.7/  19.3 win=  18.2k F=   1.1k srtt= 12.8 L=5.65 qm=B m= 7.6 qbw= 0.66 qrn=3 hb=0.104 dgq=20.0 ex=[5.0, 2.0, 4.0]
+t= 53.5 B=  31/  44/  47 beta=  19.1 bq=  19.1/  19.1/  21.4 win=  18.2k F=   1.1k srtt= 12.8 L=5.75 qm=B m= 7.6 qbw= 0.66 qrn=3 hb=1.0 dgq=47.0 ex=[28.0, 2.0, 35.0]
+t= 53.7 B=  59/  71/  71 beta=  19.0 bq=  19.0/  19.1/  19.1 win=  18.2k F=   1.1k srtt= 12.8 L=5.73 qm=B m= 7.6 qbw= 0.66 qrn=3 hb=1.0 dgq=71.0 ex=[52.0, 2.0, 63.0]
+t= 54.0 B=  28/  83/  86 beta= 110.3 bq=  19.0/  50.7/  95.1 win= 103.8k F=   1.1k srtt= 12.4 L=5.67 qm=B m= 7.6 qbw= 0.66 qrn=3 hb=0.269 dgq=0.0 ex=[79.0, 2.0, 81.0]
+t= 54.2 B=   4/  15/  16 beta=  94.0 bq=   6.6/ 106.6/ 110.4 win=  82.8k F=   1.1k srtt= 11.5 L=5.62 qm=B m= 7.6 qbw= 5.25 qrn=3 hb=0.009 dgq=13.0 ex=[0.0, 1.0, 0.0]
+t= 54.5 B=   4/  13/  15 beta=  14.5 bq=  14.3/  65.7/ 103.8 win=  14.0k F=   0.0k srtt= 12.7 L=5.62 qm=B m= 6.9 qbw= 5.25 qrn=3 hb=0.01 dgq=0.0 ex=[1.0, 1.0, 1.0]
+t= 54.7 B=   4/  15/  15 beta=   7.8 bq=  14.4/  15.1/  16.1 win=   6.7k F=   0.0k srtt= 11.3 L=5.63 qm=B m= 5.1 qbw= 0.67 qrn=3 hb=0.044 dgq=0.0 ex=[1.0, 1.0, 1.0]

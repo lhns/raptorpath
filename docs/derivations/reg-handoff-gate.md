@@ -316,3 +316,182 @@ Read from the 68r raw `[HOFF]`, `[QCC]`, `[DIAG]` and `[SPAN]` lines in `docs/l1
 **§10 correction (2026-11-27, arithmetic, no new data):**
 - **PH:** at 70 % the repair rate is about 0.15 per source (coded share 0.133). Full repair at 85 Mbit of source would need about 98 Mbit of wire, against about 90 Mbit the link carries. The room allows a coded share of about 0.055; GATE sent 0.042. So the "clamp binds with headroom" stop rests on a wrong premise (as LR's did): PH has no headroom for full repair. R4 is no reference there (it carried 76 Mbit, not 85). Predicted: the clamp starts to bind near 78 Mbit offered. To check with one load on each side (75 and 80 Mbit), not a sweep; until then the 85 % reading is not a defect finding.
 - **BU** runs at 1.2 Mbit with 10-datagram bursts against β ≈ 500, so the gate cannot bind there. It shows nothing about bursts near or above β, or bursts on a loaded link; a fair bursty cell needs frames larger than β.
+
+## 11. β spikes: cause and fix (derivation)
+
+Read from the 68s raw `[HOFF]`, `[QCC]` and `[DIAG]` lines (`docs/l1-raw/hoff68s/rep68s/diag-ld/`). The scripts and their output are in `docs/l1-raw/hoff68s/diag11/` (`out_diag11.txt`; run as `python -I <script> ../rep68s/diag-ld` from that directory). Engine lines cite the gate tree `9b3b30b3`. Nothing was rerun.
+
+The law change this section proposes is written out in `sender-queue-law.md` §10 (Revision 5, proposed). Paper §6.8 stays the authority until the owner accepts it.
+
+### 11.1 What the logs can and cannot show
+
+- `[HOFF]` gives one end sample per 0.25 s window of `win` (the published `qwin`), R, L and β. It also gives β's p5/p50/p95 over the window's **producer turns** (`beta_q`). srtt is recovered from the end sample as 1.25·win/R.
+- **Within a window, motion cannot be split between window and srtt.**
+- **Turn quantiles over-weight open-gate time.** A closed turn sleeps on the 1 ms poll (τ̂_p ≈ 2.7 ms realized); an open one does not. So a β p95 above p50 lasts at most 5 % of the window (12.5 ms), and probably less.
+- **Across windows, the end samples are random instants, so their spread decomposes.** Over t ≥ 2 s on the GATE Bulk rows (`decomp.py`):
+
+| leg | share of var(log β): window / srtt / L | corr(log win, log srtt) | (win/srtt)/b̂, p50 and p95 | F/win, p50 |
+|---|---|---|---|---|
+| c2 leg 0 (A2, K2, PH, K8) | 0.20–0.83 / −0.14–0.22 / 0.14–0.63 | 0.50–0.86 | 0.94–0.96 / 1.06–1.27 | 0.94–0.96 |
+| K8 leg 1 | 0.51–0.72 / 0.11–0.27 / 0.17–0.28 | 0.30–0.58 | 0.97–0.98 / 1.15–1.20 | 0.97 |
+
+Window and srtt move together, as Little's law says they should when F ≈ W. β moves where they do not, and with L.
+
+### 11.2 Cause
+
+**(a) R over-reads quinn's release whenever srtt is below the RTT of the bytes now in flight. This drives the large spikes.**
+- **Why R over-reads.** R = 1.25·W/srtt is quinn's pacer refill (`pacing.rs:110`). On these rows the window binds (`hand_bind` ≈ 0.65, F/W ≈ 0.95), so quinn releases what the window lets out: the room W − F, plus what acks free at the ack clock ẋ. W/srtt = ẋ only while srtt is the RTT of the bytes in flight.
+- **Where it breaks.** After a window restore, the queue has just drained, so srtt sits near m̂ while W is back at full size. The new RTT reaches srtt one round later. Until then, R reads up to W/(m̂·ẋ) ≈ srtt_ss/m̂ times the ack clock.
+- **ProbeRtt exit is the clean case.** `window()` returns the ProbeRtt window, then the full cwnd (`bbr_rs.rs:1078`).
+  - In the windows at a `[QCC]` ProbeRtt step, β p95/p50 reads 1.0–2.2, against a bound srtt_before/m̂ of 1.5–4.1. Only one of the 80 step windows exceeds its bound: K8 r3 leg 1 at 21.3 s, with β ≈ 23 (`prtt.py`).
+  - Over the rows, the largest spread is 2.0–2.8 against srtt/m̂ 2.5–2.8 on leg 0 (`spikes.py`).
+  - B follows: K2 r1 at 10.3 s reads β p95 214 and B p95 213.
+- **ProbeRtt is not the whole of it.**
+  - ProbeRtt steps come every 10 s. The windows within −0.3…+1 s of one are 14 % of windows, but carry 20–37 % of leg-0 excess (21–73 % on K8 leg 1).
+  - Bulk rows read 5–6 quinn congestion events per window (`recjoin.py`). Spike windows read no more than calm ones (median 5–7 against 5–6), and their end-sample F/W is the same (0.96). So recovery exits cannot be told apart from ordinary motion at this resolution.
+  - By band (`spikes.py`): windows with β p95/p50 ≥ 1.5 (5–7 % of windows) carry 30–50 % of leg-0 excess, and those at 1.2–1.5 carry 26–65 %.
+- **The ack-clock reading supports (a)** (`ackclock.py`; ẋ = Δ`qab`/Δt from `[QCC]`, the window's mean ack rate):
+  - end-sample (W/srtt)/ẋ reads 1.09–1.17 at p50 and 1.34–1.37 at p90;
+  - β p95 over the window's ack clock 1.25·ẋ·L/s reads 1.23–1.30 at p50, 1.54–1.67 at p90, and up to 4.6.
+
+**(b) L moves in slow steps, and part of it is a quantizer.**
+- **L steps are smaller than R's.** Between consecutive end samples, |Δlog L| reads p50 0.01 and p90 0.07–0.18; |Δlog R| reads p50 0.05–0.06 and p90 0.19–0.23 (`steps.py`).
+- **τ̂_p moves most.** It is the p99 of the producer's poll wait over a 1 s roll. It is the most-moved term in 36 % of windows, and those windows carry 36–55 % of the excess (`recjoin.py`).
+- **τ̂_o takes only the values 2.97, 4.19 and 5.93 ms.** These are the upper edges of the owner histogram's √2-spaced buckets (`hist_p99_s`, `WorkHist::upper_ns`).
+  - So L can read high by up to 41 % of τ̂_o (≈ 1.2 ms, ≈ 19 % of L), and it steps by that much for at least the 1 s roll.
+  - That is a quantizer inside the law with no provenance.
+  - **Defect finding (MD18): the L term's τ̂_o is quantized at √2.** The fix is interpolation within the bucket. It is a gauge-resolution fix, not a law change.
+
+**(c) `qwin` is fresh in Bulk and stale under an ack blackout.**
+- `RouteProbe::on_end_acks` stores `window()` once per ACK event, before the controller's own update of that event (`io_owner.rs:628`). At bulk ack rates that lag is sub-millisecond.
+- With no ACKs, `qwin` and `qinfl` freeze. On GBU r1 at 53.2–54.0 s, the gate read `win` 18.2 kB while quinn's window (`[DIAG]` `qcwnd`) was 5.8 kB (§11.5).
+- That staleness errs loose: β reads too high on a dead path.
+- Publishing both atomics from `on_sent` and `on_congestion_event` as well closes it. It is a wiring fix, with no law.
+
+**(d) Most "B over β" is β's ordinary spread, tracked by B and read against one end sample.**
+- β p95/p50 has a median of 1.13–1.18 per window (`lsplit.py`). B sits at β (B p50 ≈ β p50) and follows its p95.
+- So E = B p95 − β_end is about β's own spread plus a batch. The registered "B p95 ≤ β + batch" fires whenever that spread exceeds batch/β ≈ 0.2.
+- §9's U flag (B max within a batch of the window's highest β) holds on 412 of 436 windows. **The gate keeps its bound at admission**; what the readout calls excess is β falling after admission.
+
+### 11.3 Is "admit up to the instantaneous β" the right law?
+
+**The inequality is right. The rate in β is wrong when the window binds.**
+- §2.2's argument sizes B by what quinn **releases** before the next look, and that is the lesser of two caps:
+  - the pacer refill, 1.25·(W/srtt)·L;
+  - what the window lets out, (W − F)⁺ plus the bytes acks free over L.
+- Revision 4 reads only the first. Under a binding window it over-reads exactly as in (a), and the over-read becomes delay for everything behind it.
+- **So the fix is the second cap, not a filter:**
+
+```text
+   β_i = min( R_i·L_i ,  (W_i − F_i)⁺ + R̃_i·L_i ) / s_i ,   R_i = N·W_i/srtt_i ,   R̃_i = N·ẋ_i ,   N = 1.25
+   ẋ_i = (bytes acked on path i over the last srtt_i) / srtt_i
+```
+
+- **Provenance** (in full in `sender-queue-law.md` §10). No new constant.
+  - W_i and F_i are the `RouteProbe` atomics already in the view.
+  - ẋ_i is measured, from an acked-bytes counter in `RouteProbe::on_ack`. Its horizon is one srtt, BBR's delivery-rate interval (one packet's send-to-ack), so it reads one window's delivery rather than one ack burst.
+  - N is RFC 9002 §7.7's slack, applied to the ack clock for the same stated reason ("variations in RTT").
+- **Shape.**
+  - Units: both terms are bytes, so β is in datagrams.
+  - Continuous: a min of two continuous terms, both always computed.
+  - No dial: it reads no hint, no δ/ρ and no mode. The second term is +∞ while srtt or ẋ is undefined (cold start, as today).
+  - Monotone: β rises with W, ẋ and L, and falls with srtt and F.
+  - Per leg: N = 1 and N = 2 are each one leg's own term.
+  - It is a clamp, so it carries a bind-fraction gauge: `ack_bind_i`, the share of turns where the second term is the smaller.
+- **What it keeps.**
+  - **App-limited bursts (GBU):** room ≈ W, so the first term binds and β is unchanged.
+    - `capcheck.py`: GBU end samples read cap < β in 3 of 228 windows (r1), 0 of 227 (r2) and 12 of 226 (r3).
+    - The r3 binds are where β (≈ 500) exceeds the whole window (≈ 240 datagrams), so the cap still leaves ≥ 100 datagrams against 10-datagram frames.
+  - **Startup:** the room term is read live, so window growth is admitted at the next look.
+    - Unlike Revision 2's ν̂, no rate term is built only from past sends, so growth has no ×1.25 ceiling.
+    - The worst case is one look gap L with up to ẋ·L of unused room.
+    - Startup windows on the Bulk rows (38 on K2 r3) never bind (min cap/β 1.07).
+  - **Cruise:** β at the end of each window, over one L of the ack clock (β_fix·s/(ẋ·L)), reads p5 0.97–1.02 and p50 1.31–1.44. So it covers the next L of release.
+- **Rejected.**
+  - **A cap at the controller's pacing rate or at b̂.** On GBU r1 (ProbeBw), `qbw` is 0.35–0.66 MB/s. With s = 536 B (R·L/β from the 53.5 s line), that gives β ≈ 4–7 against today's 19, so a 15-datagram frame plus repair would wait two to three reopens.
+  - **A running min over L or srtt.** The spikes last up to 2 L, and a min over srtt reads the low srtt that causes them.
+  - **A slew limit (×2 per srtt upward).** It reads the same low srtt, and it slows the refill after every ProbeRtt.
+
+### 11.4 Predicted effect on the 68s rows (counterfactual replay)
+
+**Model** (`replay2.py`):
+- The cap per window is the end-sample room plus 1.25·ẋ·L/s, with ẋ the window's mean ack rate.
+- B follows β as it does now (B p95 ≈ β p95, §9's U), so a quantile of B drops by what the cap removes from the same quantile of β.
+- E_fix = B_fix p95 − min(β_end, cap).
+- The engine's ẋ over one srtt is noisier than a 0.25 s mean, so these are the optimistic end.
+
+| row, leg (t ≥ 2 s) | E p50 / p90 / max | windows with E > batch | E > 50 | B p95 median | B max p99 |
+|---|---|---|---|---|---|
+| A2 leg 0 | 11 / 37 / 332 → 4 / 24 / 88 | 183 → 99 | 34 → 7 | 95 → 88 | 202 → 152 |
+| K2 leg 0 | 11 / 29 / 119 → 3 / 21 / 81 | 171 → 85 | 21 → 3 | 93 → 85 | 183 → 137 |
+| K8 leg 0 | 12 / 34 / 137 → 4 / 23 / 69 | 159 → 84 | 26 → 3 | 96 → 88 | 189 → 152 |
+| PH leg 0 | 7 / 23 / 137 → −1 / 14 / 67 | 197 → 89 | 17 → 3 | 92 → 82 | 217 → 183 |
+| K8 leg 1 | 3 / 9 / 56 → 2 / 8 / 56 | 115 → 91 | 1 → 1 | 19 → 19 | 45 → 44 |
+
+**Predicted readouts on leg 0:**
+- β median −2 datagrams.
+- B p95 −7 to −10 datagrams, about −1 ms at x ≈ 9.5 k datagrams/s.
+- Over-batch windows about halved, and windows with E > 50 down by 80–85 %.
+- `ack_bind` between 0.32–0.37 (the share of windows with the cap below β p50) and 0.48–0.53 (below β p95). On K8 leg 1 it is 0.11–0.22, on GBU ≤ 0.05.
+- Goodput and `starve` unchanged: the window term covers one L of the ack clock.
+
+**`ex_max` (same instant).** The windows the cap cuts hold 70–75 % of leg-0 over-batch `ex_max` and 60–80 % of its first-send booking (`exmax.py`). That is the most the fix can remove. The exempt booking (979–1 612 per arm) is untouched.
+
+**What stays.** "B p95 ≤ β + batch" still fires on about 14 % of windows, so it stays reported, not a stop. The residual is:
+- one batch of granularity;
+- exempt traffic: K8 leg 1 unchanged, and about a third of the booking on A2 and K2;
+- L's down-steps (p90 7–18 %, so 6–15 datagrams) until the τ̂_o quantizer is fixed;
+- W's real drops (recovery entry, ProbeRtt entry), which no admission law can undo;
+- the p95-against-end-sample artifact.
+
+The gate's own witness should be the U form, the law's invariant: B max ≤ the highest β of this window and the one before, plus one batch.
+
+### 11.5 GBU r1: 600 ms in-order max and 52 of excess
+
+**What happened: a path stall in quinn and `bbr_rs`. Exempt datagrams piled up behind a correctly closed gate; the gate is not implicated.**
+
+**r1 is the only BU row whose `bbr_rs` left Startup** (S → B at 15.4 s). r2 and r3 stay in S, and the RBU rows only go S → R → S.
+- After that, the window is 2·b̂·m̂ + A from app-limited samples: 8.2 / 14.1 / 16.7 kB (p5 / p50 / p95), about 15–31 datagrams of 536 B. A frame plus its repair (r = 0.5) is 15 datagrams, and β is ≈ 16, so a frame meets the gate near its tail.
+- The gate starts binding: `hand_bind` > 0 in 129 of 172 windows (mean 0.038), against 1 of 58 before 15.4 s.
+- β falls from ≈ 440 to ≈ 16.
+- That corrects §10's correction ("BU cannot bind the gate") for one row in three.
+
+**The stall at 53.2–54.0 s:**
+- `qcwnd` falls 18 238 → 5 808 (4 × 1 452, `bbr_rs`'s min window), with `qce` +1.
+- `qab` (acked bytes) and `qage` freeze from 53.5 to 54.0 s: no ACK arrives.
+- quinn's `tx` advances 4 per window, while `hand − tx` grows 20 → 47 → 71.
+- `src` is 0, because the gate is closed (`hand_bind` 1.0) with B ≥ β.
+- `retx` (444 → 520) and repair keep staging: `ex_max` 79, of which 81 exempt and 2 first sends.
+- `relgap` max is 685 ms.
+
+**Reading:** a Gilbert-Elliott loss run took the whole small flight.
+- With no ACKs, quinn's sends are probe-only (≈ 2 per PTO) under PTO backoff. Four backed-off PTOs from ≈ 40 ms sum to ≈ 0.6 s.
+- PTO is inferred from the frozen acks and the probe-sized `tx` steps; the logs carry no PTO counter.
+- The netem loss is Gilbert-Elliott (p 1.3 %, r 50 %), so a run of ≥ 8 losses has probability ≈ 0.8 % per burst, about one per row.
+
+**Gate attribution:**
+- The gate stayed closed, and was right to. Its stale `qwin` (§11.2 c) gave β ≈ 19, where the true window gave ≈ 6.
+- Its 52 of B over β is exempt traffic staged into a dead path. That is §6.8's exempt term, not a leak (`fs_over` 0).
+- The trigger is `bbr_rs` leaving Startup on a bursty app-limited flow with a window smaller than a frame. RBU r1 and r3 touch the min window for one window each, but never leave Startup for ProbeBw.
+- Whether the gate made that exit likelier cannot be read at n = 3. It barely binds in Startup (1 of 58 windows), so it does not shape the bursts there.
+
+### 11.6 A fair bursty test: cell spec for the harness
+
+As run, BU tests nothing about the gate in 2 of 3 rows: in Startup β ≈ 440–550, and no 10-datagram frame exceeds it. A fair test puts frames above β, or puts bursts on a loaded path.
+
+| cell | source | link | condition it must reach (execution witness) | arms, n |
+|---|---|---|---|---|
+| **BW** (frames above β, headroom) | Realtime ρ = 1. A 5 s saturating lead-in, so that `bbr_rs` reaches ProbeBw by full-bandwidth detection, then `RWM_PERF_BURST=k/33` with k ∈ {10, 20, 40} | c2 | `[QCC]` qm = B on ≥ 90 % of burst-phase lines; ≥ 50 % of frames meet ≥ 1 refusal at k = 20 (`hand_bind` > 0 at the frame's first datagram) | BASE, R4, GATE; n ≥ 5 (r1's stall is a one-in-a-row event) |
+| **BL** (bursts on a loaded path) | the same burst source plus a Bulk transfer on the same path (one connection, two objects), k = 10 | c2 | the path saturated (`hand_bind` ≥ 0.5 on GATE); ≥ 50 % of frames arrive while the gate is closed | BASE, R4, GATE; n ≥ 5 |
+
+**Readouts (new, all owed):**
+- Frame completion time per frame, from the first datagram's intake to the last datagram's delivery: p50, p99 and max, by k.
+- At each frame's arrival: β, W/s, k/β and k/(W/s), so that a window-limited frame is not booked to the gate.
+- Controller mode share (qm).
+- An ack-blackout gauge: the longest interval without an ACK, and quinn's PTO count.
+- `ack_bind` (Revision 5) and the U witness.
+
+**Predictions to register with it:**
+- **BL:** GATE's frame p99 is below BASE's by the FIFO wait (BASE c2 in-order mean 344 ms).
+- **BW:** frame time on GATE rises with k/β, by about ⌈k/β⌉ − 1 reopens of at most L each.
+- **k/(W/s) > 1:** the frame is window-limited, on R4 and GATE alike.

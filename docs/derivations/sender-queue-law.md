@@ -61,6 +61,7 @@ If the owner accepts, W1.2's "δ on the store law" step is withdrawn. Its other 
 | 2 (`e0561809`) | R·(g + a)/s, with R the pacer rate | (β − B)⁺/β | ν̂ throttled Startup; Δ_v had no provenance |
 | 3 (`64aca2e0`) | R·L/s, L = VIEW_REFRESH + ℓ̂_o + P_poll + ℓ̂_p | window form (cwnd − F − sB)⁺/(F + sB) | g and a grew without bound in silence; nothing reopened a closed gate on a stale view; B/β read 0 at β < 1 |
 | 4 (this) | R·L/s, L = τ̂_o + ℓ̂_o + τ̂_p + ℓ̂_p (realized timer waits, floored at the cited periods) | last-turn predicate, +∞ or 0 | **L doubled:** the 1 ms poll realizes at 1.75–2.4 ms p50 and 2.0–3.7 ms p99 (`handoff/q8_out.txt`). **The window form is withdrawn:** it reads ≈ 0 in loss recovery (w_rec ≥ T(1) ≈ F) and the probing margin in ProbeBw. **B/β** averages ≈ batch/(2β) under saturation. Only the predicate reads 0 exactly when a first send waits, at any β |
+| 5 (proposed, §10; not built) | min( N·(W/srtt)·L , (W − F)⁺ + N·ẋ·L ) / s, ẋ the ack rate over one srtt | unchanged | 68s: under a binding window R over-reads quinn's release whenever srtt lags the in-flight RTT (after every window restore, up to srtt/m̂); B follows the over-read (`reg-handoff-gate.md` §11) |
 
 **Revision 4 in numbers.** β is ≈ 54 at c2, ≈ 61 and ≈ 12 on c8's legs, and ≈ 920 at c1s. That is ≥ 2.3× today's batch everywhere. At c1s it is above today's queue of 715, so the gate rarely binds there. At a 36/s call β ≈ 0.4–0.6 in ProbeBw, and ≈ 10 in Startup at W_init.
 - **The owner's republish timer is assumed at τ̂_o ≈ 2 ms** until built and measured.
@@ -548,3 +549,57 @@ The original order follows for the record.
 - *Placement is blind to quinn's queue:* its price reads the wire RTT and a near-zero I/W, so under `bbr_rs` it over-offers c8's saturated slow leg at each store-cap step, and the bursts wait there 0.24–0.49 s.
 
 **Paper text: done** (§6.8 and an Appendix A.5 line; `tools/build_paper.sh` builds). **Owed:** the roadmap nodes above and a node for this law (`docs/roadmap/nodes.yaml`, with `build.py` and `check.py`).
+
+## 10. Revision 5 (proposed, 2026-11-27): β reads the window's release, not only the pacer's
+
+**Status.** Proposed, post-data, from the 68s diagnosis (`reg-handoff-gate.md` §11). It is not built and not in paper §6.8. Revision 4 stays the authority until the owner accepts this. Nothing else in the law changes: the predicate clamp, the exempt kinds and L.
+
+**The sentence.** Hand quinn no more than it will send before the next hand-off. That is the lesser of what its pacer refills and what its window lets out.
+
+```text
+   hand a first send to leg i  ⇔  B_i < β_i
+   β_i = min( N·(W_i/srtt_i)·L_i ,  (W_i − F_i)⁺ + N·ẋ_i·L_i ) / s_i ,   N = 1.25
+   ẋ_i = (bytes acked on leg i over the last srtt_i) / srtt_i
+```
+
+| symbol | meaning | provenance |
+|---|---|---|
+| W_i, srtt_i, L_i, s_i | as in Revision 4 | unchanged (§0) |
+| F_i | bytes in flight on leg i | measured: `RouteProbe` `qinfl`, already in the view. Owed: publish it from `on_sent` and `on_congestion_event` too, so an ack blackout does not freeze it (68s GBU r1) |
+| ẋ_i | the ack clock, bytes/s | measured: a new acked-bytes counter in `RouteProbe::on_ack`, differenced over one srtt. The horizon is BBR's delivery-rate interval (a packet's send-to-ack), one window's delivery; a shorter one reads ack bursts (A) as rate |
+| N | RFC 9002 §7.7's slack, now on both rates | cited, unchanged. Its stated reason ("variations in RTT do not result in underutilization") applies to the ack clock as to the window rate |
+| `ack_bind_i` | share of turns where the second term is the smaller | the clamp's bind-fraction gauge (CLAUDE.md); predicted 0.3–0.5 on saturated c2 legs and ≤ 0.05 on app-limited bursts |
+
+**Derivation.**
+- §2.2 sizes B_i by quinn's release before the next look.
+- quinn sends a queued datagram only when both the pacer has tokens and the window has room. So its release over L is at most the lesser of:
+  - the bucket's refill, N·(W/srtt)·L;
+  - the window's room now, plus the bytes acks free over L, (W − F)⁺ + ẋ·L.
+- Revision 4 kept only the first. The two agree when the window binds and srtt is the RTT of the bytes in flight, because Little's law then gives W/srtt = ẋ.
+- They part when srtt lags the in-flight RTT, as after every window restore. There the first term over-reads the release by up to srtt_ss/m̂: the 68s ProbeRtt step windows read spikes ≤ srtt_before/m̂ in 79 of 80.
+- The over-read datagrams wait in quinn's FIFO. That is the delay §2.2 says buys nothing.
+- Window growth during L is not provisioned. It appears as room at the next look, and room is read live.
+- **This is not Revision 3's withdrawn window form.** That form was the repair clamp, and it read ≈ 0 in loss recovery. Here the room term is only part of the bound: at zero room (recovery, or a full window), β = N·ẋ·L/s, one L of the ack clock.
+
+**Shape, read before any number.**
+- **Units.** Both terms are bytes, so β is in datagrams.
+- **Dials.** β reads no δ, ρ, T or hint: constant in each dial, trivially continuous through every preset.
+- **N.** Per leg, as before.
+- **Inputs.** β is a min of two continuous terms, both always computed, so it is continuous. It is non-decreasing in W, ẋ and L, and non-increasing in srtt and F.
+- **Cold start.** The second term is +∞ while srtt or ẋ is undefined, so the cold-start admit is unchanged.
+- **Only an upper bound changes.** β_5 ≤ β_4 everywhere, so the gate can only get tighter. Throughput is protected by the room term (Startup, app-limited) and by the ack-clock term covering one L (68s replay: β·s/(ẋ·L) at p5 is 0.97–1.02).
+- **App-limited.** With room ≈ W > N·W·L/srtt (L < srtt/N), the first term binds, so app-limited bursts keep Revision 4's β.
+
+**Predicted on the 68s rows** (replay, `reg-handoff-gate.md` §11.4):
+- Leg-0 windows with B p95 − β > batch about halve.
+- Windows with that excess above 50 fall by 80–85 %.
+- B p95 falls by 7–10 datagrams (≈ 1 ms), and the β median by 2.
+- K8 leg 1 is unchanged: its excess is exempt.
+
+**Tests owed (red first, absolute, for the build).** These extend §7.
+1. **Post-restore over-read.** Inputs W = 280 000 B, srtt = 8 ms, F = 280 000 B, ẋ = 11.2 MB/s, L = 6.3 ms, s = 1 233. Today β = 223.6; Revision 5 gives 71.5. Hand at 71, not at 72.
+2. **App-limited burst** (GBU r1 at 53.5 s). Inputs W = 18 196 B, F = 1 114 B, srtt = 12.81 ms, ẋ = 0.66 MB/s, L = 5.75 ms, s = 536. Both revisions give 19.05, from the first term; the second reads 40.7.
+3. **Continuity.** At the crossover where the terms are equal, ±2 % on ẋ moves β by ≤ 2 %.
+4. **Cold start.** ẋ undefined gives Revision 4's β.
+
+The deny-list test covers the new code.
