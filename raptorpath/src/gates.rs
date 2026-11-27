@@ -298,6 +298,10 @@ pub struct RuntimeGates {
     /// `RWM_PERF_RATE_MBIT`, raw (the perf client's app-side offered-load
     /// pacer, `perf.rs`; parsed there, an invalid value fails the client).
     pub perf_rate_raw: Option<String>,
+    /// `RWM_PERF_BURST`, raw (`<datagrams>/<interval_ms>`: the perf client's bursty
+    /// offered-load source, `perf.rs`; parsed there, an invalid value fails the
+    /// client, and it cannot be combined with `RWM_PERF_RATE_MBIT`).
+    pub perf_burst_raw: Option<String>,
     /// `RWM_ACKDIAG_WINDOW_US`, resolved (echoed on the `[GATES]` line).
     pub ackdiag_window_us: u64,
     /// `RWM_RTT_DUMP_MAX`, resolved (echoed on the `[GATES]` line).
@@ -413,6 +417,7 @@ impl RuntimeGates {
             l0_seed_raw: std::env::var("RWM_L0_SEED").ok(),
             perf_timeout_raw: std::env::var("RWM_PERF_TIMEOUT_S").ok(),
             perf_rate_raw: std::env::var("RWM_PERF_RATE_MBIT").ok(),
+            perf_burst_raw: std::env::var("RWM_PERF_BURST").ok(),
             ackdiag_window_us: crate::net::ackdiag::resolve_window_us(
                 std::env::var("RWM_ACKDIAG_WINDOW_US").ok().as_deref(),
             ),
@@ -459,7 +464,7 @@ impl RuntimeGates {
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
-             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={} RWM_HOFF_GATE={} RWM_PERF_RATE_MBIT={}",
+             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={} RWM_HOFF_GATE={} RWM_PERF_RATE_MBIT={} RWM_PERF_BURST={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor),
             b(self.honest_anchor),
@@ -496,6 +501,7 @@ impl RuntimeGates {
             if self.rtobs_deep { "2" } else { b(self.rtobs) },
             b(self.fdiag), b(self.trace), b(self.pfrac), b(self.hoff_gate),
             self.perf_rate_raw.as_deref().unwrap_or("unset"),
+            self.perf_burst_raw.as_deref().unwrap_or("unset"),
         )
     }
 
