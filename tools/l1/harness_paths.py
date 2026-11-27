@@ -178,12 +178,13 @@ Plan 67x (the stages off Bulk, the tunnel and the pool block):
   cut-pool               LD_CUT67=pool: ABORT-CUT (only the dump twins may be cut)
   budget                 less than the registered worst case before LD_HARD: ABORT-BUDGET
 Plan 68 (status 68, the hand-off gate's step 1; docs/derivations/reg-handoff-gate.md section 3; plan68.py / s68_report.py, reported only) is plan 63's two-seat shape: the BASE seat (LD_BIN_CONTROL, pinned LD_BIN_SHA_CONTROL) runs the B arms, the
-CAND seat (the hand-off-gate tree, pinned LD_BIN_SHA_CAND) runs R4 (RWM_QUIC_CC=bbr_rs) and GATE (the same plus RWM_HOFF_GATE=1). Three cells are built (K2, K8, A2: 27 rows), three are UNBUILT (the paced and bursty cells), no engine suites. Paths:
+CAND seat (the hand-off-gate tree, pinned LD_BIN_SHA_CAND) runs R4 (RWM_QUIC_CC=bbr_rs) and GATE (the same plus RWM_HOFF_GATE=1). Five cells are built (K2, K8, A2, and LR / PC since the pacer is restored: 45 rows), BU is UNBUILT, no engine suites. Paths:
   rehearse               LD_REHEARSE=1: both builds / binaries (shas RECORDED), the preflight, the three smoke rows B / R / G on K2, the smoke check; no battery
-  full                   the pins registered: the smoke, then the 27 executed slots (registered order, one row each), the report (ROW68, RATIO68, the stop rules, the first-send-refusal witness) and the slot check
+  full                   the pins registered: the smoke, then the 45 executed slots (registered order, one row each), the report (ROW68, RATIO68, the stop rules, the first-send-refusal witness) and the slot check
   cand-sha-missing       a launch without LD_BIN_SHA_CAND: ABORT-BIN-SHA, rc 3, nothing run
   base-sha-missing       a launch without LD_BIN_SHA_CONTROL (the BASE binary's pin): ABORT-BIN-SHA, rc 3, nothing run
   base-no-hoff           the BASE binary carries no [HOFF] gauge: ABORT-SEAT, rc 5, no row measured
+  (plan 68r, the rerun table of plan68.py: the same seats and wiring with 36 rows, GATE and Q (the gate alone) on K2 / K8 / A2 and B / R4 / GATE on LR / PC; the BASE seat is the pacer-carrying BASE binary: `rehearse` runs its 6 smoke rows, `full` the 36 slots)
   gate-inert             (STUB_BAD68=gateoff) the GATE rows print gate=off and never bind: STOP68 gate-not-on and first-send-refusals-zero in the report; the rows are not voided
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
 
@@ -216,6 +217,7 @@ HARNESS_PATHS = {
     "67": ("rehearse", "not-rehearsal", "seat-s1-no-pfec", "seat-b0-has-gauge", "seat-commit-mismatch", "pin-missing-b0", "s2-seat-abort", "s2-dropped", "tools-diff", "manifest-miss", "flake-rule-edit", "ref-missing",
            "twin-no-kept-acct", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
     "68": ("rehearse", "full", "cand-sha-missing", "base-sha-missing", "base-no-hoff", "gate-inert"),
+    "68r": ("rehearse", "full"),
     "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
     "67x": ("full", "dump-twins", "s2-taper-nonzero", "s2-no-pslot", "s2-belowfloor-high", "a-under-min", "block1-fail", "r1-blind", "twin-no-final", "twin-under-min", "twin-worse", "t-refusal-missing", "b0-run-key-false", "g2-fail", "cut-pool",
             "budget"),

@@ -57,11 +57,12 @@ ANSI = "\x1b[2m2026-11-26T10:00:00Z\x1b[0m INFO " + LINE
 check("a line carrying the tracing prefix and colour codes parses", sr.parse_hoff_line(ANSI)["t"] == 12.5)
 
 # ── 2. the row readouts ──
-def mk(t, gate, hb, n, b95=52.0, beta=53.8, batch=8.0, wakes=4, acks=50):
+def mk(t, gate, hb, n, b95=52.0, beta=53.8, batch=8.0, wakes=4, acks=50, wit=""):
     return (f"[HOFF] t={t:.1f}s gate={gate} owner_timer_wakes={wakes} probe_acks={acks} tau_floor_bind=0.40 p0[B=30/{b95}/56 n={n} dgq=20 F=45 win=60 R=11500 tau_o=2.00ms(meas) tau_p=1.00ms l_o=0.30ms "
-            f"l_p=0.20ms L=3.50ms beta={beta} hand_bind={hb:.3f} spare_i=0 spare_bind=0.550 reopen=0.500/3.000ms/4 starve=0.010 app_limited=0.050 batch={batch} g_batch=1.20ms phat=1.05ms fifo_wait_resend=2.50ms/3] infl_vs_out=900/880/x1.02 store_pin=0.10")
+            f"l_p=0.20ms L=3.50ms beta={beta} hand_bind={hb:.3f} spare_i=0 spare_bind=0.550 reopen=0.500/3.000ms/4 starve=0.010 app_limited=0.050 batch={batch} g_batch=1.20ms phat=1.05ms fifo_wait_resend=2.50ms/3{wit}] infl_vs_out=900/880/x1.02 store_pin=0.10")
 
 
+WIT = " fs_over={o} fs_bypass=0/1/0/2 ex_max=46/37/9 ex_n=4/2/3 fs_n=9 beta_q=40.1/53.8/60.2 own_gap_max=7000us pend_max=12"
 lines = [mk(0.5, "on", 0.9, 400)] + [mk(2.0 + 0.25 * k, "on", 0.62, 400) for k in range(8)]
 h = sr.hoff_summary(lines)
 check("the summary skips the warm-up windows (t < 2 s), reads the last gate token and the end-of-run counters", h["n_lines"] == 9 and h["n_post"] == 8 and h["gate"] == "on" and h["probe_acks"] == 50 and h["owner_timer_wakes"] == 4, h)
@@ -77,8 +78,8 @@ check("row_metrics: the gate echo on both ends, the cpu per GB from the row, nev
 check("row_metrics on empty logs does not raise and reports no [HOFF] lines", sr.row_metrics([], [], [])["hoff"]["n_lines"] == 0)
 
 # ── 3. the report's rules ──
-def row(arm, rep, gate, hb, n=400, b95=52.0, gp=95.0, cpu_srv_gb=None, coded=None, cod_src=None, rr=None, acks=900, gate_echo="1", status="LIVE", batch=8.0):
-    ls = [mk(2.0 + 0.25 * k, gate, hb, n, b95=b95, batch=batch, acks=acks) for k in range(8)]
+def row(arm, rep, gate, hb, n=400, b95=52.0, gp=95.0, cpu_srv_gb=None, coded=None, cod_src=None, rr=None, acks=900, gate_echo="1", status="LIVE", batch=8.0, fs_over=None):
+    ls = [mk(2.0 + 0.25 * k, gate, hb, n, b95=b95, batch=batch, acks=acks, wit="" if fs_over is None else WIT.format(o=fs_over)) for k in range(8)]
     t = sr.row_metrics(["[GATES] RWM_HOFF_GATE=" + gate_echo] + ls, [], [], 600_000_000, "c2-100", arm, gp)
     t["cpu_srv_gb"], t["coded_share"], t["cod_src"], t["rr"] = cpu_srv_gb, coded, cod_src, rr
     return {"cell": "c2-100", "arm": arm, "seed": "42", "rep": rep, "status": status, "mbps": gp, "t68": t, "bin_sha": "ab" * 32}
@@ -106,8 +107,10 @@ check("rule 'gate executes': probe_acks = 0 fires STOP68 routeprobe-reads-zero",
 stops, _ = run_rules([row("GK2", 1, "on", 0.4)])
 check("rule 'gate executes': hand_bind <= 0.5 at c2 Bulk fires STOP68 hand_bind-c2-bulk (0.62 does not, above)", any(s.startswith("hand_bind-c2-bulk") for s in stops), stops)
 stops, _ = run_rules([row("GK2", 1, "on", 0.62, b95=70.0)])
-check("rule 'gate executes': B p95 above beta by more than one batch (70 - 53.8 = 16.2 > 8) fires STOP68 B-over-beta; within one batch (b95 = 60) does not",
-      any(s.startswith("B-over-beta") for s in stops) and not any(s.startswith("B-over-beta") for s in run_rules([row("GK2", 1, "on", 0.62, b95=60.0)])[0]), stops)
+stops, out = run_rules([row("GK2", 1, "on", 0.62, b95=70.0)])
+check("B p95 above beta by more than one batch (70 - 53.8 = 16.2 > 8) is REPORTED ONLY now: READ68 b-over-beta, no STOP68; within one batch (b95 = 60) nothing is printed",
+      any(ln.startswith("READ68 b-over-beta GK2") for ln in out) and not any("B-over-beta" in s or "b-over-beta" in s for s in stops)
+      and not any("b-over-beta" in ln for ln in run_rules([row("GK2", 1, "on", 0.62, b95=60.0)])[1]), (stops, out))
 stops, _ = run_rules([row("RK2", 1, "on", 0.1)])
 check("an R4 row printing gate=on fires STOP68 r4-gate-on (the arm must be off)", any(s.startswith("r4-gate-on") for s in stops), stops)
 a2 = [row("RA2", 1, "off", 0.1, coded=0.20), row("GA2", 1, "on", 0.62, coded=0.25)]
@@ -159,8 +162,8 @@ with tempfile.TemporaryDirectory() as td:
     buf = io.StringIO()
     rc = sr.report(led, out=lambda s: buf.write(s + "\n"))
     txt = buf.getvalue()
-    check("the report runs on a ledger, prints ROW68 / MED68 / RATIO68 lines and the three UNBUILT68 cells, and never claims them cleared",
-          rc == 0 and txt.count("ROW68 ") == 9 and "RATIO68 K2 goodput: R4/BASE=0.989 GATE/BASE=0.983 GATE/R4=0.994" in txt and txt.count("UNBUILT68 ") == 3 and "no row ran, nothing read, nothing cleared" in txt, txt[-1500:])
+    check("the report runs on a ledger, prints ROW68 / MED68 / RATIO68 lines and the UNBUILT68 cell (BU), and never claims it cleared",
+          rc == 0 and txt.count("ROW68 ") == 9 and "RATIO68 K2 goodput: R4/BASE=0.989 GATE/BASE=0.983 GATE/R4=0.994 Q/BASE=-" in txt and txt.count("UNBUILT68 ") == 1 and "no row ran, nothing read, nothing cleared" in txt, txt[-1500:])
     check("DIAG68 (not STOP68) is the token of the 'diagnose / attribute' rules: c2 goodput GATE/BASE 0.983 < 0.995 prints DIAG68 c2-goodput", "DIAG68 c2-goodput" in txt and "STOP68 c2-goodput" not in txt, txt[-1200:])
     check("no verdict label: no PASS / FAIL / VERDICT token in the report, and its last line is REPORT68 REPORTED-ONLY", not any(tok in txt for tok in ("PASS", "FAIL", "VERDICT")) and txt.strip().splitlines()[-1].startswith("REPORT68 REPORTED-ONLY"), txt[-600:])
     stub = os.path.join(td, "smoke.log")
@@ -173,5 +176,97 @@ with tempfile.TemporaryDirectory() as td:
     sb2 = io.StringIO()
     src2 = sr.smoke("smoke", stub + ".missing", out=lambda s: sb2.write(s + "\n"))
     check("the smoke check fails (SMOKE-FAIL) when a row is missing", src2 == 1 and "SMOKE-FAIL" in sb2.getvalue())
+
+# ── 4. the witness counters (the gate's step-1 rerun), the Q arm, the in-order tail ──
+W = sr.parse_hoff_line(LINE.replace(P0, P0.replace("]", WIT.format(o=0) + "]")))["paths"][0]
+check("the witness fields parse: fs_over, the four-way bypass list, ex_max and ex_n triples, beta_q, own_gap_max (the `us` unit is dropped) and pend_max",
+      W["fs_over"] == 0 and W["fs_bypass"] == [0, 1, 0, 2] and W["ex_max"] == [46, 37, 9] and W["ex_n"] == [4, 2, 3] and W["fs_n"] == 9 and W["beta_q"] == [40.1, 53.8, 60.2] and W["own_gap_max"] == 7000 and W["pend_max"] == 12, W)
+ps = sr.path_summary([dict(W, _gate="on"), dict(W, _gate="on", fs_over=3, ex_max=[60, 50, 10])])
+check("path_summary sums the counters over the windows, keeps the worst ex_max, the beta_q spread and the maxima",
+      ps["fs_over"] == 3 and ps["fs_bypass"] == [0, 2, 0, 4] and ps["ex_max"] == [60, 50, 10] and ps["ex_n"] == [8, 4, 6] and ps["fs_n"] == 18 and ps["beta_p5_min"] == 40.1 and ps["beta_p95_max"] == 60.2 and ps["own_gap_max"] == 7000 and ps["pend_max"] == 12, ps)
+old = sr.path_summary([dict(sr.parse_hoff_line(LINE)["paths"][0], _gate="on")])
+check("an old ledger (no witness fields) summarizes with None and does not raise", old["fs_over"] is None and old["fs_bypass"] is None and old["ex_max"] is None and old["own_gap_max"] is None and old["pend_max"] is None, old)
+stops, out = run_rules([row("GK2", 1, "on", 0.62, fs_over=2)])
+check("STOP68 fs-over fires on a GATE row with fs_over > 0 (2 per window x 8 windows = 16)", any(s.startswith("fs-over GK2 r1: 16 ") for s in stops), stops)
+stops, out = run_rules([row("QK2", 1, "on", 0.62, fs_over=1)])
+check("STOP68 fs-over fires on a Q (gate alone) row too", any(s.startswith("fs-over QK2 r1") for s in stops), stops)
+check("fs_over = 0 fires nothing; a ledger without the field fires nothing", not any(s.startswith("fs-over") for s in run_rules([row("GK2", 1, "on", 0.62, fs_over=0), row("QK2", 1, "on", 0.62, fs_over=0)])[0])
+      and not any(s.startswith("fs-over") for s in run_rules([row("GK2", 1, "on", 0.62), row("QK2", 1, "on", 0.62)])[0]))
+stops, out = run_rules([row("QK2", 1, "off", 0.0)])
+check("a Q row printing gate=off fires STOP68 gate-not-on (the arm is the gate alone: it must bind); a healthy Q row fires nothing", any(s.startswith("gate-not-on QK2") for s in stops)
+      and run_rules([row("BK2", 1, "off", 0.1), row("GK2", 1, "on", 0.62), row("QK2", 1, "on", 0.62)])[0] == [])
+check("the Q arm exists on the K cells only, runs the CAND seat with the gate and quinn's own BBR",
+      plan68.arm_parse("QK2") == ("Q", "K2") and plan68.arm_parse("QLR") == (None, None) and plan68.seat_of("QA2") == "CAND"
+      and plan68.arm_env("c2-100", "QK2") == ["RWM_HOFF_GATE=1", "RWM_DIAG=1"] and "QK8" in plan68.all_arms() and "QPC" not in plan68.all_arms())
+ls = [f"[DIAG] t={t}.0s src=10 cum={c}/0/{a}" for t, c, a in ((1, 100, 100), (2, 200, 200), (3, 300, 300), (4, 400, 300), (5, 500, 300))]
+tm = sr.row_metrics(ls, [], [])
+check("row_metrics carries the in-order delay tail beside the mean: delays 0 0 0 1 2 s -> mean 600, p95 / p99 / max 2000 ms",
+      abs(tm["inorder_mean_ms"] - 600.0) < 1e-6 and abs(tm["inorder_p95_ms"] - 2000.0) < 1e-6 and abs(tm["inorder_p99_ms"] - 2000.0) < 1e-6 and abs(tm["inorder_max_ms"] - 2000.0) < 1e-6, tm)
+qrows = [row(a, r, g, hb, gp=gp, fs_over=0) for r in (1, 2, 3) for a, g, hb, gp in (("BK2", "off", 0.1, 90.0), ("RK2", "off", 0.1, 89.0), ("GK2", "on", 0.62, 88.5), ("QK2", "on", 0.62, 45.0))]
+for r in qrows:
+    r["bytes"] = 600_000_000
+with tempfile.TemporaryDirectory() as td:
+    led = os.path.join(td, "ld.log")
+    with open(led, "w", newline="\n") as fh:
+        for r in qrows:
+            fh.write("P38ROW " + json.dumps(r) + "\n")
+    buf = io.StringIO()
+    sr.report(led, out=lambda s: buf.write(s + "\n"))
+    txt = buf.getvalue()
+    check("the report prints Q/BASE beside GATE/R4, the witness fields per row, the per-cell WIT68 summary and the in-order tail",
+          "RATIO68 K2 goodput: R4/BASE=0.989 GATE/BASE=0.983 GATE/R4=0.994 Q/BASE=0.500" in txt and "fs_over=0 fs_n=72 fs_bypass=0/8/0/16 ex_max=46/37/9 ex_n=32/16/24" in txt and "WIT68 K2 GATE" in txt and "WIT68 K2 GATE-ALONE" in txt
+          and "inorder_ms mean/p95/p99/max=" in txt and "RATIO68 K2 inorder_p99:" in txt and "own_gap_max_us=7000" in txt and "pend_max=12" in txt, txt[-2500:])
+    # the rerun's K cells have no BASE / R4 rows: a reference ledger lends them
+    led2 = os.path.join(td, "ref.log")
+    with open(led2, "w", newline="\n") as fh:
+        for r in qrows:
+            if r["arm"][0] in "BR":
+                fh.write("P38ROW " + json.dumps(r) + "\n")
+    led3 = os.path.join(td, "main.log")
+    with open(led3, "w", newline="\n") as fh:
+        for r in qrows:
+            if r["arm"][0] in "GQ":
+                fh.write("P38ROW " + json.dumps(r) + "\n")
+    b2, b3 = io.StringIO(), io.StringIO()
+    sr.report(led3, out=lambda s: b2.write(s + "\n"))
+    sr.report(led3, out=lambda s: b3.write(s + "\n"), ref=led2)
+    check("without a reference ledger the K-cell ratios against BASE / R4 read `-`; with one they are computed (and no stop rule reads the reference rows)",
+          "RATIO68 K2 goodput: R4/BASE=- GATE/BASE=- GATE/R4=- Q/BASE=-" in b2.getvalue() and "REF68 6 " in b3.getvalue() and "RATIO68 K2 goodput: R4/BASE=0.989 GATE/BASE=0.983 GATE/R4=0.994 Q/BASE=0.500" in b3.getvalue(), (b2.getvalue()[-800:], b3.getvalue()[:600]))
+
+# ── 6. the engine's own line: printed verbatim by hoff_gate_tests::hoff_line_prints_the_witness_fields_only_when_armed (raptorpath, handoff-gate) ──
+ENGINE = ("[HOFF] t=0.3s gate=on owner_timer_wakes=0 probe_acks=0 tau_floor_bind=1.00 p0[B=10/10/10 n=1 dgq=0 F=0 win=280000 R=15909091 tau_o=2.00ms(meas) tau_p=2.06ms l_o=0.02ms l_p=0.10ms L=4.17ms beta=53.83 "
+          "hand_bind=0.000 spare_i=inf spare_bind=0.000 reopen=0.000/0.000ms/0 starve=0.000 qdisc=0 app_limited=- batch=- g_batch=-ms phat=-ms fifo_wait_resend=0.000ms/0 fs_over=0 fs_bypass=0/1/0/0 ex_max=46/0/0 "
+          "ex_n=0/0/0 fs_n=0 beta_q=53.83/53.83/53.83 own_gap_max=7000us pend_max=1010] infl_vs_out=40/10/x4.000 store_pin=0.00")
+ep = (sr.parse_hoff_line(ENGINE) or {"paths": {}})["paths"].get(0, {})
+check("the engine's verbatim [HOFF] line parses with every witness field (the format is not hand-matched)",
+      ep.get("fs_over") == 0 and ep.get("fs_bypass") == [0, 1, 0, 0] and ep.get("ex_max") == [46, 0, 0] and ep.get("ex_n") == [0, 0, 0] and ep.get("fs_n") == 0 and ep.get("beta_q") == [53.83, 53.83, 53.83]
+      and ep.get("own_gap_max") == 7000 and ep.get("pend_max") == 1010 and ep.get("beta") == 53.83, ep)
+
+# ── 5. review fixes: warm-up windows, reference rows, every path, the env var ──
+warm = [mk(0.5, "on", 0.62, 400, wit=WIT.format(o=4))] + [mk(2.0 + 0.25 * k, "on", 0.62, 400, wit=WIT.format(o=0)) for k in range(4)]
+hs = sr.hoff_summary(warm)
+check("the witness counters sum over ALL windows, warm-up included (a leak or a cold-start bypass at t = 0.5 s counts), while the other readouts skip the warm-up",
+      hs["paths"][0]["fs_over"] == 4 and hs["paths"][0]["fs_bypass"] == [0, 5, 0, 10] and hs["n_post"] == 4 and hs["paths"][0]["n_win"] == 4, hs["paths"][0])
+leak = row("GK2", 1, "on", 0.62)
+leak["t68"]["hoff"] = sr.hoff_summary(warm)
+check("a leak in the warm-up window alone fires STOP68 fs-over", any(s_.startswith("fs-over GK2") for s_ in run_rules([leak])[0]))
+two = {"t68": {"hoff": {"paths": {"0": {"fs_over": 0, "fs_n": 5}, "1": {"fs_over": 7, "fs_n": 9}}}}}
+check("the per-row witness fields print for EVERY path (the slow leg of K8 is the one to read)", "w0[fs_over=0 fs_n=5" in sr._wit_paths(two) and "w1[fs_over=7 fs_n=9" in sr._wit_paths(two), sr._wit_paths(two))
+with tempfile.TemporaryDirectory() as td:
+    main_l, ref_l = os.path.join(td, "main.log"), os.path.join(td, "ref.log")
+    bad_ref = [dict(row("RK2", r, "on", 0.62, fs_over=0), bytes=600_000_000) for r in (1, 2, 3)]      # an R4 reference row that prints gate=on: the r4-gate-on rule must NOT read it
+    good = [dict(row(a, r, g, hb, fs_over=0), bytes=600_000_000) for r in (1, 2, 3) for a, g, hb in (("GK2", "on", 0.62), ("QK2", "on", 0.62))]
+    for pth, rs_ in ((main_l, good), (ref_l, bad_ref)):
+        with open(pth, "w", newline="\n") as fh:
+            for r in rs_:
+                fh.write("P38ROW " + json.dumps(r) + "\n")
+    b4 = io.StringIO()
+    sr.report(main_l, out=lambda s_: b4.write(s_ + "\n"), ref=ref_l)
+    check("reference rows feed the ratios only: an R4 reference row printing gate=on does not fire r4-gate-on, and the ratios use it", "STOP68 r4-gate-on" not in b4.getvalue() and "REF68 3 " in b4.getvalue(), b4.getvalue()[:700])
+    os.environ["LD_REF68"] = ref_l
+    b5 = io.StringIO()
+    sr.report(main_l, out=lambda s_: b5.write(s_ + "\n"))
+    del os.environ["LD_REF68"]
+    check("LD_REF68 names the reference ledger when the report is called without one (run_all's call)", "REF68 3 " in b5.getvalue())
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

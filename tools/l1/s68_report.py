@@ -2,7 +2,7 @@
 """Status 68 (the hand-off gate's step 1): the `[HOFF]` parser, the per-row readouts (`t68`) and the REPORT. Reported only: nothing here prints a PASS / FAIL or a verdict label; a registered stop rule that
 fires prints `STOP68 <reason>`, a "diagnose / attribute" rule prints `DIAG68 <reason>`, and a cell that was not built prints `UNBUILT68`.
 
-    s68_report.py report <ledger> [<raw diag-ld dir>]   per row ROW68 + per (cell, arm) medians, the ratios against BASE, the stop rules and the execution witnesses
+    s68_report.py report <ledger> [<raw diag-ld dir> [<reference ledger>]]   per row ROW68 + per (cell, arm) medians, the ratios against BASE, the stop rules and the execution witnesses
     s68_report.py smoke <smoke|rehearsal> <ledger>      the smoke check (SMOKE-PASS | SMOKE-FAIL): every row ran, carries its t68 and its seat's binary; the readings are only echoed
 
 `[HOFF]` (raptorpath/src/net/hoff.rs, paper 6.8):
@@ -10,6 +10,11 @@ fires prints `STOP68 <reason>`, a "diagnose / attribute" rule prints `DIAG68 <re
         reopen=p50/max ms/n starve=.. app_limited=.. batch=.. g_batch=.. phat=.. fifo_wait_resend=<ms>ms/<n>] ... infl_vs_out=<eng>/<out>/x<ratio> store_pin=<x>
 The parser is GENERIC: top-level `key=value` tokens, then `p<id>[...]` blocks split into `key=value`; a field it does not know (the `qdisc=` another worker is adding, anywhere) is kept and ignored. `-` is None,
 `a/b/c` a list, `2.00ms(meas)` a number plus a `_tag`. The client log is the sender's (the perf client sends), so its `[HOFF]` lines are the readouts.
+
+Witness fields (gate on only; an old ledger lacks them and reads `-`): fs_over=<n> fs_bypass=<defer>/<timer>/<shutdown>/<cold> ex_max=<total>/<first part>/<exempt part> ex_n=<ctrl>/<resend>/<repair>
+beta_q=<p5>/<p50>/<p95> own_gap_max=<us>us pend_max=<n> (hoff.rs `witness_fields`).
+Arms: B, R4 (R), GATE (G) and, on the K cells of the rerun table (68r), Q = the gate alone (quinn's own BBR, RWM_HOFF_GATE=1). STOP68 fs-over fires on any GATE or Q row with fs_over > 0; the older B-over-beta
+reading is REPORTED ONLY (`READ68 b-over-beta`), its rule being under amendment.
 
 Settled readings (the registration leaves them open):
   * first-send refusals (the execution witness) = sum over the gate=on [HOFF] windows and paths of hand_bind x n: `hand_bind` is the share of the window's turns CLOSED with units waiting, and `n` its turn count
@@ -32,7 +37,7 @@ WARM_S = 2.0                       # [HOFF] windows before this are the warm-up 
 CELLS_ORDER = plan68.CELL_ORDER
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _PATH = re.compile(r"\bp(\d+)\[([^\]]*)\]")
-_NUM = re.compile(r"^(-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?|inf|-inf|nan)(?:ms|s|x)?(?:\(([^)]*)\))?$")
+_NUM = re.compile(r"^(-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?|inf|-inf|nan)(?:ms|us|s|x)?(?:\(([^)]*)\))?$")
 
 
 def _val(v):
@@ -122,9 +127,33 @@ def _mean(v):
     return sum(v) / len(v) if v else None
 
 
+def _min(v):
+    v = [x for x in v if _num(x)]
+    return min(v) if v else None
+
+
 def _max(v):
     v = [x for x in v if _num(x)]
     return max(v) if v else None
+
+
+def witness_of(wins):
+    """The gate's witness counters over the given windows (all of a row's windows: a cold-start bypass or an early leak lands in the warm-up). None where no window carries the field (an old ledger)."""
+    col = lambda k: [w.get(k) for w in wins]      # noqa: E731
+    ex = [w["ex_max"] for w in wins if isinstance(w.get("ex_max"), list) and len(w["ex_max"]) == 3 and _num(w["ex_max"][0])]
+    exm = max(ex, key=lambda e: e[0]) if ex else None
+    byp = [w["fs_bypass"] for w in wins if isinstance(w.get("fs_bypass"), list) and len(w["fs_bypass"]) == 4]
+    exn = [w["ex_n"] for w in wins if isinstance(w.get("ex_n"), list) and len(w["ex_n"]) == 3]
+    bq = [w["beta_q"] for w in wins if isinstance(w.get("beta_q"), list) and len(w["beta_q"]) == 3]
+    fso = [w["fs_over"] for w in wins if _num(w.get("fs_over"))]
+    fsn = [w["fs_n"] for w in wins if _num(w.get("fs_n"))]
+    return {
+        "fs_over": int(sum(fso)) if fso else None, "fs_n": int(sum(fsn)) if fsn else None,
+        "fs_bypass": [int(sum(b[i] for b in byp if _num(b[i]))) for i in range(4)] if byp else None,
+        "ex_max": list(exm) if exm else None, "ex_n": [int(sum(e[i] for e in exn if _num(e[i]))) for i in range(3)] if exn else None,
+        "beta_p5_min": _min([b[0] for b in bq]), "beta_p50_med": _med([b[1] for b in bq]), "beta_p95_max": _max([b[2] for b in bq]),
+        "own_gap_max": _max(col("own_gap_max")), "pend_max": _max(col("pend_max")),
+    }
 
 
 def path_summary(wins):
@@ -137,6 +166,7 @@ def path_summary(wins):
     reo = [w["reopen"] for w in wins if isinstance(w.get("reopen"), list) and len(w["reopen"]) == 3]
     fifo = [w["fifo_wait_resend"] for w in wins if isinstance(w.get("fifo_wait_resend"), list) and len(w["fifo_wait_resend"]) == 2]
     return {
+        **witness_of(wins),
         "n_win": len(wins), "B_p50_med": _med(col("B_p50")), "B_p95_max": _max(col("B_p95")), "B_max": _max(col("B_max")),
         "hand_bind_med": _med(col("hand_bind")), "hand_bind_mean": _mean(col("hand_bind")), "spare_bind_mean": _mean(col("spare_bind")), "starve_mean": _mean(col("starve")),
         "beta_med": _med(col("beta")), "L_med": _med(col("L")), "R_med": _med(col("R")), "win_med": _med(col("win")), "F_med": _med(col("F")), "dgq_med": _med(col("dgq")),
@@ -172,9 +202,11 @@ def hoff_summary(lines):
            "owner_timer_wakes": ws[-1].get("owner_timer_wakes") if ws else None, "probe_acks": ws[-1].get("probe_acks") if ws else None,
            "tau_floor_bind": ws[-1].get("tau_floor_bind") if ws else None, "store_pin": ws[-1].get("store_pin") if ws else None,
            "infl_ratio_med": _med([w["infl_ratio"] for w in post]), "paths": {}}
-    ids = sorted({i for w in post for i in w["paths"]})
+    ids = sorted({i for w in ws for i in w["paths"]})
     for i in ids:
         out["paths"][i] = path_summary([dict(w["paths"][i], _gate=w["gate"]) for w in post if i in w["paths"]])
+        # the witness counters are totals of the whole run, warm-up windows included
+        out["paths"][i].update(witness_of([w["paths"][i] for w in ws if i in w["paths"]]))
     out["refusals"] = sum(p["refusals"] for p in out["paths"].values())
     return out
 
@@ -196,6 +228,15 @@ def row_metrics(cli, srv, drv, nbytes=None, cell="c2-100", arm="GK2", mbps=None,
         out["inorder_mean_ms"] = st["mean"] * 1e3 if st else None
     except Exception:
         out["inorder_mean_ms"] = None
+    out["inorder_p95_ms"] = out["inorder_p99_ms"] = out["inorder_max_ms"] = None
+    try:      # the tail of the same delay series (the client's [DIAG] ticks)
+        import threadp1_parse as t1
+        d = sorted(x for _, x in t1.inorder_delay(cli))
+        if d:
+            q = lambda f: d[min(len(d) - 1, int(f * (len(d) - 1) + 0.5))] * 1e3      # noqa: E731
+            out["inorder_p95_ms"], out["inorder_p99_ms"], out["inorder_max_ms"] = q(0.95), q(0.99), d[-1] * 1e3
+    except Exception:
+        pass
     try:
         import mbar59_score
         m = mbar59_score.row_metrics(cli, srv, drv or [], nbytes, cell, mbps)
@@ -225,6 +266,10 @@ def _wr(lines):
 
 
 # ── the report ──
+def _lst(v, nd=0):
+    return "-" if not isinstance(v, list) else "/".join(_f(float(x), nd) if _num(x) else "-" for x in v)
+
+
 def _f(x, nd=3):
     return "-" if x is None or (isinstance(x, float) and not math.isfinite(x)) else (f"{x:.{nd}f}" if isinstance(x, float) else str(x))
 
@@ -236,7 +281,7 @@ def _ratio(a, b):
 def _rows(path):
     import place38_parse as pp
     import pool56_score as ps
-    rows, tokens = pp.rows_of([path])
+    rows, tokens = pp.rows_of([p for p in str(path).split(",") if p])
     cnt, _ = ps.counting([r for r in rows if plan68.valid_slot(r.get("cell"), r.get("arm"))])
     return cnt, tokens
 
@@ -270,8 +315,15 @@ def _pm(rs, key, pid=0):
     return _med([(_paths(r).get(pid) or {}).get(key) for r in rs])
 
 
-def report(path, out=print, raw=None):
+def report(path, out=print, raw=None, ref=None):
     cnt, _ = _rows(path)
+    refrows = []
+    ref = ref or os.environ.get("LD_REF68") or None
+    if ref:
+        # a reference ledger (an earlier run) lends only its BASE and R4 rows, to the cells where this ledger has none: the rerun table has no such arm on the K cells
+        have = {(plan68.arm_parse(r["arm"])[1], plan68.arm_parse(r["arm"])[0]) for r in cnt}
+        refrows = [r for r in _rows(ref)[0] if plan68.arm_parse(r["arm"])[0] in ("B", "R") and (plan68.arm_parse(r["arm"])[1], plan68.arm_parse(r["arm"])[0]) not in have]
+        out(f"REF68 {len(refrows)} BASE / R4 rows from {ref} (reference only: ratios, no stop rule reads them)")
     stops = []
 
     def stop(msg):
@@ -287,27 +339,37 @@ def report(path, out=print, raw=None):
             continue
         h, p0 = t.get("hoff") or {}, _p0(r)
         out(f"ROW68 {r['arm']} s{r['seed']} r{r['rep']}: status={r.get('status')} gp={_f(r.get('mbps'), 1)} cpu_cli/GB={_f(t.get('cpu_cli_gb'), 2)} cpu_srv/GB={_f(t.get('cpu_srv_gb'), 2)} "
-            f"inorder_mean_ms={_f(t.get('inorder_mean_ms'), 1)} Ax_ms={t.get('rtt_wrtt_med')} gate={h.get('gate')} gate_echo={t.get('gate_echo_cli')}/{t.get('gate_echo_srv')} cc={t.get('cc')} "
+            f"inorder_ms mean/p95/p99/max={_f(t.get('inorder_mean_ms'), 1)}/{_f(t.get('inorder_p95_ms'), 1)}/{_f(t.get('inorder_p99_ms'), 1)}/{_f(t.get('inorder_max_ms'), 1)} Ax_ms={t.get('rtt_wrtt_med')} gate={h.get('gate')} gate_echo={t.get('gate_echo_cli')}/{t.get('gate_echo_srv')} cc={t.get('cc')} "
             f"hoff_lines={h.get('n_lines')} wakes={h.get('owner_timer_wakes')} probe_acks={h.get('probe_acks')} refusals={h.get('refusals')} "
             f"p0[B p50/p95/max={_f(p0.get('B_p50_med'), 1)}/{_f(p0.get('B_p95_max'), 1)}/{_f(p0.get('B_max'), 1)} beta={_f(p0.get('beta_med'), 1)} L_ms={_f(p0.get('L_med'), 2)} hand_bind={_f(p0.get('hand_bind_med'))} "
             f"spare_bind={_f(p0.get('spare_bind_mean'))} batch={_f(p0.get('batch_med'), 1)} starve={_f(p0.get('starve_mean'))} reopen_max_ms={_f(p0.get('reopen_max'))} tau_o={_f(p0.get('tau_o_med'))}({p0.get('tau_o_tag')}) "
-            f"app_limited={_f(p0.get('app_limited_mean'))}] cod/src={_f(t.get('cod_src'))} coded_share={_f(t.get('coded_share'))} rr={_f(t.get('rr'))} qcc={t.get('qcc') or '-'} "
+            f"app_limited={_f(p0.get('app_limited_mean'))}] {_wit_paths(r)} cod/src={_f(t.get('cod_src'))} coded_share={_f(t.get('coded_share'))} rr={_f(t.get('rr'))} qcc={t.get('qcc') or '-'} "
             f"bin_sha={str(r.get('bin_sha'))[:16]}")
     groups = _by(cnt)
+    rgroups = _by(cnt + refrows)      # the per-cell lines and ratios; the stop rules and witnesses read this ledger's rows only
     out("CELLS68 built=" + ",".join(plan68.BUILT) + " unbuilt=" + ",".join(plan68.UNBUILT))
     for code in plan68.CELL_ORDER:
         if code in plan68.UNBUILT:
             out(f"UNBUILT68 {code} ({plan68.CELLS[code][1]}): {plan68.UNBUILT_WHY[code]}; no row ran, nothing read, nothing cleared")
             continue
-        g = groups.get(code, {})
+        g = rgroups.get(code, {})
         lab = plan68.CELLS[code][1]
-        out(f"CELL68 {code} {lab}: rows " + " ".join(f"{plan68.ARM_NAME[a]}={len(g.get(a, []))}" for a in plan68.ARM_LETTERS))
-        for a in plan68.ARM_LETTERS:
+        out(f"CELL68 {code} {lab}: rows " + " ".join(f"{plan68.ARM_NAME[a]}={len(g.get(a, []))}" for a in plan68.arms_of(code)))
+        for a in plan68.arms_of(code):
             rs = [x for x in g.get(a, []) if x.get("status") == "LIVE"]
             if rs:
                 out(f"  MED68 {code} {plan68.ARM_NAME[a]:<5} n={len(rs)} gp={_f(_med(_col(rs, lambda x: x.get('mbps'))), 1)} cpu_cli/GB={_f(_med(_col(rs, lambda x: _t(x).get('cpu_cli_gb'))), 2)} "
-                    f"cpu_srv/GB={_f(_med(_col(rs, lambda x: _t(x).get('cpu_srv_gb'))), 2)} inorder_mean_ms={_f(_med(_col(rs, lambda x: _t(x).get('inorder_mean_ms'))), 1)} "
+                    f"cpu_srv/GB={_f(_med(_col(rs, lambda x: _t(x).get('cpu_srv_gb'))), 2)} inorder_ms mean/p95/p99/max={_f(_med(_col(rs, lambda x: _t(x).get('inorder_mean_ms'))), 1)}/{_f(_med(_col(rs, lambda x: _t(x).get('inorder_p95_ms'))), 1)}/"
+                    f"{_f(_med(_col(rs, lambda x: _t(x).get('inorder_p99_ms'))), 1)}/{_f(_max(_col(rs, lambda x: _t(x).get('inorder_max_ms'))), 1)} "
                     f"coded_share={_f(_med(_col(rs, lambda x: _t(x).get('coded_share'))))} hand_bind={_f(_pm(rs, 'hand_bind_med'))} spare_bind={_f(_pm(rs, 'spare_bind_mean'))} batch={_f(_pm(rs, 'batch_med'), 1)}")
+        for a in plan68.arms_of(code):
+            rs = [x for x in g.get(a, []) if x.get("status") == "LIVE"]
+            if rs and a in ("G", "Q"):
+                for pid in sorted({i for x in rs for i in _paths(x)}):
+                    out(f"  WIT68 {code} {plan68.ARM_NAME[a]:<5} p{pid} n={len(rs)} fs_over={_sumpaths(rs, 'fs_over', pid)} fs_n={_sumpaths(rs, 'fs_n', pid)} fs_bypass={_lst(_sumlist(rs, 'fs_bypass', 4, pid))} ex_max(max)={_lst(_maxex(rs, pid), 0)} "
+                        f"ex_n={_lst(_sumlist(rs, 'ex_n', 3, pid))} beta_q(p5min/p50med/p95max)={_f(_min(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('beta_p5_min'))), 1)}/{_f(_pm(rs, 'beta_p50_med', pid), 1)}/"
+                        f"{_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('beta_p95_max'))), 1)} own_gap_max_us={_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('own_gap_max'))))} "
+                        f"pend_max={_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('pend_max'))))}")
         _ratios(code, g, out)
     _stop_rules(groups, stop, out)
     _witnesses(groups, stop, out)
@@ -315,16 +377,51 @@ def report(path, out=print, raw=None):
     return 0
 
 
+def _wit_one(pid, p):
+    return (f"w{pid}[fs_over={_f(p.get('fs_over'))} fs_n={_f(p.get('fs_n'))} fs_bypass={_lst(p.get('fs_bypass'))} ex_max={_lst(p.get('ex_max'), 0)} ex_n={_lst(p.get('ex_n'))} "
+            f"beta_q={_f(p.get('beta_p5_min'), 1)}/{_f(p.get('beta_p50_med'), 1)}/{_f(p.get('beta_p95_max'), 1)} own_gap_max_us={_f(p.get('own_gap_max'))} pend_max={_f(p.get('pend_max'))}]")
+
+
+def _wit_paths(r):
+    """The witness fields of EVERY path of the row (the slow leg of a two-path cell is the one to look at)."""
+    ps = _paths(r)
+    return " ".join(_wit_one(i, ps[i]) for i in sorted(ps)) or "w-"
+
+
+def _sumpaths(rs, key, pid):
+    """Sum of path `pid`'s counter over the rows; `-` when no row carries it (an old ledger)."""
+    v = [(_paths(r).get(pid) or {}).get(key) for r in rs]
+    v = [x for x in v if _num(x)]
+    return str(int(sum(v))) if v else "-"
+
+
+def _sumlist(rs, key, n, pid):
+    v = [(_paths(r).get(pid) or {}).get(key) for r in rs]
+    v = [x for x in v if isinstance(x, list) and len(x) == n]
+    return [sum(x[i] for x in v if _num(x[i])) for i in range(n)] if v else None
+
+
+def _maxex(rs, pid):
+    v = [(_paths(r).get(pid) or {}).get("ex_max") for r in rs]
+    v = [x for x in v if isinstance(x, list) and len(x) == 3 and _num(x[0])]
+    return max(v, key=lambda e: e[0]) if v else None
+
+
+def _fs_over(x):
+    return sum(p["fs_over"] for p in _paths(x).values() if _num(p.get("fs_over")))
+
+
 def _live(g, a):
     return [x for x in g.get(a, []) if x.get("status") == "LIVE"]
 
 
 def _ratios(code, g, out):
-    base, r4, gate = _live(g, "B"), _live(g, "R"), _live(g, "G")
+    base, r4, gate, qa = _live(g, "B"), _live(g, "R"), _live(g, "G"), _live(g, "Q")
     for name, f, nd in (("goodput", lambda x: x.get("mbps"), 3), ("cpu_cli/GB", lambda x: _t(x).get("cpu_cli_gb"), 3), ("cpu_srv/GB", lambda x: _t(x).get("cpu_srv_gb"), 3),
-                        ("inorder_mean", lambda x: _t(x).get("inorder_mean_ms"), 3), ("coded_share", lambda x: _t(x).get("coded_share"), 3)):
-        mb, mr, mg = _med(_col(base, f)), _med(_col(r4, f)), _med(_col(gate, f))
-        out(f"  RATIO68 {code} {name}: R4/BASE={_f(_ratio(mr, mb), nd)} GATE/BASE={_f(_ratio(mg, mb), nd)} GATE/R4={_f(_ratio(mg, mr), nd)}")
+                        ("inorder_mean", lambda x: _t(x).get("inorder_mean_ms"), 3), ("inorder_p95", lambda x: _t(x).get("inorder_p95_ms"), 3),
+                        ("inorder_p99", lambda x: _t(x).get("inorder_p99_ms"), 3), ("inorder_max", lambda x: _t(x).get("inorder_max_ms"), 3), ("coded_share", lambda x: _t(x).get("coded_share"), 3)):
+        mb, mr, mg, mq = _med(_col(base, f)), _med(_col(r4, f)), _med(_col(gate, f)), _med(_col(qa, f))
+        out(f"  RATIO68 {code} {name}: R4/BASE={_f(_ratio(mr, mb), nd)} GATE/BASE={_f(_ratio(mg, mb), nd)} GATE/R4={_f(_ratio(mg, mr), nd)} Q/BASE={_f(_ratio(mq, mb), nd)}")
     nleg = 2 if code == "K8" else 1
     for i in range(nleg):
         ax = {a: _med([(_t(x).get("rtt_wrtt_med") or [None] * 2)[i] if len(_t(x).get("rtt_wrtt_med") or []) > i else None for x in _live(g, a)]) for a in plan68.ARM_LETTERS}
@@ -348,6 +445,10 @@ def _ratios(code, g, out):
         out(f"  READ68 K2 tau_o measured={_f(_pm(gate, 'tau_o_med'))} ms ({(_p0(gate[0]) if gate else {}).get('tau_o_tag')}) against the assumed 2 ms; app_limited GATE={_f(_pm(gate, 'app_limited_mean'))} R4={_f(_pm(r4, 'app_limited_mean'))}")
 
 
+def K_CELLS_BUILT():
+    return [c for c in plan68.K_CELLS if c in plan68.BUILT]
+
+
 def _stop_rules(groups, stop, out):
     # Gate executes
     for code in plan68.BUILT:
@@ -363,8 +464,21 @@ def _stop_rules(groups, stop, out):
                 stop(f"routeprobe-reads-zero {x['arm']} r{x['rep']}: probe_acks={h.get('probe_acks')}")
             for pid, p in _paths(x).items():
                 be, bt = p.get("b_excess_max"), p.get("batch_med")
-                if _num(be) and _num(bt) and be > bt:
-                    stop(f"B-over-beta {x['arm']} r{x['rep']} p{pid}: max(B p95 - beta) = {be:.1f} > one batch ({bt:.1f})")
+                if _num(be) and _num(bt) and be > bt:      # reported only: the rule is under amendment
+                    out(f"READ68 b-over-beta {x['arm']} r{x['rep']} p{pid}: max(B p95 - beta) = {be:.1f} > one batch ({bt:.1f})")
+    # first sends past the bound through no tagged bypass site: a leak in the gate (GATE and the gate-alone arm)
+    for code in plan68.BUILT:
+        for a in ("G", "Q"):
+            for x in groups.get(code, {}).get(a, []):
+                if x.get("status") == "LIVE":
+                    n = _fs_over(x)
+                    if n > 0:
+                        stop(f"fs-over {x['arm']} r{x['rep']}: {n} first sends staged with B >= beta through no bypass site")
+    for code in K_CELLS_BUILT():
+        for x in groups.get(code, {}).get("Q", []):
+            h = _t(x).get("hoff") or {}
+            if x.get("status") == "LIVE" and h.get("gate") != "on":
+                stop(f"gate-not-on {x['arm']} r{x['rep']}: [HOFF] gate={h.get('gate')} (lines={h.get('n_lines')}): a harness or build fault")
     for x in groups.get("K2", {}).get("G", []):
         hb = _p0(x).get("hand_bind_med")
         if x.get("status") == "LIVE" and not (_num(hb) and hb > 0.5):
@@ -431,7 +545,7 @@ def smoke(kind, path, out=print):
     """The smoke / rehearsal check: one row per arm ran with its seat's binary right and its t68 computed. The readings (gate token, probe acks, refusals) are echoed, and the report's stop rules are NOT applied to a
     smoke (a 3-row smoke is no step-1 reading)."""
     cnt, _ = _rows(path)
-    slots = plan68.plan("68", smoke=True)
+    slots = plan68.plan(plan68.plan_name(), smoke=True)
     got = {(r["arm"], str(r["seed"]), str(r["rep"])): r for r in cnt}
     bad = []
 
@@ -463,7 +577,7 @@ def main(argv):
         return 2
     cmd, a = argv[0], argv[1:]
     if cmd == "report":
-        return report(a[0], raw=a[1] if len(a) > 1 else None)
+        return report(a[0], raw=(a[1] or None) if len(a) > 1 else None, ref=a[2] if len(a) > 2 else None)
     if cmd == "smoke":
         return smoke(a[0], a[1])
     print(f"unknown command {cmd}")

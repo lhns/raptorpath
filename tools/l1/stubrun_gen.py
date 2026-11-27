@@ -808,14 +808,18 @@ def gen63(cli, srv, drv, nbytes, fam, hint):
 BAD68 = {"gateoff", "nohoff"}
 
 
-def hoff68(k, nleg, gate, bound):
+# the gate's witness fields (hoff.rs `witness_fields`), printed with the arm on: nothing leaks past the bound, the exempt traffic and the owner are quiet
+WIT68 = " fs_over=0 fs_bypass=0/0/0/0 ex_max=3/3/0 ex_n=2/0/1 beta_q=50.1/53.8/56.0 own_gap_max=900us pend_max=3"
+
+
+def hoff68(k, nleg, gate, bound, paced=False):
     t = 0.25 * k
     paths = ""
     for i in range(nleg):
         hb = 0.62 if bound else 0.10
-        paths += (f" p{i}[B=30/52/56 n=400 dgq=20 F=45 win=60 R=11500 tau_o=2.00ms({'meas' if gate else 'assumed'}) tau_p=1.00ms l_o=0.30ms l_p=0.20ms L=3.50ms beta=53.8 hand_bind={hb:.3f} "
-                  f"spare_i={'0' if bound else 'inf'} spare_bind={0.55 if bound else 0.0:.3f} reopen=0.500/3.000ms/4 starve=0.010 app_limited=0.050 batch=8.00 g_batch=1.20ms phat=1.05ms "
-                  f"fifo_wait_resend=2.50ms/3 qdisc=fq]")
+        paths += (f" p{i}[B={'1/1/1' if paced else '30/52/56'} n=400 dgq=20 F=45 win=60 R=11500 tau_o=2.00ms({'meas' if gate else 'assumed'}) tau_p=1.00ms l_o=0.30ms l_p=0.20ms L=3.50ms beta=53.8 hand_bind={hb:.3f} "
+                  f"spare_i={'0' if bound else 'inf'} spare_bind={0.55 if bound and not paced else 0.0:.3f} reopen=0.500/3.000ms/4 starve=0.010 app_limited=0.050 batch=8.00 g_batch=1.20ms phat=1.05ms "
+                  f"fifo_wait_resend=2.50ms/3 qdisc=fq{WIT68 if gate else ''}]")
     return (f"[HOFF] t={t:.1f}s gate={'on' if gate else 'off'} owner_timer_wakes={4 * k if gate else 0} probe_acks={50 * k} tau_floor_bind=0.40 qdisc=fq{paths} "
             f"infl_vs_out=900/880/x1.02 store_pin=0.10")
 
@@ -832,10 +836,10 @@ def gen68(cli, srv, drv, nbytes, fam, hint, base):
         for i, ln in enumerate(rl):
             if ln.startswith("[DIAG]"):
                 k += 1
-                rl[i] = ln + "\n" + hoff68(k, nleg, gate, gate)
+                rl[i] = ln + "\n" + hoff68(k, nleg, gate, gate, paced=bool(os.environ.get("RWM_PERF_RATE_MBIT")))
         rl = "\n".join(rl).split("\n")
     echo = f" RWM_HOFF_GATE={'1' if gate_env else '0'}"
-    cli = [ln + echo if "[GATES]" in ln else ln for ln in cli] + rl
+    cli = [ln + echo if "[GATES]" in ln else ln for ln in cli] + rl + (["INFO perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT=%s)" % os.environ["RWM_PERF_RATE_MBIT"]] if os.environ.get("RWM_PERF_RATE_MBIT") else [])
     srv = [ln + echo if "[GATES]" in ln else ln for ln in srv]
     cli = [ln.replace("hint=bulk", f"hint={hint}") if "[PIPE]" in ln else ln for ln in cli]      # the carrier hint echo (Auto cells)
     srv = [ln.replace("hint=bulk", f"hint={hint}") if "[PIPE]" in ln else ln for ln in srv]
@@ -1214,7 +1218,7 @@ def main(argv):
         cli, srv, drv = gen51e(cli, srv, drv, nbytes, fam, _hint)
     elif plan == "63":
         cli, srv, drv = gen63(cli, srv, drv, nbytes, fam, _hint)
-    elif plan == "68":
+    elif plan in ("68", "68r"):
         cli, srv, drv = gen68(cli, srv, drv, nbytes, fam, _hint, base)
     elif plan == "51":
         cli, srv, drv = gen51(cli, srv, drv, nbytes, fam, _hint)

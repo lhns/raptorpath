@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Status 68: the hand-off gate's step 1 (docs/derivations/reg-handoff-gate.md sections 1 and 3): a 54-row diagnostic, three arms, REPORTED ONLY (no verdict label). Tables, the per-arm run spec, the row witnesses and
+"""Status 68: the hand-off gate's step 1 (docs/derivations/reg-handoff-gate.md sections 1 and 3): a 54-slot diagnostic (45 executed), three arms, REPORTED ONLY (no verdict label). Tables, the per-arm run spec, the row witnesses and
 the slot check. ONE source for the shell and the scorer: the battery asks `armspec` for every row's bytes / timeout / hint / env (plan63.py's pattern), and s68_report.py imports this module.
 
     plan68.py plan 68 [smoke|rehearsal]   the EXECUTED table (built cells only), `cell store arm seed rep` per line (smoke = rehearsal = one row per arm)
+    plan68.py plan 68r [smoke|rehearsal]  the RERUN table (36 rows, see RERUN below); smoke = rehearsal = 6 rows
     plan68.py registered                  the registered 54-slot table, UNBUILT cells included
     plan68.py count 68 [smoke|rehearsal]  the number of rows the executed table holds (the battery asserts it)
     plan68.py armspec <cell> <arm>        `BYTES TIMEOUT_S HINT ENV...` (ENV tokens are KEY=VALUE)
@@ -19,12 +20,16 @@ R4 is the handoff-gate binary with the gate unset, as section 1 says ("R4 and GA
 
 ARM NAMES encode the seat and the registration cell: <letter><cell code>, e.g. `GK2` = GATE at c2 Bulk. The ledger's `cell` column stays the topology (c2-100 / c8-100); the arm carries the hint, size and pacing.
 
-CELLS (section 3). BUILT: K2 (c2-100 Bulk 600 MB), K8 (c8-100 Bulk 600 MB), A2 (c2-100 Auto 600 MB). UNBUILT (UNBUILT below; the registration allows it when the harness has no source pacing):
-  * LR (low rate, Realtime rho = 1, 36 datagrams/s) and PC (paced headroom, Auto, 70 % of the link) need the app-side pacer RWM_PERF_RATE_MBIT (commit 4ee1df9b, "offered-load pacing ACTIVE"). Neither the hand-off-gate tree
-    nor main carries it: `git grep PERF_RATE` is empty on both, so the env var would give silently UNPACED rows. Both are fully specified here (rate, bytes, timeout) and flip to built by deleting them from
-    UNBUILT once both binaries carry the pacer (the battery then checks the echo in both binaries and in every row).
+CELLS (section 3). BUILT: K2 (c2-100 Bulk 600 MB), K8 (c8-100 Bulk 600 MB), A2 (c2-100 Auto 600 MB), LR and PC (paced, since the pacer is restored). UNBUILT (UNBUILT below):
+  * LR (low rate, Realtime rho = 1, 36 datagrams/s) and PC (paced headroom, Auto, 70 % of the link) use the app-side pacer RWM_PERF_RATE_MBIT (commit 4ee1df9b, "offered-load pacing ACTIVE", restored on both trees).
+    The battery checks the echo in both binaries and in every row; a binary without it would run the rows silently unpaced.
   * BU (bursty headroom, Realtime rho = 1, frames of ~10 datagrams every 33 ms) has no mechanism: the pacer is a constant-rate schedule. It stays UNBUILT.
+The pacer (4ee1df9b, restored) is in both seats' binaries now, so LR and PC are built; BU stays UNBUILT.
 An UNBUILT cell is printed UNBUILT by the report and is never counted as cleared.
+
+RERUN (`68r`, after the gate's witness counters): 36 rows = the GATE arm of K2 / K8 / A2 (9), the Q arm of the same three cells (9) and LR / PC with all three arms (B, R, G: 18). Q = "gate alone": the CAND binary with
+RWM_QUIC_CC unset (quinn's own BBR) and RWM_HOFF_GATE=1 (arm letter Q, cells QK2 / QK8 / QA2; it exists only on the three K cells). Same interleave and seed rules as 68: rep-major, then cell, the arm order rotated by (rep - 1 + cell index).
+The BASE seat of the LR / PC rows is the pacer-carrying BASE binary (handoff-gauges-pacer).
 
 ROWS: 6 cells x 3 arms x 3 rows (seed 42, rep 1..3) = 54, interleaved: rep-major, then cell, with the arm order rotated by (rep - 1 + cell index) so no arm owns a position."""
 import os
@@ -36,9 +41,12 @@ sys.path.insert(0, HERE)
 SEEDS = ("42",)
 N_REP = 3                          # rows per arm per cell (seed 42, rep 1..3); test_stubrun shrinks it
 SEED = "42"
-ARM_LETTERS = ("B", "R", "G")
-SEAT = {"B": "BASE", "R": "CAND", "G": "CAND"}
-ARM_NAME = {"B": "BASE", "R": "R4", "G": "GATE"}
+ARM_LETTERS = ("B", "R", "G", "Q")
+ARMS_68 = ("B", "R", "G")          # the arms of the main table
+K_CELLS = ("K2", "K8", "A2")
+RERUN_CELLS = ("K2", "K8", "A2", "LR", "PC")
+SEAT = {"B": "BASE", "R": "CAND", "G": "CAND", "Q": "CAND"}
+ARM_NAME = {"B": "BASE", "R": "R4", "G": "GATE", "Q": "GATE-ALONE"}
 CHUNK_PAYLOAD = 494                # perf.rs chunk_payload_len: Realtime 508 - 14 (Bulk / Auto: 1196 - 14 = 1182)
 T_E = 60                           # s of emission of a paced row
 TIMEOUT_PACED = T_E + 15           # RWM_PERF_TIMEOUT_S: a paced row's DNF lands 15 s after emission ends
@@ -59,11 +67,13 @@ CELLS = {
 }
 CELL_ORDER = tuple(CELLS)
 # ── the one switch an amendment edits ──
-UNBUILT = ("LR", "PC", "BU")
-UNBUILT_WHY = {"LR": "needs RWM_PERF_RATE_MBIT: the pacer is in neither tree", "PC": "needs RWM_PERF_RATE_MBIT: the pacer is in neither tree", "BU": "no bursty-frame source exists (the pacer is constant-rate)"}
+UNBUILT = ("BU",)
+UNBUILT_WHY = {"BU": "no bursty-frame source exists (the pacer is constant-rate)"}
 BUILT = tuple(c for c in CELL_ORDER if c not in UNBUILT)
-BUDGET_S = {"68": 11400, "68r": 3000}      # worst case: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
+BUDGET_S = {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600}   # 68: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
+# 68r: 18 big rows x 215 s + 18 paced rows x 90 s + builds + tests; its rehearsal: 2 big + 4 paced rows + builds + tests
 SMOKE_CELL = "K2"
+SMOKE_68R = ("GK2", "QK2", "BLR", "GLR", "BPC", "GPC")
 LATE_T = 5.0
 
 
@@ -71,9 +81,14 @@ def arm_name(letter, code):
     return letter + code
 
 
+def arms_of(code):
+    """The arm letters a cell has: Q (gate alone) exists on the K cells only."""
+    return ARM_LETTERS if code in K_CELLS else ARMS_68
+
+
 def arm_parse(arm):
-    """`GK2` -> ('G', 'K2'); anything else -> (None, None)."""
-    if arm and len(arm) == 3 and arm[0] in ARM_LETTERS and arm[1:] in CELLS:
+    """`GK2` -> ('G', 'K2'); anything else (incl. a Q arm off the K cells) -> (None, None)."""
+    if arm and len(arm) == 3 and arm[0] in ARM_LETTERS and arm[1:] in CELLS and arm[0] in arms_of(arm[1:]):
         return arm[0], arm[1:]
     return None, None
 
@@ -85,7 +100,7 @@ def seat_of(arm):
 
 
 def all_arms():
-    return [arm_name(a, c) for c in CELL_ORDER for a in ARM_LETTERS]
+    return [arm_name(a, c) for c in CELL_ORDER for a in arms_of(c)]
 
 
 def valid_slot(cell, arm):
@@ -124,9 +139,9 @@ def arm_env(cell, arm):
     if letter is None:
         raise ValueError(f"unknown arm {arm}")
     env = []
-    if letter in ("R", "G"):
+    if letter in ("R", "G"):      # Q keeps quinn's own BBR
         env.append("RWM_QUIC_CC=bbr_rs")
-    if letter == "G":
+    if letter in ("G", "Q"):
         env.append("RWM_HOFF_GATE=1")
     env.append("RWM_DIAG=1")
     if CELLS[code][6]:
@@ -146,23 +161,45 @@ def registered():
     out = []
     for rep in range(1, N_REP + 1):
         for ci, code in enumerate(CELL_ORDER):
-            k = (rep - 1 + ci) % len(ARM_LETTERS)
-            for letter in ARM_LETTERS[k:] + ARM_LETTERS[:k]:
+            k = (rep - 1 + ci) % len(ARMS_68)
+            for letter in ARMS_68[k:] + ARMS_68[:k]:
+                out.append((CELLS[code][0], "def", arm_name(letter, code), SEED, rep))
+    return out
+
+
+def registered_rerun():
+    """The 68r table: [(cell, store, arm, seed, rep)], rep-major, then cell (K2, K8, A2, LR, PC), the arms of a cell rotated by (rep - 1 + cell index): GATE and Q on a K cell, B / R4 / GATE on LR and PC."""
+    out = []
+    for rep in range(1, N_REP + 1):
+        for ci, code in enumerate(RERUN_CELLS):
+            letters = ("G", "Q") if code in K_CELLS else ARMS_68
+            k = (rep - 1 + ci) % len(letters)
+            for letter in letters[k:] + letters[:k]:
                 out.append((CELLS[code][0], "def", arm_name(letter, code), SEED, rep))
     return out
 
 
 def plan(name="68", smoke=False, rehearsal=False):
     """The EXECUTED table: the registered table without its UNBUILT cells. The smoke and the rehearsal are one row per arm on K2 (seed 42, rep 1)."""
+    if name == "68r":
+        if smoke or rehearsal:
+            return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68R]
+        return [r for r in registered_rerun() if arm_parse(r[2])[1] in BUILT]
     if name != "68":
         raise ValueError(name)
     if smoke or rehearsal:
-        return [(CELLS[SMOKE_CELL][0], "def", arm_name(a, SMOKE_CELL), SEED, 1) for a in ARM_LETTERS]
+        return [(CELLS[SMOKE_CELL][0], "def", arm_name(a, SMOKE_CELL), SEED, 1) for a in ARMS_68]
     return [r for r in registered() if arm_parse(r[2])[1] in BUILT]
 
 
-def expect_rows(name="68"):
-    return len(plan(name))
+def plan_name():
+    """The plan this process serves: LD_PLAN when it is 68 or 68r, else 68."""
+    n = os.environ.get("LD_PLAN")
+    return n if n in ("68", "68r") else "68"
+
+
+def expect_rows(name=None):
+    return len(plan(name or plan_name()))
 
 
 def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None, sha_base=None, paced_echo=None):
