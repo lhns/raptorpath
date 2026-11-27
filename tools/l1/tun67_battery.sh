@@ -11,8 +11,9 @@
 #   T67SEAT seat=<B0|S1> hint=<h>              before each invocation's tun_bulk.sh output (TUNARM / TUNSHA / TUNMTU / TUNPIPE / TUNCAD / TUNCFG / TUNREP / TUNARM-DONE verbatim)
 #   T67REF seat=.. cmd=<check|run> key=<key> rc=<n> cfg=<true|false|-> err=<first non-empty stderr line>
 #   T67DONE, then LD-BATTERY-DONE
-# A B0 `run` whose stderr carries the guard's refusal text means B0 is not main's binary: ABORT-SEAT (exit 5), nothing more runs. A bring-up failure is recorded by tun_bulk.sh (TUN-BRINGUP-FAIL) and read by the scorer; it is
-# not an abort here (the stage reports it; the registration's "bring-up exhausted" class).
+# A B0 `run` whose stderr carries the guard's refusal text means B0 is not main's binary: ABORT-SEAT (exit 5), nothing more runs. A bring-up failure is recorded by tun_bulk.sh (its TUN-BRINGUP-FAIL line goes to stdout, so it is
+# in this ledger) and read by s67_score.py `tun`: ABORT-BRINGUP-T seat=<S> hint=<h> (registration 5.4 "bring-up exhausted (Stage T)"), no T verdict from the transfer clauses; loopdiag_p67.sh then does not count the stage ok.
+# It is not an abort HERE: the other invocations and the refusal rows still run, so the stage reports everything it saw.
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -58,6 +59,7 @@ printf '# plan 67 stage T: the transfer rows load this file; it sets no object-m
 echo "=== TUN67 BATTERY tag=$TAG smoke=$SMOKE reps=$REPS $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary B0 ${LD_BIN_B0} sha256 ${LD_SHA_B0}" >> "$OUT"
 echo "=== binary S1 ${LD_BIN_S1} sha256 ${LD_SHA_S1}" >> "$OUT"
+echo "LD-PLAN67 plan=t drop_s2=${LD_DROP_S2:-0}" >> "$OUT"      # the drop state in the ledger, as every plan-67 ledger (stage T runs B0 and S1 only: nothing reads it here yet)
 
 # ── transfer rows: seats alternate inside each hint (B0 first, then S1), the hints in order ──
 for hint in "${HINTS[@]}"; do

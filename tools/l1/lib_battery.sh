@@ -94,8 +94,17 @@ _lb_lock_refuse() { # path reason
   release_locks
   exit 4
 }
+# LB_LOCK_PARENT=<pid> (plan 67pre: the envelope holds both locks for the whole session and runs repeat67_run.sh / binid67_run.sh as children): a lock whose holder
+# (first field of the file) is that pid and alive is INHERITED: logged, returned 0, never taken and so never released by this process. Any other lock is taken or refused as below.
 take_lock() { # path
-  local p="$1" fd
+  local p="$1" fd holder=""
+  if [ -n "${LB_LOCK_PARENT:-}" ] && [ -f "$p" ]; then
+    read -r holder _ < "$p" 2>/dev/null
+    if [ "$holder" = "$LB_LOCK_PARENT" ] && kill -0 "$LB_LOCK_PARENT" 2>/dev/null; then
+      _lb_say "LOCK-INHERITED $p from $LB_LOCK_PARENT"
+      return 0
+    fi
+  fi
   command -v flock >/dev/null 2>&1 || _lb_lock_refuse "$p" "cannot be taken: flock(1) is not installed"
   if ! (set -o noclobber; : > "$p") 2>/dev/null; then
     _lb_lock_refuse "$p" "is held: $(cat "$p" 2>/dev/null)"
