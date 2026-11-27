@@ -8,6 +8,7 @@ section it feeds.
 |---|---|---|
 | `guard-clause-dry.md` | Do a source-phase rtp floor or a delivered in-order delay behave better than `rtp_floor` as a merge-guard clause, on the existing guard ledgers? (dry run, facts only) | status §3.10 item 7, §53 Erratum 1 |
 | [law-ledger.md](law-ledger.md) (+ `law-ledger.yaml`, `law-ledger/render.py`) | is every shipped law derived, measured in its regime, unclamped, fed honest inputs and free of mode switches; what to fix first | AUDIT (no engine change); status §3.10, the roadmap |
+| [s51-design.md](s51-design.md) | how to measure the engine off the Bulk hint: the δ dial crossed with the carrier hint, continuity at each preset (T1) and hint-as-named-point (T2), r per δ point, prerequisites (design, no VM) | `meas-s51-design` → `meas-s51-session`; ledger R01–R04, R07, S08, S09, K01 |
 | `p0-dwell-diag.md` | why lever B triples p0's quinn send backlog at c8 (diagnosis; a pinned store population rebalanced from holes to queue) | status §53 open item 1, `cand52` merge question |
 | `dup-diag.md` | why c8 duplicates doubled under the 64-gap horizon: packet-threshold fires on gap snapshots applied out of receiver order; the snapshot-order law, shipped (paper §7.1) | status §52, §53, ADR-0059 |
 | `visualizer-drift-2026-11.md` | is the L0 model (wasm + page) current against the engine and the measured findings; which audit defects still stand; what to update, in order (audit, no model change) | law ledger M01–M04, C13, R03; `wasm-modeswitch-audit` |
