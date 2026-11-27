@@ -213,14 +213,14 @@ impl SendRing {
         self.buf.is_empty()
     }
 
-    /// Record `rec` at `at`; the first record at an instant wins.
-    fn insert_if_absent(&mut self, at: Instant, rec: SendRecord) {
+    /// Record `rec` at `at`; the first record at an instant wins. Whether `rec` was inserted.
+    fn insert_if_absent(&mut self, at: Instant, rec: SendRecord) -> bool {
         match self.buf.back() {
-            Some(&(k, _)) if k == at => return,
+            Some(&(k, _)) if k == at => return false,
             Some(&(k, _)) if k > at => {
                 let i = self.buf.partition_point(|e| e.0 < at);
                 if self.buf.get(i).is_some_and(|e| e.0 == at) {
-                    return;
+                    return false;
                 }
                 self.buf.insert(i, (at, rec));
             }
@@ -230,6 +230,7 @@ impl SendRing {
             self.buf.pop_front();
             self.overflow_drops += 1;
         }
+        true
     }
 
     /// The latest record with key <= `at`.
@@ -294,7 +295,7 @@ pub(crate) struct RsBandwidthEstimation {
     samples_generated: u64,
     samples_rejected_interval: u64,
     samples_rejected_app_limited: u64,
-    /// Sends stamped app-limited (`app_limited_until` open at the send).
+    /// SendRecords inserted stamped app-limited (a same-instant batch shares one record).
     sends_marked: u64,
     /// `mark_app_limited` calls that found no bubble open.
     bubbles_opened: u64,
@@ -311,19 +312,15 @@ impl RsBandwidthEstimation {
         }
         let first_sent_time = self.first_sent_time.unwrap_or(now);
         let delivered_time = self.delivered_time.unwrap_or(now);
-        if self.app_limited_until.is_some() {
+        // First packet of a same-instant batch wins (shared send state).
+        let marked = self.app_limited_until.is_some();
+        let inserted = self.sent.insert_if_absent(
+            now,
+            SendRecord { delivered: self.delivered, delivered_time, first_sent_time, app_limited: marked },
+        );
+        if inserted && marked {
             self.sends_marked += 1;
         }
-        // First packet of a same-instant batch wins (shared send state).
-        self.sent.insert_if_absent(
-            now,
-            SendRecord {
-                delivered: self.delivered,
-                delivered_time,
-                first_sent_time,
-                app_limited: self.app_limited_until.is_some(),
-            },
-        );
     }
 
     /// One acked packet (BBR `UpdateRateSample` + `GenerateRateSample`).
@@ -2154,7 +2151,7 @@ mod tests {
         assert_eq!((b.0, b.1), (0, 1));
         h.event(rtt + 10 * MS, rtt, 10, true, 12_000); // sends in the bubble are marked
         let q = h.bbr.qcc().qal;
-        assert!(q.0 > 0, "sends_marked {q:?}");
+        assert_eq!(q.0, 1, "one record for the same-instant batch of 10 sends: {q:?}");
         assert!(q.1 >= 1, "bubbles_opened {q:?}");
     }
 
