@@ -175,6 +175,19 @@ def decoded_late(T, age):
     """Gauge: a decode after the lifetime.  A measurement, never a branch."""
     return age > T
 
+def rb_hold(sim, now):
+    """Amendment 3 (registration 15.3): is `now` inside RB's cap window, [outage start, outage end + A)?  The outage window is the cell's
+    declared `dead` (an oracle: RB is a bracket, not a design).  Named in EXEMPT."""
+    dd = sim.cfg.dead
+    if dd is None:
+        return False
+    t0, t1 = dd[1], dd[1] + dd[2]
+    if now < t0:
+        return False
+    if now < t1:
+        return True
+    return now < t1 + sim.cfg.rb_after_s
+
 def saturation_pressure(raw, r_sat):
     s = 0.1 * r_sat if r_sat else 0.0
     if not (s > 0.0): return 0.0
@@ -187,7 +200,8 @@ def saturation_pressure(raw, r_sat):
 ## 3. `Cfg` fields (append; the defaults reproduce `proof-s1`)
 
 ```python
-repair: object = None          # stage 3e: None = no repair; dict(r="law" | "est" | float, edge="worth" | "age" | "floor" | "none" | "evict")
+rb_after_s: float = 0.25       # stage 3e amendment 3 (registration 15.3, 15.6 item 5): RB's cap lasts this long after the outage end; RB runs at 0.25 and 3.0
+repair: object = None          # stage 3e: None = no repair; dict(r="law" | "est" | "rb" | float, edge="worth" | "age" | "floor" | "none" | "evict")
 repair_seam: object = None     # stage 3e, test only: "no_edge" disables the lifetime edge (the L1 positive control)
 o_bias: float = 0.0            # stage 3e robustness: added to the one-way estimate o_fwd (L2, protected, the worth edge)
 R_bias: float = 0.0            # stage 3e robustness: added to R in the dequeue rule only
@@ -236,7 +250,10 @@ def read_law(self, now):
         return
     L = rate_law(self.eps_for_law(), self.srtt_eff(), rh, self.cfg.delta)
     self.W_cur = L["W"]
-    self.r_cur = L["r"] if rp["r"] in ("law", "est") else float(rp["r"])
+    if rp["r"] == "rb":                                   # amendment 3: the bracket; the law fed the true loss outside the cap window
+        self.r_cur = R_MAX if rb_hold(self, now) else L["r"]
+    else:
+        self.r_cur = L["r"] if rp["r"] in ("law", "est") else float(rp["r"])
     self.law_last = L
     self.t_eval = now
     g = self.g
@@ -704,6 +721,7 @@ DOUBLE runs the next block of seeds (6–11 for a 6-seed comparison, 12–23 for
   - computes the total by §14.7's one-pool formula;
   - writes `PASS-time` if the total is at most 24 h, else `STOP` with the table;
   - its runs are not stored as results.
+- **Part RB** (registration §15.3, §15.6): repair `dict(r="rb", edge=…)` in CL-long, CLw-long and CL-long-v for every design, at `rb_after_s` ∈ {0.25, 3.0}, 6 seeds, reported only, after EARLY and before MAIN. In `read_law`, `L` is computed from the true loss (`eps_for_law` as for `"law"`).
 - **The part order** is §14.6: TIME, DECIDE, EARLY, MAIN, REST, then, after a PASSES verdict, ROBUST and SMOOTH. ROBUST and SMOOTH refuse to start without a `VERDICT-PASSES` marker, which the reader writes.
 - `batch3e.py --part X` refuses unless every earlier marker of the registration's §9 and §13.6 exists, and refuses everything while `out3e/STOP` exists.
 - `PASS-rttbug` and `PASS-simread` are written by the coordinator, not by the runner.

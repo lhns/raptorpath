@@ -1,6 +1,6 @@
 # Stage 3e registration: proactive repair in the three-knob model (no runs)
 
-**Status.** Registration only, written before any run. Amendment 1 (§13, 2026-11-25) adds the proof plan's rows, and Amendment 2 (§14, the same day, before any stage 3e data) sets seeds, reuse, order and workers from measured rates; the build is specified in `three-knobs-stage3e-build.md`. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate) and its final review of `abe2981c` (built on the RTT-fixed code; §12). Still no run.
+**Status.** Registration only, written before any run. Amendment 1 (§13, 2026-11-25) adds the proof plan's rows, Amendment 2 (§14, the same day, before any stage 3e data) sets seeds, reuse, order and workers from measured rates, and Amendment 3 (§15, before any MAIN data) records the simulator reading and adds the bracket arm RB; the build is specified in `three-knobs-stage3e-build.md`. Nothing here has been run in the offline simulation. Reviewed with the advisor (Fable) before it was written and again after the first push (`d500454b`); it then carries the coordinator's review of `f50401f8` (full-rate cells, the estimated-loss arm, the power cell, the RTT gate) and its final review of `abe2981c` (built on the RTT-fixed code; §12). Still no run.
 
 **Base.**
 - Derivation `docs/derivations/three-knobs.md` on `three-knobs` at `93e29a22`. The laws are §1–§10 with Revisions 1–3 (§13, §15, §17); the findings are §18 (stage 3d) and §19 (the interactive simulator and the lifetime sweep).
@@ -18,6 +18,13 @@
   - Old against new is read only on matched-share curves, with a dominance rule below the new curve's range and "undetermined" as its own outcome, with one doubling of seeds.
   - 989 configurations and 11 382 runs (11 058 with proof stage 1's repair-off rows reused), plus the conditional cross and the doubling.
   - Order: §13.6.
+- **Amendment 3 (§15) records the simulator reading.**
+  - r ≈ 0.36 is a run average of a steady 0.29 and a 0.5 cap held for about 3 s after the outage; §11 item 6 is withdrawn.
+  - RF3 is relabelled.
+  - RE does not cover the aftermath, and DECIDE's and EARLY's repair rows are labelled "law fed the true loss".
+  - A bracket arm RB (r at its cap from the outage start to `rb_after_s` after the end, every design, CL-long, CLw-long and CL-long-v) is added.
+  - **§15.6's engine checks:** the engine's estimator gets no input during an outage; its spare clamp removes repair in the drain. So RB is reported only, at `rb_after_s` ∈ {0.25 s (default), 3 s}, 6 seeds: 144 configurations and 864 runs. The count before the verdict is 810 configurations and 6 828 runs.
+  - In the drain the engine sits between repair off and RL; RL overstates its repair.
 - **Amendment 2 (§14) cuts the cost on measured rates.**
   - It reuses the re-baselined stage 3d repair-off rows.
   - It keeps 12 seeds on the deciding row and on the near-tie cells, and runs 6 elsewhere with one doubling. The long overload cells' old senders run at 3 seeds and only at their dial ends.
@@ -388,9 +395,9 @@ All arms: δ = 50, H = 0. T = 0.4 s unless stated; in RT, T = 0.12 s unless stat
 | `S5` | stage 3d's S5, `repair = None` | — | — | all |
 | `R0` | S5 + repair | 0 | worth | all (identity with `S5`, and with the re-baselined stage 3d rows where they exist, §9) |
 | `RL` | S5 + repair | the live law, true loss | worth | all |
-| `RE` | S5 + repair | the live law, estimated-loss arm (normal-approximation upper quantile, BOCD not ported; §2.1) | worth | CL-long, OV, CLw-long, RT |
+| `RE` | S5 + repair | the live law, estimated-loss arm (normal-approximation upper quantile, BOCD not ported, no burst terms; §2.1, §15.2) | worth | CL-long, OV, CLw-long, RT |
 | `RS` | S5 + repair | fixed at the cell's unqueued law value (CL, CL-long 0.107; OV 0.0998; CLs-long 0.2295) | worth | CL, CL-long, OV, CLs-long |
-| `RF3` | S5 + repair | 0.36, the simulator's reading at the Realtime δ (§19) | worth | all |
+| `RF3` | S5 + repair | 0.36: a run average the simulator's estimator never holds, not a steady rate (§15.2) | worth | all |
 | `RF1` | S5 + repair | 0.112, the law at stage 3d's 10 000/s and RTprop (a low dose) | worth | RT, CLs-long |
 | `RL-age` | as RL | live law | age (the simulator's) | OV |
 | `RL-floor` | as RL | live law | floor | OV, CL-long, RT |
@@ -749,7 +756,7 @@ Numbering continues from the derivation's Q18.
   - **Default: the cell's true first-send loss,** a declared idealisation. The law arm is then a lower bound on the engine's r.
   - **The self-limiting reading of §2.6 rests on this default.** With an estimate, an outage or queue drops raise ε̂ and so r, which is the opposite feedback. Arm `RE`, the estimated-loss arm (normal-approximation upper quantile, BOCD not ported), measures it.
   - The remaining gap is the BOCD predictive quantile, which the engine reads after 5 updates. Default: not ported. A port (`raptorpath-math/src/estimator.rs`) would follow if RE's post-outage reading matters for the verdict.
-- **Q22, the engine's spare-capacity clamp** `min(r, (cwnd − in_flight)/in_flight)`.
+- **Q22, the engine's spare-capacity clamp** `min(r, (cwnd − in_flight)/in_flight)`. **Amendment 3 §15.6:** it removes repair while a backlog drains (spare ≈ 0). Not modelling it is now a known, signed bias: repair load in the drain is inflated on every design equally.
   - **Default: not modelled.** The offline simulation has no cwnd, and its B is a store cap, not a congestion window.
   - Direction: the clamp can only lower r, so the results bound the engine's repair load from above.
   - If it is ever modelled, it needs a bind gauge.
@@ -780,7 +787,7 @@ Numbering continues from the derivation's Q18.
    - Below one resend round every unit is unprotected at birth, so no repair would be sent: the opposite of §2.2's and §5's claim.
    - §2.4's T − ô cut is the consistent reading.
 5. **The engine's empty-span fallback.** When the trailing span is empty, `emit_source.rs:839–846` falls back to `generate_repair()` over the leading window. Under a lifetime that fallback must respect the same edge, or it can code members past T. The L1 absolute test would catch it in the engine build.
-6. **The simulator's r ≈ 0.36 is not reproduced by the closed form at ε = 0.03.**
+6. **[Withdrawn by Amendment 3, §15.2: the reading shows 0.36 is a run average, not the knee.]** The simulator's r ≈ 0.36 is not reproduced by the closed form at ε = 0.03.
    - The closed form gives 0.2295 at W = 16 and 0.158 at the simulator's CL-long operating point.
    - The knee at W = 16 is exactly 0.360, and the law reaches it only at a p̂ of about 0.06.
    - So the simulator's value is probably its BOCD upper quantile driving the raw rate into the knee. Unreconciled; the mandatory SIMREAD step of §9 reads it (Q3e-10).
@@ -1147,13 +1154,14 @@ The rule is the same bit-identity rule as the `proof-s1` reuse (§13.1). `check_
 0. §9's steps 0–7, with step 7's A/A at 12 seeds in every cell.
 1. **TIME** (§14.8). Gate the whole run on its total.
 2. **DECIDE** (CL-long, RL half; the repair-off half reused), read at once. If it FAILS: `STOP`, run CROSS if its condition holds, then wait for the plan's §3.5 decision.
-3. **EARLY: one cell per use case at the call point, every design, with repair (RL).**
+3. **EARLY: one cell per use case at the call point, every design, with repair (RL, the law fed the true loss).**
    - **file:** Ec, the T = ∞ identity against today's Bulk;
    - **call:** RT at T = 0.4 and τ ∈ {0.4, 0.12}, the new model's sweep and every baseline point;
    - **tunnel:** OV, the new sweep and every baseline point (the predicted "shown better");
    - **video:** CL-long-v at T = 2, the new sweep and every baseline point.
 
    These are the AMEND rows of those four cells under RL, read when they finish.
+3a. **RB** (§15.3), read by §13.3 within its own rows, with status per `ENGINE-CAP`.
 4. **MAIN**, as registered.
 5. **REST:** the remaining AMEND rows, in §13.6's cell order (long overload cells last), each cell's doubling before the next cell.
 6. **The stage verdict** (§13.3).
@@ -1219,6 +1227,149 @@ Here `w_light` ∈ [6, 8] and `w_heavy` ∈ [1, 2].
 | ROBUST, SMOOTH (after a pass only) | 32 + 272 | 192 + 816 |
 
 This replaces §13.5's 989 configurations and 11 382 runs. The AMEND configuration count falls from 561 to 543, because the long overload cells drop the inner ρ and δ points (§14.4).
+
+## 15. Amendment 3: the simulator reading and the bracket arm RB (2026-11-25, before any MAIN data)
+
+**Why.** The mandatory simulator reading (SIMREAD, §9 step 6, Q3e-10) came out against its registered expectation. This amendment records the reading and withdraws the explanation it refutes. It relabels the arms that rested on that explanation, and registers one bracket arm. No MAIN run exists as this is written, and no reading of DECIDE or EARLY is changed by it.
+
+### 15.1 The reading (interactive simulator, CL-long preset, Realtime δ)
+
+| phase | p̂ upper (BOCD 95 %) | W | raw r | which term binds | saturation pressure | r |
+|---|---|---|---|---|---|---|
+| steady state | 0.044–0.048 | 16 | ≈ 0.30 | the random-loss term on 100 % of ticks; the knee on 3.8 % | 0.10–0.21 | ≈ 0.29 |
+| during the outage | 1 | — | — | — | — | r_max = 0.5 |
+| about 3 s after the outage | — | — | — | the Gilbert–Elliott σ² peaks at 50 and B̂ at 135, which keeps the knee above 1 until about 4.5 s | — | 0.5 until about 6.5 s |
+| whole run | — | — | — | r at r_max on 25–32 % of ticks | — | mean 0.356 (T = ∞), 0.385 (T = 0.4) |
+
+**So 0.36 is a run average, not the knee.**
+- Q3e-10's expectation was W = 16, p̂ 0.05–0.07, a raw rate at or above the knee and pressure ≥ 0.5. It reads p̂ 0.044–0.048 with pressure 0.10–0.21, so it fails.
+- The steady value agrees with the closed form: at W = 16 and p̂ = 0.045 the law gives raw 0.298 and r 0.292 (§2.1's port, the 0.045 row).
+
+### 15.2 Withdrawals and relabels
+
+1. **§11 item 6 is withdrawn,** by the rule that a miss is reported, not explained away.
+   - Its claim was that the simulator's r ≈ 0.36 is the estimator's upper quantile driving the raw rate into the knee at W = 16, with p̂ ≈ 0.06. The reading refutes it.
+   - The value is the run average of a steady r ≈ 0.29 and a saturated r = 0.5 held through the outage and about 3 s after it.
+   - The item stays in §11 as the record, marked withdrawn by this section.
+2. **RF3 is relabelled** "fixed r = 0.36: a run average the simulator's estimator never holds, not a steady rate".
+   - Its rows and predictions stand as the registered dose they are. Its overload results, including CL-long's "overloaded by repair alone", read as a dose that no steady state produces, never as "the engine's r".
+   - In §10 and Q3e-10 the question RF3 was to answer, the engine's estimator at a call-like window, is answered by §15.1, not by RF3.
+3. **RE does not cover the aftermath.** RE (§2.1) is the normal-approximation Beta upper quantile with a 0.4 s time constant. It predicts r ≥ 0.15 for about 0.4 s after an outage (Q3e-2).
+   - The engine-like estimator holds r = 0.5 for about 3 s after the outage, through the Gilbert–Elliott σ² and B̂, which RE has no counterpart for (σ² = 1 and B̂ = 1 in every cell, §2.1).
+   - So RE is not a lower bound on the engine's post-outage repair load either. Its rows stay as registered, labelled "estimated-loss arm without burst terms". The aftermath is bracketed by RB (§15.3) instead.
+4. **DECIDE's and EARLY's repair rows are labelled "law fed the true loss".** Their RL label means r(δ) evaluated on the cell's true first-send loss, with σ² = 1. That is not what an engine estimator would feed the law during and after an outage.
+
+### 15.3 The bracket arm RB
+
+**The rule** (a declared bracket, not a law):
+
+```text
+   r(t)  =  r_max                                        for  t ∈ [outage start, outage end + A)
+         =  the law fed the true loss (RL)               otherwise
+```
+
+| symbol | provenance |
+|---|---|
+| r_max = 0.5 | the engine's `max_overhead`, the law's cap (§2.1) |
+| outage start and end | the cell's declared `dead` window. An oracle, which is why RB is a bracket and not a design |
+| A (`rb_after_s`) | **superseded by §15.6 item 5: default 0.25 s at full rate, 3 s as a second value.** Originally a named parameter, default 3 s: §15.1's measured aftermath (r = 0.5 until about 6.5 s after an outage ending at about 3.5 s). A scaling check now running decides whether A is a time or a symbol count. The parameter is `rb_A` with unit `rb_unit` ∈ {`"s"`, `"sym"`}: in seconds after the outage end, or in first sends after it. If the check gives a different value, it is set by a new amendment before RB runs |
+
+- **Every design gets the same RB in a row** (F2): the new model, ADR-0084, today's Realtime and today's Bulk.
+- **Repair emission keeps its form.** RB only changes r. During the outage a paused sender makes no first sends, so it emits no repairs. Today's Realtime, which has no pause, sends both into the outage.
+- **What RB brackets.** RL holds the law fed the true loss through the aftermath. RB holds the cap. The engine lies between them, at or near RB if §15.1 carries over.
+- **Its status depends on the engine, and both checks are running now:**
+  - if the engine's own estimator holds the cap after an outage, RB counts under the verdict, with the same scope as RL (§13.3);
+  - if the engine's spare-capacity clamp (Q22) removes the cap, RB is reported only.
+  - The coordinator writes the marker `ENGINE-CAP` with `holds` or `clamped` before RB is read. Until it exists, RB is read as reported only.
+- **At δ = 0.005 the engine never reaches the cap.** The Bulk-end law gives r = 0 even at p̂ = 1 (β = 1, and the late-is-fine term has `z = −∞` when its target equals p̂). So RB in CL-long-v has no engine counterpart for the arms at δ = 0.005, and is reported only for them, whatever `ENGINE-CAP` says. Today's Realtime at δ ∈ {0.5, 5, 50} in that cell follows the marker.
+
+**Cells, designs and seeds** (amendment 2's rules: 12 seeds in these cells, which are the deciding row and near-tie cells):
+
+| cell | configurations | runs |
+|---|---|---|
+| CL-long | new T sweep (15 at H = 0, 3 at H = ∞), ADR-0084 at 5 ρ, today's Realtime at 3 δ, today's Bulk: 27 | 324 |
+| CLw-long | the same 27 | 324 |
+| CL-long-v | new (5 + 3), ADR-0084 at 5 ρ, today's Realtime at 4 δ, today's Bulk: 18 | 216 |
+| **RB total** | **72** | **864** |
+
+**Order:** RB runs after EARLY and before MAIN (§14.6 step 3a). It has its own `DONE-RB` marker and is read by §13.3's rule within RB rows only.
+
+**Cost** (§14.7's rates): about 3.5 CPU-hours light and 4.7 heavy, so about 2.8 h of wall time.
+
+**The new count before the verdict:** 738 configurations and **6 828 runs**, plus TIME.
+
+### 15.4 Predictions for RB (written before any RB run)
+
+Under RB, while queued, μ_eff = C/(1 + 0.5 + ρ) ≈ 12 500/1.53 ≈ 8 170/s.
+- **CL-long:** that is below λ = 10 000, so for A = 3 s after the outage the backlog grows by about 1 830/s, instead of draining.
+- **CLw-long:** μ_eff ≈ 8 170 is about λ = 8 000, so the backlog holds for A and then drains.
+
+| cell, arm | prediction | derivation |
+|---|---|---|
+| CL-long, new model at T = 0.4 | `share_by_0p4` = RL's − [0.015, 0.04]; recovery at 0.4 s in [A, A + 1.5] = [3.0, 4.5] s | during the aftermath the dequeue rule sheds `1 − μ_eff/λ ≈ 18 %` of hand-overs: 0.18 × 10 000 × 3 / 200 000 ≈ 0.027. The window share sits near 0.82 < θ until the cap lifts |
+| CL-long, never gives up (S5-inf, ADR-0084 at ρ = 1, today's Bulk) | recovery not within the run | backlog 16 000 + 5 500 at 6.5 s, then a drain at about 12 500/1.1 − 10 000 ≈ 1 360/s: about 16 s, past the 14.5 s readable end |
+| CL-long, ADR-0084 at ρ < 1 | recovery not within the run for ρ ≥ 0.99; reported for 0.95 and 0.98 | the receiver's give-up of B_lost (plan §3.2) saves about 0.5 s against a drain of about 16 s |
+| CL-long, today's Realtime | `queue_drop_out` above its RL value; `share_by_0p4` below the new model's at matched share | with no pause, 1.5 × the sends hit a 1 250 queue that drops the excess |
+| CL-long, comparison under the verdict | new BETTER on recovery against every never-give-up and ADR-0084 point (dominance or matched); on time: BETTER or EQUIV | the new model sheds the aftermath's excess at the intake, the old ones queue it |
+| CLw-long, never gives up | recovery ≈ A + RL-inf's: [8.0, 11.5] s | the backlog of about 25 000 holds through A, then drains as under RL (RL-inf [5.0, 7.5] s, §13.4) |
+| CLw-long, new model at T = 0.4 | `share_by_0p4` = RL's ± 0.02; recovery [0, 0.5] s | μ_eff ≈ λ, so the dequeue rule sheds little and the intake stays at about `λ(T − R)` |
+| CL-long-v | the δ = 0.005 arms: reported, and under RB they differ from OFF only by the cap's repairs. Today's Realtime at δ ≥ 0.5: as CL-long's today's Realtime row | §15.3 |
+
+**What RB settles.** If the new model stays at least equal to every old design under RB as well as under RL, the conclusion holds across the bracket. If RB reverses a cell's outcome, that cell's verdict is UNDETERMINED until `ENGINE-CAP` decides which end the engine sits at, and that cell is reported as such.
+
+### 15.5 Ledger finding: the cap binds on 25–32 % of ticks
+
+The cap r_max = 0.5 binds on 25–32 % of the simulator's ticks in this preset. A clamp that binds that often over its operating range is a defect finding (FORMULA-FIRST, MEASUREMENT DISCIPLINE 17–18) and needs a ledger verdict. It is recorded as one, with the measured fraction, the preset and this section as its source.
+
+**The preset is overloaded before the outage, at its own steady r.** The arithmetic:
+- offered λ = 800/s against 1 000 slots per second;
+- at the steady r ≈ 0.29, first sends plus repairs alone are 800 × 1.29 = 1 032/s;
+- resends add more: with 3 % loss and FEC recovering most, about 800 × 0.03 × (1 − P_fec) ≲ 24/s;
+- so about 1 030–1 056 sends contend for 1 000 slots.
+
+The preset is overloaded by repair at its steady r before any outage. Its recovery readings are therefore readings of an overloaded link, not of an outage drain. The simulator's plan sized its bottleneck preset as `μ = 1.25·λ·(1 + r_est)` (visualizer plan §7). A link of 1 000/s at 800/s offered satisfies that only with r_est = 0, so the preset's link and the estimator's steady r disagree. That is recorded beside the ledger finding.
+
+### 15.6 Engine checks (read-only findings on `main`, folded in before any MAIN or RB data)
+
+1. **During a total outage the engine's estimator gets no input.**
+   - Loss reaches it only through acks, as one lump on the first ack after the outage (`net/control_msg.rs:339`, `net/mod.rs:3716`).
+   - The simulator's p̂ = 1 during the outage (§15.1) is therefore a **simulator divergence**. It is recorded as one: the simulator feeds its estimator per tick, which the engine does not.
+   - The offline simulation's RE arm already has the engine's shape here. Reports stop during the outage, and the Beta estimate takes the outage's holes as one batch on the first report after it (§2.1).
+2. **The engine's spare-capacity clamp removes repair while a backlog drains.**
+   - The clamp is `spare = (cwnd − in_flight)/in_flight` (`scheduler/path.rs:467–472`). It is applied as `flat_rate = window_rate.min(spare.max(0))` (`net/emit_source.rs:579`), and again in `TaperBudget::accrue` (`control/fec_rate.rs:729`).
+   - While a backlog drains, in_flight sits at about cwnd, so spare is about 0, and the engine sends almost no repair whatever r is.
+   - **So `ENGINE-CAP` reads `clamped`, and RB is reported only, by its own rule (§15.3).**
+3. **What brackets the engine in the drain window.**
+   - At the low end is repair off (proof stage 1, which passed).
+   - At the high end is RL, the law fed the true loss and not clamped.
+   - **RL overstates the engine's repair in the drain.**
+4. **Q22 is now a known, signed bias** (see Threats, below).
+5. **Scaling of the aftermath.**
+   - The Gilbert–Elliott σ² and B̂ forget per symbol (decay 0.999 per symbol). They fall back to 1 as a step after about `ln(L + 1)/0.001` symbols: about 4 900 symbols for L ≈ 135, which is 0.24 s at 10 000 symbols/s.
+   - BOCD forgets per update, which is roughly time-based.
+   - **RB's aftermath parameter is renamed `rb_after_s`.** Its default for the full-rate cells (CL-long, CLw-long, CL-long-v at 10 000/s or 8 000/s) is **0.25 s**, with **3 s** kept as a second value. Both are run and both are reported. `rb_unit` and its `"sym"` form are withdrawn, because the scaling check settled the unit.
+   - **RB's runs:** each cell × design is now at two values of `rb_after_s`, so 144 configurations.
+     - RB is reported only, not a verdict comparison, so amendment 2's "elsewhere" count applies: 6 seeds, giving **864 runs**, unchanged.
+     - The 12-seed rule was for comparisons under the verdict.
+   - **RB at 0.25 s, predicted:**
+     - CL-long, new model at T = 0.4: `share_by_0p4` = RL's − [0, 0.006] (0.18 × 10 000 × 0.25 / 200 000 ≈ 0.002); recovery at 0.4 s in [0, 0.6] s;
+     - never gives up: recovery = RL-inf's + [0, 0.8] s;
+     - CLw-long: as RL within its bands.
+     - The 3 s rows keep §15.4's predictions.
+6. **The window the engine's rate law reads.**
+   - The law is evaluated at the encoder's live fill (`net/emit_source.rs:564–570`, `control/fec_rate.rs:210`); W* only sizes the encoder.
+   - The offline simulation feeds the law W = W* (`derive_window`, §2.1). A separate check on the offline simulation is running.
+   - Recorded as a pending divergence. If the check finds the two differ materially in the registered cells, a new amendment changes the law's window input to the live fill before MAIN runs. Otherwise the reading is reported beside RL's rows.
+
+**The new count before the verdict:** 810 configurations and **6 828 runs**, plus TIME. That is 666 + 144 configurations and 5 964 + 864 runs.
+
+**Threats to validity (signed).**
+- **Q22, the spare-capacity clamp, is not modelled.** That inflates repair load during the drain on every design equally, while the engine has less repair there.
+  - Repair-on drain readings (RL, RE, RS, RF3, RB) are therefore pessimistic for every design about drain speed.
+  - The comparison between designs rests on F2's equal machinery, and stands.
+  - No absolute drain number with repair is a claim about the engine. Repair off (proof stage 1) is the engine's low end.
+- **The simulator's p̂ = 1 during the outage is a simulator divergence** (item 1), so the simulator's aftermath r is not the engine's.
+- **The law's window input** is pending item 6.
 
 ## Appendix A: rate-law reference program
 
