@@ -174,6 +174,8 @@ struct SendRecord {
     delivered_time: Instant,
     /// `C.first_sent_time` at send time (start of the in-flight send burst).
     first_sent_time: Instant,
+    /// BBR `P.is_app_limited`: the packet left inside an app-limited bubble.
+    app_limited: bool,
 }
 
 /// Bound on retained send records — the engine's `RS_MAX_TRACKED` constant
@@ -282,6 +284,12 @@ pub(crate) struct RsBandwidthEstimation {
     sent: SendRing,
     max_filter: MinMax,
     acked_at_last_window: u64,
+    /// BBR `C.app_limited`: the bubble's end mark in `delivered` bytes (`C.delivered +
+    /// C.inflight` when the connection reported app-limited); open while `delivered`
+    /// has not passed it. Packets sent while it is open are stamped app-limited.
+    app_limited_until: Option<u64>,
+    /// The latest acked packet's send-time stamp (read by the Startup full-bandwidth clause).
+    last_ack_app_limited: bool,
     // DIAG counters (test/observability only — never gate control).
     samples_generated: u64,
     samples_rejected_interval: u64,
@@ -306,6 +314,7 @@ impl RsBandwidthEstimation {
                 delivered: self.delivered,
                 delivered_time,
                 first_sent_time,
+                app_limited: self.app_limited_until.is_some(),
             },
         );
     }
@@ -325,6 +334,9 @@ impl RsBandwidthEstimation {
     ) {
         self.delivered += bytes;
         self.delivered_time = Some(now);
+        if self.app_limited_until.is_some_and(|m| self.delivered > m) {
+            self.app_limited_until = None; // the bubble drained: delivered passed its mark
+        }
 
         // Snapshot for this packet: exact send instant, or the nearest
         // earlier one (older shared/pruned records still carry valid —
@@ -338,6 +350,10 @@ impl RsBandwidthEstimation {
         // (acked or presumed lost — a later ack proves the wire moved on).
         self.first_sent_time = Some(sent);
         self.sent.drop_older_than(key);
+        // A sample is app-limited if its packet was sent app-limited (per-packet, as
+        // BBR specifies); quinn's ack-time bit still counts, as before.
+        let app_limited = app_limited || rec.app_limited;
+        self.last_ack_app_limited = rec.app_limited;
 
         // send_elapsed spans the send spacing from the burst start to this
         // packet; ack_elapsed spans the same deliveries in wall time. The
@@ -373,6 +389,18 @@ impl RsBandwidthEstimation {
         }
         self.samples_generated += 1;
         self.max_filter.update_max(round, rate);
+    }
+
+    /// The connection reported app-limited at the end of an ack event with `in_flight`
+    /// bytes outstanding: open the bubble (BBR `C.app_limited = C.delivered + C.inflight`,
+    /// or 1). It lasts until that much more has been delivered.
+    pub(crate) fn mark_app_limited(&mut self, in_flight: u64) {
+        self.app_limited_until = Some((self.delivered + in_flight).max(1));
+    }
+
+    /// Whether the latest acked packet was sent app-limited.
+    pub(crate) fn last_ack_app_limited(&self) -> bool {
+        self.last_ack_app_limited
     }
 
     pub(crate) fn bytes_acked_this_window(&self) -> u64 {
@@ -1004,6 +1032,9 @@ impl Controller for BbrRs {
             }
         }
 
+        if app_limited {
+            self.max_bandwidth.mark_app_limited(in_flight);
+        }
         let bytes_acked = self.max_bandwidth.bytes_acked_this_window();
         if self.mode == Mode::ProbeRtt {
             self.probe_rtt_bytes += bytes_acked;
@@ -1036,7 +1067,9 @@ impl Controller for BbrRs {
         }
 
         if is_round_start && !self.is_at_full_bandwidth {
-            self.check_if_full_bw_reached(app_limited);
+            // an app-limited round, by quinn's ack-time bit or by its packets' send-time stamp
+            let round_app_limited = app_limited || self.max_bandwidth.last_ack_app_limited();
+            self.check_if_full_bw_reached(round_app_limited);
         }
 
         self.maybe_exit_startup_or_drain(a_e, in_flight);
@@ -1366,7 +1399,7 @@ mod tests {
     fn send_ring_semantics_and_overflow() {
         let t0 = Instant::now();
         let at = |i: u64| t0 + Duration::from_nanos(i);
-        let rec = |d: u64| SendRecord { delivered: d, delivered_time: t0, first_sent_time: t0 };
+        let rec = |d: u64| SendRecord { delivered: d, delivered_time: t0, first_sent_time: t0, app_limited: false };
         let mut r = SendRing::default();
         r.insert_if_absent(at(10), rec(1));
         r.insert_if_absent(at(10), rec(2)); // same instant: first wins
@@ -2082,5 +2115,76 @@ mod tests {
             v
         };
         assert_eq!(trace(), trace());
+    }
+    // ── §12.1: per-packet app-limited marking (BBR's P.is_app_limited) ────
+
+    /// A bursty app-limited flight acked while quinn's bit reads `false` (the ack-time
+    /// bit: quinn is still sending, or window- or pacing-blocked) must not lower the
+    /// max, even more than one filter window of rounds later. Today the unflagged
+    /// sample replaces the expired filter with one frame's delivery rate.
+    #[test]
+    fn an_app_limited_flight_acked_unflagged_cannot_lower_the_max() {
+        let t0 = Instant::now();
+        let mut est = RsBandwidthEstimation::default();
+        let rtprop = 10 * MS;
+        let pkt: u64 = 1200;
+        let mut send_t = t0;
+        for _ in 0..300 {
+            est.on_sent(send_t, pkt);
+            send_t += Duration::from_micros(100);
+        }
+        let mut sent_t = t0;
+        let mut ack_t = t0 + rtprop;
+        for _ in 0..300 {
+            est.on_ack(ack_t, sent_t, pkt, 1, false, rtprop);
+            sent_t += Duration::from_micros(100);
+            ack_t += Duration::from_micros(100);
+        }
+        let established = est.get_estimate();
+        assert!(established > 0);
+        // The connection reports app-limited at the end of this ack event, with one flight outstanding.
+        est.mark_app_limited(50 * pkt);
+        // The burst: sent inside the bubble, spaced like a frame (1/10 of the rate), acked unflagged
+        // 20 rounds later (the filter's window is 10).
+        let mut send_t = ack_t + MS;
+        for _ in 0..50 {
+            est.on_sent(send_t, pkt);
+            send_t += MS;
+        }
+        let mut sent_t = ack_t + MS;
+        let mut ack_t2 = ack_t + MS + rtprop;
+        for _ in 0..50 {
+            est.on_ack(ack_t2, sent_t, pkt, 21, false, rtprop);
+            sent_t += MS;
+            ack_t2 += MS;
+        }
+        assert_eq!(est.get_estimate(), established, "unflagged acks of an app-limited flight depressed the max");
+    }
+
+    /// Startup must not leave on an app-limited round: three ack events, the first
+    /// reporting app-limited with a flight outstanding, then two the connection
+    /// reports unflagged (the second with a loss, so recovery is entered). Every packet
+    /// of those flights was sent inside the bubble.
+    #[test]
+    fn startup_does_not_exit_on_an_app_limited_round() {
+        let mut h = H::new();
+        h.bbr.plant_min_rtt(10 * MS);
+        h.event(10 * MS * 2, 10 * MS, 100, true, 100 * 1200);
+        h.event(10 * MS * 3, 10 * MS, 100, false, 100 * 1200);
+        // a loss in the next flight: recovery, which is what ends Startup on an unflagged round
+        let t = 10 * MS * 4;
+        h.clock.store(t.as_nanos() as u64, Ordering::Relaxed);
+        let sent = h.at(t - 10 * MS);
+        for _ in 0..100 {
+            h.pn += 1;
+            h.bbr.on_sent(sent, 1200, h.pn);
+        }
+        for _ in 0..100 {
+            h.bbr.ack(h.at(t), sent, 1200, false, 10 * MS);
+        }
+        h.bbr.on_congestion_event(h.at(t), sent, false, 1200);
+        h.bbr.on_end_acks(h.at(t), 100 * 1200, false, Some(h.pn));
+        assert_eq!(h.bbr.mode, Mode::Startup, "left Startup on a round whose packets were all sent app-limited");
+        assert!(!h.bbr.is_at_full_bandwidth);
     }
 }
