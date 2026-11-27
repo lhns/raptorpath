@@ -38,6 +38,8 @@
 
 ## Short answer
 
+> **Read first (2026-11-27):** the verdicts below compare against two baselines for today's Realtime sender, one with the engine's standing queue in quinn's datagram buffer. The engine's hand-off gate (`docs/derivations/reg-handoff-gate.md`, branch sender-queue-law) removes most of that queue, so the fair old-design baseline is the no-queue arm. Against it alone the count stays 7 of 8, OV-long's "dominates" rests on delay p50 alone (0.078 s), and the mid-price cells OV-long-m and OV-long-q read worse, not a trade. The 13.10 dequeue-time falsifier passed. See `tools/toy/results-recount.md`.
+
 **The finding, re-read from the stored runs.** In OV (offered λ = 12 000 units/s, link C = 10 000/s, a 1 250-datagram buffer, one path, repair RL), the stage 3e new-model rows fit one line in the intake hold `w = T − R`:
 
 ```text
