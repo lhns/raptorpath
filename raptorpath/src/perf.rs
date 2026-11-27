@@ -58,6 +58,52 @@ fn parse_rate_mbit(raw: Option<&str>) -> anyhow::Result<Option<f64>> {
     }
 }
 
+/// The offered load of a timed object: a constant payload rate or bursty frames.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Offered {
+    /// Payload Mbit/s (`RWM_PERF_RATE_MBIT`).
+    Rate(f64),
+    /// `dgrams` datagrams released together every `period_ms` (`RWM_PERF_BURST`).
+    Burst { dgrams: u32, period_ms: u64 },
+}
+
+/// `RWM_PERF_BURST=<datagrams>/<interval_ms>`: the bursty offered-load source
+/// (default off): `datagrams` chunks released together every `interval_ms`
+/// (a video-frame shape: 10/33). Unset is `None`. Anything that is not two
+/// positive integers is an error, never silently unpaced.
+fn parse_burst(raw: Option<&str>) -> anyhow::Result<Option<(u32, u64)>> {
+    let Some(raw) = raw else { return Ok(None) };
+    let bad = || {
+        anyhow::anyhow!(
+            "RWM_PERF_BURST={raw:?} is not <datagrams>/<interval_ms> with both positive integers \
+             (e.g. 10/33); unset it to run unpaced"
+        )
+    };
+    let (d, p) = raw.trim().split_once('/').ok_or_else(bad)?;
+    match (d.parse::<u32>(), p.parse::<u64>()) {
+        (Ok(d), Ok(p)) if d > 0 && p > 0 => Ok(Some((d, p))),
+        _ => Err(bad()),
+    }
+}
+
+/// The offered load from the two knobs. Both set is an error: a silent pick of
+/// one would run a different source than the one the row says.
+fn parse_offered(rate_raw: Option<&str>, burst_raw: Option<&str>) -> anyhow::Result<Option<Offered>> {
+    match (parse_rate_mbit(rate_raw)?, parse_burst(burst_raw)?) {
+        (Some(_), Some(_)) => anyhow::bail!("RWM_PERF_RATE_MBIT and RWM_PERF_BURST are both set; use one"),
+        (Some(m), None) => Ok(Some(Offered::Rate(m))),
+        (None, Some((dgrams, period_ms))) => Ok(Some(Offered::Burst { dgrams, period_ms })),
+        (None, None) => Ok(None),
+    }
+}
+
+/// When chunk number `chunk` (0-based) of a burst source is due, as an offset
+/// from the object's t0: its frame (`chunk / dgrams`) times the interval.
+/// Absolute, like [`due_offset`]: a late frame does not push the later ones back.
+fn burst_due(chunk: u64, dgrams: u32, period_ms: u64) -> Duration {
+    Duration::from_millis(period_ms * (chunk / dgrams as u64))
+}
+
 /// Absolute schedule: when a chunk is due, as an offset from the object's
 /// t0, given the payload bytes of the chunks before it and `lambda_bps`
 /// (payload bits/s): `8 · bytes_before / λ`. Absolute, so a late send does
@@ -72,7 +118,7 @@ const PACE_LATE: Duration = Duration::from_millis(2);
 
 /// Pacer state for one timed object; no rate means no pacer at all.
 struct Pacer {
-    lambda_bps: f64,
+    offered: Offered,
     sent: u64,
     chunks: u32,
     late: u32,
@@ -81,9 +127,9 @@ struct Pacer {
 
 impl Pacer {
     /// The selector: no rate, no pacer.
-    fn new(rate_mbit: Option<f64>) -> Option<Pacer> {
-        rate_mbit.map(|m| Pacer {
-            lambda_bps: m * 1e6,
+    fn new(offered: Option<Offered>) -> Option<Pacer> {
+        offered.map(|o| Pacer {
+            offered: o,
             sent: 0,
             chunks: 0,
             late: 0,
@@ -93,7 +139,10 @@ impl Pacer {
 
     /// Due offset of the next chunk.
     fn next_due(&self) -> Duration {
-        due_offset(self.sent, self.lambda_bps)
+        match self.offered {
+            Offered::Rate(m) => due_offset(self.sent, m * 1e6),
+            Offered::Burst { dgrams, period_ms } => burst_due(self.chunks as u64, dgrams, period_ms),
+        }
     }
 
     /// Account a chunk of `k` payload bytes whose send finished at `done`
@@ -110,12 +159,17 @@ impl Pacer {
 
     fn line(&self, obj_id: u32, feed_s: f64) -> serde_json::Value {
         let achieved = if feed_s > 0.0 { 8.0 * self.sent as f64 / feed_s / 1e6 } else { 0.0 };
-        serde_json::json!({
-            "pace": true, "obj": obj_id, "rate_mbit": round(self.lambda_bps / 1e6, 6),
+        let mut v = serde_json::json!({
+            "pace": true, "obj": obj_id,
             "chunks": self.chunks, "feed_s": round(feed_s, 6),
             "achieved_mbit": round(achieved, 6), "late": self.late,
             "late_max_ms": round(self.late_max.as_secs_f64() * 1e3, 3),
-        })
+        });
+        match self.offered {
+            Offered::Rate(m) => v["rate_mbit"] = serde_json::json!(round(m, 6)),
+            Offered::Burst { dgrams, period_ms } => v["burst"] = serde_json::json!(format!("{dgrams}/{period_ms}")),
+        }
+        v
     }
 }
 
@@ -264,10 +318,10 @@ async fn run_object(
     // feed, in which case the engine's rate site reads it as `T_rem` and
     // runs the completion-exposure glide.
     feed: Option<&std::sync::Arc<net::CompletionFeed>>,
-    // `RWM_PERF_RATE_MBIT` for a timed object; `None` = today's loop.
-    rate_mbit: Option<f64>,
+    // `RWM_PERF_RATE_MBIT` / `RWM_PERF_BURST` for a timed object; `None` = today's loop.
+    offered: Option<Offered>,
 ) -> anyhow::Result<RunOutcome> {
-    let mut pacer = Pacer::new(rate_mbit);
+    let mut pacer = Pacer::new(offered);
     let total = (nbytes.max(1)).div_ceil(payload_len) as u32;
     let payload = vec![0xA5u8; payload_len];
     let t0 = crate::clock::now();
@@ -346,10 +400,10 @@ async fn run_watched(
     payload_len: usize,
     deadline: Duration,
     feed: Option<&std::sync::Arc<net::CompletionFeed>>,
-    rate_mbit: Option<f64>,
+    offered: Option<Offered>,
 ) -> anyhow::Result<RunOutcome> {
     tokio::select! {
-        r = run_object(mem, obj_id, nbytes, payload_len, deadline, feed, rate_mbit) => r,
+        r = run_object(mem, obj_id, nbytes, payload_len, deadline, feed, offered) => r,
         r = &mut *engine => match r {
             Ok(Ok(())) => anyhow::bail!("engine exited during object {obj_id}"),
             Ok(Err(e)) => Err(e.context(format!("engine ended during object {obj_id}"))),
@@ -368,10 +422,15 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     let payload_len = chunk_payload_len(hint);
     // Offered-load pacing (default off): an invalid value fails here, before
     // the engine starts. The warm-up object stays unpaced.
-    let rate_mbit = parse_rate_mbit(crate::gates::get().perf_rate_raw.as_deref())?;
-    if let Some(v) = rate_mbit {
-        // Mechanism-liveness echo (docs/measurement-discipline.md rule 1).
-        tracing::info!("perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT={v})");
+    let g = crate::gates::get();
+    let offered = parse_offered(g.perf_rate_raw.as_deref(), g.perf_burst_raw.as_deref())?;
+    // Mechanism-liveness echo (docs/measurement-discipline.md rule 1).
+    match offered {
+        Some(Offered::Rate(v)) => tracing::info!("perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT={v})"),
+        Some(Offered::Burst { dgrams, period_ms }) => {
+            tracing::info!("perf offered-load pacing ACTIVE (RWM_PERF_BURST={dgrams}/{period_ms})")
+        }
+        None => {}
     }
     // Paper §4.6: publish the completion feed only when the arm
     // is set. Absent by default ⇒ `config.completion_feed` stays `None` and
@@ -410,7 +469,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
         // `[THR]`/`[LAG]` over this timed object only (runtime_obs).
         let obs0 = crate::runtime_obs::snapshot();
         let outcome =
-            run_watched(&mut engine, &mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref(), rate_mbit).await?;
+            run_watched(&mut engine, &mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref(), offered).await?;
         if let Some(s0) = &obs0 {
             crate::runtime_obs::emit_window(s0, &format!(" run={run}"));
         }
@@ -506,6 +565,56 @@ mod tests {
     }
 
     #[test]
+    fn burst_parse_rejects_invalid_never_silently_unpaced() {
+        assert_eq!(parse_burst(None).unwrap(), None);
+        assert_eq!(parse_burst(Some("10/33")).unwrap(), Some((10, 33)));
+        assert_eq!(parse_burst(Some(" 1/1 ")).unwrap(), Some((1, 1)));
+        for bad in ["", "10", "0/33", "10/0", "a/b", "10/33/1", "-1/33", "10/-3", "1.5/33", "10/", "/33", "10/33ms", "4294967296/33", "nan/inf"] {
+            assert!(parse_burst(Some(bad)).is_err(), "{bad:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn rate_and_burst_together_is_an_error_not_a_silent_pick() {
+        assert_eq!(parse_offered(None, None).unwrap(), None);
+        assert_eq!(parse_offered(Some("8"), None).unwrap(), Some(Offered::Rate(8.0)));
+        assert_eq!(parse_offered(None, Some("10/33")).unwrap(), Some(Offered::Burst { dgrams: 10, period_ms: 33 }));
+        assert!(parse_offered(Some("8"), Some("10/33")).is_err());
+        assert!(parse_offered(Some("0"), None).is_err());
+        assert!(parse_offered(None, Some("0/33")).is_err());
+    }
+
+    #[test]
+    fn burst_schedule_releases_whole_frames_on_absolute_instants() {
+        // 10 datagrams per 33 ms: the first frame at 0, the second at 33 ms, the third at 66 ms.
+        for c in 0..10 {
+            assert_eq!(burst_due(c, 10, 33), Duration::ZERO, "chunk {c}");
+        }
+        for c in 10..20 {
+            assert_eq!(burst_due(c, 10, 33), Duration::from_millis(33), "chunk {c}");
+        }
+        assert_eq!(burst_due(20, 10, 33), Duration::from_millis(66));
+        // 1818 frames over 60 s: the last frame is due at 1817 x 33 ms
+        assert_eq!(burst_due(18_179, 10, 33), Duration::from_millis(1817 * 33));
+    }
+
+    #[test]
+    fn pacer_selector_burst_follows_the_frame_schedule_and_reports_it() {
+        let mut p = Pacer::new(Some(Offered::Burst { dgrams: 10, period_ms: 33 })).unwrap();
+        for _ in 0..10 {
+            assert_eq!(p.next_due(), Duration::ZERO);
+            p.note_sent(494, Duration::ZERO, Duration::from_micros(300));
+        }
+        assert_eq!(p.next_due(), Duration::from_millis(33));
+        p.note_sent(494, Duration::from_millis(33), Duration::from_millis(40));
+        assert_eq!((p.chunks, p.late, p.sent), (11, 1, 5434));
+        let v = p.line(5, 0.5);
+        assert_eq!(v["pace"], true);
+        assert_eq!(v["burst"], "10/33");
+        assert!(v.get("rate_mbit").is_none(), "a burst source has no constant rate: {v}");
+    }
+
+    #[test]
     fn due_offset_is_absolute_and_exact() {
         // 8 Mbit/s = 1 byte per microsecond.
         let lam = 8e6;
@@ -521,7 +630,7 @@ mod tests {
     #[test]
     fn pacer_selector_unset_has_no_pacer_and_set_follows_schedule() {
         assert!(Pacer::new(None).is_none());
-        let mut p = Pacer::new(Some(8.0)).unwrap();
+        let mut p = Pacer::new(Some(Offered::Rate(8.0))).unwrap();
         assert_eq!(p.next_due(), Duration::ZERO);
         p.note_sent(1182, Duration::ZERO, Duration::from_micros(500));
         assert_eq!(p.next_due(), Duration::from_micros(1182));
