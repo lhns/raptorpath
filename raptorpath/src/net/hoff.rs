@@ -49,7 +49,8 @@
 //!   * `fifo_wait_resend` = B_i·s_i/R_i at each source resend's hand-off (p95 ms
 //!     / count), at the SACK-gap and request-law resend site;
 //!   * gate-on rows add the witness fields, per path and window (what lets B exceed β):
-//!     `fs_over` = first sends staged with B ≥ β through no tagged bypass site;
+//!     `fs_over` = first sends staged with no admit from the gate's newest decision (`check`, `begin_turn`
+//!     or the candidate set) and through no tagged bypass site: a logic witness, no re-read of B or β at staging;
 //!     `fs_bypass` = d/t/s/c, those past the bound through the deferred intake packet, the
 //!     packer-timer flush, the shutdown flush, and those staged with β undefined (cold start);
 //!     `ex_max` = the largest end-of-turn B − β as total/first sends/exempt, the last two staged since

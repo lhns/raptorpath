@@ -11,7 +11,7 @@
 
 use super::hoff::{HoffGauge, PathIn};
 use super::hoff_gate::{
-    admits, classify_first_send, owner_republishes, poll_armed, quinn_discards_found, r_eff, Bypass, FsClass,
+    admits, classify_first_send, owner_republishes, poll_armed, quinn_discards_found, r_eff, Bypass, FsClass, Grant,
     HandoffGate, Terms,
 };
 use crate::transport::io_owner::{own_gap_us, SendKind};
@@ -597,37 +597,40 @@ fn restricted_picks_prefer_an_admitted_path_without_copa_room() {
 
 // ── witness counters: what lets a first send past the bound ─────────────────
 
-/// The classes at the anchor β = 53.83: below it the gate's own admit, at or
-/// above it a leak unless a bypass site is tagged, and an undefined β is the
-/// cold-start admit under any tag.
+/// The classes: an admit pays for a first send, a closed path with no tag is a
+/// leak, a tag names the bypass site, and a cold-start admit or a path no decision
+/// covered is the cold class under any tag.
 #[test]
 fn first_send_classes_absolute() {
-    let be = Some(53.83);
-    assert_eq!(classify_first_send(53, be, None), FsClass::Gated);
-    assert_eq!(classify_first_send(54, be, None), FsClass::Over);
-    assert_eq!(classify_first_send(54, be, Some(Bypass::Defer)), FsClass::Bypass(Bypass::Defer));
-    assert_eq!(classify_first_send(0, be, Some(Bypass::Timer)), FsClass::Gated, "a tag alone is not a leak");
-    assert_eq!(classify_first_send(500, None, None), FsClass::Cold);
-    assert_eq!(classify_first_send(500, None, Some(Bypass::Shutdown)), FsClass::Cold);
+    assert_eq!(classify_first_send(Some(Grant::Admit), None), FsClass::Gated);
+    assert_eq!(classify_first_send(Some(Grant::Admit), Some(Bypass::Timer)), FsClass::Gated, "a tag alone is not a leak");
+    assert_eq!(classify_first_send(Some(Grant::Closed), None), FsClass::Over);
+    assert_eq!(classify_first_send(Some(Grant::Closed), Some(Bypass::Defer)), FsClass::Bypass(Bypass::Defer));
+    assert_eq!(classify_first_send(Some(Grant::Cold), None), FsClass::Cold);
+    assert_eq!(classify_first_send(Some(Grant::Cold), Some(Bypass::Shutdown)), FsClass::Cold);
+    assert_eq!(classify_first_send(None, None), FsClass::Cold, "no decision covered the path");
 }
 
 /// A turn in virtual time: the loop top opens the gate, a resend burst closes
 /// it, then the deferred intake packet is staged anyway. The witness counts it
-/// as a defer bypass, counts a gated first send as nothing, an untagged one
-/// past the bound as `fs_over`, and resets with the row.
+/// as a defer bypass, counts one staged under the gate's admit as nothing, an
+/// untagged one with no admit as `fs_over`, and resets with the row.
 #[test]
 fn deferred_packet_past_a_resend_burst_is_counted_as_a_bypass() {
     let mut g = HandoffGate::new(true);
     g.fix_terms(LEG1);
     let open = [(0u32, pin(10, 280_000, 22_000))];
+    let burst = [(0u32, pin(90, 280_000, 22_000))]; // resends staged: B = 90
+    let cold = [(0u32, pin(500, 280_000, 0))]; // no RTT: β undefined
     assert!(!g.begin_turn(1000, true, false, &open));
-    g.note_first_send_at(0, &open[0].1); // B = 10 < 53.83
-    let burst = pin(90, 280_000, 22_000); // resends staged: B = 90
+    g.stage_first_send(0); // B = 10 < 53.83: the turn-top admit
+    assert!(!g.check(true, &burst), "the burst closed the path");
     g.set_bypass(Some(Bypass::Defer));
-    g.note_first_send_at(0, &burst);
+    g.stage_first_send(0);
     g.set_bypass(None);
-    g.note_first_send_at(0, &burst); // untagged, past the bound
-    g.note_first_send_at(0, &pin(500, 280_000, 0)); // no RTT: β undefined
+    g.stage_first_send(0); // untagged, no admit
+    g.check(true, &cold); // β undefined admits
+    g.stage_first_send(0);
     let r = g.take_row(0).unwrap();
     assert_eq!((r.fs_over, r.fs_bypass), (1, [1, 0, 0, 1]), "{r:?}");
     let r = g.take_row(0).unwrap();
@@ -745,8 +748,9 @@ fn hoff_line_prints_the_witness_fields_only_when_armed() {
     let ins = [(0u32, PathIn { kinds: [0, 1, 2, 3], ..pin(10, 280_000, 22_000) })];
     g.begin_turn(1000, true, false, &ins);
     gauge.turn(1000, true, false, &ins);
+    g.check(true, &[(0u32, pin(90, 280_000, 22_000))]); // the gate closed the path
     g.set_bypass(Some(Bypass::Timer));
-    g.note_first_send_at(0, &pin(90, 280_000, 22_000));
+    g.stage_first_send(0);
     g.end_turn(&[(0u32, PathIn { kinds: [0, 1, 2, 3], own_gap_us: 7_000, ..pin(100, 280_000, 22_000) })]);
     let l = gauge.line_gated(300_000, 40, false, Some(&mut g));
     for f in [
@@ -766,4 +770,115 @@ fn hoff_line_prints_the_witness_fields_only_when_armed() {
     for f in ["fs_over=", "fs_bypass=", "ex_max=", "ex_n=", "beta_q=", "own_gap_max=", "pend_max="] {
         assert!(!l.contains(f), "{f} printed with the gate off: {l}");
     }
+}
+
+// ── the token witness: `fs_over` is a logic witness, not a fresh read ───────
+
+/// A first send staged after the gate closed the path, with no tag, is a leak
+/// (`fs_over`); one staged under the gate's own admit is not, however the
+/// path's backlog reads by then (a fresh read can be skewed against the
+/// decision); each admit pays for one first send.
+#[test]
+fn first_send_without_a_token_counts_as_over_and_one_token_buys_one_send() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let open = [(0u32, pin(10, 280_000, 22_000))];
+    let shut = [(0u32, pin(90, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &open);
+    assert!(g.check(true, &open)); // admit: the token
+    g.stage_first_send(0); // consumed; the path's backlog moving since is not read
+    assert_eq!(g.take_row(0).unwrap().fs_over, 0, "staged under the gate's admit");
+    g.begin_turn(2000, true, false, &open);
+    assert!(g.check(true, &open));
+    g.stage_first_send(0);
+    g.stage_first_send(0); // no second admit
+    assert_eq!(g.take_row(0).unwrap().fs_over, 1, "one admit buys one first send");
+    assert!(!g.check(true, &shut), "the gate closed the path");
+    g.stage_first_send(0);
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.fs_over, r.fs_bypass), (1, [0; 4]), "closed path, no token, no tag: over");
+}
+
+/// The newest decision wins: the turn-top admit does not pay for a first send
+/// after `check` or the placement's candidate set found the path closed.
+#[test]
+fn the_latest_gate_decision_holds_the_token() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let open = [(0u32, pin(10, 280_000, 22_000))];
+    let shut = [(0u32, pin(90, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &open);
+    assert!(g.open_ids(&shut).is_empty());
+    g.stage_first_send(0);
+    assert_eq!(g.take_row(0).unwrap().fs_over, 1);
+    assert_eq!(g.open_ids(&open), vec![0]);
+    g.stage_first_send(0);
+    assert_eq!(g.take_row(0).unwrap().fs_over, 0, "the candidate set granted it");
+}
+
+/// Tagged sites and an undefined β keep their own counters, with or without a
+/// token to spend.
+#[test]
+fn tags_and_cold_start_classify_without_a_reading() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let shut = [(0u32, pin(90, 280_000, 22_000))];
+    let cold = [(0u32, pin(500, 280_000, 0))];
+    g.begin_turn(1000, true, false, &shut);
+    g.set_bypass(Some(Bypass::Defer));
+    g.stage_first_send(0);
+    g.set_bypass(None);
+    g.begin_turn(2000, true, false, &cold); // β undefined admits
+    g.stage_first_send(0);
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.fs_over, r.fs_bypass), (0, [1, 0, 0, 1]), "{r:?}");
+}
+
+/// A path the gate never read (no view yet, so no decision covered it) is neither
+/// admitted nor refused: its first sends land in the cold bucket, never in `fs_over`.
+#[test]
+fn a_path_with_no_reading_is_cold_never_over() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    assert!(g.begin_turn(1000, true, false, &[]) == false);
+    g.stage_first_send(3);
+    g.stage_first_send(3);
+    let r = g.take_row(3).unwrap();
+    assert_eq!((r.fs_over, r.fs_bypass), (0, [0, 0, 0, 2]), "{r:?}");
+}
+
+/// The engine's order for a first send: `check`, the placement's candidate set,
+/// stage. A resend burst between the decision and the staging does not revoke the
+/// token (the gate admitted it; the burst is exempt traffic), and the next first
+/// send needs a new decision.
+#[test]
+fn engine_order_check_candidates_stage_with_a_resend_burst_between() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let open = [(0u32, pin(10, 280_000, 22_000))];
+    let burst = [(0u32, pin(90, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &open);
+    assert!(g.check(true, &open));
+    assert_eq!(g.open_ids(&open), vec![0]);
+    // resends staged here: B = 90 now, the gate is not asked
+    g.stage_first_send(0);
+    assert_eq!(g.take_row(0).unwrap().fs_over, 0, "admitted before the burst");
+    assert!(g.open_ids(&burst).is_empty(), "the next decision sees the closed path");
+    g.stage_first_send(0);
+    assert_eq!(g.take_row(0).unwrap().fs_over, 1, "placement fell back to a closed path");
+}
+
+/// One decision pays for one first send on one path: a token left on the other
+/// admitted path must not mask a leak there.
+#[test]
+fn a_decision_pays_for_one_send_on_one_path_only() {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    let both = [(0u32, pin(10, 280_000, 22_000)), (1u32, pin(10, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &both);
+    assert_eq!(g.open_ids(&both), vec![0, 1]);
+    g.stage_first_send(0);
+    g.stage_first_send(1); // no new decision
+    assert_eq!(g.take_row(0).unwrap().fs_over, 0);
+    assert_eq!(g.take_row(1).unwrap().fs_over, 1);
 }
