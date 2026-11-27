@@ -268,5 +268,34 @@ with tempfile.TemporaryDirectory() as td:
     sr.report(main_l, out=lambda s_: b5.write(s_ + "\n"))
     del os.environ["LD_REF68"]
     check("LD_REF68 names the reference ledger when the report is called without one (run_all's call)", "REF68 3 " in b5.getvalue())
+# ── 6. plan 68s: the A/A twin T, the burst cell, PH ──
+os.environ["LD_PLAN"] = "68s"
+stops, out = run_rules([row("TPH", 1, "on", 0.62, fs_over=2)])
+os.environ["LD_PLAN"] = "68"
+check("STOP68 fs-over fires on a T (GATE twin) row too", any(s_.startswith("fs-over TPH r1") for s_ in stops), stops)
+check("T exists on PH only, runs the CAND seat with the gate and quinn's bbr_rs override like GATE", plan68.arm_parse("TPH") == ("T", "PH") and plan68.arm_parse("TK2") == (None, None) and plan68.seat_of("TPH") == "CAND"
+      and plan68.arm_env("c2-100", "TPH") == plan68.arm_env("c2-100", "GPH") and "TPH" in plan68.all_arms() and "TBU" not in plan68.all_arms())
+os.environ["LD_PLAN"] = "68s"
+ph_rows = [dict(row(a, r, g, hb, gp=gp, fs_over=0), bytes=637_500_000) for r in (1, 2, 3) for a, g, hb, gp in (("BPH", "off", 0.1, 85.0), ("GPH", "on", 0.1, 84.0), ("TPH", "on", 0.1, 84.5))]
+with tempfile.TemporaryDirectory() as td:
+    led = os.path.join(td, "ld.log")
+    with open(led, "w", newline="\n") as fh:
+        for r in ph_rows:
+            fh.write("P38ROW " + json.dumps(r) + "\n")
+    b6 = io.StringIO()
+    sr.report(led, out=lambda s_: b6.write(s_ + "\n"))
+    t6 = b6.getvalue()
+    check("the 68s report lists its own cells (PH with the T arm, no UNBUILT68 line, no LR or PC cell), prints the A/A ratio GATE-AA/GATE and the PH witness line",
+          "CELL68 PH " in t6 and "GATE-AA=3" in t6 and "AA68 PH goodput: GATE-AA/GATE=1.006" in t6 and "UNBUILT68" not in t6 and "READ68 PC" not in t6 and "WIT68 PH GATE-AA" in t6 and "REPORT68 REPORTED-ONLY rows=9/30" in t6, t6[:900])
+os.environ["LD_PLAN"] = "68s"
+bu_ok, bu_out = run_rules([row("GBU", 1, "on", 0.62, cod_src=0.95, rr=1.0), row("RBU", 1, "off", 0.1, cod_src=1.0, rr=1.0)])
+bu_bad, _ = run_rules([row("GBU", 1, "on", 0.62, cod_src=0.80, rr=1.0)])
+tw_off, _ = run_rules([row("TPH", 1, "off", 0.0)])
+check("a T row printing gate=off fires gate-not-on (a twin without the gate would print a false A/A); a healthy twin does not",
+      any(s_.startswith("gate-not-on TPH") for s_ in tw_off) and not any(s_.startswith("gate-not-on") for s_ in run_rules([row("TPH", 1, "on", 0.1)])[0]), tw_off)
+check("BU: repairs per source < 0.9 r fires the registered 'limit binds' stop, 0.95 r does not; the report reads hand_bind and repairs per source and says the frame completion time has no readout",
+      any(s_.startswith("bursts-with-headroom BU GBU r1") for s_ in bu_bad) and not any(s_.startswith("bursts-with-headroom") for s_ in bu_ok) and any(ln.startswith("READ68 BU hand_bind") for ln in bu_out)
+      and any(ln.startswith("UNWITNESSED68 BU frame completion") for ln in bu_out), (bu_bad, bu_out[-4:]))
+os.environ["LD_PLAN"] = "68"
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

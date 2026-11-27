@@ -184,6 +184,7 @@ CAND seat (the hand-off-gate tree, pinned LD_BIN_SHA_CAND) runs R4 (RWM_QUIC_CC=
   cand-sha-missing       a launch without LD_BIN_SHA_CAND: ABORT-BIN-SHA, rc 3, nothing run
   base-sha-missing       a launch without LD_BIN_SHA_CONTROL (the BASE binary's pin): ABORT-BIN-SHA, rc 3, nothing run
   base-no-hoff           the BASE binary carries no [HOFF] gauge: ABORT-SEAT, rc 5, no row measured
+  (plan 68s, the second rerun table of plan68.py: 30 rows, GATE on K2 / K8 / A2, B / R4 / GATE on the bursty cell BU (the perf client's RWM_PERF_BURST=10/33, both seats' binaries must carry the knob) and on PH (paced headroom at 85 %), plus T, the GATE twin of PH; `rehearse` runs its 6 smoke rows, `full` the 30 slots)
   (plan 68r, the rerun table of plan68.py: the same seats and wiring with 36 rows, GATE and Q (the gate alone) on K2 / K8 / A2 and B / R4 / GATE on LR / PC; the BASE seat is the pacer-carrying BASE binary: `rehearse` runs its 6 smoke rows, `full` the 36 slots)
   gate-inert             (STUB_BAD68=gateoff) the GATE rows print gate=off and never bind: STOP68 gate-not-on and first-send-refusals-zero in the report; the rows are not voided
 Plans 24..43b, 41, 41b are earlier sessions and are not covered here."""
@@ -218,6 +219,7 @@ HARNESS_PATHS = {
            "twin-no-kept-acct", "dump-needed", "t-base-refuses", "s2-taper-nonzero"),
     "68": ("rehearse", "full", "cand-sha-missing", "base-sha-missing", "base-no-hoff", "gate-inert"),
     "68r": ("rehearse", "full"),
+    "68s": ("rehearse", "full"),
     "67g": ("full", "g1-fail", "s1-no-gauge", "s2-taper-nonzero", "prebuilt-sha-mismatch", "prebuilt-missing", "budget"),
     "67x": ("full", "dump-twins", "s2-taper-nonzero", "s2-no-pslot", "s2-belowfloor-high", "a-under-min", "block1-fail", "r1-blind", "twin-no-final", "twin-under-min", "twin-worse", "t-refusal-missing", "b0-run-key-false", "g2-fail", "cut-pool",
             "budget"),

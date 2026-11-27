@@ -97,7 +97,7 @@ TMPD="${LD_TMPD:-/tmp}"
 P61=0; case "$PLAN" in 61a|61b) P61=1 ;; esac      # status 61 (the c3 sweep): single-seat like plan 60, its own tables (plan61.py)
 P62=0; case "$PLAN" in 62r0|62a) P62=1 ;; esac      # status 62 (c3 at jitter 0): plan 61's shape, its own tables (plan62.py)
 P67=0; case "$PLAN" in 67a|67r|67p|67o|67d) P67=1 ;; esac      # status 67 (VM batch 1): stages A / R1 / R2 / the pool block / the dump twins (stage G is plan 41d with LD_WITNESS67, stage T is tun67_battery.sh)
-{ [ "$P61" = 1 ] || [ "$P62" = 1 ] || [ "$P67" = 1 ]; } || case "$PLAN" in 60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|68|68r|46|48|52|53|54b|63|64|65) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (68|68r|67a|67r|67p|67o|67d|62r0|62a|61a|61b|60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65)"; exit 3 ;; esac
+{ [ "$P61" = 1 ] || [ "$P62" = 1 ] || [ "$P67" = 1 ]; } || case "$PLAN" in 60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|68|68r|68s|46|48|52|53|54b|63|64|65) ;; *) echo "ABORT-PLAN LD_PLAN=$PLAN (68|68r|68s|67a|67r|67p|67o|67d|62r0|62a|61a|61b|60a|60b|59|57a|57b|56|41d|51|51e|24|27|29|34|36|38|40|41|41b|41c|43|43b|46|48|52|53|54b|63|64|65)"; exit 3 ;; esac
 # Plans 43 and 43b share the oracle code path (P43=1).
 P43=0; { [ "$PLAN" = "43" ] || [ "$PLAN" = "43b" ]; } && P43=1
 # Plan 43b: the plan variables must be set (an amendment sets them); unset = nothing is run.
@@ -177,10 +177,10 @@ P51E=0; [ "$PLAN" = "51e" ] && { P51E=1; P38=1; PCAND=1; }
 P63=0; [ "$PLAN" = "63" ] && { P63=1; P38=1; PCAND=1; TRIES=1; }
 # Plan 68 (status 68, the hand-off gate's step 1; plan68.py / s68_report.py, reported only) is plan 63's two-seat shape: arms B* run the BASE seat (LD_BIN_BASE, pinned LD_SHA_BASE), R* and G* the CAND seat (LD_BIN, LD_SHA:
 # R4 and GATE are ONE binary, the gate's arm is RWM_HOFF_GATE=1). The bring-up retry stays at its default: no row here is expected to fail its warm-up.
-P68=0; P68R=0; { [ "$PLAN" = "68" ] || [ "$PLAN" = "68r" ]; } && { P68=1; P63=1; P38=1; PCAND=1; }; [ "$PLAN" = "68r" ] && P68R=1      # 68r = plan68.py's rerun table (36 rows)
+P68=0; P68R=0; P68S=0; { [ "$PLAN" = "68" ] || [ "$PLAN" = "68r" ] || [ "$PLAN" = "68s" ]; } && { P68=1; P63=1; P38=1; PCAND=1; }; [ "$PLAN" = "68r" ] && P68R=1; [ "$PLAN" = "68s" ] && P68S=1      # 68r = plan68.py's rerun table (36 rows); 68s = its second rerun (30 rows)
 SCRUB_EXTRA=()
 { [ "$P51" = 1 ] || [ "$P51E" = 1 ] || [ "$P63" = 1 ] || [ "$P67" = 1 ]; } && SCRUB_EXTRA=(-u RWM_DELTA -u RWM_COPA_DELTA -u RWM_COPA_WIRE -u RWM_COMPLETION_EXPOSURE -u RWM_MIN_R -u RWM_CC_PACE -u RWM_PERF_RATE_MBIT)
-[ "$P68" = 1 ] && SCRUB_EXTRA+=(-u RWM_HOFF_GATE)      # plan 68: R4 leaves the gate unset whatever the shell holds (RWM_QUIC_CC is scrubbed for every plan below)
+[ "$P68" = 1 ] && SCRUB_EXTRA+=(-u RWM_HOFF_GATE -u RWM_PERF_BURST)      # plan 68: R4 leaves the gate unset whatever the shell holds; no row inherits a burst source (the BU arms set it) (RWM_QUIC_CC is scrubbed for every plan below)
 # Plan 54 (the guard) is plan 41d unchanged; LD_WITNESS54=1 (run_all carries it for LD_PLAN=54) adds the row witnesses in the parser and the [SNAPV] preflight below.
 W54="${LD_WITNESS54:-0}"; [ "$W54" = 1 ] && [ "$PLAN" != "41d" ] && { echo "ABORT-PLAN LD_WITNESS54=1 is defined for the plan-41d stage only, not $PLAN"; exit 3; }
 BIN_BASE=""; WANT_BASE=""
@@ -313,12 +313,13 @@ if [ "$P67" = 1 ]; then
 fi
 if [ "$P68" = 1 ]; then
   # Plan 68: the CAND seat (R4 + GATE, one binary) carries the gate's arm, the [HOFF] gauge and the bbr_rs override; the BASE seat carries the gauge too (main plus the gauge commit); two different files, two different shas,
-  # each equal to its pin. A paced cell (LR and PC, built since the pacer is restored) needs the pacing echo in BOTH binaries: a binary without it would run the row silently unpaced.
+  # each equal to its pin. A paced cell (LR and PC, built since the pacer is restored) needs the pacing echo in BOTH binaries: a binary without it would run the row silently unpaced; a plan with a BU row (68s) needs the RWM_PERF_BURST knob in both too.
   preflight_binary "$BIN" "RWM_HOFF_GATE" "RWM_QUIC_CC"
   preflight_binary "$BIN_BASE" "RWM_STORE"
   for _b68 in "$BIN" "$BIN_BASE"; do
     grep -aqF -- "[HOFF] t=" "$_b68" 2>/dev/null || { _lb_say "ABORT-SEAT plan 68: binary $_b68 has no [HOFF] gauge (every arm carries it: BASE is main plus the gauge commit)"; exit 5; }
     [ "$(python3 ./plan68.py needs-pacer)" != 1 ] || grep -aqF -- "offered-load pacing ACTIVE" "$_b68" 2>/dev/null || { _lb_say "ABORT-PACER plan 68: binary $_b68 has no offered-load pacing echo (a paced cell would run unpaced)"; exit 5; }
+    [ "$(python3 ./plan68.py needs-burst "$PLAN")" != 1 ] || grep -aqF -- "RWM_PERF_BURST" "$_b68" 2>/dev/null || { _lb_say "ABORT-PACER plan $PLAN: binary $_b68 has no RWM_PERF_BURST knob (the bursty cell would run unpaced)"; exit 5; }
   done
   [ "$BIN_BASE" != "$BIN" ] || { _lb_say "ABORT-SHA BASE and CAND are the same path"; exit 5; }
   GOTB="$(sha256sum "$BIN_BASE" | cut -d' ' -f1)"
@@ -1573,13 +1574,16 @@ plan68() { # smoke -> the whole plan (0), or the smoke rows (1)
   local line cell store arm seed rep want
   if [ "$1" = "1" ]; then
     mapfile -t tbl < <(python3 ./plan68.py plan "$PLAN" smoke)
-    want=3; [ "$P68R" != 1 ] || want=6
+    want=3; [ "$P68R" = 1 ] && want=6; [ "$P68S" = 1 ] && want=6
     [ "${#tbl[@]}" -eq "$want" ] || { echo "ABORT-PLAN68 smoke table has ${#tbl[@]} rows ($want)" >> "$OUT"; exit 3; }
   else
     mapfile -t tbl < <(python3 ./plan68.py plan "$PLAN")
-    want=$(( 54 - 9 * $(python3 ./plan68.py unbuilt | wc -w) ))      # the registered 54 slots, 9 per UNBUILT cell
+    want=$(( 54 - 9 * $(python3 ./plan68.py unbuilt "$PLAN" | wc -w) ))      # the registered 54 slots, 9 per UNBUILT cell
     if [ "$P68R" = 1 ]; then      # 68r: 36 rows (GATE and Q on K2 / K8 / A2: 18; B / R4 / GATE on LR and PC: 18), 9 per UNBUILT paced cell dropped
-      want=36; unit=9; for _u68 in $(python3 ./plan68.py unbuilt); do case "$_u68" in LR|PC) want=$(( want - unit )) ;; esac; done
+      want=36; unit=9; for _u68 in $(python3 ./plan68.py unbuilt "$PLAN"); do case "$_u68" in LR|PC) want=$(( want - unit )) ;; esac; done
+    fi
+    if [ "$P68S" = 1 ]; then      # 68s: 30 rows (GATE on K2 / K8 / A2: 9; B / R4 / GATE on BU: 9; B / R4 / GATE / twin on PH: 12), the rows of an UNBUILT cell dropped
+      want=30; for _u68 in $(python3 ./plan68.py unbuilt "$PLAN"); do case "$_u68" in BU) want=$(( want - 9 )) ;; PH) want=$(( want - 12 )) ;; esac; done
     fi
     [ "${#tbl[@]}" -eq "$want" ] || { echo "ABORT-PLAN68 table has ${#tbl[@]} rows ($want)" >> "$OUT"; exit 3; }
   fi

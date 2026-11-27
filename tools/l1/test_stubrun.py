@@ -163,7 +163,7 @@ export STUB_TMP="$(cygpath -m "${LD_TMPD:?}" 2>/dev/null || echo "$LD_TMPD")"
 [ -n "${STUB_DRVLOG3:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} slaw=${RWM_SLAW-unset} pool=${RWM_STORE_PATH_POOL-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} rtobs=${RWM_RTOBS-unset} diag=${RWM_DIAG-unset} bin=$(basename "${RWM_BIN:-?}")" >> "$STUB_DRVLOG3"      # plans 60a / 60b: the whole per-row run spec
 [ -n "${STUB_DRVLOG4:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} delta=${RWM_DELTA-unset} rate=${RWM_PERF_RATE_MBIT-unset} slaw=${RWM_SLAW-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} rtobs=${RWM_RTOBS-unset} diag=${RWM_DIAG-unset} gen=${RWM_GEN-unset} minr=${RWM_MIN_R-unset} ccpace=${RWM_CC_PACE-unset} copadelta=${RWM_COPA_DELTA-unset} copawire=${RWM_COPA_WIRE-unset} cexp=${RWM_COMPLETION_EXPOSURE-unset}" >> "$STUB_DRVLOG4"      # plans 51e / 51: the per-row run spec incl. every scrubbed knob
 [ -n "${STUB_DRVLOG6:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} slaw=${RWM_SLAW-unset} reliable=${RWM_C_RELIABLE-unset} rdiag=${RWM_RDIAG-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG6"      # plan 63: which seat's binary ran
-[ -n "${STUB_DRVLOG8:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} reliable=${RWM_C_RELIABLE-unset} diag=${RWM_DIAG-unset} qcc=${RWM_QUIC_CC-unset} hoff=${RWM_HOFF_GATE-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG8"      # plan 68: the arm env and which seat's binary ran
+[ -n "${STUB_DRVLOG8:-}" ] && echo "$1 $2 $3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} burst=${RWM_PERF_BURST-unset} reliable=${RWM_C_RELIABLE-unset} diag=${RWM_DIAG-unset} qcc=${RWM_QUIC_CC-unset} hoff=${RWM_HOFF_GATE-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG8"      # plan 68: the arm env and which seat's binary ran
 [ -n "${STUB_DRVLOG2:-}" ] && echo "$3 reliable=${RWM_C_RELIABLE-unset} unified=${RWM_UNIFIED-unset} gen=${RWM_GEN-unset}" >> "$STUB_DRVLOG2"      # plan 59: hint + the evicting-seat env (a separate log: drv.log's lines are compared whole)
 [ -n "${STUB_DRVLOG5:-}" ] && echo "$3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} reliable=${RWM_C_RELIABLE-unset} diag=${RWM_DIAG-unset} bindir=$(basename "$(dirname "${RWM_BIN:-?/?}")")" >> "$STUB_DRVLOG5"      # plan 64: hint, bytes, mode, timeout, reliability, the seat's binary dir
 [ -n "${STUB_DRVLOG7:-}" ] && echo "$3 $4 $6 timeout=${RWM_PERF_TIMEOUT_S-unset} rate=${RWM_PERF_RATE_MBIT-unset} pool=${RWM_STORE_PATH_POOL-unset} dump=${RWM_SUCC_DUMP-unset} reliable=${RWM_C_RELIABLE-unset} diag=${RWM_DIAG-unset} bin=$(basename "$(dirname "${RWM_BIN:-?/?}")") cwd=$PWD" >> "$STUB_DRVLOG7"      # plan 67
@@ -227,8 +227,10 @@ FAST_PATCHES = [
     ("plan51e.py", "REPS_CAP51E = None  ", "REPS_CAP51E = 2  ", 1),
     ("loopdiag_battery.sh", "    want=76\n", "    want=28\n", 1),
     ("plan51.py", "REPS_CAP51 = None  ", "REPS_CAP51 = 2  ", 1),
-    ("loopdiag_battery.sh", "want=$(( 54 - 9 * $(python3 ./plan68.py unbuilt | wc -w) ))", "want=$(( 18 - 3 * $(python3 ./plan68.py unbuilt | wc -w) ))", 1),
+    ("loopdiag_battery.sh", 'want=$(( 54 - 9 * $(python3 ./plan68.py unbuilt "$PLAN" | wc -w) ))', 'want=$(( 18 - 3 * $(python3 ./plan68.py unbuilt "$PLAN" | wc -w) ))', 1),
     ("loopdiag_battery.sh", "want=36; unit=9;", "want=12; unit=3;", 1),
+    ("loopdiag_battery.sh", "want=30; for _u68 in", "want=10; for _u68 in", 1),
+    ("loopdiag_battery.sh", "BU) want=$(( want - 9 )) ;; PH) want=$(( want - 12 )) ;;", "BU) want=$(( want - 3 )) ;; PH) want=$(( want - 4 )) ;;", 1),
     ("plan68.py", "N_REP = 3  ", "N_REP = 1  ", 1),
     ("loopdiag_p67.sh", "G_ROWS67=96     #", "G_ROWS67=16     #", 1),
     ("plan67.py", "N_BLOCKS = 6  ", "N_BLOCKS = 2  ", 1),
@@ -2660,8 +2662,8 @@ def case63(plan, path):
 def stub_bin_pair68(sb, base_hoff=True):
     """-> ((cand_path, cand_sha), (base_path, base_sha)): two DIFFERENT stub engine binaries: the CAND carries the gate's arm, the bbr_rs override, the [HOFF] gauge and the RWM_STORE token the shared preflight asks for; the BASE
     the gauge and RWM_STORE (base_hoff=False: a BASE built without the gauge commit)."""
-    bodies = {"cand": "#!/bin/sh\n# stub engine binary for plan 68 (cand)\n# RWM_STORE\n# RWM_HOFF_GATE\n# RWM_QUIC_CC\n# [HOFF] t=\n# offered-load pacing ACTIVE\nexit 0\n",
-              "base": "#!/bin/sh\n# stub engine binary for plan 68 (base)\n# RWM_STORE\n" + ("# [HOFF] t=\n" if base_hoff else "") + "# offered-load pacing ACTIVE\nexit 0\n"}
+    bodies = {"cand": "#!/bin/sh\n# stub engine binary for plan 68 (cand)\n# RWM_STORE\n# RWM_HOFF_GATE\n# RWM_QUIC_CC\n# [HOFF] t=\n# offered-load pacing ACTIVE\n# RWM_PERF_BURST\nexit 0\n",
+              "base": "#!/bin/sh\n# stub engine binary for plan 68 (base)\n# RWM_STORE\n" + ("# [HOFF] t=\n" if base_hoff else "") + "# offered-load pacing ACTIVE\n# RWM_PERF_BURST\nexit 0\n"}
     out = []
     for name in ("cand", "base"):
         path = os.path.join(sb["logs"], "stub-engine68-" + name)
@@ -2686,7 +2688,7 @@ def expect_calls68(rows):
         e = dict(x.split("=", 1) for x in plan68.arm_env(cell, arm))
         ca, cb, mode = sp3.CELL_SPEC[cell][:3]
         out.append([ca, cb, plan68.arm_hint(arm), str(plan68.arm_bytes(cell, arm)), mode, "timeout=%d" % plan68.arm_timeout(cell, arm), "rate=" + e.get("RWM_PERF_RATE_MBIT", "unset"),
-                    "reliable=" + e.get("RWM_C_RELIABLE", "unset"), "diag=" + e["RWM_DIAG"], "qcc=" + e.get("RWM_QUIC_CC", "unset"), "hoff=" + e.get("RWM_HOFF_GATE", "unset"),
+                    "burst=" + e.get("RWM_PERF_BURST", "unset"), "reliable=" + e.get("RWM_C_RELIABLE", "unset"), "diag=" + e["RWM_DIAG"], "qcc=" + e.get("RWM_QUIC_CC", "unset"), "hoff=" + e.get("RWM_HOFF_GATE", "unset"),
                     "bindir=" + ("bin-base" if arm.startswith("B") else "bin")])
     return out
 
@@ -2747,6 +2749,15 @@ def case68(plan, path):
         check(f"{tag}: every row-parser call ran under LD_PLAN={plan} and the BASE seat's pin LD_SHA_BASE crossed `sudo -n env` to it",
               plans_seen == {plan} and {re.search(r"shabase=(\S*)", r).group(1) for r in rows} == {base_sha}, (plans_seen, rows[:1]))
         smoke_rows = plan68.plan(plan, smoke=True)
+        if rehearse and plan == "68s":
+            check(f"{tag}: the rehearsal ran the six smoke rows (GK2, BBU, GBU, BPH, GPH, TPH) on their seats with their own env (the BU rows carry RWM_PERF_BURST=10/33 and no rate, PH the 85 Mbit/s rate; TPH the GATE env under the CAND binary), no battery, REHEARSAL-PASS persisted",
+                  len(rows) == 6 and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")) and calls == expect_calls68(smoke_rows)
+                  and calls[1][6:8] == ["rate=unset", "burst=10/33"] and calls[1][-1] == "bindir=bin-base" and calls[2][7] == "burst=10/33" and calls[3][6] == "rate=85" and calls[5][-3:] == ["qcc=bbr_rs", "hoff=1", "bindir=bin"], (len(rows), calls[:6]))
+            ldr = led56(stage, "smoke.log")
+            check(f"{tag}: the six smoke rows carry their t68 and [HOFF] lines and none is VOID-RC / WITNESS-FAIL", len(ldr) == 6 and all(r.get("t68") and not r.get("t68_error") and r["t68"]["hoff"]["n_lines"] > 0 for r in ldr)
+                  and all(r["status"] == "LIVE" for r in ldr), [(r["arm"], r["status"], r["problems"]) for r in ldr])
+            EXECUTED.add((plan, path))
+            return
         if rehearse and plan == "68r":
             check(f"{tag}: the rehearsal ran the six smoke rows (GK2, QK2, BLR, GLR, BPC, GPC) on their seats with their own env (Q: the gate, quinn's own BBR; the paced rows carry the pacing rate), no battery, REHEARSAL-PASS persisted",
                   len(rows) == 6 and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")) and calls == expect_calls68(smoke_rows)
@@ -2777,13 +2788,13 @@ def case68(plan, path):
         check(f"{tag}: each seat ran its own binary on every row and the seat comparison executed",
               all(r["bin_sha"] == (base_sha if r["arm"].startswith("B") else cand_sha) for r in led) and all(r["sha_checked"] is True for r in led), {r["arm"]: r["bin_sha"][:8] for r in led})
         check(f"{tag}: the report prints one ROW68 per row, the UNBUILT68 cell (BU), a WITNESS68 line, REPORT68 REPORTED-ONLY, and no PASS / FAIL / VERDICT token",
-              len(re.findall(r"^ROW68 ", score, re.M)) == len(led) and score.count("UNBUILT68 ") == 1 and "WITNESS68 first-send refusals" in score and re.search(r"^REPORT68 REPORTED-ONLY rows=%d/" % len(led), score, re.M) is not None
+              len(re.findall(r"^ROW68 ", score, re.M)) == len(led) and score.count("UNBUILT68 ") == (0 if plan == "68s" else 1) and "WITNESS68 first-send refusals" in score and re.search(r"^REPORT68 REPORTED-ONLY rows=%d/" % len(led), score, re.M) is not None
               and not any(tok in score for tok in ("PASS", "FAIL", "VERDICT")), score[-1500:])
         if path == "gate-inert":
             check(f"{tag}: GATE rows that print gate=off are STOP68 gate-not-on and the execution witness reads total=0 (STOP68 first-send-refusals-zero), the rows are NOT voided (every row LIVE)",
                   "STOP68 gate-not-on GK2" in score and "STOP68 first-send-refusals-zero" in score and "total=0 " in score and all(r["status"] == "LIVE" for r in led), score[-1800:])
         else:
-            gate_rows = [r for r in led if r["arm"].startswith(("G", "Q"))]
+            gate_rows = [r for r in led if r["arm"].startswith(("G", "Q", "T"))]
             check(f"{tag}: the GATE (and Q) rows print gate=on, bind (hand_bind 0.62) and refuse first sends (witness total > 0); BASE and R4 print gate=off; the [HOFF] parser read the unknown qdisc= field and the witness fields (fs_over 0) without harm; no STOP68 fired",
                   gate_rows and all(r["t68"]["hoff"]["gate"] == "on" and r["t68"]["hoff"]["refusals"] > 0 and r["t68"]["hoff"]["paths"]["0"]["fs_over"] == 0 for r in gate_rows) and all(r["t68"]["hoff"]["gate"] == "off" for r in led if not r["arm"].startswith(("G", "Q")))
                   and "STOP68" not in score and re.search(r"total=[1-9]\d*", score) is not None, score[-1800:])
@@ -3248,7 +3259,7 @@ def case(plan, path):
         return case67(plan, path)
     if plan == "63":
         return case63(plan, path)
-    if plan in ("68", "68r"):
+    if plan in ("68", "68r", "68s"):
         return case68(plan, path)
     if plan in S60:
         return case60(plan, path)
@@ -3469,7 +3480,7 @@ def want(name):
     return sel is None or name in sel
 
 
-all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "68", "68r", "64", "65", "67", "67g", "67x") for v in hp.HARNESS_PATHS[p]]
+all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "68", "68r", "68s", "64", "65", "67", "67g", "67x") for v in hp.HARNESS_PATHS[p]]
 phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests") and not (p == "64" and v in P64_AFTER) and not (p == "65" and v in P65_AFTER) and p not in ("67g", "67x")]
 phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests") or (p == "64" and v in P64_AFTER) or (p == "65" and v in P65_AFTER) or p in ("67g", "67x")]      # plan 67's launches (67g, 67x) consume the rehearsal's binaries and tools result (REH67); plan 64's launch cases consume the rehearsal's binaries and tools result (REH64)
 t_all = time.time()
@@ -3598,6 +3609,6 @@ if not only:
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
     check("ADR-0080's flake rule runs in run_suites: a flake outside quarantine.txt aborts (flake-not-quarantined), one on it is recorded and passes (flake-quarantined)", FLAKE_DONE == set(EXTRA_FLAKE), set(EXTRA_FLAKE) ^ FLAKE_DONE)
     check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65, whose reuse is the reference manifest or none)",
-          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x", "68", "68r"})
+          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x", "68", "68r", "68s"})
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

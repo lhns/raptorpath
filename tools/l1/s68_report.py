@@ -13,6 +13,7 @@ The parser is GENERIC: top-level `key=value` tokens, then `p<id>[...]` blocks sp
 
 Witness fields (gate on only; an old ledger lacks them and reads `-`): fs_over=<n> fs_bypass=<defer>/<timer>/<shutdown>/<cold> ex_max=<total>/<first part>/<exempt part> ex_n=<ctrl>/<resend>/<repair>
 beta_q=<p5>/<p50>/<p95> own_gap_max=<us>us pend_max=<n> (hoff.rs `witness_fields`).
+Plan 68s adds T = the GATE twin on PH (an A/A pair: AA68 prints GATE-AA/GATE per readout) and the bursty cell BU (rule: repairs per source < 0.9 r stops; the frame completion time has no readout, UNWITNESSED68).
 Arms: B, R4 (R), GATE (G) and, on the K cells of the rerun table (68r), Q = the gate alone (quinn's own BBR, RWM_HOFF_GATE=1). STOP68 fs-over fires on any GATE or Q row with fs_over > 0; the older B-over-beta
 reading is REPORTED ONLY (`READ68 b-over-beta`), its rule being under amendment.
 
@@ -347,9 +348,9 @@ def report(path, out=print, raw=None, ref=None):
             f"bin_sha={str(r.get('bin_sha'))[:16]}")
     groups = _by(cnt)
     rgroups = _by(cnt + refrows)      # the per-cell lines and ratios; the stop rules and witnesses read this ledger's rows only
-    out("CELLS68 built=" + ",".join(plan68.BUILT) + " unbuilt=" + ",".join(plan68.UNBUILT))
-    for code in plan68.CELL_ORDER:
-        if code in plan68.UNBUILT:
+    out("CELLS68 built=" + ",".join(plan68.built_in()) + " unbuilt=" + ",".join(plan68.unbuilt_in()))
+    for code in plan68.cells_of(plan68.plan_name()):
+        if code in plan68.unbuilt_in():
             out(f"UNBUILT68 {code} ({plan68.CELLS[code][1]}): {plan68.UNBUILT_WHY[code]}; no row ran, nothing read, nothing cleared")
             continue
         g = rgroups.get(code, {})
@@ -364,7 +365,7 @@ def report(path, out=print, raw=None, ref=None):
                     f"coded_share={_f(_med(_col(rs, lambda x: _t(x).get('coded_share'))))} hand_bind={_f(_pm(rs, 'hand_bind_med'))} spare_bind={_f(_pm(rs, 'spare_bind_mean'))} batch={_f(_pm(rs, 'batch_med'), 1)}")
         for a in plan68.arms_of(code):
             rs = [x for x in g.get(a, []) if x.get("status") == "LIVE"]
-            if rs and a in ("G", "Q"):
+            if rs and a in ("G", "Q", "T"):
                 for pid in sorted({i for x in rs for i in _paths(x)}):
                     out(f"  WIT68 {code} {plan68.ARM_NAME[a]:<5} p{pid} n={len(rs)} fs_over={_sumpaths(rs, 'fs_over', pid)} fs_n={_sumpaths(rs, 'fs_n', pid)} fs_bypass={_lst(_sumlist(rs, 'fs_bypass', 4, pid))} ex_max(max)={_lst(_maxex(rs, pid), 0)} "
                         f"ex_n={_lst(_sumlist(rs, 'ex_n', 3, pid))} beta_q(p5min/p50med/p95max)={_f(_min(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('beta_p5_min'))), 1)}/{_f(_pm(rs, 'beta_p50_med', pid), 1)}/"
@@ -373,7 +374,7 @@ def report(path, out=print, raw=None, ref=None):
         _ratios(code, g, out)
     _stop_rules(groups, stop, out)
     _witnesses(groups, stop, out)
-    out(f"REPORT68 REPORTED-ONLY rows={len(cnt)}/{plan68.expect_rows()} stops={len(stops)} unbuilt={','.join(plan68.UNBUILT) or '-'}")
+    out(f"REPORT68 REPORTED-ONLY rows={len(cnt)}/{plan68.expect_rows()} stops={len(stops)} unbuilt={','.join(plan68.unbuilt_in()) or '-'}")
     return 0
 
 
@@ -416,12 +417,14 @@ def _live(g, a):
 
 
 def _ratios(code, g, out):
-    base, r4, gate, qa = _live(g, "B"), _live(g, "R"), _live(g, "G"), _live(g, "Q")
+    base, r4, gate, qa, twin = _live(g, "B"), _live(g, "R"), _live(g, "G"), _live(g, "Q"), _live(g, "T")
     for name, f, nd in (("goodput", lambda x: x.get("mbps"), 3), ("cpu_cli/GB", lambda x: _t(x).get("cpu_cli_gb"), 3), ("cpu_srv/GB", lambda x: _t(x).get("cpu_srv_gb"), 3),
                         ("inorder_mean", lambda x: _t(x).get("inorder_mean_ms"), 3), ("inorder_p95", lambda x: _t(x).get("inorder_p95_ms"), 3),
                         ("inorder_p99", lambda x: _t(x).get("inorder_p99_ms"), 3), ("inorder_max", lambda x: _t(x).get("inorder_max_ms"), 3), ("coded_share", lambda x: _t(x).get("coded_share"), 3)):
         mb, mr, mg, mq = _med(_col(base, f)), _med(_col(r4, f)), _med(_col(gate, f)), _med(_col(qa, f))
         out(f"  RATIO68 {code} {name}: R4/BASE={_f(_ratio(mr, mb), nd)} GATE/BASE={_f(_ratio(mg, mb), nd)} GATE/R4={_f(_ratio(mg, mr), nd)} Q/BASE={_f(_ratio(mq, mb), nd)}")
+        if twin:      # the A/A pair: the same arm twice; its ratio is the run-to-run spread every other ratio is read against
+            out(f"  AA68 {code} {name}: GATE-AA/GATE={_f(_ratio(_med(_col(twin, f)), mg), nd)} (n={len(twin)}/{len(gate)})")
     nleg = 2 if code == "K8" else 1
     for i in range(nleg):
         ax = {a: _med([(_t(x).get("rtt_wrtt_med") or [None] * 2)[i] if len(_t(x).get("rtt_wrtt_med") or []) > i else None for x in _live(g, a)]) for a in plan68.ARM_LETTERS}
@@ -446,13 +449,13 @@ def _ratios(code, g, out):
 
 
 def K_CELLS_BUILT():
-    return [c for c in plan68.K_CELLS if c in plan68.BUILT]
+    return [c for c in plan68.K_CELLS if c in plan68.built_in()]
 
 
 def _stop_rules(groups, stop, out):
-    # Gate executes
-    for code in plan68.BUILT:
-        for x in groups.get(code, {}).get("G", []):
+    # Gate executes (the A/A twin T is a GATE row: a twin with the gate off would print a false A/A)
+    for code in plan68.built_in():
+        for x in groups.get(code, {}).get("G", []) + groups.get(code, {}).get("T", []):
             h = _t(x).get("hoff") or {}
             if x.get("status") != "LIVE":
                 continue
@@ -467,8 +470,8 @@ def _stop_rules(groups, stop, out):
                 if _num(be) and _num(bt) and be > bt:      # reported only: the rule is under amendment
                     out(f"READ68 b-over-beta {x['arm']} r{x['rep']} p{pid}: max(B p95 - beta) = {be:.1f} > one batch ({bt:.1f})")
     # first sends past the bound through no tagged bypass site: a leak in the gate (GATE and the gate-alone arm)
-    for code in plan68.BUILT:
-        for a in ("G", "Q"):
+    for code in plan68.built_in():
+        for a in ("G", "Q", "T"):
             for x in groups.get(code, {}).get(a, []):
                 if x.get("status") == "LIVE":
                     n = _fs_over(x)
@@ -483,7 +486,7 @@ def _stop_rules(groups, stop, out):
         hb = _p0(x).get("hand_bind_med")
         if x.get("status") == "LIVE" and not (_num(hb) and hb > 0.5):
             stop(f"hand_bind-c2-bulk {x['arm']} r{x['rep']}: hand_bind median {_f(hb)} <= 0.5 at c2 Bulk (the gate does not bind)")
-    for code in plan68.BUILT:
+    for code in plan68.built_in():
         for x in groups.get(code, {}).get("R", []):
             h = _t(x).get("hoff") or {}
             if x.get("status") == "LIVE" and h.get("gate") == "on":
@@ -497,16 +500,24 @@ def _stop_rules(groups, stop, out):
     if _num(cs_g) and _num(cs_r) and cs_g >= cs_r and _num(hb) and hb > 0.5:
         stop(f"clamp-inert A2: coded share GATE {cs_g:.3f} >= R4's {cs_r:.3f} while hand_bind {hb:.3f} > 0.5")
     # The cells that need the pacer: evaluated only when they were built and ran
-    for code, label in (("PC", "clamp-with-headroom"), ("LR", "low-rate")):
-        if code in plan68.UNBUILT:
+    for code, label in (("PC", "clamp-with-headroom"), ("PH", "clamp-with-headroom"), ("LR", "low-rate"), ("BU", "bursts-with-headroom")):
+        if code not in plan68.built_in():
             continue
         g = groups.get(code, {})
         gate, r4 = _live(g, "G"), _live(g, "R")
-        if code == "PC":
+        if code in ("PC", "PH"):
             sb = _pm(gate, "spare_bind_mean")
             if _num(sb) and sb > 0.05:
-                stop(f"clamp-with-headroom PC: spare_bind {sb:.3f} > 0.05 (the clamp binds with headroom)")
-            out(f"READ68 PC coded_share GATE={_f(_med(_col(gate, lambda x: _t(x).get('coded_share'))))} R4={_f(_med(_col(r4, lambda x: _t(x).get('coded_share'))))}: A/A-UNRESOLVED (the registered +-A/A band is not evaluated)")
+                stop(f"clamp-with-headroom {code}: spare_bind {sb:.3f} > 0.05 (the clamp binds with headroom)")
+            out(f"READ68 {code} coded_share GATE={_f(_med(_col(gate, lambda x: _t(x).get('coded_share'))))} R4={_f(_med(_col(r4, lambda x: _t(x).get('coded_share'))))}: A/A-UNRESOLVED (the registered +-A/A band is not evaluated)")
+        elif code == "BU":
+            # registration section 3: repairs per source < 0.9 r means the registered limit binds (the frame completion time against R4 has no readout here: UNWITNESSED68)
+            for x in gate:
+                c, rr = _t(x).get("cod_src"), _t(x).get("rr")
+                if _num(c) and _num(rr) and rr > 0 and c / rr < 0.9:
+                    stop(f"bursts-with-headroom BU {x['arm']} r{x['rep']}: repairs per source {c:.4f} < 0.9 r ({rr:.4f}): the limit binds")
+            out(f"READ68 BU hand_bind GATE={_f(_pm(gate, 'hand_bind_med'))} repairs/source GATE={_f(_med(_col(gate, lambda x: _t(x).get('cod_src'))), 4)} R4={_f(_med(_col(r4, lambda x: _t(x).get('cod_src'))), 4)}")
+            out("UNWITNESSED68 BU frame completion time (GATE against R4): no per-frame readout exists in the harness")
         else:
             for x in gate:
                 c, rr = _t(x).get("cod_src"), _t(x).get("rr")
@@ -519,7 +530,7 @@ def _stop_rules(groups, stop, out):
 
 def _witnesses(groups, stop, out):
     tot, per = 0, []
-    for code in plan68.BUILT:
+    for code in plan68.built_in():
         for x in groups.get(code, {}).get("G", []):
             n = (_t(x).get("hoff") or {}).get("refusals") or 0
             tot += n

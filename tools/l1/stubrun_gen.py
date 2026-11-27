@@ -836,10 +836,10 @@ def gen68(cli, srv, drv, nbytes, fam, hint, base):
         for i, ln in enumerate(rl):
             if ln.startswith("[DIAG]"):
                 k += 1
-                rl[i] = ln + "\n" + hoff68(k, nleg, gate, gate, paced=bool(os.environ.get("RWM_PERF_RATE_MBIT")))
+                rl[i] = ln + "\n" + hoff68(k, nleg, gate, gate, paced=bool(os.environ.get("RWM_PERF_RATE_MBIT") or os.environ.get("RWM_PERF_BURST")))
         rl = "\n".join(rl).split("\n")
     echo = f" RWM_HOFF_GATE={'1' if gate_env else '0'}"
-    cli = [ln + echo if "[GATES]" in ln else ln for ln in cli] + rl + (["INFO perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT=%s)" % os.environ["RWM_PERF_RATE_MBIT"]] if os.environ.get("RWM_PERF_RATE_MBIT") else [])
+    cli = [ln + echo if "[GATES]" in ln else ln for ln in cli] + rl + (["INFO perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT=%s)" % os.environ["RWM_PERF_RATE_MBIT"]] if os.environ.get("RWM_PERF_RATE_MBIT") else []) + (["INFO perf offered-load pacing ACTIVE (RWM_PERF_BURST=%s)" % os.environ["RWM_PERF_BURST"]] if os.environ.get("RWM_PERF_BURST") else [])
     srv = [ln + echo if "[GATES]" in ln else ln for ln in srv]
     cli = [ln.replace("hint=bulk", f"hint={hint}") if "[PIPE]" in ln else ln for ln in cli]      # the carrier hint echo (Auto cells)
     srv = [ln.replace("hint=bulk", f"hint={hint}") if "[PIPE]" in ln else ln for ln in srv]
@@ -1218,7 +1218,7 @@ def main(argv):
         cli, srv, drv = gen51e(cli, srv, drv, nbytes, fam, _hint)
     elif plan == "63":
         cli, srv, drv = gen63(cli, srv, drv, nbytes, fam, _hint)
-    elif plan in ("68", "68r"):
+    elif plan in ("68", "68r", "68s"):
         cli, srv, drv = gen68(cli, srv, drv, nbytes, fam, _hint, base)
     elif plan == "51":
         cli, srv, drv = gen51(cli, srv, drv, nbytes, fam, _hint)

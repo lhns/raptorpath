@@ -4,11 +4,13 @@ the slot check. ONE source for the shell and the scorer: the battery asks `armsp
 
     plan68.py plan 68 [smoke|rehearsal]   the EXECUTED table (built cells only), `cell store arm seed rep` per line (smoke = rehearsal = one row per arm)
     plan68.py plan 68r [smoke|rehearsal]  the RERUN table (36 rows, see RERUN below); smoke = rehearsal = 6 rows
+    plan68.py plan 68s [smoke|rehearsal]  the SECOND RERUN table (30 rows, see RERUN-S below); smoke = rehearsal = 6 rows
     plan68.py registered                  the registered 54-slot table, UNBUILT cells included
     plan68.py count 68 [smoke|rehearsal]  the number of rows the executed table holds (the battery asserts it)
     plan68.py armspec <cell> <arm>        `BYTES TIMEOUT_S HINT ENV...` (ENV tokens are KEY=VALUE)
-    plan68.py unbuilt                     the UNBUILT cell codes, one line
-    plan68.py needs-pacer                 1 iff a built cell uses RWM_PERF_RATE_MBIT (the battery then requires the pacing echo in both binaries)
+    plan68.py unbuilt [<plan>]            the UNBUILT cell codes of the plan, one line
+    plan68.py needs-pacer                 1 iff a built cell uses RWM_PERF_RATE_MBIT or RWM_PERF_BURST (the battery then requires the pacing echo in both binaries)
+    plan68.py needs-burst <plan>          1 iff a row of the table uses RWM_PERF_BURST (the battery then requires the knob in both binaries)
     plan68.py check 68 <ledger>           rc 0 iff the battery finished and the ledger holds a row for every executed slot
 
 ARMS (registration section 1). Two binaries serve three arms: BASE = main plus the gauge commit (the BASE seat, LD_BIN_BASE), R4 and GATE = ONE binary, the hand-off-gate tree (the CAND seat, LD_BIN):
@@ -31,6 +33,10 @@ RERUN (`68r`, after the gate's witness counters): 36 rows = the GATE arm of K2 /
 RWM_QUIC_CC unset (quinn's own BBR) and RWM_HOFF_GATE=1 (arm letter Q, cells QK2 / QK8 / QA2; it exists only on the three K cells). Same interleave and seed rules as 68: rep-major, then cell, the arm order rotated by (rep - 1 + cell index).
 The BASE seat of the LR / PC rows is the pacer-carrying BASE binary (handoff-gauges-pacer).
 
+RERUN-S (`68s`, after the token witness and the bursty source): 30 rows = the GATE arm of K2 / K8 / A2 (9), BU at B / R4 / GATE (9) and PH (paced headroom at 85 % of the link, Auto) at B / R4 / GATE plus T, the GATE twin (12).
+T = the A/A twin: the same binary, tree and env as GATE under its own arm letter, so GATE-vs-T is the run-to-run spread of one arm (AA68 in the report). BU is built: the perf client's RWM_PERF_BURST=10/33 (10 datagrams every 33 ms, Realtime, rho = 1, the echo
+"offered-load pacing ACTIVE (RWM_PERF_BURST=10/33)"); both seats' binaries must carry it (the BASE seat is rebuilt from main plus the pacer, the gauge commit and the burst knob). PH is a 68s cell only (PC of 68 / 68r stays at 70 %). Same interleave rules.
+
 ROWS: 6 cells x 3 arms x 3 rows (seed 42, rep 1..3) = 54, interleaved: rep-major, then cell, with the arm order rotated by (rep - 1 + cell index) so no arm owns a position."""
 import os
 import sys
@@ -41,12 +47,14 @@ sys.path.insert(0, HERE)
 SEEDS = ("42",)
 N_REP = 3                          # rows per arm per cell (seed 42, rep 1..3); test_stubrun shrinks it
 SEED = "42"
-ARM_LETTERS = ("B", "R", "G", "Q")
+ARM_LETTERS = ("B", "R", "G", "Q", "T")
 ARMS_68 = ("B", "R", "G")          # the arms of the main table
 K_CELLS = ("K2", "K8", "A2")
 RERUN_CELLS = ("K2", "K8", "A2", "LR", "PC")
-SEAT = {"B": "BASE", "R": "CAND", "G": "CAND", "Q": "CAND"}
-ARM_NAME = {"B": "BASE", "R": "R4", "G": "GATE", "Q": "GATE-ALONE"}
+RERUN_S_CELLS = ("K2", "K8", "A2", "BU", "PH")
+REGISTERED_CELLS = ("K2", "K8", "A2", "LR", "PC", "BU")      # plan 68's registered 54 slots; PH exists in 68s only
+SEAT = {"B": "BASE", "R": "CAND", "G": "CAND", "Q": "CAND", "T": "CAND"}
+ARM_NAME = {"B": "BASE", "R": "R4", "G": "GATE", "Q": "GATE-ALONE", "T": "GATE-AA"}
 CHUNK_PAYLOAD = 494                # perf.rs chunk_payload_len: Realtime 508 - 14 (Bulk / Auto: 1196 - 14 = 1182)
 T_E = 60                           # s of emission of a paced row
 TIMEOUT_PACED = T_E + 15           # RWM_PERF_TIMEOUT_S: a paced row's DNF lands 15 s after emission ends
@@ -55,25 +63,39 @@ LINK_MBIT = 100.0                  # c2-100's netem rate
 LOW_DGRAM_S = 36.0                 # section 3: a call rate of ~36 datagrams/s
 PACED_FRAC = 0.70                  # section 3: ~70 % of the link
 BURST_DGRAMS, BURST_PERIOD_MS = 10, 33
+PH_FRAC = 0.85                     # 68s: paced headroom at 85 % of the link
 
-# code -> (topology cell, label, hint, bytes, timeout, rate Mbit/s payload or None, rho-one witnessed (Realtime)); order = the registration's table
+# code -> (topology cell, label, hint, bytes, timeout, rate Mbit/s payload or None, rho-one witnessed (Realtime), burst token "<datagrams>/<ms>" or None); order = the registration's table
 CELLS = {
-    "K2": ("c2-100", "c2-100 Bulk", "bulk", BYTES_BIG, TIMEOUT_BIG, None, False),
-    "K8": ("c8-100", "c8-100 Bulk", "bulk", BYTES_BIG, TIMEOUT_BIG, None, False),
-    "A2": ("c2-100", "c2-100 Auto", "auto", BYTES_BIG, TIMEOUT_BIG, None, False),
-    "LR": ("c2-100", "c2-100 low rate (Realtime rho=1, 36 dg/s)", "realtime", int(LOW_DGRAM_S * T_E * CHUNK_PAYLOAD), TIMEOUT_PACED, round(LOW_DGRAM_S * CHUNK_PAYLOAD * 8 / 1e6, 6), True),
-    "PC": ("c2-100", "c2-100 paced (Auto, 70 % of the link)", "auto", int(PACED_FRAC * LINK_MBIT * 1e6 * T_E / 8), TIMEOUT_PACED, PACED_FRAC * LINK_MBIT, False),
-    "BU": ("c2-100", "c2-100 bursty (Realtime rho=1, 10-dgram frames / 33 ms)", "realtime", None, TIMEOUT_PACED, None, True),
+    "K2": ("c2-100", "c2-100 Bulk", "bulk", BYTES_BIG, TIMEOUT_BIG, None, False, None),
+    "K8": ("c8-100", "c8-100 Bulk", "bulk", BYTES_BIG, TIMEOUT_BIG, None, False, None),
+    "A2": ("c2-100", "c2-100 Auto", "auto", BYTES_BIG, TIMEOUT_BIG, None, False, None),
+    "LR": ("c2-100", "c2-100 low rate (Realtime rho=1, 36 dg/s)", "realtime", int(LOW_DGRAM_S * T_E * CHUNK_PAYLOAD), TIMEOUT_PACED, round(LOW_DGRAM_S * CHUNK_PAYLOAD * 8 / 1e6, 6), True, None),
+    "PC": ("c2-100", "c2-100 paced (Auto, 70 % of the link)", "auto", int(PACED_FRAC * LINK_MBIT * 1e6 * T_E / 8), TIMEOUT_PACED, PACED_FRAC * LINK_MBIT, False, None),
+    "BU": ("c2-100", "c2-100 bursty (Realtime rho=1, 10-dgram frames / 33 ms)", "realtime", int(T_E * 1000 / BURST_PERIOD_MS) * BURST_DGRAMS * CHUNK_PAYLOAD, TIMEOUT_PACED, None, True, "%d/%d" % (BURST_DGRAMS, BURST_PERIOD_MS)),
+    "PH": ("c2-100", "c2-100 paced (Auto, 85 % of the link)", "auto", int(PH_FRAC * LINK_MBIT * 1e6 * T_E / 8), TIMEOUT_PACED, PH_FRAC * LINK_MBIT, False, None),
 }
 CELL_ORDER = tuple(CELLS)
 # ── the one switch an amendment edits ──
-UNBUILT = ("BU",)
-UNBUILT_WHY = {"BU": "no bursty-frame source exists (the pacer is constant-rate)"}
-BUILT = tuple(c for c in CELL_ORDER if c not in UNBUILT)
-BUDGET_S = {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600}   # 68: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
+UNBUILT = ("BU",)      # of plans 68 and 68r (the first never ran BU, the second does not hold it); 68s builds it (the burst knob): see unbuilt_in
+UNBUILT_WHY = {"BU": "plans 68 / 68r have no bursty-frame source (the pacer is constant-rate); the burst knob belongs to 68s"}
+BUILT = tuple(c for c in REGISTERED_CELLS if c not in UNBUILT)
+
+
+def unbuilt_in(name=None):
+    """The UNBUILT cells of the table `name` (default: this process's plan): none in 68s, which carries the burst knob."""
+    return () if (name or plan_name()) == "68s" else UNBUILT
+
+
+def built_in(name=None):
+    n = name or plan_name()
+    return tuple(c for c in cells_of(n) if c not in unbuilt_in(n))
+BUDGET_S = {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600, "68s": 7400, "68s-rehearsal": 3600}   # 68: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
 # 68r: 18 big rows x 215 s + 18 paced rows x 90 s + builds + tests; its rehearsal: 2 big + 4 paced rows + builds + tests
+# 68s: 9 big rows x 215 s + 21 paced rows x 90 s + builds + tests; its rehearsal: 1 big + 5 paced rows + builds + tests
 SMOKE_CELL = "K2"
 SMOKE_68R = ("GK2", "QK2", "BLR", "GLR", "BPC", "GPC")
+SMOKE_68S = ("GK2", "BBU", "GBU", "BPH", "GPH", "TPH")
 LATE_T = 5.0
 
 
@@ -82,8 +104,10 @@ def arm_name(letter, code):
 
 
 def arms_of(code):
-    """The arm letters a cell has: Q (gate alone) exists on the K cells only."""
-    return ARM_LETTERS if code in K_CELLS else ARMS_68
+    """The arm letters a cell has: Q (gate alone) exists on the K cells only, T (the GATE twin) on PH only."""
+    if code in K_CELLS:
+        return ("B", "R", "G", "Q")
+    return ("B", "R", "G", "T") if code == "PH" else ARMS_68
 
 
 def arm_parse(arm):
@@ -101,6 +125,11 @@ def seat_of(arm):
 
 def all_arms():
     return [arm_name(a, c) for c in CELL_ORDER for a in arms_of(c)]
+
+
+def cells_of(name):
+    """The cells the table `name` holds, in report order."""
+    return {"68": REGISTERED_CELLS, "68r": RERUN_CELLS, "68s": RERUN_S_CELLS}[name]
 
 
 def valid_slot(cell, arm):
@@ -127,6 +156,10 @@ def arm_hint(arm):
     return _cell(arm)[2]
 
 
+def burst_token(arm):
+    return _cell(arm)[7]
+
+
 def rate_token(arm):
     r = _cell(arm)[5]
     return None if r is None else ("%.6f" % r).rstrip("0").rstrip(".")
@@ -139,9 +172,9 @@ def arm_env(cell, arm):
     if letter is None:
         raise ValueError(f"unknown arm {arm}")
     env = []
-    if letter in ("R", "G"):      # Q keeps quinn's own BBR
+    if letter in ("R", "G", "T"):      # Q keeps quinn's own BBR
         env.append("RWM_QUIC_CC=bbr_rs")
-    if letter in ("G", "Q"):
+    if letter in ("G", "Q", "T"):      # T = the A/A twin of G: the same env
         env.append("RWM_HOFF_GATE=1")
     env.append("RWM_DIAG=1")
     if CELLS[code][6]:
@@ -149,18 +182,25 @@ def arm_env(cell, arm):
     tok = rate_token(arm)
     if tok is not None:
         env.append("RWM_PERF_RATE_MBIT=" + tok)
+    if burst_token(arm) is not None:
+        env.append("RWM_PERF_BURST=" + burst_token(arm))
     return env
 
 
 def needs_pacer():
-    return any(CELLS[c][5] is not None for c in BUILT)
+    return any(CELLS[c][5] is not None or CELLS[c][7] is not None for c in built_in())
+
+
+def needs_burst(name=None):
+    """True iff a row of the table `name` (default: this process's plan) uses RWM_PERF_BURST: the battery then requires the knob in both binaries (a binary without it would run the BU rows unpaced)."""
+    return any(CELLS[arm_parse(r[2])[1]][7] is not None for r in plan(name or plan_name()))
 
 
 def registered():
     """All 54 slots: [(cell, store, arm, seed, rep)], rep-major, then cell, with the arm order rotated by (rep - 1 + cell index)."""
     out = []
     for rep in range(1, N_REP + 1):
-        for ci, code in enumerate(CELL_ORDER):
+        for ci, code in enumerate(REGISTERED_CELLS):
             k = (rep - 1 + ci) % len(ARMS_68)
             for letter in ARMS_68[k:] + ARMS_68[:k]:
                 out.append((CELLS[code][0], "def", arm_name(letter, code), SEED, rep))
@@ -179,12 +219,28 @@ def registered_rerun():
     return out
 
 
+def registered_rerun_s():
+    """The 68s table: [(cell, store, arm, seed, rep)], rep-major, then cell (K2, K8, A2, BU, PH), the arms of a cell rotated by (rep - 1 + cell index): GATE on a K cell, B / R4 / GATE on BU, B / R4 / GATE / T on PH."""
+    out = []
+    for rep in range(1, N_REP + 1):
+        for ci, code in enumerate(RERUN_S_CELLS):
+            letters = ("G",) if code in K_CELLS else arms_of(code)
+            k = (rep - 1 + ci) % len(letters)
+            for letter in letters[k:] + letters[:k]:
+                out.append((CELLS[code][0], "def", arm_name(letter, code), SEED, rep))
+    return out
+
+
 def plan(name="68", smoke=False, rehearsal=False):
     """The EXECUTED table: the registered table without its UNBUILT cells. The smoke and the rehearsal are one row per arm on K2 (seed 42, rep 1)."""
     if name == "68r":
         if smoke or rehearsal:
             return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68R]
         return [r for r in registered_rerun() if arm_parse(r[2])[1] in BUILT]
+    if name == "68s":
+        if smoke or rehearsal:
+            return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68S]
+        return registered_rerun_s()
     if name != "68":
         raise ValueError(name)
     if smoke or rehearsal:
@@ -193,9 +249,9 @@ def plan(name="68", smoke=False, rehearsal=False):
 
 
 def plan_name():
-    """The plan this process serves: LD_PLAN when it is 68 or 68r, else 68."""
+    """The plan this process serves: LD_PLAN when it is 68, 68r or 68s, else 68."""
     n = os.environ.get("LD_PLAN")
-    return n if n in ("68", "68r") else "68"
+    return n if n in ("68", "68r", "68s") else "68"
 
 
 def expect_rows(name=None):
@@ -209,8 +265,11 @@ def row_problems(cell, arm, cli, srv, sha=None, sha_cand=None, sha_base=None, pa
     if not valid_slot(cell, arm):
         return [f"unknown-arm-{arm}-at-{cell}"]
     p = pool54_score.sha_problems(seat_of(arm), sha, sha_cand, sha_base)
-    if _cell(arm)[5] is not None and not any("offered-load pacing ACTIVE" in ln for ln in list(cli or []) + list(srv or [])):
+    lines = list(cli or []) + list(srv or [])
+    if (_cell(arm)[5] is not None or _cell(arm)[7] is not None) and not any("offered-load pacing ACTIVE" in ln for ln in lines):
         p.append("pace-echo-missing")
+    if _cell(arm)[7] is not None and not any("RWM_PERF_BURST=" + _cell(arm)[7] in ln for ln in lines):
+        p.append("burst-echo-missing")
     return p
 
 
@@ -246,14 +305,17 @@ def main(argv):
                 print(f"{c} {s} {ar} {sd} {rp}")
             return 0
         if cmd == "unbuilt":
-            print(" ".join(UNBUILT))
+            print(" ".join(unbuilt_in(a[0] if a else None)))
             return 0
         if cmd == "needs-pacer":
             print(1 if needs_pacer() else 0)
             return 0
+        if cmd == "needs-burst":
+            print(1 if needs_burst(a[0] if a else None) else 0)
+            return 0
         if cmd == "armspec":
             cell, arm = a[0], a[1]
-            if not valid_slot(cell, arm) or arm_parse(arm)[1] not in BUILT:
+            if not valid_slot(cell, arm) or arm_parse(arm)[1] not in built_in():
                 print(f"UNKNOWN-ARM {arm} at {cell}")
                 return 1
             print(arm_bytes(cell, arm), arm_timeout(cell, arm), arm_hint(arm), *arm_env(cell, arm))
