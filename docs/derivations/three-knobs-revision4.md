@@ -40,7 +40,7 @@
 
 > **Read first (2026-11-27):** the verdicts below compare against two baselines for today's Realtime sender, one with the engine's standing queue in quinn's datagram buffer. The engine's hand-off gate (`docs/derivations/reg-handoff-gate.md`, branch sender-queue-law) removes most of that queue, so the fair old-design baseline is the no-queue arm. Against it alone the count stays 7 of 8, OV-long's "dominates" rests on delay p50 alone (0.078 s), and the mid-price cells OV-long-m and OV-long-q read worse, not a trade. The 13.10 dequeue-time falsifier passed. See `tools/toy/results-recount.md`.
 
-> **Read first (2026-11-27, Revision 5, §14):** build B″ (R5 ramp `w = (c⁺/x̄)/max(1, y)` plus the net repair clamp `min(r, (spare − σ)⁺)`) is at least as good as both arms of today's Realtime in every cell, the two mid-price cells included (now "dominates"). See `tools/toy/results-rev5.md`.
+> **Read first (2026-11-27, Revision 5, §14):** build B″ (R5 ramp `w = (c⁺/x̄)/max(1, y)` plus the net repair clamp `min(r, (spare − σ)⁺)`) is at least as good as both arms of today's Realtime in every cell run, the two mid-price cells included (now "dominates", at δ = 0.1 by 4 ms over the p50 bar). Below δ ≈ 0.078 it is predicted worse on delay; that is a Q33/Q32 limit, not fixed (§14.8). See `tools/toy/results-rev5.md`.
 
 **The finding, re-read from the stored runs.** In OV (offered λ = 12 000 units/s, link C = 10 000/s, a 1 250-datagram buffer, one path, repair RL), the stage 3e new-model rows fit one line in the intake hold `w = T − R`:
 
@@ -2602,7 +2602,7 @@ T = 2's share is 0.002 off, from the end flush, so its band is widened.
 
 ### 14.7 Result (2026-11-27; post-data, `tools/toy/results-rev5.md`)
 
-**Verdict: against both arms of today's Realtime, B″ is at least as good in every cell**: the eight cells of §12 and both mid-price cells.
+**Verdict: against both arms of today's Realtime, B″ is at least as good in every cell run**: the eight cells of §12 and both mid-price cells. It is **not** shown for every δ: below δ ≈ 0.078 it is predicted worse on delay (§14.8).
 - **OV-long-m** goes from "worse" (B′) to **dominates**: share −0.0063, p50 0.0127 s better, against the stored arm.
 - **OV-long-q** goes from "worse" to **dominates**: share −0.0065, p50 0.0224 s better.
 - **Against the engine-queue arm, both dominate.**
@@ -2630,3 +2630,53 @@ T = 2's share is 0.002 off, from the end flush, so its band is widened.
 - **Q33:** R5 replaces R1 as the default; it is still a choice of Kelly's premise.
 - **Q34:** the x̂ → 1⁺ edge, unchanged because the onset is unchanged.
 - **The engine side of the net clamp.** Porting it needs an engine source for σ: the count of units the sender gives up at its intake. The engine was not read for it here.
+
+### 14.8 The boundary the fix moves, and a row below it (2026-11-27; written after §14.7, before the row runs)
+
+**The fix moves the mid-price loss; it does not remove it.**
+- §14.1's delay form at the best point T = 0.4 predicts B″'s reader p50 as ≈ ô + (c/x̄)·s_b/t_ov* ≈ 0.095 + 0.0065/δ s. The measured values are 0.160 s at δ = 0.1 and 0.150 s at 0.118.
+- Against the stored arm's flat 0.172 s and its 0.0086 s bar, the predictor's cap transform of the stored B′ rows (`rev5_predict.transform(…, delta_new=δ)`, with the repair term), read against the δ = 0.1 Realtime row, gives:
+
+| δ | 0.03 | 0.05 | 0.07 | 0.076 | 0.08 | 0.09 | 0.1 (measured) |
+|---|---|---|---|---|---|---|---|
+| share against the stored arm | −0.0048 | −0.0055 | −0.0058 | −0.0059 | −0.0059 | −0.0060 | −0.0063 |
+| p50 against the stored arm (positive: B″ faster) | −0.138 s | −0.053 s | −0.016 s | −0.009 s | −0.005 s | +0.005 s | +0.013 s |
+| word | worse | worse | worse | worse | equivalent | equivalent | dominates |
+
+- So B″ reads "dominates" for δ ≳ 0.095, "equivalent" for about 0.078–0.095, and **worse on delay below δ ≈ 0.078**. Its share stays inside the bar throughout.
+- At δ = 0.1, "dominates" rests on p50 alone, 4 ms over the bar at 3 seed pairs, as OV-long's did in the recount.
+- Below δ = 0.005, the video price, the verdict does not read delay (§12.3). The band in which delay is read and B″ is predicted worse is therefore about **0.005 < δ < 0.078**.
+
+**Why it is not fixed here.**
+- **The structural reason:** U holds the reserve c/x̄ until the onset s_b = (c + x̄ô)/δ, the throughput it would forfeit if the overload ended. Today's stored arm holds no reserve. A dominance reading on a 40 s window cannot price the reserve (§13.4, Q32).
+- **Even the U optimum, bang-bang at s_b** (inadmissible as a mode switch), loses on delay once its onset passes the reader's median point: s_b ≳ 15 s, which is δ ≲ 0.03.
+- **Between that and δ ≈ 0.078, a faster relaxation could win.** But R5 is the fastest member of the Kelly family (§14.3). Anything faster needs an added constant (R3's width) or a step. So the region is the Q33 choice, and it stays an open owner question.
+- **Below δ ≈ 0.03,** no shed law that U accepts beats the stored arm's delay inside 40 s. That is Q32: should a reserve U values be held at all when the reading cannot see its worth?
+
+**The row (registered here, before it runs).** OV-long-c is OV-long's link, load, units and τ = 0.4 s, at δ = 0.05.
+- **Runs:** B″ and A at T = 0.4, 6 seeds; today's Realtime at δ = 0.05, both arms, 3 seeds, fresh.
+- **Reading:** dominance at T = 0.4, the best point at every other price here. The A/A floor is OV-long-q's, which has the same link, load and T.
+- **Predicted, against the stored arm:**
+  - share −0.0055 ± 0.002, which is equivalent;
+  - p50 −0.053 ± 0.015 s, worse beyond the bar;
+  - B″'s p50 0.225 ± 0.015 s;
+  - **word: worse.**
+- **Predicted, against the engine-queue arm: dominates** (on time about +0.80, p50 about 0.5 s better).
+- **If the row reads not worse,** the boundary sits lower than the transform puts it, and that is reported as a misprediction.
+
+**Two §14.7 statements made precise.**
+- **The net clamp binds by design under overload.** Over the dequeues of each finite-T overload row, its bind fraction (`net_bind`/first sends) is 0.75–0.91 in OV-long-m and OV-long-q, and 0.91 in OV-long.
+  - The rest are first sends before the run's first shed, or first sends where the shipped clamp already gives 0.
+  - Repairs fall from about 2 060 to about 240 per run.
+  - **Proposed ledger verdict:** "binds by design: under sustained overload no repair displaces a first send". It is pinned exactly where the sentence says repair has no spare. It is not degenerate, because σ = 0 wherever nothing is shed.
+  - In K-OV the fraction is 0.03–0.05, since the shipped clamp already sends little there.
+- **The identity in CLc, CLc-v and CL-long-v holds beyond the identity set.**
+  - The stored A rows of CLc and CLc-v show 0 intake sheds at every row and seed (72 and 96 runs), so σ = 0 there by arithmetic.
+  - CL-long-v sheds in its drain, but r = 0 at δ = 0.005, so min(0, ·) = 0. And y ≤ 1 throughout, so R5 ≡ R1.
+  - So B″ ≡ A at every row of the three cells, not only at the 3 × 3 identity set.
+
+**The outage cells' cost, stated in full.**
+- **CL at T = 1.3** recovers in 12.73 s against A's 11.84 s, and the row is censored-adjacent: CL's runs are 10 s, and 14.5 s is the censor cap. That is the largest change.
+- **At T = 0.6–1.35,** whole-run on time is 0.0016–0.0036 lower than A's in CL and CL-long, and recovery is 0.02–0.07 s later, while delivered is 0.0015–0.003 higher.
+  - **Mechanism, inferred and not separated by a gauge:** at those lifetimes the drain's units are young enough to be resent. The removed repairs had decoded some units earlier than a resend round trip would, so fewer units arrive within 0.4 s, although more arrive at all.
+- **No Realtime word moves.** The ADR-0084 moves are listed in §14.7.

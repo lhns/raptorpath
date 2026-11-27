@@ -43,7 +43,14 @@ FULL_CELLS = ("CL-long", "CL", "CLw-long")
 IDENT_CELLS = ("CLc", "CLc-v", "CL-long-v")
 OV_CELLS = ("OV-long-v", "OV-long")
 MID = (K.M, KQ.Q)
-PARTS = ("GAUGE", "IDENT", "OV-long-v", "OV-long", K.M, KQ.Q) + FULL_CELLS + ("K-OV",)
+LOW, LOW_DELTA = "OV-long-c", 0.05                   # 14.8: one row below the predicted boundary (registered before it ran)
+
+if LOW not in B.CELLS:
+    B.CELLS[LOW] = B._copy(B.CELLS, "OV-long")
+    B.SWEEP[LOW] = B.SWEEP["OV-long"]
+    _delta_of5 = B.delta_of
+    B.delta_of = lambda cell: LOW_DELTA if cell == LOW else _delta_of5(cell)
+PARTS = ("GAUGE", "IDENT", "OV-long-v", "OV-long", K.M, KQ.Q) + FULL_CELLS + ("K-OV", LOW)
 MAX_UNITS = 24
 
 
@@ -106,7 +113,17 @@ def kov_jobs():
     return [bpp_job("K-OV", ("lt", 0.4, 0.0), 6)]
 
 
+def low_rows():
+    """14.8: OV-long-c (delta 0.05): A at T = 0.4 (6 seeds), today's Realtime at delta 0.05, both arms (3 seeds)."""
+    key, d = ("lt", 0.4, 0.0), ("rt", LOW_DELTA)
+    return [C.CJob("%s | A | %s" % (LOW, B.row_name(key)), LOW, "A", key, 6, C.mk(LOW, key, K.A_KW)),
+            C.CJob("%s | rt | %s" % (LOW, B.row_name(d)), LOW, "rt", d, C.SEEDS_END, C.mk(LOW, d, {}, rt_cwnd=True)),
+            C.CJob("%s | rteq | %s (engine queue)" % (LOW, B.row_name(d)), LOW, "rteq", d, C.SEEDS_END, C.mk(LOW, d, dict(eq=True), rt_cwnd=True))]
+
+
 def stored_of(cell):
+    if cell == LOW:
+        return low_rows()
     if cell == K.M:
         return K.m_jobs()
     if cell == KQ.Q:
@@ -118,12 +135,13 @@ def stored_of(cell):
 
 def part_jobs():
     return {"GAUGE": gauge_jobs(), "IDENT": [b for _, b in ident_pairs()] + [seed_x_jobs()[1]], "OV-long-v": ov_jobs("OV-long-v"), "OV-long": ov_jobs("OV-long"),
-            K.M: mid_jobs(K.M), KQ.Q: mid_jobs(KQ.Q), "CL-long": full_jobs("CL-long"), "CL": full_jobs("CL"), "CLw-long": full_jobs("CLw-long"), "K-OV": kov_jobs()}
+            K.M: mid_jobs(K.M), KQ.Q: mid_jobs(KQ.Q), "CL-long": full_jobs("CL-long"), "CL": full_jobs("CL"), "CLw-long": full_jobs("CLw-long"), "K-OV": kov_jobs(),
+            LOW: [bpp_job(LOW, ("lt", 0.4, 0.0), 6)] + low_rows()}
 
 
 def all_jobs5():
     out = [j for js in part_jobs().values() for j in js]
-    for c in OV_CELLS + MID + FULL_CELLS + IDENT_CELLS + ("K-OV",):
+    for c in OV_CELLS + MID + FULL_CELLS + IDENT_CELLS + ("K-OV", LOW):
         out += stored_of(c)
     out.append(seed_x_jobs()[0])
     return out
@@ -164,6 +182,7 @@ def load_nf():
         with open(p) as f:
             for k, v in json.load(f).items():
                 nf.setdefault(k, v)
+    nf.setdefault(LOW, nf[KQ.Q])                     # 14.8: OV-long-q's own A/A floor (the same link, load and T; registered)
     return nf
 
 
@@ -278,7 +297,7 @@ def read_dom(cell, new, nf, double=frozenset()):
         dA = float(np.mean([C.recs(aa[0], n)[s]["delivered"] - rn[s]["delivered"] for s in range(min(n, len(C.recs(aa[0], n))))])) if aa else None
         dB = float(np.mean([C.recs(bb[0], n)[s]["delivered"] - rn[s]["delivered"] for s in range(min(n, len(C.recs(bb[0], n))))])) if bb else None
         L.append("| %s | %s | %s |" % (B.TAG(j.key[1]), fmt(dA, 0), fmt(dB, 0)))
-    if cell in MID:
+    if cell in MID or cell == LOW:
         L.append("\nR5's tail (14.3): w t_ov = (c / xb) s_b per window past the onset:\n")
         L += tail_check(Bpp)
     return L, undet, {k[1]: v for k, v in best.items() if k[0] == "B''"}
@@ -383,8 +402,8 @@ def run_chain(workers, only=None):
                 C.run_pool(pool, C.tasks_of([xa]), part + " (A traced, seed 11)")
                 lines, b2 = read_ident(ident_pairs(), xa, xb)
                 bad += b2
-            elif part in OV_CELLS or part in MID:
-                lines, undet, best = read_dom(part, jobs, nf)
+            elif part in OV_CELLS or part in MID or part == LOW:
+                lines, undet, best = read_dom(part, [j for j in jobs if is_bpp(j)], nf)
                 if part == "OV-long-v":
                     il, b2 = read_ovv_identity(jobs)
                     lines += il
@@ -392,7 +411,7 @@ def run_chain(workers, only=None):
                 if undet:
                     st = stored_of(part)
                     double_arms(pool, st + jobs, undet, part)
-                    lines2, _, _ = read_dom(part, jobs, nf, double=frozenset(undet))
+                    lines2, _, _ = read_dom(part, [j for j in jobs if is_bpp(j)], nf, double=frozenset(undet))
                     lines += ["\n### %s after the registered doubling (arms: %s)\n" % (part, sorted(undet))] + lines2
             elif part in FULL_CELLS:
                 lines, undet = read_full(part, jobs, nf)

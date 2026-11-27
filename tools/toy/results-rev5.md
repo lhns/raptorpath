@@ -10,7 +10,7 @@
 
 ## Verdict
 
-**Against both arms of today's Realtime, B″ is at least as good in every cell**: the eight cells of 12 and both mid-price cells. No registered word against today's Realtime moved toward worse, and the two mid-price cells that read "worse" under B′ now read "dominates".
+**Against both arms of today's Realtime, B″ is at least as good in every cell run**: the eight cells of 12 and both mid-price cells. It is not shown for every δ: the predictor puts B″ worse on delay below δ ≈ 0.078 (three-knobs-revision4.md 14.8, with a registered row at δ = 0.05 below). At δ = 0.1, "dominates" rests on p50 alone, 4 ms over its bar. No registered word against today's Realtime moved toward worse, and the two mid-price cells that read "worse" under B′ now read "dominates".
 
 | cell | B′ against the stored (no-queue) arm | B″ against the stored arm | B″ against the engine-queue arm | how B″'s word is established |
 |---|---|---|---|---|
@@ -64,6 +64,7 @@
   - Neither row is the best point.
 - **In CL** (T = 0.6–1.25), whole-run delivered rises by +0.003, but on time within 0.4 s falls by about 0.003, and recovery is up to 0.07 s later.
   - These rows lie on the curve, and they do not change any Realtime word.
+- **CL at T = 1.3:** recovery 12.73 s against A's 11.84 s (near the 14.5 s censor). CL-long at T = 0.6–1.35: on time 0.0017–0.0018 lower and recovery 0.02–0.07 s later. The inferred mechanism (14.8): the removed drain repairs had decoded some young units sooner than a resend round trip.
 
 
 ## GAUGE (14.5, reads only): build A with the net clamp's gauge, against the stored A rows
