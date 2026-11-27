@@ -134,6 +134,11 @@ pub(crate) struct PathIn {
     pub qwin: u64,
     pub srtt_us: u64,
     pub qinfl: u64,
+    /// Cumulative bytes quinn acked on this path (the probe's `on_ack`), reported only.
+    pub qacked: u64,
+    /// Bytes in flight read live: sent − acked − lost, published from `on_sent`, `on_ack` and
+    /// `on_congestion_event` (a gauge: no decision reads it).
+    pub qf: u64,
     pub end_acks: u64,
     pub app_limited_acks: u64,
     pub polls: u64,
@@ -164,7 +169,7 @@ impl PathIn {
     pub(crate) fn dgram_size(&self) -> f64 {
         if self.staged > 0 { self.staged_bytes as f64 / self.staged as f64 } else { 0.0 }
     }
-    fn window(&self) -> u64 {
+    pub(crate) fn window(&self) -> u64 {
         if self.qwin > 0 { self.qwin } else { self.cwnd }
     }
     pub(crate) fn rate(&self) -> f64 {
@@ -515,9 +520,13 @@ fn witness_fields(r: &super::hoff_gate::GateRow) -> String {
     let [d, t, s, c] = r.fs_bypass;
     let [xc, xr, xp] = r.ex_n;
     let [oc, os] = r.fs_over_cs;
+    let bm = r.beta_max.map_or("-".to_string(), |(b, w, s, l, rate)| {
+        format!("{}/{w}/{:.2}/{:.2}/{:.2}", f1(b), s as f64 / 1e3, l * 1e3, rate / 1e6)
+    });
+    let ab = r.ack_bind.map_or("-".to_string(), |v| format!("{v:.3}"));
     format!(
-        " fs_over={} fs_over_cs={oc}/{os} fs_bypass={d}/{t}/{s}/{c} ex_max={ex} ex_n={xc}/{xr}/{xp} fs_n={} beta_q={bq} own_gap_max={}us pend_max={}",
-        r.fs_over, r.fs_n, r.own_gap_max_us, r.pend_max
+        " fs_over={} fs_over_cs={oc}/{os} fs_bypass={d}/{t}/{s}/{c} ex_max={ex} ex_n={xc}/{xr}/{xp} fs_n={} beta_max={bm} b_max={} u_over={} ack_bind={ab} beta_q={bq} own_gap_max={}us pend_max={}",
+        r.fs_over, r.fs_n, r.b_max, r.u_over, r.own_gap_max_us, r.pend_max
     )
 }
 
@@ -546,6 +555,8 @@ impl HoffGauge {
             qwin: h.qwin.load(Relaxed),
             srtt_us: view.rtt().map_or(0, |d| d.as_micros() as u64),
             qinfl: h.qinfl.load(Relaxed),
+            qacked: h.qacked.load(Relaxed),
+            qf: h.qsent.load(Relaxed).saturating_sub(h.qacked.load(Relaxed).saturating_add(h.qlost.load(Relaxed))),
             end_acks: h.end_acks.load(Relaxed),
             app_limited_acks: h.app_limited_acks.load(Relaxed),
             polls: c.polls.load(Relaxed),
