@@ -1154,7 +1154,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     break; // every producer handle is gone
                 }
                 ctr.drains.fetch_add(1, Relaxed);
-                t_work = view.hoff.on.then(Instant::now);
+                t_work = view.hoff.on.then(crate::clock::now);
                 if a.deep {
                     ctr.cmdq.record((n + a.cmd_rx.len()) as u64);
                 }
@@ -1362,7 +1362,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
             deep_end(&ctr.k_pub, dsec);
         }
         if let Some(t) = t_work {
-            view.hoff.work.record(t.elapsed().as_nanos() as u64);
+            view.hoff.work.record(t.clock_elapsed().as_nanos() as u64);
         }
         if full {
             last_full = now;
