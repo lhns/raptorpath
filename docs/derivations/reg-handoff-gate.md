@@ -312,3 +312,7 @@ Read from the 68r raw `[HOFF]`, `[QCC]`, `[DIAG]` and `[SPAN]` lines in `docs/l1
 **Unchanged from 68r:** B over β on most GATE rows (diagnosed in §9, β moving); c2 Bulk goodput DIAG68 0.994; c8 leg-0 batch DIAG68.
 
 **Next:** the `fs_over` fix and a rehearsal reading 0; GBU r1's stall; the clamp's 70–85 % curve and its verdict; then step 2's registration.
+
+**§10 correction (2026-11-27, arithmetic, no new data):**
+- **PH:** at 70 % the repair rate is about 0.15 per source (coded share 0.133). Full repair at 85 Mbit of source would need about 98 Mbit of wire, against about 90 Mbit the link carries. The room allows a coded share of about 0.055; GATE sent 0.042. So the "clamp binds with headroom" stop rests on a wrong premise (as LR's did): PH has no headroom for full repair. R4 is no reference there (it carried 76 Mbit, not 85). Predicted: the clamp starts to bind near 78 Mbit offered. To check with one load on each side (75 and 80 Mbit), not a sweep; until then the 85 % reading is not a defect finding.
+- **BU** runs at 1.2 Mbit with 10-datagram bursts against β ≈ 500, so the gate cannot bind there. It shows nothing about bursts near or above β, or bursts on a loaded link; a fair bursty cell needs frames larger than β.
