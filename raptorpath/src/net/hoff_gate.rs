@@ -58,6 +58,14 @@ fn grant_of(open: bool, beta: Option<f64>) -> Grant {
     }
 }
 
+/// An owner timer wake is idle when the timer fired and the poll after it published no
+/// full snapshot: an ordinary poll had published inside the refresh interval, so the
+/// armed deadline (set from the earlier publish) came due with nothing left to do.
+/// Reported only (`owner_timer_idle`): it prices a deadline that follows the last publish.
+pub(crate) fn timer_wake_idle(fired: bool, full: bool) -> bool {
+    fired && !full
+}
+
 /// The sites that stage a first send without asking the gate (witness tags;
 /// no decision reads them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -704,6 +712,14 @@ impl HandoffGate {
         ids
     }
 
+    /// The decision's inputs alone, per view ([`super::hoff::HoffGauge::read_decision`]).
+    fn read_decisions(&mut self) -> Vec<(u32, PathIn)> {
+        let mut b = std::mem::take(&mut self.buf);
+        b.clear();
+        b.extend(self.views.iter().map(|(id, v)| (*id, super::hoff::HoffGauge::read_decision(v))));
+        b
+    }
+
     fn read_all(&mut self) -> Vec<(u32, PathIn)> {
         let mut b = std::mem::take(&mut self.buf);
         b.clear();
@@ -761,7 +777,7 @@ impl HandoffGate {
 
     /// Before a first send is taken, live: see [`Self::check`].
     pub(crate) fn check_live(&mut self, waiting: bool) -> bool {
-        let ins = self.read_all();
+        let ins = self.read_decisions();
         let open = self.check(waiting, &ins);
         self.buf = ins;
         open
@@ -769,13 +785,18 @@ impl HandoffGate {
 
     /// Placement's candidate set for a first send, live.
     pub(crate) fn open_live(&mut self) -> Vec<u32> {
-        let ins = self.read_all();
+        let ins = self.read_decisions();
         let open = self.open_ids(&ins);
         self.buf = ins;
         open
     }
 
     /// The views' cumulative owner-timer wake count (the gauge).
+    pub(crate) fn owner_timer_idle(&self) -> u64 {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.views.iter().map(|(_, v)| v.hoff.timer_idle.load(Relaxed)).sum()
+    }
+
     pub(crate) fn owner_timer_wakes(&self) -> u64 {
         use std::sync::atomic::Ordering::Relaxed;
         self.views.iter().map(|(_, v)| v.hoff.timer_wakes.load(Relaxed)).sum()

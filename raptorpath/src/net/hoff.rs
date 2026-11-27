@@ -60,6 +60,7 @@
 //!     `own_gap_max` = the owner's longest interval between data drains (µs; includes idle gaps,
 //!     read it beside `pend_max`); `pend_max` = max of staged − handed to quinn − dropped, at turn starts;
 //!   * `owner_timer_wakes` = the owner's republish-timer wakes (0 with the gate off);
+//!     `owner_timer_idle` (gate on only) = those wakes after which the owner published nothing;
 //!     with `RWM_HOFF_GATE` the line prints `gate=on` and the gate's own β, τ̂_o
 //!     (`(meas)`), hand_bind and predicate instead of the shadow model's.
 
@@ -392,6 +393,7 @@ impl HoffGauge {
         let mut outstanding = 0.0;
         let gate_on = gate.as_deref().is_some_and(|g| g.on());
         let wakes = gate.as_deref().map_or(0, |g| g.owner_timer_wakes());
+        let idle = if gate_on { format!(" owner_timer_idle={}", gate.as_deref().map_or(0, |g| g.owner_timer_idle())) } else { String::new() };
         for id in ids {
             let st = self.paths.get_mut(&id).expect("id from keys");
             let (cur, prev) = (st.last, st.prev);
@@ -490,10 +492,11 @@ impl HoffGauge {
         let ratio = if outstanding > 0.0 { engine_infl as f64 / outstanding } else { f64::NAN };
         let probe_acks: u64 = self.paths.values().map(|p| p.last.end_acks).sum();
         let l = format!(
-            "[HOFF] t={:.1}s gate={} owner_timer_wakes={} probe_acks={} tau_floor_bind={:.2}{} infl_vs_out={}/{:.0}/x{} store_pin={:.2}",
+            "[HOFF] t={:.1}s gate={} owner_timer_wakes={}{} probe_acks={} tau_floor_bind={:.2}{} infl_vs_out={}/{:.0}/x{} store_pin={:.2}",
             now_us.saturating_sub(self.start_us) as f64 / 1e6,
             if gate_on { "on" } else { "off" },
             wakes,
+            idle,
             probe_acks,
             self.floor_binds as f64 / self.floor_reads as f64,
             out,
@@ -541,6 +544,27 @@ fn f2(v: f64) -> String {
 }
 
 impl HoffGauge {
+    /// The gate's decision reads only its inputs: `admits` and `beta_of` use the
+    /// backlog (staged, tx, dropped, quinn's discards), the datagram size (staged,
+    /// staged bytes), the window (`qwin`, else the snapshot's cwnd) and srtt. The rest of
+    /// [`Self::read`] (about 14 more atomics, most of them written by the owner and
+    /// quinn's driver) is gauge-only and left at zero.
+    pub(crate) fn read_decision(view: &crate::transport::io_owner::PathView) -> PathIn {
+        use std::sync::atomic::Ordering::Relaxed;
+        let h = &view.hoff;
+        PathIn {
+            staged: h.staged.load(Relaxed),
+            staged_bytes: h.staged_bytes.load(Relaxed),
+            tx: view.frame_stats().map_or(0, |(_, tx)| tx),
+            cwnd: view.path_stats().map_or(0, |p| p.0),
+            qwin: h.qwin.load(Relaxed),
+            srtt_us: view.rtt().map_or(0, |d| d.as_micros() as u64),
+            dropped: h.dropped.load(Relaxed),
+            quinn_discards: h.quinn_discards.load(Relaxed),
+            ..PathIn::default()
+        }
+    }
+
     /// Read one path view's raw counters.
     pub(crate) fn read(view: &crate::transport::io_owner::PathView) -> PathIn {
         use std::sync::atomic::Ordering::Relaxed;
