@@ -1,0 +1,27 @@
+SMOKE68 kind=smoke rows=6 slots=6
+PASS every smoke row ran
+PASS GK2: the row carries its t68 readouts
+PASS GK2: the row ran its seat's binary (no bin-sha problem)
+PASS GK2: [HOFF] lines on the sending end
+  REPORTED GK2: gate=on gate_echo=1 probe_acks=63612.0 refusals=49877 status=LIVE
+PASS BW2: the row carries its t68 readouts
+PASS BW2: the row ran its seat's binary (no bin-sha problem)
+PASS BW2: [HOFF] lines on the sending end
+  REPORTED BW2: gate=off gate_echo=None probe_acks=36160.0 refusals=0 status=LIVE
+PASS RW2: the row carries its t68 readouts
+PASS RW2: the row ran its seat's binary (no bin-sha problem)
+PASS RW2: [HOFF] lines on the sending end
+  REPORTED RW2: gate=off gate_echo=0 probe_acks=25475.0 refusals=0 status=LIVE
+PASS GW2: the row carries its t68 readouts
+PASS GW2: the row ran its seat's binary (no bin-sha problem)
+PASS GW2: [HOFF] lines on the sending end
+  REPORTED GW2: gate=on gate_echo=1 probe_acks=26828.0 refusals=5900 status=LIVE
+PASS BP7: the row carries its t68 readouts
+PASS BP7: the row ran its seat's binary (no bin-sha problem)
+PASS BP7: [HOFF] lines on the sending end
+  REPORTED BP7: gate=off gate_echo=None probe_acks=98589.0 refusals=0 status=LIVE
+PASS GP8: the row carries its t68 readouts
+PASS GP8: the row ran its seat's binary (no bin-sha problem)
+PASS GP8: [HOFF] lines on the sending end
+  REPORTED GP8: gate=on gate_echo=1 probe_acks=87990.0 refusals=11395 status=LIVE
+SMOKE-PASS

@@ -1,0 +1,21 @@
+LD-ALL start plan=68t load=0.66 1.10 2.10 1/387 82224 2026-11-27T17:48:29Z
+LD-ALL precondition met procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=1.29 avg60=0.69 avg300=0.22 total=5568318660 2026-11-27T17:48:37Z
+LD-ALL plan 68t budget: 8991s to LD_HARD (at least 7200s required: the worst case of the status) 2026-11-27T17:48:37Z
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN ~/rp.lock (noclobber + flock fd 11)
+LD-ALL locks held; cotenants cargo=0 rustc=0 load=0.56 1.07 2.08; io=full avg10=1.29 avg60=0.69 avg300=0.22 total=5568318660 2026-11-27T17:48:37Z
+LD-ALL plan 68t pre-flight: 4967636 KB free on /dev/shm (need 1048576) 2026-11-27T17:48:37Z
+LD-ALL parser test ok 2026-11-27T17:50:02Z
+LD-ALL built wall=302s 2026-11-27T17:55:04Z
+LD-ALL binary e473d2503cbbb77eb6caf5845190aeca900a9377a184c23e01a10f4a32483c6e 2026-11-27T17:55:04Z
+LD-ALL CAND bin_sha equals the registered value e473d2503cbbb77eb6caf5845190aeca900a9377a184c23e01a10f4a32483c6e 2026-11-27T17:55:04Z
+LD-ALL CONTROL bin_sha equals the pinned value a0b4fb04e30aa33a00eb773cc78d558cf23880a650e0451846ad9518fb9438b8 2026-11-27T17:59:58Z
+LD-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-27T18:07:55Z
+LD-ALL test bashtests rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-11-27T18:07:56Z
+LD-ALL suites done tfail=0 2026-11-27T18:07:56Z
+LD-ALL suites ok; before the guard procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.24 avg60=0.08 avg300=0.06 total=5569759741 2026-11-27T18:08:04Z
+LD-ALL stage rep68t (plan 68t) smoke; procs_running=[1,1,1,1,1,] cargo=0 rustc=0 io=full avg10=0.10 avg60=0.07 avg300=0.06 total=5569759893 2026-11-27T18:08:13Z
+LD-ALL stage rep68t SMOKE-PASS 2026-11-27T18:13:15Z
+LD-ALL stage rep68t battery rc=0 wall=2710s 2026-11-27T18:58:25Z
+LD-ALL stage rep68t end ok=1  2026-11-27T18:58:25Z
+LD-ALL end plan 68t rep68t_ok=1 raptorpath=0 netns=0 2026-11-27T18:58:25Z

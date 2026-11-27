@@ -687,3 +687,32 @@ Code citations:
 - The next run reads `owner_timer_wakes`, the new `owner_timer_idle` and Σ`busy_us` per GB as the witnesses.
 
 **Rejected: a minimum batch before handing over.** Hand-offs do not carry the cost, and GSO sends are already equal. A minimum adds a constant with no provenance and a wait that L does not contain.
+
+## 13. Plan 68t result (2026-11-27, post-data, reported only)
+
+**Ran** on the VM: 54 of 54 rows, n = 3, seed 42, `stops=0`. CAND harness `37fa4be8` (gate tree `bb7133f5`: the `fs_over` fix a47da148, the `beta_max` / U / `ack_bind` gauges, the burst lead-in), BASE `4b2a480c`. Pre-flight green (10 of 10; gate-off sim traces identical to `f80715eb`, 0 of 14). Ledger in `docs/l1-raw/hoff68t/`. The `bbr_rs` app-limited fix (d3697f66) is NOT in this tree: the bursty cells read the controller before that fix.
+
+**Leak:** `fs_over` = 0 on every GATE row and path (closed/spent 0/0). As noted in §11 this now holds by construction; the U bound is the reading that tests B against β:
+- U (`B max > β max + one batch`): K2 1/644 windows, K8 leg 0 1/531, A2 0/648, P7 0/718, P8 2/717. Exceptions: K8 leg 1 163/531 (exempt traffic on the slow leg, §9) and the bursty cells 15–25 of about 430.
+- `beta_max` reaches 2 000–2 800 against a p50 of about 80 (W ≈ 241 kB with srtt 10–13 ms, L at its 2 ms floor). B does not follow it (b_max 186–616), so the spikes do not turn into staged data at these loads.
+
+**Bursty Realtime after a 5 s saturating lead-in (W1/W2/W4: 10/20/40-datagram frames every 33 ms), BASE / R4 / GATE:**
+
+| frame | goodput | in-order p99 | in-order max |
+|---|---|---|---|
+| 10 | 14.5 / 14.5 / 14.5 | 125 / 157 / 61 ms | 204 / 256 / 94 ms |
+| 20 | 15.5 / 15.6 / 15.4 | 174 / 146 / 45 ms | 338 / 189 / 90 ms |
+| 40 | 17.5 / 17.3 / 17.4 | 170 / 199 / 51 ms | 688 / 1 494 / 91 ms |
+
+- All arms in ProbeBw after 10 s (share 1.00). The gate binds on bursts (5.5–6.9 refusals per frame), so the cell tests what BU could not.
+- GATE has the shortest tail at every frame size (p99 2–4× lower, max under 100 ms); R4 alone has the worst tail at 40 (1.5 s). Repair share equal or higher with the gate (0.21–0.24).
+- `ack_bind` reads 0.89–0.93 here: Revision 5's proposed cap would bind on almost every bursty turn. That is evidence against shipping it as drafted (it would cut admission during bursts that the gate handles well today).
+
+**Auto at 75 and 80 % (P7, P8):**
+- P7 (75 Mbit): all arms carry 75; GATE coded share 0.131 against BASE 0.138 (`spare_bind` 0.041). Repair essentially intact.
+- P8 (80 Mbit): BASE and R4 saturate at 76 (in-order p99 751 / 723 ms); GATE carries 80 with p99 85 ms and coded share 0.096 (`spare_bind` 0.18).
+- The clamp starts to bind between 75 and 80 Mbit, as the arithmetic in §10's correction predicted (about 78). The 85 % reading is not a defect finding.
+
+**CPU (client per GB, GATE against BASE, cross-session on K):** K2 +8 %, K8 +13 %, A2 −19 %, P7 +4 %, P8 −1 %, W cells −1 to −11 %. The F3 decision-read trim and the `owner_timer_idle` counter are not in this tree.
+
+**Open:** c2 Bulk goodput DIAG68 0.990; c8 leg-0 batch DIAG68 (17.1 against 25.7); reopen max 15 ms against L 6.2 ms (the §9 gauge artifact still unfixed); the `bbr_rs` app-limited fix needs its own off-Bulk reading (the W cells are the place).

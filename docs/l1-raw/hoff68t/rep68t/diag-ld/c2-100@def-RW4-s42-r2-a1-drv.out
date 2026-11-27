@@ -1,0 +1,15 @@
+--- RWM-C perf pipeline=window mode=single hint=realtime A=c2 B=c2 ooo=0 extra='' T=default (80205840 x 1) rate=unset start=19:35:39 reliable=1
+[2m2026-11-27T18:35:39.631808Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_HONEST_ANCHOR=1 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_THREE_TERM=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_EMIT_BATCH=1 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_SP=0 RWM_DELTA=unset RWM_COPA_DELTA=unset RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 RWM_DIAG=1 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_RTOBS=0 RWM_FDIAG=0 RWM_TRACE=0 RWM_PFRAC=0 RWM_HOFF_GATE=0 RWM_PERF_RATE_MBIT=unset RWM_PERF_BURST=40/33+126000
+{"seconds":0.049261,"warmup":true}
+{"bytes":80205840,"dnf":0,"hint":"realtime","max_s":37.6014,"mean_mbps":17.064,"mean_s":37.6014,"median_s":37.6014,"min_s":37.6014,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+--- F2 undeliv=0 unframable=0
+    CPU: CPUSRV=7.69s CPUCLI=9.66s (srv=decoder cli=sender; whole-invocation incl warmup)
+    done 19:36:17
+--- server log tail:
+[CHI] n=0 max=0.0000 frac_gt_half=0.0000 mean=- rttvar_src=srtt_eighth cold=0
+[REQS] on=0 reports=0 spans=0 m_max=0 served=0 copy=0 coded=0 wa1_some=0 wa1_none=0 wa1_none_frac=- stale=0 budget_bound=0 open_wants=0 cause=other
+[SPAN] t=37.6s ack=1 win=[0,1] wsize=2 a_star=Some(1) delta=Some(1) owed=0.00 rr=0.500 debt=0.00 retx_buf=1 ar=0 agap=0/0 dg_rx=205545 dg_tx=205560
+    QDISC cli0: qdisc netem a522: root refcnt 11 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 119505612 bytes 114214 pkt (dropped 1073, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem a524: root refcnt 11 limit 1000 delay 5ms  3ms rate 100Mbit seed 3172907764835032100  Sent 20164390 bytes 61768 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    [TRUTH] leg=0 dev=cli0 egress_dgrams=117163 egress_skbs=42362 gso=2.77 netem_sent_dgrams=114214 netem_dropped_skbs=1073 backlog=0 lost=2949 loss=0.025170 rcvbuf_drops=0 rcvbuf_scope=netns
+    QCAP: /tmp/rwm-q.txt 12 lines
