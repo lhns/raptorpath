@@ -673,6 +673,10 @@ Draft, regenerated 2026-11-27 for review. Not accepted. It lists the decisions t
 ### Contradictions
 
 **Still contradicting at `harness67d`.** Each is resolved by a proposed text change, not a code fix:
+- **T2's red (Amendment 1 item 2(b), §2.1 item 3; third review).** Registered as "copies of k sent through a proactive slot"; the record is a taper red. It is the same `taper = 0` property that `s06_no_copy` and Stage A's outcome witness assert; T2's own subject (k recovered by NACK within the bound, at most one resend per SRTT) is not evaluated on S1, because the taper panic comes first. The ported T2 therefore adds no red-first evidence on recovery timing; on S2 it gates that timing as a green test. Amended: Proposed text §2.1 item 3.
+- **#63, AS's null.** §9 says an exact null; the code uses a Monte Carlo null. Amended: "AS's p-value is a Monte Carlo permutation estimate (the code's draw count), reported with its count."
+- **#68, c8 in-order delay.** §4.2 says two-sided; the code tests nothing. Amended: "reported as a relative median difference, untested."
+- **#110, block-1.** Its Proposed text calls the coded rule stricter; in Stage A it skips the c8 first rows, which is looser than "every arm's first real row". Amended: "stricter except in Stage A, where c8's first rows are not block-1 rows."
 0. **#156, where the touched targets run.** §2.2 says inside the suites run; three of them run only in the repeat's sim step or nowhere. Amended: Proposed text §2.2 (the touched-target list).
 1. **#12, tools-diff scope.** §1.3: "`git diff B0 S1 -- tools` and `git diff S1 S2 -- tools` are empty". The code compares `tools/l1` only. Amended: Proposed text #12 (§1.3).
 2. **#111, block-1 coverage.** G1 and G2 now run block 1 (battery:879-892). T and the dump twins still have none. Amended: Proposed text #111 (§5.2).
@@ -713,12 +717,12 @@ Defaults taken:
 - **A1 and S2's minimum:** resolved at `3092dc96` (Proposed text #59).
 
 Owner answers (2026-11-27, verbatim; the owner delegated the S06 judgement to Fable):
-- **P0, Ceph: cleared.** "i dont think i have any ceph instability." Sessions may launch; session 1's A/A rows are the witness that the VM is stable, and a failed A/A stops the batch.
+- **P0, Ceph: cleared.** "i dont think i have any ceph instability." Sessions may launch. No stability stop rule is added: plan 67 has no A/A rows, and infra aborts are read as registered (UNSCOREABLE, re-run), never as a verdict.
 - **#135, the launch smoke: waiver granted.** "i accept the rehearsals smoke rows." The launches rest on the rehearsal's smoke of the same sha-checked binaries plus the block-1 rule; the gaps listed above (T and the dump twins have no block-1) are accepted with it.
-- **S06's merge on its own guard-2 PASS: stands, conditionally.** "the merge approval does stand if fable is confident on the fix." Fable's conditions (2026-11-27); if all three hold, S06 merges on guard-2 PASS without a further question:
-  1. T2 red on S1 in both invocations with matching traces, and green on S2 with the slot witness (`pslot=Some(n)`, n > 0): met at the VM pre-pin check below, as amended in §2.1 item 3;
+- **S06's merge on its own guard-2 PASS: stands, conditionally.** "the merge approval does stand if fable is confident on the fix." Fable's conditions (2026-11-27, revised after the third review); if all three hold, S06 merges without a further question:
+  1. T2 red on S1 in both invocations with matching output lines (S1 panics before the test's own trace comparison, so the sim traces were not compared), and green on S2 with the slot witness (`pslot=Some(n)`, n > 0): met at the VM pre-pin check below, as amended in §2.1 item 3. The record was taken at S1 `507fb836` / S2 `90a13d59`; it carries to the final pins only if the S1→S2 engine patch-ids (`git diff S1 S2 -- raptorpath | git patch-id`) are unchanged at the pin, else T2 is re-run on the pinned trees;
   2. the harness67d S2 gating command, run once on the VM, prints a `Running` line and a non-zero passed count for every target: met (VM pre-pin check 1 below);
-  3. guard 2 passes with its off-Bulk stages carrying their execution witnesses (A, R1, R2 as registered), not on Bulk rows alone.
+  3. guard 2 reads ELIGIBLE TO MERGE under §4.5, every bullet (suites and repeats, G2, AS, R1, the below-floor hold-flag read, R2-HOLD not fired or cleared, binid, the ADR-0084 Amendment 1 rewrite before the merge). R1-BLIND is accepted only with A's and R2's execution witnesses met, so the merge never rests on Bulk rows alone. A fired R2-HOLD or a below-floor flag is cleared only by a written read (Fable's, owner-delegated), recorded in the Result before the merge.
 
 ### Seat heads at the 2026-11-27 main merge (pins, full shas)
 
@@ -733,7 +737,7 @@ Main moved from `9bc656bf` to `39c41f2a4d8597f770db17db9984dd4c081e92a1`: the wa
 | P2 (P2T) | `vmb-p2` | `4664086538df8d1daace6d49e684ec99a87eae2b` | S2 + the same diff; P2T as P1T |
 | vmb-c8, vmb-tun | none | not cut | only after a G1 FAIL (defaults taken) |
 
-**These pins move once more** when `harness67d` merges to main: S1 and S2 take main again (tools only), and P1 and P2 are rebuilt on the new heads. The second amendment pins the final shas.
+**These pins move once more** when `harness67d` (with the third review's fixes, `harness67e`) merges to main: B0 becomes the new main, S1 and S2 take main again (tools only), and P1 and P2 are rebuilt on the new heads. B0 moves too, because the tools witness compares its `tools/l1` with the session harness. The second amendment pins the final shas.
 
 Witnesses at these heads (§1.3):
 - `git diff B0 S1 -- tools` is empty; `git diff S1 S2 -- tools` is `tools/ci/coverage_sites.json` only (#12).
@@ -773,6 +777,19 @@ Each item replaces or extends the registration text named. Since `9bc656bf`, har
 - **§2.1 item 3 (T2's red, Fable 2026-11-27).** Replace "It must be shown red on S1's engine (copies of k sent through a proactive slot) and green on S2." with "It must be shown red on S1's engine and green on S2. The red is the run-wide `taper` assertion (`taper = 0`): S1's copy branch sends proactive-slot copies in T2's scenario (`taper > 0`), S2 sends none while taking slots (`pslot > 0`). The k-specific assertion (no copy of k through a proactive slot) is kept, but it is not a discriminating red: at the 2026-11-27 check it passed on S1 too, so the record claims a taper red only, not that k is slot-copied on S1."
 - **§2.2, the S2 repeat.** Replace "S2: every non-ignored test in `s06_no_copy` and `s06_reactive` (T2 runs as a sim test, §2.1 item 3); `holeclass_reachability`" with "S2: every non-ignored test in `s06_no_copy` and `holeclass_reachability`. `s06_reactive` holds no non-ignored test (T2 runs as the sim test `sim_s06_nack`, T3 records only, §2.1 item 3), so it is not repeated. Each run must pass at least one test in each named target."
 - **§2.2, the touched-target list (#156).** Replace "inside the suites run; listed so a seat-specific failure is named" with "`holeclass_reachability`, `recovery_bench`, `sim_nack_test`, `place_arms_reachability` and `s06_no_copy` inside the suites run; `sim_shed_reach`, `sim_lost_tail` and `sim_s06_nack` in the repeat's sim step (#29); `s06_reactive` holds only record-only `#[ignore]` tests and runs nowhere in this batch. Session 0's TARGETS line reports what the suites saw, and gates nothing."
+
+### Third review (2026-11-27, fresh Opus reviewer, at `a9fd5aab` / harness67d `5826606a`)
+
+Verdict: ready after fixes. Text fixed here: the P0 stop rule (no A/A rows exist), Fable's S06 conditions aligned with §4.5, the T2 red listed as a contradiction, B0 in the pin move, #63, #68, #110. Code fixed on `harness67e` (from harness67d; each with a red-first test), all decided by the coordinator:
+1. GATE-67G verdict classes: FAIL only for GATE-41d FAIL, S06-FAIL or G2-TAPER-NONZERO; NO VERDICT and UNSCOREABLE (aborts, NOT EVALUATED, no S2 row, unreplaced witness failures) mean re-run, and never trigger §3.4's bisection or `LD_G2_FAIL67`. This replaces Proposed text #39's "an abort reads FAIL".
+2. Stage T: aborts read `T UNSCOREABLE`, a cut battery `T TRUNCATED`; T FAIL only on refusal lines present and wrong.
+3. R1 and A1-R: unreplaced VOID-* rows leave the completion sets (crashes still count as not completing); R1-BLIND counts LIVE S1 rows; too few live rows read UNSCOREABLE. This replaces the #77/#78 defaults.
+4. The repeat budget: S2 gets the 60 min minus S1's elapsed time, as §2.2 registers (#25).
+5. `S2-TAPER-NONZERO` on every S2-family row in A, R1, pool, dump twins and R2, originals and replacements alike; a hit makes guard 2 NOT ELIGIBLE (added to §4.5).
+6. NO_DATA is not replaceable for candidate arms (it stays a crash, as in 41d; #49).
+7. R2-HOLD with mixed account labels runs on `final=1` rows only, else UNSCOREABLE; `oldest_unchanged_max` is read regardless (replaces the #90 default).
+8. A rehearsal S2-family smoke failure marks guard 2 VOID and lets the other smokes run, as #126 does for R2 (replaces the #122/#124 defaults).
+Not changed: the sim digest compares sorted ok/FAILED lines only (adds nothing beyond "both runs passed"; reported as such); T clause 3 is vacuous if B0 completes nothing (as registered); the pool block has no own session after a G2 FAIL (its own amendment, as before).
 
 ### VM pre-pin checks (2026-11-27, coordinator; output on the VM in `~/vmb1-in/check.out`)
 
