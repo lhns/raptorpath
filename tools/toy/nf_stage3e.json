@@ -1,0 +1,1476 @@
+{
+ "notes": "p95 over the first n seeds of |A - A'|; A' = phase variant 1 of A; A = S5 at T=inf, hold 0 (tinf, build 8.5) or at the cell's primary lifetime (primary, registration 5), repair off; the larger of the two per readout; degenerate = zero in both, comparisons on it are reported only",
+ "by_n": {
+  "3": {
+   "cells": {
+    "CL": {
+     "share_any": 0.00230899999999995,
+     "share_T": 0.0023099999999999453,
+     "share_by_0p4": 0.011059000000000001,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0011545000000000249,
+     "share_T": 0.0011550000000000171,
+     "share_by_0p4": 0.0055345000000000645,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.0001483333333333725,
+     "share_T": 0.0001483333333333725,
+     "share_by_0p4": 0.0001483333333333725
+    },
+    "CLw-long": {
+     "share_any": 0.0011362500000000608,
+     "share_T": 0.0011312499999999726,
+     "share_by_0p4": 0.001960000000000028,
+     "recovery_time": 0.09000000000000127
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333332966,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.00013999999999998456,
+     "share_T": 0.00013999999999998456,
+     "share_by_0p4": 0.012489999999999966,
+     "recovery_time": 0.36000000000000026
+    },
+    "K-I2": {
+     "share_any": 0.0006333333333333634,
+     "share_T": 0.0006333333333333634,
+     "share_by_0p4": 0.0006333333333333634,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0012666666666666382,
+     "share_T": 0.0012666666666666382,
+     "share_by_0p4": 0.0012666666666666382,
+     "recovery_time": 29.740000000000002
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0002999999999999997
+    },
+    "CLc": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "OV-long": {
+     "share_any": 2.1666666666653175e-05,
+     "share_T": 2.1666666666653175e-05,
+     "share_by_0p4": 2.4166666666664004e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.00017799999999996708,
+     "share_T": 0.00018449999999998746,
+     "share_by_2": 0.00021400000000006968,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 1.7499999999970315e-05,
+     "share_T": 1.7499999999970315e-05,
+     "share_by_2": 1.958333333333395e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    }
+   },
+   "degenerate": {
+    "CL": [
+     "recovery_time"
+    ],
+    "CL-long": [],
+    "OV": [],
+    "CLw-long": [],
+    "RT": [
+     "share_any",
+     "share_T",
+     "share_by_0p12"
+    ],
+    "CLs-long": [],
+    "K-I2": [
+     "recovery_time"
+    ],
+    "K-L10": [],
+    "K-OV": [
+     "share_any",
+     "share_T"
+    ],
+    "CLc": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "OV-long": [],
+    "CLc-v": [
+     "share_any",
+     "share_T",
+     "share_by_2"
+    ],
+    "CL-long-v": [],
+    "OV-long-v": [],
+    "Ec": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "E-I2": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "M-I2": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ]
+   },
+   "tinf": {
+    "CL": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.011059000000000001,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0055345000000000645,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 9.666666666665601e-05
+    },
+    "CLw-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.001960000000000028,
+     "recovery_time": 0.09000000000000127
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333332966,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.012489999999999966,
+     "recovery_time": 0.36000000000000026
+    },
+    "K-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0006333333333333634,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.001266666666666627,
+     "recovery_time": 29.740000000000002
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0002999999999999997
+    },
+    "CLc": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "OV-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 2.4166666666664004e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.00021400000000006968,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 1.958333333333395e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    }
+   },
+   "primary": {
+    "CL": {
+     "share_any": 0.00230899999999995,
+     "share_T": 0.0023099999999999453,
+     "share_by_0p4": 0.0023099999999999453,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0011545000000000249,
+     "share_T": 0.0011550000000000171,
+     "share_by_0p4": 0.0011550000000000171,
+     "recovery_time": 0.0
+    },
+    "OV": {
+     "share_any": 0.0001483333333333725,
+     "share_T": 0.0001483333333333725,
+     "share_by_0p4": 0.0001483333333333725
+    },
+    "CLw-long": {
+     "share_any": 0.0011362500000000608,
+     "share_T": 0.0011312499999999726,
+     "share_by_0p4": 0.0011312499999999726,
+     "recovery_time": 0.0
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.00013999999999998456,
+     "share_T": 0.00013999999999998456,
+     "share_by_0p4": 0.00013999999999998456,
+     "recovery_time": 0.0
+    },
+    "K-I2": {
+     "share_any": 0.0006333333333333634,
+     "share_T": 0.0006333333333333634,
+     "share_by_0p4": 0.0006333333333333634,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0012666666666666382,
+     "share_T": 0.0012666666666666382,
+     "share_by_0p4": 0.0012666666666666382,
+     "recovery_time": 29.740000000000002
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "CLc": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "OV-long": {
+     "share_any": 2.1666666666653175e-05,
+     "share_T": 2.1666666666653175e-05,
+     "share_by_0p4": 2.1666666666653175e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.00017799999999996708,
+     "share_T": 0.00018449999999998746,
+     "share_by_2": 0.00018449999999998746,
+     "recovery_time": 0.08999999999999966
+    },
+    "OV-long-v": {
+     "share_any": 1.7499999999970315e-05,
+     "share_T": 1.7499999999970315e-05,
+     "share_by_2": 1.7499999999970315e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    }
+   }
+  },
+  "6": {
+   "cells": {
+    "CL": {
+     "share_any": 0.0025324999999999376,
+     "share_T": 0.0025324999999999376,
+     "share_by_0p4": 0.010819999999999996,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0012662500000000243,
+     "share_T": 0.0012662500000000243,
+     "share_by_0p4": 0.0054187500000000555,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.00013333333333337416,
+     "share_T": 0.00013333333333337416,
+     "share_by_0p4": 0.00013749999999998486
+    },
+    "CLw-long": {
+     "share_any": 0.0021640624999999525,
+     "share_T": 0.0021671875000000285,
+     "share_by_0p4": 0.0021671875000000285,
+     "recovery_time": 0.10000000000000142
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333332966,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0004500000000000337,
+     "share_T": 0.0004500000000000337,
+     "share_by_0p4": 0.011049999999999977,
+     "recovery_time": 0.30000000000000027
+    },
+    "K-I2": {
+     "share_any": 0.0005833333333333801,
+     "share_T": 0.0005833333333333801,
+     "share_by_0p4": 0.0005833333333333801,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0013333333333332975,
+     "share_T": 0.0013333333333332975,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 26.225
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0002499999999999998
+    },
+    "CLc": {
+     "share_any": 7.499999999965867e-06,
+     "share_T": 7.499999999965867e-06,
+     "share_by_0p4": 7.499999999965867e-06
+    },
+    "OV-long": {
+     "share_any": 2.2395833333299642e-05,
+     "share_T": 2.2395833333299642e-05,
+     "share_by_0p4": 3.4374999999996214e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.00017499999999998073,
+     "share_T": 0.00018374999999998254,
+     "share_by_2": 0.00021250000000005986,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 2.031250000000817e-05,
+     "share_T": 2.031250000000817e-05,
+     "share_by_2": 7.083333333334635e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    }
+   },
+   "degenerate": {
+    "CL": [
+     "recovery_time"
+    ],
+    "CL-long": [],
+    "OV": [],
+    "CLw-long": [],
+    "RT": [
+     "share_any",
+     "share_T",
+     "share_by_0p12"
+    ],
+    "CLs-long": [],
+    "K-I2": [
+     "recovery_time"
+    ],
+    "K-L10": [],
+    "K-OV": [
+     "share_any",
+     "share_T"
+    ],
+    "CLc": [],
+    "OV-long": [],
+    "CLc-v": [
+     "share_any",
+     "share_T",
+     "share_by_2"
+    ],
+    "CL-long-v": [],
+    "OV-long-v": [],
+    "Ec": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "E-I2": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "M-I2": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ]
+   },
+   "tinf": {
+    "CL": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.010819999999999996,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0054187500000000555,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.00013749999999998486
+    },
+    "CLw-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.001853125000000011,
+     "recovery_time": 0.10000000000000142
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333332966,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.011049999999999977,
+     "recovery_time": 0.30000000000000027
+    },
+    "K-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0005833333333333801,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 26.225
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0002499999999999998
+    },
+    "CLc": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "OV-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 3.4374999999996214e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.00021250000000005986,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 7.083333333334635e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    }
+   },
+   "primary": {
+    "CL": {
+     "share_any": 0.0025324999999999376,
+     "share_T": 0.0025324999999999376,
+     "share_by_0p4": 0.0025324999999999376,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0012662500000000243,
+     "share_T": 0.0012662500000000243,
+     "share_by_0p4": 0.0012662500000000243,
+     "recovery_time": 0.0
+    },
+    "OV": {
+     "share_any": 0.00013333333333337416,
+     "share_T": 0.00013333333333337416,
+     "share_by_0p4": 0.00013333333333337416
+    },
+    "CLw-long": {
+     "share_any": 0.0021640624999999525,
+     "share_T": 0.0021671875000000285,
+     "share_by_0p4": 0.0021671875000000285,
+     "recovery_time": 0.0
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0004500000000000337,
+     "share_T": 0.0004500000000000337,
+     "share_by_0p4": 0.0004500000000000337,
+     "recovery_time": 0.0
+    },
+    "K-I2": {
+     "share_any": 0.0005833333333333801,
+     "share_T": 0.0005833333333333801,
+     "share_by_0p4": 0.0005833333333333801,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0013333333333332975,
+     "share_T": 0.0013333333333332975,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 26.225
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "CLc": {
+     "share_any": 7.499999999965867e-06,
+     "share_T": 7.499999999965867e-06,
+     "share_by_0p4": 7.499999999965867e-06
+    },
+    "OV-long": {
+     "share_any": 2.2395833333299642e-05,
+     "share_T": 2.2395833333299642e-05,
+     "share_by_0p4": 2.2395833333299642e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.00017499999999998073,
+     "share_T": 0.00018374999999998254,
+     "share_by_2": 0.00018374999999998254,
+     "recovery_time": 0.10000000000000098
+    },
+    "OV-long-v": {
+     "share_any": 2.031250000000817e-05,
+     "share_T": 2.031250000000817e-05,
+     "share_by_2": 2.031250000000817e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    }
+   }
+  },
+  "12": {
+   "cells": {
+    "CL": {
+     "share_any": 0.002511499999999933,
+     "share_T": 0.002511499999999933,
+     "share_by_0p4": 0.010207999999999983,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.001255750000000022,
+     "share_T": 0.001255750000000022,
+     "share_by_0p4": 0.0051172500000000445,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.00010333333333337739,
+     "share_T": 0.00010333333333337739,
+     "share_by_0p4": 0.00025499999999998424
+    },
+    "CLw-long": {
+     "share_any": 0.0018134374999999696,
+     "share_T": 0.001812812500000021,
+     "share_by_0p4": 0.001812812500000021,
+     "recovery_time": 0.10000000000000142
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333333466,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0006400000000000404,
+     "share_T": 0.0006400000000000404,
+     "share_by_0p4": 0.008169999999999986,
+     "recovery_time": 0.23499999999999976
+    },
+    "K-I2": {
+     "share_any": 0.0004833333333333909,
+     "share_T": 0.0004833333333333909,
+     "share_by_0p4": 0.0004833333333333909,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0013333333333332975,
+     "share_T": 0.0013333333333332975,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 23.394999999999992
+    },
+    "K-OV": {
+     "share_any": 0.00014999999999998324,
+     "share_T": 0.0,
+     "share_by_0p4": 0.00014999999999999963
+    },
+    "CLc": {
+     "share_any": 4.499999999979513e-06,
+     "share_T": 4.499999999979513e-06,
+     "share_by_0p4": 4.499999999979513e-06
+    },
+    "OV-long": {
+     "share_any": 2.177083333327889e-05,
+     "share_T": 2.177083333327889e-05,
+     "share_by_0p4": 6.374999999999606e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.000169000000000008,
+     "share_T": 0.00018224999999997272,
+     "share_by_2": 0.0002095000000000402,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 1.968749999998742e-05,
+     "share_T": 1.968749999998742e-05,
+     "share_by_2": 5.885416666668027e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 3.704618424302247e-05
+    }
+   },
+   "degenerate": {
+    "CL": [
+     "recovery_time"
+    ],
+    "CL-long": [],
+    "OV": [],
+    "CLw-long": [],
+    "RT": [
+     "share_any",
+     "share_T",
+     "share_by_0p12"
+    ],
+    "CLs-long": [],
+    "K-I2": [
+     "recovery_time"
+    ],
+    "K-L10": [],
+    "K-OV": [
+     "share_T"
+    ],
+    "CLc": [],
+    "OV-long": [],
+    "CLc-v": [
+     "share_any",
+     "share_T",
+     "share_by_2"
+    ],
+    "CL-long-v": [],
+    "OV-long-v": [],
+    "Ec": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "E-I2": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "M-I2": [
+     "share_any",
+     "share_T"
+    ]
+   },
+   "tinf": {
+    "CL": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.010207999999999983,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0051172500000000445,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.00025499999999998424
+    },
+    "CLw-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0016393749999999757,
+     "recovery_time": 0.10000000000000142
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333333466,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.008169999999999986,
+     "recovery_time": 0.23499999999999976
+    },
+    "K-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0004833333333333909,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 23.394999999999992
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.00014999999999999963
+    },
+    "CLc": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "OV-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 6.374999999999606e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0002095000000000402,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 5.885416666668027e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 3.704618424302247e-05
+    }
+   },
+   "primary": {
+    "CL": {
+     "share_any": 0.002511499999999933,
+     "share_T": 0.002511499999999933,
+     "share_by_0p4": 0.002511499999999933,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.001255750000000022,
+     "share_T": 0.001255750000000022,
+     "share_by_0p4": 0.001255750000000022,
+     "recovery_time": 0.0
+    },
+    "OV": {
+     "share_any": 0.00010333333333337739,
+     "share_T": 0.00010333333333337739,
+     "share_by_0p4": 0.00010333333333337739
+    },
+    "CLw-long": {
+     "share_any": 0.0018134374999999696,
+     "share_T": 0.001812812500000021,
+     "share_by_0p4": 0.001812812500000021,
+     "recovery_time": 0.0
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0006400000000000404,
+     "share_T": 0.0006400000000000404,
+     "share_by_0p4": 0.0006400000000000404,
+     "recovery_time": 0.0
+    },
+    "K-I2": {
+     "share_any": 0.0004833333333333909,
+     "share_T": 0.0004833333333333909,
+     "share_by_0p4": 0.0004833333333333909,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0013333333333332975,
+     "share_T": 0.0013333333333332975,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 23.394999999999992
+    },
+    "K-OV": {
+     "share_any": 0.00014999999999998324,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "CLc": {
+     "share_any": 4.499999999979513e-06,
+     "share_T": 4.499999999979513e-06,
+     "share_by_0p4": 4.499999999979513e-06
+    },
+    "OV-long": {
+     "share_any": 2.177083333327889e-05,
+     "share_T": 2.177083333327889e-05,
+     "share_by_0p4": 2.177083333327889e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.000169000000000008,
+     "share_T": 0.00018224999999997272,
+     "share_by_2": 0.00018224999999997272,
+     "recovery_time": 0.10000000000000045
+    },
+    "OV-long-v": {
+     "share_any": 1.968749999998742e-05,
+     "share_T": 1.968749999998742e-05,
+     "share_by_2": 1.968749999998742e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 3.704618424302247e-05
+    }
+   }
+  },
+  "24": {
+   "cells": {
+    "CL": {
+     "share_any": 0.002511499999999933,
+     "share_T": 0.002511499999999933,
+     "share_by_0p4": 0.010207999999999983,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.001255750000000022,
+     "share_T": 0.001255750000000022,
+     "share_by_0p4": 0.0051172500000000445,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.00010333333333337739,
+     "share_T": 0.00010333333333337739,
+     "share_by_0p4": 0.00025499999999998424
+    },
+    "CLw-long": {
+     "share_any": 0.0018134374999999696,
+     "share_T": 0.001812812500000021,
+     "share_by_0p4": 0.001812812500000021,
+     "recovery_time": 0.10000000000000142
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333333466,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0006400000000000404,
+     "share_T": 0.0006400000000000404,
+     "share_by_0p4": 0.008169999999999986,
+     "recovery_time": 0.23499999999999976
+    },
+    "K-I2": {
+     "share_any": 0.0004833333333333909,
+     "share_T": 0.0004833333333333909,
+     "share_by_0p4": 0.0004833333333333909,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0013333333333332975,
+     "share_T": 0.0013333333333332975,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 23.394999999999992
+    },
+    "K-OV": {
+     "share_any": 0.00014999999999998324,
+     "share_T": 0.0,
+     "share_by_0p4": 0.00014999999999999963
+    },
+    "CLc": {
+     "share_any": 4.499999999979513e-06,
+     "share_T": 4.499999999979513e-06,
+     "share_by_0p4": 4.499999999979513e-06
+    },
+    "OV-long": {
+     "share_any": 2.177083333327889e-05,
+     "share_T": 2.177083333327889e-05,
+     "share_by_0p4": 6.374999999999606e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.000169000000000008,
+     "share_T": 0.00018224999999997272,
+     "share_by_2": 0.0002095000000000402,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 1.968749999998742e-05,
+     "share_T": 1.968749999998742e-05,
+     "share_by_2": 5.885416666668027e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 3.704618424302247e-05
+    }
+   },
+   "degenerate": {
+    "CL": [
+     "recovery_time"
+    ],
+    "CL-long": [],
+    "OV": [],
+    "CLw-long": [],
+    "RT": [
+     "share_any",
+     "share_T",
+     "share_by_0p12"
+    ],
+    "CLs-long": [],
+    "K-I2": [
+     "recovery_time"
+    ],
+    "K-L10": [],
+    "K-OV": [
+     "share_T"
+    ],
+    "CLc": [],
+    "OV-long": [],
+    "CLc-v": [
+     "share_any",
+     "share_T",
+     "share_by_2"
+    ],
+    "CL-long-v": [],
+    "OV-long-v": [],
+    "Ec": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "E-I2": [
+     "share_any",
+     "share_T",
+     "share_by_0p4"
+    ],
+    "M-I2": [
+     "share_any",
+     "share_T"
+    ]
+   },
+   "tinf": {
+    "CL": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.010207999999999983,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0051172500000000445,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.00025499999999998424
+    },
+    "CLw-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0016393749999999757,
+     "recovery_time": 0.10000000000000142
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0003333333333333466,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.008169999999999986,
+     "recovery_time": 0.23499999999999976
+    },
+    "K-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0004833333333333909,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 23.394999999999992
+    },
+    "K-OV": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.00014999999999999963
+    },
+    "CLc": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "OV-long": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 6.374999999999606e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0002095000000000402,
+     "recovery_time": 0.10000000000000142
+    },
+    "OV-long-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 5.885416666668027e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 3.704618424302247e-05
+    }
+   },
+   "primary": {
+    "CL": {
+     "share_any": 0.002511499999999933,
+     "share_T": 0.002511499999999933,
+     "share_by_0p4": 0.002511499999999933,
+     "recovery_time": 0.0
+    },
+    "CL-long": {
+     "share_any": 0.001255750000000022,
+     "share_T": 0.001255750000000022,
+     "share_by_0p4": 0.001255750000000022,
+     "recovery_time": 0.0
+    },
+    "OV": {
+     "share_any": 0.00010333333333337739,
+     "share_T": 0.00010333333333337739,
+     "share_by_0p4": 0.00010333333333337739
+    },
+    "CLw-long": {
+     "share_any": 0.0018134374999999696,
+     "share_T": 0.001812812500000021,
+     "share_by_0p4": 0.001812812500000021,
+     "recovery_time": 0.0
+    },
+    "RT": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0,
+     "share_by_0p12": 0.0
+    },
+    "CLs-long": {
+     "share_any": 0.0006400000000000404,
+     "share_T": 0.0006400000000000404,
+     "share_by_0p4": 0.0006400000000000404,
+     "recovery_time": 0.0
+    },
+    "K-I2": {
+     "share_any": 0.0004833333333333909,
+     "share_T": 0.0004833333333333909,
+     "share_by_0p4": 0.0004833333333333909,
+     "recovery_time": 0.0
+    },
+    "K-L10": {
+     "share_any": 0.0013333333333332975,
+     "share_T": 0.0013333333333332975,
+     "share_by_0p4": 0.0013333333333332975,
+     "recovery_time": 23.394999999999992
+    },
+    "K-OV": {
+     "share_any": 0.00014999999999998324,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "CLc": {
+     "share_any": 4.499999999979513e-06,
+     "share_T": 4.499999999979513e-06,
+     "share_by_0p4": 4.499999999979513e-06
+    },
+    "OV-long": {
+     "share_any": 2.177083333327889e-05,
+     "share_T": 2.177083333327889e-05,
+     "share_by_0p4": 2.177083333327889e-05
+    },
+    "CLc-v": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_2": 0.0
+    },
+    "CL-long-v": {
+     "share_any": 0.000169000000000008,
+     "share_T": 0.00018224999999997272,
+     "share_by_2": 0.00018224999999997272,
+     "recovery_time": 0.10000000000000045
+    },
+    "OV-long-v": {
+     "share_any": 1.968749999998742e-05,
+     "share_T": 1.968749999998742e-05,
+     "share_by_2": 1.968749999998742e-05
+    },
+    "Ec": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "E-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 0.0
+    },
+    "M-I2": {
+     "share_any": 0.0,
+     "share_T": 0.0,
+     "share_by_0p4": 3.704618424302247e-05
+    }
+   }
+  }
+ },
+ "cells": {
+  "CL": {
+   "share_any": 0.002511499999999933,
+   "share_T": 0.002511499999999933,
+   "share_by_0p4": 0.010207999999999983,
+   "recovery_time": 0.0
+  },
+  "CL-long": {
+   "share_any": 0.001255750000000022,
+   "share_T": 0.001255750000000022,
+   "share_by_0p4": 0.0051172500000000445,
+   "recovery_time": 0.10000000000000142
+  },
+  "OV": {
+   "share_any": 0.00010333333333337739,
+   "share_T": 0.00010333333333337739,
+   "share_by_0p4": 0.00025499999999998424
+  },
+  "CLw-long": {
+   "share_any": 0.0018134374999999696,
+   "share_T": 0.001812812500000021,
+   "share_by_0p4": 0.001812812500000021,
+   "recovery_time": 0.10000000000000142
+  },
+  "RT": {
+   "share_any": 0.0,
+   "share_T": 0.0,
+   "share_by_0p4": 0.0003333333333333466,
+   "share_by_0p12": 0.0
+  },
+  "CLs-long": {
+   "share_any": 0.0006400000000000404,
+   "share_T": 0.0006400000000000404,
+   "share_by_0p4": 0.008169999999999986,
+   "recovery_time": 0.23499999999999976
+  },
+  "K-I2": {
+   "share_any": 0.0004833333333333909,
+   "share_T": 0.0004833333333333909,
+   "share_by_0p4": 0.0004833333333333909,
+   "recovery_time": 0.0
+  },
+  "K-L10": {
+   "share_any": 0.0013333333333332975,
+   "share_T": 0.0013333333333332975,
+   "share_by_0p4": 0.0013333333333332975,
+   "recovery_time": 23.394999999999992
+  },
+  "K-OV": {
+   "share_any": 0.00014999999999998324,
+   "share_T": 0.0,
+   "share_by_0p4": 0.00014999999999999963
+  },
+  "CLc": {
+   "share_any": 4.499999999979513e-06,
+   "share_T": 4.499999999979513e-06,
+   "share_by_0p4": 4.499999999979513e-06
+  },
+  "OV-long": {
+   "share_any": 2.177083333327889e-05,
+   "share_T": 2.177083333327889e-05,
+   "share_by_0p4": 6.374999999999606e-05
+  },
+  "CLc-v": {
+   "share_any": 0.0,
+   "share_T": 0.0,
+   "share_by_2": 0.0
+  },
+  "CL-long-v": {
+   "share_any": 0.000169000000000008,
+   "share_T": 0.00018224999999997272,
+   "share_by_2": 0.0002095000000000402,
+   "recovery_time": 0.10000000000000142
+  },
+  "OV-long-v": {
+   "share_any": 1.968749999998742e-05,
+   "share_T": 1.968749999998742e-05,
+   "share_by_2": 5.885416666668027e-05
+  },
+  "Ec": {
+   "share_any": 0.0,
+   "share_T": 0.0,
+   "share_by_0p4": 0.0
+  },
+  "E-I2": {
+   "share_any": 0.0,
+   "share_T": 0.0,
+   "share_by_0p4": 0.0
+  },
+  "M-I2": {
+   "share_any": 0.0,
+   "share_T": 0.0,
+   "share_by_0p4": 3.704618424302247e-05
+  }
+ },
+ "degenerate": {
+  "CL": [
+   "recovery_time"
+  ],
+  "CL-long": [],
+  "OV": [],
+  "CLw-long": [],
+  "RT": [
+   "share_any",
+   "share_T",
+   "share_by_0p12"
+  ],
+  "CLs-long": [],
+  "K-I2": [
+   "recovery_time"
+  ],
+  "K-L10": [],
+  "K-OV": [
+   "share_T"
+  ],
+  "CLc": [],
+  "OV-long": [],
+  "CLc-v": [
+   "share_any",
+   "share_T",
+   "share_by_2"
+  ],
+  "CL-long-v": [],
+  "OV-long-v": [],
+  "Ec": [
+   "share_any",
+   "share_T",
+   "share_by_0p4"
+  ],
+  "E-I2": [
+   "share_any",
+   "share_T",
+   "share_by_0p4"
+  ],
+  "M-I2": [
+   "share_any",
+   "share_T"
+  ]
+ }
+}
