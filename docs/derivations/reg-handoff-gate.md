@@ -179,3 +179,33 @@ Step 2 does not run on this.
 - **(b)** The law's own witness replaces it: `fs_over`, first sends staged while B ≥ β, must be 0 on every GATE row (`STOP68` otherwise). The bypass paths are counted separately (`fs_bypass`). The exempt part of the excess, β p5/p50/p95, the owner's longest drain gap and the staged-but-unhanded maximum are reported beside it.
 - **(c)** A rerun, plan 68r, carries these counters on the 9 GATE rows plus LR and PC at three arms, with the pacer restored in both trees (4ee1df9b ported).
 - **(d)** Step 2 waits for 68r. If 68r shows `fs_over` > 0, the gate is at fault and is fixed before step 2. If the excess is exempt traffic or an owner stall, it goes to the derivation (§6.8's bound on exempt traffic) before step 2.
+
+## 8. Plan 68r result (2026-11-27, post-data, reported only)
+
+**Ran** on the VM: 36 of 36 rows, n = 3, seed 42, `stops=20`. CAND `5fd66615` (gate tree `269c11fe`, witness counters + pacer), BASE `ac46d5f1` (`4b245251` + pacer). Pre-flight: gate-tree build, release lib, loopback, `sim_determinism` and `sim_cross_os` green; gate-off sim traces identical to `f80715eb` (0 of 14 differ). Ledger and report in `docs/l1-raw/hoff68r/`.
+
+**New arm Q** ("gate alone": the CAND binary on quinn's BBR, `RWM_HOFF_GATE=1`) separates the two changes that GATE against BASE bundles. On the K cells, BASE and R4 come from the plan-68 ledger (older binaries, cross-session); GATE's repeat is the drift witness (goodput within 1 %, K2 delay 41 → 49 ms). GATE against Q is the clean within-session pair.
+
+| cell | in-order mean, BASE / Q / GATE | GATE p99 / max | goodput Q/BASE, GATE/BASE |
+|---|---|---|---|
+| c2 Bulk (K2) | 344 / 239 / 49 ms | 118 / 217 ms | 0.998, 0.994 |
+| c8 Bulk (K8) | 4 233 / 1 491 / 123 ms | 293 / 445 ms | 1.073, 1.103 |
+| c2 Auto (A2) | 392 / 199 / 46 ms | 110 / 248 ms | 1.151, 1.177 |
+
+- **Attribution:** the gate alone removes 30–65 % of the delay and most of the goodput gain; the delay reaches 40–120 ms only with `bbr_rs` and the gate together. "The gain comes from the gate" stays withdrawn; both are needed. K2 goodput differences are inside cross-session drift.
+- **CPU:** GATE and Q both pay +5–13 % CPU per GB on K2 and K8 client. Part of it is the new witness (a view read per first send), so it is not booked to the gate law.
+
+**Auto with headroom (PC, Auto paced at 70 % of the link):** repair comes back. Coded share GATE 0.133 against BASE 0.136, `spare_bind` 0.018, goodput equal, in-order p99 40.5 against 41.8 ms, max 70 against 182 ms. The report's own label for the coded-share reading is A/A-UNRESOLVED. 70–100 % load is unmeasured.
+- **Ledger verdict (CLAUDE.md, pinned clamp):** on a saturated path the predicate pins repair off (`spare_bind` 0.99), and GATE at Auto equals GATE at Bulk on every readout (A2 and K2 both 89.8 Mbit). Measured range: the clamp is pinned at 100 % offered load and nearly free at 70 %. With the gate, δ has no effect between Auto and Bulk on a full link. That is the predicate's registered behaviour (§6.8), recorded here as a finding with its range, not a footnote.
+- **Worst-case delay:** BA2 has no percentiles (old ledger); GA2's max (248 ms) is below BA2's mean (392 ms).
+- **Bursty Realtime (BU):** still unbuilt (no bursty-frame source), so unproven.
+
+**Stops:**
+- **`fs_over` (14 stops, on GATE and Q rows):** 1–13 first sends per row staged with B ≥ β through no tagged site, out of about 1.5 M first sends; `fs_bypass` (deferred intake) 0–22. Amendment 1(b) makes this the stop, so step 2 waits. The witness reads the view again after the gate's own check, so the count may be read skew; the data cannot tell skew from an untagged path.
+- **Low rate (6 stops, GLR):** repairs per source 0.023–0.026 against the law's r ≈ 0.44–0.47, and B max 3 > 2. BASE and R4 read the same (0.022–0.027, B max 3–4), so it is not the gate. It is a separate finding: at 36 datagrams/s Realtime the engine sends about 2.5 % repair where its own r reads about 0.45 (or the rule compares different quantities). Open; the B ≤ 2 premise is wrong on every arm.
+
+**What lets B exceed β (the read B-over-β line, 14 rows):** first sends are ruled out (≤ 13 + 22 per 1.5 M). Exempt traffic is 0 of the worst excess at K2 and K8 leg 0, but a real part at A2 (39 of 81) and K8 leg 1 (55 of 68). The unbooked rest lumps "β dipped" (β p5 down to 14 against p50 80) with "the owner had not drained" (`pend_max` 122–168, `own_gap_max` 43–166 ms). Narrowed to those two; a per-window join (end-sample β against p50, beside `pend_max` and `own_gap_max`) separates them.
+
+**Other open:** Q K8 leg 1's `own_gap_max` reaches 2.0 s (an owner stall on quinn's BBR); reopen latency max 18.9 ms against L 6.3 ms; the c8 leg-0 batch DIAG68 item stands (16.8 against 25.7).
+
+**Next:** the per-window join; decide whether `fs_over` is read skew (red-first test in `hoff_gate_tests.rs` with the check and the witness read at the same instant); then step 2's registration.
