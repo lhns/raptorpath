@@ -10,7 +10,11 @@ plan: 67a 67r 67p 67o 67d (the battery plans), g1 g2 (stage G: Bulk rows, arm CA
 
 Seats: B0 prints none of the c8 gauges; S1 prints scw / plx on [DIAG] and rsat / rlaw / pfec on [SPAN] and shed_slot / shed_nack, but no pslot; S2 adds pslot and reads taper = plost = 0. P1 / P1T are S1's family, P2 / P2T S2's.
 Defects (the stub-path names of registration 9.8, plus a few the tests need): s2-taper-nonzero s2-no-pslot s2-belowfloor-high s1-no-gauge s1-no-pfec r1-blind twin-no-final twin-under-min twin-worse
-twin-no-acct no-succ-times rho-one-end pool-echo-wrong s2-goodput-low s1-goodput-low dnf bulk-rr no-pace-echo.
+twin-no-acct no-succ-times rho-one-end pool-echo-wrong s2-goodput-low s1-goodput-low dnf bulk-rr no-pace-echo,
+and (harness 67c) r2-blind (P1 taper = 0, P2 pslot = 0), b0-gauge (B0 prints the gauges), twin-missing-field (P2T's [ACCT] lacks oldest_unchanged_max),
+s2-taper-cotenant / s1-crash / s2-crash (the lines of s2-taper-nonzero / a clean row; the STUB makes the driver exit 1, so the row is also a crash void).
+Stage G (Bulk) has rr = 0 by design: s2-taper-nonzero / s2-taper-cotenant on a g2 S2 row carry rr > 0 too (the mechanism preconditions of an S06-FAIL hold: pslot > 0, [SPAN] median rr > 0; the row is also a W-ROUTE
+witness failure), g2-taper-no-pslot (harness 67c) is the same taper = plost = 40 on an S2 row that prints no pslot= (a seat-witness failure, replaced once): reported as G2-TAPER-NONZERO, the gate fails whatever the replacement shows.
 """
 import os
 import random
@@ -31,7 +35,7 @@ RUN_BYTES = {"c1s-400": 5000000000, "c1d-400": 5000000000, "c2-100": 600000000, 
 BASE_MBPS = {"c1s-400": 600.0, "c1d-400": 380.0, "c2-100": 85.0, "c8-100": 97.0}
 ABOVE = {"c2-100": dict(taper=0.12, bf=4200, bf_s2=900, fill=1500, hb=854), "c8-100": dict(taper=0.20, bf=9000, bf_s2=600, fill=800, hb=122)}
 DEFECTS = {"s2-taper-nonzero", "s2-no-pslot", "s2-belowfloor-high", "s1-no-gauge", "s1-no-pfec", "r1-blind", "twin-no-final", "twin-under-min", "twin-worse", "twin-no-acct", "no-succ-times",
-           "rho-one-end", "pool-echo-wrong", "s2-goodput-low", "s1-goodput-low", "dnf", "bulk-rr", "no-pace-echo"}
+           "rho-one-end", "pool-echo-wrong", "s2-goodput-low", "s1-goodput-low", "dnf", "bulk-rr", "no-pace-echo", "r2-blind", "b0-gauge", "twin-missing-field", "s2-taper-cotenant", "s1-crash", "g2-taper-no-pslot", "s2-crash"}
 
 
 def spec(plan, cell, arm):
@@ -106,9 +110,9 @@ def extra_lines(plan, cell, arm, seed, rep, defect=None):
     jit = lambda s=0.012: 1.0 + s * (rng.random() * 2 - 1)      # noqa: E731
     bulk = plan in G_SEAT
     paced = plan == "67p"
-    gauge = seat in GAUGE_SEATS and not (defect == "s1-no-gauge" and seat in ("S1", "P1", "P1T"))
+    gauge = (seat in GAUGE_SEATS and not (defect == "s1-no-gauge" and seat in ("S1", "P1", "P1T"))) or (defect == "b0-gauge" and seat == "B0")
     pfec = gauge and defect != "s1-no-pfec"
-    pslot_on = seat in S2_SEATS and not (defect == "s2-no-pslot")
+    pslot_on = seat in S2_SEATS and defect not in ("s2-no-pslot", "g2-taper-no-pslot")
     ab = ABOVE.get(cell, ABOVE["c2-100"])
     mbps = BASE_MBPS.get(cell, 85.0) * jit()
     if hint == "realtime" and not paced:
@@ -126,20 +130,21 @@ def extra_lines(plan, cell, arm, seed, rep, defect=None):
     on_s2 = seat in S2_SEATS
     # the copy / coded repair counters (cumulative totals at the end of the row)
     copies_on = (not bulk) and not on_s2
-    tf = ab["taper"] if (copies_on and not (defect == "r1-blind" and seat == "S1")) else 0.0
+    tf = ab["taper"] if (copies_on and not (defect == "r1-blind" and seat == "S1") and not (defect == "r2-blind" and seat == "P1")) else 0.0
     if plan == "67r" and not on_s2 and defect != "r1-blind":
         tf = 0.10
     taper_tot = int(total * tf * jit(0.05))
     plost_tot = taper_tot
-    if on_s2 and defect == "s2-taper-nonzero":
+    if on_s2 and defect in ("s2-taper-nonzero", "s2-taper-cotenant", "g2-taper-no-pslot"):
         taper_tot = plost_tot = 40
-    pslot_tot = int(total * (ab["taper"] if plan != "67r" else 0.10) * jit(0.05)) if pslot_on else 0
+    pslot_tot = int(total * (ab["taper"] if plan != "67r" else 0.10) * jit(0.05)) if (pslot_on and not (defect == "r2-blind" and seat == "P2")) else 0
     cod_tot = int(total * 0.0056 * jit(0.05))
     if on_s2 and not bulk:
         cod_tot += pslot_tot
     retx_tot = int(total * 0.029 * jit(0.03))
-    rr_val = 0.0 if (bulk and defect != "bulk-rr") else (0.2 if not on_s2 else 0.22) * jit(0.05)
-    if bulk and defect == "bulk-rr":
+    bulk_rr = defect == "bulk-rr"      # stage G: rr > 0 on a Bulk row (W-ROUTE)
+    rr_val = 0.0 if (bulk and not bulk_rr) else (0.2 if not on_s2 else 0.22) * jit(0.05)
+    if bulk and bulk_rr:
         rr_val = 0.1
     if seat == "B0" and not bulk:
         rr_val = 0.2 * jit(0.05)
@@ -243,6 +248,8 @@ def _acct(plan, arm, seed, rep, seat, defect, nbytes, total):
         s_sent = a + h + e + u + o_strand
         base = (f"[ACCT] reliable=0 S_sent={s_sent} A={a} H={h} E={e} O_serv={u} O_strand={o_strand} O_max={u + 4} closes=0 inert_sweeps={g} sweeps_nosend=3 sweeps=50 oldest_unchanged={o // 2} "
                 f"oldest_unchanged_max={o} O_hwm={u + 4} cap_at_hwm=0 store_cap=2048 bud=0.0500 shed_slot={0 if p2 else 90} shed_nack={110 if p2 else 20} shed_visit_slot=0 shed_visit_nack=0 clamp_evals=10 clamp_excl=0")
+        if defect == "twin-missing-field" and p2:
+            base = base.replace(f" oldest_unchanged_max={o}", "")
         cli = [base.replace(f"S_sent={s_sent}", f"S_sent={s_sent - 5}").replace(f"A={a} ", f"A={a - 5} "), base + (" final=1" if defect != "twin-no-final" else "")]
         if defect == "twin-no-final":
             cli = [cli[0], base]
@@ -257,10 +264,19 @@ TUN_TEXT = "{key} is a perf/native-object mode; the tunnel always delivers in or
 
 def tun_lines(defect=None, reps=5, smoke=False):
     """The ledger tun67_battery.sh writes. defects: t-refusal-missing (an S1 refusal line absent), t-base-refuses (B0's run refuses with the guard text), b0-run-key-false (B0's run reads cfg=false for one key),
-    s1-tun-nodata (an S1 transfer carries no data where B0's does), s1-cfg-true (S1's TUNCFG reads ooo:true), tun-no-cfg (every TUNCFG field `-`: the log level is too low)."""
+    s1-tun-nodata (an S1 transfer carries no data where B0's does), s1-cfg-true (S1's TUNCFG reads ooo:true), tun-no-cfg (every TUNCFG field `-`: the log level is too low),
+    t-bringup-fail / t-bringup-fail-s1 (tun_bulk.sh's TUN-BRINGUP-FAIL for B0 / S1 at realtime), t-refusal-and-void (t-refusal-missing and b0-run-key-false together),
+    t-refusal-and-bringup (t-refusal-missing and t-bringup-fail together)."""
+    parts = set((defect or "").split("+")) | ({"t-refusal-missing", "b0-run-key-false"} if defect == "t-refusal-and-void" else set()) | ({"t-refusal-missing", "t-bringup-fail"} if defect == "t-refusal-and-bringup" else set())
+    has = lambda d: d in parts or defect == d      # noqa: E731
     out = []
     for seat in ("B0", "S1"):
         for hint in ("auto",) if smoke else ("auto", "realtime"):
+            if hint == "realtime" and ((has("t-bringup-fail") and seat == "B0") or (has("t-bringup-fail-s1") and seat == "S1")):
+                out += [f"T67SEAT seat={seat} hint={hint}", f"TUNARM label={seat}-{hint} cell=c2-100 hint={hint} bytes=100000000 reps={reps} seed=42 bin={seat}", "TUNSHA " + "a" * 64,
+                        f"TUN-BRINGUP-RETRY label={seat}-{hint} attempt=1", f"TUN-BRINGUP-RETRY label={seat}-{hint} attempt=2", f"TUN-BRINGUP-RETRY label={seat}-{hint} attempt=3",
+                        f"TUN-BRINGUP-FAIL label={seat}-{hint}", f"TUNARM-DONE label={seat}-{hint} reps=0 2026-11-21T10:00:00Z", f"T67END seat={seat} hint={hint} rc=0 10:00:00"]
+                continue
             out += [f"T67SEAT seat={seat} hint={hint}", f"TUNARM label={seat}-{hint} cell=c2-100 hint={hint} bytes=100000000 reps={reps} seed=42 bin={seat}", "TUNSHA " + "a" * 64, "TUNMTU cli=1196 srv=1196",
                     f"TUNPIPE cli=window/Rlc/{hint} srv=window/Rlc/{hint}", "TUNCAD cli=ACTIVE srv=ACTIVE"]
             v = "-" if defect == "tun-no-cfg" else "false"
@@ -280,13 +296,13 @@ def tun_lines(defect=None, reps=5, smoke=False):
             for key in TUN_KEYS:
                 if seat == "S1":
                     rc, cfg, err = 1, "-", "Error: " + guard.format(key=key)
-                    if defect == "t-refusal-missing" and cmd == "run" and key == TUN_KEYS[2]:
+                    if has("t-refusal-missing") and cmd == "run" and key == TUN_KEYS[2]:
                         continue
                 else:
                     rc, cfg, err = (0, "true", "") if cmd == "check" else (124, "true", "")
-                    if cmd == "run" and defect == "b0-run-key-false" and key == TUN_KEYS[1]:
+                    if cmd == "run" and (has("b0-run-key-false") or defect == "t-refusal-and-void") and key == TUN_KEYS[1]:
                         cfg = "false"
-                    if cmd == "run" and defect == "t-base-refuses" and key == TUN_KEYS[0]:
+                    if cmd == "run" and has("t-base-refuses") and key == TUN_KEYS[0]:
                         rc, cfg, err = 1, "-", "Error: " + guard.format(key=key)
                     if defect == "tun-no-cfg":
                         cfg = "-"

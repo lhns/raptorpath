@@ -118,6 +118,37 @@ else
   ( take_lock "$L" >/dev/null 2>&1 ); ckeq "take_lock refuses without flock(1) (exit 4)" "4" "$?"
 fi
 
+# ── lock inheritance: LB_LOCK_PARENT=<pid> (plan 67pre's children; the inherit path needs no flock(1), the refusals fall through to the cases above) ──
+L3="$TD/lock-inherit"
+printf '%s parent-session %s
+' "$$" "$(date -u +%FT%TZ)" > "$L3"
+OUT3="$( ( LB_LOCK_PARENT=$$ take_lock "$L3"; echo "rc=$?"; release_locks ) 2>&1 )"
+case "$OUT3" in *"LOCK-INHERITED $L3 from $$"*"rc=0"*) ok "a lock held by the live LB_LOCK_PARENT is inherited (LOCK-INHERITED, rc 0)" ;; *) bad "inherit: '$OUT3'" ;; esac
+case "$OUT3" in *LOCK-RELEASED*) bad "the child released the inherited lock" ;; *) ok "release_locks does not release an inherited lock" ;; esac
+case "$(cat "$L3")" in "$$ parent-session "*) ok "the parent's lock file is untouched" ;; *) bad "inherit: lock file is '$(cat "$L3")'" ;; esac
+printf '999999 other-session x
+' > "$L3"
+( LB_LOCK_PARENT=$$ take_lock "$L3" >/dev/null 2>&1 ); ckeq "a lock held by another pid than LB_LOCK_PARENT is refused (exit 4)" "4" "$?"
+( sleep 0 ) & DEADPID=$!; wait "$DEADPID" 2>/dev/null
+printf '%s parent-session x
+' "$DEADPID" > "$L3"
+( LB_LOCK_PARENT=$DEADPID take_lock "$L3" >/dev/null 2>&1 ); ckeq "a lock whose LB_LOCK_PARENT is dead is refused (exit 4)" "4" "$?"
+printf '%s parent-session x
+' "$$" > "$L3"
+( take_lock "$L3" >/dev/null 2>&1 ); ckeq "without LB_LOCK_PARENT the same lock is refused (exit 4)" "4" "$?"
+# a child that inherited the lock and runs release_locks (explicitly, on exit, and in its EXIT / INT / TERM traps) leaves the parent's lock file with the parent's pid line
+for how in explicit exit int term; do
+  printf '%s parent-session x\n' "$$" > "$L3"
+  case "$how" in
+    explicit) LB_LOCK_PARENT=$$ bash -c "source ./lib_battery.sh; take_lock '$L3' >/dev/null; release_locks" >/dev/null 2>&1 ;;
+    exit) LB_LOCK_PARENT=$$ bash -c "source ./lib_battery.sh; install_lock_traps; take_lock '$L3' >/dev/null; exit 0" >/dev/null 2>&1 ;;
+    int) LB_LOCK_PARENT=$$ bash -c "source ./lib_battery.sh; install_lock_traps; take_lock '$L3' >/dev/null; kill -INT \$\$; sleep 5" >/dev/null 2>&1 ;;
+    term) LB_LOCK_PARENT=$$ bash -c "source ./lib_battery.sh; install_lock_traps; take_lock '$L3' >/dev/null; kill -TERM \$\$; sleep 5" >/dev/null 2>&1 ;;
+  esac
+  case "$(cat "$L3" 2>/dev/null)" in "$$ parent-session x") ok "an inheriting child leaves the parent's lock file in place after $how (file exists, parent's pid line)" ;; *) bad "inherit/$how: lock file is '$(cat "$L3" 2>/dev/null)'" ;; esac
+done
+rm -f "$L3"
+
 # ── preflight_binary ──
 printf '#!/bin/sh\n# RWM_PLACE_WDIV_DERIVED\nexit 0\n' > "$TD/bin"; chmod +x "$TD/bin"
 ( preflight_binary "$TD/bin" RWM_PLACE_WDIV_DERIVED >/dev/null 2>&1 ) && ok "preflight passes a binary carrying the gate" || bad "preflight refused a good binary"
