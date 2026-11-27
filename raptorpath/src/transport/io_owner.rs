@@ -208,6 +208,33 @@ pub struct HoffCounters {
     /// when its send buffer is full, oversize after an MTU shrink): netted out
     /// of B_i, found by the owner when quinn's queue reads empty.
     pub quinn_discards: AtomicU64,
+    /// Datagrams staged by kind, counted in [`TxBatch::stage`] when `on`
+    /// (index = [`SendKind`] as usize): the `[HOFF]` witness for what the gate
+    /// admits (first sends) and what it exempts (resends, repair, control).
+    pub staged_kind: [AtomicU64; 4],
+    /// The owner's longest interval between data drains, µs since the producer
+    /// last took it (`swap(0)`); read through `crate::clock`.
+    pub own_gap_max_us: AtomicU64,
+}
+
+/// What a staged datagram is, for the `[HOFF]` witness counters (reported
+/// only; nothing decides on it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SendKind {
+    /// A first send of source data: the only kind the gate admits against B < β.
+    First = 0,
+    /// A source resend (NACK retransmission, requested copy).
+    Resend = 1,
+    /// Any other data-lane datagram (repair, coded, redundant copy): the default.
+    #[default]
+    Repair = 2,
+    /// The control lane.
+    Ctrl = 3,
+}
+
+/// Interval since the owner's previous data drain, µs (0 for the first).
+pub(crate) fn own_gap_us(prev: Option<Instant>, now: Instant) -> u64 {
+    prev.map_or(0, |p| now.saturating_duration_since(p).as_micros() as u64)
 }
 
 /// Log-spaced (two buckets per octave) histogram of ns durations.
@@ -1164,6 +1191,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     // The view refresh is driven by activity only (no timer: an idle owner
     // never wakes for it), rate-limited by snapshot age.
     let mut last_full = crate::clock::now();
+    let mut last_drain: Option<Instant> = None;
     let mut dirty = false;
     // The hand-off gate's republish timer (paper §6.8): while the owner holds
     // unsent data (what it handed to quinn exceeds quinn's `tx` at its last
@@ -1222,6 +1250,11 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 }
                 ctr.drains.fetch_add(1, Relaxed);
                 t_work = view.hoff.on.then(crate::clock::now);
+                if let Some(t) = t_work {
+                    // `[HOFF]` own_gap_max: the longest interval between drains.
+                    view.hoff.own_gap_max_us.fetch_max(own_gap_us(last_drain, t), Relaxed);
+                    last_drain = Some(t);
+                }
                 if a.deep {
                     ctr.cmdq.record((n + a.cmd_rx.len()) as u64);
                 }
@@ -1622,6 +1655,9 @@ pub struct TxBatch {
     slots: Vec<Slot>,
     epoch: u64,
     dirty: bool,
+    /// The kind of the next data-lane datagram staged (`[HOFF]` witness only);
+    /// consumed by `stage`, reset at `flush`.
+    next_kind: SendKind,
 }
 
 struct Slot {
@@ -1634,6 +1670,11 @@ struct Slot {
 impl TxBatch {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Label the next data-lane datagram staged (default: [`SendKind::Repair`]).
+    pub fn mark(&mut self, kind: SendKind) {
+        self.next_kind = kind;
     }
 
     /// Stage one serialized datagram. Fails (synchronously, as quinn's own
@@ -1675,8 +1716,13 @@ impl TxBatch {
         // it includes this turn's unflushed batch.
         let h = &s.io.view.hoff;
         if h.on {
+            let kind = match lane {
+                Lane::Ctrl => SendKind::Ctrl,
+                Lane::Data => std::mem::take(&mut self.next_kind),
+            };
             h.staged.fetch_add(1, Relaxed);
             h.staged_bytes.fetch_add(b.len() as u64, Relaxed);
+            h.staged_kind[kind as usize].fetch_add(1, Relaxed);
         }
         match lane {
             Lane::Data => s.data.push(b),
@@ -1708,6 +1754,7 @@ impl TxBatch {
     /// (a control datagram never overtakes the data staged before it). A
     /// full owner channel back-pressures here; nothing is dropped.
     pub async fn flush(&mut self) {
+        self.next_kind = SendKind::default();
         if !self.dirty {
             return;
         }

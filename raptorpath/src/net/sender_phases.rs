@@ -1048,6 +1048,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
 
                 let seqs = batch_counter.next(nack_path);
                 let batch = SymbolBatch::new(vec![sym], now_us(), seqs, nack_path);
+                st.tx.mark(crate::transport::io_owner::SendKind::Resend);
                 let sent = match transport.send_symbols(&mut st.tx, nack_path, batch) {
                     Ok(()) => true,
                     Err(e) => {

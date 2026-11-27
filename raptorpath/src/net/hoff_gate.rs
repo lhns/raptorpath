@@ -49,6 +49,44 @@ pub(crate) fn admits(b: u64, beta: Option<f64>) -> bool {
     b == 0 || beta.is_none_or(|be| (b as f64) < be)
 }
 
+/// The sites that stage a first send without asking the gate (witness tags;
+/// no decision reads them).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Bypass {
+    /// The intake packet deferred behind the resend phase: read at the loop
+    /// top, staged after the gate may have closed.
+    Defer = 0,
+    /// The packer's timer flush.
+    Timer = 1,
+    /// The shutdown / TUN-closed flush.
+    Shutdown = 2,
+}
+
+/// How one first send stood against the bound when it was staged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FsClass {
+    /// `B < β`: the gate's own admit.
+    Gated,
+    /// `B ≥ β` through no tagged bypass site: the gate leaked.
+    Over,
+    /// `B ≥ β` through a tagged bypass site.
+    Bypass(Bypass),
+    /// β undefined: the cold-start admit (any tag).
+    Cold,
+}
+
+/// Classify a first send at staging time from the path's `B`, its `β` and the
+/// bypass tag in force.
+pub(crate) fn classify_first_send(b: u64, beta: Option<f64>, bypass: Option<Bypass>) -> FsClass {
+    if beta.is_none() {
+        FsClass::Cold
+    } else if admits(b, beta) {
+        FsClass::Gated
+    } else {
+        bypass.map_or(FsClass::Over, FsClass::Bypass)
+    }
+}
+
 /// `r_eff = min(r_law, spare)` at the repair seams.
 pub(crate) fn r_eff(r_law: f64, spare: f64) -> f64 {
     r_law.min(spare.max(0.0))
@@ -174,6 +212,26 @@ struct PathGate {
     sends: u64,
     cut_sends: u64,
     last_beta: Option<f64>,
+    // `[HOFF]` witness counters (see `GateRow`).
+    fs_over: u64,
+    fs_byp: [u64; 4],
+    beta_s: Vec<f64>,
+    ex_max: Option<(f64, f64, f64)>,
+    /// Cumulative staged-by-kind at the window start, the latest read and the turn start.
+    kinds_start: Option<[u64; 4]>,
+    kinds_last: [u64; 4],
+    /// The kinds at the start of the last turn that admitted (B < β) on this path.
+    kinds_open: Option<[u64; 4]>,
+    kinds_turn: [u64; 4],
+    own_gap_max_us: u64,
+    pend_max: u64,
+}
+
+impl PathGate {
+    fn note_kinds(&mut self, k: [u64; 4]) {
+        self.kinds_start.get_or_insert(k);
+        self.kinds_last = k;
+    }
 }
 
 /// One path's gauge row (the gate's real state).
@@ -184,6 +242,25 @@ pub(crate) struct GateRow {
     pub hand_bind: f64,
     pub spare_zero: bool,
     pub spare_bind: f64,
+    /// First sends staged with `B ≥ β` through no tagged bypass site.
+    pub fs_over: u64,
+    /// First sends staged past the bound through a tagged site (defer, timer,
+    /// shutdown), then those staged while β was undefined (cold).
+    pub fs_bypass: [u64; 4],
+    /// The window's largest end-of-turn `B − β` as `(total, first sends, exempt)`:
+    /// the first sends and exempt datagrams (resends, repair, control) staged
+    /// since the path last admitted; the rest of the total is carry-in or drain.
+    pub ex_max: Option<(f64, f64, f64)>,
+    /// Exempt datagrams staged in the window: control, resend, repair.
+    pub ex_n: [u64; 3],
+    /// First sends staged in the window.
+    pub fs_n: u64,
+    /// β's p5 / p50 / p95 over the window's per-turn values.
+    pub beta_q: Option<(f64, f64, f64)>,
+    /// The owner's longest drain-to-drain gap in the window, µs.
+    pub own_gap_max_us: u64,
+    /// The window's largest staged − handed − dropped, read at turn starts.
+    pub pend_max: u64,
 }
 
 #[derive(Default)]
@@ -200,6 +277,8 @@ pub(crate) struct HandoffGate {
     /// The turn in progress ended because the store is full.
     store_ended: bool,
     turn_open: bool,
+    /// The bypass site in force (witness tag).
+    bypass: Option<Bypass>,
     views: Vec<(u32, Arc<PathView>)>,
     buf: Vec<(u32, PathIn)>,
     /// Test seam: terms fixed by the caller (no rolling measurement).
@@ -294,12 +373,45 @@ impl HandoffGate {
             p.turns += 1;
             p.closed_turns += (!open) as u64;
             p.last_beta = beta;
+            if let Some(be) = beta {
+                if p.beta_s.len() < MAX_SAMPLES {
+                    p.beta_s.push(be);
+                }
+            }
+            p.pend_max = p.pend_max.max(i.pending());
+            p.note_kinds(i.kinds);
+            p.kinds_turn = i.kinds;
+            if open {
+                p.kinds_open = Some(i.kinds);
+            }
             if !open && waiting && !store_paused {
                 p.refused = true;
             }
             any_open |= open;
         }
         !store_paused && !any_open
+    }
+
+    /// The loop's end, before the flush: sample `B − β` after this turn's staging
+    /// and take the owner's gap (the readings carry it in `own_gap_us`).
+    pub(crate) fn end_turn(&mut self, ins: &[(u32, PathIn)]) {
+        for (id, i) in ins {
+            let beta = self.beta(*id, i);
+            let p = self.paths.entry(*id).or_default();
+            if let Some(be) = beta {
+                let total = i.backlog() as f64 - be;
+                // Booked since the last turn that admitted: first sends and exempt datagrams staged
+                // since then; the rest of the excess is carry-in or drain, never booked to a kind.
+                let base = p.kinds_open.unwrap_or(p.kinds_turn);
+                let first = i.kinds[0].saturating_sub(base[0]) as f64;
+                let exempt = (1..4).map(|k| i.kinds[k].saturating_sub(base[k])).sum::<u64>() as f64;
+                if p.ex_max.is_none_or(|m| total > m.0) {
+                    p.ex_max = Some((total, first, exempt));
+                }
+            }
+            p.own_gap_max_us = p.own_gap_max_us.max(i.own_gap_us);
+            p.note_kinds(i.kinds);
+        }
     }
 
     /// Mid-turn, before a first send is taken from the intake: is any path
@@ -325,6 +437,26 @@ impl HandoffGate {
     /// The turn ended because the store is full: it does not update the predicate.
     pub(crate) fn note_store_end(&mut self) {
         self.store_ended = true;
+    }
+
+    /// Tag the first sends staged from now on as passing a bypass site (`None`
+    /// clears). Witness only: no decision reads it.
+    pub(crate) fn set_bypass(&mut self, b: Option<Bypass>) {
+        self.bypass = b;
+    }
+
+    /// A first send is about to be staged on `path` with reading `i`: count how
+    /// it stands against the bound, then as [`Self::note_first_send`].
+    pub(crate) fn note_first_send_at(&mut self, path: u32, i: &PathIn) {
+        let class = classify_first_send(i.backlog(), self.beta(path, i), self.bypass);
+        let p = self.paths.entry(path).or_default();
+        match class {
+            FsClass::Gated => {}
+            FsClass::Over => p.fs_over += 1,
+            FsClass::Bypass(b) => p.fs_byp[b as usize] += 1,
+            FsClass::Cold => p.fs_byp[3] += 1,
+        }
+        self.note_first_send(path);
     }
 
     /// A first send was placed on `path`.
@@ -364,7 +496,28 @@ impl HandoffGate {
             hand_bind: p.closed_turns as f64 / p.turns.max(1) as f64,
             spare_zero,
             spare_bind: p.cut_sends as f64 / p.sends.max(1) as f64,
+            fs_over: p.fs_over,
+            fs_bypass: p.fs_byp,
+            ex_max: p.ex_max,
+            ex_n: [3usize, 1, 2].map(|k| p.kinds_last[k].saturating_sub(p.kinds_start.unwrap_or(p.kinds_last)[k])),
+            fs_n: p.kinds_last[0].saturating_sub(p.kinds_start.unwrap_or(p.kinds_last)[0]),
+            beta_q: {
+                p.beta_s.sort_by(|a, b| a.total_cmp(b));
+                (!p.beta_s.is_empty()).then(|| {
+                    let q = |x| super::hoff::quantile(&p.beta_s, x);
+                    (q(0.05), q(0.5), q(0.95))
+                })
+            },
+            own_gap_max_us: p.own_gap_max_us,
+            pend_max: p.pend_max,
         };
+        p.fs_over = 0;
+        p.fs_byp = [0; 4];
+        p.beta_s.clear();
+        p.ex_max = None;
+        p.kinds_start = Some(p.kinds_last);
+        p.own_gap_max_us = 0;
+        p.pend_max = 0;
         p.turns = 0;
         p.closed_turns = 0;
         p.sends = 0;
@@ -425,6 +578,25 @@ impl HandoffGate {
         let paused = self.begin_turn(now_us, waiting, store_paused, &ins);
         self.buf = ins;
         paused
+    }
+
+    /// Loop end, live: see [`Self::end_turn`]. Takes each owner's gap.
+    pub(crate) fn end_turn_live(&mut self) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let mut ins = self.read_all();
+        for ((_, i), (_, v)) in ins.iter_mut().zip(&self.views) {
+            i.own_gap_us = v.hoff.own_gap_max_us.swap(0, Relaxed);
+        }
+        self.end_turn(&ins);
+        self.buf = ins;
+    }
+
+    /// A first send is about to be staged on `path`, live: see [`Self::note_first_send_at`].
+    pub(crate) fn note_first_send_live(&mut self, path: u32) {
+        match self.views.iter().find(|(id, _)| *id == path).map(|(_, v)| super::hoff::HoffGauge::read(v)) {
+            Some(i) => self.note_first_send_at(path, &i),
+            None => self.note_first_send(path),
+        }
     }
 
     /// Before a first send is taken, live: see [`Self::check`].

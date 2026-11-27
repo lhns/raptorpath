@@ -377,7 +377,7 @@ pub(crate) fn emit_source(
         }
     };
     if ctx.hg.on() {
-        ctx.hg.note_first_send(source_path);
+        ctx.hg.note_first_send_live(source_path);
     }
     st.last_source_path = source_path;
     // ── `[ETA]`: stamp the sender's own prediction ───────────────────────
@@ -447,6 +447,7 @@ pub(crate) fn emit_source(
             &wire_sym
         };
         let seqs = ctx.batch_counter.next(source_path);
+        st.tx.mark(crate::transport::io_owner::SendKind::First);
         // The batch's `send_timestamp_us` is the key the ack's echo will
         // carry, so it must be the same instant the ETA stamp registered —
         // hence `src_send_ts_us` rather than a second `now_us()`.

@@ -48,6 +48,16 @@
 //!     never called);
 //!   * `fifo_wait_resend` = B_i·s_i/R_i at each source resend's hand-off (p95 ms
 //!     / count), at the SACK-gap and request-law resend site;
+//!   * gate-on rows add the witness fields, per path and window (what lets B exceed β):
+//!     `fs_over` = first sends staged with B ≥ β through no tagged bypass site;
+//!     `fs_bypass` = d/t/s/c, those past the bound through the deferred intake packet, the
+//!     packer-timer flush, the shutdown flush, and those staged with β undefined (cold start);
+//!     `ex_max` = the largest end-of-turn B − β as total/first sends/exempt, the last two staged since
+//!     the path last admitted (resends, repair and control); the rest of the total is carry-in or drain;
+//!     `ex_n` = exempt datagrams staged in the window: control/resend/repair; `fs_n` = first sends;
+//!     `beta_q` = β's p5/p50/p95 over the window's per-turn values (`beta=` is the end sample);
+//!     `own_gap_max` = the owner's longest interval between data drains (µs; includes idle gaps,
+//!     read it beside `pend_max`); `pend_max` = max of staged − handed to quinn − dropped, at turn starts;
 //!   * `owner_timer_wakes` = the owner's republish-timer wakes (0 with the gate off);
 //!     with `RWM_HOFF_GATE` the line prints `gate=on` and the gate's own β, τ̂_o
 //!     (`(meas)`), hand_bind and predicate instead of the shadow model's.
@@ -82,7 +92,7 @@ pub(crate) fn beta(r_bps: f64, l_s: f64, s_bytes: f64) -> Option<f64> {
 }
 
 /// Nearest-rank quantile of an ascending slice (`q` in 0..=1).
-fn quantile<T: Copy + Default>(sorted: &[T], q: f64) -> T {
+pub(crate) fn quantile<T: Copy + Default>(sorted: &[T], q: f64) -> T {
     if sorted.is_empty() {
         return T::default();
     }
@@ -132,12 +142,23 @@ pub(crate) struct PathIn {
     pub dropped: u64,
     /// Datagrams quinn accepted and discarded without a tx (the owner's count).
     pub quinn_discards: u64,
+    /// Datagrams the owner handed to quinn (`send_datagram` `Ok`).
+    pub handed: u64,
+    /// Datagrams staged by kind, cumulative: first, resend, repair, control.
+    pub kinds: [u64; 4],
+    /// The owner's longest drain-to-drain gap since the last take, µs. Zero in
+    /// a plain read; the gate's end-of-turn read fills it (it takes it).
+    pub own_gap_us: u64,
 }
 
 impl PathIn {
     pub(crate) fn backlog(&self) -> u64 {
         self.staged
             .saturating_sub(self.tx.saturating_add(self.dropped).saturating_add(self.quinn_discards))
+    }
+    /// Staged datagrams the owner has not yet handed to quinn (or dropped).
+    pub(crate) fn pending(&self) -> u64 {
+        self.staged.saturating_sub(self.handed.saturating_add(self.dropped))
     }
     pub(crate) fn dgram_size(&self) -> f64 {
         if self.staged > 0 { self.staged_bytes as f64 / self.staged as f64 } else { 0.0 }
@@ -388,6 +409,7 @@ impl HoffGauge {
             st.reopen_ms.sort_by(|a, b| a.total_cmp(b));
             // The gate's real state replaces the shadow model's when armed.
             let row = gate.as_deref_mut().and_then(|g| g.take_row(id));
+            let extra = row.as_ref().map_or(String::new(), witness_fields);
             let (tau_o_v, tau_o_tag, l_o_v, tau_p_v, l_p_v, l_v, beta_v, hand_bind_v, spare_i_v, spare_bind_v) = match row {
                 Some(r) => (
                     r.terms.tau_o.unwrap_or(TIMER_FLOOR_S),
@@ -416,7 +438,7 @@ impl HoffGauge {
             };
             let _ = write!(
                 out,
-                " p{id}[B={}/{}/{} n={} dgq={} F={} win={} R={:.0} tau_o={}ms({}) tau_p={}ms l_o={}ms l_p={}ms L={}ms beta={} hand_bind={} spare_i={} spare_bind={} reopen={}/{}ms/{} starve={} qdisc={} app_limited={} batch={} g_batch={}ms phat={}ms fifo_wait_resend={}ms/{}]",
+                " p{id}[B={}/{}/{} n={} dgq={} F={} win={} R={:.0} tau_o={}ms({}) tau_p={}ms l_o={}ms l_p={}ms L={}ms beta={} hand_bind={} spare_i={} spare_bind={} reopen={}/{}ms/{} starve={} qdisc={} app_limited={} batch={} g_batch={}ms phat={}ms fifo_wait_resend={}ms/{}{}]",
                 quantile(&st.b, 0.5),
                 quantile(&st.b, 0.95),
                 st.b.last().copied().unwrap_or(0),
@@ -446,6 +468,7 @@ impl HoffGauge {
                 ms(phat),
                 f2(quantile(&st.resend_ms, 0.95)),
                 st.resend_n,
+                extra,
             );
             st.b.clear();
             st.turns = 0;
@@ -481,6 +504,21 @@ impl HoffGauge {
     }
 }
 
+/// The gate's witness fields of one path's row (gate on only): first sends past
+/// the bound, the end-of-turn excess and its split, exempt datagrams by kind,
+/// β's spread, the owner's longest gap and the pending-to-quinn maximum.
+fn witness_fields(r: &super::hoff_gate::GateRow) -> String {
+    let e = |v: f64| if v.is_finite() { format!("{v:.0}") } else { "-".into() };
+    let ex = r.ex_max.map_or("-/-/-".to_string(), |(t, f, x)| format!("{}/{}/{}", e(t), e(f), e(x)));
+    let bq = r.beta_q.map_or("-/-/-".to_string(), |(a, b, c)| format!("{}/{}/{}", f1(a), f1(b), f1(c)));
+    let [d, t, s, c] = r.fs_bypass;
+    let [xc, xr, xp] = r.ex_n;
+    format!(
+        " fs_over={} fs_bypass={d}/{t}/{s}/{c} ex_max={ex} ex_n={xc}/{xr}/{xp} fs_n={} beta_q={bq} own_gap_max={}us pend_max={}",
+        r.fs_over, r.fs_n, r.own_gap_max_us, r.pend_max
+    )
+}
+
 fn ms(s: f64) -> String {
     if s.is_finite() { format!("{:.2}", s * 1e3) } else { "-".into() }
 }
@@ -513,6 +551,9 @@ impl HoffGauge {
             tx_dgrams: c.tx_dgrams.load(Relaxed),
             dropped: h.dropped.load(Relaxed),
             quinn_discards: h.quinn_discards.load(Relaxed),
+            handed: h.handed.load(Relaxed),
+            kinds: std::array::from_fn(|k| h.staged_kind[k].load(Relaxed)),
+            own_gap_us: 0,
         }
     }
 }
@@ -575,6 +616,7 @@ mod tests {
             tx_dgrams: 500,
             dropped: 0,
             quinn_discards: 0,
+            ..Default::default()
         }
     }
 
