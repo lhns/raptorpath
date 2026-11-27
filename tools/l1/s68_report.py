@@ -221,7 +221,7 @@ def hoff_summary(lines):
     ws = parse_hoff(lines)
     post = [w for w in ws if w["t"] >= WARM_S]
     out = {"n_lines": len(ws), "n_post": len(post), "gate": ws[-1]["gate"] if ws else None, "gates": sorted({w["gate"] for w in ws if w["gate"]}),
-           "owner_timer_wakes": ws[-1].get("owner_timer_wakes") if ws else None, "probe_acks": ws[-1].get("probe_acks") if ws else None,
+           "owner_timer_wakes": ws[-1].get("owner_timer_wakes") if ws else None, "owner_timer_idle": ws[-1].get("owner_timer_idle") if ws else None, "probe_acks": ws[-1].get("probe_acks") if ws else None,
            "tau_floor_bind": ws[-1].get("tau_floor_bind") if ws else None, "store_pin": ws[-1].get("store_pin") if ws else None,
            "infl_ratio_med": _med([w["infl_ratio"] for w in post]), "paths": {}}
     ids = sorted({i for w in ws for i in w["paths"]})
@@ -564,6 +564,8 @@ def _window_reads(groups, out):
                     bm = max([b for b in ((_paths(x).get(pid) or {}).get("beta_max") for x in rs) if b], key=lambda e: e[0], default=None)
                     uo = [(_paths(x).get(pid) or {}).get("u_over") for x in rs]
                     uw = [(_paths(x).get(pid) or {}).get("u_windows") for x in rs]
+                    hs_ = [(_t(x).get("hoff") or {}) for x in rs]
+                    out(f"READ68 {code} GATE owner_timer wakes/idle (median)={_f(_med([h.get('owner_timer_wakes') for h in hs_]), 0)}/{_f(_med([h.get('owner_timer_idle') for h in hs_]), 0)}") if pid == 0 else None
                     out(f"READ68 {code} GATE p{pid} u_over={int(sum(v for v in uo if _num(v)))}/{int(sum(v for v in uw if _num(v)))} windows beta_max(max; beta/W/srtt_ms/L_ms/R_MBs)={_lst(bm, 2)} "
                         f"b_max(max)={_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('b_max'))))} ack_bind(mean)={_f(_pm(rs, 'ack_bind', pid), 3)} fs_over_cs(closed/spent)={_lst(_sumlist(rs, 'fs_over_cs', 2, pid))}")
             if code in ("W1", "W2", "W4"):
