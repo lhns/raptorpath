@@ -235,16 +235,22 @@ Read from the 68r raw `[HOFF]`, `[QCC]`, `[DIAG]` and `[SPAN]` lines in `docs/l1
 - The 18 "owner" windows on leg 0 fail U by only 1.0–3.2 batches. They are measured against β's p95, not its maximum.
 - Q rows (quinn's BBR) read the same: 145 of 172 over-batch windows are "β moved".
 
-**Answer: cause (a), β moving.**
-- In the worst windows β p95 is 2–2.5 times its p50 (e.g. 257 against 87). The gate admits up to that β, then β falls back while B drains at R.
-- B never stood more than about one batch above the highest β in force during the window, so the gate held its bound at admission.
-- The 75–170 excess is the end sample of a moving bound, the defect Amendment 1(a) already named.
+**Answer: mostly cause (a), β moving.**
+- In the worst windows β p95 is about 1.5–3 times its p50 (e.g. 257 against 87). The gate admits up to that β, then β falls back while B drains at R.
+- Flag split on leg 0: U without A in 291 windows, A and U in 121, A alone in 0. So β spiked up and fell back; it did not dip below its median.
+- In 412 of 436 windows B max stayed within one batch of the highest β p95 of the window (or the one before), so the gate held its bound at admission. The 18 "owner" windows exceed it by 1.0–3.2 batches.
+- **Part of the excess is real.** `ex_max` total, the one same-instant reading (B − live β at a turn end), is over the 436 windows:
+  - p50 16 (about 1 batch), p90 44, max 92 (5 batches), against a median E of about 1.7 times that;
+  - booked at that turn end: first sends of the open turn 8 587, exempt 3 148, against a total of 9 554;
+  - unbooked carry-in: p50 0.
+- **So roughly 60 % of E is B standing above the live β at a turn end**, built from that turn's own first sends and exempt datagrams. Each first send passed `B < β` (`fs_over` ≈ 0), so the excess comes either from β falling within the turn or from the read skew still open for `fs_over`. The rest of E is the p95-against-end-sample artifact Amendment 1(a) named.
+- **This agrees with §8's exempt split** (A2: 39 of 81). X is set on many leg-0 windows, but the rule ranks U above X.
 - **The owner is a co-factor, not a cause.** O is set in 150 of 436 over-batch windows, against about 17 % of all windows. But B counts a datagram from its staging, and admission reads that B (`io_owner.rs` `stage`). An undrained owner keeps B high longer; it cannot carry B past β.
 - **Exempt traffic is the cause on K8 leg 1.** That leg's batch is about 6 and its β about 15–20, so 50 resends or repairs are 3 β.
 - **ProbeRtt carries much of it.**
   - GATE leg 0: 34 of the 83 windows with E > 50 lie within −0.3…+1.0 s of a `[QCC]` ProbeRtt step, against 14 % of all windows.
   - Q rows: 75 of 78 lie within 1 s after the 10 s ProbeRtt cadence. The Q rows have no `[QCC]` line, so the 10 s cadence is a proxy.
-- What makes β spike is open: R = window/srtt, and both are only end samples.
+- What makes β spike is open. β = R·L/s, with R = window/srtt; window and srtt are only end samples, and L's terms refresh every turn.
 
 **Reopen misses share these windows.**
 - On GATE leg 0, 29 of 1 747 windows read reopen max > L, and 25 of the 29 are over-batch windows.
@@ -253,11 +259,12 @@ Read from the 68r raw `[HOFF]`, `[QCC]`, `[DIAG]` and `[SPAN]` lines in `docs/l1
 - **The reopen gauge is the shadow one.** On a gate=on line, `reopen` tests B against the previous line's shadow β (τ_o assumed 2 ms), held for 0.25 s (`hoff.rs` `turn`, `beta_prev`), not against the gate's live β. In a window where β moves, a "slow reopen" cannot be told apart from the live gate correctly still closed.
 - The 19 ms maximum is therefore not yet evidence against §6.8. The gauge should time reopen on the gate's own `admits` at the live β.
 
-**Q K8 leg 1, the 2.0 s gap (r3, t ≈ 44.3–46.2 s): an idle sender, not an owner stall.**
-- Both legs read `fs_n` 0, B 0, `pend_max` 0, `app_limited` 1 and starve 1.
-- The producer loop fell from about 410 to 10–13 turns per window.
-- Why the sender idled is open.
-- **The 0.7 and 0.9 s gaps on r1 and r2 are different.** Quinn's window on leg 1 collapsed (r2: 2.3 MB → 89 kB, β 0.8), and B stuck at 11–23, equal to `dgq`. Quinn held datagrams it did not send, the gate stayed closed (`hand_bind` 1), and the owner had nothing to drain.
+**Q K8 leg 1, the 2.0 s gap (r3, t ≈ 44.3–46.2 s): the end-of-run tail, not an owner stall.**
+- The source finished at 44.1 s: `[DIAG]` cum src stays at 507 616 from 44.1 to 46.2 s, and 46.2 s is the row's last `[HOFF]` line.
+- Both legs then read `fs_n` 0, B 0, `pend_max` 0 and `app_limited` 1. The 2 s is idle time while the sender waits out its acks.
+- **The 0.7 and 0.9 s gaps on r1 and r2 are different.** They follow a collapse of quinn's window on leg 1 (r2: 2.3 MB → 89 kB, β 0.8).
+  - B stuck at 11–23, the same value as `dgq`, and the gate stayed closed (`hand_bind` 1) with `pend_max` 0.
+  - This reads as quinn holding datagrams it did not send, while the owner had nothing to drain. The source of `dgq` was not checked, so this is an inference.
 
 ### 9.2 Low rate (LR): repair per source 0.024 against rr 0.45
 
@@ -270,9 +277,9 @@ Read from the 68r raw `[HOFF]`, `[QCC]`, `[DIAG]` and `[SPAN]` lines in `docs/l1
 **Where r is cut: ack cancellation of the debt.**
 - Each source adds r to the debt (`emit_source.rs:767`), and a repair goes out only while the debt is ≥ 1 (`:770`).
 - Each cumulative ack advance subtracts `newly_acked × r` (`sender_phases.rs:1328–1329`).
-- At 36 datagrams/s and an RTT of about 11 ms, about one source is acked per advance (`rel_ack` 0.99, m̄ lower bound 0.33), before the next is sent.
-- So the debt never reaches 1: `[SPAN]` debt p50 is 0.03 and its max 0.21–0.33 on all 9 rows. The W1 lower bracket max(0, 1 − 1/(r·m̄)) is 0.
-- **The 2.4 % that is sent is reactive.**
+- At 36 datagrams/s a source goes out every 27.8 ms, against an RTT of about 11 ms (`[DIAG]` rtt). Each source is acked before the next is sent, so each advance cancels the r that the one source added.
+- So the debt never reaches 1: `[SPAN]` debt p50 is 0.03 and its max 0.21–0.33 on all 9 rows. The W1 lower bracket, max(0, 1 − 1/(r·m̄)) with m̄ ≥ 0.33, is 0 and excludes nothing; the debt readings carry the claim.
+- **The 2.4 % that is sent is consistent with reactive repair.**
   - Δcod is 44–54 per row. On the three r1 rows it matches the gap reports (`mpr rep` 51–53) and the gap-served resends (`retx` 52–55).
   - The repair margin `ceil(retransmitted × ε)` (`sender_phases.rs:1113`) rounds ε ≈ 0.001 up to one coded repair per served gap. That ceil always binds here.
 
@@ -282,6 +289,5 @@ Read from the 68r raw `[HOFF]`, `[QCC]`, `[DIAG]` and `[SPAN]` lines in `docs/l1
 
 - What drives the β spikes (window against srtt), and whether β should be smoothed or the reading taken against β at admission.
 - A live-β reopen gauge.
-- Why the sender went idle for 2 s on Q K8 r3.
 - A verdict on the low-rate debt cancellation and on the margin's ceil.
 - Whether `fs_over` is read skew (the §8 next step is unchanged).
