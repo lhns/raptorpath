@@ -75,7 +75,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
     "RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 ",
     "RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_RTOBS=0 RWM_FDIAG=0 RWM_TRACE=0 ",
-    "RWM_PFRAC=0",
+    "RWM_PFRAC=0 RWM_PERF_RATE_MBIT=unset",
 );
 
 /// Gates removed as refuted experiment arms are unknown names: a stale script
