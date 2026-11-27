@@ -49,6 +49,15 @@ pub(crate) fn admits(b: u64, beta: Option<f64>) -> bool {
     b == 0 || beta.is_none_or(|be| (b as f64) < be)
 }
 
+/// The grant a decision gives one path.
+fn grant_of(open: bool, beta: Option<f64>) -> Grant {
+    match (open, beta) {
+        (false, _) => Grant::Closed,
+        (true, None) => Grant::Cold,
+        (true, Some(_)) => Grant::Admit,
+    }
+}
+
 /// The sites that stage a first send without asking the gate (witness tags;
 /// no decision reads them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,28 +71,48 @@ pub(crate) enum Bypass {
     Shutdown = 2,
 }
 
-/// How one first send stood against the bound when it was staged.
+/// What the gate's latest decision said about one path for the next first send.
+///
+/// The witness is a logic witness, not a second reading: a decision that admits a
+/// path (`begin_turn`, `check`, the placement's candidate set `open_ids`) grants it
+/// a token; staging a first send spends it. The gate's own read of `B` and `β`
+/// decided, so the staging site re-reads nothing and cannot disagree with it.
+///
+/// A decision is the gate's NEWEST word: each one overwrites the grant of every
+/// path it covered. Staging spends the decision for ALL paths (a candidate set pays
+/// for one first send, on one path), so a token left on the other admitted path
+/// cannot mask a leak there. A path no decision covered (no view yet) has no entry
+/// and reads as cold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Grant {
+    /// Admitted with `B < β`.
+    Admit,
+    /// Admitted while β was undefined (cold start).
+    Cold,
+    /// Closed by the newest decision, or the decision was already spent.
+    Closed,
+}
+
+/// How one first send stood against the gate when it was staged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FsClass {
-    /// `B < β`: the gate's own admit.
+    /// Staged under the gate's own admit.
     Gated,
-    /// `B ≥ β` through no tagged bypass site: the gate leaked.
+    /// Staged with no admit and no tagged bypass site: the gate leaked.
     Over,
-    /// `B ≥ β` through a tagged bypass site.
+    /// Staged with no admit through a tagged bypass site.
     Bypass(Bypass),
-    /// β undefined: the cold-start admit (any tag).
+    /// β undefined at the decision, or no decision covered the path: the cold-start admit (any tag).
     Cold,
 }
 
-/// Classify a first send at staging time from the path's `B`, its `β` and the
-/// bypass tag in force.
-pub(crate) fn classify_first_send(b: u64, beta: Option<f64>, bypass: Option<Bypass>) -> FsClass {
-    if beta.is_none() {
-        FsClass::Cold
-    } else if admits(b, beta) {
-        FsClass::Gated
-    } else {
-        bypass.map_or(FsClass::Over, FsClass::Bypass)
+/// Classify a first send at staging time from the path's grant (`None`: no decision
+/// ever covered the path) and the bypass tag in force.
+pub(crate) fn classify_first_send(grant: Option<Grant>, bypass: Option<Bypass>) -> FsClass {
+    match grant {
+        Some(Grant::Admit) => FsClass::Gated,
+        None | Some(Grant::Cold) => FsClass::Cold,
+        Some(Grant::Closed) => bypass.map_or(FsClass::Over, FsClass::Bypass),
     }
 }
 
@@ -212,6 +241,8 @@ struct PathGate {
     sends: u64,
     cut_sends: u64,
     last_beta: Option<f64>,
+    /// The newest decision's word on this path (see [`Grant`]); `None` before any.
+    grant: Option<Grant>,
     // `[HOFF]` witness counters (see `GateRow`).
     fs_over: u64,
     fs_byp: [u64; 4],
@@ -242,10 +273,12 @@ pub(crate) struct GateRow {
     pub hand_bind: f64,
     pub spare_zero: bool,
     pub spare_bind: f64,
-    /// First sends staged with `B ≥ β` through no tagged bypass site.
+    /// First sends staged with no admit from the gate's newest decision and through
+    /// no tagged bypass site (a logic witness: see [`Grant`]).
     pub fs_over: u64,
-    /// First sends staged past the bound through a tagged site (defer, timer,
-    /// shutdown), then those staged while β was undefined (cold).
+    /// First sends staged with no admit through a tagged site (defer, timer,
+    /// shutdown), then those staged under a cold-start admit or on a path no
+    /// decision covered (cold).
     pub fs_bypass: [u64; 4],
     /// The window's largest end-of-turn `B − β` as `(total, first sends, exempt)`:
     /// the first sends and exempt datagrams (resends, repair, control) staged
@@ -367,9 +400,10 @@ impl HandoffGate {
         self.active.extend(ins.iter().map(|(id, _)| *id));
         let mut any_open = ins.is_empty();
         for (id, i) in ins {
-            let open = self.admit(*id, i);
             let beta = self.beta(*id, i);
+            let open = admits(i.backlog(), beta);
             let p = self.paths.entry(*id).or_default();
+            p.grant = Some(grant_of(open, beta));
             p.turns += 1;
             p.closed_turns += (!open) as u64;
             p.last_beta = beta;
@@ -419,9 +453,12 @@ impl HandoffGate {
     pub(crate) fn check(&mut self, waiting: bool, ins: &[(u32, PathIn)]) -> bool {
         let mut any_open = ins.is_empty();
         for (id, i) in ins {
-            let open = self.admit(*id, i);
+            let beta = self.beta(*id, i);
+            let open = admits(i.backlog(), beta);
+            let p = self.paths.entry(*id).or_default();
+            p.grant = Some(grant_of(open, beta));
             if !open && waiting {
-                self.paths.entry(*id).or_default().refused = true;
+                p.refused = true;
             }
             any_open |= open;
         }
@@ -429,9 +466,19 @@ impl HandoffGate {
     }
 
     /// Paths with room now (placement's candidate set for a first send). Empty
-    /// only when every path is closed.
-    pub(crate) fn open_ids(&self, ins: &[(u32, PathIn)]) -> Vec<u32> {
-        ins.iter().filter(|(id, i)| self.admit(*id, i)).map(|(id, _)| *id).collect()
+    /// only when every path is closed. The newest decision: it grants (or
+    /// revokes) the token of every path it covers.
+    pub(crate) fn open_ids(&mut self, ins: &[(u32, PathIn)]) -> Vec<u32> {
+        let mut open = Vec::new();
+        for (id, i) in ins {
+            let beta = self.beta(*id, i);
+            let admitted = admits(i.backlog(), beta);
+            self.paths.entry(*id).or_default().grant = Some(grant_of(admitted, beta));
+            if admitted {
+                open.push(*id);
+            }
+        }
+        open
     }
 
     /// The turn ended because the store is full: it does not update the predicate.
@@ -445,10 +492,20 @@ impl HandoffGate {
         self.bypass = b;
     }
 
-    /// A first send is about to be staged on `path` with reading `i`: count how
-    /// it stands against the bound, then as [`Self::note_first_send`].
-    pub(crate) fn note_first_send_at(&mut self, path: u32, i: &PathIn) {
-        let class = classify_first_send(i.backlog(), self.beta(path, i), self.bypass);
+    /// A first send is about to be staged on `path`: spend the newest decision's
+    /// token and count how the send stands ([`Grant`]), then as
+    /// [`Self::note_first_send`]. No view read: a re-read at staging time can be
+    /// skewed against the decision, which is what this witness must not be.
+    ///
+    /// (An `fs_late` field, the old fresh-read comparison, is dropped: its only
+    /// reading without a per-send view read is the one the decision already used.)
+    pub(crate) fn stage_first_send(&mut self, path: u32) {
+        let class = classify_first_send(self.paths.get(&path).and_then(|p| p.grant), self.bypass);
+        for p in self.paths.values_mut() {
+            if p.grant.is_some() {
+                p.grant = Some(Grant::Closed);
+            }
+        }
         let p = self.paths.entry(path).or_default();
         match class {
             FsClass::Gated => {}
@@ -591,12 +648,9 @@ impl HandoffGate {
         self.buf = ins;
     }
 
-    /// A first send is about to be staged on `path`, live: see [`Self::note_first_send_at`].
+    /// A first send is about to be staged on `path`, live: see [`Self::stage_first_send`].
     pub(crate) fn note_first_send_live(&mut self, path: u32) {
-        match self.views.iter().find(|(id, _)| *id == path).map(|(_, v)| super::hoff::HoffGauge::read(v)) {
-            Some(i) => self.note_first_send_at(path, &i),
-            None => self.note_first_send(path),
-        }
+        self.stage_first_send(path);
     }
 
     /// Before a first send is taken, live: see [`Self::check`].
