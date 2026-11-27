@@ -1,0 +1,10 @@
+[18:17:16] A/A rows of OV-long-q
+[18:22:29] AA-q: 24/24 runs (313 s)
+[18:22:30] cell OV-long-q: 75 new runs
+[18:29:13] OV-long-q: 25/69 runs (402 s)
+[18:36:31] OV-long-q: 50/69 runs (841 s)
+[18:43:28] OV-long-q: 69/69 runs (1258 s)
+[18:43:33] resend gauge: 48 runs
+[18:49:32] RESEND-GAUGE: 25/48 runs (360 s)
+[18:51:23] RESEND-GAUGE: 48/48 runs (470 s)
+rc=0

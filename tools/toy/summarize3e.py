@@ -1,0 +1,552 @@
+"""Stage-3e reader (three-knobs-stage3e-build.md 8.5; registration 13.3).  Reads out3e/runs through batch3e's fingerprints.
+
+    python summarize3e.py freeze [--force]            # A/A -> nf_stage3e.json (once, before any decision part), writes PASS-aa
+    python summarize3e.py read CELL [--modes OFF,RL,RE] [--nseeds 12] [--write-undet FILE] [--out results-stage3e.md]
+    python summarize3e.py verdict CELL[,CELL...]       # the stage verdict from the cells' outcomes
+
+The curve functions are proof_s1's (val, vec, boot, read_good, t_bar, nf_of, merge_points, curve_at, compare, compare_rev, classify, bracket);
+this file only keys the rows, reads the 0.12 s and 2 s on-time shares, and applies registration 13.3's scope and doubling.
+"""
+import argparse
+import json
+import math
+import os
+import sys
+
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import proof_s1 as P  # noqa: E402
+from proof_s1 import val, vec, boot, read_good, t_bar, nf_of, merge_points, curve_at, compare, compare_rev, classify, bracket  # noqa: E402,F401
+
+NF_PATH = os.path.join(HERE, "nf_stage3e.json")
+INF = math.inf
+SEEDS = 12
+P.BETTER.update({"share_by_2": +1.0, "share_by_0p12": +1.0, "share_any": +1.0})      # higher is better; recovery_time is already lower-is-better
+
+
+# ---- values ------------------------------------------------------------------------------------------------------------------------------
+def rec_cap(cell_kw):
+    """The readable end of a cell's recovery: the run's length less 2 s less the outage's end (14.5 s in CL-long)."""
+    d = cell_kw["dead"]
+    return cell_kw["n_total"] / cell_kw["rate"] - 2.0 - (d[1] + d[2])
+
+
+def rec_value(r, cap):
+    """recovery_time None ("not within the run") is censored at the readable end, counted, never dropped."""
+    v = r.get("recovery_time")
+    return cap if v is None else float(v)
+
+
+def value(r, k, cap):
+    if k == "recovery_time":
+        return rec_value(r, cap)
+    if k == "share_by_0p12":
+        return float(r["rep3e"]["share_by"]["0.12"])
+    if k in r and r[k] is not None:
+        return float(r[k])
+    if k in r.get("gauges", {}):
+        return float(r["gauges"][k])
+    return float(r["rep3e"][k])
+
+
+def nf_from(A, Ap, cap, keys):
+    """The A/A floor: the 95th percentile over seeds of |A - A'| per readout (A, Ap: seed -> result)."""
+    out = {}
+    for k in keys:
+        d = np.abs(np.asarray([value(A[s], k, cap) for s in sorted(A)]) - np.asarray([value(Ap[s], k, cap) for s in sorted(Ap)]))
+        out[k] = float(np.percentile(d, 95))
+    return out
+
+
+def combine_floors(tinf, primary):
+    """The larger of the two A/A floors per readout.  A pair whose floor is zero (an on-time share that is 0 by construction under overload at T = inf, a recovery
+    at the readout's resolution) gives way to the other pair's.  Returns (floors, readouts whose floor is zero in both: their comparisons are reported only)."""
+    cells = {k: max(tinf[k], primary[k]) for k in tinf}
+    return cells, [k for k, v in cells.items() if v == 0.0]
+
+
+def stage_verdict(outcomes, better_somewhere):
+    """Registration 13.3 (plan 1.3) with the coordinator's reading: FAILS if any cell fails; UNDETERMINED if any cell is undetermined; otherwise PASSES
+    when at least one comparison outside the identity cells reads shown better, else UNDETERMINED."""
+    if any(v == "FAILS" for v in outcomes.values()):
+        return "FAILS"
+    if any(v == "UNDETERMINED" for v in outcomes.values()):                  # as proof stage 1: an undetermined cell leaves the stage undetermined
+        return "UNDETERMINED"
+    if better_somewhere:
+        return "PASSES"
+    return "UNDETERMINED"
+
+
+# ---- one cell in one repair mode ----------------------------------------------------------------------------------------------------------
+def identical(a, b):
+    """Amendment 3e-4 (identity baselines): the keys registration 13.6 compares for the T = inf, H = inf arm against today's Bulk (every top-level key outside
+    batch3e's id3e exclusions and the ID_GAUGES), plus the trace digest when both runs carry one.  Returns the differing keys (empty: identical)."""
+    import test_toy2
+    excl = test_toy2.ID_EXCL | {"rep3e", "trace_sha", "trace_n", "wall_s"}
+    bad = [k for k in a if k not in excl and not k.startswith("_") and json.dumps(a[k]) != json.dumps(b.get(k, "<missing>"))]
+    bad += [("g", k) for k in test_toy2.ID_GAUGES if a.get("gauges", {}).get(k) != b.get("gauges", {}).get(k)]
+    if a.get("trace_sha") and b.get("trace_sha") and a["trace_sha"] != b["trace_sha"]:
+        bad.append("trace")
+    return bad
+
+
+def nf_n(nfall, cell, n):
+    """The frozen A/A floor of a cell for a comparison of n seeds (registration 14.3): the freeze at the largest count not above n (the A/A rows
+    run at 12 seeds, so 24 reads the 12-seed floor), else the smallest count."""
+    keys = sorted(int(k) for k in nfall["by_n"])
+    use = max([k for k in keys if k <= n], default=keys[0])
+    return nfall["by_n"][str(use)]["cells"][cell]
+
+
+def nf_degenerate(nfall, cell, n):
+    keys = sorted(int(k) for k in nfall["by_n"])
+    use = max([k for k in keys if k <= n], default=keys[0])
+    return tuple(nfall["by_n"][str(use)].get("degenerate", {}).get(cell, ()))
+
+
+def rb_reported_only(out_dir, cell, key):
+    """Amendment 3 (15.3): RB is read as reported only until ENGINE-CAP says "holds"; in CL-long-v the delta = 0.005 arms (the whole new curve, ADR-0084,
+    today's Bulk and today's Realtime at 0.005) never reach the cap in the engine, so they stay reported whatever the marker says."""
+    if cell in ("CL-long-v",) and not (key[0] == "rt" and key[1] != 0.005):
+        return True
+    path = os.path.join(out_dir, "ENGINE-CAP")
+    if not os.path.exists(path):
+        return True
+    with open(path) as f:
+        return not f.read().lstrip().lower().startswith("holds")
+
+
+def write_verdict_marker(out_dir, verdict):
+    """ROBUST and SMOOTH wait for this marker (registration 14.5): present only while the stage verdict reads PASSES."""
+    path = os.path.join(out_dir, "VERDICT-PASSES")
+    if verdict == "PASSES":
+        os.makedirs(out_dir, exist_ok=True)
+        open(path, "w").close()
+    elif os.path.exists(path):
+        os.remove(path)
+
+
+def steady_window(r, rate):
+    """The steady window of a run (OV and the other overload cells): from the first dequeue expiry (+ the 0.5 s window width) to the source stop (- the width).  Returns
+    (first expiry, mean on-time share at 0.4 s over the windows, mean on-time share at 2 s over them, source stop)."""
+    t0 = r["first_deq_exp"] if r.get("first_deq_exp") is not None else 0.0
+    stop = r["units"] / rate
+    ks = [k for k in range(len(r["win_ot04"])) if k * 0.1 >= t0 + 0.5 - 1e-9 and k * 0.1 + 0.5 <= stop + 1e-9]
+    if not ks:
+        return t0, float("nan"), float("nan"), stop
+    return t0, float(np.mean([r["win_ot04"][k] for k in ks])), float(np.mean([r["win_ot2"][k] for k in ks])), stop
+
+
+def steady_table(R, nseeds, rate, link_rate=None):
+    """Markdown rows per design row: delivered, on time at 0.4 s and 2 s, the same over the steady window, delay p50 and p90, R and srtt, repairs, repair share of link
+    sends, link-queue drops."""
+    out = ["| row | delivered | on time 0.4 s | on time 2 s | steady 0.4 s | steady 2 s | delay p50 | delay p90 | R | srtt | repairs | repair share | queue drops |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for key in sorted(R, key=str):
+        ss = [s for s in range(nseeds) if s in R[key]]
+        if not ss or "win_ot04" not in R[key][ss[0]]:
+            continue
+        g = lambda f: float(np.mean([f(R[key][s]) for s in ss]))        # noqa: E731
+        st = [steady_window(R[key][s], rate) for s in ss]
+        first, res = g(lambda r: sum(r["win_first"])), g(lambda r: sum(r["win_resend"]))
+        rep = g(lambda r: r["gauges"].get("rep_sent", 0))
+        out.append("| %s | %.4f | %.4f | %.4f | %.4f | %.4f | %.3f | %.3f | %.3f | %.3f | %.0f | %.3f | %.0f |" % (
+            key, g(lambda r: r["share_any"]), g(lambda r: r["share_by_0p4"]), g(lambda r: r["share_by_2"]), float(np.nanmean([x[1] for x in st])),
+            float(np.nanmean([x[2] for x in st])), g(lambda r: r["dh_p50"]), g(lambda r: r["dh_p90"]), g(lambda r: r["R_mean"]), g(lambda r: r["srtt_mean"]), rep,
+            rep / (first + res + rep) if first + res + rep else 0.0, g(lambda r: r["gauges"].get("queue_drop_out", 0))))
+    return out
+
+
+def cmd_expl(nseeds=6):
+    """The exploratory rows (OV, repair off): sizing a sender wait limit.  Reported only; never read under the verdict."""
+    import batch3e as B
+    B.build()
+    R = {}
+    for j in B.PARTS["EXPL"]:
+        rows = {s: B.load(j.fp, s) for s in range(nseeds)}
+        if all(v is not None for v in rows.values()):
+            R[j.key] = rows
+    rate = B.CELLS["OV"][1]["rate"]
+    print("exploratory: sizing a sender wait limit (OV, repair off both sides, %d seeds; reported only, never under the verdict)\n" % nseeds)
+    print("\n".join(steady_table(R, nseeds, rate)))
+
+
+def delay_table(R, nseeds):
+    """Markdown rows: the delay from hand-over (p50 and p90 over every unit handed over, inf where fewer arrive) and of the delivered units (p50), per row."""
+    out = ["| row | delivered | on time | delay p50 (s) | delay p90 (s) | delivered units' p50 (s) |", "|---|---|---|---|---|---|"]
+    for key in sorted(R, key=str):
+        ss = [s for s in range(nseeds) if s in R[key]]
+        if not ss or "dh_p50" not in R[key][ss[0]]:
+            continue
+        mean = lambda k: float(np.mean([R[key][s][k] for s in ss]))        # noqa: E731
+        out.append("| %s | %.4f | %.4f | %.3f | %.3f | %.3f |" % (key, mean("share_any"), mean("share_by_0p4"), mean("dh_p50"), mean("dh_p90"), mean("w_p50")))
+    return out
+
+
+def identity_vs_off(rl_rows, off_rows, nseeds=3):
+    """The delta = 0.005 rows of a repair mode have 3 seeds and equal their repair-off rows (the law gives r = 0 exactly there): read by identity.
+    rows: key -> seed -> result.  Returns (IDENTITY PASSES | IDENTITY PENDING | FAILS, the differences)."""
+    diffs, pending = [], False
+    for key, rows in rl_rows.items():
+        off = off_rows.get(key)
+        if off is None or any(s not in off for s in range(nseeds)):
+            pending = True
+            continue
+        for s in range(nseeds):
+            d = identical(rows[s], off[s])
+            if d:
+                diffs.append((key, s, d))
+    if diffs:
+        return "FAILS", diffs[:5]
+    return ("IDENTITY PENDING" if pending else "IDENTITY PASSES"), []
+
+
+def read_mode(R, nf, units, ys, nseeds, rec_cap, rt_verdict=(50.0,), gates_bad=False, degenerate=(), base_n=None, reported=None, require_key=None):
+    """R: row key -> seed -> result, keys ("lt", T, 0.0) (the new curve), ("adr", rho), ("rt", delta), ("bulk",).  The object API is the new
+    curve's own T = inf, H = 0 point.  ADR-0084 (curve and points), today's Bulk and the object API are under the verdict in every mode;
+    today's Realtime only at the deltas in rt_verdict (50 in RL and RE, none in OFF), elsewhere it is reported.
+    nf is the floor dict, or a function of the comparison's seed count n (the floor is taken over the first n seeds).  base_n: baseline row key -> its
+    seed count where that is below nseeds (the old senders of the long overload cells have 3 against the new curve's 6): the comparison runs on that
+    count, and its one doubling goes to twice that count.
+    A readout in `degenerate` has a zero A/A floor in the cell (both pairs): its comparisons are reported only, never under the verdict.
+    Returns dict(outcome, comps, undet (row keys to double), worse, better)."""
+    base_n = base_n or {}
+    if require_key is not None and not (require_key in R and all(s in R[require_key] for s in range(nseeds))):
+        return dict(outcome="REFUSED", reason="the new curve lacks the cell's primary lifetime point %s" % (require_key,), comps=[], undet=set(), worse=[],
+                    undetermined=[], better=[], broken=[])
+
+    def have(key, ns):
+        return key in R and all(s in R[key] for s in range(ns))
+
+    def arr(keys, k, ns):
+        return np.stack([[value(R[key][s], k, rec_cap) for s in range(ns)] for key in keys])
+
+    new_all = sorted([k for k in R if k[0] == "lt" and k[2] == 0.0 and have(k, nseeds)], key=lambda k: k[1])
+    base_keys = [k for k in R if k[0] in ("adr", "rt", "bulk") and have(k, base_n.get(k, nseeds))]
+    if new_all and ("lt", INF, 0.0) in new_all:
+        base_keys.append(("api",))
+        R = dict(R)
+        R[("api",)] = R[("lt", INF, 0.0)]
+    nfn = nf if callable(nf) else (lambda n: nf)
+    xn = lambda n: max(nf_of(nfn(n), "share_any"), 1.0 / units)              # noqa: E731
+    comps, undet, broken = [], set(), []
+
+    def identity_reading(bk, R, nb):
+        """Amendment (dated 2026-11-26, after CL-long's data, before any other cell's): a baseline that is itself a configuration of the new model is read by
+        identity.  The object API is S5 at T = inf, hold 0, the curve's own last point.  Today's Bulk is S5 at T = inf, hold inf (strict order), so it is compared
+        with that row, never with the any-order H = 0 curve.  Identity counts as neither better nor worse; a difference is a finding (it fails the cell)."""
+        if bk == ("api",):
+            return dict(word="identity", mean=0.0, lo=0.0, hi=0.0, m=0.0, n_out=0, note="the object API is the curve's own point: S5 at T=inf, hold 0")
+        if bk == ("bulk",) and ("lt", INF, INF) in R and have(("lt", INF, INF), nb) and have(bk, nb):
+            diffs = [(s, identical(R[("lt", INF, INF)][s], R[bk][s])) for s in range(nb)]
+            diffs = [d for d in diffs if d[1]]
+            if not diffs:
+                return dict(word="identity", mean=0.0, lo=0.0, hi=0.0, m=0.0, n_out=0, note="today's Bulk equals S5 at T=inf, hold inf on every compared key, %d seeds" % nb)
+            return dict(word="identity broken", mean=float("nan"), lo=float("nan"), hi=float("nan"), m=0.0, n_out=0, note="differs on %s at seed %d" % (diffs[0][1][:3], diffs[0][0]))
+        return None
+
+    def scope_of(key, k=None):
+        if k in degenerate or (reported is not None and reported(key)):
+            return "reported"
+        if key[0] == "rt":
+            return "verdict" if key[1] in rt_verdict else "reported"
+        return "verdict"
+
+    for k in ys:
+        for bk in base_keys:
+            nb = base_n.get(bk, nseeds)
+            idn = identity_reading(bk, R, nb)
+            if idn is not None:                                               # a configuration of the new model itself: read by identity, never interpolated
+                if idn["word"] == "identity broken":
+                    broken.append((bk, idn))
+                comps.append(dict(scope=scope_of(bk, k), kind="identity", base=bk, k=k, rd=idn))
+                continue
+
+            def run(newk, ns):
+                nx, ny = arr(newk, "share_any", ns), arr(newk, k, ns)
+                kk = merge_points(nx, ny, P.BETTER[k], xn(ns))
+                bx, by = arr([bk], "share_any", ns)[0], arr([bk], k, ns)[0]
+                return compare(nx, ny, kk, bx, by, k, nf_of(nfn(ns), k), xn(ns), units, float(by.mean()), True), kk, nx, bx
+            rd, kk, nx, bx = run(new_all, nb)
+            if rd["word"] == "undetermined":
+                arms = {bk} | {new_all[i] for i in bracket(nx.mean(1), kk, float(bx.mean()))}
+                n2 = [n for n in new_all if have(n, 2 * nb)]
+                if have(bk, 2 * nb) and len(n2) >= 2:                          # the registered doubling, on these arms only; never a second one
+                    rd, _, _, _ = run(n2, 2 * nb)
+                    rd["note"] = "doubled to %d seeds" % (2 * nb)
+                else:
+                    undet.update(a for a in arms if a != ("api",) and not have(a, 2 * nb))             # still to double
+            comps.append(dict(scope=scope_of(bk, k), kind="point", base=bk, k=k, rd=rd))
+        adr = [k2 for k2 in base_keys if k2[0] == "adr"]
+        if len(adr) >= 2 and new_all:                                          # curve against curve: the new points inside ADR-0084's range
+            na = min(base_n.get(k2, nseeds) for k2 in adr)
+            ax, ay = arr(adr, "share_any", na), arr(adr, k, na)
+            ak = merge_points(ax, ay, P.BETTER[k], xn(na))
+            lo, hi = ax[ak].mean(1).min(), ax[ak].mean(1).max()
+            for n in new_all:
+                x = float(arr([n], "share_any", na).mean())
+                if not (lo - 1e-12 <= x <= hi + 1e-12):
+                    continue
+
+                def runr(adrk, ns):
+                    ax_, ay_ = arr(adrk, "share_any", ns), arr(adrk, k, ns)
+                    ak_ = merge_points(ax_, ay_, P.BETTER[k], xn(ns))
+                    px, py = arr([n], "share_any", ns)[0], arr([n], k, ns)[0]
+                    return compare_rev(ax_, ay_, ak_, px, py, k, nf_of(nfn(ns), k), units, float(ay_.mean())), ax_, ak_
+                rd, ax_, ak_ = runr(adr, na)
+                if rd["word"] == "undetermined":
+                    a2 = [m for m in adr if have(m, 2 * na)]
+                    if have(n, 2 * na) and len(a2) >= 2:
+                        rd, _, _ = runr(a2, 2 * na)
+                        rd["note"] = "doubled to %d seeds" % (2 * na)
+                    else:
+                        undet.update(a for a in ({n} | {adr[i] for i in bracket(ax_.mean(1), ak_, x)}) if not have(a, 2 * na))
+                comps.append(dict(scope="reported" if (k in degenerate or (reported is not None and reported(n))) else "verdict", kind="curve", base=n, k=k, rd=rd))
+    out, worse, und, better = classify(comps, gates_bad or bool(broken))
+    return dict(outcome=out, comps=comps, undet=undet, worse=worse, undetermined=und, better=better, broken=broken)
+
+
+# ---- the store, per cell --------------------------------------------------------------------------------------------------------------------
+def cell_ys(cell):
+    import batch3e as B
+    base = B.base_of(cell)
+    ys = ["share_by_2" if cell in B.VIDEO else "share_by_0p4"]
+    if cell == "RT":
+        ys.append("share_by_0p12")
+    if B.CELLS[base][1].get("dead") is not None and cell not in B.FILE_CELLS:
+        ys.append("recovery_time")
+    return ys
+
+
+def load_rows(cell, mode, nseeds):
+    """(R, base_n): row key -> seed -> result for every design row of a cell in a repair mode that has its own first seeds on disk (3 for a delta = 0.005 identity
+    row or an old sender of a long overload cell, else nseeds); seeds up to twice that count are loaded where the registered doubling has run them.
+    base_n holds the rows with fewer seeds than nseeds.  Reused stage 3d rows come through batch3e.load."""
+    import batch3e as B
+    R, base_n = {}, {}
+    for key in B.rows_of(cell):
+        fp = B.fingerprint(B.row_builder(cell, key, mode)(0))
+        own = min(nseeds, B.row_nseeds(cell, key, mode))
+        rows = {}
+        for s_ in range(2 * own):
+            r = B.load(fp, s_)
+            if r is None:
+                break
+            rows[s_] = r
+        if len(rows) >= own:
+            R[key] = rows
+            if own < nseeds:
+                base_n[key] = own
+    return R, base_n
+
+
+def cell_units(cell):
+    import batch3e as B
+    kw = B.CELLS[B.base_of(cell)][1]
+    return kw["n_total"]
+
+
+def cell_cap(cell):
+    import batch3e as B
+    kw = B.CELLS[B.base_of(cell)][1]
+    return rec_cap(kw) if kw.get("dead") is not None and "rate" in kw else 0.0     # file cells send at link rate: judged by completion time, no recovery readout
+
+
+def cmd_freeze(force=False, aa_at="tinf"):
+    """The A/A floors, frozen at each count n in (3, 6, 12, 24) over the first n seeds (the A/A rows have 12, so 24 reads the 12-seed floor):
+    both pairs (T = inf, and the primary lifetime), the larger per readout, and the readouts that are zero in both (reported only)."""
+    import batch3e as B
+    B.build()
+    nf = dict(notes="p95 over the first n seeds of |A - A'|; A' = phase variant 1 of A; A = S5 at T=inf, hold 0 (tinf, build 8.5) or at the cell's primary lifetime "
+                    "(primary, registration 5), repair off; the larger of the two per readout; degenerate = zero in both, comparisons on it are reported only",
+              by_n={})
+    rows = {}
+    for cell in B.MAIN_CELLS + B.AA2_CELLS:
+        base, d = B.base_of(cell), B.delta_of(cell)
+        for at in ("tinf", "primary"):
+            T = INF if at == "tinf" else B.primary_T(cell)
+            A = {s_: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None)), s_) for s_ in range(2 * SEEDS)}
+            Ap = {s_: B.load(B.fingerprint(B.new_cfg(base, 0, T, 0.0, d, None, variant=1)), s_) for s_ in range(2 * SEEDS)}
+            A, Ap = {k: v for k, v in A.items() if v is not None}, {k: v for k, v in Ap.items() if v is not None}
+            if len(A) < SEEDS or len(Ap) < SEEDS:
+                raise SystemExit("the A/A (%s) needs the %d seeds of both arms in %s" % (at, SEEDS, cell))
+            rows[(cell, at)] = (A, Ap)
+    for n in (3, 6, 12, 24):
+        nf["by_n"][str(n)] = dict(cells={}, degenerate={}, tinf={}, primary={})
+        for cell in B.MAIN_CELLS + B.AA2_CELLS:
+            for at in ("tinf", "primary"):
+                A, Ap = rows[(cell, at)]
+                m = min(n, len(A), len(Ap))
+                nf["by_n"][str(n)][at][cell] = nf_from({k: A[k] for k in range(m)}, {k: Ap[k] for k in range(m)}, cell_cap(cell), ["share_any", "share_T"] + cell_ys(cell))
+            c, dg = combine_floors(nf["by_n"][str(n)]["tinf"][cell], nf["by_n"][str(n)]["primary"][cell])
+            nf["by_n"][str(n)]["cells"][cell], nf["by_n"][str(n)]["degenerate"][cell] = c, dg
+            if n == 12:
+                for at in ("tinf", "primary"):
+                    z = [k for k, v in nf["by_n"]["12"][at][cell].items() if v == 0.0]
+                    if z:
+                        print("degenerate floor (zero) in the %s pair of %s at 12 seeds: %s%s" % (at, cell, z, "; zero in both, comparisons on it are reported only" if set(z) & set(dg) else "; the other pair's floor is used"))
+    nf["cells"] = nf["by_n"]["12"]["cells"]
+    nf["degenerate"] = nf["by_n"]["12"]["degenerate"]
+    if os.path.exists(NF_PATH) and not force:
+        print("nf_stage3e.json exists; not overwriting (frozen)")
+        return
+    with open(NF_PATH, "w") as f:
+        json.dump(nf, f, indent=1)
+    os.makedirs(B.OUT, exist_ok=True)
+    open(os.path.join(B.OUT, "PASS-aa"), "w").close()
+    print("frozen", NF_PATH)
+
+
+def cmd_read(cell, modes, nseeds, write_undet, out_path):
+    import batch3e as B
+    B.build()
+    with open(NF_PATH) as f:
+        nfall = json.load(f)
+    nseeds = nseeds or B.cell_seeds(cell)
+    nf, degenerate = (lambda n: nf_n(nfall, cell, n)), nf_degenerate(nfall, cell, nseeds)
+    L = []
+    P_ = L.append
+    outcomes, undet_fp, better_somewhere = {}, set(), False
+    units = cell_units(cell)
+    P_("### %s (readouts %s; paired seeds, the first %d)\n" % (cell, ", ".join(cell_ys(cell)), nseeds))
+    for mode in modes:
+        R, base_n = load_rows(cell, mode, nseeds)
+        if not R:
+            P_("- mode %s: no complete rows on disk" % mode)
+            continue
+        if mode in ("RL", "RE") and B.delta_of(cell) == 0.005 and all(B.row_nseeds(cell, key, mode) == B.SEEDS_ID for key in R if key[0] == "lt"):
+            off = {key: {s: B.load(B.fingerprint(B.row_builder(cell, key, "OFF")(0)), s) for s in range(B.SEEDS_ID)} for key in R}
+            off = {k: v for k, v in off.items() if all(x is not None for x in v.values())}
+            ident = {key: rows for key, rows in R.items() if B.row_nseeds(cell, key, mode) == B.SEEDS_ID}
+            word, detail = identity_vs_off(ident, off)
+            outcomes[mode] = word
+            P_("#### %s: %s\n" % (B.n_mode(mode), word))
+            P_("- at delta = 0.005 the law gives r = 0 exactly, so these %d rows (3 seeds) are read against their repair-off rows by identity, not as a curve; %d have their repair-off row on disk%s\n"
+               % (len(ident), len(off), "; the difference: %s" % (detail,) if detail else ""))
+            continue
+        rt_verdict = () if mode == "OFF" else (50.0,)
+        rep = (lambda key, cell=cell: rb_reported_only(B.OUT, cell, key)) if mode in ("RB", "RB025") else None
+        req = ("lt", B.primary_T(cell), 0.0) if mode in ("OFF", "RL", "RE") else None
+        res = read_mode(R, nf, units, cell_ys(cell), nseeds, cell_cap(cell), rt_verdict, degenerate=degenerate, base_n=base_n, reported=rep, require_key=req)
+        outcomes[mode] = res["outcome"]
+        if res["outcome"] == "REFUSED":
+            P_("#### %s: REFUSED, %s\n" % (B.n_mode(mode), res["reason"]))
+            continue
+        better_somewhere = better_somewhere or bool(res["better"])
+        for key in res["undet"]:
+            undet_fp.add(B.fingerprint(B.row_builder(cell, key, mode)(0)))
+        P_("#### %s: %s\n" % (B.n_mode(mode), res["outcome"]))
+        P_("| baseline | readout | difference | outcome | under the verdict |")
+        P_("|---|---|---|---|---|")
+        for c in res["comps"]:
+            P_("| %s | %s | %s | %s | %s |" % (B.row_name(c["base"]) if c["base"][0] != "api" else "object API (S5 at T=inf, hold 0)", c["k"], P.fmt(c["rd"]),
+                                             c["rd"]["word"], "yes" if c["scope"] == "verdict" else "no, reported only"))
+        P_("\n- shown worse or outside the swept range: %d; undetermined: %d; shown better: %d\n" % (len(res["worse"]), len(res["undetermined"]), len(res["better"])))
+        P_("Delay from hand-over per row (the readout the on-time share hides), first %d seeds:\n" % nseeds)
+        L.extend(delay_table(R, nseeds))
+        P_("")
+    vals = set(outcomes.values())
+    cell_out = ("REFUSED" if "REFUSED" in vals else "FAILS" if "FAILS" in vals else "UNDETERMINED" if "UNDETERMINED" in vals else
+                "PASSES" if "PASSES" in vals else (sorted(vals)[0] if vals else "no data"))
+    P_("**CELL %s: %s**\n" % (cell, cell_out))
+    text = "\n".join(L)
+    print(text)
+    if out_path:
+        with open(out_path, "a", newline="\n") as f:
+            f.write(text + "\n")
+    if write_undet:
+        with open(write_undet, "w") as f:
+            json.dump(sorted(undet_fp), f)
+    return cell_out, better_somewhere
+
+
+# ---- smoothness: kp_stats over every 5 consecutive points (registration 13.2, plan 6) ------------------------------------------------------------
+def kp_stats(Y):
+    """Per seed K = 2 J1 - J2 and P = 2 D1 - D2 of a readout over five equally spaced points (Y: (5, seeds); the centre is index 2), as
+    summarize2.kp_stats forms them: a step in the dial shows in K, a kink in P."""
+    J1, J2 = Y[3] - Y[1], Y[4] - Y[0]
+    D1 = Y[2] - 0.5 * (Y[1] + Y[3])
+    D2 = Y[2] - 0.5 * (Y[0] + Y[4])
+    return {"K": 2 * J1 - J2, "P": 2 * D1 - D2}
+
+
+def slide_kp(Y, m):
+    """kp_stats on every window of 5 consecutive points of Y ((points, seeds)); each statistic is read against +-m (the A/A floor of the readout,
+    reported with the sweep).  Returns a list of (first point, K reading, P reading); a reading is "shown" when its interval lies outside +-m."""
+    out = []
+    for i in range(Y.shape[0] - 4):
+        st = kp_stats(Y[i:i + 5])
+        row = []
+        for name in ("K", "P"):
+            mu, lo, hi = boot(st[name])
+            shown = lo > m or hi < -m
+            row.append(dict(stat=name, mean=mu, lo=lo, hi=hi, m=m, word="shown" if shown else "not shown"))
+        out.append((i, row[0], row[1]))
+    return out
+
+
+def cmd_smooth(nseeds=3):                                                   # SMOOTH runs 3 paired seeds (registration 14.5)
+    import batch3e as B
+    B.build()
+    with open(NF_PATH) as f:
+        nfall = json.load(f)
+    shown = 0
+    for name, jobs in sorted(B.SMOOTH_GROUPS.items()):
+        cell = jobs[0].cell
+        for k in cell_ys(cell):
+            Y = []
+            for j in jobs:
+                rows = [B.load(j.fp, s) for s in range(nseeds)]
+                if any(r is None for r in rows):
+                    break
+                Y.append([value(r, k, cell_cap(cell)) for r in rows])
+            if len(Y) != len(jobs):
+                print("- %s, %s: not complete" % (name, k))
+                continue
+            m = nf_n(nfall, cell, nseeds).get(k, 0.0)
+            res = slide_kp(np.asarray(Y), m)
+            bad = [(i, r) for i, a, b in res for r in (a, b) if r["word"] == "shown"]
+            shown += len(bad)
+            print("- %s, %s: %d windows, A/A floor %.3g, K or P shown in %d (%s)" % (name, k, len(res), m, len(bad), ", ".join("window %d %s" % (i, r["stat"]) for i, r in bad) or "none"))
+    print("SMOOTHNESS: %s" % ("a K or P is shown: a step or a kink, a defect finding" if shown else "no K or P shown in any window"))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=("freeze", "read", "verdict", "smooth", "expl"))
+    ap.add_argument("cell", nargs="?", default="")
+    ap.add_argument("--modes", default="OFF,RL")
+    ap.add_argument("--nseeds", type=int, default=None, help="default: the cell's seed count (12 or 6)")
+    ap.add_argument("--write-undet", default="")
+    ap.add_argument("--out", default="")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--aa-at", default="tinf", choices=("tinf", "primary"))
+    ap.add_argument("--reuse-dirs", default="", help="the same reuse stores as batch3e, so reused rows are readable")
+    a = ap.parse_args()
+    if a.reuse_dirs:
+        import batch3e as B
+        B.set_reuse([x for x in a.reuse_dirs.split(",") if x])
+    if a.cmd == "freeze":
+        cmd_freeze(a.force, a.aa_at)
+    elif a.cmd == "expl":
+        cmd_expl(a.nseeds or 6)
+    elif a.cmd == "smooth":
+        cmd_smooth(a.nseeds or 3)
+    elif a.cmd == "read":
+        cmd_read(a.cell, [m if m in ("OFF", "RL", "RE", "RB", "RB025") else float(m) for m in a.modes.split(",")], a.nseeds, a.write_undet, a.out)
+    else:
+        import batch3e as B
+        outs, better = {}, False
+        for c in a.cell.split(","):
+            o, b = cmd_read(c, ["OFF", "RL"] + (["RE"] if c in B.RE_CELLS else []), a.nseeds, "", "")
+            outs[c] = o
+            better = better or b
+        v = stage_verdict(outs, better)
+        write_verdict_marker(B.OUT, v)                                         # ROBUST and SMOOTH wait for VERDICT-PASSES
+        print("STAGE VERDICT:", v, outs)
+
+
+if __name__ == "__main__":
+    main()

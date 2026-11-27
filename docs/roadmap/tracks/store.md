@@ -51,7 +51,7 @@ flowchart TB
     store_s42_engine_path["✔ Engine path for<br/>dispersion"]
     store_engine_form["✔ Oracle store law,<br/>closed loop"]
     store_s43b_retuned["✔ Oracle store law re-<br/>tuned"]
-    store_w1_who_limits[/"⏳ What enforces the<br/>latency setting"/]
+    store_w1_who_limits[/"▶ What enforces the<br/>latency setting"/]
     store_s54_budget["✔ Store-budget test<br/>design"]
     store_defect_cap_constant>"⚠ In-flight limit<br/>stuck at its ceiling"]
     store_law_derivation["▶ Deriving the in-<br/>flight data limit"]
@@ -244,9 +244,9 @@ flowchart TB
     class store_latency_lever,store_cap_unification,store_s60a,store_s60b,store_s61a_rerun,store_law_g_rederive,store_s62_j0 mixed
     class store_deadwall_modehunt,store_cap_law_cluster,store_input_search,store_s36_dispersion,store_s40_p90,store_s42_engine_path,store_engine_form,store_s43b_retuned,store_s54_budget,store_s56_sweep,store_s57a_burst,store_s57b_c1d,store_law_r67,store_count_rule unrated
     class store_delta_cap vsucc
-    class store_w1_who_limits,store_slaw_gauge waiting
+    class store_w1_who_limits,store_law_derivation inprog
     class store_defect_cap_constant,store_defect_allowance_short,store_defect_b0p_brake finding
-    class store_law_derivation inprog
+    class store_slaw_gauge waiting
     class store_sampler_design next
     class store_fix_maxbw_minrtt,store_engine_form_impl,store_engine_form_guard,store_delta_seat,store_s48c_session blocked
 ```
@@ -372,7 +372,7 @@ flowchart TB
 | `store-s42-engine-path` | Engine path for dispersion | (a) Kernel receive timestamps for an engine L̂. `FEASIBLE-IN-TREE`, not built. |  |  | Split 2026-11-16 from 'Dispersion and oracle store law'. Derivation and feasibility record, no VM: a wire-clocked S does not close c1s (af06313d). |  |  |  |  |
 | `store-engine-form` | Oracle store law, closed loop | c2 `BISTABLE`, c1s `UNSTABLE` (the c1s runaway is quinn's window collapse); diagnostic only, nothing ships |  | Tests of how the in-flight data limit could read the real link rate and delay found no reliable source yet, so the work is on hold until better measurements exist. | Split 2026-11-16 from 'Dispersion and oracle store law' (§36, §40, §42, §43, §43b, rated successful as a family): those are now store-s36-dispersion, store-s40-p90, store-s42-engine-path and store-s43b-retuned; this node is §43 alone, a diagnostic with no rating. RWM_STORE_LAW=oracle, 24 rows; continues as plan W3.3. |  |  |  |  |
 | `store-s43b-retuned` | Oracle store law re-tuned | c2 `CONVERGES-ONE-POINT`: both starts in band (191 / 187), Tp50 18–19.6 ms vs main ≈ 208 ms, goodput ≈ 2 % lower; diagnostic only, nothing ships |  |  | Split 2026-11-16 from 'Dispersion and oracle store law'. G = 0.9, τ = 5 ms, c2, SL/SH starts, n = 3 each. |  |  |  |  |
-| `store-w1-who-limits` | What enforces the latency setting | The final pick waits on §48b's cost attribution (Section 5). |  | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. | Derivation (derive-w1, w1r2): δ's seat on the store, bbr_rs window δ-free; waits on owner questions U1-U3 (plan user decision 10). Its three owner questions are answered (owner decisions 1, 2 and 8); only the docs merge is left. Was titled 'Who limits at each δ'. |  | merge to main |  |  |
+| `store-w1-who-limits` | What enforces the latency setting | The final pick waits on §48b's cost attribution (Section 5). |  | Working out whether the congestion controller or the in-flight data limit should carry the latency setting; the answer so far is the limit. | Derivation (derive-w1, w1r2): δ's seat on the store, bbr_rs window δ-free; waits on owner questions U1-U3 (plan user decision 10). Its three owner questions are answered (owner decisions 1, 2 and 8); only the docs merge is left. Was titled 'Who limits at each δ'. Docs from derive-w1, w1r2 merged to main 2026-11-27. |  |  |  |  |
 | `store-s54-budget` | Store-budget test design | lever B, from a mean of about 5.3 s to about 1.0 s. | from a mean of about 5.3 s to about 1.0 s | Designed a test of whether a smaller in-flight budget stops data from piling up in the send queue after the end-of-transfer fix. | p0-dwell-diag: lever B triples p0 quinn backlog; §8 holds the §54 store-budget test design (reduced RWM_STORE_PATH_POOL on BASE' and CAND'), plan item 2 of 2026-11-13. |  |  |  |  |
 | `store-law-derivation` | Deriving the in-flight data limit |  |  | Working out the formula for how much unconfirmed data the sender may hold, from the link and the delay dial, instead of a fixed number that is far too big. | Owner decision 2026-11-14: before the lever-B guard. One derivation for the store law, its rate and delay inputs (E04, E03) and the gap horizon (C02); §54b is the c8 anchor (slope only, the knee is not bracketed). Fable reviews before code. Progress 2026-11-14..15: the R6.4/R6.5 amendments with §57a/§57b (store-law-rev6, merged); R6.7 (store-law-r67: candidate floor C, no recommendation); the §60 gauge session measures the queue-free floors, tests the target form at c8 and scores R6.7's allowance shortfall at c2. Next derivation: R6.7's allowance item; a large sweep only after it. Was titled 'Store-law derivation'. |  |  |  |  |
 | `store-s56-sweep` | Store-pool sweep | c2 and c8 have a wide flat region; c1s pays at every cut. | c2 flat to W 192, c8 to 512 | Measured how throughput and delay change as the in-flight data limit shrinks, on three test links, to find where throughput starts to drop. | Reported only, no build (RWM_STORE_PATH_POOL). 64 rows at c8/c2/c1s plus one RWM_SUCC_DUMP row. Feeds the store law's Part B and the owner's U2. |  |  |  |  |

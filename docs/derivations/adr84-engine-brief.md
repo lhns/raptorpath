@@ -12,10 +12,12 @@ Owner decisions of 2026-11-21 are recorded in Amendment 2 and in `rho-step-sites
 - C6 is option (a); the Realtime N ≥ 2 changes (C1, C3, gap-report coalescing at every N) are accepted.
 - Still open: the receiver law R1 as final, the floor-cadence reversal, the C10 hold at Realtime. R1 is the staging point only. The receiver's release arm (C9, C11, C12, design U) lands once, with the release rule, after the disorder price ω is measured.
 
-**What is still open.** The form of each (C) site, and whether the receiver reads ρ at all, come from `docs/derivations/rho-step-sites.md` (branch `rho-step-sites`). That derivation is still running.
-- Steps 0–8 below do not depend on it.
-- Step 9 (the (C) rewrites) does not start until it is accepted.
-- The merge condition is zero `rho1_debt` readers, with the scaffolding function and every `rho1_debt` field deleted.
+**Owner decision of 2026-11-21, recorded in Amendment 3: this build is the sender side.** It starts right after S06 merges through VM batch 1 and does not wait for ω. The receiver side lands once, in a later build with design U's release rule (roadmap `model-ordering-hold`). Sender-only R1 is not shipped as an interim Realtime receiver. So:
+- **In this build:** steps 0–8 (store, rate bound, verdict and budget, v11, the last copy, the pair merge, the floor and the seat-free floor pass on both buffers), and the site commits of `rho-step-sites.md` §5 for C2, C5, C12's refresh half, C3, C4, C1, C7 and C6.
+- **Not in this build:** removing the receiver's own give-up (C9's expiry and force-drain, C11's local arm), the C10 slow-consumer hold, C12's expiry rewrite, C8 (every corner at ρ < 1 would reach the old arm, so the refusal stays), the floor-on-raise cadence, the reorder tombstones, `sim_rho_dial` (§3 there), the reverse pairing (§4 there) and `rho1_debt_is_gone`.
+- **The interim receiver** below ρ = 1 is today's arm plus the floor pass, keyed on `rho1_debt_bit` of its own configured `window_rho` at the sites named in Amendment 3's `rho1-debt-exception` block. **Merge condition:** the deny test's ratchet table equals that block exactly, with no sender function in it. The owner accepted Amendment 3's Q-a (the exception, with its fallback, both removed together by the release-rule build) and answered Q-b with (iii): H is derived first (`docs/derivations/floor-hold.md`, roadmap `model-floor-hold`), and step 8's floor pass waits on that derivation.
+- **The 1 − ρ promise is not kept at Realtime in this build.** The old arm's passes are counted in `G_rx` (step 4) but neither told nor bounded, and a full-channel drop is not counted at all (Amendment 3 item 4).
+- **H is derived before step 8** (owner, Q-b (iii); Amendment 3 item 3). Steps 0–7 do not depend on it; step 8's floor pass and the H_max in the step-1 bounds wait on it.
 
 **Working rules.** The coordinator's worker rules apply:
 - your own worktree and branch;
@@ -65,7 +67,7 @@ At ρ = 1 the last conjunct reads `Ab + 1 ≤ 0`, which is always false, so the 
 
 The receiver calls `shed_armed(.., false, ..)` at `net/receiver.rs:186`; after the change that call simply loses the argument.
 
-**(C) No ρ-continuous form yet.** 12 sites, 24 lines. All are rewritten under option B in step 9. Until then they read the mid-stack scaffolding bit `rho1_debt` (Amendment 1, items 2 and 4); C8 reads ρ at config time instead.
+**(C) No ρ-continuous form yet.** 12 sites, 24 lines. All are rewritten under option B: the sender sites C1–C7 and C12's refresh half in step 9; C8, the receiver sites C9–C11 and C12's expiry in the release-rule build (Amendment 3). Until then they read the mid-stack scaffolding bit `rho1_debt` (Amendment 1, items 2 and 4); C8 reads ρ at config time instead.
 
 | # | site and lines | test (`raptorpath/tests/rho1_debt_bounds.rs`) | ledger |
 |---|---|---|---|
@@ -132,11 +134,11 @@ Your guard has BASE = that main and CAND = your head, so a failure belongs to AD
 ## 3. What does not change
 
 - Hints stay named points. No step adds an `if hint ==`.
-- The receiver's give-up budget stays ε̂_recv (C9, C11).
+- The receiver's give-up stays as on main below ρ = 1 (C9, C10, C11: expiry at `shed_recv_hold`, force-drain at 500, drop on a full channel), under the Amendment 3 exception. The floor pass is added beside it.
 - D keeps the EWMA RTT. Compute and log `D_rtprop / D_ewma` (decision 7).
 - The budget stays cumulative.
 - The cwnd brake stays unarmed.
-- SACK release stays on the ρ = 1 arm (C2).
+- SACK release stays on the ρ = 1 arm through steps 1–8; it moves to every ρ in its own site commit (C2, `rho-step-sites.md` §5).
 
 ## 4. Steps, in order, one commit each
 
@@ -150,11 +152,15 @@ The derivation's tests (§6) keep its names. The scenario parameters (seed 42, 6
   4. `G_rx ≤ Ab`, once that exists.
 
   It asserts the frontier first. It asserts completion only in ρ = 1 controls.
-- **T1** `lost_tail_ack_reaches_s_src_at_rho_below_1` (`sim_lost_tail.rs`, k = 11 800, `limit_s: 40`). The ack reaches S_src by `t_dead + (n_tail + 1 + n_drop)·T_sweep_max + owd_max + H_max`, with `n_tail = 346`. k is passed by `t_dead + 2·T_sweep_max + owd_max + H_max`. Red on the base: the ack stays at 11 800.
+- **T1** `lost_tail_ack_reaches_s_src_at_rho_below_1` (`sim_lost_tail.rs`, k = 11 800, `limit_s: 40`). The ack reaches S_src by `t_dead + (n_tail + 1 + n_drop)·T_sweep_max + owd_max + H_max`, with `n_tail = 346`. k is passed by `t_dead + 2·T_sweep_max + owd_max + H_max`. Red on the base: the ack stays at 11 800. **T1 is liveness by fills, not by verdicts.** At ρ = 0.99 the allowance is ⌊0.01·12 147⌋ = 121, less what the old arm's expiry passes already spent (matched cell) or 0 of it (R1 cell). The tail is 347 seqs (k and the 346 above it), all past D during the 1.5 s `dead` window: at most 121 get a verdict, and the rest (≥ 226) are denied and served. Once `dead` ends, the store resends them on the sweep, and they fill. That is what the bound's `(n_tail + 1 + n_drop)·T_sweep_max` term prices. So T1 is reachable in both cells, and it must not assert `G_floor > 0` or a verdict count: with the allowance spent, zero verdicts is a valid green. A tail longer than the allowance that never fills (a `dead` without end) would serialize, and no bound would hold; that is R1's spent-budget cost, not a T1 case.
 - **T1′ is not here.** It is an ablation, not a defect on main. On the base the derived budget reads 0 in the sim (`sim_shed_reach.rs:9–14`), so k is resent and filled. It is red there only under a forced budget, which would make the expected-failure job lock in a seam artefact. T1′ is written in step 8.
 - **`sim_mixed_rho::mixed_realtime_sender_bulk_receiver_ack_reaches_src`** is already on the branch: Amendment 1 item 5, the mixed-config stall on main. Keep it ignored until step 8.
 - **T2** `shed_blocker_ack_reaches_s_src` (`sim_shed_reach.rs`, forced budget 0.05). The ack reaches 12 147, and every shed seq is below the final ack by `t_s + (1 + n_drop)·T_sweep_max + owd_max + H_max`. Red on the base: the ack stays at 12 087.
 - **T7a** `intake_bounded_at_rho_below_1` (`sim_lost_tail.rs`). First the pause executes: the paused-iteration share on the `O ≥ B` disjunct is greater than 0, read first. Then `O_hwm ≤ cap_at_hwm + 1` from `[ACCT]`. Red on the base: `O_hwm > 4·cap_at_hwm`. The existing defect test already reads this.
+- **Two receiver cells (Amendment 3).** The receiver keeps its old arm below ρ = 1, and its expiry and force-drain passes enter `G_rx` unbudgeted. So:
+  - the **R1 cell**, sender at ρ < 1 and receiver at ρ = 1, same hint (the server's own ρ; `SIM_SRV_RELIABLE=true` before step 2), is floor-only by construction: the ρ = 1 buffer passes nothing on its own. Every assertion of `G_rx ≤ (1 − ρ)·S_src`, `G_floor = G_rx`, a pass count, a shed witness that needs budget headroom, or "the seq ends delivered, with `G_rx` not counting it" runs here: T2's shed witness, T6, T1′, `last_copy_sent_with_each_verdict`, `forced_verdict_sends_floor_alone`, the ablation and T5;
+  - the **matched cell**, both ends at ρ < 1, asserts liveness and the account (`assert_frontier_live` items 1–3) and prints `G_expiry`, `G_force`, `G_floor` and the `[BUDGET]` breach line. It does not assert the budget. T1, T2 and T7a run here, and T2 also in the R1 cell for its witness;
+  - both cells are red on the base: the matched cell by the lost tail, the R1 cell by the mixed-config stall (ack 49).
 - **T3** (not ignored) `rho1_controls`: the same scenarios at ρ = 1 on the plain, generation and coded-only arms. Green on the base and on every later commit. Asserts `client_ok`, `V = 0` and, once those counters exist, `floor_sent = 0` and `G_rx = 0`.
 
 **Step 2: `window_rho` replaces the flag.** Zero behaviour at every mapped config.
@@ -178,9 +184,9 @@ The derivation's tests (§6) keep its names. The scenario parameters (seed 42, 6
 **Step 3: the deny test** `raptorpath/tests/rho_deny_list.rs`. Copy the structure of `raptorpath-core/tests/deny_list.rs`, including the walk-visited assertion and the planted fixture under `CARGO_TARGET_TMPDIR` at `:144`. Strip comments and string literals, skip test files (`**/tests.rs`, `#[cfg(test)]` modules), and walk the non-test code of `raptorpath/src`. It fails on:
 - **(a) Comparing a retention-ρ identifier** (`rho`, `window_rho`, `contract_rho`, `recv_rho`, `peer_rho`). That means a comparison operator on either side, a `match`, `.partial_cmp(` or `.total_cmp(` on one. It also fails when a ρ value is bound to a name outside that list: `contract_rho: cfg.window_rho` passes and `let r = window_rho;` fails. The allowlist is two function bodies, `rho1_debt_bit` and `check_window_rho`, each defined exactly once (pin the definition count).
 - **(b) The ratchet.** Attribute every identifier containing `rho1_debt` to its `(file, enclosing fn)`; a struct field counts under its struct.
-  - The set of functions must equal the `rho1-debt-readers` block in Amendment 1, which the test parses from `docs/adr/0084-every-verdict-reaches-the-receiver.md`. A reader in any other function fails.
+  - The set of functions must equal the `rho1-debt-readers` block in Amendment 1, which the test parses from `docs/adr/0084-every-verdict-reaches-the-receiver.md`, and at merge Amendment 3's `rho1-debt-exception` block, which the readers block shrinks to. A reader in any other function fails.
   - The per-function counts must equal a const table in the test. A rise fails, and so does a fall the table does not record.
-  - The table starts at step 2's counts, including the (A) and (B) readers still present. Every later step that removes a reader lowers its entry in the same commit, and at the end the table matches the ADR block exactly.
+  - The table starts at step 2's counts, including the (A) and (B) readers still present. Every later step that removes a reader lowers its entry in the same commit, and at merge the table equals Amendment 3's `rho1-debt-exception` block exactly.
   - The test also fails if the table lists a function the ADR block does not. So the list can only shrink, and growing it needs a new ADR.
 - **(c) An old identifier.** These must not occur: `reliable`, `window_reliable`, `recv_window_reliable`, `sender_window_reliable`, `hold_on_full`, `new_reliable`. The exception is the two tombstones, `config.rs` (field plus check) and `main.rs` (hidden arg plus check), with their counts pinned.
 
@@ -247,7 +253,18 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
 
 **Step 8: the floor.**
 - **Sender:** `F = min{s ≥ A_rx : s ∉ V}`. While `F > A_rx`, send it on every live path at each tail-sweep fire. Arm the sweep on `U ≠ ∅ ∨ F > A_rx` (`sweep_armed`). Send the last floor on the reliable control stream before `Shutdown`.
-- **Receiver:** take the newest floor over paths, `floor_rx = max`, 0 before the first. The pass is its own function on `ReorderBuffer`, and it reads no `rho1_debt`; derivation §2.3 says "the pass reads no seat bit". The marker is `(F_rx, now + H)`, with H from `shed_recv_hold`, and the marker's own deadline arms the drain timer. The pass does not go through `drain_expired` or `oldest_deadline`, which return nothing on the ρ = 1 buffer (`reorder.rs:117–119`, `:182`). When the marker expires it delivers the pending entries below F in order, counts the passes in `G_rx` and moves the frontier to F. Unit tests run it on both constructors: the ρ = 1 buffer passes a hole below a floor exactly like the evicting one.
+- **Receiver:** take the newest floor over paths, `floor_rx = max`, 0 before the first. The pass is its own function on `ReorderBuffer`, and it reads no `rho1_debt`; derivation §2.3 says "the pass reads no seat bit". The marker is `(F_rx, now + H)`, and the marker's own deadline arms the drain timer. This marker term is in this build: T1's lost tail has no pending entry, so nothing else arms the timer.
+- **H: the derived floor hold** (`docs/derivations/floor-hold.md`; owner Q-b (iii)). Do not call `shed_recv_hold` from the floor pass (that stays the expiry's).
+  - Feed a sampler at the `record_arrival` site for every data batch (source and repair):
+    - `ℓ_i = (a_i − min{a_j : j before i, j ≻ i})⁺`, where `j ≻ i ⇔ τ_j > τ_i ∨ (τ_j = τ_i ∧ path_j ≠ path_i)`;
+    - records kept for W = 10 s at 1 ms resolution;
+    - `H = max ℓ` over the last W (0 when empty).
+  - Markers: one per floor rise, `(F_rx, t_F + H(t_F))`. A hole passes at the earliest expiry among the markers covering it.
+  - Handle `WindowFloor` in the receiver loop's `Control` arm, never the control fast path. Stage the last copy before the floor on its path, and stamp the copy with a fresh `now_us()`.
+  - Gauges on `[ACCT-RX]`: `fh_n`, `fh_us_sum`, `fh_us_max`, `fh_zero`, `fl_n`, `fl_late`, `fl_max_us`, `fh_age_us`, `fl_trunc`, `fh_miss`, `fh_miss_us_max`, `fh_miss_refused`, `fh_fill_first`.
+  - Tests: `floor-hold.md` §7's absolute tests and signature test, `last_copy_carries_a_fresh_stamp`, and `floor_never_overtakes_its_copy_real_io`.
+  - **H_max = 0** in T1, T2 and T1′ (N = 1, FIFO sim links); each asserts `fh_us_max = 0` and `fl_late = 0`. N = 2 cells budget `H_max ≤ J + q + d` (`floor-hold.md` §7).
+- **Floor cadence: the tail-sweep clock only**, as `evict-verdict-law.md` question 6 accepted. Its premise (holes with data above pass on the receiver's own hold) still holds while the old arm stays; the floor-on-raise reversal belongs to the release-rule build. The pass does not go through `drain_expired` or `oldest_deadline`, which return nothing on the ρ = 1 buffer (`reorder.rs:117–119`, `:182`). When the marker expires it delivers the pending entries below F in order, counts the passes in `G_rx` and moves the frontier to F. Unit tests run it on both constructors: the ρ = 1 buffer passes a hole below a floor exactly like the evicting one.
 - **Absolute tests:** `floor(a, ∅) = a`; a run of verdicts from a gives `a + run`; a gap stops it. `floor_rx` at N = 1 and N = 2, including a path with no floor yet.
 - **T4** (floor loss, ack loss, never-ack, dead peer, shutdown), **T5** (N = 2: the frozen idle leg; a slow leg's late fills excluded from `G_rx`) and **T5′** (N = 1 overtaking), as in derivation §6.
 - **Un-ignore T1, T2 and `sim_mixed_rho::mixed_realtime_sender_bulk_receiver_ack_reaches_src`** (green here: the Bulk receiver's floor pass honours the Realtime sender's floors).
@@ -259,33 +276,15 @@ It runs in the normal CI test job (`cargo test -p raptorpath --test rho_deny_lis
   It is green on the finished tree. Its witness is the ablation below.
 - **The ablation** is the evidence that the floor is what fixes these: a test seam `RWM_TEST_TS_NO_FLOOR=1` that suppresses `WindowFloor` on the finished tree. `ablation_without_the_floor_t1prime_and_t2_stall` (not ignored) runs T1′, T2, and T1 at ρ = 0.97 under the seam, and asserts that each one's ack stops short. T1 at 0.99 under the seam is the control that stays live (derivation §2.5). Record the outputs in the commit message.
 
-**Step 9: the (C) rewrites (option B), T8 and the ledger.** This step starts only once `rho-step-sites.md` is accepted. Each (C) site is one commit, in the order the derivation gives, and each takes one of two forms:
-- the derived law, continuous in ρ, with its ±2 % test through ρ = 1 and its ρ = 1 reduction test (it must equal today's ρ = 1 arm at ρ = 1, unless the derivation says why not);
-- the split deleted, where the derivation finds no reason for it.
-
-Each commit removes its rows from the ratchet table and from Amendment 1's `rho1-debt-readers` block, marks its ledger G row done, and updates its §11.3 row. The **last** commit deletes `rho1_debt_bit`, `net/rho_debt.rs` and every `rho1_debt` field, and switches the deny test to assert zero `rho1_debt` identifiers. That is the merge condition. The bounding tests below cover each site while it still reads the bit; they are removed or turned into continuity tests by its rewrite.
-- **T8** `rho1_step_is_confined_to_the_c_sites`. The same seed at ρ = 1 and at ρ = 1 − ε with ε·S_src < 1 (for 6 MB, ε = 5·10⁻⁵ gives 0.6). It runs after every behavioural step, so the pause, the store and the budget are all in.
-  - Assert on what no live (C) site touches: `V = ∅` on both sides, so `H = E = 0` and `floor_sent = 0`.
-  - Record per-seq sends and resends, and the receiver's passes and `G_rx`.
-  - Name the (C) sites live in its cell. At Realtime, N = 1 these are C2 (default on: it changes O and so the pause) and C9–C12; C3 is listed if `recov_mp` acts at N = 1.
-
-  This replaces the derivation's "sender observables identical" (Amendment 1, the correction to decision 2).
-- **`raptorpath/tests/rho1_debt_bounds.rs`**, one test per C row. Each asserts that the site routes by the bit:
-  - the ρ = 1 arm executes at ρ = 1, through an existing counter or echo, or a test-seam hook;
-  - the other arm executes at ρ = 0.99 and at ρ = 0.97, the same arm at both, so the step is at one point;
-  - at ρ = 1 against 1 − ε, it prints the site's observable; that line is record-only.
-
-  The absolute bounds to assert:
-  - C9: at ρ = 1, `pass = pass_force = 0`;
-  - C10: at ρ < 1, the drop count is printed beside `G_rx`, the known gap;
-  - C11: at ρ = 1, `SHEDH evals = 0`;
-  - C12: at ρ = 1, the `[QCLK] site=receiver` echo appears and there is no expiry.
-
-  C8 is a config test: refused at 0.99, accepted at 1, and no runtime reader (the deny test).
-- **Bookkeeping:**
-  - the ratchet table ends empty: D1 prints ρ instead of the bit, and every (C) row has gone;
-  - update the ledger rows F02 (done), G01–G12 and S09 with the test names;
-  - flip the paper's "engine change pending" tense to the present for the parts that landed, and re-render `law-ledger/render.py`.
+**Step 9: the sender (C) sites and the receiver's bounding tests.** The order, formulas and red-first tests are `rho-step-sites.md` §5 and §2, which replace this step's earlier text. T8 is dropped; `sim_rho_dial` moves to the release-rule build. One commit per site: C2, C5, C12's refresh half, C3, C4, C1, C7, C6, then the scaffold commit, which deletes the sender's `rho1_debt_bit` call and every sender reader, prints D1 as `rho=` at every ρ, and leaves the ratchet table equal to Amendment 3's `rho1-debt-exception` block.
+- **C12's refresh half.** The timer's deadline becomes `min(t_nack + refresh, t_req, reorder.oldest_deadline(), t_F + H)`, every term always computed, so `run_receiver` no longer reads the bit for the timer. The expiry term comes from C9's buffer (`None` on the ρ = 1 buffer, so ρ = 1 is unchanged). `rb.set_timeout(shed_recv_hold(..))` runs unconditionally (the ρ = 1 buffer ignores it), and the `:860` arm runs both actions on their own deadlines: re-advertise when the refresh or request term is due, and `drain_expired`, which returns nothing on the ρ = 1 buffer. No bit is read, and ρ = 1 is unchanged. Its red-first test `c12_refresh_runs_below_1` runs with the receiver's ε̂_recv budget spent: there the old hold `(4·SRTT).clamp(60, 300) ms` is never earlier than the refresh `(2·SRTT).clamp(25, 100) ms`, so the refresh fires first. With the budget open, the hold `SRTT/2` expires first for SRTT < 200 ms; at SRTT ≥ 200 ms the refresh cap (100 ms) is earlier and the refresh acts there too.
+- **C7 with the old arm.** An old-arm pass is not in V, so the feed credits it as delivered: the over-credit is at most `G_expiry + G_force`, printed beside the feed. `c07_feed_never_credits_a_verdict` runs in the R1 cell.
+- **C6 with the old arm.** The expiry path also prunes the open map (`succ.abandon_below`, `receiver.rs:1001`), so a request never asks for a hole the old arm passed.
+- **`raptorpath/tests/rho1_debt_bounds.rs`** for the sites that merge as debt, C9, C10 and C11. Each asserts that the site routes by the bit: the ρ = 1 arm at ρ = 1, the other arm at both 0.99 and 0.97 (the step is at one point), and the observable recorded at ρ = 1 against 1 − ε. Absolute bounds:
+  - C9: at ρ = 1, `G_expiry = G_force = 0`;
+  - C10: at ρ < 1, the drop count printed beside `G_rx`, the known uncounted gap;
+  - C11: at ρ = 1, `SHEDH evals = 0`.
+- **Bookkeeping:** ledger F02 and the G rows of the sites that landed (G01–G07, S09's ρ part); G08 stays open with their test names; G09–G11 point to the bounding tests and stay open; G12 records the refresh half done and the expiry half open. Flip the paper's tense only for the parts that landed, and re-render `law-ledger/render.py`.
 
 **Step 10: the model's give-up law (its own commit).** This is a deliberate model change (ADR-0084 decision 5). The wasm and cartoon give-up law moves to `1 − ρ`, and the visualizer anchor "= R when 1 − ρ ≥ R" (`test_visualizer_ui.mjs:238–241`) becomes "= 1 − ρ". Re-capture with `GOLDEN_CAPTURE=1` and say in the commit message that it is a deliberate model change.
 
@@ -295,12 +294,12 @@ Done means all of these hold:
 - each step's tests are red before it and green after it, with commands and outputs in the report;
 - `expected_failure.py` lists nothing left from `rec-evict-blocker-unresolved` that passes;
 - the deny test is red on its fixture and green on the tree;
-- T3 and T8 are green;
+- T3 is green, and the ratchet table equals Amendment 3's `rho1-debt-exception` block;
 - the wasm and visualizer gates pass after step 10.
 
 Report the branch and the commit per step, every number the tests printed (`G_rx / S_src` against 1 − ρ, R, `O_hwm` against B, the refusal shares), the decisions you made locally, and anything in this brief that the spec contradicted.
 
 The guards are not yours to run, and there is no VM. Three things for whoever runs them:
 - the guard's BASE is main (with S06 merged) and its CAND is your head;
-- the guard needs a ρ < 1 stage before merge (Amendment 1 item 8), because a Bulk-only guard cannot see this change: Realtime at 0.99, N = 1 and N = 2, with execution witnesses read before outcomes (store fill, pause share on `O ≥ B`, verdict visits, `floor_sent`/`floor_passes`, `G_rx` against `(1 − ρ)·S_src`);
+- the guard needs a ρ < 1 stage before merge (Amendment 1 item 8), because a Bulk-only guard cannot see this change: Realtime at 0.99, N = 1 and N = 2, with execution witnesses read before outcomes (store fill, pause share on `O ≥ B`, verdict visits, `floor_sent > 0` wherever a verdict happened). With the old receiver arm present (Amendment 3), `floor_passes` can be 0 for a verdict the receiver had already expired past, so it is reported, not required, beside `G_expiry`, `G_force`, `G_floor` and `G_rx` against `(1 − ρ)·S_src`, which is a record with a possible breach, not a pass condition;
 - the harness takes `--window-reliable` on BASE and `--window-rho 1` on CAND, as Amendment 1 item 8 requires. The `tools/l1` scripts must detect the spelling from the binary (`perf --help | grep -q -- --window-rho`) before that guard runs. That change is a separate commit in `tools/`, listed in your report.
