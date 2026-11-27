@@ -8,8 +8,9 @@
 #   S2: `cargo test -p raptorpath --release --features test-seams --test s06_no_copy --test s06_reactive --test holeclass_reachability --no-fail-fast` x N
 #       (every non-ignored test of those three targets; s06_reactive requires test-seams, and cargo refuses a named target whose required features are off; T2 is a sim test and runs below)
 #   sim tests (deterministic): once each seat's list (R67_SIM, default sim_shed_reach sim_lost_tail sim_s06_nack sim_nack_test place_arms_reachability) TWICE, the two result digests must be equal
-#       (digest = the sorted `test <name> ... <ok|FAILED|ignored>` lines, timings stripped). As ci.yml's sim job runs them: RUSTFLAGS="--cfg tokio_unstable", --features sim,test-seams,
-#       debug profile, in a target dir of their own (RUSTFLAGS would rebuild the repeat's). sim_s06_nack is T2's deterministic port (registration 2.1 item 3).
+#       (digest = the sorted `test <name> ... <ok|FAILED|ignored>` lines, timings stripped). A target whose [[test]] stanza requires `sim` (sim_shed_reach, sim_lost_tail, sim_s06_nack) runs
+#       as ci.yml's sim job runs it: RUSTFLAGS="--cfg tokio_unstable", --features sim,test-seams, debug profile, in a target dir of its own (RUSTFLAGS would rebuild the repeat's);
+#       the plain ones (sim_nack_test, place_arms_reachability) run --release with no feature, as before. sim_s06_nack is T2's deterministic port (registration 2.1 item 3).
 # Every run must show a `Running` line for each named target and at least one passed test (ZERO-TESTS / TARGET-MISSING otherwise), so a target that did not run never reads as zero failures.
 # Zero failures means zero: a test named FAILED, a run with no `test result` line, or a non-zero exit with no named test is a failure (no quarantine here: ADR-0080's rule applies to the suites, this is the
 # flake detector). Any failure: `ABORT-REPEAT seat=<S>`, that seat's guard does not launch (S1: guard 1 and guard 2's BASE; S2: guard 2); exit 5. The budget (R67_BUDGET_S, registered 60 min for both seats)
@@ -46,6 +47,10 @@ BAD=0
 
 digest() { grep -aE '^test .* \.\.\. (ok|FAILED|ignored)' "$1" | LC_ALL=C sort; }
 # ran <log> <target...>: what is missing from a run that exited cleanly: TARGET-MISSING(<t>) per named target with no `Running` line, ZERO-TESTS when no `test result` line reports a passed test.
+# needs_sim <Cargo.toml> <target>: the target's [[test]] stanza lists `sim` in required-features
+needs_sim() {
+  awk -v t="$2" '/^\[/ {inside = 0} /^name = / {inside = ($3 == "\"" t "\"")} inside && /^required-features/ && /"sim"/ {f = 1} END {exit !f}' "$1"
+}
 ran() {
   local log="$1" t re miss="" npass; shift
   for t in "$@"; do
@@ -101,11 +106,19 @@ for seat in "$@"; do
   # the sim tests: twice, equal digests
   simbad=""
   if [ -n "$sims" ] && [ "$reached" -ge 1 ]; then
-    args=(); for t in $sims; do args+=(--test "$t"); done
+    # split by the seat's own manifest: a target whose [[test]] stanza requires `sim` runs as ci.yml's sim job does; the others (plain integration tests) run --release with no feature, as before
+    sargs=(); pargs=()
+    for t in $sims; do if needs_sim "$src/raptorpath/Cargo.toml" "$t"; then sargs+=(--test "$t"); else pargs+=(--test "$t"); fi; done
     for k in 1 2; do
-      ( cd "$src" && CARGO_TARGET_DIR="$CARGO_TARGET_DIR-sim" RUSTFLAGS="--cfg tokio_unstable" "$CARGO" test -p raptorpath --features sim,test-seams "${args[@]}" --no-fail-fast ) > "$ROOT/sim$k-$seat.log" 2>&1
-      src_rc=$?
-      [ "$src_rc" = 0 ] || simbad="${simbad}SIM-RC$k=$src_rc "
+      : > "$ROOT/sim$k-$seat.log"
+      if [ "${#sargs[@]}" -gt 0 ]; then
+        ( cd "$src" && CARGO_TARGET_DIR="$CARGO_TARGET_DIR-sim" RUSTFLAGS="--cfg tokio_unstable" "$CARGO" test -p raptorpath --features sim,test-seams "${sargs[@]}" --no-fail-fast ) >> "$ROOT/sim$k-$seat.log" 2>&1
+        src_rc=$?; [ "$src_rc" = 0 ] || simbad="${simbad}SIM-RC$k=$src_rc "
+      fi
+      if [ "${#pargs[@]}" -gt 0 ]; then
+        ( cd "$src" && "$CARGO" test -p raptorpath --release "${pargs[@]}" --no-fail-fast ) >> "$ROOT/sim$k-$seat.log" 2>&1
+        src_rc=$?; [ "$src_rc" = 0 ] || simbad="${simbad}DET-RC$k=$src_rc "
+      fi
       grep -aq '^test result' "$ROOT/sim$k-$seat.log" || simbad="${simbad}SIM-NO-RESULT$k "
       miss="$(ran "$ROOT/sim$k-$seat.log" $sims)"
       [ -z "$miss" ] || simbad="${simbad}SIM$k:$miss"

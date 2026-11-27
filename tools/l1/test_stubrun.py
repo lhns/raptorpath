@@ -2815,6 +2815,8 @@ def make67(root, plan, path):
         fh.write(VIS_STUB67)
     with open(os.path.join(vis, "interactive-visualizer.html"), "w", newline="\n") as fh:
         fh.write("<html></html>\n")
+    with open(os.path.join(sb["repo"], "raptorpath", "Cargo.toml"), "a", newline="\n") as fh:      # the [[test]] stanzas raptorpath/Cargo.toml declares: the repeat (repeat67_run.sh) splits its sim list by them
+        fh.write("".join('\n[[test]]\nname = "%s"\nrequired-features = [%s]\n' % tf for tf in (("s06_reactive", '"test-seams"'), ("sim_shed_reach", '"sim", "test-seams"'), ("sim_lost_tail", '"sim", "test-seams"'), ("sim_s06_nack", '"sim", "test-seams"'))))
     for tree in TREES67:
         dst = os.path.join(sb["root"], "seats", tree, "src")
         shutil.copytree(sb["repo"], dst)
@@ -3054,7 +3056,7 @@ def case67pre(plan, path):
                     return next((i for i, c in enumerate(cargo) if pred(c)), -1)
                 order = [idx(lambda c: "/seats/S1/src|check "in c), idx(lambda c: "/seats/S2/src|check " in c), idx(lambda c: c.endswith("|test -p raptorpath --lib gates")),
                          idx(lambda c: "/seats/S1/src|test -p raptorpath -p raptorpath-math --release --no-fail-fast" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath -p raptorpath-math --release --no-fail-fast" in c),
-                         idx(lambda c: "/seats/S1/src|test -p raptorpath --release --lib --no-run" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath --release --test s06_no_copy" in c),
+                         idx(lambda c: "/seats/S1/src|test -p raptorpath --release --lib --no-run" in c), idx(lambda c: "/seats/S2/src|test -p raptorpath --release --features test-seams --test s06_no_copy" in c),
                          idx(lambda c: "|build_visualizer" in c), idx(lambda c: c.endswith("|test -p raptorpath-wasm golden")), idx(lambda c: "/b67work/src/raptorpath|build " in c)]
                 check(f"{tag}: the steps ran in the registered order: check S1, check S2, gates on B0, suites S1, suites S2, repeat S1, repeat S2, visualizer, golden, binid", order == sorted(order) and min(order) >= 0 and len(set(order)) == len(order), order)
             check(f"{tag}: no release build of a seat (the only builds are binid's, at its one work path), no binary installed or kept (no BINSHA.txt, no bins67), no battery: no ledger, no row-parser call, no driver call",
@@ -3441,12 +3443,14 @@ def extra_repeat(kind):
         rep = txt67(root, "out", "REPEAT67.txt")
         s06 = [c for c in cargo if "|test " in c and "--test s06_no_copy" in c and "--no-run" not in c]
         sims = [c for c in cargo if "|test " in c and "--test sim_shed_reach" in c and "--no-run" not in c]
+        dets = [c for c in cargo if "|test " in c and "--test sim_nack_test" in c and "--no-run" not in c]
         if kind == "repeat-pass":
             check(f"{tag}: zero failures: rc 0, both seats read 4 of 4 with no failing run, the S2 gating tests ran 4 times, the sim tests twice, REPEAT67-DONE bad=0",
                   rc == 0 and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "REPEAT67 seat=S2 reached=4 of 4 failing_runs=0" in rep and len(s06) == 4 and len(sims) == 2 and "REPEAT67-DONE bad=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep, len(s06), len(sims)))
-            check(f"{tag}: the S2 gating tests run with --features test-seams (s06_reactive requires it); the sim list runs with --features sim,test-seams and includes T2's port sim_s06_nack, as ci.yml's sim job",
-                  len(s06) == 4 and len(sims) == 2 and all("--features test-seams --test s06_no_copy --test s06_reactive --test holeclass_reachability" in c for c in s06)
-                  and all("--features sim,test-seams" in c and "--test sim_s06_nack" in c and "--release" not in c for c in sims), (s06, sims))
+            check(f"{tag}: the S2 gating tests run with --features test-seams (s06_reactive requires it); the sim-feature targets (by the seat's [[test]] stanzas) run with --features sim,test-seams and include T2's port sim_s06_nack, as ci.yml's sim job; the plain ones run --release with no feature",
+                  len(s06) == 4 and len(sims) == 2 and len(dets) == 2 and all("--features test-seams --test s06_no_copy --test s06_reactive --test holeclass_reachability" in c for c in s06)
+                  and all("--features sim,test-seams" in c and "--test sim_s06_nack" in c and "--release" not in c and "--test sim_nack_test" not in c for c in sims)
+                  and all("--release" in c and "--features" not in c and "--test place_arms_reachability" in c for c in dets), (s06, sims, dets))
         elif kind == "repeat-one-failure":
             check(f"{tag}: one failing run in 4 of S2's gating tests: ABORT-REPEAT seat=S2 (guard 2 does not launch), the failing test named, rc 5; S1 read zero failures and is not aborted",
                   rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=1 failures=[s06_no_copy::t_one]" in rep and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
