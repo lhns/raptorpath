@@ -2488,5 +2488,134 @@ class ResendGauge(unittest.TestCase):
         self.assertEqual((ro["series"][2][1], ro["dup"]), (2, 1))
 
 
+class Rev5Law(unittest.TestCase):
+    """Revision 5 section 14 (build B''): the ramp R5, w = (c / xb) / max(1, y), and the net repair clamp min(r, max(spare - sigma, 0))."""
+
+    R, O = 0.104, 0.095
+    PRESETS = (0.005, 0.1, 0.118, 0.5, 5.0, 50.0)
+
+    def w5(self, T=0.4, delta=50.0, x=1.24, t_ov=1.0):
+        return toy2.wait_limit_w5(T, self.R, self.O, delta, x, t_ov)
+
+    def w1(self, T=0.4, delta=50.0, x=1.24, t_ov=1.0):
+        return toy2.wait_limit_w(T, self.R, self.O, delta, x, t_ov)
+
+    def test_inert_at_t_inf_never_nan_and_exact_at_headroom(self):
+        for delta in (0.005, 0.1, 0.5, 50.0, 1e6):
+            for x in (0.0, 1.0, 1.3, 100.0, math.nan):
+                for t_ov in (0.0, 1.0, 1e6):
+                    self.assertEqual(toy2.wait_limit_w5(math.inf, self.R, self.O, delta, x, t_ov), math.inf)
+                    for T in (0.0, 0.05, 0.4, 2.0):
+                        self.assertFalse(math.isnan(self.w5(T=T, delta=delta, x=x, t_ov=t_ov)))
+        for T in (0.05, 0.4, 2.0, 1e9):
+            for x in (0.0, 0.5, 1.0):
+                self.assertEqual(self.w5(T=T, x=x, t_ov=0.0), max(T - self.R, 0.0))
+
+    def test_bit_identical_to_r1_wherever_y_le_1(self):
+        for d in self.PRESETS:
+            for T in (0.4, 1.0, 2.0, math.inf):
+                for x in (0.5, 1.0, 1.226, 1.39):
+                    c = max(T - self.R, 0.0)
+                    sb = (c + max(1.0, x) * self.O) / d
+                    for f in (0.0, 0.1, 0.5, 0.999):
+                        t = f * sb if math.isfinite(sb) else 1e6
+                        self.assertEqual(self.w5(T=T, delta=d, x=x, t_ov=t), self.w1(T=T, delta=d, x=x, t_ov=t), (d, T, x, f))
+
+    def test_tail_and_onset_slope(self):
+        """Above the onset w t_ov = (c / xb) s_b exactly (R1: 2 (c / xb) s_b y / (1 + y)); the slope just past the onset is -(c / xb) / s_b (R1: half that)."""
+        for d in (0.1, 0.118, 50.0):
+            for T in (0.4, 2.0):
+                x = 1.237
+                c = T - self.R
+                sb = (c + x * self.O) / d
+                for k in (1.5, 2.0, 5.0, 20.0):
+                    self.assertAlmostEqual(self.w5(T=T, delta=d, x=x, t_ov=k * sb) * k * sb, (c / x) * sb, delta=1e-9 * c * sb)
+                h = 1e-6 * sb
+                t1 = sb * (1.0 + 1e-6)
+                slope = (self.w5(T=T, delta=d, x=x, t_ov=t1 + h) - self.w5(T=T, delta=d, x=x, t_ov=t1)) / h
+                self.assertAlmostEqual(slope, -(c / x) / sb, delta=1e-3 * (c / x) / sb)
+                slope1 = (self.w1(T=T, delta=d, x=x, t_ov=t1 + h) - self.w1(T=T, delta=d, x=x, t_ov=t1)) / h
+                self.assertAlmostEqual(slope1, -0.5 * (c / x) / sb, delta=1e-3 * (c / x) / sb)
+                for k in (1.01, 2.0, 10.0):
+                    self.assertLessEqual(self.w5(T=T, delta=d, x=x, t_ov=k * sb), self.w1(T=T, delta=d, x=x, t_ov=k * sb))
+
+    def test_kelly_growth_optimum(self):
+        """14.3: f = 1 - s_b / t_ov maximises G(f) = f / s_b + ln(1 - f) / t_ov on [0, 1)."""
+        for sb, tov in ((3.5, 7.0), (4.14, 20.0), (0.04, 1.0)):
+            f0 = 1.0 - sb / tov
+            G = lambda f: f / sb + math.log(1.0 - f) / tov            # noqa: E731
+            for df in (-1e-3, 1e-3):
+                self.assertGreater(G(f0), G(f0 + df))
+
+    def test_monotone_and_continuous_at_each_preset(self):
+        for T in (0.4, 1.0, 2.0):
+            for x in (1.0, 1.24, 3.0):
+                for t_ov in (0.0, 0.01, 1.0, 40.0):
+                    ds = [self.w5(T=T, delta=d, x=x, t_ov=t_ov) for d in (0.005, 0.1, 0.5, 5.0, 50.0, 1e3)]
+                    self.assertTrue(all(a >= b for a, b in zip(ds, ds[1:])))
+                    xs = [self.w5(T=T, x=xx, t_ov=t_ov) for xx in (0.5, 1.0, 1.1, 1.5, 3.0)]
+                    self.assertTrue(all(a >= b for a, b in zip(xs, xs[1:])))
+        for d in self.PRESETS:
+            ts = [self.w5(delta=d, t_ov=t) for t in (0.0, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0)]
+            self.assertTrue(all(a >= b for a, b in zip(ts, ts[1:])))
+            Ts = [self.w5(T=T, delta=d, t_ov=2.0) for T in (0.1, 0.2, 0.4, 1.0, 2.0, 5.0)]
+            self.assertTrue(all(a <= b for a, b in zip(Ts, Ts[1:])))
+            for T in (0.4, 2.0):
+                c = T - self.R
+                sb = (c + 1.24 * self.O) / d
+                for t_ov in (0.5 * sb, sb, 1.01 * sb, 5.0 * sb):
+                    w0 = self.w5(T=T, delta=d, t_ov=t_ov)
+                    for k in (0.98, 1.02):
+                        self.assertLessEqual(abs(self.w5(T=T, delta=d * k, t_ov=t_ov) - w0) / w0, 0.0205)
+
+    def test_branch_free(self):
+        import inspect
+        for fn in (toy2.wait_limit_w5, toy2.repair_net_spare):
+            body = inspect.getsource(fn).split('"""')[2]
+            for bad in ("isinf", "isfinite", "if ", "else", "while"):
+                self.assertNotIn(bad, body)
+
+    def test_net_spare_exact_without_sheds(self):
+        for sp in (-0.3, 0.0, 0.004, 0.2, math.inf):
+            self.assertEqual(toy2.repair_net_spare(sp, 0, 7), sp)
+        self.assertLess(toy2.repair_net_spare(0.004, 2400, 9700), 0.0)
+        self.assertEqual(toy2.repair_net_spare(math.inf, 5, 7), math.inf)
+
+    def test_fingerprints_and_validation(self):
+        import batch3e
+        c = batch3e.new_cfg("OV", 0, 0.4, 0.0, 50.0, None, wait_limit=True, wait_limit_form="rev4b", clamp=True)
+        for f in ("clamp_net", "net_gauge"):
+            self.assertEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, **{f: False})))
+            self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, **{f: True})))
+        self.assertNotEqual(batch3e.fingerprint(c), batch3e.fingerprint(dataclasses.replace(c, wait_limit_form="rev5")))
+        with self.assertRaises(ValueError):
+            toy2.Sim(dataclasses.replace(c, clamp=False, clamp_net=True))
+
+    def test_gauge_changes_no_decision_and_the_rule_acts_under_overload(self):
+        import batch3e
+        base = dataclasses.replace(Rev4Step2.ov("new", n=60000), rev4_gauge=True, clamp=True, wait_limit=True, wait_limit_form="rev4b", want_trace=True)
+        a = toy2.run(base)
+        g = toy2.run(dataclasses.replace(base, net_gauge=True))
+        self.assertEqual(batch3e.id3e({k: v for k, v in a.items() if k != "rev4"}, {k: v for k, v in g.items() if k != "rev4"}), [])
+        self.assertEqual(a["_trace"], g["_trace"])
+        self.assertEqual(set(g["rev4"]) - set(a["rev4"]), {"net"})
+        self.assertGreater(g["rev4"]["net"]["bind"], 0)                          # executes: under overload sigma lowers r_eff
+        n = toy2.run(dataclasses.replace(base, clamp_net=True))
+        self.assertLess(n["gauges"]["rep_sent"], a["gauges"]["rep_sent"])
+        self.assertTrue(n["rev4"]["net"]["clamp_net"])
+
+    def test_inert_at_t_inf_and_without_sheds_in_the_simulation(self):
+        import batch3e
+        inf = dataclasses.replace(Rev4Step2.ov("new", n=24000), T=math.inf, want_trace=True, rev4_gauge=True, clamp=True)
+        a = toy2.run(inf)
+        b = toy2.run(dataclasses.replace(inf, wait_limit=True, wait_limit_form="rev5", clamp_net=True))
+        self.assertEqual(batch3e.id3e({k: v for k, v in a.items() if k != "rev4"}, {k: v for k, v in b.items() if k != "rev4"}), [])
+        self.assertEqual(a["_trace"], b["_trace"])
+        self.assertEqual(b["rev4"]["net"]["bind"], 0)
+        c = e_cfg("CL", 0, 0.4, 0.0, repair=dict(r="law", edge="worth"), n_total=20000, dead=None, want_trace=True, rev4_gauge=True, clamp=True)
+        a, b = toy2.run(c), toy2.run(dataclasses.replace(c, wait_limit=True, wait_limit_form="rev5", clamp_net=True))
+        self.assertEqual(a["_trace"], b["_trace"])
+
+
 if __name__ == "__main__":
     unittest.main()
