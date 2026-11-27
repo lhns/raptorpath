@@ -2,6 +2,27 @@
 
 Re-read of stored runs and committed readings, plus one rerun of stored configurations (part 2). No rule, bar or law changes.
 
+## Part 0 (2026-11-27, added on branch three-knobs-rev5): the eight cells behind "7 of 8", from the source
+
+**The source exists**; Part 1 below inferred the mapping and named the wrong miss. "Seven of eight" first appears in commit `0f3dcc53` ("roadmap: three-knob confirmation, seven of eight pass, wait limit misses the video overload"), the roadmap line written from `results-confirm3e.md` item 3. The eight are the cells of three-knobs-revision4.md 12.5, in registered order:
+
+| # | cell | what it is | build read | word in `0f3dcc53` (build B, before 13) | word for B' (13), as registered | word for B', source's convention |
+|---|---|---|---|---|---|---|
+| 1 | CL-long | 1.5 s outage, 20 s, delta 50 | A (B = A by identity) | pass | pass (better on time) | pass |
+| 2 | CL | the same, 10 s | A | pass | pass (re-read in Part 1) | pass |
+| 3 | CLw-long | 3 s outage, lambda 8 000 | A | pass | pass | pass |
+| 4 | CLc | no outage (the null cell) | A | pass | pass (equivalent) | pass |
+| 5 | CLc-v | no outage, delta 0.005, tau 2 s | A | pass | pass | pass |
+| 6 | CL-long-v | 1.5 s outage, delta 0.005, tau 2 s | A | **pass, on the supplementary set** (`supp-confirm-cllongv.md`: recovery equivalent) | **recovery "shown worse" as registered** (curve's lowest point T = 1 against Realtime's 0.925 share) | pass (supplementary set) |
+| 7 | OV-long | overload, lambda 12 000 > C 10 000, delta 50 | B / B' | pass (B dominates) | pass (dominates) | pass |
+| 8 | OV-long-v | the same at delta 0.005, tau 2 s | B / B' | **the miss**: B 2.35 points worse on delivered and on time | pass (equivalent) | pass |
+
+**Count, corrected.**
+- The source's count was for build B: the one miss was OV-long-v (the wait limit shed the video standing queue), and CL-long-v was counted a pass on its supplementary set. It was not "CL-long-v".
+- For B' the same convention gives **8 of 8**; it is **7 of 8 only if CL-long-v's registered recovery word is counted** (the supplementary set, post-data, reads equivalent). Both counts hold against the no-queue arm alone, because cells 1-6 have identical rows on both Realtime arms and cells 7-8 read the same word on both.
+- The mid-price cells OV-long-m (13.5) and OV-long-q (13.9.6) are **not** among the eight. They are where B' reads worse against the no-queue arm (Part 1, second table); three-knobs-revision4.md 14 addresses them.
+- CL's ADR-0084 at rho = 1 "undetermined" (Part 1) concerns ADR-0084, not today's Realtime; its doubling is still owed.
+
 ## Part 1: the B' verdict against today's Realtime, recounted on the no-queue ("stored") arm alone
 
 **Which verdict.** The phrase "7 of 8" is not written in any results file. It is read here as: build B' against today's Realtime in the eight cells of three-knobs-revision4.md 12. In the six headroom cells B' is identical to A trace for trace (`results-confirm13.md`, "Headroom identity"), so those cells carry build A's reading. Sources, current word per cell: CL-long `results-confirm3e.md`; CLw-long, CLc, CLc-v, CL-long-v `reread-confirm-4cells.md` (CL-long-v supplementary set `supp-confirm-cllongv.md`); OV-long, OV-long-v, OV-long-m `results-confirm13.md`; OV-long-q `results-confirm13q.md`. CL had no committed reading (its first read stopped on an empty window; the reader fix came after): it is re-read here with `reread_confirm.py CL` on the stored runs, the registered reader unchanged.
