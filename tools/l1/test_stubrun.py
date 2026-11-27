@@ -146,7 +146,6 @@ case "$1" in
     }
     case " $* " in
       *" --no-run "*) ;;
-      *" --lib -- config:: "*) if [ -n "${STUB_REPEAT_SLEEP_S1:-}" ]; then s0=$SECONDS; while [ $(( SECONDS - s0 )) -lt "$STUB_REPEAT_SLEEP_S1" ]; do :; done; fi; running "$@"; echo "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out" ;;      # plan 67's repeat run of S1: STUB_REPEAT_SLEEP_S1=<s> makes each run take that long (the stub `sleep` is a no-op, so a SECONDS loop; S2's share is the budget minus S1's elapsed time)
       *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test; STUB_REPEAT_ZERO=1: every run passes zero tests (a filter or build that ran nothing)
         if [ -n "${STUB_REPEAT_ZERO:-}" ]; then per_target 0 "$@"; exit 0; fi
         per_target 3 "$@"
@@ -3456,9 +3455,7 @@ def extra_repeat(kind):
         sb = make67(root, "67", "rehearse")
         rd = os.path.join(sb["logs"], "repeat")
         os.makedirs(rd)
-        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": "4" if kind == "repeat-cut" else "11" if kind == "repeat-s2-share" else "3600", "STUB_REPEAT_DIR": px(rd), "R67_T1_S": "1"}
-        if kind == "repeat-s2-share":      # S1's four runs take 2 s each (8 s of the 11 s budget): S1's share (half) fits all four, S2's share is what S1 left, so S2 is cut (an equal split would give it 5 s and no cut)
-            env["STUB_REPEAT_SLEEP_S1"] = "2"
+        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": {"repeat-cut": "20", "repeat-s2-share": "39"}.get(kind, "3600"), "STUB_REPEAT_DIR": px(rd), "R67_T1_S": {"repeat-cut": "5", "repeat-s2-share": "10"}.get(kind, "1")}
         if kind == "repeat-one-failure":
             env["STUB_REPEAT_FAIL"] = "3"
         if kind == "repeat-zero-tests":
@@ -3488,11 +3485,11 @@ def extra_repeat(kind):
                   rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS(holeclass_reachability)" in rep and "ZERO-TESTS(s06_no_copy)" not in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
         elif kind == "repeat-s2-share":
             m_ = re.search(r"REPEAT-CUT seat=S2 reached=(\d+) of 4", rep)
-            check(f"{tag}: S2's share is the budget minus S1's elapsed time: S1 reads 4 of 4 with no cut, S2 gets what S1 left of the 11 s budget (at most 3 s, so at most 3 runs of 1 s) and its cut is on record, rc 0 (an equal split would give S2 5 s and no cut)",
-                  rc == 0 and "REPEAT67 seat=S1 reached=4 of 4" in rep and "REPEAT-CUT seat=S1" not in rep and m_ is not None and 1 <= int(m_.group(1)) <= 3 and "ABORT-REPEAT" not in rep, (rc, rep))
+            check(f"{tag}: first run 10 s (seam) on a 39 s budget: S1's share is half (19 s: 1 run, REPEAT-CUT on record), S2's is the budget minus S1's real elapsed time (30-39 s while S1 took under 10 s: 3 runs; an equal split would give it 1), rc 0",
+                  rc == 0 and "REPEAT-CUT seat=S1 reached=1 of 4" in rep and "REPEAT67 seat=S1 reached=1 of 4" in rep and m_ is not None and 2 <= int(m_.group(1)) <= 3 and "REPEAT67 seat=S2 reached=%s of 4" % m_.group(1) in rep and "ABORT-REPEAT" not in rep, (rc, rep))
         else:
-            check(f"{tag}: a budget of 4 s (2 s per seat) fits two timed runs: REPEAT-CUT with the reached N is on record (for the second amendment), the seats read that N with zero failures, rc 0",
-                  rc == 0 and rep.count("REPEAT-CUT seat=") == 2 and "reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
+            check(f"{tag}: a 20 s budget with a 5 s first run: S1's share (10 s) fits two timed runs: REPEAT-CUT seat=S1 with the reached N is on record (for the second amendment), S1 reads 2 of 4 with zero failures, rc 0",
+                  rc == 0 and "REPEAT-CUT seat=S1 reached=2 of 4" in rep and "REPEAT67 seat=S1 reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
         EXTRA67_DONE.add(kind)
     finally:
         shutil.rmtree(root, ignore_errors=True)

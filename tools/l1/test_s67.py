@@ -1220,6 +1220,8 @@ def test_g_verdict_classes():
     rows = [r for r in _g_ledger("g1") if not (r["cell"] == "c8-100" and r["arm"] == "BASE" and r["seed"] == "42" and r["rep"] == 1)]
     t = _g_run("g1", rows, "gc-nv.log")
     check("g_class_red: score41d's NO VERDICT (a missing slot) reads GATE-67G1 NO VERDICT, never FAIL", _gate_line(t, 1).startswith("GATE-67G1 NO VERDICT"), (_gate_line(t, 1), t[-500:]))
+    t = _g_run("g2", _g_ledger("g2", lambda c, a, s, r: "s2-goodput-low" if a == "CAND" else None), "gc-41d.log")
+    check("g_class_green: GATE-41d FAIL (S2 goodput low on every CAND row, p <= 0.05) is FAIL", _gate_line(t, 2).startswith("GATE-67G2 FAIL (GATE-41d FAIL"), _gate_line(t, 2))
     t = _g_run("g2", _g_ledger("g2", lambda c, a, s, r: "s2-taper-nonzero" if (a == "CAND" and c == "c2-100" and s == "42" and r == 1) else None), "gc-s06.log")
     check("g_class_green: an S06-FAIL row is still FAIL", _gate_line(t, 2).startswith("GATE-67G2 FAIL"), _gate_line(t, 2))
     t = _g_run("g2", _g_ledger("g2", lambda c, a, s, r: "g2-taper-no-pslot" if (a == "CAND" and c == "c2-100" and s == "42" and r == 1) else None), "gc-taper.log")

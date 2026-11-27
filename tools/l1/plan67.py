@@ -304,7 +304,7 @@ def kept_acct(path):
 
 
 def s2_smoke_fail(stage, path):
-    """Rehearsal helper: rc 0 iff the stage's smoke-check.txt reads SMOKE-FAIL and the failure is the S2 family's alone: every g2 failure (guard 2's own stage), or in A / R1 only S2 arm items (`S2: ...`, no S1 or B0 item).
+    """Rehearsal helper: rc 0 iff the stage's smoke-check.txt reads SMOKE-FAIL and the failure is the S2 family's alone: in g2 a CAND (S2) item and no BASE (S1) item, in A / R1 only S2 arm items (`S2: ...`, no S1 or B0 item).
     The rehearsal then marks guard 2 VOID and runs the other smokes (as for R2); any other smoke failure stops it."""
     if stage not in ("g2", "a", "r1"):
         return 1
@@ -315,8 +315,9 @@ def s2_smoke_fail(stage, path):
     fail = [ln for ln in lines if ln.startswith("SMOKE-FAIL")]
     if not fail:
         return 1
-    if stage == "g2":
-        return 0
+    if stage == "g2":      # guard 2's own stage, but an S1 (BASE) row's failure is guard 1's base: only a CAND (S2) failure alone voids guard 2
+        txt = " ".join(fail)
+        return 0 if "CAND" in txt and "BASE" not in txt else 1
     arms = {x.split(":", 1)[0].strip() for ln in fail for x in ln[len("SMOKE-FAIL"):].split(";") if ":" in x}
     return 0 if "S2" in arms and not (arms & {"S1", "B0"}) else 1
 

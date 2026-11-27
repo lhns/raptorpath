@@ -215,8 +215,8 @@ _sc = os.path.join(_tf.mkdtemp(prefix="h67e"), "smoke-check.txt")
 def _s2sf(stage, text):
     open(_sc, "w").write(text)
     return plan67.s2_smoke_fail(stage, _sc)
-check("plan67.s2_smoke_fail: g2 any failure and A / R1 failures naming S2 alone are the S2 family's (rc 0); an S1 or B0 item, a pass, another stage or no file are not (rc 1)",
-      _s2sf("g2", "FAIL x: c2-100 CAND: y\nSMOKE-FAIL c2-100 CAND: y\n") == 0 and _s2sf("a", "SMOKE-FAIL S2: VOID-WITNESS []; S2: S06-FAIL\n") == 0 and _s2sf("r1", "SMOKE-FAIL S2: pslot=0 taper=1\n") == 0
+check("plan67.s2_smoke_fail: g2 a CAND item without a BASE item and A / R1 failures naming S2 alone are the S2 family's (rc 0); an S1 or B0 item, a pass, another stage or no file are not (rc 1)",
+      _s2sf("g2", "FAIL x: c2-100 CAND: y\nSMOKE-FAIL c2-100 CAND: y\n") == 0 and _s2sf("g2", "SMOKE-FAIL c2-100 CAND: y; c8-100 BASE: z\n") == 1 and _s2sf("g2", "SMOKE-FAIL c2-100 BASE: z\n") == 1 and _s2sf("g2", "SMOKE-FAIL plan 41d's smoke failed\n") == 1 and _s2sf("g2", "SMOKE-FAIL c2-100 CAND: y\n") == 0 and _s2sf("a", "SMOKE-FAIL S2: VOID-WITNESS []; S2: S06-FAIL\n") == 0 and _s2sf("r1", "SMOKE-FAIL S2: pslot=0 taper=1\n") == 0
       and _s2sf("a", "SMOKE-FAIL S2: x; S1: y\n") == 1 and _s2sf("a", "SMOKE-FAIL B0: x\n") == 1 and _s2sf("a", "SMOKE-FAIL S2: x; B0: no row\n") == 1 and _s2sf("a", "SMOKE-PASS\n") == 1 and _s2sf("g2", "SMOKE-PASS\n") == 1
       and _s2sf("r2", "SMOKE-FAIL P2: x\n") == 1 and _s2sf("t", "SMOKE-FAIL S2: x\n") == 1 and plan67.s2_smoke_fail("g2", _sc + ".none") == 1)
 rp = open(os.path.join(HERE, "repeat67_run.sh")).read()
