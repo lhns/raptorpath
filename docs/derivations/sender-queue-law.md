@@ -565,10 +565,11 @@ The original order follows for the record.
 | symbol | meaning | provenance |
 |---|---|---|
 | W_i, srtt_i, L_i, s_i | as in Revision 4 | unchanged (§0) |
-| F_i | bytes in flight on leg i | measured: `RouteProbe` `qinfl`, already in the view. Owed: publish it from `on_sent` and `on_congestion_event` too, so an ack blackout does not freeze it (68s GBU r1) |
+| F_i | bytes in flight on leg i, **live** | measured: `RouteProbe` `qinfl`, already in the view, but also published from `on_sent` and `on_congestion_event`. Today it is stored only in `on_end_acks`, after the ACK's bytes leave flight and before quinn refills them, so W − F reads the last ACK event's freed bytes (68s p50 ≈ 13 datagrams) and freezes under an ack blackout (68s GBU r1) |
 | ẋ_i | the ack clock, bytes/s | measured: a new acked-bytes counter in `RouteProbe::on_ack`, differenced over one srtt. The horizon is BBR's delivery-rate interval (a packet's send-to-ack), one window's delivery; a shorter one reads ack bursts (A) as rate |
-| N | RFC 9002 §7.7's slack, now on both rates | cited, unchanged. Its stated reason ("variations in RTT do not result in underutilization") applies to the ack clock as to the window rate |
-| `ack_bind_i` | share of turns where the second term is the smaller | the clamp's bind-fraction gauge (CLAUDE.md); predicted 0.3–0.5 on saturated c2 legs and ≤ 0.05 on app-limited bursts |
+| N | RFC 9002 §7.7's slack, now on both rates | cited on the window rate. **On the ack clock it is argued, not cited: the owner's call.** The argument is that its stated reason ("variations in RTT do not result in underutilization") applies to the ack clock as well |
+| (growth over L) | left out | **argued, the owner's call.** Growth appears as live room at the next look. The alternative is a factor 2 on ẋ, from "growth ≤ acked" (slow start, `bbr_rs` ProbeBw), which caps restore spikes at ≈ 1.6× cruise instead of ≈ 1× |
+| `ack_bind_i` | share of turns where the second term is the smaller | the clamp's bind-fraction gauge (CLAUDE.md). Predicted 0.3–0.7 on saturated c2 legs and ≤ 0.05 on app-limited bursts |
 
 **Derivation.**
 - §2.2 sizes B_i by quinn's release before the next look.
@@ -576,7 +577,9 @@ The original order follows for the record.
   - the bucket's refill, N·(W/srtt)·L;
   - the window's room now, plus the bytes acks free over L, (W − F)⁺ + ẋ·L.
 - Revision 4 kept only the first. The two agree when the window binds and srtt is the RTT of the bytes in flight, because Little's law then gives W/srtt = ẋ.
-- They part when srtt lags the in-flight RTT, as after every window restore. There the first term over-reads the release by up to srtt_ss/m̂: the 68s ProbeRtt step windows read spikes ≤ srtt_before/m̂ in 79 of 80.
+- They part when srtt lags the in-flight RTT, as after every window restore. There the first term over-reads the release by up to srtt_ss/m̂.
+  - The 68s ProbeRtt step windows read spikes ≤ srtt_before/m̂ in 134 of 136; the two exceptions are on c8's slow leg.
+  - This is the mechanism the shape supports; per-turn data would settle it (`reg-handoff-gate.md` §11.2 a).
 - The over-read datagrams wait in quinn's FIFO. That is the delay §2.2 says buys nothing.
 - Window growth during L is not provisioned. It appears as room at the next look, and room is read live.
 - **This is not Revision 3's withdrawn window form.** That form was the repair clamp, and it read ≈ 0 in loss recovery. Here the room term is only part of the bound: at zero room (recovery, or a full window), β = N·ẋ·L/s, one L of the ack clock.
@@ -588,13 +591,15 @@ The original order follows for the record.
 - **Inputs.** β is a min of two continuous terms, both always computed, so it is continuous. It is non-decreasing in W, ẋ and L, and non-increasing in srtt and F.
 - **Cold start.** The second term is +∞ while srtt or ẋ is undefined, so the cold-start admit is unchanged.
 - **Only an upper bound changes.** β_5 ≤ β_4 everywhere, so the gate can only get tighter. Throughput is protected by the room term (Startup, app-limited) and by the ack-clock term covering one L (68s replay: β·s/(ẋ·L) at p5 is 0.97–1.02).
+- **Startup is a risk, not ruled out.** The cap binds on the first Startup line of three 68s Bulk rows (cap/β 0.57–0.92). Witness it with the time to leave Startup and with `starve` in Startup.
 - **App-limited.** With room ≈ W > N·W·L/srtt (L < srtt/N), the first term binds, so app-limited bursts keep Revision 4's β.
 
-**Predicted on the 68s rows** (replay, `reg-handoff-gate.md` §11.4):
-- Leg-0 windows with B p95 − β > batch about halve.
-- Windows with that excess above 50 fall by 80–85 %.
-- B p95 falls by 7–10 datagrams (≈ 1 ms), and the β median by 2.
-- K8 leg 1 is unchanged: its excess is exempt.
+**Predicted on the 68s rows** (replay, `reg-handoff-gate.md` §11.4; first figure with the logged room, second with live F):
+- Leg-0 windows with B p95 − β > batch fall by about half, or by 65–79 % with live F.
+- Windows with that excess above 50 fall by 79–90 %.
+- B p95 falls by 7–10 datagrams, or 14–21 with live F (≈ 1–2 ms).
+- The β median falls by 2, or 5–6 with live F.
+- K8 leg 1 changes least; its excess is mostly exempt.
 
 **Tests owed (red first, absolute, for the build).** These extend §7.
 1. **Post-restore over-read.** Inputs W = 280 000 B, srtt = 8 ms, F = 280 000 B, ẋ = 11.2 MB/s, L = 6.3 ms, s = 1 233. Today β = 223.6; Revision 5 gives 71.5. Hand at 71, not at 72.

@@ -14,7 +14,7 @@ for arm, rep, fn in J.rows(sys.argv[1]):
         if not a or not b or not p or not p.get("R") or not p.get("beta"): continue
         if arm != "GBU" and a["qm"] != "S": continue
         s = p["R"] * p["L"] / 1e3 / p["beta"]; xd = (int(a["qab"]) - int(b["qab"])) / (t - t0)
-        cap = max(p["win"] - p["F"], 0) / s + N * xd * p["L"] / 1e3 / s
+        cap = (0.0 if os.environ.get("ROOM0") == "1" else max(p["win"] - p["F"], 0) / s) + N * xd * p["L"] / 1e3 / s
         n += 1; r = cap / p["beta"]; worst = min(worst, r); bind += r < 1
         modes[a["qm"]] = modes.get(a["qm"], 0) + 1
     print(arm, rep, "windows", n, "modes", modes, "cap<beta(end) in", bind, "min cap/beta=%.2f" % worst)

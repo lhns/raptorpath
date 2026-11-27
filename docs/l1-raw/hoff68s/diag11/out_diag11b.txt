@@ -1,0 +1,61 @@
+=== replay.py (model 1: B does not follow the cap; B95f = min(B95, max cap + batch))
+GA2 p0: n=618 E p50/p90/max now=11/37/332 fix=14/39/267 | over-batch now=183 fix=235 | Bmax p90 now/fix=135/131 | spread p95/p50 p90 now=1.41 fix=1.27 | cap binds below beta p95 in 0.51, below p50 in 0.32 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.31
+GA2 p0 t<2: n=15 E p50/p90/max now=10/17/29 fix=12/21/41 | over-batch now=2 fix=3 | Bmax p90 now/fix=119/119 | spread p95/p50 p90 now=1.17 fix=1.13 | cap binds below beta p95 in 0.60, below p50 in 0.53 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.35
+GK2 p0: n=618 E p50/p90/max now=11/29/119 fix=14/32/86 | over-batch now=171 fix=226 | Bmax p90 now/fix=126/122 | spread p95/p50 p90 now=1.35 fix=1.25 | cap binds below beta p95 in 0.48, below p50 in 0.32 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.31
+GK2 p0 t<2: n=15 E p50/p90/max now=14/18/33 fix=14/18/20 | over-batch now=3 fix=4 | Bmax p90 now/fix=107/107 | spread p95/p50 p90 now=1.27 fix=1.18 | cap binds below beta p95 in 0.47, below p50 in 0.27 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.45
+GK8 p0: n=512 E p50/p90/max now=12/34/137 fix=14/37/84 | over-batch now=159 fix=217 | Bmax p90 now/fix=131/126 | spread p95/p50 p90 now=1.39 fix=1.26 | cap binds below beta p95 in 0.51, below p50 in 0.34 | beta_fix_end/(xdot L/s) p5/p50=0.97/1.31
+GK8 p0 t<2: n=15 E p50/p90/max now=12/22/46 fix=17/27/53 | over-batch now=4 fix=6 | Bmax p90 now/fix=125/125 | spread p95/p50 p90 now=1.22 fix=1.13 | cap binds below beta p95 in 0.60, below p50 in 0.53 | beta_fix_end/(xdot L/s) p5/p50=1.02/1.38
+GK8 p1: n=512 E p50/p90/max now=3/9/56 fix=3/9/38 | over-batch now=115 fix=118 | Bmax p90 now/fix=34/32 | spread p95/p50 p90 now=1.25 fix=1.20 | cap binds below beta p95 in 0.22, below p50 in 0.11 | beta_fix_end/(xdot L/s) p5/p50=0.99/1.44
+GK8 p1 t<2: n=15 E p50/p90/max now=5/12/20 fix=5/12/16 | over-batch now=8 fix=8 | Bmax p90 now/fix=28/27 | spread p95/p50 p90 now=1.57 fix=1.25 | cap binds below beta p95 in 0.53, below p50 in 0.20 | beta_fix_end/(xdot L/s) p5/p50=0.33/1.38
+GPH p0: n=698 E p50/p90/max now=7/23/137 fix=9/26/81 | over-batch now=197 fix=291 | Bmax p90 now/fix=132/128 | spread p95/p50 p90 now=1.37 fix=1.24 | cap binds below beta p95 in 0.53, below p50 in 0.37 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.31
+GPH p0 t<2: n=15 E p50/p90/max now=8/25/44 fix=11/18/25 | over-batch now=4 fix=4 | Bmax p90 now/fix=134/113 | spread p95/p50 p90 now=1.55 fix=1.24 | cap binds below beta p95 in 0.80, below p50 in 0.13 | beta_fix_end/(xdot L/s) p5/p50=0.99/1.41
+=== track.py (does B follow beta?)
+GA2 p0: B p50 - beta p50 p10/50/90 = -3/-1/-1 | B p95 - beta p95 p10/50/90 = -3/-0/1
+GK2 p0: B p50 - beta p50 p10/50/90 = -4/-1/-0 | B p95 - beta p95 p10/50/90 = -5/-0/1
+GK8 p0: B p50 - beta p50 p10/50/90 = -2/-1/-0 | B p95 - beta p95 p10/50/90 = -2/0/1
+GK8 p1: B p50 - beta p50 p10/50/90 = -0/0/1 | B p95 - beta p95 p10/50/90 = 0/1/5
+GPH p0: B p50 - beta p50 p10/50/90 = -22/-8/-4 | B p95 - beta p95 p10/50/90 = -19/-5/-1
+=== ROOM0=1 ackclock.py
+GA2 p0 run: n=618 bq50/ack p10/50/90=0.81/1.16/1.28  bq95/ack p50/90/max=1.30/1.64/4.59  (W/srtt)/xdot p50/90=1.09/1.34  room p50/90=0/0  fix/now(end) p10/50=0.75/0.90
+GA2 p0 startup: n=15 bq50/ack p10/50/90=0.81/1.20/1.24  bq95/ack p50/90/max=1.32/1.44/1.72  (W/srtt)/xdot p50/90=1.19/1.28  room p50/90=0/0  fix/now(end) p10/50=0.78/0.84
+GK2 p0 run: n=618 bq50/ack p10/50/90=0.81/1.15/1.29  bq95/ack p50/90/max=1.29/1.61/3.26  (W/srtt)/xdot p50/90=1.09/1.34  room p50/90=0/0  fix/now(end) p10/50=0.75/0.91
+GK2 p0 startup: n=15 bq50/ack p10/50/90=0.82/1.23/1.35  bq95/ack p50/90/max=1.43/1.57/2.32  (W/srtt)/xdot p50/90=1.23/1.34  room p50/90=0/0  fix/now(end) p10/50=0.73/0.82
+GK8 p0 run: n=512 bq50/ack p10/50/90=0.81/1.04/1.30  bq95/ack p50/90/max=1.28/1.67/2.85  (W/srtt)/xdot p50/90=1.12/1.36  room p50/90=0/0  fix/now(end) p10/50=0.73/0.89
+GK8 p0 startup: n=15 bq50/ack p10/50/90=0.80/1.25/1.36  bq95/ack p50/90/max=1.40/1.60/1.94  (W/srtt)/xdot p50/90=1.20/1.28  room p50/90=0/0  fix/now(end) p10/50=0.75/0.83
+GK8 p1 run: n=512 bq50/ack p10/50/90=0.80/1.11/1.34  bq95/ack p50/90/max=1.23/1.54/3.82  (W/srtt)/xdot p50/90=1.17/1.35  room p50/90=0/0  fix/now(end) p10/50=0.74/0.86
+GK8 p1 startup: n=15 bq50/ack p10/50/90=0.80/1.25/1.42  bq95/ack p50/90/max=1.39/1.90/2.23  (W/srtt)/xdot p50/90=1.10/1.29  room p50/90=0/0  fix/now(end) p10/50=0.75/0.91
+GPH p0 run: n=698 bq50/ack p10/50/90=0.81/1.12/1.30  bq95/ack p50/90/max=1.29/1.67/3.48  (W/srtt)/xdot p50/90=1.12/1.35  room p50/90=0/0  fix/now(end) p10/50=0.74/0.89
+GPH p0 startup: n=15 bq50/ack p10/50/90=0.81/1.17/1.24  bq95/ack p50/90/max=1.39/1.90/2.13  (W/srtt)/xdot p50/90=1.19/1.37  room p50/90=0/0  fix/now(end) p10/50=0.73/0.84
+=== ROOM0=1 replay2.py
+GA2 p0: n=618 E p50/p90/max 11/37/332 -> 0/16/85 | over-batch 183 -> 39 | E>50 34 -> 4 | B p95 med 95 -> 81, p90 125 -> 99 | B max p99/max 202/727 -> 135/279 | beta p50 med 82 -> 76
+GK2 p0: n=618 E p50/p90/max 11/29/119 -> 0/16/81 | over-batch 171 -> 38 | E>50 21 -> 2 | B p95 med 93 -> 72, p90 114 -> 97 | B max p99/max 183/235 -> 124/140 | beta p50 med 81 -> 76
+GK8 p0: n=512 E p50/p90/max 12/34/137 -> 1/17/69 | over-batch 159 -> 56 | E>50 26 -> 3 | B p95 med 96 -> 81, p90 120 -> 101 | B max p99/max 189/289 -> 146/239 | beta p50 med 82 -> 76
+GK8 p1: n=512 E p50/p90/max 3/9/56 -> 1/6/50 | over-batch 115 -> 62 | E>50 1 -> 0 | B p95 med 19 -> 17, p90 27 -> 23 | B max p99/max 45/70 -> 39/70 | beta p50 med 16 -> 15
+GPH p0: n=698 E p50/p90/max 7/23/137 -> -2/10/61 | over-batch 197 -> 48 | E>50 17 -> 2 | B p95 med 92 -> 76, p90 117 -> 100 | B max p99/max 217/257 -> 139/184 | beta p50 med 82 -> 77
+=== ROOM0=1 replay.py
+GA2 p0: n=618 E p50/p90/max now=11/37/332 fix=22/41/145 | over-batch now=183 fix=396 | Bmax p90 now/fix=135/120 | spread p95/p50 p90 now=1.41 fix=1.19 | cap binds below beta p95 in 0.69, below p50 in 0.51 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.25
+GA2 p0 t<2: n=15 E p50/p90/max now=10/17/29 fix=18/27/43 | over-batch now=2 fix=7 | Bmax p90 now/fix=119/118 | spread p95/p50 p90 now=1.17 fix=1.13 | cap binds below beta p95 in 0.67, below p50 in 0.60 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.25
+GK2 p0: n=618 E p50/p90/max now=11/29/119 fix=21/38/86 | over-batch now=171 fix=373 | Bmax p90 now/fix=126/116 | spread p95/p50 p90 now=1.35 fix=1.20 | cap binds below beta p95 in 0.68, below p50 in 0.51 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.25
+GK2 p0 t<2: n=15 E p50/p90/max now=14/18/33 fix=14/30/37 | over-batch now=3 fix=6 | Bmax p90 now/fix=107/106 | spread p95/p50 p90 now=1.27 fix=1.08 | cap binds below beta p95 in 0.73, below p50 in 0.60 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.25
+GK8 p0: n=512 E p50/p90/max now=12/34/137 fix=23/43/82 | over-batch now=159 fix=334 | Bmax p90 now/fix=131/120 | spread p95/p50 p90 now=1.39 fix=1.19 | cap binds below beta p95 in 0.67, below p50 in 0.50 | beta_fix_end/(xdot L/s) p5/p50=0.97/1.25
+GK8 p0 t<2: n=15 E p50/p90/max now=12/22/46 fix=18/38/55 | over-batch now=4 fix=6 | Bmax p90 now/fix=125/124 | spread p95/p50 p90 now=1.22 fix=1.13 | cap binds below beta p95 in 0.67, below p50 in 0.60 | beta_fix_end/(xdot L/s) p5/p50=1.02/1.25
+GK8 p1: n=512 E p50/p90/max now=3/9/56 fix=5/10/22 | over-batch now=115 fix=200 | Bmax p90 now/fix=34/27 | spread p95/p50 p90 now=1.25 fix=1.13 | cap binds below beta p95 in 0.61, below p50 in 0.52 | beta_fix_end/(xdot L/s) p5/p50=0.99/1.25
+GK8 p1 t<2: n=15 E p50/p90/max now=5/12/20 fix=7/13/16 | over-batch now=8 fix=10 | Bmax p90 now/fix=28/26 | spread p95/p50 p90 now=1.57 fix=1.11 | cap binds below beta p95 in 0.73, below p50 in 0.67 | beta_fix_end/(xdot L/s) p5/p50=0.33/1.25
+GPH p0: n=698 E p50/p90/max now=7/23/137 fix=18/34/77 | over-batch now=197 fix=446 | Bmax p90 now/fix=132/124 | spread p95/p50 p90 now=1.37 fix=1.19 | cap binds below beta p95 in 0.68, below p50 in 0.52 | beta_fix_end/(xdot L/s) p5/p50=0.98/1.25
+GPH p0 t<2: n=15 E p50/p90/max now=8/25/44 fix=16/23/30 | over-batch now=4 fix=7 | Bmax p90 now/fix=134/105 | spread p95/p50 p90 now=1.55 fix=1.17 | cap binds below beta p95 in 0.93, below p50 in 0.60 | beta_fix_end/(xdot L/s) p5/p50=0.99/1.25
+=== ROOM0=1 capcheck.py (GBU rows: room is real there, so this bracket does not apply to them)
+GA2 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GA2 2 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GA2 3 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GBU 1 windows 228 modes {'S': 56, 'B': 172} cap<beta(end) in 228 min cap/beta=0.00
+GBU 2 windows 227 modes {'S': 227} cap<beta(end) in 227 min cap/beta=0.00
+GBU 3 windows 226 modes {'S': 226} cap<beta(end) in 226 min cap/beta=0.00
+GK2 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GK2 2 windows 1 modes {'S': 1} cap<beta(end) in 1 min cap/beta=0.79
+GK2 3 windows 38 modes {'S': 38} cap<beta(end) in 19 min cap/beta=0.60
+GPH 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GPH 2 windows 1 modes {'S': 1} cap<beta(end) in 1 min cap/beta=0.84
+GPH 3 windows 1 modes {'S': 1} cap<beta(end) in 1 min cap/beta=0.57
+GK8 1 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GK8 2 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00
+GK8 3 windows 0 modes {} cap<beta(end) in 0 min cap/beta=9.00

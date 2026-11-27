@@ -6,6 +6,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import join68r as J, series as SE
 from collections import defaultdict
 N = 1.25
+# ROOM0=1 (env): drop the room term (bracket for an F sampled at on_end_acks, which reads the last ack event's freed bytes as room)
+ROOM0 = os.environ.get("ROOM0") == "1"
 q = lambda v, p: sorted(v)[int(p * (len(v) - 1))] if v else float("nan")
 def rows(d, arms="G"):
     for arm, rep, fn in J.rows(d):
@@ -24,7 +26,7 @@ def rows(d, arms="G"):
                 xd = (int(a["qab"]) - int(b["qab"])) / (t - t0)
                 if xd <= 0: continue
                 ack = N * xd * p["L"] / 1e3 / s
-                room = max(p["win"] - p["F"], 0) / s
+                room = 0.0 if ROOM0 else max(p["win"] - p["F"], 0) / s
                 out.append(dict(arm=arm, rep=rep, pid=pid, t=t, j=j, s=s, xd=xd, ack=ack, room=room, p=p, ws=ws))
         yield arm, rep, fn, out
 if __name__ == "__main__":

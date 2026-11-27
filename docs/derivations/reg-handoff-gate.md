@@ -339,11 +339,13 @@ Window and srtt move together, as Little's law says they should when F ≈ W. β
 
 ### 11.2 Cause
 
-**(a) R over-reads quinn's release whenever srtt is below the RTT of the bytes now in flight. This drives the large spikes.**
+**(a) The mechanism the shape supports for the large spikes: R over-reads quinn's release whenever srtt is below the RTT of the bytes now in flight.**
+- **Not proven at this resolution (§11.1).** The gauge that would settle it is the tuple (W, srtt, L) at the turn of each window's largest β, a `beta_max` field in `[HOFF]` (owed).
 - **Why R over-reads.** R = 1.25·W/srtt is quinn's pacer refill (`pacing.rs:110`). On these rows the window binds (`hand_bind` ≈ 0.65, F/W ≈ 0.95), so quinn releases what the window lets out: the room W − F, plus what acks free at the ack clock ẋ. W/srtt = ẋ only while srtt is the RTT of the bytes in flight.
 - **Where it breaks.** After a window restore, the queue has just drained, so srtt sits near m̂ while W is back at full size. The new RTT reaches srtt one round later. Until then, R reads up to W/(m̂·ẋ) ≈ srtt_ss/m̂ times the ack clock.
 - **ProbeRtt exit is the clean case.** `window()` returns the ProbeRtt window, then the full cwnd (`bbr_rs.rs:1078`).
-  - In the windows at a `[QCC]` ProbeRtt step, β p95/p50 reads 1.0–2.2, against a bound srtt_before/m̂ of 1.5–4.1. Only one of the 80 step windows exceeds its bound: K8 r3 leg 1 at 21.3 s, with β ≈ 23 (`prtt.py`).
+  - There are 136 windows at or just after a `[QCC]` ProbeRtt step (112 on leg 0, 24 on K8 leg 1; `prtt.py`). On leg 0, β p95/p50 reads 1.02–2.22, every one within its bound srtt_before/m̂ (1.5–4.1).
+  - Two windows exceed their bound, both on K8 leg 1, where β ≈ 15–40: r3 at 21.3 s (3.91 against 1.88) and r2 at 31.1 s (1.61 against 1.50).
   - Over the rows, the largest spread is 2.0–2.8 against srtt/m̂ 2.5–2.8 on leg 0 (`spikes.py`).
   - B follows: K2 r1 at 10.3 s reads β p95 214 and B p95 213.
 - **ProbeRtt is not the whole of it.**
@@ -376,7 +378,7 @@ Window and srtt move together, as Little's law says they should when F ≈ W. β
 ### 11.3 Is "admit up to the instantaneous β" the right law?
 
 **The inequality is right. The rate in β is wrong when the window binds.**
-- §2.2's argument sizes B by what quinn **releases** before the next look, and that is the lesser of two caps:
+- `sender-queue-law.md` §2.2's argument sizes B by what quinn **releases** before the next look, and that is the lesser of two caps:
   - the pacer refill, 1.25·(W/srtt)·L;
   - what the window lets out, (W − F)⁺ plus the bytes acks free over L.
 - Revision 4 reads only the first. Under a binding window it over-reads exactly as in (a), and the over-read becomes delay for everything behind it.
@@ -389,8 +391,12 @@ Window and srtt move together, as Little's law says they should when F ≈ W. β
 
 - **Provenance** (in full in `sender-queue-law.md` §10). No new constant.
   - W_i and F_i are the `RouteProbe` atomics already in the view.
+    - F_i is meant live: also published from `on_sent`.
+    - Today `qinfl` is stored in `on_end_acks`, after the ACK's bytes leave flight and before quinn refills them. So the logged W − F (p50 ≈ 13 datagrams) is mostly the last ACK event's freed bytes, not standing room.
   - ẋ_i is measured, from an acked-bytes counter in `RouteProbe::on_ack`. Its horizon is one srtt, BBR's delivery-rate interval (one packet's send-to-ack), so it reads one window's delivery rather than one ack burst.
-  - N is RFC 9002 §7.7's slack, applied to the ack clock for the same stated reason ("variations in RTT").
+  - **Argued, not cited; the owner's call:**
+    - N on ẋ. N is RFC 9002 §7.7's slack, reused on the ack clock for its stated reason ("variations in RTT"). That reuse is an argument.
+    - Leaving out the window's growth over L. The alternative is a factor 2 on ẋ, from "growth ≤ acked" (slow start: cwnd += acked; `bbr_rs` ProbeBw: min(target, W + acked)). That factor would cap the restore spikes at ≈ 1.6× instead of ≈ 1×.
 - **Shape.**
   - Units: both terms are bytes, so β is in datagrams.
   - Continuous: a min of two continuous terms, both always computed.
@@ -405,8 +411,12 @@ Window and srtt move together, as Little's law says they should when F ≈ W. β
   - **Startup:** the room term is read live, so window growth is admitted at the next look.
     - Unlike Revision 2's ν̂, no rate term is built only from past sends, so growth has no ×1.25 ceiling.
     - The worst case is one look gap L with up to ẋ·L of unused room.
-    - Startup windows on the Bulk rows (38 on K2 r3) never bind (min cap/β 1.07).
-  - **Cruise:** β at the end of each window, over one L of the ack clock (β_fix·s/(ẋ·L)), reads p5 0.97–1.02 and p50 1.31–1.44. So it covers the next L of release.
+    - **But the cap does bind in Startup** (`capcheck.py`, 41 Startup end samples on the Bulk rows):
+      - **The first Startup line** of K2 r2, PH r2 and PH r3 binds at cap/β 0.92, 0.89 and 0.74 with the logged room, and at 0.79, 0.84 and 0.57 with room 0.
+      - **K2 r3** stays in Startup until 10.3 s. W sits at 478 kB with the link full and the gate open (`hand_bind` 0, B p50 ≈ 10). Its 38 windows never bind with the logged room (min 1.07), and bind in 19 of 38 with room 0 (min 0.60). B ≪ β there, so the bind costs nothing.
+    - So Startup β falls by up to 26 % (logged room) or 43 % (room 0) on the first line.
+    - **That is Revision 2's hazard, here bounded by the live room term rather than structural. It is a risk to witness, not one ruled out.** Witnesses: time to leave Startup, and `starve` in Startup.
+  - **Cruise:** β at the end of each window, over one L of the ack clock (β_fix·s/(ẋ·L)), reads p5 0.97–1.02 and p50 1.25–1.44. So it covers the next L of release.
 - **Rejected.**
   - **A cap at the controller's pacing rate or at b̂.** On GBU r1 (ProbeBw), `qbw` is 0.35–0.66 MB/s. With s = 536 B (R·L/β from the 53.5 s line), that gives β ≈ 4–7 against today's 19, so a 15-datagram frame plus repair would wait two to three reopens.
   - **A running min over L or srtt.** The spikes last up to 2 L, and a min over srtt reads the low srtt that causes them.
@@ -414,30 +424,42 @@ Window and srtt move together, as Little's law says they should when F ≈ W. β
 
 ### 11.4 Predicted effect on the 68s rows (counterfactual replay)
 
-**Model** (`replay2.py`):
-- The cap per window is the end-sample room plus 1.25·ẋ·L/s, with ẋ the window's mean ack rate.
-- B follows β as it does now (B p95 ≈ β p95, §9's U), so a quantile of B drops by what the cap removes from the same quantile of β.
-- E_fix = B_fix p95 − min(β_end, cap).
-- The engine's ẋ over one srtt is noisier than a 0.25 s mean, so these are the optimistic end.
+**Model** (`replay2.py`; outputs in `out_diag11.txt` and `out_diag11b.txt`).
+- **The cap.** Per window, the cap is room + 1.25·ẋ·L/s, with ẋ the window's mean ack rate. Room is taken two ways, as a bracket:
+  - **logged room:** the end-sample W − F, which over-reads (§11.3);
+  - **room 0:** F live, which is what Revision 5 means. On Bulk rows this is the realistic end.
+- **B follows β as it does now.** `track.py`: per window, B p50 − β p50 reads −1 at the median (p10 −2 to −4) on A2, K2 and K8. B p95 − β p95 reads 0 (PH: −8 and −5). So a B quantile drops by what the cap removes from the same β quantile.
+- **The readout.** E_fix = B_fix p95 − min(β_end, cap).
+- **ẋ noise.** The engine's ẋ over one srtt is noisier than a 0.25 s mean, so these numbers are the optimistic end.
 
-| row, leg (t ≥ 2 s) | E p50 / p90 / max | windows with E > batch | E > 50 | B p95 median | B max p99 |
-|---|---|---|---|---|---|
-| A2 leg 0 | 11 / 37 / 332 → 4 / 24 / 88 | 183 → 99 | 34 → 7 | 95 → 88 | 202 → 152 |
-| K2 leg 0 | 11 / 29 / 119 → 3 / 21 / 81 | 171 → 85 | 21 → 3 | 93 → 85 | 183 → 137 |
-| K8 leg 0 | 12 / 34 / 137 → 4 / 23 / 69 | 159 → 84 | 26 → 3 | 96 → 88 | 189 → 152 |
-| PH leg 0 | 7 / 23 / 137 → −1 / 14 / 67 | 197 → 89 | 17 → 3 | 92 → 82 | 217 → 183 |
-| K8 leg 1 | 3 / 9 / 56 → 2 / 8 / 56 | 115 → 91 | 1 → 1 | 19 → 19 | 45 → 44 |
+| row, leg (t ≥ 2 s) | E p50 / p90 / max: now → logged room → room 0 | windows with E > batch | E > 50 | B p95 median | B max p99 | β p50 median |
+|---|---|---|---|---|---|---|
+| A2 leg 0 | 11/37/332 → 4/24/88 → 0/16/85 | 183 → 99 → 39 | 34 → 7 → 4 | 95 → 88 → 81 | 202 → 152 → 135 | 82 → 80 → 76 |
+| K2 leg 0 | 11/29/119 → 3/21/81 → 0/16/81 | 171 → 85 → 38 | 21 → 3 → 2 | 93 → 85 → 72 | 183 → 137 → 124 | 81 → 79 → 76 |
+| K8 leg 0 | 12/34/137 → 4/23/69 → 1/17/69 | 159 → 84 → 56 | 26 → 3 → 3 | 96 → 88 → 81 | 189 → 152 → 146 | 82 → 80 → 76 |
+| PH leg 0 | 7/23/137 → −1/14/67 → −2/10/61 | 197 → 89 → 48 | 17 → 3 → 2 | 92 → 82 → 76 | 217 → 183 → 139 | 82 → 80 → 77 |
+| K8 leg 1 | 3/9/56 → 2/8/56 → 1/6/50 | 115 → 91 → 62 | 1 → 1 → 0 | 19 → 19 → 17 | 45 → 44 → 39 | 16 → 16 → 15 |
 
-**Predicted readouts on leg 0:**
-- β median −2 datagrams.
-- B p95 −7 to −10 datagrams, about −1 ms at x ≈ 9.5 k datagrams/s.
-- Over-batch windows about halved, and windows with E > 50 down by 80–85 %.
-- `ack_bind` between 0.32–0.37 (the share of windows with the cap below β p50) and 0.48–0.53 (below β p95). On K8 leg 1 it is 0.11–0.22, on GBU ≤ 0.05.
-- Goodput and `starve` unchanged: the window term covers one L of the ack clock.
+**The first model, and why it is not used** (`replay.py`, in `out_diag11b.txt`).
+- It assumed B does not move with the cap: B_fix p95 = min(B p95, cap + batch), with β_end lowered.
+- It reads the readout getting worse. Over-batch windows go 183 → 235 (logged room) or → 396 (room 0) on A2, and similarly on the others, while B max barely moves (p90 135 → 131).
+- **Its premise contradicts the data.** B sits within one or two datagrams of β's median and p95 in every window (`track.py`), so a lower β is a lower B.
+- **Its one real warning stands.** Against an end sample, a β lowered by the cap reads as more "excess" wherever B lags the cap downward. That is the same artifact as §11.2(d).
+
+**Predicted readouts on leg 0 (logged room → room 0):**
+- β median −2 → −5 to −6 datagrams (end-sample β_fix/β p50 1.00 → 0.89–0.91).
+- B p95 median −7 to −10 → −14 to −21 datagrams, about −1 to −2 ms at x ≈ 9.5 k datagrams/s.
+- Over-batch windows cut by about half → by 65–79 %. Windows with E > 50 cut by 79–88 % → 88–90 %.
+- **`ack_bind`:**
+  - leg 0: between 0.32–0.37 (windows with the cap below β p50) and 0.48–0.53 (below β p95) with logged room, and between 0.50–0.52 and 0.67–0.69 with room 0;
+  - K8 leg 1: 0.11–0.22 → 0.52–0.61.
+  - It binds about half the time, not always, so the law's shape stays visible.
+- **GBU:** ≤ 0.05. There the room is real (F ≈ 1 kB against W ≈ 18 kB), so the room-0 bracket does not apply.
+- **Goodput and `starve` unchanged.** The window term covers one L of the ack clock (p5 0.97–1.02 in both brackets).
 
 **`ex_max` (same instant).** The windows the cap cuts hold 70–75 % of leg-0 over-batch `ex_max` and 60–80 % of its first-send booking (`exmax.py`). That is the most the fix can remove. The exempt booking (979–1 612 per arm) is untouched.
 
-**What stays.** "B p95 ≤ β + batch" still fires on about 14 % of windows, so it stays reported, not a stop. The residual is:
+**What stays.** "B p95 ≤ β + batch" still fires on 13–16 % (logged room) or 6–11 % (room 0) of leg-0 windows, so it stays reported, not a stop. The residual is:
 - one batch of granularity;
 - exempt traffic: K8 leg 1 unchanged, and about a third of the booking on A2 and K2;
 - L's down-steps (p90 7–18 %, so 6–15 datagrams) until the τ̂_o quantizer is fixed;
@@ -448,7 +470,7 @@ The gate's own witness should be the U form, the law's invariant: B max ≤ the 
 
 ### 11.5 GBU r1: 600 ms in-order max and 52 of excess
 
-**What happened: a path stall in quinn and `bbr_rs`. Exempt datagrams piled up behind a correctly closed gate; the gate is not implicated.**
+**What happened: a path stall in quinn and `bbr_rs`. Exempt datagrams piled up behind a correctly closed gate. No gate mechanism was found; there is no control, because no R4 row reached ProbeBw.**
 
 **r1 is the only BU row whose `bbr_rs` left Startup** (S → B at 15.4 s). r2 and r3 stay in S, and the RBU rows only go S → R → S.
 - After that, the window is 2·b̂·m̂ + A from app-limited samples: 8.2 / 14.1 / 16.7 kB (p5 / p50 / p95), about 15–31 datagrams of 536 B. A frame plus its repair (r = 0.5) is 15 datagrams, and β is ≈ 16, so a frame meets the gate near its tail.
@@ -472,7 +494,7 @@ The gate's own witness should be the U form, the law's invariant: B max ≤ the 
 **Gate attribution:**
 - The gate stayed closed, and was right to. Its stale `qwin` (§11.2 c) gave β ≈ 19, where the true window gave ≈ 6.
 - Its 52 of B over β is exempt traffic staged into a dead path. That is §6.8's exempt term, not a leak (`fs_over` 0).
-- The trigger is `bbr_rs` leaving Startup on a bursty app-limited flow with a window smaller than a frame. RBU r1 and r3 touch the min window for one window each, but never leave Startup for ProbeBw.
+- The trigger is `bbr_rs` leaving Startup on a bursty app-limited flow, with a window of one to two frames. RBU r1 and r3 touch the min window for one window each, but never leave Startup for ProbeBw.
 - Whether the gate made that exit likelier cannot be read at n = 3. It barely binds in Startup (1 of 58 windows), so it does not shape the bursts there.
 
 ### 11.6 A fair bursty test: cell spec for the harness
