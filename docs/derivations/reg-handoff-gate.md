@@ -517,3 +517,8 @@ As run, BU tests nothing about the gate in 2 of 3 rows: in Startup β ≈ 440–
 - **BL:** GATE's frame p99 is below BASE's by the FIFO wait (BASE c2 in-order mean 344 ms).
 - **BW:** frame time on GATE rises with k/β, by about ⌈k/β⌉ − 1 reopens of at most L each.
 - **k/(W/s) > 1:** the frame is window-limited, on R4 and GATE alike.
+
+**Corrections after §11 (2026-11-27):**
+- **BU can bind the gate.** The §10 correction said it cannot. In GBU r1, `bbr_rs` left Startup at 15.4 s, its window sized itself to the flow's low rate (15–31 datagrams), and the gate then bound in 129 of 172 windows with β ≈ 16, about one frame with repair. The median `hand_bind` of 0 hid it; the witness line shows 846 refusals on that row. The 600 ms stall follows (§11).
+- **CPU.** §8's "part of it is the new witness" is withdrawn. Plan 68, with no witness, already read client CPU +7 % at c2 and c8, and removing the per-send read left the cost unchanged (68r +11/+13 %, 68s +9/+14 %). The CPU cost is at least partly the gate's own and must be priced before step 2's registration, with the c8 leg-0 batch drop (DIAG68).
+- **Revision 5** (sender-queue-law §10) is recorded as proposed, not built: the gate holds its bound at admission (B p50 − β p50 ≈ −1), the predicted gain (1–2 ms of staged data) is below the A/A spread, and its mechanism and two choices lack provenance. The next candidate carries its gauges only (`beta_max` with W, srtt and L at that turn, and the U bound B max ≤ window β max + batch).
