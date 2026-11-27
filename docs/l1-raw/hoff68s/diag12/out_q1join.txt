@@ -1,0 +1,6 @@
+GBU r1: falls=30 joined=30 nonAL_followed_by_fall=38 non-AL windows=65 (before first B: 0) first B at 15.4; falls: 15.4s 544->522k B, 16.7s 522->501k B, 17.2s 501->247k B, 18.5s 374->249k B, 21.2s 798->389k B, 22.2s 693->273k B
+GBU r2: falls=3 joined=3 nonAL_followed_by_fall=3 non-AL windows=3 (before first B: 3) first B at None; falls: 15.2s 815->328k S, 28.3s 794->691k S, 48.9s 799->380k S
+GBU r3: falls=3 joined=3 nonAL_followed_by_fall=3 non-AL windows=3 (before first B: 3) first B at None; falls: 17.3s 755->423k S, 31.7s 779->400k S, 48.6s 901->424k S
+RBU r1: falls=3 joined=3 nonAL_followed_by_fall=3 non-AL windows=3 (before first B: 3) first B at None; falls: 27.5s 1106->453k S, 40.8s 936->531k S, 54.9s 722->399k S
+RBU r2: falls=4 joined=4 nonAL_followed_by_fall=4 non-AL windows=4 (before first B: 4) first B at None; falls: 21.4s 866->333k S, 32.4s 786->445k S, 47.5s 820->450k S, 59.9s 829->674k S
+RBU r3: falls=2 joined=2 nonAL_followed_by_fall=2 non-AL windows=2 (before first B: 2) first B at None; falls: 16.0s 754->414k S, 45.5s 778->596k S

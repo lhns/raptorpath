@@ -1,0 +1,20 @@
+cell     cpuR   cpuG  dCPU  d%    dbusy  resid  otw    resid/otw_us  d_eb   d_skbs  d_secs  batchR batchG  GB   per-GB: dCPU dbusy resid
+68  K2   17.61  19.09  1.48   8.4  0.515  0.965  29574     32.6      3915   -814  -0.14   21.7  17.5  0.600    2.47   0.86   1.61
+68  K8   19.78  21.07  1.29   6.5  0.479  0.811  48695     16.7     15321  -1112  -4.81   25.7  16.7  0.600    2.15   0.80   1.35
+68r PC   23.57  26.22  2.65  11.2  0.965  1.685  33007     51.1      -795     50   0.00    9.1   9.2  0.525    5.05   1.84   3.21
+68r LR    1.75   1.94  0.19  10.9  0.061  0.129   2229     58.0         0      7   0.00    1.0   1.0  0.001  178.06  56.99 121.07
+68s BU    2.97   3.22  0.25   8.4  0.096  0.154   3849     40.0         0     -2   0.00    1.5   1.5  0.009   27.84  10.70  17.14
+
+c_w (fit on PC, BU, LR, through origin) = 50.9 us per owner-timer wake
+  PC: resid 1.685 s, c_w*otw 1.681 s
+  BU: resid 0.154 s, c_w*otw 0.196 s
+  LR: resid 0.129 s, c_w*otw 0.114 s
+
+K cells: producer / owner timer (c_w*otw) / left (hand-offs, run time), seconds and s per GB
+  K2: dCPU 1.480 = producer 0.515 + owner 1.507 + left -0.542   (per GB 2.47 = 0.86 + 2.51 + -0.90; d_eb 3915, left/d_eb -138.4 us)
+      producer per first send 0.98 us ; busy per iter R 59.4 G 65.4 us ; time-proportional share if left is run time: 3.937 s/s
+  K8: dCPU 1.290 = producer 0.479 + owner 2.481 + left -1.669   (per GB 2.15 = 0.80 + 4.13 + -2.78; d_eb 15321, left/d_eb -108.9 us)
+      producer per first send 0.91 us ; busy per iter R 71.6 G 68.6 us ; time-proportional share if left is run time: 0.347 s/s
+  PC: producer per first send 1.81 us ; busy per iter R 73.8 G 86.4 us
+  BU: producer per first send 3.47 us ; busy per iter R 32.4 G 36.2 us
+  LR: producer per first send 26.49 us ; busy per iter R 40.4 G 49.6 us

@@ -522,3 +522,144 @@ As run, BU tests nothing about the gate in 2 of 3 rows: in Startup β ≈ 440–
 - **BU can bind the gate.** The §10 correction said it cannot. In GBU r1, `bbr_rs` left Startup at 15.4 s, its window sized itself to the flow's low rate (15–31 datagrams), and the gate then bound in 129 of 172 windows with β ≈ 16, about one frame with repair. The median `hand_bind` of 0 hid it; the witness line shows 846 refusals on that row. The 600 ms stall follows (§11).
 - **CPU.** §8's "part of it is the new witness" is withdrawn. Plan 68, with no witness, already read client CPU +7 % at c2 and c8, and removing the per-send read left the cost unchanged (68r +11/+13 %, 68s +9/+14 %). The CPU cost is at least partly the gate's own and must be priced before step 2's registration, with the c8 leg-0 batch drop (DIAG68).
 - **Revision 5** (sender-queue-law §10) is recorded as proposed, not built: the gate holds its bound at admission (B p50 − β p50 ≈ −1), the predicted gain (1–2 ms of staged data) is below the A/A spread, and its mechanism and two choices lack provenance. The next candidate carries its gauges only (`beta_max` with W, srtt and L at that turn, and the U bound B max ≤ window β max + batch).
+
+## 12. CPU and the controller's app-limited samples (diagnosis)
+
+Read from the 68, 68r and 68s raw logs (`[DIAG]`, `[HOFF]`, `[QCC]`, the driver's `CPU:` and `[TRUTH]` lines, client and server). Scripts and their output are in `docs/l1-raw/hoff68s/diag12/` (run from that directory as `python -I attrib.py ../..`, `python -I srv.py ../..`, `python -I q1join.py ../rep68s/diag-ld`). Nothing was rerun.
+
+Code citations:
+- `bbr_rs.rs` is identical from `74651de2` to `a47da148`, so on every tree that ran. Lines cite `a47da148`.
+- `io_owner.rs` is identical on the 68r and 68s trees and `a47da148`. The plan-68 tree differs only by the witness counters; its republish rule is the same.
+- Producer reads cite the 68s gate tree `9b3b30b3`.
+
+### 12.1 Q1: do app-limited samples shrink `bbr_rs`'s bandwidth estimate?
+
+**Verdict: yes, in effect. The filter honours the flag, but the flag it gets is the wrong one. R4 shares the defect; it is in the controller, not the gate.**
+
+**The flag exists, and the filter honours it.**
+- quinn computes `app_limited` once per connection, at the end of each `poll_transmit`: `buf.is_empty() && !congestion_blocked` (quinn-proto 0.11.14 `connection/mod.rs:940`). A pacing block also sets `congestion_blocked` (`:617–625`).
+- It passes that bit to `on_ack` (`:1596`) and `on_end_acks` (`:1508`).
+- The engine does not set it. `RouteProbe` forwards it unchanged (`io_owner.rs:607–636`), and `BbrRs::on_ack` hands it to the sampler (`bbr_rs.rs:966–975`).
+- The sampler rejects a flagged sample at or below the max (`bbr_rs.rs:370–373`) and admits every unflagged one (`:375`).
+
+**The hole is the unflagged samples.**
+- quinn's bit is the connection's state **at ack time**: "the last poll sent nothing and was not blocked". BBR's `P.is_app_limited` is a per-packet stamp **at send time**: the packet left inside an app-limited bubble, `C.app_limited = C.delivered + C.inflight`. That is the delivery-rate estimation draft the module header cites.
+- So an ack processed while quinn is still sending a burst, or is window- or pacing-blocked, reads `app_limited = false`. This holds even when every packet it acknowledges left in an app-limited flight.
+- `on_sent` records no app-limited state (`bbr_rs.rs:292–313`; `SendRecord`, `:170–177`).
+- **Rejected samples never touch the filter, but rounds keep counting.** The first unflagged sample more than 10 rounds after the max replaces the whole filter (`update_max`, `bbr_rs.rs:125`).
+  - On a bursty flow a round is about one frame (33 ms), so the max expires within about 0.33 s.
+  - The next unflagged sample sets b̂ to one frame's delivery rate.
+- The unit test `app_limited_samples_are_raise_only` (`:1493`) passes `true` for every dribble sample. It covers the filter's rule, not where the flag comes from.
+
+**Startup exit is a second clause on the same bit.**
+- `check_if_full_bw_reached` skips flagged rounds only (`:938–940`).
+- One unflagged round start during recovery sets full bandwidth (`:953–955`).
+- BU rows read about 3–4 quinn congestion events per second (`qce` 201–235 per 60 s row), so recovery is frequent.
+
+**Witness** (`q1join.py`; rule: a fall of `qbw` at a `[QCC]` line is joined if the `[HOFF]` window at most 0.35 s earlier reads `app_limited` < 1, since `[QCC]` trails `[HOFF]` by one line):
+
+| row | qbw falls | joined to an unflagged window | unflagged windows followed by a fall | first S → B |
+|---|---|---|---|---|
+| GBU r1 | 30 | 30 | 38 of 65 | 15.4 s |
+| GBU r2, r3 | 3, 3 | 3, 3 | 3 of 3, 3 of 3 | never |
+| **RBU r1, r2, r3 (R4)** | 3, 4, 2 | 3, 4, 2 | 3 of 3, 4 of 4, 2 of 2 | never |
+
+- **Every fall of b̂ on all six rows follows a window with unflagged acks.** On the five rows that stay in Startup, every unflagged window is followed by a fall.
+- **R4 reads the same falls.** In Startup, RBU r1 drops 1 106 → 453 kB/s, r2 866 → 334, r3 754 → 414.
+- **Not witnessed on R4: the stall,** because no R4 row reached ProbeBw.
+
+**GBU r1** (inferred: no line records the exit's cause):
+- In Startup b̂ sits at 544 kB/s (4.4 Mbit/s, a burst's delivery rate against a 1.2 Mbit/s flow and a 100 Mbit/s link) for 15 s, with no unflagged window before 15.2 s.
+- The 15.2 s window reads `app_limited` 0.895 and `qce` +2. Its `[QCC]` line reads ProbeBw with W 17 kB (from 478 kB). That fits the recovery clause at `:953`.
+- **Feedback after the exit:** 65 unflagged windows, none before.
+  - A window of 15–31 datagrams blocks each frame on window or pacing, which clears the flag.
+  - The next window then admits a frame-rate sample: b̂ 501 → 247 kB/s at 17.2 s, and 30 falls in all.
+  - So the window stays one to two frames wide, and §11.5's loss run then takes the whole flight.
+
+**Fix (controller only, the same in R4 and GATE): per-packet marking, as the cited estimator does.**
+- In `on_end_acks`, when quinn's bit is true, set the bubble `app_limited_until = delivered + in_flight`.
+- `on_sent` stamps `SendRecord.app_limited = bubble open`.
+- A sample is app-limited if its record is. The bubble closes when `delivered` passes the mark.
+- `check_if_full_bw_reached` reads the latest sample's stamp, not quinn's bit.
+- It reads no hint, δ or ρ.
+- **Red-first test:** an app-limited burst flight acked while quinn's bit reads `false`, over more than 10 rounds, must leave b̂ unchanged. It falls today.
+- **A second test:** that flight with a loss in it must not leave Startup.
+- It changes `bbr_rs`'s behaviour, so it carries a guard with off-Bulk stages. Bulk rows are never app-limited and cannot see it.
+
+### 12.2 Q2: what the gate's CPU is
+
+**Rule, fixed before counting.**
+1. **Pairs:** GATE against R4 within one session only, the same binary with the gate arm off:
+   - plan 68: K2, K8;
+   - 68r: PC, LR;
+   - 68s: BU.
+   - Excluded: A2 and PH, where the gate changes the bytes sent and the run time, and every cross-session pair.
+2. **Counting:** medians of the 3 rows per arm.
+3. **Producer term:** Δ of Σ`busy_us` (the sender loop's body time, `[DIAG]` `wait[...]`).
+4. **Off-producer residual:** Δ`CPUCLI` minus the producer term.
+5. **Pricing:** price the owner timer on the cells where hand-offs and GSO sends do not change (PC, BU, LR), then apply that price to K2 and K8.
+   - **Rule 5 failed.** The price from those cells (≈ 51 µs per wake) exceeds the whole K residual, leaving −0.5 s and −1.7 s. So no unit cost is published.
+   - What replaces it is post-data and labelled so: the residual per wake as a range, and the server as a control (below).
+
+| cell | client CPU R4 → GATE (row ranges) | Δ | per GB | producer | off-producer | client timer wakes | Δ hand-offs | Δ GSO sends (`egress_skbs`) | server Δ / server timer wakes |
+|---|---|---|---|---|---|---|---|---|---|
+| K2 (68) | 17.13–18.01 → 18.32–19.10 s | +1.48 s, +8.4 % | +2.47 s | 0.52 s (35 %) | 0.97 s | 29 574 | +3 915 | −814 | +2.56 s / 36 110 |
+| K8 (68) | 19.72–20.77 → 20.70–22.05 | +1.29, +6.5 % | +2.15 | 0.48 (37 %) | 0.81 | 48 695 | +15 321 | −1 112 | −3.89 / 47 505 (run −4.8 s) |
+| PC (68r) | 23.34–24.75 → 25.13–26.96 | +2.65, +11.2 % | +5.05 | 0.97 (36 %) | 1.69 | 33 007 | −795 | +50 | +1.74 / 40 923 |
+| LR (68r) | 1.67–1.82 → 1.81–1.98 | +0.19, +10.9 % | — | 0.06 (32 %) | 0.13 | 2 229 | 0 | +7 | +0.12 / 2 178 |
+| BU (68s) | 2.85–2.99 → 3.19–3.44 | +0.25, +8.4 % | — | 0.10 (38 %) | 0.15 | 3 849 | 0 | −2 | +0.11 / 3 788 |
+
+**Noise.** §10's A/A reads CPU 0.94–0.95 at n = 3. K2, PC and BU separate (no overlap in row ranges); K8 and LR touch at one row each.
+
+**Session drift.** GATE's own K rows rose from 68 to 68r and 68s: K2 19.09 → 19.77 / 19.50 s, K8 21.07 → 22.25 / 22.38 s, with `busy_us` +0.3–0.6 s. Part of that is the 68r witness re-read; the rest is not separable.
+- So §11's "+11–14 %" (68r and 68s GATE against plan 68's BASE) mixes cross-session drift with the gate.
+- The within-session figures are plan 68's: +6.8 % and +7.0 % against BASE, +8.4 % and +6.5 % against R4.
+
+**The hypotheses:**
+- **"Smaller batches, so more syscalls": refuted.** GSO sends are equal or lower (K2 −814, K8 −1 112), and datagrams per GSO send rise slightly (K2 6.17 → 6.25, K8 5.64 → 5.70). quinn's transmit batching does not see the hand-off batch.
+- **"Smaller batches, so more owner drains": not the driver.** Hand-offs and the CPU delta rank oppositely. K8 has +15 k hand-offs and the smallest delta; PC has −0.8 k and the largest. Its per-hand-off cost is not identifiable from these logs.
+  - The c8 leg-0 batch drop (25.7 → 16.7, DIAG68) is the burst loop ending at a closed gate (`BurstEnd::Drained`, `mod.rs:3301`). K8 loop iterations are +13 %, but producer time per GB is the same as K2's (0.80 against 0.86 s/GB).
+- **"Refusals spin": refuted.** K2 iterations are +0.4 % (inside the row spread) and the 1 ms poll wakes are unchanged (median 13.1 k against R4's 12.5 k, rows 12.4–13.6 k). PC reads −3.8 %. A refusal sleeps on the same poll the store's pause uses.
+- **Producer reads: about a third of the cost, on every cell** (32–38 %).
+  - On Bulk this is 0.9–1.0 µs per first send.
+  - The run trees read every view twice per first send, at the burst loop's `check_live` (`mod.rs:3301`) and placement's `open_live` (`emit_source.rs:364`/`:372`), and placement allocates a `Vec` per send.
+  - Each read loads about 22 atomics per path (`HoffGauge::read`, `hoff.rs:536–558`), most of them gauges that the owner and quinn's driver are writing.
+  - Per-turn work rises too, by 4–13 µs per iteration on K2, PC, BU and LR (K8 reads −3 µs, with 13 % more iterations): `sync_views` allocates and sorts `active_ids` every turn, and `end_turn_live` reads every view again.
+- **The owner's republish timer: the rest, about two thirds.**
+  - Residual per client wake: 17 µs (K8), 33 (K2), 40 (BU), 51 (PC), 58 (LR). It is cheaper where the owner is busy anyway (Bulk), and dearer where each wake unparks an idle thread.
+  - **The server is a control with no producer term.** It runs no gate decision: the gate lives in the window sender, `mod.rs:2047`. But its owner arms the same timer, because the rule counts control datagrams (`io_owner.rs:1481–1490`, `ctrl_dgrams`), so the receiver's SACKs arm it.
+    - Server ΔCPU per server wake: 71 µs (K2), 43 (PC), 55 (LR), 29 (BU). K8 and A2 are not usable: server CPU falls there with the removed reorder and repair work.
+    - **That is §7's server +11 % at c2 Bulk.** No view on the server is ever read by a gate, so every one of those wakes is waste.
+  - **Why the timer fires so often:**
+    - The rule arms whenever handed > `tx` at the last publish (`:1481–1490`). The publish that follows a drain runs before quinn's driver has transmitted, so it always reads `tx` short.
+    - LR shows it cleanly: 2 229 wakes for about 2 296 datagrams handed and 0 refusals, so one wake per datagram on a gate that never closes.
+    - **The deadline is also stale.** It is set once, to `last_full + VIEW_REFRESH`, when the timer arms (`:1490`), and is not moved by later activity publishes (`:1231–1240`). So the timer can fire under 1 ms after a publish, and then the `full` test (`:1466`) publishes nothing.
+    - No counter separates those empty wakes (owed: `owner_timer_idle`).
+  - **Each wake's publish locks quinn's connection three times:** `datagram_send_buffer_space`, `stats` and `max_datagram_size` (`:1603–1625`).
+
+### 12.3 Fix: cheapest first, the law unchanged
+
+**F1. Arm the republish only while this path's gate is closed.**
+- The producer stores `view.hoff.wanted` when its decision refuses a waiting first send on path i (`begin_turn`/`check` already set `p.refused`), and clears it when it admits.
+- The owner's rule becomes handed > `tx` **and** `wanted`. On the open → closed edge the producer sends one nudge on the existing command channel, so there is no new `select!` branch and arm-off traces are unchanged.
+- **Why the law is unchanged.** A stale `tx` only over-reads B, so it errs closed, never open. An open gate needs no refresh. τ̂_o keeps its meaning, the republish wait while closed, which is the only time L uses it. The reopen-without-inbound-traffic test (§2 item 3) must stay green.
+- No dial is read; `wanted` is the gate's own B ≥ β state.
+- **Predicted** (upper bounds, from the table):
+  - server ΔCPU → about 0 on every cell (K2 −2.56 s, PC −1.74, LR −0.12, BU −0.11), since no gate runs there;
+  - client off-producer residual removed where the gate rarely closes (PC, 708 edges: up to −1.69 s, −7 %; LR −0.13; BU −0.15). There the client cost falls to the producer term, about +3–4 %.
+  - On K2 and K8 the gate is closed in 66 % and 79 % of turns and has 13.7 k / 17.9 k closed → open edges, so F1 saves at most the open share of the wakes, minus the nudges. **It may save nothing on the K cells.**
+
+**F2. Move the deadline with the last publish.** Recompute it from the current `last_full` each loop, not the one stored at arming. It removes the empty wakes; their count is unmeasured, so the gain is bounded only by the K residual (≤ 0.97 s on K2, 1.6 s/GB). The `owner_timer_idle` counter prices it first.
+
+**F3. The decision reads only its inputs, once per decision.**
+- `a47da148` already drops placement's re-read (placement spends `granted()`), which halves the per-send reads.
+- The rest is to read the decision's own inputs (staged, `tx`, `qwin`, srtt and size: 5 loads) instead of the 22-field gauge read, and to read the gauge fields once per turn.
+- **Predicted:** at most the producer term, −0.80 to −0.86 s/GB on the K cells (about −3 %); about half of that from `a47da148` alone. The host ns bench verifies it before the VM.
+
+**Combined, predicted:**
+- K2 client +8.4 % → about +2–7 %. F3 accounts for 1.5–2.9 points; the rest of the range is F2's unmeasured share. The upper end is inside the A/A spread;
+- server about +0 %;
+- PC, LR and BU client about +3–4 %.
+- The next run reads `owner_timer_wakes`, the new `owner_timer_idle` and Σ`busy_us` per GB as the witnesses.
+
+**Rejected: a minimum batch before handing over.** Hand-offs do not carry the cost, and GSO sends are already equal. A minimum adds a constant with no provenance and a wait that L does not contain.
