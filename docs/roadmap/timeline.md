@@ -226,6 +226,7 @@ gantt
     Minimum delay includes our own queue :active, cc_defect_copa_minrtt, 2026-11-13, 2026-11-27
     AIMD congestion control (first CC) :crit, cc_aimd_v1, 2026-03-12, 2026-03-13
     BtlBw-anchored window recovery :cc_btlbw_recovery, 2026-07-04, 2026-07-04
+    Our BBR forgets the link rate when the… :cc_defect_bbrrs_app_limited, 2026-11-27, 2026-11-27
     section perf - performance
     Engine or receiver parallelisation :crit, perf_parallelisation, 2026-07-08, 2026-07-21
     Emission batching, first attempt :crit, perf_emit_batch_v1, 2026-07-27, 2026-07-27
@@ -257,6 +258,7 @@ gantt
     Per-ACK RTT minimum rescan removed :perf_rtt_rescan, 2026-07-07, 2026-07-07
     Inner-TCP geometry hypothesis :perf_native_geometry, 2026-07-04, 2026-07-04
     Realtime path deaths in window mode :perf_realtime_path_death, 2026-07-04, 2026-07-04
+    Gate costs CPU through a timer :perf_handoff_gate_cpu, 2026-11-27, 2026-11-27
     section meas - measurement
     Repair-share bound counts every slot :active, meas_w1_bracket_fix, 2026-11-19, 2026-11-27
     Steady-window check passed untested win… :meas_blocke_steady_rule, 2026-11-18, 2026-11-18

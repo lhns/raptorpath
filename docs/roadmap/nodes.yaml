@@ -10179,6 +10179,46 @@ nodes:
   overview: false
   plain: 'A proposed change to the hand-off gate: cap its limit by the rate at which the network actually acknowledges data, so the limit cannot jump to two or three times its normal value after the controller restores its window.'
   notes: 'Revision 5, proposed only (sender-queue-law section 10, 701a0f41): beta = min(N (W/srtt) L, (W - F)+ + N xdot L) / s, N = 1.25, xdot = bytes acked over the last srtt / srtt; a clamp with an ack_bind gauge, no dial. Not built: the gate already holds its bound at admission (B p50 - beta p50 about -1), the predicted gain (1-2 ms of staged data) is below the A/A spread, the over-read mechanism is unproven, two choices (N on the ack rate, no window-growth term) lack provenance, and Startup is a named risk. Next: its gauges (beta_max with W, srtt, L; ack_bind; the U bound) on the next candidate, reported only.'
+- id: cc-defect-bbrrs-app-limited
+  title: Our BBR forgets the link rate when the sender idles
+  track: cc
+  kind: defect-verdict
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/reg-handoff-gate.md section 12 (branch sender-queue-law ff0cd203)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-27'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'When the application sends little, our BBR controller still trusts the low delivery rate it measures and shrinks its estimate of the link, so its window can shrink to about one video frame and a short loss run then stalls the path.'
+  notes: 'Found in plan 68s (bursty Realtime, row GBU r1, 0.8 s stall) by reg-handoff-gate section 12: bbr_rs honours an app-limited flag (bbr_rs.rs:370-373) but quinn-proto 0.11.14 supplies one connection-level bit at ACK time (connection/mod.rs:940), not per packet at send time as BBR specifies; on_sent records no app-limited state (bbr_rs.rs:292-313), so unflagged ACKs mid-burst shrink b-hat, and the first unflagged sample after 10 rounds replaces the max (:125). The Startup exit has a second clause on the same bit (:953-955). R4 (bbr_rs without the gate) shows the same falls. Blocks making bbr_rs the default with or without the gate. Fix proposed: per-packet marking in RsBandwidthEstimation with two red-first tests.'
+- id: perf-handoff-gate-cpu
+  title: Gate costs CPU through a timer
+  track: perf
+  kind: mechanism
+  state: next
+  outcome: unrated
+  evidence:
+  - docs/derivations/reg-handoff-gate.md section 12 (branch sender-queue-law ff0cd203)
+  verdict_quote: ''
+  headline: ''
+  depends_on: []
+  replaced_by: []
+  qualified_by: []
+  lane: host-cargo
+  start: '2026-11-27'
+  end: ''
+  folded: []
+  overview: false
+  plain: 'The hand-off gate costs about 7 % more client CPU per gigabyte; about a third is reading each path state twice per packet, and most of the rest is a 1 ms timer that keeps firing even when the gate is open, on the server too.'
+  notes: 'Priced in reg-handoff-gate section 12 (within-session GATE against R4; plan 68 K cells +6.8/+7.0 % against BASE; the +11-14 % in section 11 was partly session drift). Producer view reads 32-38 % of the delta (about 1 us per first send, read twice at 9b3b30b3; the fs_over fix a47da148 removed one read). The rest: the owner republish timer arms on every publish that reads quinn tx short, including control datagrams, and its deadline never moves (io_owner.rs:1231-1240, :1490). Fixes: F1 arm the timer only while the gate is closed (changes tau_o samples, a law input: decision owed), F2 recompute the deadline from the last publish (needs an owner_timer_idle counter), F3 decision reads load 5 inputs instead of 22. Rejected: minimum batch. Blocks step 2 registration (the guard scores CPU).'
 - id: model-sender-queue-law
   title: Sender hand-off gate
   track: model

@@ -412,6 +412,7 @@ flowchart TB
 | Copa readers use shared path records | ⛔ blocked | Moving the parts that read the Copa controller onto the shared per-path measurements and replacing its per-setting table with one smooth rule. |
 | Our own BBR made the default | ⛔ blocked | Making our BBR controller the default, recorded as a new architecture decision. |
 | BBR/Copa hybrid build | ⏸ parked | Designing a controller that blends BBR's speed with Copa's low queues, with pass or fail targets fixed before anything is built. |
+| Our BBR forgets the link rate when the sender idles | ⚠ open | When the application sends little, our BBR controller still trusts the low delivery rate it measures and shrinks its estimate of the link, so its window can shrink to about one video frame and a short loss run then stalls the path. |
 | One control datagram per message | ✔ done · very-successful | Sending one control datagram per message became the default after a full test: single-path throughput rose about 13 % and receiver CPU per bit fell about 9 %. |
 | Packets sent in small bursts | ✔ done · very-successful | Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere. |
 | All control logic on one task | ✖ dead end | Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted. |
@@ -420,6 +421,7 @@ flowchart TB
 | Cheaper bookkeeping in our BBR | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Deriving the send-burst size | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
 | Benchmark tool ignores the config file | ⚠ open | The built-in benchmark client and server never read the config file, so the tail target, the repair overhead cap, certificate pinning and the retention dial ρ cannot be set for a benchmark run. |
+| Gate costs CPU through a timer | ○ next | The hand-off gate costs about 7 % more client CPU per gigabyte; about a third is reading each path state twice per packet, and most of the rest is a 1 ms timer that keeps firing even when the gate is open, on the server too. |
 | Repair-share bound counts every slot | ▶ in progress | The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model's definition is checked to mean the same thing. |
 | Collapse detector misfires on large limits | ⚠ open | The rule that tells a collapsed run from a healthy one wrongly flags healthy comparison runs with a large in-flight limit on the slower test link; the wide delay tail there is not yet explained. |
 | Standard test scenarios and pass criteria | ✔ done · successful | Fixed a set of standard test scenarios with falsifiable win conditions, and got the simulated gate suite to pass them. |
@@ -519,6 +521,8 @@ flowchart TB
 - `perf-config-dropped`: Benchmark tool ignores the config file
 - `infra-dead-code-batch`: Remove 24 dead functions
 - `rec-shed-d-defects`: Give-up deadline D defects on main
+- `cc-defect-bbrrs-app-limited`: Our BBR forgets the link rate when the sender idles
+- `perf-handoff-gate-cpu`: Gate costs CPU through a timer
 
 **no-cargo**
 
@@ -1247,8 +1251,8 @@ Each track has its own page with its tree, node table and per-node details.
 - [rate - rate law](roadmap/tracks/rate.md): 40 nodes (19 done, 5 in progress, 7 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 71 nodes (37 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 22 nodes (8 done, 3 in progress, 1 next, 1 blocked, 9 abandoned)
-- [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
-- [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
+- [cc - congestion control](roadmap/tracks/cc.md): 27 nodes (11 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
+- [perf - performance](roadmap/tracks/perf.md): 33 nodes (22 done, 1 in progress, 3 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 68 nodes (49 done, 6 in progress, 7 next, 5 blocked, 1 abandoned)
 - [model - model and paper](roadmap/tracks/model.md): 55 nodes (27 done, 14 in progress, 10 next, 3 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
