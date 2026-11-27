@@ -291,3 +291,24 @@ Read from the 68r raw `[HOFF]`, `[QCC]`, `[DIAG]` and `[SPAN]` lines in `docs/l1
 - A live-β reopen gauge.
 - A verdict on the low-rate debt cancellation and on the margin's ceil.
 - Whether `fs_over` is read skew (the §8 next step is unchanged).
+
+## 10. Plan 68s result (2026-11-27, post-data, reported only)
+
+**Ran** on the VM: 30 of 30 rows, n = 3, seed 42. CAND harness `96ad6910` (gate tree `9b3b30b3`: token witness for `fs_over`, the `RWM_PERF_BURST` source), BASE `2f884be4`. Pre-flight green (all 11 steps; gate-off sim traces identical to `f80715eb`, 0 of 14). Ledger and report in `docs/l1-raw/hoff68s/`. K-cell BASE and R4 are the plan-68 rows (cross-session).
+
+**`fs_over` with the token witness: still 1–11 per row** (GK2, GK8, GA2, GPH, TPH; 0 on BU). So it was not read skew. The cause, found in the code before this run finished (notes in the session scratchpad, `fsover/notes.md`): `emit_source` re-reads the gate (`open_live`) after the decision that admitted the packet. When that second read finds no open path (β drops by a datagram as `qwin` moves), placement falls back to an unrestricted pick (`place.rs:116`, `scheduler/mod.rs:533`) and stages past the bound. A second route: the `RWM_EMIT_BATCH` burst loop decides only when `tun.has_queued()`. A real gate leak of one datagram per event. Fix in progress (placement obeys the admitting decision; the burst loop always decides); the next run must read `fs_over` = 0.
+
+**Auto at 85 % of the link (PH):**
+- GATE carries the offered 85 Mbit (84.9); BASE and R4 saturate at 76 Mbit (as at full load), so for them PH is a full link.
+- In-order delay: GATE mean 41 ms, p99 98 ms against BASE 399 / 782 ms.
+- Repair: GATE coded share 0.042 against R4 0.081, `spare_bind` 0.47. **The registered stop "clamp binds with headroom" fired**: at 85 % offered load the predicate halves repair. 85 Mbit of source plus overhead sits near the 89.8 Mbit the link carries, so the headroom is about 5 %. The clamp's range is now: nearly free at 70 %, binding half the time at 85 %, pinned at 100 %. Ledger verdict on that shape owed with the 70–85 % curve (a defect finding if the predicate cuts repair the path has room for).
+
+**Bursty Realtime (BU, 10-datagram frames every 33 ms, ρ = 1):**
+- The gate never binds (`hand_bind` 0); repairs per source 0.49 on all arms; goodput equal.
+- In-order p99 37.5 ms on 8 of 9 rows. One GATE row (GBU r1) reads mean 8.1, p99 100, max 600 ms and a B-over-β excess of 52, against max 37–60 ms on every other row. One row in three; cause open. Frame completion time has no readout (UNWITNESSED68).
+
+**A/A (GATE against its twin T on PH, same binary):** goodput 1.000, coded share 1.014, CPU 0.94–0.95, in-order delay 1.11–1.18. So at n = 3 differences under about 6 % in CPU and about 20 % in in-order delay are not readable.
+
+**Unchanged from 68r:** B over β on most GATE rows (diagnosed in §9, β moving); c2 Bulk goodput DIAG68 0.994; c8 leg-0 batch DIAG68.
+
+**Next:** the `fs_over` fix and a rehearsal reading 0; GBU r1's stall; the clamp's 70–85 % curve and its verdict; then step 2's registration.
