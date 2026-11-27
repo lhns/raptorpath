@@ -268,6 +268,9 @@ with tempfile.TemporaryDirectory() as td:
     sr.report(main_l, out=lambda s_: b5.write(s_ + "\n"))
     del os.environ["LD_REF68"]
     check("LD_REF68 names the reference ledger when the report is called without one (run_all's call)", "REF68 3 " in b5.getvalue())
+Wc = sr.parse_hoff_line(LINE.replace(P0, P0.replace("]", WIT.format(o=3).replace("fs_over=3", "fs_over=3 fs_over_cs=2/1") + "]")))["paths"][0]
+psc = sr.path_summary([dict(Wc, _gate="on"), dict(Wc, _gate="on")])
+check("fs_over_cs (closed/spent) parses and sums over windows; an old ledger without it reads None", Wc.get("fs_over_cs") == [2, 1] and psc["fs_over_cs"] == [4, 2] and old["fs_over_cs"] is None, (Wc.get("fs_over_cs"), psc.get("fs_over_cs")))
 # ── 6. plan 68s: the A/A twin T, the burst cell, PH ──
 os.environ["LD_PLAN"] = "68s"
 stops, out = run_rules([row("TPH", 1, "on", 0.62, fs_over=2)])

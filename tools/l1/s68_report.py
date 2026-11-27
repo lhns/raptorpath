@@ -145,12 +145,14 @@ def witness_of(wins):
     exm = max(ex, key=lambda e: e[0]) if ex else None
     byp = [w["fs_bypass"] for w in wins if isinstance(w.get("fs_bypass"), list) and len(w["fs_bypass"]) == 4]
     exn = [w["ex_n"] for w in wins if isinstance(w.get("ex_n"), list) and len(w["ex_n"]) == 3]
+    ocs = [w["fs_over_cs"] for w in wins if isinstance(w.get("fs_over_cs"), list) and len(w["fs_over_cs"]) == 2]
     bq = [w["beta_q"] for w in wins if isinstance(w.get("beta_q"), list) and len(w["beta_q"]) == 3]
     fso = [w["fs_over"] for w in wins if _num(w.get("fs_over"))]
     fsn = [w["fs_n"] for w in wins if _num(w.get("fs_n"))]
     return {
         "fs_over": int(sum(fso)) if fso else None, "fs_n": int(sum(fsn)) if fsn else None,
         "fs_bypass": [int(sum(b[i] for b in byp if _num(b[i]))) for i in range(4)] if byp else None,
+        "fs_over_cs": [int(sum(c[i] for c in ocs if _num(c[i]))) for i in range(2)] if ocs else None,
         "ex_max": list(exm) if exm else None, "ex_n": [int(sum(e[i] for e in exn if _num(e[i]))) for i in range(3)] if exn else None,
         "beta_p5_min": _min([b[0] for b in bq]), "beta_p50_med": _med([b[1] for b in bq]), "beta_p95_max": _max([b[2] for b in bq]),
         "own_gap_max": _max(col("own_gap_max")), "pend_max": _max(col("pend_max")),
@@ -368,7 +370,7 @@ def report(path, out=print, raw=None, ref=None):
             rs = [x for x in g.get(a, []) if x.get("status") == "LIVE"]
             if rs and a in ("G", "Q", "T"):
                 for pid in sorted({i for x in rs for i in _paths(x)}):
-                    out(f"  WIT68 {code} {plan68.ARM_NAME[a]:<5} p{pid} n={len(rs)} fs_over={_sumpaths(rs, 'fs_over', pid)} fs_n={_sumpaths(rs, 'fs_n', pid)} fs_bypass={_lst(_sumlist(rs, 'fs_bypass', 4, pid))} ex_max(max)={_lst(_maxex(rs, pid), 0)} "
+                    out(f"  WIT68 {code} {plan68.ARM_NAME[a]:<5} p{pid} n={len(rs)} fs_over={_sumpaths(rs, 'fs_over', pid)} fs_over_cs(closed/spent)={_lst(_sumlist(rs, 'fs_over_cs', 2, pid))} fs_n={_sumpaths(rs, 'fs_n', pid)} fs_bypass={_lst(_sumlist(rs, 'fs_bypass', 4, pid))} ex_max(max)={_lst(_maxex(rs, pid), 0)} "
                         f"ex_n={_lst(_sumlist(rs, 'ex_n', 3, pid))} beta_q(p5min/p50med/p95max)={_f(_min(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('beta_p5_min'))), 1)}/{_f(_pm(rs, 'beta_p50_med', pid), 1)}/"
                         f"{_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('beta_p95_max'))), 1)} own_gap_max_us={_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('own_gap_max'))))} "
                         f"pend_max={_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('pend_max'))))}")
