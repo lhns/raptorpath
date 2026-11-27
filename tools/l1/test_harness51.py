@@ -40,7 +40,7 @@ runall, battery, perf = rd("loopdiag_run_all.sh"), rd("loopdiag_battery.sh"), rd
 check("battery: the plan case still starts with 60a|60b|59|57a|57b|56 and the per-plan scrub line still reads '-u RWM_C_RELIABLE -u RWM_SLAW -u RWM_THREE_TERM' (the 60 tests' substrings)",
       'case "$PLAN" in 60a|60b|59|57a|57b|56' in battery and "-u RWM_C_RELIABLE -u RWM_SLAW -u RWM_THREE_TERM" in battery and 'read -r -a arm_env <<< "$p60_arm_env"' in battery)
 check("run_all: the ABORT-REHEARSE case line is the registered one, byte for byte (plans 51 / 51e are rehearsable through a separate guard)",
-      'case "$PLAN" in 62r0|61a) ;; 41c|41d|46|47|48|52|53|54b|56|57a|57b|59|60a|60b|65|67) ;; *) echo "ABORT-REHEARSE' in runall and 'if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ] && [ "$PLAN" != "63" ] && [ "$PLAN" != "68" ] && [ "$PLAN" != "68r" ] && [ "$PLAN" != "68s" ]; then' in runall)
+      'case "$PLAN" in 62r0|61a) ;; 41c|41d|46|47|48|52|53|54b|56|57a|57b|59|60a|60b|65|67) ;; *) echo "ABORT-REHEARSE' in runall and 'if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ] && [ "$PLAN" != "63" ] && [ "$PLAN" != "68" ] && [ "$PLAN" != "68r" ] && [ "$PLAN" != "68s" ] && [ "$PLAN" != "68t" ]; then' in runall)
 
 # ═══ 2. the battery ═══
 check("battery: plans 51 / 51e accepted; both single-seat (P38 + PCAND, no P41); plan 51e's instrument env is RWM_RDIAG=1 + the arm's timeout (no RWM_RTOBS), plan 51's the guard env at 200 s",

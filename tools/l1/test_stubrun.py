@@ -230,6 +230,7 @@ FAST_PATCHES = [
     ("loopdiag_battery.sh", 'want=$(( 54 - 9 * $(python3 ./plan68.py unbuilt "$PLAN" | wc -w) ))', 'want=$(( 18 - 3 * $(python3 ./plan68.py unbuilt "$PLAN" | wc -w) ))', 1),
     ("loopdiag_battery.sh", "want=36; unit=9;", "want=12; unit=3;", 1),
     ("loopdiag_battery.sh", "want=30; for _u68 in", "want=10; for _u68 in", 1),
+    ("loopdiag_battery.sh", "      want=54\n    fi", "      want=18\n    fi", 1),
     ("loopdiag_battery.sh", "BU) want=$(( want - 9 )) ;; PH) want=$(( want - 12 )) ;;", "BU) want=$(( want - 3 )) ;; PH) want=$(( want - 4 )) ;;", 1),
     ("plan68.py", "N_REP = 3  ", "N_REP = 1  ", 1),
     ("loopdiag_p67.sh", "G_ROWS67=96     #", "G_ROWS67=16     #", 1),
@@ -2749,6 +2750,15 @@ def case68(plan, path):
         check(f"{tag}: every row-parser call ran under LD_PLAN={plan} and the BASE seat's pin LD_SHA_BASE crossed `sudo -n env` to it",
               plans_seen == {plan} and {re.search(r"shabase=(\S*)", r).group(1) for r in rows} == {base_sha}, (plans_seen, rows[:1]))
         smoke_rows = plan68.plan(plan, smoke=True)
+        if rehearse and plan == "68t":
+            check(f"{tag}: the rehearsal ran the six smoke rows (GK2, BW2, RW2, GW2, BP7, GP8) on their seats with their own env (the BW rows carry RWM_PERF_BURST=20/33+126000 and no rate, P7 / P8 the 75 / 80 Mbit/s rate), no battery, REHEARSAL-PASS persisted",
+                  len(rows) == 6 and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")) and calls == expect_calls68(smoke_rows)
+                  and calls[1][6:8] == ["rate=unset", "burst=20/33+126000"] and calls[1][-1] == "bindir=bin-base" and calls[4][6] == "rate=75" and calls[5][6] == "rate=80", (len(rows), calls[:6]))
+            ldr = led56(stage, "smoke.log")
+            check(f"{tag}: the six smoke rows carry their t68 and [HOFF] lines and none is VOID-RC / WITNESS-FAIL", len(ldr) == 6 and all(r.get("t68") and not r.get("t68_error") and r["t68"]["hoff"]["n_lines"] > 0 for r in ldr)
+                  and all(r["status"] == "LIVE" for r in ldr), [(r["arm"], r["status"], r["problems"]) for r in ldr])
+            EXECUTED.add((plan, path))
+            return
         if rehearse and plan == "68s":
             check(f"{tag}: the rehearsal ran the six smoke rows (GK2, BBU, GBU, BPH, GPH, TPH) on their seats with their own env (the BU rows carry RWM_PERF_BURST=10/33 and no rate, PH the 85 Mbit/s rate; TPH the GATE env under the CAND binary), no battery, REHEARSAL-PASS persisted",
                   len(rows) == 6 and not os.path.exists(os.path.join(stage, "ld.log")) and os.path.exists(os.path.join(stage, "REHEARSAL-PASS")) and calls == expect_calls68(smoke_rows)
@@ -2788,7 +2798,7 @@ def case68(plan, path):
         check(f"{tag}: each seat ran its own binary on every row and the seat comparison executed",
               all(r["bin_sha"] == (base_sha if r["arm"].startswith("B") else cand_sha) for r in led) and all(r["sha_checked"] is True for r in led), {r["arm"]: r["bin_sha"][:8] for r in led})
         check(f"{tag}: the report prints one ROW68 per row, the UNBUILT68 cell (BU), a WITNESS68 line, REPORT68 REPORTED-ONLY, and no PASS / FAIL / VERDICT token",
-              len(re.findall(r"^ROW68 ", score, re.M)) == len(led) and score.count("UNBUILT68 ") == (0 if plan == "68s" else 1) and "WITNESS68 first-send refusals" in score and re.search(r"^REPORT68 REPORTED-ONLY rows=%d/" % len(led), score, re.M) is not None
+              len(re.findall(r"^ROW68 ", score, re.M)) == len(led) and score.count("UNBUILT68 ") == (0 if plan in ("68s", "68t") else 1) and "WITNESS68 first-send refusals" in score and re.search(r"^REPORT68 REPORTED-ONLY rows=%d/" % len(led), score, re.M) is not None
               and not any(tok in score for tok in ("PASS", "FAIL", "VERDICT")), score[-1500:])
         if path == "gate-inert":
             check(f"{tag}: GATE rows that print gate=off are STOP68 gate-not-on and the execution witness reads total=0 (STOP68 first-send-refusals-zero), the rows are NOT voided (every row LIVE)",
@@ -3259,7 +3269,7 @@ def case(plan, path):
         return case67(plan, path)
     if plan == "63":
         return case63(plan, path)
-    if plan in ("68", "68r", "68s"):
+    if plan in ("68", "68r", "68s", "68t"):
         return case68(plan, path)
     if plan in S60:
         return case60(plan, path)
@@ -3480,7 +3490,7 @@ def want(name):
     return sel is None or name in sel
 
 
-all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "68", "68r", "68s", "64", "65", "67", "67g", "67x") for v in hp.HARNESS_PATHS[p]]
+all_cases = [(p, v) for p in ("41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "68", "68r", "68s", "68t", "64", "65", "67", "67g", "67x") for v in hp.HARNESS_PATHS[p]]
 phase1 = [(p, v) for p, v in all_cases if not v.startswith("prior-tests") and not (p == "64" and v in P64_AFTER) and not (p == "65" and v in P65_AFTER) and p not in ("67g", "67x")]
 phase2 = [(p, v) for p, v in all_cases if v.startswith("prior-tests") or (p == "64" and v in P64_AFTER) or (p == "65" and v in P65_AFTER) or p in ("67g", "67x")]      # plan 67's launches (67g, 67x) consume the rehearsal's binaries and tools result (REH67); plan 64's launch cases consume the rehearsal's binaries and tools result (REH64)
 t_all = time.time()
@@ -3609,6 +3619,6 @@ if not only:
     check("a changed byte in Cargo.lock, a Cargo.toml, vendor/ or the math / wasm sources each invalidates the suite reuse (ABORT-TESTS)", EXTRA_DONE == set(EXTRA_MISMATCH), set(EXTRA_MISMATCH) ^ EXTRA_DONE)
     check("ADR-0080's flake rule runs in run_suites: a flake outside quarantine.txt aborts (flake-not-quarantined), one on it is recorded and passes (flake-quarantined)", FLAKE_DONE == set(EXTRA_FLAKE), set(EXTRA_FLAKE) ^ FLAKE_DONE)
     check("HARNESS_PATHS covers exactly the candidate plans of run_all (41c, 41d, 46, 47, 48, 52, 53, 54, 54b, 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65) -- the plans LD_REHEARSE is defined for (LD_PRIOR_TESTS: all but 56, 57a, 57b, 59, 60a, 60b, 61a, 61b, 62r0, 62a, 51e, 51, 63, 64, 65, whose reuse is the reference manifest or none)",
-          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x", "68", "68r", "68s"})
+          set(hp.HARNESS_PATHS) == {"41c", "41d", "46", "47", "48", "52", "53", "54", "54b", "56", "57a", "57b", "59", "60a", "60b", "61a", "61b", "62r0", "62a", "51e", "51", "63", "64", "65", "67", "67g", "67x", "68", "68r", "68s", "68t"})
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

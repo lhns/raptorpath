@@ -5,6 +5,7 @@ the slot check. ONE source for the shell and the scorer: the battery asks `armsp
     plan68.py plan 68 [smoke|rehearsal]   the EXECUTED table (built cells only), `cell store arm seed rep` per line (smoke = rehearsal = one row per arm)
     plan68.py plan 68r [smoke|rehearsal]  the RERUN table (36 rows, see RERUN below); smoke = rehearsal = 6 rows
     plan68.py plan 68s [smoke|rehearsal]  the SECOND RERUN table (30 rows, see RERUN-S below); smoke = rehearsal = 6 rows
+    plan68.py plan 68t [smoke|rehearsal]  the THIRD RERUN table (54 rows, see RERUN-T below); smoke = rehearsal = 6 rows
     plan68.py registered                  the registered 54-slot table, UNBUILT cells included
     plan68.py count 68 [smoke|rehearsal]  the number of rows the executed table holds (the battery asserts it)
     plan68.py armspec <cell> <arm>        `BYTES TIMEOUT_S HINT ENV...` (ENV tokens are KEY=VALUE)
@@ -37,6 +38,12 @@ RERUN-S (`68s`, after the token witness and the bursty source): 30 rows = the GA
 T = the A/A twin: the same binary, tree and env as GATE under its own arm letter, so GATE-vs-T is the run-to-run spread of one arm (AA68 in the report). BU is built: the perf client's RWM_PERF_BURST=10/33 (10 datagrams every 33 ms, Realtime, rho = 1, the echo
 "offered-load pacing ACTIVE (RWM_PERF_BURST=10/33)"); both seats' binaries must carry it (the BASE seat is rebuilt from main plus the pacer, the gauge commit and the burst knob). PH is a 68s cell only (PC of 68 / 68r stays at 70 %). Same interleave rules.
 
+RERUN-T (`68t`, after the window gauges: beta_max, the U witness, ack_bind; reported only): 54 rows = the GATE arm of K2 / K8 / A2 (9; read fs_over = 0, fs_over_cs, u_over, beta_max), the BW cell of
+reg-handoff-gate.md section 11.6 at three frame sizes W1 / W2 / W4 = k of 10 / 20 / 40 datagrams every 33 ms, each at B / R4 / GATE (27), and PC at 75 and 80 Mbit/s (P7 / P8) at B / R4 / GATE (18).
+BW (Realtime, rho = 1): an unpaced saturating lead-in of BW_LEAD datagrams (about 5 s at the link), then BW_FRAMES frames (30 s): the perf client's RWM_PERF_BURST=<k>/33+<lead>. Its witnesses (ProbeBw share of the [QCC]
+lines after the lead-in, refusals per frame) are READ68 lines, never a stop. BUDGET: 9 big rows x 215 s + 27 BW rows x 75 s + 18 paced rows x 90 s = 5580 s, plus two builds, the tools tests and slack: 7200 s (2 h);
+n = 3 at every frame size fits, so no frame size is dropped. The BASE seat must carry the burst knob WITH the lead-in (a `+<lead>` token): the handoff-gauges-pacer binary of this table is rebuilt from the branch that has it.
+
 ROWS: 6 cells x 3 arms x 3 rows (seed 42, rep 1..3) = 54, interleaved: rep-major, then cell, with the arm order rotated by (rep - 1 + cell index) so no arm owns a position."""
 import os
 import sys
@@ -52,6 +59,7 @@ ARMS_68 = ("B", "R", "G")          # the arms of the main table
 K_CELLS = ("K2", "K8", "A2")
 RERUN_CELLS = ("K2", "K8", "A2", "LR", "PC")
 RERUN_S_CELLS = ("K2", "K8", "A2", "BU", "PH")
+RERUN_T_CELLS = ("K2", "K8", "A2", "W1", "W2", "W4", "P7", "P8")
 REGISTERED_CELLS = ("K2", "K8", "A2", "LR", "PC", "BU")      # plan 68's registered 54 slots; PH exists in 68s only
 SEAT = {"B": "BASE", "R": "CAND", "G": "CAND", "Q": "CAND", "T": "CAND"}
 ARM_NAME = {"B": "BASE", "R": "R4", "G": "GATE", "Q": "GATE-ALONE", "T": "GATE-AA"}
@@ -64,6 +72,9 @@ LOW_DGRAM_S = 36.0                 # section 3: a call rate of ~36 datagrams/s
 PACED_FRAC = 0.70                  # section 3: ~70 % of the link
 BURST_DGRAMS, BURST_PERIOD_MS = 10, 33
 PH_FRAC = 0.85                     # 68s: paced headroom at 85 % of the link
+BW_LEAD = 126_000                  # 68t: the saturating lead-in of BW, in datagrams (494 B each: about 5 s at the 100 Mbit/s link)
+BW_FRAMES = 909                    # 68t: BW's frames after the lead-in (909 x 33 ms = 30 s)
+BW_SIZES = (10, 20, 40)            # 68t: datagrams per frame
 
 # code -> (topology cell, label, hint, bytes, timeout, rate Mbit/s payload or None, rho-one witnessed (Realtime), burst token "<datagrams>/<ms>" or None); order = the registration's table
 CELLS = {
@@ -74,7 +85,12 @@ CELLS = {
     "PC": ("c2-100", "c2-100 paced (Auto, 70 % of the link)", "auto", int(PACED_FRAC * LINK_MBIT * 1e6 * T_E / 8), TIMEOUT_PACED, PACED_FRAC * LINK_MBIT, False, None),
     "BU": ("c2-100", "c2-100 bursty (Realtime rho=1, 10-dgram frames / 33 ms)", "realtime", int(T_E * 1000 / BURST_PERIOD_MS) * BURST_DGRAMS * CHUNK_PAYLOAD, TIMEOUT_PACED, None, True, "%d/%d" % (BURST_DGRAMS, BURST_PERIOD_MS)),
     "PH": ("c2-100", "c2-100 paced (Auto, 85 % of the link)", "auto", int(PH_FRAC * LINK_MBIT * 1e6 * T_E / 8), TIMEOUT_PACED, PH_FRAC * LINK_MBIT, False, None),
+    "P7": ("c2-100", "c2-100 paced (Auto, 75 % of the link)", "auto", int(0.75 * LINK_MBIT * 1e6 * T_E / 8), TIMEOUT_PACED, 0.75 * LINK_MBIT, False, None),
+    "P8": ("c2-100", "c2-100 paced (Auto, 80 % of the link)", "auto", int(0.80 * LINK_MBIT * 1e6 * T_E / 8), TIMEOUT_PACED, 0.80 * LINK_MBIT, False, None),
 }
+for _k in BW_SIZES:      # BW: frames above beta after a saturating lead-in (section 11.6): W1 / W2 / W4 = 10 / 20 / 40 datagrams per 33 ms frame
+    CELLS["W%d" % (_k // 10)] = ("c2-100", "c2-100 bursty after a lead-in (Realtime rho=1, %d-dgram frames / 33 ms)" % _k, "realtime", (BW_LEAD + BW_FRAMES * _k) * CHUNK_PAYLOAD, 70, None, True,
+                                 "%d/%d+%d" % (_k, BURST_PERIOD_MS, BW_LEAD))
 CELL_ORDER = tuple(CELLS)
 # ── the one switch an amendment edits ──
 UNBUILT = ("BU",)      # of plans 68 and 68r (the first never ran BU, the second does not hold it); 68s builds it (the burst knob): see unbuilt_in
@@ -84,18 +100,19 @@ BUILT = tuple(c for c in REGISTERED_CELLS if c not in UNBUILT)
 
 def unbuilt_in(name=None):
     """The UNBUILT cells of the table `name` (default: this process's plan): none in 68s, which carries the burst knob."""
-    return () if (name or plan_name()) == "68s" else UNBUILT
+    return () if (name or plan_name()) in ("68s", "68t") else UNBUILT
 
 
 def built_in(name=None):
     n = name or plan_name()
     return tuple(c for c in cells_of(n) if c not in unbuilt_in(n))
-BUDGET_S = {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600, "68s": 7400, "68s-rehearsal": 3600}   # 68: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
+BUDGET_S = {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600, "68s": 7400, "68s-rehearsal": 3600, "68t": 7200, "68t-rehearsal": 3600}   # 68: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
 # 68r: 18 big rows x 215 s + 18 paced rows x 90 s + builds + tests; its rehearsal: 2 big + 4 paced rows + builds + tests
 # 68s: 9 big rows x 215 s + 21 paced rows x 90 s + builds + tests; its rehearsal: 1 big + 5 paced rows + builds + tests
 SMOKE_CELL = "K2"
 SMOKE_68R = ("GK2", "QK2", "BLR", "GLR", "BPC", "GPC")
 SMOKE_68S = ("GK2", "BBU", "GBU", "BPH", "GPH", "TPH")
+SMOKE_68T = ("GK2", "BW2", "RW2", "GW2", "BP7", "GP8")
 LATE_T = 5.0
 
 
@@ -129,7 +146,7 @@ def all_arms():
 
 def cells_of(name):
     """The cells the table `name` holds, in report order."""
-    return {"68": REGISTERED_CELLS, "68r": RERUN_CELLS, "68s": RERUN_S_CELLS}[name]
+    return {"68": REGISTERED_CELLS, "68r": RERUN_CELLS, "68s": RERUN_S_CELLS, "68t": RERUN_T_CELLS}[name]
 
 
 def valid_slot(cell, arm):
@@ -231,12 +248,28 @@ def registered_rerun_s():
     return out
 
 
+def registered_rerun_t():
+    """The 68t table: [(cell, store, arm, seed, rep)], rep-major, then cell (K2, K8, A2, W1, W2, W4, P7, P8), the arms of a cell rotated by (rep - 1 + cell index): GATE alone on a K cell, B / R4 / GATE elsewhere."""
+    out = []
+    for rep in range(1, N_REP + 1):
+        for ci, code in enumerate(RERUN_T_CELLS):
+            letters = ("G",) if code in K_CELLS else ARMS_68
+            k = (rep - 1 + ci) % len(letters)
+            for letter in letters[k:] + letters[:k]:
+                out.append((CELLS[code][0], "def", arm_name(letter, code), SEED, rep))
+    return out
+
+
 def plan(name="68", smoke=False, rehearsal=False):
     """The EXECUTED table: the registered table without its UNBUILT cells. The smoke and the rehearsal are one row per arm on K2 (seed 42, rep 1)."""
     if name == "68r":
         if smoke or rehearsal:
             return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68R]
         return [r for r in registered_rerun() if arm_parse(r[2])[1] in BUILT]
+    if name == "68t":
+        if smoke or rehearsal:
+            return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68T]
+        return registered_rerun_t()
     if name == "68s":
         if smoke or rehearsal:
             return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68S]
@@ -249,9 +282,9 @@ def plan(name="68", smoke=False, rehearsal=False):
 
 
 def plan_name():
-    """The plan this process serves: LD_PLAN when it is 68, 68r or 68s, else 68."""
+    """The plan this process serves: LD_PLAN when it is 68, 68r, 68s or 68t, else 68."""
     n = os.environ.get("LD_PLAN")
-    return n if n in ("68", "68r", "68s") else "68"
+    return n if n in ("68", "68r", "68s", "68t") else "68"
 
 
 def expect_rows(name=None):

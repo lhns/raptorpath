@@ -300,5 +300,32 @@ check("BU: repairs per source < 0.9 r fires the registered 'limit binds' stop, 0
       any(s_.startswith("bursts-with-headroom BU GBU r1") for s_ in bu_bad) and not any(s_.startswith("bursts-with-headroom") for s_ in bu_ok) and any(ln.startswith("READ68 BU hand_bind") for ln in bu_out)
       and any(ln.startswith("UNWITNESSED68 BU frame completion") for ln in bu_out), (bu_bad, bu_out[-4:]))
 os.environ["LD_PLAN"] = "68"
+# ── 7. plan 68t: the window gauges, the BW witnesses ──
+WG = " beta_max=63.44/330000/22.00/4.17/18.75 b_max=70 u_over=1 ack_bind=0.500"
+Wg = sr.parse_hoff_line(LINE.replace(P0, P0.replace("]", WIT.format(o=0) + WG + "]")))["paths"][0]
+psg = sr.path_summary([dict(Wg, _gate="on"), dict(Wg, _gate="on", beta_max=[70.0, 1, 2, 3, 4], u_over=0, b_max=90, ack_bind=0.25)])
+check("the window gauges parse (beta_max as five numbers, b_max, u_over, ack_bind) and sum / max / mean over windows; an old ledger reads None",
+      Wg["beta_max"] == [63.44, 330000, 22.0, 4.17, 18.75] and Wg["u_over"] == 1 and psg["beta_max"][0] == 70.0 and psg["u_over"] == 1 and psg["u_windows"] == 2 and psg["b_max"] == 90 and abs(psg["ack_bind"] - 0.375) < 1e-9
+      and old["beta_max"] is None and old["u_over"] is None and old["ack_bind"] is None, (Wg, psg))
+qc = ["[QCC] t=%.1fs p0:qm=%s qrt_us=1 qsr_us=1" % (t, m) for t, m in ((2.0, "S"), (11.0, "B"), (12.0, "B"), (13.0, "R"), (14.0, "B"))]
+check("qm_b_share counts leg 0's ProbeBw lines at t >= 10 s (3 of 4); none without [QCC]", abs(sr.qm_b_share(qc) - 0.75) < 1e-9 and sr.qm_b_share(["x"]) is None and sr.qm_b_share(qc, t_min=0.0) == 0.6)
+os.environ["LD_PLAN"] = "68t"
+wrows = []
+for r_ in (1, 2, 3):
+    for a_, g_, hb_ in (("BW2", "off", 0.1), ("RW2", "off", 0.1), ("GW2", "on", 0.62)):
+        x_ = dict(row(a_, r_, g_, hb_, fs_over=0), bytes=71_224_920)
+        x_["t68"]["qm_b_share"] = 0.95
+        wrows.append(x_)
+with tempfile.TemporaryDirectory() as td:
+    led = os.path.join(td, "ld.log")
+    with open(led, "w", newline="\n") as fh:
+        for r in wrows:
+            fh.write("P38ROW " + json.dumps(r) + "\n")
+    b7 = io.StringIO()
+    sr.report(led, out=lambda s_: b7.write(s_ + "\n"))
+    t7 = b7.getvalue()
+    check("the 68t report prints the BW witnesses as READ68 lines (ProbeBw share after 10 s, refusals per frame on GATE) and the GATE window gauges; none of them is a stop",
+          "READ68 W2 GATE k=20 qm=B share of [QCC] lines after 10 s=0.95" in t7 and "refusals/frame=" in t7 and "READ68 W2 BASE k=20" in t7 and "READ68 W2 GATE p0 u_over=" in t7 and "STOP68" not in t7, t7[-1500:])
+os.environ["LD_PLAN"] = "68"
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)

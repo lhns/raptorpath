@@ -146,6 +146,9 @@ def witness_of(wins):
     byp = [w["fs_bypass"] for w in wins if isinstance(w.get("fs_bypass"), list) and len(w["fs_bypass"]) == 4]
     exn = [w["ex_n"] for w in wins if isinstance(w.get("ex_n"), list) and len(w["ex_n"]) == 3]
     ocs = [w["fs_over_cs"] for w in wins if isinstance(w.get("fs_over_cs"), list) and len(w["fs_over_cs"]) == 2]
+    bmx = [w["beta_max"] for w in wins if isinstance(w.get("beta_max"), list) and len(w["beta_max"]) == 5 and _num(w["beta_max"][0])]
+    bmm = max(bmx, key=lambda e: e[0]) if bmx else None
+    uo = [w["u_over"] for w in wins if _num(w.get("u_over"))]
     bq = [w["beta_q"] for w in wins if isinstance(w.get("beta_q"), list) and len(w["beta_q"]) == 3]
     fso = [w["fs_over"] for w in wins if _num(w.get("fs_over"))]
     fsn = [w["fs_n"] for w in wins if _num(w.get("fs_n"))]
@@ -153,6 +156,8 @@ def witness_of(wins):
         "fs_over": int(sum(fso)) if fso else None, "fs_n": int(sum(fsn)) if fsn else None,
         "fs_bypass": [int(sum(b[i] for b in byp if _num(b[i]))) for i in range(4)] if byp else None,
         "fs_over_cs": [int(sum(c[i] for c in ocs if _num(c[i]))) for i in range(2)] if ocs else None,
+        "beta_max": list(bmm) if bmm else None, "b_max": _max(col("b_max")), "u_over": int(sum(uo)) if uo else None, "u_windows": len(uo) if uo else None,
+        "ack_bind": _mean(col("ack_bind")),
         "ex_max": list(exm) if exm else None, "ex_n": [int(sum(e[i] for e in exn if _num(e[i]))) for i in range(3)] if exn else None,
         "beta_p5_min": _min([b[0] for b in bq]), "beta_p50_med": _med([b[1] for b in bq]), "beta_p95_max": _max([b[2] for b in bq]),
         "own_gap_max": _max(col("own_gap_max")), "pend_max": _max(col("pend_max")),
@@ -197,6 +202,20 @@ def qcc_last(lines):
     return out
 
 
+_QM0 = re.compile(r"^\[QCC\] t=([\d.]+)s.*?\bp0:qm=(\S)")
+
+
+def qm_b_share(lines, t_min=10.0):
+    """The share of the sender's [QCC] lines at t >= t_min (the burst phase: the lead-in is over) whose leg 0 reads qm = B (ProbeBw); None without such a line (BASE has no [QCC])."""
+    n = b = 0
+    for ln in lines or []:
+        m = _QM0.match(_ANSI.sub("", ln).strip())
+        if m and float(m.group(1)) >= t_min:
+            n += 1
+            b += m.group(2) == "B"
+    return b / n if n else None
+
+
 def hoff_summary(lines):
     """-> the row's `[HOFF]` readouts from the SENDER's log: the gate token, the end-of-run counters and a path_summary per path."""
     ws = parse_hoff(lines)
@@ -217,7 +236,7 @@ def hoff_summary(lines):
 def row_metrics(cli, srv, drv, nbytes=None, cell="c2-100", arm="GK2", mbps=None, row=None):
     """The `t68` of one row. Never raises on log content. `row` (the parser's partial row) lends cpu / in-order readouts when it has them."""
     cli, srv = list(cli or []), list(srv or [])
-    out = {"v": 1, "arm": arm, "hoff": hoff_summary(cli), "hoff_srv_lines": len(parse_hoff(srv)), "qcc": qcc_last(cli), "goodput": mbps, "bytes": nbytes}
+    out = {"v": 1, "arm": arm, "hoff": hoff_summary(cli), "hoff_srv_lines": len(parse_hoff(srv)), "qcc": qcc_last(cli), "qm_b_share": qm_b_share(cli), "goodput": mbps, "bytes": nbytes}
     try:
         import l1common as lc
         out["gate_echo_cli"], out["gate_echo_srv"] = lc.gate_tok(cli, "RWM_HOFF_GATE"), lc.gate_tok(srv, "RWM_HOFF_GATE")
@@ -377,6 +396,7 @@ def report(path, out=print, raw=None, ref=None):
         _ratios(code, g, out)
     _stop_rules(groups, stop, out)
     _witnesses(groups, stop, out)
+    _window_reads(groups, out)
     out(f"REPORT68 REPORTED-ONLY rows={len(cnt)}/{plan68.expect_rows()} stops={len(stops)} unbuilt={','.join(plan68.unbuilt_in()) or '-'}")
     return 0
 
@@ -529,6 +549,28 @@ def _stop_rules(groups, stop, out):
                     stop(f"low-rate LR {x['arm']} r{x['rep']}: repairs per source {c:.4f} outside r {rr:.4f} +- 5 %")
                 if _num(bm) and bm > 2:
                     stop(f"low-rate LR {x['arm']} r{x['rep']}: B max {bm:.1f} > 2")
+
+
+def _window_reads(groups, out):
+    """Plan 68t's reported-only readings (never a stop): the window gauges per GATE cell (beta_max with its tuple, the U witness, ack_bind) and the BW witnesses (ProbeBw share of [QCC] after the lead-in,
+    refusals per frame)."""
+    for code in plan68.cells_of(plan68.plan_name()):
+        for a in ("G", "R", "B"):
+            rs = [x for x in groups.get(code, {}).get(a, []) if x.get("status") == "LIVE"]
+            if not rs:
+                continue
+            if a == "G":
+                for pid in sorted({i for x in rs for i in _paths(x)}):
+                    bm = max([b for b in ((_paths(x).get(pid) or {}).get("beta_max") for x in rs) if b], key=lambda e: e[0], default=None)
+                    uo = [(_paths(x).get(pid) or {}).get("u_over") for x in rs]
+                    uw = [(_paths(x).get(pid) or {}).get("u_windows") for x in rs]
+                    out(f"READ68 {code} GATE p{pid} u_over={int(sum(v for v in uo if _num(v)))}/{int(sum(v for v in uw if _num(v)))} windows beta_max(max; beta/W/srtt_ms/L_ms/R_MBs)={_lst(bm, 2)} "
+                        f"b_max(max)={_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('b_max'))))} ack_bind(mean)={_f(_pm(rs, 'ack_bind', pid), 3)} fs_over_cs(closed/spent)={_lst(_sumlist(rs, 'fs_over_cs', 2, pid))}")
+            if code in ("W1", "W2", "W4"):
+                k = 10 * int(code[1])
+                refs = [sum(p["refusals"] for p in (((_t(x).get("hoff") or {}).get("paths") or {}).values())) for x in rs]
+                out(f"READ68 {code} {plan68.ARM_NAME[a]} k={k} qm=B share of [QCC] lines after 10 s={_f(_med(_col(rs, lambda x: _t(x).get('qm_b_share'))), 2)} (BW needs >= 0.90) "
+                    f"refusals/frame={_f(_med([r / plan68.BW_FRAMES for r in refs]), 3) if a == 'G' else '-'} (BW needs frames with a refusal >= 0.5 at k = 20)")
 
 
 def _witnesses(groups, stop, out):

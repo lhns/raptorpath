@@ -809,7 +809,7 @@ BAD68 = {"gateoff", "nohoff"}
 
 
 # the gate's witness fields (hoff.rs `witness_fields`), printed with the arm on: nothing leaks past the bound, the exempt traffic and the owner are quiet
-WIT68 = " fs_over=0 fs_bypass=0/0/0/0 ex_max=3/3/0 ex_n=2/0/1 beta_q=50.1/53.8/56.0 own_gap_max=900us pend_max=3"
+WIT68 = " fs_over=0 fs_over_cs=0/0 fs_bypass=0/0/0/0 ex_max=3/3/0 ex_n=2/0/1 fs_n=400 beta_max=56.0/280000/22.00/4.17/15.91 b_max=30 u_over=0 ack_bind=0.500 beta_q=50.1/53.8/56.0 own_gap_max=900us pend_max=3"
 
 
 def hoff68(k, nleg, gate, bound, paced=False):
@@ -1218,7 +1218,7 @@ def main(argv):
         cli, srv, drv = gen51e(cli, srv, drv, nbytes, fam, _hint)
     elif plan == "63":
         cli, srv, drv = gen63(cli, srv, drv, nbytes, fam, _hint)
-    elif plan in ("68", "68r", "68s"):
+    elif plan in ("68", "68r", "68s", "68t"):
         cli, srv, drv = gen68(cli, srv, drv, nbytes, fam, _hint, base)
     elif plan == "51":
         cli, srv, drv = gen51(cli, srv, drv, nbytes, fam, _hint)

@@ -104,11 +104,11 @@ check("row_problems: a wrong seat binary is a problem, a right one is none; a pa
 
 # ── 5. the shell side ──
 ra, bt, pp = rd("loopdiag_run_all.sh"), rd("loopdiag_battery.sh"), rd("place38_parse.py")
-check("run_all and the battery accept LD_PLAN=68, 68r and 68s; the battery shares plan 63's two-seat shape (P68 sets P63) and keeps the bring-up retry", '{ [ "$PLAN" = "68" ] || [ "$PLAN" = "68r" ] || [ "$PLAN" = "68s" ]; } && { P68=1; P63=1; P38=1; PCAND=1; }' in bt and "68r) P_SMOKE=smoke68" in ra and "68s) P_SMOKE=smoke68" in ra and "|43b|68|68r|68s|46|" in bt and "TRIES=1" not in [ln for ln in bt.splitlines() if "P68=1" in ln][0])
+check("run_all and the battery accept LD_PLAN=68, 68r, 68s and 68t; the battery shares plan 63's two-seat shape (P68 sets P63) and keeps the bring-up retry", '{ [ "$PLAN" = "68" ] || [ "$PLAN" = "68r" ] || [ "$PLAN" = "68s" ] || [ "$PLAN" = "68t" ]; } && { P68=1; P63=1; P38=1; PCAND=1; }' in bt and "68r) P_SMOKE=smoke68" in ra and "68s) P_SMOKE=smoke68" in ra and "|43b|68|68r|68s|68t|46|" in bt and "TRIES=1" not in [ln for ln in bt.splitlines() if "P68=1" in ln][0])
 check("the gate is scrubbed from the shell on every plan-68 row, so R4 never inherits it (RWM_QUIC_CC and RWM_C_RELIABLE already are, for every plan)", 'SCRUB_EXTRA+=(-u RWM_HOFF_GATE -u RWM_PERF_BURST)' in bt and "-u RWM_QUIC_CC" in bt and "-u RWM_C_RELIABLE" in bt)
 check("the BASE seat's pin has no default at plan 68 (REQUIRED on a launch, RECORDED by the rehearsal); plan 63's CONTROL default is unchanged", "ABORT-BIN-SHA plan 68 needs LD_BIN_SHA_CONTROL" in ra and "8013a312" in ra)
-check("the budget guard knows plans 68 (worst case 11 400 s, rehearsal 3 000 s), 68r (8 000 s, rehearsal 3 600 s) and 68s (7 400 s, rehearsal 3 600 s) and plan68.BUDGET_S says the same", "P57_NEED=11400" in ra and "P57_NEED=3000" in ra and "P57_NEED=8000" in ra and "P57_NEED=3600" in ra and "P57_NEED=7400" in ra
-      and plan68.BUDGET_S == {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600, "68s": 7400, "68s-rehearsal": 3600})
+check("the budget guard knows plans 68 (worst case 11 400 s, rehearsal 3 000 s), 68r (8 000 s, rehearsal 3 600 s) 68s (7 400 s, rehearsal 3 600 s) and 68t (7 200 s, rehearsal 3 600 s) and plan68.BUDGET_S says the same", "P57_NEED=11400" in ra and "P57_NEED=3000" in ra and "P57_NEED=8000" in ra and "P57_NEED=3600" in ra and "P57_NEED=7400" in ra and "P57_NEED=7200" in ra
+      and plan68.BUDGET_S == {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600, "68s": 7400, "68s-rehearsal": 3600, "68t": 7200, "68t-rehearsal": 3600})
 check("the preflight asks the CAND for the gate arm and [HOFF], the BASE for [HOFF], and both for the pacer echo when a paced cell is built", 'preflight_binary "$BIN" "RWM_HOFF_GATE" "RWM_QUIC_CC"' in bt and '"[HOFF] t="' in bt and "ABORT-PACER plan 68" in bt)
 check("the row parser registers every plan-68 arm: B* on the BASE family, R* / G* on the CAND family, hints from the cell", "plan68.all_arms()" in pp and 'AFAM.setdefault(_a68, "BASE" if _a68.startswith("B") else "CAND")' in pp)
 check("the new files are LF only and in both crlf_guard lists, and lib.sh forwards the pacer knob for the day a paced cell is built", all(b"\r" not in open(os.path.join(HERE, f), "rb").read() for f in ("plan68.py", "s68_report.py", "test_s68.py", "test_harness68.py"))
@@ -175,6 +175,38 @@ check("the shell wires 68s: the battery's table (30 rows, 6 smoke rows), the bur
       'P68S=1' in bt and "want=30;" in bt and 'needs-burst "$PLAN"' in bt and "68s) stage rep68s 68s; rrc=$? ;;" in ra and '"68s"' in pp and '[ "$PLAN" = "68s" ] && { P57_NEED=7400;' in ra)
 os.environ["LD_PLAN"] = "68s"
 check("plan68.plan_name() follows LD_PLAN (68s) so the report's row count and smoke slots are the second rerun's, and no cell is UNBUILT in it", plan68.plan_name() == "68s" and plan68.expect_rows() == 30 and plan68.unbuilt_in() == () and "BU" in plan68.built_in())
+# ── 8. the third rerun table 68t ──
+rt = plan68.plan("68t")
+rta = [r[2] for r in rt]
+check("68t holds 54 rows: GATE on K2 / K8 / A2 (3 each = 9), B / R4 / GATE on W1 / W2 / W4 (the BW cell at 10 / 20 / 40 datagrams per frame: 27) and on P7 / P8 (PC at 75 and 80 Mbit/s: 18); seed 42, reps 1..3, every slot unique and valid",
+      len(rt) == 54 and all(rta.count(plan68.arm_name("G", c)) == 3 for c in ("K2", "K8", "A2")) and not any(plan68.arm_parse(a)[1] in plan68.K_CELLS and a[0] != "G" for a in rta)
+      and all(rta.count(plan68.arm_name(l, c)) == 3 for c in ("W1", "W2", "W4", "P7", "P8") for l in "BRG") and {r[3] for r in rt} == {"42"} and {r[4] for r in rt} == {1, 2, 3}
+      and len({(r[0], r[2], r[3], r[4]) for r in rt}) == 54 and all(plan68.valid_slot(r[0], r[2]) for r in rt), len(rt))
+ok_rt = [r[4] for r in rt] == sorted(r[4] for r in rt)
+for code in ("W1", "W2", "W4", "P7", "P8"):
+    pos = {l: [] for l in "BRG"}
+    for rep in (1, 2, 3):
+        blk = [r[2][0] for r in rt if plan68.arm_parse(r[2])[1] == code and r[4] == rep]
+        ok_rt &= sorted(blk) == sorted("BRG")
+        for i, l in enumerate(blk):
+            pos[l].append(i)
+    ok_rt &= all(len(set(v)) == 3 for v in pos.values())
+check("68t keeps the interleave rules (rep-major; the arm order of a cell rotates so no arm owns a position)", ok_rt)
+check("68t's smoke is six rows (GK2, BW2, RW2, GW2, BP7, GP8) and equals its rehearsal; 68, 68r, 68s keep their 45 / 36 / 30 rows", [r[2] for r in plan68.plan("68t", smoke=True)] == list(plan68.SMOKE_68T)
+      and plan68.plan("68t", smoke=True) == plan68.plan("68t", rehearsal=True) and plan68.expect_rows("68t") == 54 and (plan68.expect_rows("68"), plan68.expect_rows("68r"), plan68.expect_rows("68s")) == (45, 36, 30))
+bw = {k: plan68.arm_env("c2-100", "GW%d" % (k // 10)) for k in (10, 20, 40)}
+check("BW: Realtime rho = 1, a saturating lead-in of 126 000 datagrams (about 5 s) then 909 frames (30 s) of 10 / 20 / 40 datagrams per 33 ms: RWM_PERF_BURST=<k>/33+126000, no rate, bytes = (126 000 + 909 k) x 494, timeout 70 s",
+      all("RWM_PERF_BURST=%d/33+126000" % k in bw[k] and "RWM_C_RELIABLE=1" in bw[k] and not any(x.startswith("RWM_PERF_RATE_MBIT") for x in bw[k]) for k in bw)
+      and [plan68.arm_bytes("c2-100", "GW%d" % (k // 10)) for k in (10, 20, 40)] == [(126_000 + 909 * k) * 494 for k in (10, 20, 40)] and plan68.arm_timeout("c2-100", "GW2") == 70 and plan68.arm_hint("GW4") == "realtime"
+      and plan68.seat_of("BW2") == "BASE" and plan68.seat_of("RW2") == plan68.seat_of("GW2") == "CAND")
+check("P7 / P8 are PC at 75 and 80 Mbit/s (Auto, 562.5 / 600 MB, 75 s); PC and PH keep their rates; the burst-knob preflight is armed by 68t as by 68s",
+      plan68.rate_token("GP7") == "75" and plan68.rate_token("GP8") == "80" and plan68.arm_bytes("c2-100", "GP7") == 562_500_000 and plan68.arm_bytes("c2-100", "GP8") == 600_000_000 and plan68.arm_timeout("c2-100", "GP8") == 75
+      and plan68.rate_token("GPC") == "70" and plan68.rate_token("GPH") == "85" and plan68.needs_burst("68t") and plan68.row_problems("c2-100", "GW2", ["offered-load pacing ACTIVE (RWM_PERF_BURST=20/33+126000)"], [], "x" * 64, "x" * 64, "y" * 64) == []
+      and "burst-echo-missing" in plan68.row_problems("c2-100", "GW2", ["offered-load pacing ACTIVE (RWM_PERF_BURST=20/33)"], [], "x" * 64, "x" * 64, "y" * 64))
+check("the shell wires 68t: the battery's table (54 rows, 6 smoke rows), run_all's stage rep68t and its budget",
+      'P68T=1' in bt and "want=54" in bt and "68t) stage rep68t 68t; rrc=$? ;;" in ra and '"68t"' in pp and '[ "$PLAN" = "68t" ] && { P57_NEED=7200;' in ra)
+os.environ["LD_PLAN"] = "68t"
+check("plan68.plan_name() follows LD_PLAN (68t); no cell is UNBUILT in it and every cell of the table is built", plan68.plan_name() == "68t" and plan68.expect_rows() == 54 and plan68.unbuilt_in() == () and set(plan68.RERUN_T_CELLS) <= set(plan68.built_in()))
 os.environ["LD_PLAN"] = "68r"
 check("plan68.plan_name() follows LD_PLAN (68r) so the report's row count and smoke slots are the rerun's", plan68.plan_name() == "68r" and plan68.expect_rows() == 36)
 os.environ["LD_PLAN"] = "68"
