@@ -541,6 +541,27 @@ fn f2(v: f64) -> String {
 }
 
 impl HoffGauge {
+    /// The gate's decision reads only its inputs: `admits` and `beta_of` use the
+    /// backlog (staged, tx, dropped, quinn's discards), the datagram size (staged,
+    /// staged bytes), the window (`qwin`, else the snapshot's cwnd) and srtt. The rest of
+    /// [`Self::read`] (about 14 more atomics, most of them written by the owner and
+    /// quinn's driver) is gauge-only and left at zero.
+    pub(crate) fn read_decision(view: &crate::transport::io_owner::PathView) -> PathIn {
+        use std::sync::atomic::Ordering::Relaxed;
+        let h = &view.hoff;
+        PathIn {
+            staged: h.staged.load(Relaxed),
+            staged_bytes: h.staged_bytes.load(Relaxed),
+            tx: view.frame_stats().map_or(0, |(_, tx)| tx),
+            cwnd: view.path_stats().map_or(0, |p| p.0),
+            qwin: h.qwin.load(Relaxed),
+            srtt_us: view.rtt().map_or(0, |d| d.as_micros() as u64),
+            dropped: h.dropped.load(Relaxed),
+            quinn_discards: h.quinn_discards.load(Relaxed),
+            ..PathIn::default()
+        }
+    }
+
     /// Read one path view's raw counters.
     pub(crate) fn read(view: &crate::transport::io_owner::PathView) -> PathIn {
         use std::sync::atomic::Ordering::Relaxed;

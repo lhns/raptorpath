@@ -704,6 +704,14 @@ impl HandoffGate {
         ids
     }
 
+    /// The decision's inputs alone, per view ([`super::hoff::HoffGauge::read_decision`]).
+    fn read_decisions(&mut self) -> Vec<(u32, PathIn)> {
+        let mut b = std::mem::take(&mut self.buf);
+        b.clear();
+        b.extend(self.views.iter().map(|(id, v)| (*id, super::hoff::HoffGauge::read_decision(v))));
+        b
+    }
+
     fn read_all(&mut self) -> Vec<(u32, PathIn)> {
         let mut b = std::mem::take(&mut self.buf);
         b.clear();
@@ -761,7 +769,7 @@ impl HandoffGate {
 
     /// Before a first send is taken, live: see [`Self::check`].
     pub(crate) fn check_live(&mut self, waiting: bool) -> bool {
-        let ins = self.read_all();
+        let ins = self.read_decisions();
         let open = self.check(waiting, &ins);
         self.buf = ins;
         open
@@ -769,7 +777,7 @@ impl HandoffGate {
 
     /// Placement's candidate set for a first send, live.
     pub(crate) fn open_live(&mut self) -> Vec<u32> {
-        let ins = self.read_all();
+        let ins = self.read_decisions();
         let open = self.open_ids(&ins);
         self.buf = ins;
         open
