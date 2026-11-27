@@ -1313,3 +1313,52 @@ B'' against the stored A at each row (id3e keys, seeds 0-11); net clamp gauges:
 
 (K-OV: 6 new runs, 16 s wall at 2 workers)
 
+
+## OV-long-c (delta = 0.05; three-knobs-revision4.md 14.8, registered in `ad0b4faf` before it ran)
+
+Predicted against the stored arm: share -0.0055 +- 0.002, p50 -0.053 +- 0.015 s, word worse; against the engine-queue arm dominates. Measured: share -0.0055, p50 -0.0531 s, **worse**; engine-queue arm **dominates**. The boundary is real: below delta ~ 0.078 B'' is worse than today's no-queue Realtime on delay (14.8).
+
+## OV-long-c (build B'', 14)
+
+B'' = A + R5 (wait_limit_form rev5) + the net repair clamp (clamp_net). A and B' are the stored rows. Dominance on the paired steady window (12.2), best finite-T point per build, on the fixed reader (13.6). 
+
+| row | seeds | whole-run delivered | on time (whole run) | repairs sent | decoded | resends | net_bind (mean) | repair credits removed (mean) | onset_t | y_max | w_min_over_c |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| A; lifetime T=0p4, hold 0 (S5) | 6 | 0.8122 | 0.8122 | 2234 | 540 | 432 | - | - | - | - | - |
+| Bpp; lifetime T=0p4, hold 0 (S5) | 6 | 0.8094 | 0.8094 | 198 | 147 | 9586 | 355353 | 3600.3 | 9.53 | 4.81 | 0.1730 |
+| rt; today's Realtime, delta=0p05 (E-rt) | 3 | 0.8107 | 0.8101 | 147 | 95 | 45 | - | - | - | - | - |
+| rteq; today's Realtime, delta=0p05 (E-rt) (engine queue) | 3 | 0.8247 | 0.0418 | 147 | 95 | 14 | - | - | - | - | - |
+
+Dominance (12.3):
+
+| build | baseline | best point | share | on time | p50 | outcome |
+|---|---|---|---|---|---|---|
+| A | rt; today's Realtime, delta=0p05 (E-rt) | T=0p4 | -0.00345 [-0.0036, -0.00329] | -0.00346 [-0.0036, -0.00329] | -0.217 [-0.217, -0.217] | worse |
+| A | rteq; today's Realtime, delta=0p05 (E-rt) (engine queue) | T=0p4 | -0.00426 [-0.00431, -0.0042] | 0.805 [0.805, 0.805] | 0.34 [0.34, 0.34] | dominates |
+| B'' | rt; today's Realtime, delta=0p05 (E-rt) | T=0p4 | -0.00549 [-0.00559, -0.00538] | -0.00549 [-0.00559, -0.00538] | -0.0531 [-0.0531, -0.0531] | worse |
+| B'' | rteq; today's Realtime, delta=0p05 (E-rt) (engine queue) | T=0p4 | -0.0067 [-0.00677, -0.00662] | 0.802 [0.802, 0.802] | 0.517 [0.517, 0.517] | dominates |
+
+B'' against B' and against A at each lifetime, paired steady window (reported only; 'positive favours B''' reads 'positive favours the first'):
+
+| T | readout | B'' - B' [95 %] | bar |
+|---|---|---|---|
+| T | readout | B'' - A [95 %] | bar |
+|---|---|---|---|
+| 0p4 | steady share | -0.00213 [-0.0022, -0.00206] (positive favours B'') | 0.00977 |
+| 0p4 | steady ot | -0.00213 [-0.0022, -0.00205] (positive favours B'') | 0.00977 |
+| 0p4 | steady p50 | 0.164 [0.164, 0.164] (positive favours B'') | 0.0195 |
+
+Whole-run delivered units, A - B'' and B' - B'' (seed means over the common seeds):
+
+| T | A - B'' | B' - B'' |
+|---|---|---|
+| 0p4 | 1371 | - |
+
+R5's tail (14.3): w t_ov = (c / xb) s_b per window past the onset:
+
+| T | windows | median abs(w t_ov / ((c/xb) s_b) - 1) | max |
+|---|---|---|---|
+| 0p4 | 366 | 0.0016 | 0.0139 |
+
+(OV-long-c: 18 new runs, 491 s wall at 6 workers)
+
