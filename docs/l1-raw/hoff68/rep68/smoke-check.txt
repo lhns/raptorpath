@@ -1,0 +1,15 @@
+SMOKE68 kind=smoke rows=3 slots=3
+PASS every smoke row ran
+PASS BK2: the row carries its t68 readouts
+PASS BK2: the row ran its seat's binary (no bin-sha problem)
+PASS BK2: [HOFF] lines on the sending end
+  REPORTED BK2: gate=off gate_echo=None probe_acks=69740.0 refusals=0 status=LIVE
+PASS RK2: the row carries its t68 readouts
+PASS RK2: the row ran its seat's binary (no bin-sha problem)
+PASS RK2: [HOFF] lines on the sending end
+  REPORTED RK2: gate=off gate_echo=0 probe_acks=63244.0 refusals=0 status=LIVE
+PASS GK2: the row carries its t68 readouts
+PASS GK2: the row ran its seat's binary (no bin-sha problem)
+PASS GK2: [HOFF] lines on the sending end
+  REPORTED GK2: gate=on gate_echo=1 probe_acks=66929.0 refusals=52409 status=LIVE
+SMOKE-PASS
