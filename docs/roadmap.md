@@ -473,6 +473,8 @@ flowchart TB
 | Engine in-flight count reads low | ⚠ open | The engine's per-path in-flight count, read by the send gate, the repair clamp and placement, is about 60 times below what is actually outstanding, so those three never see the real load. |
 | Network library queue unmanaged | ⚠ open | Everything the sender hands over waits in one first-in first-out queue in the network library, with no priority and no deadline, so resends and control messages wait behind hundreds of new datagrams. |
 | Placement blind to the send queue | ⚠ open | Placement chooses a path by its network round trip and an in-flight count that reads near zero, so it cannot see data already waiting in the send queue and overloads the slow path. |
+| Hand-off latency read in coarse steps | ⚠ open | The sender measures how long the network thread takes to pick up waiting data, but it only ever reads one of three values, so the gate limit is up to about a fifth too high and jumps in steps. |
+| Gate limit capped by the acknowledgement rate | ○ next | A proposed change to the hand-off gate: cap its limit by the rate at which the network actually acknowledges data, so the limit cannot jump to two or three times its normal value after the controller restores its window. |
 | Sender hand-off gate | ▶ in progress | Everything the sender hands to the network waits in one unmanaged first-in first-out queue in the network library, so with our own BBR controller the waiting data moved from the link into the sender instead of going away. A hand-off gate keeps only a few milliseconds staged per path, so data waits in the sender's own queue where the lifetime and delay price can act on it. |
 | Three application knobs (lifetime T, delay price, order hold H) | ▶ in progress | Replace the delivery share as a setting with three numbers the application states: how long data stays worth sending (lifetime, in seconds), how much each millisecond costs, and how long the receiver may hold data behind a gap. The share delivered becomes a reported result, never a promise. |
 | Burst estimate explodes after a long outage | ⚠ open | Open problem, found in the simulator, which uses the engine's shared burst estimator: after a long total outage at a high send rate the estimator's memory of good-after-bad transitions decays to nearly zero, so the first good packet makes the estimated burst length about a hundred million and the loss variance about 2 000. The repair rate then sits at its cap until the estimate settles (about 3 s at 1 000/s, 0.1 s at 10 000/s). Whether the engine reaches this state depends on how it feeds the estimator after an outage (one lump on the first ack). |
@@ -537,6 +539,8 @@ flowchart TB
 - `model-defect-quinn-queue`: Network library queue unmanaged
 - `model-defect-placement-blind`: Placement blind to the send queue
 - `rate-defect-lowrate-cancel`: Low-rate repair cancelled by acks
+- `model-defect-tau-o-quantized`: Hand-off latency read in coarse steps
+- `model-handoff-rev5`: Gate limit capped by the acknowledgement rate
 - `model-defect-ge-after-outage`: Burst estimate explodes after a long outage
 - `model-defect-rate-vs-span`: Repair rate sized for a wider window than each repair covers
 
@@ -1246,7 +1250,7 @@ Each track has its own page with its tree, node table and per-node details.
 - [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
 - [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 68 nodes (49 done, 6 in progress, 7 next, 5 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 53 nodes (27 done, 14 in progress, 8 next, 3 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 55 nodes (27 done, 14 in progress, 10 next, 3 blocked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 30 nodes (21 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->

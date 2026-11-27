@@ -354,6 +354,8 @@ gantt
     Engine in-flight count reads low :model_defect_inflight_count, 2026-11-26, 2026-11-27
     Network library queue unmanaged :model_defect_quinn_queue, 2026-11-26, 2026-11-27
     Placement blind to the send queue :model_defect_placement_blind, 2026-11-26, 2026-11-27
+    Hand-off latency read in coarse steps :model_defect_tau_o_quantized, 2026-11-27, 2026-11-27
+    Gate limit capped by the acknowledgemen… :model_handoff_rev5, 2026-11-27, 2026-11-27
     Sender hand-off gate :active, model_sender_queue_law, 2026-11-26, 2026-11-27
     Three application knobs (lifetime T, de… :active, model_three_knobs, 2026-11-23, 2026-11-27
     Burst estimate explodes after a long ou… :model_defect_ge_after_outage, 2026-11-25, 2026-11-27
