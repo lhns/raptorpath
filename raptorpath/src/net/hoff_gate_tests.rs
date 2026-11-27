@@ -943,3 +943,108 @@ fn the_site_decides_and_emit_source_spends_that_decision() {
     assert!(m.contains("let _ = hg.check_live(false); hg.set_bypass(Some(hoff_gate::Bypass::Timer))".replace(' ', "").as_str()));
     assert_eq!(m.matches("let_=hg.check_live(false);hg.set_bypass(Some(hoff_gate::Bypass::Shutdown))").count(), 2);
 }
+
+// ── window gauges: beta_max, the U witness, ack_bind (reported only) ────────
+
+fn lg() -> HandoffGate {
+    let mut g = HandoffGate::new(true);
+    g.fix_terms(LEG1);
+    g
+}
+
+/// `beta_max` keeps the tuple (β, W, srtt, L, R) at the turn of the window's largest β.
+#[test]
+fn beta_max_keeps_the_tuple_at_the_turn_of_the_largest_beta() {
+    let mut g = lg();
+    for (k, w) in [(1u64, 280_000u64), (2, 330_000), (3, 250_000)] {
+        g.begin_turn(1000 * k, true, false, &[(0u32, pin(10, w, 22_000))]);
+    }
+    let r = g.take_row(0).unwrap();
+    let (b, w, s, l, rate) = r.beta_max.expect("beta_max");
+    assert!((b - 63.4).abs() < 0.1 && w == 330_000 && s == 22_000, "{:?}", r.beta_max);
+    assert!((l - 0.004172).abs() < 1e-5 && (rate - 1.25 * 330_000.0 / 0.022).abs() < 1.0, "{:?}", r.beta_max);
+    assert!(g.take_row(0).unwrap().beta_max.is_none(), "the window resets");
+}
+
+/// The U witness: a window whose B max exceeds its β max by more than one batch is
+/// `u_over`; one within a batch is not. The batch is the window's datagrams per tx batch.
+#[test]
+fn u_witness_counts_a_window_whose_b_max_passes_beta_max_plus_a_batch() {
+    let at = |b: u64, bat: u64, dg: u64| (0u32, PathIn { tx_batches: bat, tx_dgrams: dg, ..pin(b, 280_000, 22_000) });
+    let mut g = lg();
+    g.begin_turn(1000, true, false, &[at(10, 0, 0)]);
+    g.begin_turn(2000, true, false, &[at(70, 10, 80)]); // beta_max 53.83, batch 8: 70 > 61.83
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.b_max, r.u_over), (70, 1), "{r:?}");
+    g.begin_turn(3000, true, false, &[at(10, 10, 80)]);
+    g.begin_turn(4000, true, false, &[at(60, 20, 160)]); // 60 <= 53.83 + 8
+    let r = g.take_row(0).unwrap();
+    assert_eq!((r.b_max, r.u_over), (60, 0), "{r:?}");
+}
+
+/// `ack_bind` (Revision 5's cap, computed alongside, never used): the share of turns
+/// where (W - F)+ + 1.25 x_dot L is below beta s = R L. x_dot = bytes acked over the
+/// last srtt / srtt; before one srtt of history there is no ack clock and no verdict.
+#[test]
+fn ack_bind_is_the_share_of_turns_where_the_cap_is_below_the_pacer_term() {
+    let run = |qf: u64| {
+        let mut g = lg();
+        for k in 1..=60u64 {
+            // 10 kB acked per ms (10 MB/s), W = 280 kB, srtt 22 ms: R L = 66.4 kB, 1.25 x L = 52.2 kB
+            let i = PathIn { qacked: 10_000 * k, qf, ..pin(10, 280_000, 22_000) };
+            g.begin_turn(1000 * k, true, false, &[(0u32, i)]);
+        }
+        g.take_row(0).unwrap().ack_bind
+    };
+    assert_eq!(run(270_000), Some(1.0), "room 10 kB: cap 62 kB < 66 kB");
+    assert_eq!(run(0), Some(0.0), "no flight: cap 332 kB");
+    let mut g = lg();
+    g.begin_turn(1000, true, false, &[(0u32, PathIn { qacked: 10_000, ..pin(10, 280_000, 22_000) })]);
+    assert_eq!(g.take_row(0).unwrap().ack_bind, None, "no ack clock yet");
+}
+
+/// The gauges read no decision: the gate's answers do not depend on the acked / flight readings.
+#[test]
+fn the_window_gauges_leave_the_decision_alone() {
+    let mut a = lg();
+    let mut b = lg();
+    for k in 1..=40u64 {
+        let i = pin(50 + k % 7, 280_000, 22_000);
+        let j = PathIn { qacked: 99_000 * k, qf: 1_000_000, ..i };
+        assert_eq!(a.begin_turn(1000 * k, true, false, &[(0u32, i)]), b.begin_turn(1000 * k, true, false, &[(0u32, j)]));
+        assert_eq!(a.admit(0, &i), b.admit(0, &j));
+    }
+}
+
+/// With the gate armed the line carries the window gauges; unarmed it does not.
+#[test]
+fn hoff_line_prints_the_window_gauges_only_when_armed() {
+    let mut gauge = HoffGauge::new(0);
+    let mut g = lg();
+    let ins = [(0u32, pin(10, 280_000, 22_000))];
+    g.begin_turn(1000, true, false, &ins);
+    gauge.turn(1000, true, false, &ins);
+    let l = gauge.line_gated(300_000, 40, false, Some(&mut g));
+    for f in [" beta_max=53.83/280000/22.00/4.17/", " b_max=10 ", " u_over=0 ", " ack_bind=-"] {
+        assert!(l.contains(f), "missing {f}: {l}");
+    }
+    let mut off = HoffGauge::new(0);
+    off.turn(1000, true, false, &ins);
+    let l = off.line_gated(300_000, 40, false, None);
+    for f in ["beta_max=", "b_max=", "u_over=", "ack_bind="] {
+        assert!(!l.contains(f), "{f} printed with the gate off: {l}");
+    }
+}
+
+/// The probe publishes the acked / sent / lost byte counters as gauges and leaves the
+/// window on its ACK cadence: a second `qwin` store would change what the gate reads.
+#[test]
+fn the_probe_publishes_flight_counters_and_leaves_qwin_alone() {
+    let o = flat(include_str!("../transport/io_owner.rs"));
+    assert!(o.contains("h.qacked.fetch_add(bytes,Relaxed)"));
+    assert!(o.contains("h.qsent.fetch_add(bytes,Relaxed)"));
+    assert!(o.contains("h.qlost.fetch_add(lost_bytes,Relaxed)"));
+    assert_eq!(o.matches("h.qwin.store(").count(), 1, "qwin stays on the ACK cadence");
+    let h = flat(include_str!("hoff.rs"));
+    assert!(h.contains("qacked:h.qacked.load(Relaxed)"));
+}

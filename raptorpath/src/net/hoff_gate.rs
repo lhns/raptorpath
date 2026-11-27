@@ -249,6 +249,14 @@ struct PathGate {
     fs_over: u64,
     /// `fs_over` by why: [closed by the newest decision, decision already spent].
     fs_over_cs: [u64; 2],
+    // Window gauges (reported only; see `GateRow`).
+    beta_max: Option<(f64, u64, u64, f64, f64)>,
+    b_max: u64,
+    bat_start: Option<(u64, u64)>,
+    bat_last: (u64, u64),
+    acks: VecDeque<(u64, u64)>,
+    ack_turns: u64,
+    ack_bound: u64,
     fs_byp: [u64; 4],
     beta_s: Vec<f64>,
     ex_max: Option<(f64, f64, f64)>,
@@ -263,6 +271,42 @@ struct PathGate {
 }
 
 impl PathGate {
+    /// One turn's window gauges: the largest β with its tuple, the largest B, the
+    /// batch bookkeeping for the U bound, and Revision 5's cap against today's β·s.
+    /// Read-only with respect to every decision.
+    fn note_window(&mut self, now_us: u64, i: &PathIn, beta: Option<f64>, l_s: f64) {
+        self.b_max = self.b_max.max(i.backlog());
+        self.bat_start.get_or_insert((i.tx_batches, i.tx_dgrams));
+        self.bat_last = (i.tx_batches, i.tx_dgrams);
+        if let Some(be) = beta {
+            if self.beta_max.is_none_or(|m| be > m.0) {
+                self.beta_max = Some((be, i.window(), i.srtt_us, l_s, i.rate()));
+            }
+        }
+        // ẋ = bytes acked over the last srtt / srtt: the oldest sample at or before the horizon.
+        self.acks.push_back((now_us, i.qacked));
+        if self.acks.len() > MAX_SAMPLES {
+            self.acks.pop_front();
+        }
+        let srtt = i.srtt_us;
+        if srtt == 0 {
+            return;
+        }
+        while self.acks.len() > 1 && self.acks[1].0 + srtt <= now_us {
+            self.acks.pop_front();
+        }
+        let Some(&(t0, a0)) = self.acks.front() else { return };
+        let dt = now_us - t0;
+        if beta.is_none() || dt * 2 < srtt {
+            return; // no ack clock yet (or cold start): no verdict
+        }
+        let xdot = i.qacked.saturating_sub(a0) as f64 / (dt as f64 / 1e6);
+        let room = i.window().saturating_sub(i.qf) as f64;
+        let cap = room + 1.25 * xdot * l_s;
+        self.ack_turns += 1;
+        self.ack_bound += (cap < i.rate() * l_s) as u64;
+    }
+
     fn note_kinds(&mut self, k: [u64; 4]) {
         self.kinds_start.get_or_insert(k);
         self.kinds_last = k;
@@ -295,6 +339,15 @@ pub(crate) struct GateRow {
     pub ex_n: [u64; 3],
     /// First sends staged in the window.
     pub fs_n: u64,
+    /// The window's largest β with the tuple at that turn: (β, W bytes, srtt µs, L s, R bytes/s).
+    pub beta_max: Option<(f64, u64, u64, f64, f64)>,
+    /// The window's largest backlog B read at a turn start or end.
+    pub b_max: u64,
+    /// 1 if `b_max` > the window's `beta_max` + one batch (the U witness), else 0.
+    pub u_over: u64,
+    /// Share of turns (with an ack clock) where Revision 5's cap (W − F)⁺ + 1.25·ẋ·L is below β·s.
+    /// Reported only: no decision reads it.
+    pub ack_bind: Option<f64>,
     /// β's p5 / p50 / p95 over the window's per-turn values.
     pub beta_q: Option<(f64, f64, f64)>,
     /// The owner's longest drain-to-drain gap in the window, µs.
@@ -408,9 +461,11 @@ impl HandoffGate {
         let mut any_open = ins.is_empty();
         for (id, i) in ins {
             let beta = self.beta(*id, i);
+            let l_s = self.terms(*id).l_s();
             let open = admits(i.backlog(), beta);
             let p = self.paths.entry(*id).or_default();
             p.grant = Some(grant_of(open, beta));
+            p.note_window(now_us, i, beta, l_s);
             p.turns += 1;
             p.closed_turns += (!open) as u64;
             p.last_beta = beta;
@@ -451,6 +506,7 @@ impl HandoffGate {
                 }
             }
             p.own_gap_max_us = p.own_gap_max_us.max(i.own_gap_us);
+            p.b_max = p.b_max.max(i.backlog());
             p.note_kinds(i.kinds);
         }
     }
@@ -594,6 +650,14 @@ impl HandoffGate {
             ex_max: p.ex_max,
             ex_n: [3usize, 1, 2].map(|k| p.kinds_last[k].saturating_sub(p.kinds_start.unwrap_or(p.kinds_last)[k])),
             fs_n: p.kinds_last[0].saturating_sub(p.kinds_start.unwrap_or(p.kinds_last)[0]),
+            beta_max: p.beta_max,
+            b_max: p.b_max,
+            u_over: {
+                let (db, dg) = p.bat_start.map_or((0, 0), |s| (p.bat_last.0.saturating_sub(s.0), p.bat_last.1.saturating_sub(s.1)));
+                let batch = if db > 0 { dg.div_ceil(db).max(1) } else { 1 };
+                p.beta_max.is_some_and(|m| p.b_max as f64 > m.0 + batch as f64) as u64
+            },
+            ack_bind: (p.ack_turns > 0).then(|| p.ack_bound as f64 / p.ack_turns as f64),
             beta_q: {
                 p.beta_s.sort_by(|a, b| a.total_cmp(b));
                 (!p.beta_s.is_empty()).then(|| {
@@ -606,6 +670,11 @@ impl HandoffGate {
         };
         p.fs_over = 0;
         p.fs_over_cs = [0; 2];
+        p.beta_max = None;
+        p.b_max = 0;
+        p.bat_start = Some(p.bat_last);
+        p.ack_turns = 0;
+        p.ack_bound = 0;
         p.fs_byp = [0; 4];
         p.beta_s.clear();
         p.ex_max = None;

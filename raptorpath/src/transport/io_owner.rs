@@ -188,6 +188,12 @@ pub struct HoffCounters {
     pub staged: AtomicU64,
     pub staged_bytes: AtomicU64,
     pub qinfl: AtomicU64,
+    /// Cumulative bytes sent / acked / lost as the probe sees them (`on_sent`, `on_ack`,
+    /// `on_congestion_event`): the live flight F = sent - acked - lost and the ack clock.
+    /// Gauges: no decision reads them.
+    pub qsent: AtomicU64,
+    pub qacked: AtomicU64,
+    pub qlost: AtomicU64,
     pub end_acks: AtomicU64,
     pub app_limited_acks: AtomicU64,
     /// The inner controller's `window()` at the last `on_end_acks` (for
@@ -596,6 +602,10 @@ struct RouteProbe {
 
 impl quinn::congestion::Controller for RouteProbe {
     fn on_sent(&mut self, now: Instant, bytes: u64, last_packet_number: u64) {
+        let h = &self.view.hoff;
+        if h.on {
+            h.qsent.fetch_add(bytes, Relaxed);
+        }
         if self.view.owner_thread.load(Relaxed) == thread_token() {
             self.view.drv_on.fetch_add(1, Relaxed);
         } else {
@@ -612,6 +622,10 @@ impl quinn::congestion::Controller for RouteProbe {
         app_limited: bool,
         rtt: &quinn_proto::RttEstimator,
     ) {
+        let h = &self.view.hoff;
+        if h.on {
+            h.qacked.fetch_add(bytes, Relaxed);
+        }
         self.inner.on_ack(now, sent, bytes, app_limited, rtt)
     }
 
@@ -642,6 +656,10 @@ impl quinn::congestion::Controller for RouteProbe {
         is_persistent_congestion: bool,
         lost_bytes: u64,
     ) {
+        let h = &self.view.hoff;
+        if h.on {
+            h.qlost.fetch_add(lost_bytes, Relaxed);
+        }
         self.inner
             .on_congestion_event(now, sent, is_persistent_congestion, lost_bytes)
     }

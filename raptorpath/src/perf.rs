@@ -58,20 +58,27 @@ fn parse_rate_mbit(raw: Option<&str>) -> anyhow::Result<Option<f64>> {
     }
 }
 
+/// The knob's token for a burst source, as echoed: `10/33`, or `20/33+126000` with a lead-in.
+fn burst_token(dgrams: u32, period_ms: u64, lead: u64) -> String {
+    if lead > 0 { format!("{dgrams}/{period_ms}+{lead}") } else { format!("{dgrams}/{period_ms}") }
+}
+
 /// The offered load of a timed object: a constant payload rate or bursty frames.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Offered {
     /// Payload Mbit/s (`RWM_PERF_RATE_MBIT`).
     Rate(f64),
     /// `dgrams` datagrams released together every `period_ms` (`RWM_PERF_BURST`).
-    Burst { dgrams: u32, period_ms: u64 },
+    Burst { dgrams: u32, period_ms: u64, lead: u64 },
 }
 
-/// `RWM_PERF_BURST=<datagrams>/<interval_ms>`: the bursty offered-load source
-/// (default off): `datagrams` chunks released together every `interval_ms`
-/// (a video-frame shape: 10/33). Unset is `None`. Anything that is not two
-/// positive integers is an error, never silently unpaced.
-fn parse_burst(raw: Option<&str>) -> anyhow::Result<Option<(u32, u64)>> {
+/// `RWM_PERF_BURST=<datagrams>/<interval_ms>[+<lead_datagrams>]`: the bursty
+/// offered-load source (default off): `datagrams` chunks released together every
+/// `interval_ms` (a video-frame shape: 10/33), after an optional unpaced lead-in
+/// of `lead_datagrams` chunks (a saturating start, so the controller leaves its
+/// startup before the frames begin). Unset is `None`. Anything that is not
+/// positive integers in that shape is an error, never silently unpaced.
+fn parse_burst(raw: Option<&str>) -> anyhow::Result<Option<(u32, u64, u64)>> {
     let Some(raw) = raw else { return Ok(None) };
     let bad = || {
         anyhow::anyhow!(
@@ -79,9 +86,13 @@ fn parse_burst(raw: Option<&str>) -> anyhow::Result<Option<(u32, u64)>> {
              (e.g. 10/33); unset it to run unpaced"
         )
     };
-    let (d, p) = raw.trim().split_once('/').ok_or_else(bad)?;
+    let (d, rest) = raw.trim().split_once('/').ok_or_else(bad)?;
+    let (p, lead) = match rest.split_once('+') {
+        Some((p, l)) => (p, l.parse::<u64>().ok().filter(|l| *l > 0).ok_or_else(bad)?),
+        None => (rest, 0),
+    };
     match (d.parse::<u32>(), p.parse::<u64>()) {
-        (Ok(d), Ok(p)) if d > 0 && p > 0 => Ok(Some((d, p))),
+        (Ok(d), Ok(p)) if d > 0 && p > 0 => Ok(Some((d, p, lead))),
         _ => Err(bad()),
     }
 }
@@ -92,7 +103,7 @@ fn parse_offered(rate_raw: Option<&str>, burst_raw: Option<&str>) -> anyhow::Res
     match (parse_rate_mbit(rate_raw)?, parse_burst(burst_raw)?) {
         (Some(_), Some(_)) => anyhow::bail!("RWM_PERF_RATE_MBIT and RWM_PERF_BURST are both set; use one"),
         (Some(m), None) => Ok(Some(Offered::Rate(m))),
-        (None, Some((dgrams, period_ms))) => Ok(Some(Offered::Burst { dgrams, period_ms })),
+        (None, Some((dgrams, period_ms, lead))) => Ok(Some(Offered::Burst { dgrams, period_ms, lead })),
         (None, None) => Ok(None),
     }
 }
@@ -123,6 +134,8 @@ struct Pacer {
     chunks: u32,
     late: u32,
     late_max: Duration,
+    /// Burst source with a lead-in: when the last lead-in chunk finished (frame 0 starts then).
+    lead_end: Option<Duration>,
 }
 
 impl Pacer {
@@ -134,6 +147,7 @@ impl Pacer {
             chunks: 0,
             late: 0,
             late_max: Duration::ZERO,
+            lead_end: None,
         })
     }
 
@@ -141,7 +155,14 @@ impl Pacer {
     fn next_due(&self) -> Duration {
         match self.offered {
             Offered::Rate(m) => due_offset(self.sent, m * 1e6),
-            Offered::Burst { dgrams, period_ms } => burst_due(self.chunks as u64, dgrams, period_ms),
+            Offered::Burst { dgrams, period_ms, lead } => {
+                let c = self.chunks as u64;
+                if c < lead {
+                    Duration::ZERO // the lead-in is unpaced: backpressure alone limits it
+                } else {
+                    self.lead_end.unwrap_or(Duration::ZERO) + burst_due(c - lead, dgrams, period_ms)
+                }
+            }
         }
     }
 
@@ -150,6 +171,11 @@ impl Pacer {
     fn note_sent(&mut self, k: usize, due: Duration, done: Duration) {
         self.sent += k as u64;
         self.chunks += 1;
+        if let Offered::Burst { lead, .. } = self.offered {
+            if lead > 0 && self.chunks as u64 == lead {
+                self.lead_end = Some(done);
+            }
+        }
         let over = done.saturating_sub(due);
         if over > PACE_LATE {
             self.late += 1;
@@ -167,7 +193,7 @@ impl Pacer {
         });
         match self.offered {
             Offered::Rate(m) => v["rate_mbit"] = serde_json::json!(round(m, 6)),
-            Offered::Burst { dgrams, period_ms } => v["burst"] = serde_json::json!(format!("{dgrams}/{period_ms}")),
+            Offered::Burst { dgrams, period_ms, lead } => v["burst"] = serde_json::json!(burst_token(dgrams, period_ms, lead)),
         }
         v
     }
@@ -427,8 +453,8 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     // Mechanism-liveness echo (docs/measurement-discipline.md rule 1).
     match offered {
         Some(Offered::Rate(v)) => tracing::info!("perf offered-load pacing ACTIVE (RWM_PERF_RATE_MBIT={v})"),
-        Some(Offered::Burst { dgrams, period_ms }) => {
-            tracing::info!("perf offered-load pacing ACTIVE (RWM_PERF_BURST={dgrams}/{period_ms})")
+        Some(Offered::Burst { dgrams, period_ms, lead }) => {
+            tracing::info!("perf offered-load pacing ACTIVE (RWM_PERF_BURST={})", burst_token(dgrams, period_ms, lead))
         }
         None => {}
     }
@@ -567,9 +593,10 @@ mod tests {
     #[test]
     fn burst_parse_rejects_invalid_never_silently_unpaced() {
         assert_eq!(parse_burst(None).unwrap(), None);
-        assert_eq!(parse_burst(Some("10/33")).unwrap(), Some((10, 33)));
-        assert_eq!(parse_burst(Some(" 1/1 ")).unwrap(), Some((1, 1)));
-        for bad in ["", "10", "0/33", "10/0", "a/b", "10/33/1", "-1/33", "10/-3", "1.5/33", "10/", "/33", "10/33ms", "4294967296/33", "nan/inf"] {
+        assert_eq!(parse_burst(Some("10/33")).unwrap(), Some((10, 33, 0)));
+        assert_eq!(parse_burst(Some(" 1/1 ")).unwrap(), Some((1, 1, 0)));
+        assert_eq!(parse_burst(Some("20/33+126000")).unwrap(), Some((20, 33, 126_000)));
+        for bad in ["", "10", "0/33", "10/0", "a/b", "10/33/1", "-1/33", "10/-3", "1.5/33", "10/", "/33", "10/33ms", "4294967296/33", "nan/inf", "20/33+", "20/33+x", "20/33+-1", "20/33+0", "20/33+1+2", "+5"] {
             assert!(parse_burst(Some(bad)).is_err(), "{bad:?} must be rejected");
         }
     }
@@ -578,7 +605,7 @@ mod tests {
     fn rate_and_burst_together_is_an_error_not_a_silent_pick() {
         assert_eq!(parse_offered(None, None).unwrap(), None);
         assert_eq!(parse_offered(Some("8"), None).unwrap(), Some(Offered::Rate(8.0)));
-        assert_eq!(parse_offered(None, Some("10/33")).unwrap(), Some(Offered::Burst { dgrams: 10, period_ms: 33 }));
+        assert_eq!(parse_offered(None, Some("10/33")).unwrap(), Some(Offered::Burst { dgrams: 10, period_ms: 33, lead: 0 }));
         assert!(parse_offered(Some("8"), Some("10/33")).is_err());
         assert!(parse_offered(Some("0"), None).is_err());
         assert!(parse_offered(None, Some("0/33")).is_err());
@@ -600,7 +627,7 @@ mod tests {
 
     #[test]
     fn pacer_selector_burst_follows_the_frame_schedule_and_reports_it() {
-        let mut p = Pacer::new(Some(Offered::Burst { dgrams: 10, period_ms: 33 })).unwrap();
+        let mut p = Pacer::new(Some(Offered::Burst { dgrams: 10, period_ms: 33, lead: 0 })).unwrap();
         for _ in 0..10 {
             assert_eq!(p.next_due(), Duration::ZERO);
             p.note_sent(494, Duration::ZERO, Duration::from_micros(300));
@@ -612,6 +639,22 @@ mod tests {
         assert_eq!(v["pace"], true);
         assert_eq!(v["burst"], "10/33");
         assert!(v.get("rate_mbit").is_none(), "a burst source has no constant rate: {v}");
+    }
+
+    #[test]
+    fn lead_in_is_unpaced_and_the_frames_start_when_it_ends() {
+        // 2 datagrams per 33 ms after a 3-chunk lead-in that finished at t = 5 s
+        let mut p = Pacer::new(Some(Offered::Burst { dgrams: 2, period_ms: 33, lead: 3 })).unwrap();
+        for c in 0..3u64 {
+            assert_eq!(p.next_due(), Duration::ZERO, "lead chunk {c}");
+            p.note_sent(494, Duration::ZERO, Duration::from_millis(1700 * (c + 1)));
+        }
+        assert_eq!(p.next_due(), Duration::from_millis(5100), "frame 0 starts when the lead-in ended");
+        p.note_sent(494, Duration::from_millis(5100), Duration::from_millis(5100));
+        assert_eq!(p.next_due(), Duration::from_millis(5100));
+        p.note_sent(494, Duration::from_millis(5100), Duration::from_millis(5100));
+        assert_eq!(p.next_due(), Duration::from_millis(5133), "frame 1");
+        assert_eq!(p.line(1, 6.0)["burst"], "2/33+3");
     }
 
     #[test]
