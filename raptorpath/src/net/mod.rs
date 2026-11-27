@@ -3071,6 +3071,7 @@ async fn run_window_sender(
                 if pol.use_packing {
                     if let Some(packed) = packer.flush() {
                         if hg.on() {
+                            let _ = hg.check_live(false);
                             hg.set_bypass(Some(hoff_gate::Bypass::Shutdown));
                         }
                         emit_source(
@@ -3107,6 +3108,7 @@ async fn run_window_sender(
                 // Flush timeout expired — emit partial packed symbol
                 if let Some(packed) = packer.flush() {
                     if hg.on() {
+                        let _ = hg.check_live(false);
                         hg.set_bypass(Some(hoff_gate::Bypass::Timer));
                     }
                     emit_source(
@@ -3208,6 +3210,7 @@ async fn run_window_sender(
                     if pol.use_packing {
                         if let Some(packed) = packer.flush() {
                             if hg.on() {
+                                let _ = hg.check_live(false);
                                 hg.set_bypass(Some(hoff_gate::Bypass::Shutdown));
                             }
                             emit_source(
@@ -3298,8 +3301,9 @@ async fn run_window_sender(
                             }
                             break; // store headroom exhausted (flow control)
                         }
-                        if hg.on() && tun.has_queued() && !hg.check_live(true) {
-                            // Every path is closed with a first send waiting: it stays in the intake.
+                        if hg.on() && !hg.check_live(tun.has_queued()) {
+                            // Every path is closed (a first send waiting stays in the intake); the
+                            // decision comes before the read, whether or not the intake looks empty.
                             why = emit_burst::BurstEnd::Drained;
                             break;
                         }

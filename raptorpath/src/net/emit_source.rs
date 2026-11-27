@@ -314,6 +314,37 @@ fn test_corrupt_framed(framed: bytes::Bytes) -> bytes::Bytes {
 /// Feed one framed packet to the encoder, place it on the wire, account for
 /// it, and emit the proactive repair its taper budget owes.
 #[allow(clippy::too_many_arguments)]
+/// The placement of one first send and its witness staging (the hand-off gate's
+/// candidate step, one function so a host test can call it).
+pub(crate) fn place_first_send(
+    hg: &mut super::hoff_gate::HandoffGate,
+    sched: &crate::scheduler::Scheduler,
+    reliable: bool,
+) -> u32 {
+    // With the gate on, the candidates are the paths the site's own decision admitted
+    // (`check` before the read): one decision pays for one send, no second read.
+    let open = if hg.on() { hg.granted() } else { Vec::new() };
+    debug_assert!(
+        !hg.on() || hg.bypass().is_some() || !hg.has_views() || !open.is_empty(),
+        "an untagged first send reached placement with no admitted path"
+    );
+    let source_path = if reliable {
+        if hg.on() {
+            sched.place_symbol_among(false, &[], &|id| open.contains(&id)).unwrap_or(0)
+        } else {
+            sched.place_symbol(false, &[]).unwrap_or(0)
+        }
+    } else if hg.on() {
+        sched.best_source_path_among(&|id| open.contains(&id)).unwrap_or(0)
+    } else {
+        super::select_source_path(sched)
+    };
+    if hg.on() {
+        hg.note_first_send_live(source_path);
+    }
+    source_path
+}
+
 pub(crate) fn emit_source(
     framed: bytes::Bytes,
     st: &mut SenderState,
@@ -357,28 +388,7 @@ pub(crate) fn emit_source(
     //
     // Hand-off gate (paper §6.8): a first send goes to a path with room
     // (B_i < β_i), through the same placement law restricted to those paths.
-    let source_path = {
-        if pol.reliable {
-            let sched = &*ctx.scheduler;
-            if ctx.hg.on() {
-                let open = ctx.hg.open_live();
-                sched.place_symbol_among(false, &[], &|id| open.contains(&id)).unwrap_or(0)
-            } else {
-                sched.place_symbol(false, &[]).unwrap_or(0)
-            }
-        } else {
-            let sched = &*ctx.scheduler;
-            if ctx.hg.on() {
-                let open = ctx.hg.open_live();
-                sched.best_source_path_among(&|id| open.contains(&id)).unwrap_or(0)
-            } else {
-                select_source_path(&sched)
-            }
-        }
-    };
-    if ctx.hg.on() {
-        ctx.hg.note_first_send_live(source_path);
-    }
+    let source_path = place_first_send(&mut *ctx.hg, &*ctx.scheduler, pol.reliable);
     st.last_source_path = source_path;
     // ── `[ETA]`: stamp the sender's own prediction ───────────────────────
     // `E_picked` is `E_i` (`Scheduler::place_e`) of the path the placement
