@@ -294,6 +294,10 @@ pub(crate) struct RsBandwidthEstimation {
     samples_generated: u64,
     samples_rejected_interval: u64,
     samples_rejected_app_limited: u64,
+    /// Sends stamped app-limited (`app_limited_until` open at the send).
+    sends_marked: u64,
+    /// `mark_app_limited` calls that found no bubble open.
+    bubbles_opened: u64,
 }
 
 impl RsBandwidthEstimation {
@@ -307,6 +311,9 @@ impl RsBandwidthEstimation {
         }
         let first_sent_time = self.first_sent_time.unwrap_or(now);
         let delivered_time = self.delivered_time.unwrap_or(now);
+        if self.app_limited_until.is_some() {
+            self.sends_marked += 1;
+        }
         // First packet of a same-instant batch wins (shared send state).
         self.sent.insert_if_absent(
             now,
@@ -395,7 +402,15 @@ impl RsBandwidthEstimation {
     /// bytes outstanding: open the bubble (BBR `C.app_limited = C.delivered + C.inflight`,
     /// or 1). It lasts until that much more has been delivered.
     pub(crate) fn mark_app_limited(&mut self, in_flight: u64) {
+        if self.app_limited_until.is_none() {
+            self.bubbles_opened += 1;
+        }
         self.app_limited_until = Some((self.delivered + in_flight).max(1));
+    }
+
+    /// Witness counters `(sends_marked, bubbles_opened, rejected_app_limited)`. Observation only.
+    pub(crate) fn al_witness(&self) -> (u64, u64, u64) {
+        (self.sends_marked, self.bubbles_opened, self.samples_rejected_app_limited)
     }
 
     /// Whether the latest acked packet was sent app-limited.
@@ -622,6 +637,7 @@ impl BbrRs {
                 },
             qrb: self.probe_rtt_bytes,
             qab: self.acked_bytes,
+            qal: self.max_bandwidth.al_witness(),
             qage_us: match (self.min_rtt_stamp, self.last_event_at) {
                 (Some(t), Some(a)) => a.saturating_duration_since(t).as_micros() as u64,
                 _ => 0,
@@ -1161,6 +1177,8 @@ pub(crate) struct Qcc {
     pub qab: u64,
     /// The min filter's age (µs) at the last ACK event: a_e - t_m.
     pub qage_us: u64,
+    /// App-limited witness: sends stamped / bubbles opened / samples rejected as app-limited.
+    pub qal: (u64, u64, u64),
 }
 
 /// The `[QCC]` read of a connection's controller (`congestion_state()`'s
@@ -1175,9 +1193,10 @@ impl Qcc {
     /// the last field the host cost (ns) of the `congestion_state()` read.
     pub(crate) fn token(&self, path: u32, last_ns: u64, reads: u64, mean_ns: u64) -> String {
         format!(
-            " p{path}:qm={} qrt_us={} qsr_us={} qbw={} qmin_us={} qcns={last_ns}/{reads}/{mean_ns}              qrn={} qrus={} qrb={} qab={} qage_us={}",
+            " p{path}:qm={} qrt_us={} qsr_us={} qbw={} qmin_us={} qcns={last_ns}/{reads}/{mean_ns}              qrn={} qrus={} qrb={} qab={} qage_us={} qal={}/{}/{}",
             self.mode, self.rt_us, self.sr_us, self.bw, self.quinn_min_us,
-            self.qrn, self.qrus, self.qrb, self.qab, self.qage_us
+            self.qrn, self.qrus, self.qrb, self.qab, self.qage_us,
+            self.qal.0, self.qal.1, self.qal.2
         )
     }
 }
@@ -2117,6 +2136,28 @@ mod tests {
         assert_eq!(trace(), trace());
     }
     // ── §12.1: per-packet app-limited marking (BBR's P.is_app_limited) ────
+
+    /// Execution witness behind `qal=`: an app-limited ack event opens a bubble and the
+    /// sends after it are stamped; a never-app-limited run counts 0/0/0.
+    #[test]
+    fn qal_witness_counts_marked_sends_and_bubbles() {
+        let rtt = 10 * MS;
+        let mut h = H::new();
+        for k in 0..20u32 {
+            h.event(rtt + MS * (k * 10), rtt, 10, false, 0);
+        }
+        assert_eq!(h.bbr.qcc().qal, (0, 0, 0), "never app-limited");
+
+        let mut h = H::new();
+        h.event(rtt, rtt, 10, true, 12_000); // bubble opens at the end of this ack event
+        let b = h.bbr.qcc().qal;
+        assert_eq!((b.0, b.1), (0, 1));
+        h.event(rtt + 10 * MS, rtt, 10, true, 12_000); // sends in the bubble are marked
+        let q = h.bbr.qcc().qal;
+        assert!(q.0 > 0, "sends_marked {q:?}");
+        assert!(q.1 >= 1, "bubbles_opened {q:?}");
+    }
+
 
     /// A bursty app-limited flight acked while quinn's bit reads `false` (the ack-time
     /// bit: quinn is still sending, or window- or pacing-blocked) must not lower the
