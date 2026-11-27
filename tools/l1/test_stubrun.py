@@ -146,6 +146,7 @@ case "$1" in
     }
     case " $* " in
       *" --no-run "*) ;;
+      *" --lib -- config:: "*) if [ -n "${STUB_REPEAT_SLEEP_S1:-}" ]; then s0=$SECONDS; while [ $(( SECONDS - s0 )) -lt "$STUB_REPEAT_SLEEP_S1" ]; do :; done; fi; running "$@"; echo "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out" ;;      # plan 67's repeat run of S1: STUB_REPEAT_SLEEP_S1=<s> makes each run take that long (the stub `sleep` is a no-op, so a SECONDS loop; S2's share is the budget minus S1's elapsed time)
       *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test; STUB_REPEAT_ZERO=1: every run passes zero tests (a filter or build that ran nothing)
         if [ -n "${STUB_REPEAT_ZERO:-}" ]; then per_target 0 "$@"; exit 0; fi
         per_target 3 "$@"
@@ -3268,7 +3269,16 @@ def case67(plan, path):
                       (rc, tail(e, 8), tail(out, 6), am[-300:]))
                 EXECUTED.add((plan, path))
                 return
-            stage_of = {"t-base-refuses": "t", "s2-taper-nonzero": "g2"}[path]
+            if path == "s2-taper-nonzero":
+                am = txt67(run_dir, "AMENDMENT2.txt")
+                voided = [s for s in ("g2", "a", "r1") if os.path.exists(os.path.join(stage_dirs[s], "G2-VOID"))]
+                check(f"{tag}: S2 prints taper > 0 on its smoke rows: the S2-family smoke failure in g2, A and R1 makes guard 2 VOID (G2-VOID and the kept ABORT-SMOKE in each stage dir), it does not stop the rehearsal: g1, t and r2 still ran their smokes (REHEARSAL-PASS), AMENDMENT2.txt carries REHEARSAL-G2-VOID, the sentinel REHEARSAL-G2-VOID, rc {TRUNC_EXIT67} and the token LD-ALL-REHEARSAL-G2-VOID (not -DONE, no FAILED-ALL)",
+                      rc == TRUNC_EXIT67 and voided == ["g2", "a", "r1"] and all(os.path.exists(os.path.join(stage_dirs[s], "ABORT-SMOKE")) and not os.path.exists(os.path.join(stage_dirs[s], "REHEARSAL-PASS")) for s in voided)
+                      and all(os.path.exists(os.path.join(stage_dirs[s], "REHEARSAL-PASS")) for s in ("g1", "t", "r2")) and "LD-ALL-REHEARSAL-G2-VOID" in out and "LD-ALL-REHEARSAL-DONE" not in out and not failed
+                      and os.path.exists(os.path.join(run_dir, "REHEARSAL-G2-VOID")) and "REHEARSAL-G2-VOID" in am and "BINSHA S1 " in am, (rc, voided, tail(e, 8), tail(out, 4), am[-300:]))
+                EXECUTED.add((plan, path))
+                return
+            stage_of = {"t-base-refuses": "t"}[path]
             check(f"{tag}: the rehearsal stops: rc 5, FAILED-ALL, ABORT-SMOKE of stage {stage_of} (a defect or a finding is never a pass), no LD-ALL-REHEARSAL-DONE",
                   rc == 5 and failed and os.path.exists(os.path.join(stage_dirs[stage_of], "ABORT-SMOKE")) and "LD-ALL-REHEARSAL-DONE" not in out, (rc, tail(e, 8), tail(txt67(stage_dirs[stage_of], "smoke-check.txt"), 8)))
             if path == "t-base-refuses":
@@ -3300,8 +3310,8 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
     cleanish = path in ("full", "dump-twins", "g2-fail", "s2-belowfloor-high", "r1-blind", "twin-no-final", "g1-fail", "s1-no-gauge", "s2-no-pslot")
     if plan == "67g":
         g1, g2 = led56(stage_dirs["g1"]), led56(stage_dirs["g2"])
-        gate1 = re.search(r"^GATE-67G1 (PASS|FAIL)", sc["g1"], re.M)
-        gate2 = re.search(r"^GATE-67G2 (PASS|FAIL)", sc["g2"], re.M)
+        gate1 = re.search(r"^GATE-67G1 (PASS|FAIL|UNSCOREABLE|NO VERDICT|TRUNCATED)", sc["g1"], re.M)
+        gate2 = re.search(r"^GATE-67G2 (PASS|FAIL|UNSCOREABLE|NO VERDICT|TRUNCATED)", sc["g2"], re.M)
         if path == "g-block1-fail":
             check(f"{tag}: S1's first G1 row lacks the gauge prints: the block-1 rule stops G1 after 8 rows (FAILED-STAGE67 in its ledger, FAILED-g1 marker, BLOCK1-FAIL naming the row, exit 6, no score), G2 still ran to the end and printed its gate; the session is not DONE-ALL",
                   os.path.exists(os.path.join(stage_dirs["g1"], "FAILED-g1")) and "FAILED-STAGE67" in txt67(stage_dirs["g1"], "ld.log") and "BLOCK1-FAIL CAND" in txt67(stage_dirs["g1"], "ld.log") and len(g1) == 8
@@ -3316,7 +3326,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         if path == "full":
             check(f"{tag}: rc 0, LD-ALL-DONE; GATE-67G1 PASS and GATE-67G2 PASS on clean rows; no replacement run, no S06-FAIL", done_ok and gate1.group(1) == "PASS" and gate2.group(1) == "PASS" and not any(r["status"] == "S06-FAIL" for r in g1 + g2), (rc, tail(out, 8), tail(sc["g1"], 6), tail(sc["g2"], 6)))
         if path == "g1-fail":
-            check(f"{tag}: S1 rows without the gauge prints on every draw (the witness failure is not replaced away): GATE-67G1 FAIL, and G2 (BASE = S1) still ran to the end and printed its gate", gate1.group(1) == "FAIL" and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (tail(sc["g1"], 5), tail(sc["g2"], 5)))
+            check(f"{tag}: S1 rows without the gauge prints on every draw (the witness failure is not replaced away): GATE-67G1 UNSCOREABLE (re-run: nothing was found, so never FAIL), and G2 (BASE = S1) still ran to the end and printed its gate", gate1.group(1) == "UNSCOREABLE" and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (tail(sc["g1"], 5), tail(sc["g2"], 5)))
         if path == "s1-no-gauge":
             rp = led56(stage_dirs["g1"], "repl.log")
             check(f"{tag}: an S1 row without the gauge prints is WITNESS-FAIL in G1 and re-run once (repl.log holds its replacement), and the gate still reads", any(r["status"] == "WITNESS-FAIL" for r in g1) and len(rp) >= 1 and gate1 is not None, ([r["status"] for r in g1], len(rp)))
@@ -3420,7 +3430,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
 
 
 # ── plan 67's session-0 steps that are scripts of their own: the repeat run (repeat67_run.sh: N gating runs per seat, zero failures, ABORT-REPEAT) and binid on three seats (binid67_run.sh) ──
-EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut", "repeat-zero-tests", "repeat-all-ignored")
+EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut", "repeat-zero-tests", "repeat-all-ignored", "repeat-s2-share")
 EXTRA_BINID = ("binid-pass", "binid-same")
 EXTRA67_DONE = set()
 
@@ -3446,7 +3456,9 @@ def extra_repeat(kind):
         sb = make67(root, "67", "rehearse")
         rd = os.path.join(sb["logs"], "repeat")
         os.makedirs(rd)
-        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": "4" if kind == "repeat-cut" else "3600", "STUB_REPEAT_DIR": px(rd), "R67_T1_S": "1"}
+        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": "4" if kind == "repeat-cut" else "11" if kind == "repeat-s2-share" else "3600", "STUB_REPEAT_DIR": px(rd), "R67_T1_S": "1"}
+        if kind == "repeat-s2-share":      # S1's four runs take 2 s each (8 s of the 11 s budget): S1's share (half) fits all four, S2's share is what S1 left, so S2 is cut (an equal split would give it 5 s and no cut)
+            env["STUB_REPEAT_SLEEP_S1"] = "2"
         if kind == "repeat-one-failure":
             env["STUB_REPEAT_FAIL"] = "3"
         if kind == "repeat-zero-tests":
@@ -3474,6 +3486,10 @@ def extra_repeat(kind):
         elif kind == "repeat-all-ignored":
             check(f"{tag}: one gating target passes nothing (all its tests ignored) while the other passes: the per-target rule fails every S2 run (ZERO-TESTS(holeclass_reachability)), ABORT-REPEAT seat=S2, rc 5",
                   rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS(holeclass_reachability)" in rep and "ZERO-TESTS(s06_no_copy)" not in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        elif kind == "repeat-s2-share":
+            m_ = re.search(r"REPEAT-CUT seat=S2 reached=(\d+) of 4", rep)
+            check(f"{tag}: S2's share is the budget minus S1's elapsed time: S1 reads 4 of 4 with no cut, S2 gets what S1 left of the 11 s budget (at most 3 s, so at most 3 runs of 1 s) and its cut is on record, rc 0 (an equal split would give S2 5 s and no cut)",
+                  rc == 0 and "REPEAT67 seat=S1 reached=4 of 4" in rep and "REPEAT-CUT seat=S1" not in rep and m_ is not None and 1 <= int(m_.group(1)) <= 3 and "ABORT-REPEAT" not in rep, (rc, rep))
         else:
             check(f"{tag}: a budget of 4 s (2 s per seat) fits two timed runs: REPEAT-CUT with the reached N is on record (for the second amendment), the seats read that N with zero failures, rc 0",
                   rc == 0 and rep.count("REPEAT-CUT seat=") == 2 and "reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))

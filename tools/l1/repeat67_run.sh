@@ -16,7 +16,8 @@
 # so a target that ran nothing (absent, filtered out, or all #[ignore]) never reads as zero failures.
 # Zero failures means zero: a test named FAILED, a run with no `test result` line, or a non-zero exit with no named test is a failure (no quarantine here: ADR-0080's rule applies to the suites, this is the
 # flake detector). Any failure: `ABORT-REPEAT seat=<S>`, that seat's guard does not launch (S1: guard 1 and guard 2's BASE; S2: guard 2); exit 5. The budget (R67_BUDGET_S, registered 60 min for both seats)
-# is split equally between the seats: each seat's N is cut to what the first timed run says fits, `REPEAT-CUT seat=<S> reached=<n>` is written (the cut goes into the second amendment, never silently). Exit 0 only if every seat read N
+# is shared in run order (S1 first): a seat gets what is left of the budget when it starts, divided by the seats still to run (S1: half; S2: the budget minus S1's elapsed time, builds and sim runs included). Each seat's N is cut to what the
+# first timed run says fits, `REPEAT-CUT seat=<S> reached=<n>` is written (the cut goes into the second amendment, never silently). Exit 0 only if every seat read N
 # (or its recorded cut) with zero failures. Locks and the launch precondition as suites_run.sh.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -29,6 +30,7 @@ BUDGET="${R67_BUDGET_S:-3600}"
 SIM="${R67_SIM:-sim_shed_reach sim_lost_tail sim_s06_nack sim_nack_test place_arms_reachability}"
 TGT="${R67_TGT:-$ROOT}"      # where the per-seat target dirs go (plan 67pre passes a disk path: its R67_ROOT is on tmpfs)
 [ "$#" -gt 0 ] || set -- S1 S2
+set -- $(printf '%s\n' "$@" | LC_ALL=C sort)      # S1 first: S2's share is the budget minus S1's elapsed time
 mkdir -p "$ROOT"
 OUT="$ROOT/REPEAT67.txt"
 era() { echo "$* $(date -u +%FT%TZ)" | tee -a "$ROOT/era.txt"; }
@@ -46,6 +48,7 @@ CARGO="$(command -v cargo || echo "$HOME/.cargo/bin/cargo")"
 : > "$OUT"
 NSEATS=$#
 BAD=0
+T_START=$(date +%s); SEAT_NO=0
 
 digest() { grep -aE '^test .* \.\.\. (ok|FAILED|ignored)' "$1" | LC_ALL=C sort; }
 # ran <log> <target...>: what is missing from a run that exited cleanly, per named target: TARGET-MISSING(<t>) with no `Running` line, ZERO-TESTS(<t>) when the `test result`
@@ -69,6 +72,7 @@ ran() {
 }
 
 for seat in "$@"; do
+  seat_left=$(( (BUDGET - ($(date +%s) - T_START)) / (NSEATS - SEAT_NO) )); SEAT_NO=$(( SEAT_NO + 1 ))      # this seat's share, fixed at its start: what is left of the budget over the seats still to run
   src="$SEATS_DIR/$seat/src"
   [ -d "$src" ] || { echo "ABORT-REPEAT seat=$seat (no tree $src)" >> "$OUT"; era "ABORT-REPEAT seat=$seat no tree"; BAD=1; continue; }
   export CARGO_TARGET_DIR="$TGT/tgt-$seat"
@@ -82,7 +86,7 @@ for seat in "$@"; do
   ( cd "$src" && "${cmd[@]}" --no-run ) > "$ROOT/build-$seat.log" 2>&1 || { echo "ABORT-REPEAT seat=$seat (build: $ROOT/build-$seat.log)" >> "$OUT"; era "ABORT-REPEAT seat=$seat build"; BAD=1; continue; }
   # the repeat: the first run is timed and decides the cut; failures are counted per test
   fails=""; reached=0; nfail=0; t1=1; N_SEAT=$N
-  left=$(( BUDGET / NSEATS ))      # each seat gets an equal share of the budget; the first timed run decides how many runs fit it
+  left=$seat_left      # the first timed run decides how many runs fit the share
   for i in $(seq 1 "$N"); do
     t0=$(date +%s)
     ( cd "$src" && "${cmd[@]}" "${filt[@]}" ) > "$ROOT/run-$seat.log" 2>&1
@@ -101,7 +105,7 @@ for seat in "$@"; do
       t1=$dt
       fit=$(( left / t1 ))
       if [ "$fit" -lt "$N" ]; then
-        echo "REPEAT-CUT seat=$seat reached=$fit of $N (first run ${t1}s, ${left}s left of the ${BUDGET}s budget: write the cut into the second amendment)" >> "$OUT"
+        echo "REPEAT-CUT seat=$seat reached=$fit of $N (first run ${t1}s, ${left}s share left of the ${BUDGET}s budget: write the cut into the second amendment)" >> "$OUT"
         era "REPEAT-CUT seat=$seat reached=$fit"
         [ "$fit" -ge 1 ] || { echo "ABORT-REPEAT seat=$seat (the budget does not fit one run)" >> "$OUT"; BAD=1; fit=0; break; }
         N_SEAT=$fit

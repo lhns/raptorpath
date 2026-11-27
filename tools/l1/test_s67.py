@@ -438,7 +438,8 @@ def _tun(defect=None, smoke=False):
 def test_t_green_red():
     lines = []
     check("t_green: a clean stage T reads T PASS (16 commands, 12 scored)", S.score_t(_tun(), lines.append) == "T PASS", "\n".join(lines)[-1200:])
-    for defect, want, name in (("t-refusal-missing", "T FAIL", "t_refusal_red: an S1 refusal line missing"), ("s1-tun-nodata", "T FAIL", "t_complete_red: an S1 transfer without data where B0's completes"),
+    for defect, want, name in (("t-refusal-wrong", "T FAIL", "t_refusal_red: an S1 refusal command that does not refuse (the line is present and wrong)"),
+                               ("t-refusal-missing", "T UNSCOREABLE", "t_refusal_missing: an S1 refusal line ABSENT (no reading, not a failure)"), ("s1-tun-nodata", "T FAIL", "t_complete_red: an S1 transfer without data where B0's completes"),
                                ("s1-cfg-true", "T FAIL", "t_cfg_red: an S1 TUNCFG field reading true"), ("b0-run-key-false", "T VOID", "t_void: a B0 run reading cfg=false (the file never reached the tunnel)"),
                                ("t-base-refuses", "T ABORT-SEAT", "t_seat: B0's run stderr carrying the guard text")):
         lines = []
@@ -534,7 +535,7 @@ def test_g_gate():
     t = _g_score("g2", _g_ledger("g2", lambda c, a, s, r: "s2-taper-nonzero" if (a == "CAND" and c == "c2-100" and s == "42" and r == 1) else None), "g2r.log")
     check("gate_g2_red: one S06-FAIL row -> GATE-67G2 FAIL (counted in the gate, kept in the ledger, scored under its 41d label)", "GATE-67G2 FAIL" in t and "S06-FAIL c2-100 CAND" in t and "1 S06-FAIL row" in t, t[-700:])
     t = _g_score("g1", _g_ledger("g1", lambda c, a, s, r: "s1-no-gauge" if (a == "CAND" and c == "c8-100" and s == "42" and r == 1) else None) , "g1r.log")
-    check("gate_g1_red: an unreplaced witness failure -> GATE-67G1 FAIL (or NO VERDICT: the slot is missing its replacement)", "GATE-67G1 FAIL" in t and ("witness failure" in t or "NO VERDICT" in t), t[-700:])
+    check("gate_g1_red: an unreplaced witness failure -> GATE-67G1 UNSCOREABLE (re-run), not FAIL", "GATE-67G1 UNSCOREABLE" in t and "witness failure" in t and "GATE-67G1 FAIL" not in t, t[-700:])
     t = _g_score("g1", _g_ledger("g1"), "g1g.log")
     check("gate_g1_green: clean rows -> GATE-67G1 PASS after score41d's own output", "GATE-67G1 PASS" in t and "MERGE-CANDIDATE GUARD v2" in t and "G-WITNESS67" in t, t[-900:])
     t = _g_score("g2", _g_ledger("g2"), "g2g.log")
@@ -715,7 +716,7 @@ def test_truncated():
     p = os.path.join(TMP, "tun-trunc2.log")
     open(p, "w").write("\n".join(ln for ln in F.tun_lines() if not ln.startswith("T67DONE")) + "\n" + TRUNC + "\n")
     res = S.score_t(p, lambda *_: None)
-    check("truncated_green: stage T cut before T67DONE stays T FAIL (a missing T67DONE is a FAIL; TRUNCATED replaces only PASS)", res.startswith("T FAIL"), res)
+    check("truncated_green: stage T cut before T67DONE reads T TRUNCATED (no reading), never T FAIL", res.startswith("T TRUNCATED"), res)
     for which in ("g1", "g2"):
         rows = _g_ledger(which)
         p = os.path.join(TMP, f"g{which}-trunc.log")
@@ -796,7 +797,7 @@ def test_t_precedence():
     p = os.path.join(TMP, "tun-nodone.log")
     open(p, "w").write("\n".join(ln for ln in F.tun_lines("b0-run-key-false") if not ln.startswith("T67DONE")) + "\n")
     res = S.score_t(p, lambda *_: None)
-    check("t_precedence_red: a missing T67DONE (T FAIL) outranks clause 2 (T VOID)", res.startswith("T FAIL"), res)
+    check("t_precedence_red: a missing T67DONE (T UNSCOREABLE, INCOMPLETE) outranks clause 2 (T VOID)", res.startswith("T UNSCOREABLE (INCOMPLETE"), res)
     res, txt = run("t-bringup-fail")
     check("t_precedence_green: every failing clause line is printed regardless", "(3)" in txt and "(4)" in txt and "(1)" in txt)
 
@@ -1168,8 +1169,8 @@ def test_g_empty_sets():
     """Item 4 (a), (b), (c): an empty set is a named outcome, never silence."""
     rows = [r for r in _g_ledger("g2") if not (r["cell"] == "c1s-400" and r["arm"] == "BASE")]
     t = _g_run("g2", rows, "g2-nobase.log")
-    check("g_dnf_rule_red: a cell with no live S1 (BASE) rows -> `S06-DNF-RULE NOT EVALUATED c1s-400 (no live S1 rows)`, in the gate's why list (FAIL)",
-          "\nS06-DNF-RULE NOT EVALUATED c1s-400 (no live S1 rows)" in t and re.search(r"^GATE-67G2 FAIL \(.*S06-DNF-RULE NOT EVALUATED c1s-400", t, re.M) is not None, t[-900:])
+    check("g_dnf_rule_red: a cell with no live S1 (BASE) rows -> `S06-DNF-RULE NOT EVALUATED c1s-400 (no live S1 rows)`, in the gate's list (UNSCOREABLE: the rule could not be read, nothing was found)",
+          "\nS06-DNF-RULE NOT EVALUATED c1s-400 (no live S1 rows)" in t and re.search(r"^GATE-67G2 UNSCOREABLE \(.*S06-DNF-RULE NOT EVALUATED c1s-400", t, re.M) is not None and "GATE-67G2 FAIL" not in t, t[-900:])
     rows = _g_ledger("g2")
     for r in rows:
         if r["cell"] == "c2-100" and r["arm"] == "BASE" and r["seed"] == "42" and r["rep"] == 1:
@@ -1205,6 +1206,175 @@ def test_g_empty_sets():
         check(f"t_state_red: score_t prints `LD-PLAN67 STATE drop_s2={want}`", f"LD-PLAN67 STATE drop_s2={want}" in lines and any(x.startswith("T PASS") for x in lines), lines[-4:])
 
 
+# ═════════════ harness67e: the third review's code fixes (registration, Third review 1-8) ═════════════
+def _gate_line(t, which):
+    return next((x for x in t.splitlines() if x.startswith(f"GATE-67G{which} ")), "")
+
+
+def test_g_verdict_classes():
+    """Review 1: GATE-67G FAIL only for GATE-41d FAIL, an S06-FAIL row or G2-TAPER-NONZERO; NO VERDICT and UNSCOREABLE read re-run."""
+    t = _g_run("g1", _g_ledger("g1", lambda c, a, s, r: "s1-no-gauge" if (a == "CAND" and c == "c8-100" and s == "42" and r == 1) else None), "gc-witness.log")
+    check("g_class_red: an unreplaced witness failure is UNSCOREABLE (re-run), never FAIL", _gate_line(t, 1).startswith("GATE-67G1 UNSCOREABLE") and "unreplaced witness failure" in _gate_line(t, 1) and "re-run" in _gate_line(t, 1), _gate_line(t, 1))
+    t = _g_run("g1", _g_ledger("g1"), "gc-abort.log", extra=("ABORT-SHA plan 67 stage g1: x",))
+    check("g_class_red: an abort token is UNSCOREABLE (abort ABORT-SHA), never FAIL", _gate_line(t, 1).startswith("GATE-67G1 UNSCOREABLE (abort ABORT-SHA"), _gate_line(t, 1))
+    rows = [r for r in _g_ledger("g1") if not (r["cell"] == "c8-100" and r["arm"] == "BASE" and r["seed"] == "42" and r["rep"] == 1)]
+    t = _g_run("g1", rows, "gc-nv.log")
+    check("g_class_red: score41d's NO VERDICT (a missing slot) reads GATE-67G1 NO VERDICT, never FAIL", _gate_line(t, 1).startswith("GATE-67G1 NO VERDICT"), (_gate_line(t, 1), t[-500:]))
+    t = _g_run("g2", _g_ledger("g2", lambda c, a, s, r: "s2-taper-nonzero" if (a == "CAND" and c == "c2-100" and s == "42" and r == 1) else None), "gc-s06.log")
+    check("g_class_green: an S06-FAIL row is still FAIL", _gate_line(t, 2).startswith("GATE-67G2 FAIL"), _gate_line(t, 2))
+    t = _g_run("g2", _g_ledger("g2", lambda c, a, s, r: "g2-taper-no-pslot" if (a == "CAND" and c == "c2-100" and s == "42" and r == 1) else None), "gc-taper.log")
+    check("g_class_green: G2-TAPER-NONZERO (not S06-FAIL) is still FAIL", _gate_line(t, 2).startswith("GATE-67G2 FAIL") and "G2-TAPER-NONZERO" in _gate_line(t, 2), _gate_line(t, 2))
+    t = _g_run("g2", _g_ledger("g2", lambda c, a, s, r: "s2-taper-nonzero" if (a == "CAND" and c == "c2-100" and s == "42" and r == 1) else None), "gc-both.log", extra=("ABORT-SHA plan 67 stage g2: x",))
+    check("g_class_green: a finding plus an abort reads FAIL and still names the abort (finding before void)", _gate_line(t, 2).startswith("GATE-67G2 FAIL") and "abort ABORT-SHA" in _gate_line(t, 2), _gate_line(t, 2))
+    check("g_class_green: the non-FAIL classes are listed as non-pass lines", S.nonpass_lines(["GATE-67G1 UNSCOREABLE (x); re-run", "GATE-67G1 NO VERDICT (x)"]) == ["GATE-67G1 UNSCOREABLE (x); re-run", "GATE-67G1 NO VERDICT (x)"])
+
+
+def _t_with(lines_extra, defect=None, drop_done=False, name="t-x.log"):
+    ls = [ln for ln in F.tun_lines(defect) if not (drop_done and ln.startswith("T67DONE"))] + list(lines_extra)
+    p = os.path.join(TMP, name)
+    open(p, "w").write("\n".join(ls) + "\n")
+    out = []
+    return S.score_t(p, out.append), "\n".join(out)
+
+
+def test_t_aborts_and_incomplete():
+    """Review 2: an abort token reads T UNSCOREABLE before any clause; no T67DONE reads T TRUNCATED (LD_HARD sentinel) or T UNSCOREABLE (INCOMPLETE); a FAIL needs refusal lines present and wrong."""
+    for tok in ("ABORT-SHA plan 67 stage T seat B0: x", "ABORT-SEAT plan 67 stage T: x", "BUSY: raptorpath already running -- aborting", "ABORT-SENTINEL-UNWRITABLE /x", "ABORT-LIB lib_battery.sh did not load"):
+        name = re.match(r"[A-Z-]+", tok).group(0)
+        want = "ABORT-SENTINEL" if name.startswith("ABORT-SENTINEL") else name      # the token the scorer names
+        res, _ = _t_with([tok], "t-refusal-wrong", name=f"t-abort-{name}.log")
+        check(f"t_abort_red: {name} (with a wrong refusal line in the ledger too) reads T UNSCOREABLE (abort {want}), not T FAIL", res.startswith(f"T UNSCOREABLE (abort {want}"), res)
+    res, _ = _t_with([], "t-refusal-wrong", drop_done=True, name="t-inc-wrong.log")
+    check("t_incomplete_red: no T67DONE reads T UNSCOREABLE (INCOMPLETE), even with a wrong refusal line", res.startswith("T UNSCOREABLE (INCOMPLETE"), res)
+    res, _ = _t_with([TRUNC], drop_done=True, name="t-trunc.log")
+    check("t_incomplete_red: no T67DONE with the LD_HARD sentinel reads T TRUNCATED", res.startswith("T TRUNCATED"), res)
+    res, _ = _t_with([], "t-refusal-wrong", name="t-wrong.log")
+    check("t_fail_green: a refusal line present and wrong is T FAIL", res.startswith("T FAIL"), res)
+    res, _ = _t_with([], name="t-pass.log")
+    check("t_fail_green: a clean ledger is T PASS", res == "T PASS", res)
+    res, txt = _t_with([], "t-refusal-missing", name="t-missing.log")
+    check("t_fail_green: a refusal line absent is no reading: T UNSCOREABLE naming the missing line, never T FAIL", res.startswith("T UNSCOREABLE") and "refusal line missing" in txt and "T FAIL" not in txt, (res, txt[-500:]))
+    check("t_fail_green: T UNSCOREABLE and T TRUNCATED are listed / not listed as non-pass lines as before", S.nonpass_lines(["T UNSCOREABLE (abort ABORT-SHA)", "T TRUNCATED (x)"]) == ["T UNSCOREABLE (abort ABORT-SHA)"])
+
+
+def _edit_row(rows, plan, arm, seed, rep, defect=None, rc=0):
+    return [build(plan, r["cell"], arm, seed, rep, defect, rc=rc) if (r["arm"] == arm and r["seed"] == seed and r["rep"] == rep) else r for r in rows]
+
+
+def test_r1_voids():
+    """Review 3: unreplaced VOID-* rows leave the R1 / A1-R completion sets; a crash still counts as not completing; R1-BLIND counts LIVE S1 rows; too few S1 rows with a reading read UNSCOREABLE."""
+    ed = lambda rows, arm, seed, rep, defect=None, rc=0: _edit_row(rows, "67r", arm, seed, rep, defect, rc)      # noqa: E731
+    rows = ed(ed(ledger_rows("67r"), "S1", "42", 1, "rho-one-end"), "S2", "42", 1, "dnf")
+    check("r1_void_setup: the S1 void row is an unreplaced VOID-RHO", next(r for r in rows if r["arm"] == "S1" and r["seed"] == "42" and r["rep"] == 1)["status"] == "VOID-RHO")
+    t = scored("67r", rows)
+    check("r1_void_red: one unreplaced S1 VOID-RHO row does not switch off the S2 completion check: an S2 DNF still reads R1 FAIL, naming the row", "\nR1 FAIL" in t and "S2 s42 r1" in t.split("CLAUSE R1")[1], t[-700:])
+    t = scored("67r", ed(ledger_rows("67r"), "S1", "42", 1, "rho-one-end"))
+    check("r1_void_red: with only the S1 void (11 of the registered 12 rows read) R1 and A1-R read UNSCOREABLE (re-run), never PASS",
+          "\nR1 UNSCOREABLE" in t and "\nA1-R UNSCOREABLE" in t and "11 of the registered 12" in t and "R1 PASS" not in t and "A1-R PASS" not in t, t[-700:])
+    t = scored("67r", ed(ledger_rows("67r"), "S2", "42", 1, "rho-one-end"))
+    check("r1_void_red: an unreplaced S2 VOID-RHO row is not a non-completion: R1 does not FAIL on it", "\nR1 FAIL" not in t and "S2 rows that did not complete: none" in t, t[-700:])
+    t = scored("67r", ed(ledger_rows("67r"), "S1", "42", 1, rc=1))
+    check("r1_void_green: an S1 crash row (VOID-RC) is a row that did not complete and stays in the sets (12 rows read, no UNSCOREABLE)", "every S1 row completes: False" in t and "UNSCOREABLE" not in t, t[-700:])
+    check("r1_void_green: an S2 crash still reads R1 FAIL", "\nR1 FAIL" in scored("67r", ed(ledger_rows("67r"), "S2", "42", 1, rc=1)))
+    t = scored("67r", ledger_rows("67r"))
+    check("r1_void_green: no void: R1 PASS and A1-R PASS as before", "\nR1 PASS" in t and "\nA1-R PASS" in t, t[-500:])
+    # R1-BLIND counts LIVE S1 rows: 6 of 12 blind is not blind; voiding 3 clean rows leaves 6 blind of 9 LIVE
+    rows = ledger_rows("67r", lambda c, a, s, r: "r1-blind" if (a == "S1" and r <= 3) else None)
+    s1 = [r for r in rows if r["arm"] == "S1"]
+    blind_n = sum(1 for r in s1 if (r["w67"].get("taper") or 0) == 0)
+    check("r1_blind_setup: the fixture has exactly half the S1 rows blind", blind_n == len(s1) // 2, (blind_n, len(s1)))
+    check("r1_blind_live_only: half blind of 12 is not R1-BLIND", "\nR1-BLIND" not in scored("67r", rows))
+    k, rows2 = 0, list(rows)
+    for i, r in enumerate(rows2):
+        if r["arm"] == "S1" and (r["w67"].get("taper") or 0) > 0 and k < 2:
+            rows2[i] = build("67r", r["cell"], "S1", r["seed"], r["rep"], "rho-one-end")
+            k += 1
+    t = scored("67r", rows2)
+    check("r1_blind_live_only: two clean S1 rows voided (the replacement cap): 6 blind of 10 LIVE rows; the denominator is the LIVE count and the verdict is UNSCOREABLE (10 of 12 rows read)",
+          "S1 taper = 0 on 6 of 10 LIVE rows (R1-BLIND iff more than half: True)" in t and "\nR1 UNSCOREABLE" in t, t[-800:])
+
+
+def test_s2_taper_every_stage():
+    """Review 5: S2-TAPER-NONZERO on every S2-family row of A, R1, pool, dump twins and R2 (originals and replacements alike); a hit makes guard 2 NOT ELIGIBLE."""
+    for plan, arm, stage in (("67a", "S2", "A"), ("67r", "S2", "R1"), ("67p", "P2", "R2"), ("67p", "P2T", "R2"), ("67o", "S2P170", "pool"), ("67d", "S2D", "dump")):
+        rows = ledger_rows(plan)
+        j = next(i for i, r in enumerate(rows) if r["arm"] == arm)
+        rows[j] = json.loads(json.dumps(rows[j]))
+        rows[j]["w67"]["taper"] = 4
+        t = scored(plan, rows)
+        r0 = rows[j]
+        hit = f"S2-TAPER-NONZERO {stage} {r0['cell']} {arm} s{r0['seed']} rep{r0['rep']}"
+        check(f"s2_taper_red: {plan} {arm}: taper > 0 on the row prints `{hit}` and guard 2 NOT ELIGIBLE", hit in t and "\nGUARD2-ELIGIBILITY NOT ELIGIBLE" in t, t[-600:])
+        t = scored(plan, ledger_rows(plan))
+        check(f"s2_taper_green: {plan}: clean S2-family rows print no S2-TAPER-NONZERO and no eligibility line", "S2-TAPER-NONZERO" not in t and "GUARD2-ELIGIBILITY" not in t, t[-300:])
+    rows = ledger_rows("67a")
+    j = next(i for i, r in enumerate(rows) if r["arm"] == "S2" and r["cell"] == "c2-100")
+    o = json.loads(json.dumps(rows[j]))
+    o["status"], o["problems"] = "VOID-COTENANT", []
+    o["w67"]["taper"] = 3
+    t = scored("67a", rows[:j] + [o] + rows[j:])      # a voided original with taper > 0 followed by its clean replacement
+    check("s2_taper_red: a voided original with taper > 0 counts although its replacement is clean", f"S2-TAPER-NONZERO A c2-100 S2 s{o['seed']} rep{o['rep']} (VOID-COTENANT)" in t and "\nGUARD2-ELIGIBILITY NOT ELIGIBLE" in t, t[-600:])
+    rows = ledger_rows("67a")
+    j = next(i for i, r in enumerate(rows) if r["arm"] == "S1")
+    rows[j]["w67"]["taper"] = 9
+    check("s2_taper_green: taper > 0 on an S1 row (the copy branch) is not an S2-family hit", "S2-TAPER-NONZERO" not in scored("67a", rows))
+    rows = ledger_rows("67a")
+    j = next(i for i, r in enumerate(rows) if r["arm"] == "S2")
+    rows[j]["w67"]["taper"] = 4
+    rows[j]["problems"] = rows[j]["problems"] + ["bin-sha=abc (want def for seat S2)"]
+    check("s2_taper_green: a wrong-binary row is not an S2 row (as g_s2_taper)", "S2-TAPER-NONZERO" not in scored("67a", rows))
+    check("s2_taper_nonpass: the eligibility line is listed as a non-pass line", S.nonpass_lines(["GUARD2-ELIGIBILITY NOT ELIGIBLE (x)"]) == ["GUARD2-ELIGIBILITY NOT ELIGIBLE (x)"])
+
+
+def test_nodata_candidate():
+    """Review 6: NO_DATA is replaceable on the reference arms only; a candidate arm's NO_DATA stays a crash (CANDIDATE-CRASH)."""
+    check("nodata_cand_red: replaceable() is false for NO_DATA on S2, P2, P2T and their pool / dump arms", not any(plan67.replaceable("NO_DATA", a) for a in ("S2", "P2", "P2T", "S2P170", "S2D")))
+    check("nodata_cand_green: NO_DATA stays replaceable on S1, B0, P1, P1T and their arms; other voids stay replaceable on S2", all(plan67.replaceable("NO_DATA", a) for a in ("S1", "B0", "P1", "P1T", "S1P256", "S1D")) and plan67.replaceable("VOID-WITNESS", "S2"))
+    for plan, arm in (("67a", "S2"), ("67p", "P2"), ("67p", "P2T")):
+        nd = S.error_row(plan, "c2-100", arm, "42", 1, 0, RuntimeError("x"))
+        p = _ledger_file([nd], f"nd-{arm}.log")
+        check(f"nodata_cand_red: a {arm} NO_DATA row is not re-run (plan67.py replace rc 1)", quiet_replace(plan, p, "c2-100", arm, "42", 1) == 1)
+    rows = ledger_rows("67a")
+    j = next(i for i, r in enumerate(rows) if r["arm"] == "S2" and r["cell"] == "c2-100")
+    nd = S.error_row("67a", rows[j]["cell"], "S2", rows[j]["seed"], rows[j]["rep"], 0, RuntimeError("x"))
+    out, info = S.apply_repl([nd] + rows, "67a")      # the slot's second row must not replace a candidate's NO_DATA
+    mine = [r for r in out if r["arm"] == "S2" and r["cell"] == "c2-100" and r["seed"] == nd["seed"] and r["rep"] == nd["rep"]]
+    check("nodata_cand_red: apply_repl keeps the candidate's NO_DATA row as the slot's row (a crash), the later row is ignored, nothing replaced", len(mine) == 1 and mine[0]["status"] == "NO_DATA" and not info["replaced"], info)
+    crashes = [S.error_row("67a", r["cell"], "S2", r["seed"], r["rep"], 0, RuntimeError("x")) for r in rows if r["arm"] == "S2" and r["cell"] == "c2-100"][:3]
+    ledger = [r for r in rows if not (r["arm"] == "S2" and r["cell"] == "c2-100")] + crashes
+    ledger += [r for r in rows if r["arm"] == "S2" and r["cell"] == "c2-100"][3:]      # the three NO_DATA rows are crashes in the counts (a replaceable NO_DATA would have been replaced away)
+    t = scored("67a", ledger)
+    check("nodata_cand_green: S2 NO_DATA rows are crashes in the counts (c2-100 S2 live 9 crashes 3)", "c2-100 S2 live 9 crashes 3" in t, t[-1200:])
+
+
+def test_r2_mixed_labels():
+    """Review 7: final=1 and ACCT-LAST rows together: U on the final=1 rows only (the minimum applies), else UNSCOREABLE; oldest_unchanged_max on every counted row."""
+    def nofinal(n):
+        slots = [("42", 1), ("7", 1), ("42", 2), ("7", 2), ("42", 3), ("7", 3)][:n]
+        return _twin_rows(lambda c, a, s, r: "twin-no-final" if (a == "P2T" and (s, r) in slots) else None)
+    t = scored("67p", nofinal(1))
+    check("r2_mixed_red: one P2T ACCT-LAST row among final=1 rows: U is read on the final=1 rows only, the mix is stated, the verdict is scored",
+          "MIXED account labels" in t and "final=1 rows only (P1T 6, P2T 5" in t and "R2-HOLD CLEAR" in t, t[-1400:])
+    t = scored("67p", nofinal(2))
+    check("r2_mixed_red: two ACCT-LAST P2T rows leave 4 final=1 rows (< the minimum): R2-HOLD UNSCOREABLE naming the mixed labels, guard 2 NOT ELIGIBLE",
+          "\nR2-HOLD UNSCOREABLE (mixed account labels" in t and "guard 2 NOT ELIGIBLE" in t and "CLEAR" not in t.split("LIVE TWIN ROWS")[1], t[-1400:])
+    t = scored("67p", _twin_rows(lambda c, a, s, r: "twin-no-final" if a == "P2T" else None))
+    check("r2_mixed_red: every P2T row ACCT-LAST against final=1 P1T rows: UNSCOREABLE, never CLEAR (the labels differ across the arms)", "\nR2-HOLD UNSCOREABLE (mixed account labels" in t and "CLEAR" not in t.split("LIVE TWIN ROWS")[1], t[-900:])
+    rows = _twin_rows(lambda c, a, s, r: "twin-worse" if a == "P2T" else None)
+    mixed = []
+    for r in rows:
+        if r["arm"] == "P2T" and r["rep"] <= 2:      # two ACCT-LAST rows in a P2T-worse ledger: U cannot be read, oldest_unchanged_max (every row) still fires
+            r = dict(r, w67=dict(r["w67"], acct_label="ACCT-LAST"))
+        mixed.append(r)
+    t = scored("67p", mixed)
+    check("r2_mixed_green: oldest_unchanged_max is read on every counted row regardless of the label: P2T worse on it -> R2-HOLD FIRED although U could not be read",
+          "R2-HOLD (ii) oldest_unchanged_max" in t and "R2-HOLD (i) U: not read" in t and "\nR2-HOLD FIRED" in t, t[-1400:])
+    t = scored("67p", _twin_rows())
+    check("r2_mixed_green: all final=1 rows: no mixed note, scored as before", "MIXED" not in t and "R2-HOLD CLEAR" in t)
+    t = scored("67p", _twin_rows(lambda c, a, s, r: "twin-no-final" if a in ("P1T", "P2T") else None))
+    check("r2_mixed_green: all ACCT-LAST rows (the same label on both arms): no mixed note, read on all rows as before", "MIXED" not in t and "R2-HOLD CLEAR" in t, t[-600:])
+
+
 TESTS = [test_s06_taper_red, test_s06_taper_green, test_s2_pslot_red, test_s2_pslot_green, test_s1_gauge_red, test_s1_gauge_green, test_b0_gauge_red, test_seat_sha_red_green, test_short_red_green,
          test_dnf_row, test_rows_never_raise, test_as_red_green, test_a1_red_green, test_a1_exact_matches_mc, test_unscoreable_red_green, test_replacement_cap, test_s06_stage_red_green,
          test_s06_dnf_red_green, test_belowfloor_red_green, test_succ_red_green, test_rate_table, test_owner_flag, test_block1, test_a1r_red_green, test_r1_red_green, test_r1_blind,
@@ -1212,7 +1382,7 @@ TESTS = [test_s06_taper_red, test_s06_taper_green, test_s2_pslot_red, test_s2_ps
          test_t_green_red, test_smoke_t, test_g1_red_green, test_g2_red_green, test_g_gate, test_smoke_g, test_fixtures_deterministic,
          test_s06_precedence, test_slotfill_live_only, test_replaceable_set, test_r1_b0_gauge, test_r1_readouts, test_r1_complete, test_truncated, test_r2_blind, test_r2_missing_field,
          test_rho_witness_line, test_t_precedence, test_t_parser_agrees_with_verify4, test_g_block1,
-         test_candidate_crash, test_truncation_every_verdict, test_ledger_drop_state, test_g2_taper_preconditions, test_r1_readout_values, test_t_bringup_attribution, test_partial_crash_cause, test_crash_without_shortfall, test_nonpass_lines, test_g_empty_sets]
+         test_candidate_crash, test_truncation_every_verdict, test_ledger_drop_state, test_g2_taper_preconditions, test_r1_readout_values, test_t_bringup_attribution, test_partial_crash_cause, test_crash_without_shortfall, test_nonpass_lines, test_g_empty_sets, test_g_verdict_classes, test_t_aborts_and_incomplete, test_r1_voids, test_s2_taper_every_stage, test_nodata_candidate, test_r2_mixed_labels]
 
 if __name__ == "__main__":
     import time

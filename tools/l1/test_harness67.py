@@ -207,6 +207,23 @@ check("p67: an R2 smoke failure in the rehearsal is R2 VOID, not FAILED-ALL (reg
       and 'echo "LD-ALL-REHEARSAL-R2-VOID"; exit $P67_EXIT_NONPASS' in p67 and 'touch "$RUN/REHEARSAL-R2-VOID"' in p67 and 'fail_all "rehearsal: stage $_st smoke did not pass ($_st)"' in p67
       and p67.index('"$_st" = "r2"') < p67.index('fail_all "rehearsal: stage $_st smoke did not pass') and p67.count("LD-ALL-REHEARSAL-DONE") >= 1
       and 'SENTINELS="DONE-ALL FAILED-ALL TRUNCATED-ALL REHEARSAL-R2-VOID ' in open(os.path.join(HERE, "loopdiag_run_all.sh")).read())
+check("p67: an S2-family smoke failure in g2 / A / R1 is guard 2 VOID like R2's (REHEARSAL-G2-VOID: marker, AMENDMENT2.txt line, LD-ALL-REHEARSAL-G2-VOID, the one non-pass exit); the other smokes still run and any other smoke failure stays fail_all",
+      'python3 ./plan67.py s2-smoke-fail "$_st" "$_sd/smoke-check.txt"' in p67 and 'touch "$_sd/G2-VOID"; P67G2VOID=1' in p67 and 'touch "$RUN/REHEARSAL-G2-VOID"' in p67 and 'echo "LD-ALL-REHEARSAL-G2-VOID"' in p67 and "REHEARSAL-G2-VOID (an S2-family smoke failed" in p67
+      and p67.index("s2-smoke-fail") < p67.index('fail_all "rehearsal: stage $_st smoke did not pass') and "exit $P67_EXIT_NONPASS" in p67 and "REHEARSAL-G2-VOID all-era" in open(os.path.join(HERE, "loopdiag_run_all.sh")).read())
+import tempfile as _tf
+_sc = os.path.join(_tf.mkdtemp(prefix="h67e"), "smoke-check.txt")
+def _s2sf(stage, text):
+    open(_sc, "w").write(text)
+    return plan67.s2_smoke_fail(stage, _sc)
+check("plan67.s2_smoke_fail: g2 any failure and A / R1 failures naming S2 alone are the S2 family's (rc 0); an S1 or B0 item, a pass, another stage or no file are not (rc 1)",
+      _s2sf("g2", "FAIL x: c2-100 CAND: y\nSMOKE-FAIL c2-100 CAND: y\n") == 0 and _s2sf("a", "SMOKE-FAIL S2: VOID-WITNESS []; S2: S06-FAIL\n") == 0 and _s2sf("r1", "SMOKE-FAIL S2: pslot=0 taper=1\n") == 0
+      and _s2sf("a", "SMOKE-FAIL S2: x; S1: y\n") == 1 and _s2sf("a", "SMOKE-FAIL B0: x\n") == 1 and _s2sf("a", "SMOKE-FAIL S2: x; B0: no row\n") == 1 and _s2sf("a", "SMOKE-PASS\n") == 1 and _s2sf("g2", "SMOKE-PASS\n") == 1
+      and _s2sf("r2", "SMOKE-FAIL P2: x\n") == 1 and _s2sf("t", "SMOKE-FAIL S2: x\n") == 1 and plan67.s2_smoke_fail("g2", _sc + ".none") == 1)
+rp = open(os.path.join(HERE, "repeat67_run.sh")).read()
+check("repeat67_run: S1 runs first and S2's share is the budget minus S1's elapsed time (a seat's share = what is left over the seats still to run, fixed at its start); the per-run timing and the REPEAT-CUT report stay",
+      "LC_ALL=C sort)" in rp and "T_START=$(date +%s)" in rp and 'seat_left=$(( (BUDGET - ($(date +%s) - T_START)) / (NSEATS - SEAT_NO) ))' in rp and "left=$seat_left" in rp and "BUDGET / NSEATS" not in rp
+      and "REPEAT-CUT seat=$seat reached=$fit of $N" in rp and 'REPEAT67 seat=$seat reached=$reached of $N' in rp)
+check("plan67.replaceable: NO_DATA is replaceable for reference arms only (the S2 family's stays a crash)", plan67.replaceable("NO_DATA", "S1") and not plan67.replaceable("NO_DATA", "S2") and not plan67.replaceable("NO_DATA", "P2T") and plan67.replaceable("VOID-WITNESS", "P2T"))
 check("run_all: TRUNCATED-ALL is a sentinel (cleared and proven like DONE-ALL / FAILED-ALL)", 'SENTINELS="DONE-ALL FAILED-ALL TRUNCATED-ALL ' in open(os.path.join(HERE, "loopdiag_run_all.sh")).read())
 check("p67: stage T is ok only without a TUN-BRINGUP-FAIL line in its ledger (ABORT-BRINGUP-T)", "! grep -aq '^TUN-BRINGUP-FAIL' \"$dir/ld.log\" && ok=1" in p67)
 check("battery: plan 41d with LD_WITNESS67 applies the block-1 rule after G_BLOCK1_N rows (s67_score.py block1g, exit 6), not on the smoke and not on the replacement run",
