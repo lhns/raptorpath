@@ -233,7 +233,7 @@ check("tun_bulk.sh: the four object-mode fields of each endpoint's `resolved con
       'echo "TUNCFG cli=$(cfg_of $TB_TMP/tb-c.log) srv=$(cfg_of $TB_TMP/tb-s.log)"' in tb and "${TB_CONFIG:+--config $TB_CONFIG}" in tb and "${TB_RUST_LOG:+RUST_LOG=$TB_RUST_LOG}" in tb and 'TB_TMP="${TB_TMPD:-/tmp}"' in tb)
 
 rep, bid = rd("repeat67_run.sh"), rd("binid67_run.sh")
-check("repeat67_run.sh: N = 30 default, S1 repeats `--lib -- config::`, S2 the three gating targets (every non-ignored test), the sim tests run twice with an equal-digest check, any failure is ABORT-REPEAT for THAT seat, a budget cut is written (REPEAT-CUT), no quarantine",
+check("repeat67_run.sh: N = 30 default, S1 repeats `--lib -- config::`, S2 the two gating targets s06_no_copy and holeclass_reachability (every non-ignored test; s06_reactive is all #[ignore]), the sim tests run twice with an equal-digest check, any failure is ABORT-REPEAT for THAT seat, a budget cut is written (REPEAT-CUT), no quarantine",
       'N="${R67_N:-30}"' in rep and "-- config::" in rep and "--test s06_no_copy --test holeclass_reachability" in rep and "--test s06_reactive" not in rep and "SIM-DIGEST-DIFFERS" in rep and "ABORT-REPEAT seat=$seat" in rep and "REPEAT-CUT seat=" in rep and "flake_rule" not in rep)
 check("binid67_run.sh: B0, S1 and S2 are packed with their COMMIT and built by binid_run.sh at one path; the shas must be pairwise different (BINID67 FAIL otherwise)",
       'for seat in "${SEATS[@]}"; do' in bid and 'set -- B0 S1 S2' in bid and 'bash ./binid_run.sh "${args[@]}"' in bid and "two seats built to the same binary" in bid and "BINID67 PASS" in bid)
