@@ -373,6 +373,7 @@ flowchart TB
 | Readout: which repair-rate term controls | ⛔ blocked | Adding a readout that shows which part of the repair-rate formula is actually in control. |
 | Loss estimator approximations | ⛔ blocked | Checking and tightening three approximations inside the loss and delay estimators. |
 | Rules for droppable data made smooth | ⛔ blocked | Fixing the rules that only act when data may be dropped, so they follow the dials smoothly and read honest delays. |
+| Low-rate repair cancelled by acks | ⚠ open | At a low sending rate each packet is acknowledged before the next one goes out, and every acknowledgement cancels the repair it owed, so Realtime at 36 packets a second sends about 2.5 % repair where its own law asks for about 45 %, on every design. |
 | In-flight limit: derived factor replaces doubling | ✔ done · very-successful ⚠ | Replaced a hand-picked doubling factor in the in-flight data limit with one derived from the latency dial, cutting queueing delay at equal throughput. |
 | One in-flight limit, any path count | ✔ done · successful ⚠ | Made one in-flight data limit rule apply to any number of paths, removing a special case for single-path links. |
 | Self-tuning in-flight limit | ✖ dead end | Tried a self-tuning in-flight limit that hunts for the best throughput-to-delay balance; its measurements were too noisy to work. |
@@ -535,6 +536,7 @@ flowchart TB
 - `model-defect-inflight-count`: Engine in-flight count reads low
 - `model-defect-quinn-queue`: Network library queue unmanaged
 - `model-defect-placement-blind`: Placement blind to the send queue
+- `rate-defect-lowrate-cancel`: Low-rate repair cancelled by acks
 - `model-defect-ge-after-outage`: Burst estimate explodes after a long outage
 - `model-defect-rate-vs-span`: Repair rate sized for a wider window than each repair covers
 
@@ -1241,7 +1243,7 @@ Each track has its own page with its tree, node table and per-node details.
 
 - [cod - coding core](roadmap/tracks/cod.md): 23 nodes (12 done, 2 parked, 9 abandoned)
 - [rec - recovery](roadmap/tracks/rec.md): 65 nodes (30 done, 8 in progress, 5 next, 4 blocked, 4 parked, 14 abandoned)
-- [rate - rate law](roadmap/tracks/rate.md): 39 nodes (19 done, 5 in progress, 6 next, 5 blocked, 1 parked, 3 abandoned)
+- [rate - rate law](roadmap/tracks/rate.md): 40 nodes (19 done, 5 in progress, 7 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 71 nodes (37 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 22 nodes (8 done, 3 in progress, 1 next, 1 blocked, 9 abandoned)
 - [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)

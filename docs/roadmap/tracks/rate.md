@@ -34,6 +34,7 @@ flowchart TB
     rate_evict_epre["✔ Evicting-seat test<br/>suites and binary"]
     rate_c8_frontier_recopy["✔ c8 repair budget re-<br/>copies"]
     rate_overprovision_verdict>"⚠ Too much repair<br/>sent: verdict"]
+    rate_defect_lowrate_cancel>"⚠ Low-rate repair<br/>cancelled by acks"]
     rate_evict_session["✔ Repair test with<br/>droppable late data"]
     rate_k4_input_checks>"⚠ Two repair-test<br/>readings explained"]
     rate_spare_clamp_verdict[/"○ Full-path repair<br/>cap: verdict"/]
@@ -71,9 +72,10 @@ flowchart TB
     rate_defect_taper_inert ~~~ rate_evict_epre
     rate_evict_registration ~~~ rate_c8_frontier_recopy
     rate_spare_cwnd ~~~ rate_overprovision_verdict
-    rate_evict_epre ~~~ rate_evict_session
+    rate_evict_epre ~~~ rate_defect_lowrate_cancel
     rate_c8_frontier_recopy ~~~ rate_evict_session
     rate_overprovision_verdict ~~~ rate_k4_input_checks
+    rate_defect_lowrate_cancel ~~~ rate_spare_clamp_verdict
     rate_evict_session ~~~ rate_spare_clamp_verdict
     rate_k4_input_checks ~~~ rate_delta_jitter_fix
     rate_spare_clamp_verdict ~~~ rate_fix_rate_readout
@@ -106,7 +108,7 @@ flowchart TB
     rate_fix_estimators --> rate_fix_term_gauge
     rate_law_reconcile --> rate_fix_rho_realtime
     rate_fix_estimators --> rate_fix_rho_realtime
-    linkStyle 40,41,44 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 41,42,45 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -126,7 +128,7 @@ flowchart TB
     class rate_leading_taper,rate_sender_truth_loss,rate_r_battery dead
     class rate_est_cadence vsucc
     class rate_dof_ledger parked
-    class rate_defect_pfec,rate_defect_taper_inert,rate_overprovision_verdict,rate_k4_input_checks,rate_shed_budget_rho,rate_adr50_split_unwired finding
+    class rate_defect_pfec,rate_defect_taper_inert,rate_overprovision_verdict,rate_defect_lowrate_cancel,rate_k4_input_checks,rate_shed_budget_rho,rate_adr50_split_unwired finding
     class rate_pfec_oracle waiting
     class rate_spare_clamp_verdict,rate_delta_jitter_fix,rate_fix_rate_readout,rate_s06_plost_derivation next
     class rate_law_reconcile,rate_fix_estimators,rate_fix_term_gauge,rate_fix_rho_realtime blocked
@@ -177,6 +179,7 @@ flowchart TB
 | `rate-rho-not-input` | ρ not an engine input | defect-verdict | no-cargo | done | unrated | 2026-08-20 | 2026-08-21 |  |  |  |  | commit b181fa54; commit 5d14dd53 |
 | `rate-pfec-exact` | Exact P_fec by transfer matrix | law | host-cargo | done | unrated | 2026-07-02 | 2026-07-02 |  |  |  |  | commit c4daf2bb; commit b6170b77; paper §8.7 |
 | `rate-ge-real-trace` | Real-trace check of the loss model | research | host-cargo | done | unrated | 2026-07-07 | 2026-07-07 |  |  |  |  | commit 1ee87fa1; commit 229917fb |
+| `rate-defect-lowrate-cancel` | Low-rate repair cancelled by acks | defect-verdict | no-cargo | next | unrated | 2026-11-27 |  |  |  |  |  | docs/derivations/reg-handoff-gate.md section 9 (branch sender-queue-law 4fa7e583) |
 
 ### Details per node
 
@@ -221,6 +224,7 @@ flowchart TB
 | `rate-rho-not-input` | ρ not an engine input | merge: item 1 CLOSED UNREADABLE - rho is not an input anywhere in the shipped engine |  | The retention dial turned out to be an input nowhere in the shipped engine, so the recovery goals could not read it; wiring it in was left to the owner. | Split 2026-11-20 from rec-goal100 (item 1). Goal #101 recorded the same impasse on 2026-08-21. Later finding on the same dial: model-defect-rho-inert (2026-11-14). |  |  |  |  |
 | `rate-pfec-exact` | Exact P_fec by transfer matrix | Merge feature/exact-pfec: exact transfer-matrix P_fec (paper 8.7) |  | An exact calculation of how often repair data recovers a loss on a bursty link; it showed the closed form under-provisions the tail by 30–50 %. | The session-record finding that the normal approximation under-provisions on bursty channels (2026-07-06) is folded here. |  |  |  |  |
 | `rate-ge-real-trace` | Real-trace check of the loss model | Merge real-trace validation: GE inadequate for real loss; aggregation robust |  | On five real cellular traces the loss model under-provisioned repair by up to 12.8 times the target; a better channel model was recommended and not built. |  |  |  |  |  |
+| `rate-defect-lowrate-cancel` | Low-rate repair cancelled by acks |  |  | At a low sending rate each packet is acknowledged before the next one goes out, and every acknowledgement cancels the repair it owed, so Realtime at 36 packets a second sends about 2.5 % repair where its own law asks for about 45 %, on every design. | Found in plan 68r cell LR, all arms (BASE, R4, GATE). Each source adds r to the repair debt (emit_source.rs:767), repair goes out only at debt >= 1 (:770), each ack advance subtracts newly_acked x r (sender_phases.rs:1328-1329); at 27.8 ms between sources against an 11 ms RTT the debt never reaches 1 (p50 0.03, max 0.21-0.33). The 2.4 % sent is reactive repair; the margin ceil(retransmitted x eps) (sender_phases.rs:1113) always binds. Proactive law degenerate over this range: a defect finding owing a ledger verdict (CLAUDE.md). The registered LR rule (repairs per source = r +- 5 %) compares accrual with emission after cancellation and cannot pass; step 2's stage-L rule must be rewritten. |  |  |  |  |
 
 ### Folded items per node
 

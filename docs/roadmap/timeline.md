@@ -119,6 +119,7 @@ gantt
     ρ not an engine input :rate_rho_not_input, 2026-08-20, 2026-08-21
     Exact P_fec by transfer matrix :rate_pfec_exact, 2026-07-02, 2026-07-02
     Real-trace check of the loss model :rate_ge_real_trace, 2026-07-07, 2026-07-07
+    Low-rate repair cancelled by acks :rate_defect_lowrate_cancel, 2026-11-27, 2026-11-27
     section store - store law
     Path-scaled pool ×N :crit, store_xn_pool, 2026-07-14, 2026-08-19
     Per-path store accounts :crit, store_percap_family, 2026-07-18, 2026-07-19
