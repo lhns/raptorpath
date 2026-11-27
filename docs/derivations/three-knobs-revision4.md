@@ -40,6 +40,8 @@
 
 > **Read first (2026-11-27):** the verdicts below compare against two baselines for today's Realtime sender, one with the engine's standing queue in quinn's datagram buffer. The engine's hand-off gate (`docs/derivations/reg-handoff-gate.md`, branch sender-queue-law) removes most of that queue, so the fair old-design baseline is the no-queue arm. Against it alone the count stays 7 of 8, OV-long's "dominates" rests on delay p50 alone (0.078 s), and the mid-price cells OV-long-m and OV-long-q read worse, not a trade. The 13.10 dequeue-time falsifier passed. See `tools/toy/results-recount.md`.
 
+> **Read first (2026-11-27, Revision 5, §14):** build B″ (R5 ramp `w = (c⁺/x̄)/max(1, y)` plus the net repair clamp `min(r, (spare − σ)⁺)`) is at least as good as both arms of today's Realtime in every cell, the two mid-price cells included (now "dominates"). See `tools/toy/results-rev5.md`.
+
 **The finding, re-read from the stored runs.** In OV (offered λ = 12 000 units/s, link C = 10 000/s, a 1 250-datagram buffer, one path, repair RL), the stage 3e new-model rows fit one line in the intake hold `w = T − R`:
 
 ```text
@@ -2597,3 +2599,34 @@ T = 2's share is 0.002 off, from the end flush, so its band is widened.
   - fingerprints;
   - the gauge changes no decision (trace equal) and the rule executes under overload (`net_bind` > 0, fewer repairs);
   - B″ ≡ A at T = ∞ and in a cell without sheds.
+
+### 14.7 Result (2026-11-27; post-data, `tools/toy/results-rev5.md`)
+
+**Verdict: against both arms of today's Realtime, B″ is at least as good in every cell**: the eight cells of §12 and both mid-price cells.
+- **OV-long-m** goes from "worse" (B′) to **dominates**: share −0.0063, p50 0.0127 s better, against the stored arm.
+- **OV-long-q** goes from "worse" to **dominates**: share −0.0065, p50 0.0224 s better.
+- **Against the engine-queue arm, both dominate.**
+- **OV-long** still dominates. Its share gap to the stored arm shrinks from −0.0051 to −0.0019, which is §14.1's term (1), removed.
+- **OV-long-v** is bit-identical to B′ (48 of 48 runs).
+- **CLc, CLc-v and CL-long-v** are identical to A (IDENT, 28 of 28, traces).
+- **CL, CL-long and CLw-long** were rerun in full, with every Realtime word unchanged:
+  - B″ ≡ A wherever the gauge read 0, including the Bulk identity;
+  - whole-run delivered is +0.0016 / +0.0032 / +0.0004 at T = 0.4.
+
+**Every registered prediction at the best points held,** as did the mid-price levels at every T and R5's tail (within 1 % per window).
+
+**Misses** (detail in the results file):
+- CLw-long's gain is about a quarter of the predicted size.
+- OV-long-q's T = 2 share sits on its −0.004 edge.
+- Five ADR-0084 words in CL and CL-long moved from "equivalent" to "undetermined" after the doubling. They moved toward better, and every interval lies above −bar.
+- CL's owed doubling at ρ = 1 has run, and it stays undetermined toward better.
+
+**The cost B″ pays.**
+- **At T ≥ 1 at mid price,** R5 sheds more of the band inside the window: the steady share is up to 0.006 below B′'s at T = 2, for a p50 0.10–0.12 s lower. Neither row is the best point.
+- **The design trade is unchanged:** share −0.19 against ADR-0084 and Bulk under overload, for on time +0.80.
+
+**Open, unchanged by this run.**
+- **Q24:** U read as a flow.
+- **Q33:** R5 replaces R1 as the default; it is still a choice of Kelly's premise.
+- **Q34:** the x̂ → 1⁺ edge, unchanged because the onset is unchanged.
+- **The engine side of the net clamp.** Porting it needs an engine source for σ: the count of units the sender gives up at its intake. The engine was not read for it here.
