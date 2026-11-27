@@ -1,7 +1,7 @@
 #!/bin/bash
 # Plan 67, session 0 (registration 2.2): the REPEAT run of the gating loopback tests, N = 30, zero failures.
 #
-#   R67_ROOT=<out dir> R67_SEATS=<$LD_ROOT/seats> [R67_N=30] [R67_BUDGET_S=3600] bash repeat67_run.sh [S1] [S2]
+#   R67_ROOT=<out dir> R67_SEATS=<$LD_ROOT/seats> [R67_TGT=<dir for the targets>] [R67_N=30] [R67_BUDGET_S=3600] bash repeat67_run.sh [S1] [S2]
 #
 # Per seat (trees at $R67_SEATS/<S1|S2>/src, built with the harness's own commands; no seat is built or run twice in parallel):
 #   S1: `cargo test -p raptorpath --release --lib -- config::` x N                                   (the tunnel guard's config tests)
@@ -22,6 +22,7 @@ SEATS_DIR="${R67_SEATS:?R67_SEATS}"
 N="${R67_N:-30}"
 BUDGET="${R67_BUDGET_S:-3600}"
 SIM="${R67_SIM:-sim_shed_reach sim_lost_tail sim_nack_test place_arms_reachability}"
+TGT="${R67_TGT:-$ROOT}"      # where the per-seat target dirs go (plan 67pre passes a disk path: its R67_ROOT is on tmpfs)
 [ "$#" -gt 0 ] || set -- S1 S2
 mkdir -p "$ROOT"
 OUT="$ROOT/REPEAT67.txt"
@@ -46,7 +47,7 @@ digest() { grep -aE '^test .* \.\.\. (ok|FAILED|ignored)' "$1" | LC_ALL=C sort; 
 for seat in "$@"; do
   src="$SEATS_DIR/$seat/src"
   [ -d "$src" ] || { echo "ABORT-REPEAT seat=$seat (no tree $src)" >> "$OUT"; era "ABORT-REPEAT seat=$seat no tree"; BAD=1; continue; }
-  export CARGO_TARGET_DIR="$ROOT/tgt-$seat"
+  export CARGO_TARGET_DIR="$TGT/tgt-$seat"
   rm -rf "$CARGO_TARGET_DIR"
   case "$seat" in
     S1) cmd=("$CARGO" test -p raptorpath --release --lib) ; filt=(-- config::) ; sims="" ;;
