@@ -39,6 +39,7 @@ flowchart TB
     perf_receiver_followups["✔ Receiver follow-ups"]
     perf_bbrrs_ns_cost["✔ bbr_rs per-packet<br/>cost bench"]
     perf_bbrrs_ring_fix["⏳ Cheaper bookkeeping<br/>in our BBR"]
+    perf_handoff_gate_cpu["○ Gate costs CPU<br/>through a timer"]
     perf_fix_burst_bound[/"○ Deriving the send-<br/>burst size"/]
     perf_config_dropped>"⚠ Benchmark tool<br/>ignores the config<br/>file"]
     perf_liveness_split ~~~ perf_rtt_rescan
@@ -72,8 +73,11 @@ flowchart TB
     perf_decoder_prune ~~~ perf_receiver_followups
     perf_decoder_prune ~~~ perf_bbrrs_ns_cost
     perf_s33_timer ~~~ perf_bbrrs_ring_fix
-    perf_receiver_followups ~~~ perf_fix_burst_bound
-    perf_bbrrs_ns_cost ~~~ perf_config_dropped
+    perf_receiver_followups ~~~ perf_handoff_gate_cpu
+    perf_bbrrs_ns_cost ~~~ perf_fix_burst_bound
+    perf_bbrrs_ring_fix ~~~ perf_config_dropped
+    perf_handoff_gate_cpu ~~~ perf_config_dropped
+    perf_fix_burst_bound ~~~ perf_config_dropped
     perf_emit_batch_v1 -.-> perf_emit_batch_law0
     perf_rcvbuf --> perf_emit_batch_law0
     perf_quic_feeder -.-> perf_io_owner
@@ -114,7 +118,7 @@ flowchart TB
     class perf_ack_merge,perf_emit_batch_law0,perf_io_owner,perf_incremental_sack,perf_decoder_prune vsucc
     class perf_c8_lag,perf_s33_timer,perf_bbrrs_ns_cost unrated
     class perf_bbrrs_ring_fix waiting
-    class perf_fix_burst_bound next
+    class perf_handoff_gate_cpu,perf_fix_burst_bound next
     class perf_config_dropped finding
 ```
 <!-- END GENERATED: track-perf -->
@@ -156,6 +160,7 @@ flowchart TB
 | `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | mechanism | vm | done | successful | 2026-07-07 | 2026-07-07 |  |  |  | clean single-path 3–5.6× faster | commit 6302798c; commit 99926477 |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | research | vm | done | dead-end | 2026-07-04 | 2026-07-04 |  |  |  |  | commit 020d34d5 |
 | `perf-realtime-path-death` | Realtime path deaths in window mode | defect-verdict | vm | done | unrated | 2026-07-04 | 2026-07-04 |  |  |  |  | commit dff2d7a3; commit bc2d118e; commit 33d5a79c |
+| `perf-handoff-gate-cpu` | Gate costs CPU through a timer | mechanism | host-cargo | next | unrated | 2026-11-27 |  |  |  |  |  | docs/derivations/reg-handoff-gate.md section 12 (branch sender-queue-law ff0cd203) |
 
 ### Details per node
 
@@ -193,6 +198,7 @@ flowchart TB
 | `perf-rtt-rescan` | Per-ACK RTT minimum rescan removed | Merge per-symbol perf fix: O(n²) RTT-min rescan — clean single-path 3–5.6× faster | clean single-path 3–5.6× faster | The sender rescanned its whole window of round-trip samples on every acknowledgement; keeping the minimum incrementally removed a large per-packet CPU cost. | The fix is commit 6302798c and its merge 99926477; rated like cod-rlc-index (merged, measured gain, no registered readout). First found in the session record. |  |  |  |  |
 | `perf-native-geometry` | Inner-TCP geometry hypothesis | the remaining ~4.5x to quinn (0.20s) is the rp pipeline itself. |  | Removing the inner TCP connection moved completion time only about 13 percent, so the gap to native QUIC lies in the pipeline itself, not in the tunnel geometry. | L2 workstream 3 (2026-07-04); measured with the native object mode folded in meas-l1-harness. |  |  |  |  |
 | `perf-realtime-path-death` | Realtime path deaths in window mode | Merge window-liveness fix: a malformed inner packet no longer kills the tunnel |  | A tail matrix showed the 513 ms realtime tail came from the realtime path dying under low-rate traffic; one malformed inner packet tore the tunnel down, and the write loop now drops it and continues. | Split 2026-11-20 from meas-l2-multipath (own defect verdict and fix branch). |  |  |  |  |
+| `perf-handoff-gate-cpu` | Gate costs CPU through a timer |  |  | The hand-off gate costs about 7 % more client CPU per gigabyte; about a third is reading each path state twice per packet, and most of the rest is a 1 ms timer that keeps firing even when the gate is open, on the server too. | Priced in reg-handoff-gate section 12 (within-session GATE against R4; plan 68 K cells +6.8/+7.0 % against BASE; the +11-14 % in section 11 was partly session drift). Producer view reads 32-38 % of the delta (about 1 us per first send, read twice at 9b3b30b3; the fs_over fix a47da148 removed one read). The rest: the owner republish timer arms on every publish that reads quinn tx short, including control datagrams, and its deadline never moves (io_owner.rs:1231-1240, :1490). Fixes: F1 arm the timer only while the gate is closed (changes tau_o samples, a law input: decision owed), F2 recompute the deadline from the last publish (needs an owner_timer_idle counter), F3 decision reads load 5 inputs instead of 22. Rejected: minimum batch. Blocks step 2 registration (the guard scores CPU). |  |  |  |  |
 
 ### Folded items per node
 
