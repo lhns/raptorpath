@@ -6,6 +6,9 @@ the slot check. ONE source for the shell and the scorer: the battery asks `armsp
     plan68.py plan 68r [smoke|rehearsal]  the RERUN table (36 rows, see RERUN below); smoke = rehearsal = 6 rows
     plan68.py plan 68s [smoke|rehearsal]  the SECOND RERUN table (30 rows, see RERUN-S below); smoke = rehearsal = 6 rows
     plan68.py plan 68t [smoke|rehearsal]  the THIRD RERUN table (54 rows, see RERUN-T below); smoke = rehearsal = 6 rows
+    plan68.py plan 68u [smoke|rehearsal]  the bbr_rs-fix table (36 rows, see FIX-U below); smoke = rehearsal = 4 rows
+    plan68.py plan 68v [smoke|rehearsal]  the CPU table (27 rows, see FIX-V below); smoke = rehearsal = 3 rows
+    plan68.py seat <arm>                  BASE or CAND: the seat whose binary the arm runs
     plan68.py registered                  the registered 54-slot table, UNBUILT cells included
     plan68.py count 68 [smoke|rehearsal]  the number of rows the executed table holds (the battery asserts it)
     plan68.py armspec <cell> <arm>        `BYTES TIMEOUT_S HINT ENV...` (ENV tokens are KEY=VALUE)
@@ -44,6 +47,12 @@ BW (Realtime, rho = 1): an unpaced saturating lead-in of BW_LEAD datagrams (abou
 lines after the lead-in, refusals per frame) are READ68 lines, never a stop. BUDGET: 9 big rows x 215 s + 27 BW rows x 75 s + 18 paced rows x 90 s = 5580 s, plus two builds, the tools tests and slack: 7200 s (2 h);
 n = 3 at every frame size fits, so no frame size is dropped. The BASE seat must carry the burst knob WITH the lead-in (a `+<lead>` token): the handoff-gauges-pacer binary of this table is rebuilt from the branch that has it.
 
+FIX-U (`68u`, the bbr_rs per-packet app-limited marking, off Bulk; reported only, no verdict): 36 rows = W1 / W2 / W4 (the BW cell of 68t, same lead-in and frame count) x four seat-arms x 3 reps. BASE seat = handoff-gate bb7133f5 (the 68t
+build, no per-packet marking: LD_BIN_CONTROL), CAND seat = the `hgate-fixw` head (per-packet marking + the `qal=` witness: the $ROOT tree). Both seats run R4 (RWM_QUIC_CC=bbr_rs, gate unset) and GATE (bbr_rs + RWM_HOFF_GATE=1); the seat-arm
+letters are X = BASE R4, Y = BASE GATE, R = CAND R4, G = CAND GATE. The seat ref is the launch's (LD_BIN_CONTROL / $ROOT); the arm set is the plan's. Smoke: one row per seat-arm on W2 (4).
+FIX-V (`68v`, CPU of the fix against the hand-off-gate head: F3 and owner_timer_idle; reported only): 27 rows = K2 / K8 / A2 x three arms x 3 reps. BASE seat = the `hgate-fixw` head (FIX), CAND seat = handoff-gate head with the witness counters (NEW).
+Arms: Y = GATE on BASE, G = GATE on CAND, T = the GATE twin on CAND (the A/A spread). Smoke: GATE of each seat and the twin on K2 (3).
+
 ROWS: 6 cells x 3 arms x 3 rows (seed 42, rep 1..3) = 54, interleaved: rep-major, then cell, with the arm order rotated by (rep - 1 + cell index) so no arm owns a position."""
 import os
 import sys
@@ -54,15 +63,20 @@ sys.path.insert(0, HERE)
 SEEDS = ("42",)
 N_REP = 3                          # rows per arm per cell (seed 42, rep 1..3); test_stubrun shrinks it
 SEED = "42"
-ARM_LETTERS = ("B", "R", "G", "Q", "T")
+ARM_LETTERS = ("B", "R", "G", "Q", "T", "X", "Y")
 ARMS_68 = ("B", "R", "G")          # the arms of the main table
 K_CELLS = ("K2", "K8", "A2")
 RERUN_CELLS = ("K2", "K8", "A2", "LR", "PC")
 RERUN_S_CELLS = ("K2", "K8", "A2", "BU", "PH")
 RERUN_T_CELLS = ("K2", "K8", "A2", "W1", "W2", "W4", "P7", "P8")
+FIX_U_CELLS = ("W1", "W2", "W4")
+FIX_V_CELLS = ("K2", "K8", "A2")
+ARMS_U = ("X", "Y", "R", "G")      # 68u: BASE R4, BASE GATE, CAND R4, CAND GATE
+ARMS_V = ("Y", "G", "T")           # 68v: GATE on BASE (FIX), GATE on CAND (NEW), the CAND twin
+PLANS = ("68", "68r", "68s", "68t", "68u", "68v")
 REGISTERED_CELLS = ("K2", "K8", "A2", "LR", "PC", "BU")      # plan 68's registered 54 slots; PH exists in 68s only
-SEAT = {"B": "BASE", "R": "CAND", "G": "CAND", "Q": "CAND", "T": "CAND"}
-ARM_NAME = {"B": "BASE", "R": "R4", "G": "GATE", "Q": "GATE-ALONE", "T": "GATE-AA"}
+SEAT = {"B": "BASE", "R": "CAND", "G": "CAND", "Q": "CAND", "T": "CAND", "X": "BASE", "Y": "BASE"}
+ARM_NAME = {"B": "BASE", "R": "R4", "G": "GATE", "Q": "GATE-ALONE", "T": "GATE-AA", "X": "BASE-R4", "Y": "BASE-GATE"}
 CHUNK_PAYLOAD = 494                # perf.rs chunk_payload_len: Realtime 508 - 14 (Bulk / Auto: 1196 - 14 = 1182)
 T_E = 60                           # s of emission of a paced row
 TIMEOUT_PACED = T_E + 15           # RWM_PERF_TIMEOUT_S: a paced row's DNF lands 15 s after emission ends
@@ -100,19 +114,25 @@ BUILT = tuple(c for c in REGISTERED_CELLS if c not in UNBUILT)
 
 def unbuilt_in(name=None):
     """The UNBUILT cells of the table `name` (default: this process's plan): none in 68s, which carries the burst knob."""
-    return () if (name or plan_name()) in ("68s", "68t") else UNBUILT
+    return () if (name or plan_name()) in ("68s", "68t", "68u", "68v") else UNBUILT
 
 
 def built_in(name=None):
     n = name or plan_name()
     return tuple(c for c in cells_of(n) if c not in unbuilt_in(n))
-BUDGET_S = {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600, "68s": 7400, "68s-rehearsal": 3600, "68t": 7200, "68t-rehearsal": 3600}   # 68: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
+# Margin rule of 68t: rows + 1620 s (7200 s budget - 5580 s of rows: two builds, the tools tests, slack), rounded up to 300 s.
+# 68u: 36 W rows x 75 s = 2700 s -> 4500 s.  68v: 27 big rows x 215 s = 5805 s -> 7500 s.
+BUDGET_U, BUDGET_V = 4500, 7500
+BUDGET_S = {"68": 11400, "68-rehearsal": 3000, "68r": 8000, "68r-rehearsal": 3600, "68s": 7400, "68s-rehearsal": 3600, "68t": 7200, "68t-rehearsal": 3600,
+            "68u": BUDGET_U, "68u-rehearsal": 3600, "68v": BUDGET_V, "68v-rehearsal": 3600}   # 68: 27 big rows x 215 s + 27 paced rows x 90 s + two builds (~17 min) + tools tests; the rehearsal: builds + 3 rows + tests
 # 68r: 18 big rows x 215 s + 18 paced rows x 90 s + builds + tests; its rehearsal: 2 big + 4 paced rows + builds + tests
 # 68s: 9 big rows x 215 s + 21 paced rows x 90 s + builds + tests; its rehearsal: 1 big + 5 paced rows + builds + tests
 SMOKE_CELL = "K2"
 SMOKE_68R = ("GK2", "QK2", "BLR", "GLR", "BPC", "GPC")
 SMOKE_68S = ("GK2", "BBU", "GBU", "BPH", "GPH", "TPH")
 SMOKE_68T = ("GK2", "BW2", "RW2", "GW2", "BP7", "GP8")
+SMOKE_68U = ("XW2", "YW2", "RW2", "GW2")
+SMOKE_68V = ("YK2", "GK2", "TK2")
 LATE_T = 5.0
 
 
@@ -120,8 +140,22 @@ def arm_name(letter, code):
     return letter + code
 
 
+def arms_known(code):
+    """Every arm letter a cell can carry in any plan (what the parser registers): Q (gate alone), T (the GATE twin) and Y (GATE on the BASE seat, 68v) on the K cells, T on PH, X / Y (the BASE-seat bbr_rs arms of 68u) on the W cells."""
+    if code in K_CELLS:
+        return ("B", "R", "G", "Q", "T", "Y")
+    if code in FIX_U_CELLS:
+        return ARMS_68 + ("X", "Y")
+    return ("B", "R", "G", "T") if code == "PH" else ARMS_68
+
+
 def arms_of(code):
-    """The arm letters a cell has: Q (gate alone) exists on the K cells only, T (the GATE twin) on PH only."""
+    """The arm letters a cell has in THIS plan (the report's columns): 68u and 68v carry their own arm sets; elsewhere Q exists on the K cells only, T on PH only."""
+    n = plan_name()
+    if n == "68u" and code in FIX_U_CELLS:
+        return ARMS_U
+    if n == "68v" and code in FIX_V_CELLS:
+        return ARMS_V
     if code in K_CELLS:
         return ("B", "R", "G", "Q")
     return ("B", "R", "G", "T") if code == "PH" else ARMS_68
@@ -129,7 +163,7 @@ def arms_of(code):
 
 def arm_parse(arm):
     """`GK2` -> ('G', 'K2'); anything else (incl. a Q arm off the K cells) -> (None, None)."""
-    if arm and len(arm) == 3 and arm[0] in ARM_LETTERS and arm[1:] in CELLS and arm[0] in arms_of(arm[1:]):
+    if arm and len(arm) == 3 and arm[0] in ARM_LETTERS and arm[1:] in CELLS and arm[0] in arms_known(arm[1:]):
         return arm[0], arm[1:]
     return None, None
 
@@ -141,12 +175,12 @@ def seat_of(arm):
 
 
 def all_arms():
-    return [arm_name(a, c) for c in CELL_ORDER for a in arms_of(c)]
+    return [arm_name(a, c) for c in CELL_ORDER for a in arms_known(c)]
 
 
 def cells_of(name):
     """The cells the table `name` holds, in report order."""
-    return {"68": REGISTERED_CELLS, "68r": RERUN_CELLS, "68s": RERUN_S_CELLS, "68t": RERUN_T_CELLS}[name]
+    return {"68": REGISTERED_CELLS, "68r": RERUN_CELLS, "68s": RERUN_S_CELLS, "68t": RERUN_T_CELLS, "68u": FIX_U_CELLS, "68v": FIX_V_CELLS}[name]
 
 
 def valid_slot(cell, arm):
@@ -189,9 +223,9 @@ def arm_env(cell, arm):
     if letter is None:
         raise ValueError(f"unknown arm {arm}")
     env = []
-    if letter in ("R", "G", "T"):      # Q keeps quinn's own BBR
+    if letter in ("R", "G", "T", "X", "Y"):      # Q keeps quinn's own BBR
         env.append("RWM_QUIC_CC=bbr_rs")
-    if letter in ("G", "Q", "T"):      # T = the A/A twin of G: the same env
+    if letter in ("G", "Q", "T", "Y"):      # T = the A/A twin of G: the same env; Y = GATE on the BASE seat
         env.append("RWM_HOFF_GATE=1")
     env.append("RWM_DIAG=1")
     if CELLS[code][6]:
@@ -260,6 +294,17 @@ def registered_rerun_t():
     return out
 
 
+def _rotated(cells, letters):
+    """[(cell, store, arm, seed, rep)], rep-major, then cell, the arms of a cell rotated by (rep - 1 + cell index)."""
+    out = []
+    for rep in range(1, N_REP + 1):
+        for ci, code in enumerate(cells):
+            k = (rep - 1 + ci) % len(letters)
+            for letter in letters[k:] + letters[:k]:
+                out.append((CELLS[code][0], "def", arm_name(letter, code), SEED, rep))
+    return out
+
+
 def plan(name="68", smoke=False, rehearsal=False):
     """The EXECUTED table: the registered table without its UNBUILT cells. The smoke and the rehearsal are one row per arm on K2 (seed 42, rep 1)."""
     if name == "68r":
@@ -270,6 +315,10 @@ def plan(name="68", smoke=False, rehearsal=False):
         if smoke or rehearsal:
             return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68T]
         return registered_rerun_t()
+    if name in ("68u", "68v"):
+        if smoke or rehearsal:
+            return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in (SMOKE_68U if name == "68u" else SMOKE_68V)]
+        return _rotated(FIX_U_CELLS, ARMS_U) if name == "68u" else _rotated(FIX_V_CELLS, ARMS_V)
     if name == "68s":
         if smoke or rehearsal:
             return [(CELLS[arm_parse(a)[1]][0], "def", a, SEED, 1) for a in SMOKE_68S]
@@ -282,9 +331,9 @@ def plan(name="68", smoke=False, rehearsal=False):
 
 
 def plan_name():
-    """The plan this process serves: LD_PLAN when it is 68, 68r, 68s or 68t, else 68."""
+    """The plan this process serves: LD_PLAN when it is one of PLANS, else 68."""
     n = os.environ.get("LD_PLAN")
-    return n if n in ("68", "68r", "68s", "68t") else "68"
+    return n if n in PLANS else "68"
 
 
 def expect_rows(name=None):
@@ -337,6 +386,10 @@ def main(argv):
             for c, s, ar, sd, rp in registered():
                 print(f"{c} {s} {ar} {sd} {rp}")
             return 0
+        if cmd == "seat":
+            s_ = seat_of(a[0])
+            print(s_ or "UNKNOWN")
+            return 0 if s_ else 1
         if cmd == "unbuilt":
             print(" ".join(unbuilt_in(a[0] if a else None)))
             return 0

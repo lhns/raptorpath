@@ -173,9 +173,11 @@ case "$PLAN" in
   68) P_SMOKE=smoke68; P_SCORE=score68; P_CHECK=check68 ;;
   68s) P_SMOKE=smoke68; P_SCORE=score68; P_CHECK=check68 ;;
   68t) P_SMOKE=smoke68; P_SCORE=score68; P_CHECK=check68 ;;
+  68u) P_SMOKE=smoke68; P_SCORE=score68; P_CHECK=check68 ;;
+  68v) P_SMOKE=smoke68; P_SCORE=score68; P_CHECK=check68 ;;
   68r) P_SMOKE=smoke68; P_SCORE=score68; P_CHECK=check68 ;;        # unused: the stage below calls s68_report.py / plan68.py directly
   51e) P_SMOKE=smoke51e; P_SCORE=score51e; P_CHECK=check51e ;;     # unused: the stage below calls s51e_score.py / plan51e.py directly
-  *) echo "ABORT-PLAN LD_PLAN=$PLAN (67|67g|67x|68|68r|68s|68t|24|27|29|34|36|38|40|41|41b|41c|41d|43|43b|46|47|48|51|51e|52|53|54|54b|56|57a|57b|59|60a|60b|61a|61b|62r0|62a|63|64|65)"; exit 3 ;;
+  *) echo "ABORT-PLAN LD_PLAN=$PLAN (67|67g|67x|68|68r|68s|68t|68u|68v|24|27|29|34|36|38|40|41|41b|41c|41d|43|43b|46|47|48|51|51e|52|53|54|54b|56|57a|57b|59|60a|60b|61a|61b|62r0|62a|63|64|65)"; exit 3 ;;
 esac
 # Test seams (test_stubrun.py runs this script end to end against stubs); on the VM none is set and the defaults are the real paths.
 DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOCK_VM:-/tmp/rwm-vm.lock}"; LOCK_RP="${LD_LOCK_RP:-$HOME/rp.lock}"
@@ -183,7 +185,7 @@ DEVSHM="${LD_DEVSHM:-/dev/shm}"; PROCFS="${LD_PROCFS:-/proc}"; LOCK_VM="${LD_LOC
 # binary pins, smoke rows), then stop: REHEARSAL-PASS / LD-ALL-REHEARSAL-DONE. No suites (unless LD_PRIOR_TESTS names a run to verify) and no battery.
 REHEARSE="${LD_REHEARSE:-0}"
 [ "$PLAN" = "62r0" ] && REHEARSE=1      # status 62: the rehearsal IS plan 62r0 (its rows are its smoke; no battery follows it); plan 62a has no rehearsal mode
-if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ] && [ "$PLAN" != "63" ] && [ "$PLAN" != "68" ] && [ "$PLAN" != "68r" ] && [ "$PLAN" != "68s" ] && [ "$PLAN" != "68t" ]; then      # plans 51 / 51e / 63 / 68 are rehearsable too (their own rules below)
+if [ "$REHEARSE" = 1 ] && [ "$PLAN" != "51" ] && [ "$PLAN" != "51e" ] && [ "$PLAN" != "63" ] && [ "$PLAN" != "68" ] && [ "$PLAN" != "68r" ] && [ "$PLAN" != "68s" ] && [ "$PLAN" != "68t" ] && [ "$PLAN" != "68u" ] && [ "$PLAN" != "68v" ]; then      # plans 51 / 51e / 63 / 68 are rehearsable too (their own rules below)
   case "$PLAN" in 62r0|61a) ;; 41c|41d|46|47|48|52|53|54b|56|57a|57b|59|60a|60b|65|67) ;; *) echo "ABORT-REHEARSE LD_REHEARSE=1 is defined for plans 41c|41d|46|47|48|52|53|54|54b|56|57a|57b|59|60a|60b|61a|62r0|64|65|67 only, not $PLAN; NOTHING WAS RUN"; exit 3 ;; esac
 fi
 # The guard's clause-set version (status 41d). Plan 41d IS the v2 guard (stage `guard 41d`: c2 / c8 rows at 600 MB, timeout 200, score41d). The session plans 47 and 52 run
@@ -287,7 +289,7 @@ fi
 # Plan 68 (status 68, the hand-off gate's step 1; plan68.py / s68_report.py, reported only) is plan 63's shape with its own seats: the BASE seat (main plus the gauge commit: LD_BIN_CONTROL, an executable, or a build of
 # $ROOT/base/src) pinned by LD_BIN_SHA_CONTROL (no default: REQUIRED on a launch, RECORDED by the rehearsal) and the CAND seat ($ROOT's hand-off-gate tree; R4 and GATE are its one binary) pinned by LD_BIN_SHA_CAND (the same).
 # P63=1 here too, so every plan-63 seam below (two seats, no engine suites, the single-seat gate shape) applies; the plan-68 differences are branched on P68. LD_HARD = launch + 3.2 h (rehearsal + 50 min).
-P68=0; { [ "$PLAN" = "68" ] || [ "$PLAN" = "68r" ] || [ "$PLAN" = "68s" ] || [ "$PLAN" = "68t" ]; } && { P68=1; P63=1; P46=1; P57=1; }      # 68r / 68s = the rerun tables (plan68.py): the same seats and wiring, the BASE seat (LD_BIN_CONTROL) is the pacer-carrying BASE binary (68s: and the burst knob)
+P68=0; { [ "$PLAN" = "68" ] || [ "$PLAN" = "68r" ] || [ "$PLAN" = "68s" ] || [ "$PLAN" = "68t" ] || [ "$PLAN" = "68u" ] || [ "$PLAN" = "68v" ]; } && { P68=1; P63=1; P46=1; P57=1; }      # 68r / 68s = the rerun tables (plan68.py): the same seats and wiring, the BASE seat (LD_BIN_CONTROL) is the pacer-carrying BASE binary (68s: and the burst knob)
 if [ "$P68" = 1 ]; then
   LD_BIN_SHA_CONTROL="${LD_BIN_SHA_CONTROL:-}"; export LD_BIN_SHA_CONTROL LD_BIN_SHA_CAND
   [ -z "${LD_BIN_PREBUILT:-}" ] || { echo "ABORT-BUILD plan 68 never accepts a prebuilt CAND (LD_BIN_PREBUILT is set): the CAND is a plain release build from the launch archive; NOTHING WAS RUN"; exit 3; }
@@ -389,7 +391,7 @@ if [ "$P57" = 1 ]; then
   [ "$P60" = 1 ] && [ "$P61" != 1 ] && [ "$P62" != 1 ] && { P57_NEED=18360; [ "$PLAN" = "60b" ] && P57_NEED=13860; P57_TAG="$PLAN"; }      # status 60 section 7: 3.2 h (60a) / 2.9 h (60b) PLUS the worst-case floor DNF re-runs (36 / 18 rows x 190 s): 5.1 h / 3.85 h (plan60.BUDGET_S)
   [ "$P51E" = 1 ] && { P57_NEED=2730; [ "$REHEARSE" = 1 ] && P57_NEED=1500; P57_TAG="51e"; }      # plan51e.BUDGET_S: the battery's worst case (every slot twice + build + smoke + tests); the rehearsal's 25 min
   [ "$P63" = 1 ] && { P57_NEED=5400; [ "$REHEARSE" = 1 ] && P57_NEED=1800; P57_TAG="63"; }      # plan63.BUDGET_S (section 63): two builds + the tools tests + 10 rows of at most 150 s = 1.5 h; the rehearsal ~30 min; LD_HARD = launch + 1.5 h
-  [ "$P68" = 1 ] && { P57_NEED=11400; [ "$REHEARSE" = 1 ] && P57_NEED=3000; [ "$PLAN" = "68r" ] && { P57_NEED=8000; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; [ "$PLAN" = "68s" ] && { P57_NEED=7400; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; [ "$PLAN" = "68t" ] && { P57_NEED=7200; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; P57_TAG="$PLAN"; }      # plan68.BUDGET_S: 27 big rows x 215 s + 27 paced rows x 90 s + two builds + the tools tests; the rehearsal: builds + 3 rows + tests; LD_HARD = launch + 3.2 h
+  [ "$P68" = 1 ] && { P57_NEED=11400; [ "$REHEARSE" = 1 ] && P57_NEED=3000; [ "$PLAN" = "68r" ] && { P57_NEED=8000; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; [ "$PLAN" = "68s" ] && { P57_NEED=7400; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; [ "$PLAN" = "68t" ] && { P57_NEED=7200; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; [ "$PLAN" = "68u" ] && { P57_NEED=4500; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; [ "$PLAN" = "68v" ] && { P57_NEED=7500; [ "$REHEARSE" = 1 ] && P57_NEED=3600; }; P57_TAG="$PLAN"; }      # plan68.BUDGET_S: 27 big rows x 215 s + 27 paced rows x 90 s + two builds + the tools tests; the rehearsal: builds + 3 rows + tests; LD_HARD = launch + 3.2 h
   [ "$P51" = 1 ] && { P57_NEED=17400; [ "$REHEARSE" = 1 ] && P57_NEED=1200; P57_TAG="51"; }          # plan51.BUDGET_S: 76 rows x 215 s + 16 min = 4 h 50 (s51-design section 7); the rehearsal ~20 min
   P57_LEFT=$(( LD_HARD - $(date +%s) ))
   era "LD-ALL plan $PLAN budget: ${P57_LEFT}s to LD_HARD (at least ${LD_HARD_MIN_S:-$P57_NEED}s required: the worst case of the status)"
@@ -1051,7 +1053,7 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
       61a|61b) smk=smoke61; scr=score61; chk=check61 ;;
       62r0|62a) smk=smoke62; scr=score62; chk=check62 ;;
       63) smk=smoke63; scr=score63; chk=check63 ;;
-      68|68r|68s|68t) smk=smoke68; scr=score68; chk=check68 ;;
+      68|68r|68s|68t|68u|68v) smk=smoke68; scr=score68; chk=check68 ;;
       46) smk=smoke46; scr=score46; chk=check46 ;;
       65) smk=smoke65r; scr=score65r; chk=check65r ;;      # plan 65's stage R (battery LD_PLAN=65): plan 64's stage R at 24 pairs, scored by the registered s65_score.py
     esac
@@ -1211,7 +1213,7 @@ if [ "$PLAN" = "56" ] || [ "$P57" = 1 ] || [ "$PLAN" = "41d" ] || [ "$PLAN" = "4
   if [ "$P57" = 1 ]; then
     # Status 57a / 57b: no guard, one seat; ONE reported-only stage in its own ledger dir (smoke with the rehearsal criteria -> the slots -> score -> slot check).
     ROK=0
-    case "$PLAN" in 57a) stage rep57a 57a; rrc=$? ;; 59) stage rep59 59; rrc=$? ;; 60a) stage rep60a 60a; rrc=$? ;; 60b) stage rep60b 60b; rrc=$? ;; 61a) stage rep61a 61a; rrc=$? ;; 61b) stage rep61b 61b; rrc=$? ;; 62r0) stage rep62r0 62r0; rrc=$? ;; 62a) stage rep62a 62a; rrc=$? ;; 51) stage rep51 51; rrc=$? ;; 63) stage rep63 63; rrc=$? ;; 68) stage rep68 68; rrc=$? ;; 68r) stage rep68r 68r; rrc=$? ;; 68s) stage rep68s 68s; rrc=$? ;; 68t) stage rep68t 68t; rrc=$? ;; 51e) stage rep51e 51e; rrc=$? ;; *) stage rep57b 57b; rrc=$? ;; esac
+    case "$PLAN" in 57a) stage rep57a 57a; rrc=$? ;; 59) stage rep59 59; rrc=$? ;; 60a) stage rep60a 60a; rrc=$? ;; 60b) stage rep60b 60b; rrc=$? ;; 61a) stage rep61a 61a; rrc=$? ;; 61b) stage rep61b 61b; rrc=$? ;; 62r0) stage rep62r0 62r0; rrc=$? ;; 62a) stage rep62a 62a; rrc=$? ;; 51) stage rep51 51; rrc=$? ;; 63) stage rep63 63; rrc=$? ;; 68) stage rep68 68; rrc=$? ;; 68r) stage rep68r 68r; rrc=$? ;; 68s) stage rep68s 68s; rrc=$? ;; 68t) stage rep68t 68t; rrc=$? ;; 68u) stage rep68u 68u; rrc=$? ;; 68v) stage rep68v 68v; rrc=$? ;; 51e) stage rep51e 51e; rrc=$? ;; *) stage rep57b 57b; rrc=$? ;; esac
     if [ "$rrc" = "2" ]; then persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0; fi
     [ "$rrc" = "0" ] && ROK=1
     { echo "STATUS $PLAN (REPORTED ONLY): suites/TESTS.txt, rep$PLAN/score.txt"; grep -a '^VERDICT' "$RUN/rep$PLAN/score.txt"; } > "$RUN/score.txt"

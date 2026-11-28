@@ -202,6 +202,45 @@ def qcc_last(lines):
     return out
 
 
+_QAL = re.compile(r"\bqal=(\d+)/(\d+)/(\d+)")
+_QBW = re.compile(r"\bqbw=(\d+)")
+_QT = re.compile(r"^\[QCC\] t=([\d.]+)s")
+
+
+def _qcc_blocks(line):
+    """-> [(path id, block text)] of one [QCC] line."""
+    out = []
+    for blk in re.split(r"(?= p\d+:qm=)", _ANSI.sub("", line))[1:]:
+        m = re.match(r" p(\d+):", blk)
+        if m:
+            out.append((int(m.group(1)), blk))
+    return out
+
+
+def qal_last(lines):
+    """The last [QCC] line's `qal=<sends_marked>/<bubbles_opened>/<rejected_app_limited>` per path {id: (a, b, c)}; {} when the line has none (a build before the witness counters, or no [QCC] at all: printed `absent`)."""
+    last = [ln for ln in lines or [] if "[QCC]" in ln]
+    out = {}
+    for pid, blk in _qcc_blocks(last[-1]) if last else []:
+        m = _QAL.search(blk)
+        if m:
+            out[pid] = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return out
+
+
+def qbw_after(lines, t_min=10.0):
+    """Per path, the median of qbw (B/s) over the [QCC] lines at t >= t_min (after the lead-in); {} without such a line."""
+    v = {}
+    for ln in lines or []:
+        m = _QT.match(_ANSI.sub("", ln).strip())
+        if m and float(m.group(1)) >= t_min:
+            for pid, blk in _qcc_blocks(ln):
+                b = _QBW.search(blk)
+                if b:
+                    v.setdefault(pid, []).append(int(b.group(1)))
+    return {pid: _med(x) for pid, x in v.items()}
+
+
 _QM0 = re.compile(r"^\[QCC\] t=([\d.]+)s.*?\bp0:qm=(\S)")
 
 
@@ -236,7 +275,7 @@ def hoff_summary(lines):
 def row_metrics(cli, srv, drv, nbytes=None, cell="c2-100", arm="GK2", mbps=None, row=None):
     """The `t68` of one row. Never raises on log content. `row` (the parser's partial row) lends cpu / in-order readouts when it has them."""
     cli, srv = list(cli or []), list(srv or [])
-    out = {"v": 1, "arm": arm, "hoff": hoff_summary(cli), "hoff_srv_lines": len(parse_hoff(srv)), "qcc": qcc_last(cli), "qm_b_share": qm_b_share(cli), "goodput": mbps, "bytes": nbytes}
+    out = {"v": 1, "arm": arm, "hoff": hoff_summary(cli), "hoff_srv_lines": len(parse_hoff(srv)), "qcc": qcc_last(cli), "qm_b_share": qm_b_share(cli), "qal": qal_last(cli), "qbw_after": qbw_after(cli), "goodput": mbps, "bytes": nbytes}
     try:
         import l1common as lc
         out["gate_echo_cli"], out["gate_echo_srv"] = lc.gate_tok(cli, "RWM_HOFF_GATE"), lc.gate_tok(srv, "RWM_HOFF_GATE")
@@ -250,13 +289,13 @@ def row_metrics(cli, srv, drv, nbytes=None, cell="c2-100", arm="GK2", mbps=None,
         out["inorder_mean_ms"] = st["mean"] * 1e3 if st else None
     except Exception:
         out["inorder_mean_ms"] = None
-    out["inorder_p95_ms"] = out["inorder_p99_ms"] = out["inorder_max_ms"] = None
+    out["inorder_p50_ms"] = out["inorder_p95_ms"] = out["inorder_p99_ms"] = out["inorder_max_ms"] = None
     try:      # the tail of the same delay series (the client's [DIAG] ticks)
         import threadp1_parse as t1
         d = sorted(x for _, x in t1.inorder_delay(cli))
         if d:
             q = lambda f: d[min(len(d) - 1, int(f * (len(d) - 1) + 0.5))] * 1e3      # noqa: E731
-            out["inorder_p95_ms"], out["inorder_p99_ms"], out["inorder_max_ms"] = q(0.95), q(0.99), d[-1] * 1e3
+            out["inorder_p50_ms"], out["inorder_p95_ms"], out["inorder_p99_ms"], out["inorder_max_ms"] = q(0.5), q(0.95), q(0.99), d[-1] * 1e3
     except Exception:
         pass
     try:
@@ -387,7 +426,7 @@ def report(path, out=print, raw=None, ref=None):
                     f"coded_share={_f(_med(_col(rs, lambda x: _t(x).get('coded_share'))))} hand_bind={_f(_pm(rs, 'hand_bind_med'))} spare_bind={_f(_pm(rs, 'spare_bind_mean'))} batch={_f(_pm(rs, 'batch_med'), 1)}")
         for a in plan68.arms_of(code):
             rs = [x for x in g.get(a, []) if x.get("status") == "LIVE"]
-            if rs and a in ("G", "Q", "T"):
+            if rs and a in ("G", "Q", "T", "Y"):
                 for pid in sorted({i for x in rs for i in _paths(x)}):
                     out(f"  WIT68 {code} {plan68.ARM_NAME[a]:<5} p{pid} n={len(rs)} fs_over={_sumpaths(rs, 'fs_over', pid)} fs_over_cs(closed/spent)={_lst(_sumlist(rs, 'fs_over_cs', 2, pid))} fs_n={_sumpaths(rs, 'fs_n', pid)} fs_bypass={_lst(_sumlist(rs, 'fs_bypass', 4, pid))} ex_max(max)={_lst(_maxex(rs, pid), 0)} "
                         f"ex_n={_lst(_sumlist(rs, 'ex_n', 3, pid))} beta_q(p5min/p50med/p95max)={_f(_min(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('beta_p5_min'))), 1)}/{_f(_pm(rs, 'beta_p50_med', pid), 1)}/"
@@ -397,6 +436,8 @@ def report(path, out=print, raw=None, ref=None):
     _stop_rules(groups, stop, out)
     _witnesses(groups, stop, out)
     _window_reads(groups, out)
+    if plan68.plan_name() in ("68u", "68v"):      # the fix tables: their own readouts and one execution-witness line (the rules above keep running on the new BASE-seat arms X / Y)
+        _fix_reads(plan68.plan_name(), groups, out)
     out(f"REPORT68 REPORTED-ONLY rows={len(cnt)}/{plan68.expect_rows()} stops={len(stops)} unbuilt={','.join(plan68.unbuilt_in()) or '-'}")
     return 0
 
@@ -478,7 +519,7 @@ def K_CELLS_BUILT():
 def _stop_rules(groups, stop, out):
     # Gate executes (the A/A twin T is a GATE row: a twin with the gate off would print a false A/A)
     for code in plan68.built_in():
-        for x in groups.get(code, {}).get("G", []) + groups.get(code, {}).get("T", []):
+        for x in groups.get(code, {}).get("G", []) + groups.get(code, {}).get("T", []) + groups.get(code, {}).get("Y", []):
             h = _t(x).get("hoff") or {}
             if x.get("status") != "LIVE":
                 continue
@@ -494,7 +535,7 @@ def _stop_rules(groups, stop, out):
                     out(f"READ68 b-over-beta {x['arm']} r{x['rep']} p{pid}: max(B p95 - beta) = {be:.1f} > one batch ({bt:.1f})")
     # first sends past the bound through no tagged bypass site: a leak in the gate (GATE and the gate-alone arm)
     for code in plan68.built_in():
-        for a in ("G", "Q", "T"):
+        for a in ("G", "Q", "T", "Y"):
             for x in groups.get(code, {}).get(a, []):
                 if x.get("status") == "LIVE":
                     n = _fs_over(x)
@@ -505,12 +546,12 @@ def _stop_rules(groups, stop, out):
             h = _t(x).get("hoff") or {}
             if x.get("status") == "LIVE" and h.get("gate") != "on":
                 stop(f"gate-not-on {x['arm']} r{x['rep']}: [HOFF] gate={h.get('gate')} (lines={h.get('n_lines')}): a harness or build fault")
-    for x in groups.get("K2", {}).get("G", []):
+    for x in groups.get("K2", {}).get("G", []) + groups.get("K2", {}).get("Y", []):
         hb = _p0(x).get("hand_bind_med")
         if x.get("status") == "LIVE" and not (_num(hb) and hb > 0.5):
             stop(f"hand_bind-c2-bulk {x['arm']} r{x['rep']}: hand_bind median {_f(hb)} <= 0.5 at c2 Bulk (the gate does not bind)")
     for code in plan68.built_in():
-        for x in groups.get(code, {}).get("R", []):
+        for x in groups.get(code, {}).get("R", []) + groups.get(code, {}).get("X", []):
             h = _t(x).get("hoff") or {}
             if x.get("status") == "LIVE" and h.get("gate") == "on":
                 stop(f"r4-gate-on {x['arm']} r{x['rep']}: the R4 arm printed gate=on (the arm must be off)")
@@ -555,30 +596,107 @@ def _window_reads(groups, out):
     """Plan 68t's reported-only readings (never a stop): the window gauges per GATE cell (beta_max with its tuple, the U witness, ack_bind) and the BW witnesses (ProbeBw share of [QCC] after the lead-in,
     refusals per frame)."""
     for code in plan68.cells_of(plan68.plan_name()):
-        for a in ("G", "R", "B"):
+        for a in ("G", "Y", "R", "X", "B"):
             rs = [x for x in groups.get(code, {}).get(a, []) if x.get("status") == "LIVE"]
             if not rs:
                 continue
-            if a == "G":
+            if a in ("G", "Y"):
                 for pid in sorted({i for x in rs for i in _paths(x)}):
                     bm = max([b for b in ((_paths(x).get(pid) or {}).get("beta_max") for x in rs) if b], key=lambda e: e[0], default=None)
                     uo = [(_paths(x).get(pid) or {}).get("u_over") for x in rs]
                     uw = [(_paths(x).get(pid) or {}).get("u_windows") for x in rs]
                     hs_ = [(_t(x).get("hoff") or {}) for x in rs]
-                    out(f"READ68 {code} GATE owner_timer wakes/idle (median)={_f(_med([h.get('owner_timer_wakes') for h in hs_]), 0)}/{_f(_med([h.get('owner_timer_idle') for h in hs_]), 0)}") if pid == 0 else None
-                    out(f"READ68 {code} GATE p{pid} u_over={int(sum(v for v in uo if _num(v)))}/{int(sum(v for v in uw if _num(v)))} windows beta_max(max; beta/W/srtt_ms/L_ms/R_MBs)={_lst(bm, 2)} "
+                    out(f"READ68 {code} {plan68.ARM_NAME[a]} owner_timer wakes/idle (median)={_f(_med([h.get('owner_timer_wakes') for h in hs_]), 0)}/{_f(_med([h.get('owner_timer_idle') for h in hs_]), 0)}") if pid == 0 else None
+                    out(f"READ68 {code} {plan68.ARM_NAME[a]} p{pid} u_over={int(sum(v for v in uo if _num(v)))}/{int(sum(v for v in uw if _num(v)))} windows beta_max(max; beta/W/srtt_ms/L_ms/R_MBs)={_lst(bm, 2)} "
                         f"b_max(max)={_f(_max(_col(rs, lambda x: (_paths(x).get(pid) or {}).get('b_max'))))} ack_bind(mean)={_f(_pm(rs, 'ack_bind', pid), 3)} fs_over_cs(closed/spent)={_lst(_sumlist(rs, 'fs_over_cs', 2, pid))}")
             if code in ("W1", "W2", "W4"):
                 k = 10 * int(code[1])
                 refs = [sum(p["refusals"] for p in (((_t(x).get("hoff") or {}).get("paths") or {}).values())) for x in rs]
                 out(f"READ68 {code} {plan68.ARM_NAME[a]} k={k} qm=B share of [QCC] lines after 10 s={_f(_med(_col(rs, lambda x: _t(x).get('qm_b_share'))), 2)} (BW needs >= 0.90) "
-                    f"refusals/frame={_f(_med([r / plan68.BW_FRAMES for r in refs]), 3) if a == 'G' else '-'} (BW needs frames with a refusal >= 0.5 at k = 20)")
+                    f"refusals/frame={_f(_med([r / plan68.BW_FRAMES for r in refs]), 3) if a in ('G', 'Y') else '-'} (BW needs frames with a refusal >= 0.5 at k = 20)")
+
+
+def _mr(vals, nd=1):
+    """`median[min-max]` of the numbers in vals; `-` when there are none."""
+    v = [x for x in vals if _num(x)]
+    return f"{_f(_med(v), nd)}[{_f(float(min(v)), nd)}-{_f(float(max(v)), nd)}]" if v else "-"
+
+
+def _qal_str(t):
+    """The row's `qal=` per leg as `p0:<marked>/<bubbles>/<rejected>`; `absent` when the build prints none."""
+    q = (t or {}).get("qal") or {}
+    return " ".join("p%s:%d/%d/%d" % (k, *v) for k, v in sorted(q.items(), key=lambda kv: int(kv[0]))) or "absent"
+
+
+def _qal_marked(t):
+    q = (t or {}).get("qal") or {}
+    return sum(v[0] for v in q.values()) if q else None
+
+
+def _qbw_str(t):
+    """qbw after the lead-in per leg, against the link rate (100 Mbit/s = 12.5 MB/s): `p0:<MB/s>(x<ratio>)`."""
+    q = (t or {}).get("qbw_after") or {}
+    link = plan68.LINK_MBIT * 1e6 / 8
+    return " ".join("p%s:%.2fMB/s(x%.2f)" % (k, v / 1e6, v / link) for k, v in sorted(q.items(), key=lambda kv: int(kv[0])) if _num(v)) or "absent"
+
+
+def _qbw_ratio(t):
+    """Leg 0's qbw after the lead-in over the link rate (None without a [QCC] line)."""
+    q = (t or {}).get("qbw_after") or {}
+    v = q.get(0, q.get("0"))
+    return v / (plan68.LINK_MBIT * 1e6 / 8) if _num(v) else None
+
+
+def _fix_reads(name, groups, out):
+    """Plans 68u / 68v, reported only: per row and per (cell, seat-arm) median[range] readouts and ONE execution-witness line (never a stop)."""
+    for code in plan68.cells_of(name):
+        g = groups.get(code, {})
+        for a in plan68.arms_of(code):
+            for x in sorted(g.get(a, []), key=lambda r: int(r["rep"])):
+                t, h = _t(x), (_t(x).get("hoff") or {})
+                if name == "68u":
+                    out(f"UROW68 {x['arm']} {plan68.SEAT[a]} r{x['rep']}: status={x.get('status')} gp={_f(x.get('mbps'), 1)} delivered_ms p50/p99/max={_f(t.get('inorder_p50_ms'), 1)}/{_f(t.get('inorder_p99_ms'), 1)}/{_f(t.get('inorder_max_ms'), 1)} "
+                        f"qal(marked/bubbles/rejected)={_qal_str(t)} qbw_after_lead-in={_qbw_str(t)} probebw_share={_f(t.get('qm_b_share'), 2)} gate={h.get('gate')} gate_echo={t.get('gate_echo_cli')} refusals={h.get('refusals')} cc={t.get('cc')}")
+                else:
+                    wk, idl = h.get("owner_timer_wakes"), h.get("owner_timer_idle")
+                    out(f"UROW68 {x['arm']} {plan68.SEAT[a]} r{x['rep']}: status={x.get('status')} gp={_f(x.get('mbps'), 1)} cpu_cli/GB={_f(t.get('cpu_cli_gb'), 2)} cpu_srv/GB={_f(t.get('cpu_srv_gb'), 2)} "
+                        f"owner_timer_wakes={_f(wk)} owner_timer_idle={_f(idl) if _num(idl) else 'absent'} idle/wakes={_f(_ratio(idl, wk))} qal={_qal_str(t)} gate={h.get('gate')} gate_echo={t.get('gate_echo_cli')} refusals={h.get('refusals')}")
+            rs = _live(g, a)
+            if not rs:
+                continue
+            if name == "68u":
+                out(f"  UMED68 {code} {plan68.ARM_NAME[a]:<9} n={len(rs)} gp={_mr(_col(rs, lambda x: x.get('mbps')))} delivered_ms p50={_mr(_col(rs, lambda x: _t(x).get('inorder_p50_ms')))} p99={_mr(_col(rs, lambda x: _t(x).get('inorder_p99_ms')))} "
+                    f"max={_mr(_col(rs, lambda x: _t(x).get('inorder_max_ms')))} qal_marked={_mr([_qal_marked(_t(x)) for x in rs], 0) if any(_qal_marked(_t(x)) is not None for x in rs) else 'absent'} "
+                    f"qbw/link(p0)={_mr([_qbw_ratio(_t(x)) for x in rs], 2)} "
+                    f"probebw_share={_mr(_col(rs, lambda x: _t(x).get('qm_b_share')), 2)}")
+            else:
+                out(f"  UMED68 {code} {plan68.ARM_NAME[a]:<9} n={len(rs)} gp={_mr(_col(rs, lambda x: x.get('mbps')))} cpu_cli/GB={_mr(_col(rs, lambda x: _t(x).get('cpu_cli_gb')), 2)} cpu_srv/GB={_mr(_col(rs, lambda x: _t(x).get('cpu_srv_gb')), 2)} "
+                    f"wakes={_mr(_col(rs, lambda x: (_t(x).get('hoff') or {}).get('owner_timer_wakes')), 0)} idle={_mr(_col(rs, lambda x: (_t(x).get('hoff') or {}).get('owner_timer_idle')), 0)} "
+                    f"idle/wakes={_mr([_ratio((_t(x).get('hoff') or {}).get('owner_timer_idle'), (_t(x).get('hoff') or {}).get('owner_timer_wakes')) for x in rs], 3)} "
+                    f"qal_marked={_mr([_qal_marked(_t(x)) for x in rs], 0) if any(_qal_marked(_t(x)) is not None for x in rs) else 'absent'}")
+        if name == "68v":      # the twin's spread (T against G: one arm twice) is the yardstick of the CAND-BASE difference (G against Y)
+            gy, gg, gt = _live(g, "Y"), _live(g, "G"), _live(g, "T")
+            for mname, f in (("cpu_cli/GB", lambda x: _t(x).get("cpu_cli_gb")), ("cpu_srv/GB", lambda x: _t(x).get("cpu_srv_gb")), ("goodput", lambda x: x.get("mbps"))):
+                my, mg, mt = _med(_col(gy, f)), _med(_col(gg, f)), _med(_col(gt, f))
+                spread = abs(mt - mg) if _num(mt) and _num(mg) else None
+                diff = mg - my if _num(mg) and _num(my) else None
+                out(f"  AA68 {code} {mname}: twin spread |T-G|={_f(spread, 3)} (T {_mr(_col(gt, f), 2)} G {_mr(_col(gg, f), 2)}) vs CAND-BASE G-Y={_f(diff, 3)} (Y {_mr(_col(gy, f), 2)}); |G-Y|/|T-G|={_f(_ratio(abs(diff) if diff is not None else None, spread), 2)}")
+    allrows = [x for c in plan68.cells_of(name) for a in plan68.arms_of(c) for x in groups.get(c, {}).get(a, [])]
+    if name == "68u":
+        cw = [x for x in allrows if plan68.seat_of(x["arm"]) == "CAND" and x.get("status") == "LIVE"]
+        n = sum(1 for x in cw if (_qal_marked(_t(x)) or 0) > 0)
+        base_abs = sum(1 for x in allrows if plan68.seat_of(x["arm"]) == "BASE" and not _t(x).get("qal"))
+        out(f"WITNESS-QAL cand_W_rows_with_sends_marked>0={n}/{len(cw)} (registered expectation: all) base_rows_without_qal={base_abs}/{sum(1 for x in allrows if plan68.seat_of(x['arm']) == 'BASE')} (absent is expected, not a failure)")
+    else:
+        cd = [x for x in allrows if plan68.seat_of(x["arm"]) == "CAND" and x.get("status") == "LIVE"]
+        n = sum(1 for x in cd if _num((_t(x).get("hoff") or {}).get("owner_timer_idle")))
+        out(f"WITNESS-IDLE cand_rows_printing_owner_timer_idle={n}/{len(cd)} (registered expectation: all)")
 
 
 def _witnesses(groups, stop, out):
     tot, per = 0, []
     for code in plan68.built_in():
-        for x in groups.get(code, {}).get("G", []):
+        for x in groups.get(code, {}).get("G", []) + groups.get(code, {}).get("Y", []):
             n = (_t(x).get("hoff") or {}).get("refusals") or 0
             tot += n
             per.append(f"{x['arm']}r{x['rep']}={n}")

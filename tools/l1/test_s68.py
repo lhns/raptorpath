@@ -6,6 +6,7 @@
   3. the report's stop rules, each fed a row that must fire it and a row that must not (the rule's EXECUTION, not only its text), and the no-label contract: no PASS / FAIL / VERDICT line is ever printed.
 Run: python3 test_s68.py"""
 import io
+import re
 import os
 import sys
 
@@ -276,7 +277,7 @@ os.environ["LD_PLAN"] = "68s"
 stops, out = run_rules([row("TPH", 1, "on", 0.62, fs_over=2)])
 os.environ["LD_PLAN"] = "68"
 check("STOP68 fs-over fires on a T (GATE twin) row too", any(s_.startswith("fs-over TPH r1") for s_ in stops), stops)
-check("T exists on PH only, runs the CAND seat with the gate and quinn's bbr_rs override like GATE", plan68.arm_parse("TPH") == ("T", "PH") and plan68.arm_parse("TK2") == (None, None) and plan68.seat_of("TPH") == "CAND"
+check("T exists on PH (68s) and the K cells (68v) only, runs the CAND seat with the gate and quinn's bbr_rs override like GATE", plan68.arm_parse("TPH") == ("T", "PH") and plan68.arm_parse("TK2") == ("T", "K2") and plan68.arm_parse("TW2") == (None, None) and plan68.seat_of("TPH") == "CAND"
       and plan68.arm_env("c2-100", "TPH") == plan68.arm_env("c2-100", "GPH") and "TPH" in plan68.all_arms() and "TBU" not in plan68.all_arms())
 os.environ["LD_PLAN"] = "68s"
 ph_rows = [dict(row(a, r, g, hb, gp=gp, fs_over=0), bytes=637_500_000) for r in (1, 2, 3) for a, g, hb, gp in (("BPH", "off", 0.1, 85.0), ("GPH", "on", 0.1, 84.0), ("TPH", "on", 0.1, 84.5))]
@@ -326,6 +327,83 @@ with tempfile.TemporaryDirectory() as td:
     t7 = b7.getvalue()
     check("the 68t report prints the BW witnesses as READ68 lines (ProbeBw share after 10 s, refusals per frame on GATE) and the GATE window gauges; none of them is a stop",
           "READ68 W2 GATE k=20 qm=B share of [QCC] lines after 10 s=0.95" in t7 and "refusals/frame=" in t7 and "READ68 W2 BASE k=20" in t7 and "READ68 W2 GATE p0 u_over=" in t7 and "STOP68" not in t7, t7[-1500:])
+os.environ["LD_PLAN"] = "68"
+# ── 8. plans 68u / 68v: qal= and qbw readouts, the per-row and per-seat-arm lines, the witnesses (reported only) ──
+QL = "[QCC] t=%.1fs p0:qm=B qrt_us=10000 qsr_us=500 qbw=%d qmin_us=9900 qcns=900/10/880              qrn=1 qrus=2 qrb=3 qab=4 qage_us=5%s"
+q_cand = [QL % (t, 11_000_000, " qal=1200/3/7") for t in (2.0, 11.0, 12.0)]
+q_base = [QL % (t, 6_000_000, "") for t in (2.0, 11.0, 12.0)]
+check("qal= parses per path from the last [QCC] line (sends_marked/bubbles_opened/rejected); a line without it reads {} (absent); qbw_after is the median after 10 s",
+      sr.qal_last(q_cand) == {0: (1200, 3, 7)} and sr.qal_last(q_base) == {} and sr.qal_last([]) == {} and sr.qbw_after(q_cand) == {0: 11_000_000} and sr.qbw_after(q_cand, t_min=99) == {}
+      and sr.qcc_last(q_cand)[0]["qab"] == 4 and sr.qal_last(["[2m2026[0m INFO " + q_cand[-1]]) == {0: (1200, 3, 7)})
+
+
+def urow(arm, rep, qcc_lines, idle=None, cpu=(10.0, 8.0), gp=95.0, mark_no_idle=False):
+    x = row(arm, rep, "on" if arm[0] in "GYT" else "off", 0.62 if arm[0] in "GYT" else 0.1, gp=gp)
+    g_ = arm[0] in "GYT"
+    t = sr.row_metrics(["[GATES] RWM_HOFF_GATE=" + ("1" if g_ else "0")] + [mk(2.0 + 0.25 * k, "on" if g_ else "off", 0.62 if g_ else 0.1, 400, wit=WIT.format(o=0) if g_ else "") for k in range(8)] + qcc_lines, [], [], 600_000_000, "c2-100", arm, gp)
+    t["cpu_cli_gb"], t["cpu_srv_gb"] = cpu
+    if idle is not None:
+        t["hoff"]["owner_timer_idle"] = idle
+    x["t68"] = t
+    return x
+
+
+def run_fix(plan_, rows):
+    os.environ["LD_PLAN"] = plan_
+    with tempfile.TemporaryDirectory() as td:
+        led = os.path.join(td, "ld.log")
+        with open(led, "w", newline="\n") as fh:
+            for r in rows:
+                fh.write("P38ROW " + json.dumps(r) + "\n")
+        b = io.StringIO()
+        rc = sr.report(led, out=lambda s_: b.write(s_ + "\n"))
+    os.environ["LD_PLAN"] = "68"
+    return rc, b.getvalue()
+
+
+u_rows = []
+for r_ in (1, 2, 3):
+    for a_ in ("XW2", "YW2", "RW2", "GW2"):
+        cand = plan68.seat_of(a_) == "CAND"
+        x_ = urow(a_, r_, q_cand if cand else q_base)
+        x_["cell"] = "c2-100"
+        x_["bytes"] = 71_224_920
+        u_rows.append(x_)
+rc, tu = run_fix("68u", u_rows)
+check("the 68u report: one UROW68 per row (delivered-delay p50/p99/max, goodput, qal per leg, qbw after the lead-in against the link, ProbeBw share, the gate fields), one UMED68 per seat-arm with median[range]; CAND shows sends_marked, BASE reads `absent` (not a failure)",
+      rc == 0 and len(re.findall(r"^UROW68 ", tu, re.M)) == 12 and "UROW68 GW2 CAND r1:" in tu and "qal(marked/bubbles/rejected)=p0:1200/3/7" in tu and "UROW68 XW2 BASE r1:" in tu and "qal(marked/bubbles/rejected)=absent" in tu
+      and "qbw_after_lead-in=p0:11.00MB/s(x0.88)" in tu and re.search(r"^  UMED68 W2 BASE-R4\s+n=3 .*qal_marked=absent", tu, re.M) and re.search(r"^  UMED68 W2 GATE\s+n=3 .*qal_marked=1200\[1200-1200\]", tu, re.M)
+      and re.search(r"UMED68 W2 GATE .*qbw/link\(p0\)=0.88\[0.88-0.88\]", tu) and "delivered_ms p50=" in tu and "STOP68" not in tu, tu[-2500:])
+check("WITNESS-QAL counts the CAND W rows with sends_marked > 0 (all 6 here: R and G on W1..W4 present as W2 only = 6) and reports the BASE rows without qal; the last line is REPORT68 REPORTED-ONLY with no PASS / FAIL / VERDICT token",
+      "WITNESS-QAL cand_W_rows_with_sends_marked>0=6/6 (registered expectation: all) base_rows_without_qal=6/6" in tu and tu.strip().splitlines()[-1].startswith("REPORT68 REPORTED-ONLY rows=12/36") and not any(tok in tu for tok in ("PASS", "FAIL", "VERDICT")), tu[-900:])
+u_zero = [dict(x, t68=dict(x["t68"], qal={0: (0, 0, 0)})) if plan68.seat_of(x["arm"]) == "CAND" else x for x in u_rows]
+rc, tz = run_fix("68u", u_zero)
+check("a CAND row whose sends_marked is 0 lowers the witness count (reported, never a stop): 0/6", "WITNESS-QAL cand_W_rows_with_sends_marked>0=0/6" in tz and "STOP68" not in tz and rc == 0, tz[-600:])
+v_rows = []
+for r_ in (1, 2, 3):
+    for a_, idle, cpu in (("YK2", None, (10.0, 8.0)), ("GK2", 30, (10.2, 8.1)), ("TK2", 31, (10.1, 8.0))):
+        x_ = urow(a_, r_, [QL % (t, 12_000_000, " qal=0/0/0") for t in (2.0, 12.0)], idle=idle, cpu=cpu, gp=95.0)
+        x_["bytes"] = 600_000_000
+        v_rows.append(x_)
+rc, tv = run_fix("68v", v_rows)
+check("the 68v report: client / server CPU per GB, goodput, owner_timer_wakes / idle and their ratio per row (absent on the BASE seat), qal, the median[range] per seat-arm, the twin spread against the CAND-BASE difference, WITNESS-IDLE over the CAND rows",
+      rc == 0 and len(re.findall(r"^UROW68 ", tv, re.M)) == 9 and "UROW68 YK2 BASE r1:" in tv and "owner_timer_idle=absent" in tv and "UROW68 GK2 CAND r1:" in tv and "owner_timer_idle=30" in tv and "idle/wakes=" in tv and "qal=p0:0/0/0" in tv
+      and re.search(r"^  UMED68 K2 GATE\s+n=3 .*cpu_cli/GB=10.20\[10.20-10.20\]", tv, re.M) and re.search(r"^  AA68 K2 cpu_cli/GB: twin spread \|T-G\|=0.100 .*G-Y=0.200 ", tv, re.M)
+      and "WITNESS-IDLE cand_rows_printing_owner_timer_idle=6/6 (registered expectation: all)" in tv and "STOP68" not in tv and tv.strip().splitlines()[-1].startswith("REPORT68 REPORTED-ONLY rows=9/27"), tv[-2500:])
+check("the existing rules and gate readouts cover the BASE-seat arms: WITNESS68 / READ68 gate gauges for Y (BASE-GATE) and the CAND GATE, the refusal witness sums Y rows too, no STOP68 on a healthy table",
+      "READ68 W2 BASE-GATE p0 u_over=" in tu and "READ68 W2 GATE p0 u_over=" in tu and "READ68 W2 BASE-GATE owner_timer wakes/idle" in tu and "WITNESS68 first-send refusals" in tu and "YW2r1=" in tu and "STOP68" not in tu, tu[-1500:])
+y_off = [dict(x, t68=urow("YW2", int(x["rep"]), q_base, gp=95.0)["t68"]) if x["arm"] == "YW2" else x for x in u_rows]
+y_off = [dict(x, t68=dict(x["t68"], hoff=dict(x["t68"]["hoff"], gate="off"))) if x["arm"] == "YW2" else x for x in y_off]
+rc, ty = run_fix("68u", y_off)
+check("a BASE-seat GATE row printing gate=off fires STOP68 gate-not-on (the new arm Y is a gate arm); an X (BASE R4) row printing gate=on fires r4-gate-on",
+      "STOP68 gate-not-on YW2" in ty and "STOP68 r4-gate-on" not in ty, ty[-800:])
+x_on = [dict(x, t68=dict(x["t68"], hoff=dict(x["t68"]["hoff"], gate="on"))) if x["arm"] == "XW2" else x for x in u_rows]
+rc, tx = run_fix("68u", x_on)
+check("an X row with the gate on is r4-gate-on", "STOP68 r4-gate-on XW2" in tx, tx[-800:])
+v_noidle = [dict(x, t68=dict(x["t68"], hoff=dict(x["t68"]["hoff"], owner_timer_idle=None))) if x["arm"] == "TK2" else x for x in v_rows]
+rc, tn = run_fix("68v", v_noidle)
+check("WITNESS-IDLE drops by the CAND rows that print no owner_timer_idle (3 of 6 print it); reported, not a stop", "WITNESS-IDLE cand_rows_printing_owner_timer_idle=3/6" in tn and "STOP68" not in tn, tn[-400:])
+check("the 68t / 68 report path is unchanged by the new plans: arms_of under LD_PLAN=68t is the 68t set (W cells B, R, G)", (os.environ.__setitem__("LD_PLAN", "68t") or True) and plan68.arms_of("W2") == ("B", "R", "G") and plan68.arms_of("K2") == ("B", "R", "G", "Q") and (os.environ.__setitem__("LD_PLAN", "68") or True))
 os.environ["LD_PLAN"] = "68"
 print("FAILED %d" % fails if fails else "ALL OK")
 sys.exit(1 if fails else 0)
