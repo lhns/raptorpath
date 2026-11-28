@@ -724,6 +724,24 @@ Owner answers (2026-11-27, verbatim; the owner delegated the S06 judgement to Fa
   2. the harness67d S2 gating command, run once on the VM, prints a `Running` line and a non-zero passed count for every target: met (VM pre-pin check 1 below);
   3. guard 2 reads ELIGIBLE TO MERGE under §4.5, every bullet (suites and repeats, G2, AS, R1, the below-floor hold-flag read, R2-HOLD not fired or cleared, binid, the ADR-0084 Amendment 1 rewrite before the merge). R1-BLIND is accepted only with A's and R2's execution witnesses met, so the merge never rests on Bulk rows alone. A fired R2-HOLD or a below-floor flag is cleared only by a written read (Fable's, owner-delegated), recorded in the Result before the merge.
 
+### Seat heads at the 2026-11-28 main merge (final pins, full shas)
+
+`harness67e` `1d26c8cd` (harness67d plus the third review's fixes) merged to main as `5ea4dd11`; main is `6d1c959ddf73ec10bc1eb1374c222c6e3824b6ea` with the roadmap note. Every seat took it by a clean `git merge --no-ff`, tools only:
+
+| seat | branch | pin (`LD_PIN_<SEAT>`) |
+|---|---|---|
+| B0 | none | `6d1c959ddf73ec10bc1eb1374c222c6e3824b6ea` (github/main) |
+| S1 | `vmb-s1` | `1ecc5b8305ebe2886c205f8669eee3d03f157c0e` |
+| S2 | `vmb-s2` | `e74d4645f893bbac0b515ca03ed1efdc34385427` |
+| P1 (P1T) | `vmb-p1` | `fc9d696ec27f42e29d01410e415eb71f4e56a993` |
+| P2 (P2T) | `vmb-p2` | `cd93566c6402f50cf07f8f76e2b6ca04f4e6a69a` |
+
+Witnesses at these heads:
+- `git diff B0 S1 -- tools` is empty; `git diff S1 S2 -- tools` is `tools/ci/coverage_sites.json` only (#12). P1 / P2 against S1 / S2: `perf.rs`, `gates/tests.rs`, `lib.sh` (one line) and the pacer's fourth file, as before (#14).
+- `git diff 507fb836 S1 -- raptorpath` is empty: S1's engine is byte-for-byte the tree T2's red and the binid runs were taken on.
+- T2's carry rule (S06 condition 1): `git diff S1 S2 -- raptorpath | git patch-id --stable` = `32a5afdc…` at the old and the new heads; the pacer diff's patch-id is unchanged too (`1d8c086e…`). The T2 record carries; no re-run.
+- CI on the four heads: see the roadmap note of the pin push.
+
 ### Seat heads at the 2026-11-27 main merge (pins, full shas)
 
 Main moved from `9bc656bf` to `39c41f2a4d8597f770db17db9984dd4c081e92a1`: the wasm model (knobs, consumer, link vectors), docs, `tools/toy`, the roadmap, harness67c round 3 (tools only), and test-only engine-path files (`raptorpath/src/net/tests.rs` +91, `raptorpath/tests/sim_d_frozen.rs` and its `[[test]]` stanza, the ci.yml sim line). No non-test `src/` of `raptorpath`, `raptorpath-math` or `raptorpath-core`, no root `Cargo.*` and no `vendor` changed, so §1.3's "if main moves" needs no engine re-pin. Engine patch-ids (`git patch-id --stable` over §1.3's set `raptorpath raptorpath-math Cargo.toml Cargo.lock`): S1 against B0 `ac12e9b5`, as at the 2026-11-21 heads; S2 against B0 `24602b1e` and S1 to S2 `9cbbd742`, equal to those of `1ea78c26` (the 2026-11-21 S2 head plus its `sim_s06_nack` `[[test]]` stanza, which is why they differ from the draft's `3d06984e` reading). Main's new source pins in `net/tests.rs` (`emit_source.rs` text) hold on S2.
