@@ -333,7 +333,7 @@ else
   mkdir -p "$RUN" "$SHM/bin"
 fi
 persist() { mkdir -p "$ROOT/run" && cp -a "$RUN/." "$ROOT/run/" && echo "PERSISTED $RUN -> $ROOT/run $(date -u +%FT%TZ)"; }
-SENTINELS="DONE-ALL FAILED-ALL TRUNCATED-ALL REHEARSAL-R2-VOID all-era.txt TESTS.txt TESTS-OK TESTS-FAIL SMOKE-PASS REHEARSAL-PASS ABORT-SMOKE BINSHA.txt smoke.log smoke-check.txt ld.log score.txt parser-test.log"
+SENTINELS="DONE-ALL FAILED-ALL TRUNCATED-ALL REHEARSAL-R2-VOID REHEARSAL-G2-VOID all-era.txt TESTS.txt TESTS-OK TESTS-FAIL SMOKE-PASS REHEARSAL-PASS ABORT-SMOKE BINSHA.txt smoke.log smoke-check.txt ld.log score.txt parser-test.log"
 probe_sentinel "$RUN/all.out"
 exec > >(tee -a "$RUN/all.out") 2>&1
 LB_PROOF_EXTRA="launch=$(date -u +%FT%TZ)" prove_sentinels "$RUN" $SENTINELS
