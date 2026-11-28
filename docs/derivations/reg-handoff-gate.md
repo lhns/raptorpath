@@ -716,3 +716,34 @@ Code citations:
 **CPU (client per GB, GATE against BASE, cross-session on K):** K2 +8 %, K8 +13 %, A2 −19 %, P7 +4 %, P8 −1 %, W cells −1 to −11 %. The F3 decision-read trim and the `owner_timer_idle` counter are not in this tree.
 
 **Open:** c2 Bulk goodput DIAG68 0.990; c8 leg-0 batch DIAG68 (17.1 against 25.7); reopen max 15 ms against L 6.2 ms (the §9 gauge artifact still unfixed); the `bbr_rs` app-limited fix needs its own off-Bulk reading (the W cells are the place).
+
+## 14. Plans 68u and 68v (registration, 2026-11-28, before any row; reported only)
+
+Fable's design (2026-11-27): the three changes since 68t are read apart, not as one tree. Harness `harness68` `b6b8b28e`; engine `handoff-gate` `43a70ae8`, `hgate-fixw` `8d6490c1` (= d3697f66 + the witness commits). Neither plan decides a merge; both feed the step-2 registration.
+
+**Execution witness added first.** d3697f66's per-packet marking had no in-vivo counter. `[QCC]` now ends each path block with `qal=<sends_marked>/<bubbles_opened>/<rejected_app_limited>` (observation only, never read by the law; unit test `qal_witness_counts_marked_sends_and_bubbles`).
+
+### 14.1 68u: the bbr_rs app-limited fix, off Bulk
+
+- **Seats:** BASE `bb7133f5` (the 68t build, no per-packet marking), CAND `hgate-fixw` `8d6490c1`. **Arms on both:** R4 (bbr_rs, gate off) and GATE (bbr_rs + gate). **Cells:** W1, W2, W4 as 68t (10 / 20 / 40 datagrams per 33 ms frame after the lead-in). n = 3, seed 42: 36 rows.
+- **Witness (VOID if it fails):** every CAND W row shows `sends_marked` > 0 on the active legs (`WITNESS-QAL`). BASE prints no `qal=`.
+- **Predictions (from §12.1's mechanism):**
+  1. **b̂ after the lead-in.** BASE: `qbw` falls to about one frame's delivery rate within about 0.33 s (10 rounds of one frame). CAND: bubble samples are raise-only, so `qbw` holds near the lead-in's value. Prediction: CAND's W-phase median `qbw` is at least 3× BASE's on each cell and arm, and at least 0.5× the lead-in median.
+  2. **R4 delay.** With b̂ held, the window no longer throttles a frame burst. R4's p99 and max delivered delay fall on every W cell (CAND < BASE, all three cells), and CAND-R4's p99 lands within 1.5× of BASE-GATE's.
+  3. **GATE delay.** The gate already bounds what is handed over, so GATE moves little: CAND-GATE's p99 within ±25 % of BASE-GATE's on each cell; max under 100 ms as in 68t.
+  4. **Goodput.** The flow is app-limited, so goodput is equal (±2 %) on every seat-arm.
+- **Falsifiers:** `WITNESS-QAL` fails → the fix does not execute here (VOID, back to the engine). Prediction 1 fails with the witness met → §12.1's diagnosis is wrong or incomplete (a defect finding). Prediction 2 fails with 1 met → b̂ was not what throttled R4.
+
+### 14.2 68v: CPU of F3 and the timer counter
+
+- **Seats:** BASE `hgate-fixw` `8d6490c1` (FIX), CAND `handoff-gate` `43a70ae8` (FIX + F3 + `owner_timer_idle`). **Arms:** GATE on both, plus T (CAND's GATE twin, the A/A noise reference). **Cells:** K2, K8, A2 as 68t. n = 3: 27 rows.
+- **Witness:** every CAND row prints `owner_timer_idle` (`WITNESS-IDLE`).
+- **Predictions (§12.3):**
+  1. **F3.** Client CPU per GB, CAND against BASE, falls by 0 to 0.86 s/GB on K2 and K8 (at most about 3 %). That is likely inside the T twin's spread; it is reported beside the spread, not tested.
+  2. **Unchanged:** goodput (±1 %) and the gate's decision fields (F3 is pinned to read the same inputs by a host test).
+  3. **`qal=` on K2 / K8:** `sends_marked` about 0 (Bulk is never app-limited).
+- **Decision rule for the timer fix (registered now):** F2 (a deadline that follows the last publish, with τ̂_o timed from the last publish) is derived and built only if `owner_timer_idle / owner_timer_wakes` ≥ 0.5 on both K2 and K8 (CAND, row medians). Below that, F1 and F2 are dropped, and step 2 registers the Bulk CPU cost as measured. F1 stays the owner's call either way, because it moves τ̂_o's sample set.
+
+### 14.3 Order
+
+Both run after VM batch 1 (Fable's order). Before the rehearsal: the unfiltered `test_stubrun.py` on harness68 (the worker could not finish it on the host), on the VM between batch-1 sessions.
