@@ -118,10 +118,37 @@ case "$1" in
       echo 'exit 0'; } > "$T/release/raptorpath"
     chmod +x "$T/release/raptorpath" ;;
   test)
+    # as cargo does: a target named with --test whose required-features are off is an error, before anything builds (raptorpath/Cargo.toml: s06_reactive needs test-seams, sim_* need sim and test-seams);
+    # the sim targets also need RUSTFLAGS="--cfg tokio_unstable" (ADR-0082), here a build error without it
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--test" ]; then
+        case "$a" in
+          s06_reactive) case " $* " in *" --features test-seams "*|*" --features sim,test-seams "*) ;; *) echo "error: target \`$a\` in package \`raptorpath\` requires the features: \`test-seams\`" >&2; exit 101 ;; esac ;;
+          sim_nack_test) ;;
+          sim_*) case " $* " in *" --features sim,test-seams "*) ;; *) echo "error: target \`$a\` in package \`raptorpath\` requires the features: \`sim\`, \`test-seams\`" >&2; exit 101 ;; esac
+                 case "${RUSTFLAGS:-}" in *tokio_unstable*) ;; *) echo "error: could not compile raptorpath (stub: sim without --cfg tokio_unstable)" >&2; exit 101 ;; esac ;;
+        esac
+      fi
+      prev="$a"
+    done
+    running() { local p="" a; for a in "$@"; do [ "$p" = "--test" ] && echo "     Running tests/$a.rs (target/release/deps/$a-0)"; [ "$a" = "--lib" ] && echo "     Running unittests src/lib.rs (target/release/deps/raptorpath-0)"; p="$a"; done; }
+    per_target() { # <passed> <cargo args...>: one Running line and one result line per --test target, as cargo prints them; STUB_REPEAT_IGNORED=<t>: that target's tests are all #[ignore]
+      local n="$1" p="" a; shift
+      for a in "$@"; do
+        if [ "$p" = "--test" ]; then
+          echo "     Running tests/$a.rs (target/release/deps/$a-0)"
+          if [ "$a" = "${STUB_REPEAT_IGNORED:-}" ]; then echo "test result: ok. 0 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out"
+          else echo "test result: ok. $n passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"; fi
+        fi
+        p="$a"
+      done
+    }
     case " $* " in
       *" --no-run "*) ;;
-      *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test
-        echo "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+      *" --test s06_no_copy "*)      # plan 67's repeat run (repeat67_run.sh): STUB_REPEAT_FAIL=<k>: the k-th run of the S2 gating tests fails one test; STUB_REPEAT_ZERO=1: every run passes zero tests (a filter or build that ran nothing)
+        if [ -n "${STUB_REPEAT_ZERO:-}" ]; then per_target 0 "$@"; exit 0; fi
+        per_target 3 "$@"
         if [ -n "${STUB_REPEAT_FAIL:-}" ]; then
           n=$(cat "$STUB_REPEAT_DIR/n" 2>/dev/null || echo 0); n=$(( n + 1 )); echo "$n" > "$STUB_REPEAT_DIR/n"
           if [ "$n" = "$STUB_REPEAT_FAIL" ]; then echo "test s06_no_copy::t_one ... FAILED"; echo "test result: FAILED. 2 passed; 1 failed; 0 ignored"; exit 101; fi
@@ -160,7 +187,10 @@ case "$1" in
           [ "$seen" = 1 ] && case "$a" in -*) ;; *) [ "$a" = "$gf" ] || echo "test $a ... ok" ;; esac
           [ "$a" = "--" ] && seen=1
         done ;;
-      *) echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+      *" --test sim_shed_reach "*|*" --test sim_nack_test "*)      # plan 67's repeat: the sim / deterministic lists, one result line per target
+        per_target 1 "$@" ;;
+      *) running "$@"
+          echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
           seen=0      # plan 51's dial pins name their tests after `--`: one `test <name> ... ok` line each (STUB_FAIL_PIN: that one FAILS; STUB_SKIP_PIN: that one prints nothing, a filter that matched no test)
           for a in "$@"; do
             if [ "$seen" = 1 ]; then
@@ -2797,6 +2827,8 @@ def make67(root, plan, path):
         fh.write(VIS_STUB67)
     with open(os.path.join(vis, "interactive-visualizer.html"), "w", newline="\n") as fh:
         fh.write("<html></html>\n")
+    with open(os.path.join(sb["repo"], "raptorpath", "Cargo.toml"), "a", newline="\n") as fh:      # the [[test]] stanzas raptorpath/Cargo.toml declares: the repeat (repeat67_run.sh) splits its sim list by them
+        fh.write("".join('\n[[test]]\nname = "%s"\nrequired-features = [%s]\n' % tf for tf in (("s06_reactive", '"test-seams"'), ("sim_shed_reach", '"sim", "test-seams"'), ("sim_lost_tail", '"sim", "test-seams"'), ("sim_s06_nack", '"sim", "test-seams"'))))
     for tree in TREES67:
         dst = os.path.join(sb["root"], "seats", tree, "src")
         shutil.copytree(sb["repo"], dst)
@@ -3236,7 +3268,16 @@ def case67(plan, path):
                       (rc, tail(e, 8), tail(out, 6), am[-300:]))
                 EXECUTED.add((plan, path))
                 return
-            stage_of = {"t-base-refuses": "t", "s2-taper-nonzero": "g2"}[path]
+            if path == "s2-taper-nonzero":
+                am = txt67(run_dir, "AMENDMENT2.txt")
+                voided = [s for s in ("g2", "a", "r1") if os.path.exists(os.path.join(stage_dirs[s], "G2-VOID"))]
+                check(f"{tag}: S2 prints taper > 0 on its smoke rows: the S2-family smoke failure in g2, A and R1 makes guard 2 VOID (G2-VOID and the kept ABORT-SMOKE in each stage dir), it does not stop the rehearsal: g1, t and r2 still ran their smokes (REHEARSAL-PASS), AMENDMENT2.txt carries REHEARSAL-G2-VOID, the sentinel REHEARSAL-G2-VOID, rc {TRUNC_EXIT67} and the token LD-ALL-REHEARSAL-G2-VOID (not -DONE, no FAILED-ALL)",
+                      rc == TRUNC_EXIT67 and voided == ["g2", "a", "r1"] and all(os.path.exists(os.path.join(stage_dirs[s], "ABORT-SMOKE")) and not os.path.exists(os.path.join(stage_dirs[s], "REHEARSAL-PASS")) for s in voided)
+                      and all(os.path.exists(os.path.join(stage_dirs[s], "REHEARSAL-PASS")) for s in ("g1", "t", "r2")) and "LD-ALL-REHEARSAL-G2-VOID" in out and "LD-ALL-REHEARSAL-DONE" not in out and not failed
+                      and os.path.exists(os.path.join(run_dir, "REHEARSAL-G2-VOID")) and "REHEARSAL-G2-VOID" in am and "BINSHA S1 " in am, (rc, voided, tail(e, 8), tail(out, 4), am[-300:]))
+                EXECUTED.add((plan, path))
+                return
+            stage_of = {"t-base-refuses": "t"}[path]
             check(f"{tag}: the rehearsal stops: rc 5, FAILED-ALL, ABORT-SMOKE of stage {stage_of} (a defect or a finding is never a pass), no LD-ALL-REHEARSAL-DONE",
                   rc == 5 and failed and os.path.exists(os.path.join(stage_dirs[stage_of], "ABORT-SMOKE")) and "LD-ALL-REHEARSAL-DONE" not in out, (rc, tail(e, 8), tail(txt67(stage_dirs[stage_of], "smoke-check.txt"), 8)))
             if path == "t-base-refuses":
@@ -3268,8 +3309,8 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
     cleanish = path in ("full", "dump-twins", "g2-fail", "s2-belowfloor-high", "r1-blind", "twin-no-final", "g1-fail", "s1-no-gauge", "s2-no-pslot")
     if plan == "67g":
         g1, g2 = led56(stage_dirs["g1"]), led56(stage_dirs["g2"])
-        gate1 = re.search(r"^GATE-67G1 (PASS|FAIL)", sc["g1"], re.M)
-        gate2 = re.search(r"^GATE-67G2 (PASS|FAIL)", sc["g2"], re.M)
+        gate1 = re.search(r"^GATE-67G1 (PASS|FAIL|UNSCOREABLE|NO VERDICT|TRUNCATED)", sc["g1"], re.M)
+        gate2 = re.search(r"^GATE-67G2 (PASS|FAIL|UNSCOREABLE|NO VERDICT|TRUNCATED)", sc["g2"], re.M)
         if path == "g-block1-fail":
             check(f"{tag}: S1's first G1 row lacks the gauge prints: the block-1 rule stops G1 after 8 rows (FAILED-STAGE67 in its ledger, FAILED-g1 marker, BLOCK1-FAIL naming the row, exit 6, no score), G2 still ran to the end and printed its gate; the session is not DONE-ALL",
                   os.path.exists(os.path.join(stage_dirs["g1"], "FAILED-g1")) and "FAILED-STAGE67" in txt67(stage_dirs["g1"], "ld.log") and "BLOCK1-FAIL CAND" in txt67(stage_dirs["g1"], "ld.log") and len(g1) == 8
@@ -3284,7 +3325,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
         if path == "full":
             check(f"{tag}: rc 0, LD-ALL-DONE; GATE-67G1 PASS and GATE-67G2 PASS on clean rows; no replacement run, no S06-FAIL", done_ok and gate1.group(1) == "PASS" and gate2.group(1) == "PASS" and not any(r["status"] == "S06-FAIL" for r in g1 + g2), (rc, tail(out, 8), tail(sc["g1"], 6), tail(sc["g2"], 6)))
         if path == "g1-fail":
-            check(f"{tag}: S1 rows without the gauge prints on every draw (the witness failure is not replaced away): GATE-67G1 FAIL, and G2 (BASE = S1) still ran to the end and printed its gate", gate1.group(1) == "FAIL" and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (tail(sc["g1"], 5), tail(sc["g2"], 5)))
+            check(f"{tag}: S1 rows without the gauge prints on every draw (the witness failure is not replaced away): GATE-67G1 UNSCOREABLE (re-run: nothing was found, so never FAIL), and G2 (BASE = S1) still ran to the end and printed its gate", gate1.group(1) == "UNSCOREABLE" and os.path.exists(os.path.join(stage_dirs["g2"], "DONE")), (tail(sc["g1"], 5), tail(sc["g2"], 5)))
         if path == "s1-no-gauge":
             rp = led56(stage_dirs["g1"], "repl.log")
             check(f"{tag}: an S1 row without the gauge prints is WITNESS-FAIL in G1 and re-run once (repl.log holds its replacement), and the gate still reads", any(r["status"] == "WITNESS-FAIL" for r in g1) and len(rp) >= 1 and gate1 is not None, ([r["status"] for r in g1], len(rp)))
@@ -3388,7 +3429,7 @@ def launch67(tag, plan, path, sb, rc, out, rows, e, run_dir, failed, stage_dirs)
 
 
 # ── plan 67's session-0 steps that are scripts of their own: the repeat run (repeat67_run.sh: N gating runs per seat, zero failures, ABORT-REPEAT) and binid on three seats (binid67_run.sh) ──
-EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut")
+EXTRA_REPEAT = ("repeat-pass", "repeat-one-failure", "repeat-cut", "repeat-zero-tests", "repeat-all-ignored", "repeat-s2-share")
 EXTRA_BINID = ("binid-pass", "binid-same")
 EXTRA67_DONE = set()
 
@@ -3414,22 +3455,41 @@ def extra_repeat(kind):
         sb = make67(root, "67", "rehearse")
         rd = os.path.join(sb["logs"], "repeat")
         os.makedirs(rd)
-        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": "4" if kind == "repeat-cut" else "3600", "STUB_REPEAT_DIR": px(rd), "R67_T1_S": "1"}
+        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": {"repeat-cut": "2400", "repeat-s2-share": "3900"}.get(kind, "3600"), "STUB_REPEAT_DIR": px(rd), "R67_T1_S": {"repeat-cut": "500", "repeat-s2-share": "1000"}.get(kind, "1")}      # seams in the hundreds of seconds: the real elapsed time of a loaded host (seconds to minutes) must not move the cuts
         if kind == "repeat-one-failure":
             env["STUB_REPEAT_FAIL"] = "3"
+        if kind == "repeat-zero-tests":
+            env["STUB_REPEAT_ZERO"] = "1"
+        if kind == "repeat-all-ignored":      # one gating target runs, but every test in it is #[ignore] (s06_reactive's shape, VM 2026-11-27): the others pass
+            env["STUB_REPEAT_IGNORED"] = "holeclass_reachability"
         rc, out, cargo = script67(sb, root, "repeat67_run.sh", env)
         rep = txt67(root, "out", "REPEAT67.txt")
         s06 = [c for c in cargo if "|test " in c and "--test s06_no_copy" in c and "--no-run" not in c]
         sims = [c for c in cargo if "|test " in c and "--test sim_shed_reach" in c and "--no-run" not in c]
+        dets = [c for c in cargo if "|test " in c and "--test sim_nack_test" in c and "--no-run" not in c]
         if kind == "repeat-pass":
             check(f"{tag}: zero failures: rc 0, both seats read 4 of 4 with no failing run, the S2 gating tests ran 4 times, the sim tests twice, REPEAT67-DONE bad=0",
                   rc == 0 and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "REPEAT67 seat=S2 reached=4 of 4 failing_runs=0" in rep and len(s06) == 4 and len(sims) == 2 and "REPEAT67-DONE bad=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep, len(s06), len(sims)))
+            check(f"{tag}: the S2 gating tests are s06_no_copy and holeclass_reachability, with no feature (s06_reactive is all #[ignore]: not named); the sim-feature targets (by the seat's [[test]] stanzas) run with --features sim,test-seams and include T2's port sim_s06_nack, as ci.yml's sim job; the plain ones run --release with no feature",
+                  len(s06) == 4 and len(sims) == 2 and len(dets) == 2 and all(c.endswith("|test -p raptorpath --release --test s06_no_copy --test holeclass_reachability --no-fail-fast") for c in s06)
+                  and all("--features sim,test-seams" in c and "--test sim_s06_nack" in c and "--release" not in c and "--test sim_nack_test" not in c for c in sims)
+                  and all("--release" in c and "--features" not in c and "--test place_arms_reachability" in c for c in dets), (s06, sims, dets))
         elif kind == "repeat-one-failure":
             check(f"{tag}: one failing run in 4 of S2's gating tests: ABORT-REPEAT seat=S2 (guard 2 does not launch), the failing test named, rc 5; S1 read zero failures and is not aborted",
                   rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=1 failures=[s06_no_copy::t_one]" in rep and "REPEAT67 seat=S1 reached=4 of 4 failing_runs=0" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        elif kind == "repeat-zero-tests":
+            check(f"{tag}: every S2 run exits 0 with zero passed tests: each run is a failure (ZERO-TESTS per target), ABORT-REPEAT seat=S2, rc 5; S1 is not aborted",
+                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS(s06_no_copy) ZERO-TESTS(holeclass_reachability)" in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        elif kind == "repeat-all-ignored":
+            check(f"{tag}: one gating target passes nothing (all its tests ignored) while the other passes: the per-target rule fails every S2 run (ZERO-TESTS(holeclass_reachability)), ABORT-REPEAT seat=S2, rc 5",
+                  rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS(holeclass_reachability)" in rep and "ZERO-TESTS(s06_no_copy)" not in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
+        elif kind == "repeat-s2-share":
+            m_ = re.search(r"REPEAT-CUT seat=S2 reached=(\d+) of 4", rep)
+            check(f"{tag}: first run 1000 s (seam) on a 3900 s budget: S1's share is half (1950 s: 1 run, REPEAT-CUT on record), S2's is the budget minus S1's real elapsed time (3000-3900 s while S1 took under 900 s: 3 runs; an equal split would give it 1), rc 0",
+                  rc == 0 and "REPEAT-CUT seat=S1 reached=1 of 4" in rep and "REPEAT67 seat=S1 reached=1 of 4" in rep and m_ is not None and 2 <= int(m_.group(1)) <= 3 and "REPEAT67 seat=S2 reached=%s of 4" % m_.group(1) in rep and "ABORT-REPEAT" not in rep, (rc, rep))
         else:
-            check(f"{tag}: a budget of 4 s (2 s per seat) fits two timed runs: REPEAT-CUT with the reached N is on record (for the second amendment), the seats read that N with zero failures, rc 0",
-                  rc == 0 and rep.count("REPEAT-CUT seat=") == 2 and "reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
+            check(f"{tag}: a 2400 s budget with a 500 s first run: S1's share (1200 s) fits two timed runs: REPEAT-CUT seat=S1 with the reached N is on record (for the second amendment), S1 reads 2 of 4 with zero failures, rc 0",
+                  rc == 0 and "REPEAT-CUT seat=S1 reached=2 of 4" in rep and "REPEAT67 seat=S1 reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
         EXTRA67_DONE.add(kind)
     finally:
         shutil.rmtree(root, ignore_errors=True)

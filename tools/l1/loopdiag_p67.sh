@@ -262,7 +262,7 @@ stage67() { # name
 }
 
 # ── 8. the session ──
-P67RC=(); P67R2VOID=0
+P67RC=(); P67R2VOID=0; P67G2VOID=0
 if [ "$REHEARSE" = 1 ]; then
   for _st in "${P67STAGES[@]}"; do
     stage67 "$_st"; _rc=$?
@@ -271,6 +271,13 @@ if [ "$REHEARSE" = 1 ]; then
     if [ "$_st" = "r2" ] && [ "$_rc" = "1" ] && [ -e "$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['r2'])")/ABORT-SMOKE" ]; then
       touch "$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['r2'])")/R2-VOID"; P67R2VOID=1
       era "LD-ALL R2-VOID: the rehearsal's R2 smoke failed (ABORT-SMOKE kept); the other stages' smokes still run, guard 2 waits for an R2 re-run"
+      continue
+    fi
+    # registration 5.2 / 4.4 likewise for the S2 family in g2 / A / R1 (the S2 seat's smoke failure alone): guard 2 is VOID (REHEARSAL-G2-VOID), the other smokes (S1, B0, T) still run. A failure that names S1 or B0 stops.
+    _sd="$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['$_st'])")"
+    if [ "$_rc" = "1" ] && [ -e "$_sd/ABORT-SMOKE" ] && python3 ./plan67.py s2-smoke-fail "$_st" "$_sd/smoke-check.txt"; then
+      touch "$_sd/G2-VOID"; P67G2VOID=1
+      era "LD-ALL G2-VOID: the rehearsal's S2-family smoke failed in stage $_st (ABORT-SMOKE kept); the other stages' smokes still run, guard 2 is VOID until a re-run"
       continue
     fi
     fail_all "rehearsal: stage $_st smoke did not pass ($_st)"
@@ -282,9 +289,12 @@ if [ "$REHEARSE" = 1 ]; then
     echo "SUITE-REUSE HIT for: $(for _s in S1 S2; do [[ " ${P67NEED[*]} " == *" $_s "* ]] && echo -n "$_s "; done)"
     echo "TOOLS-MANIFEST $(sha256sum "$SD/TOOLS-MANIFEST.sha256" 2>/dev/null | cut -d' ' -f1)"
     [ "$P67R2VOID" != 1 ] || echo "R2 VOID (rehearsal smoke failed: guard 2 waits for an R2 re-run)"
+    [ "$P67G2VOID" != 1 ] || echo "REHEARSAL-G2-VOID (an S2-family smoke failed in g2 / A / R1: guard 2 is VOID until the S2 seat is fixed and the rehearsal re-run; guard 1 may launch)"
   } > "$RUN/AMENDMENT2.txt"
   cat "$RUN/AMENDMENT2.txt"
-  if [ "$P67R2VOID" = 1 ]; then touch "$RUN/REHEARSAL-R2-VOID"; era "LD-ALL REHEARSAL-R2-VOID: every other stage's smoke passed; R2 is VOID (guard 2 waits for an R2 re-run; guard 1 may launch)"; persist; echo "LD-ALL-REHEARSAL-R2-VOID"; exit $P67_EXIT_NONPASS; fi
+  if [ "$P67G2VOID" = 1 ]; then touch "$RUN/REHEARSAL-G2-VOID"; era "LD-ALL REHEARSAL-G2-VOID: guard 2 is VOID (an S2-family smoke failed); every other smoke ran (guard 1 may launch)"; fi
+  if [ "$P67R2VOID" = 1 ]; then touch "$RUN/REHEARSAL-R2-VOID"; era "LD-ALL REHEARSAL-R2-VOID: every other stage's smoke passed; R2 is VOID (guard 2 waits for an R2 re-run; guard 1 may launch)"; fi
+  if [ "$P67G2VOID" = 1 ] || [ "$P67R2VOID" = 1 ]; then persist; [ "$P67G2VOID" != 1 ] || echo "LD-ALL-REHEARSAL-G2-VOID"; [ "$P67R2VOID" != 1 ] || echo "LD-ALL-REHEARSAL-R2-VOID"; exit $P67_EXIT_NONPASS; fi
   persist; echo "LD-ALL-REHEARSAL-DONE"; exit 0
 fi
 P67BAD=(); P67CUT=()
@@ -303,7 +313,7 @@ done
   echo "VM BATCH 1 (status 67, plan $PLAN): suites/TESTS.txt, one score.txt per stage"
   for _st in "${P67STAGES[@]}"; do
     _d="$RUN/$(python3 -c "import plan67; print(plan67.STAGE_DIR['$_st'])")"
-    echo "== $_st"; grep -aE '^(VERDICT|GATE-67|A1|AS |R1|R2-HOLD|T |FAILED|S06-FAIL|NO VERDICT|UNSCOREABLE)' "$_d/score.txt" 2>/dev/null; ls "$_d" 2>/dev/null | grep -a '^FAILED-' | sed 's/^/MARKER /'
+    echo "== $_st"; grep -aE '^(VERDICT|GATE-67|GUARD2-ELIGIBILITY|A1|AS |R1|R2-HOLD|T |FAILED|S06-FAIL|NO VERDICT|UNSCOREABLE)' "$_d/score.txt" 2>/dev/null; ls "$_d" 2>/dev/null | grep -a '^FAILED-' | sed 's/^/MARKER /'
   done
   [ "${#P67CUT[@]}" = 0 ] || { echo "== CUT AT LD_HARD (${P67CUT[*]}): non-pass verdict lines of the cut stages (their passes read TRUNCATED; these were found)"; nonpass67 | sed 's/^/NONPASS-IN-CUT-STAGE /'; }
 } > "$RUN/score.txt"

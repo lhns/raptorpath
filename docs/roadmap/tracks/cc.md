@@ -26,6 +26,7 @@ flowchart TB
     cc_pacing_audit["⏳ Can our controller<br/>set the pace"]
     cc_pacing_seam["⏳ Pacing hook in our<br/>library copy"]
     cc_defect_copa_minrtt>"⚠ Minimum delay<br/>includes our own queue"]
+    cc_defect_bbrrs_app_limited>"⚠ Our BBR forgets the<br/>link rate when the<br/>sender idles"]
     cc_s48d_session["⛔ Our BBR round 2:<br/>network test"]
     cc_pacing_seam_reading["⛔ First measurement of<br/>controller-set pacing"]
     cc_bbrrs_promote["⛔ Our own BBR made the<br/>default"]
@@ -50,11 +51,13 @@ flowchart TB
     cc_bbrrs_r1 ~~~ cc_pacing_audit
     cc_bbrrs_r2 ~~~ cc_pacing_seam
     cc_pacing_audit ~~~ cc_defect_copa_minrtt
-    cc_pacing_audit ~~~ cc_s48d_session
-    cc_pacing_seam ~~~ cc_pacing_seam_reading
-    cc_defect_copa_minrtt ~~~ cc_bbrrs_promote
+    cc_pacing_audit ~~~ cc_defect_bbrrs_app_limited
+    cc_pacing_seam ~~~ cc_s48d_session
+    cc_defect_copa_minrtt ~~~ cc_pacing_seam_reading
+    cc_defect_bbrrs_app_limited ~~~ cc_pacing_seam_reading
     cc_s48d_session ~~~ cc_bbrrs_promote
-    cc_pacing_seam_reading ~~~ cc_hybrid
+    cc_pacing_seam_reading ~~~ cc_bbrrs_promote
+    cc_bbrrs_promote ~~~ cc_hybrid
     cc_bbrrs_promote ~~~ cc_copa_consumers
     cc_cubic_substrate -.-> cc_bbr_default
     cc_aimd_v1 -.-> cc_early_delay_cc
@@ -76,7 +79,7 @@ flowchart TB
     cc_s48d_session --> cc_bbrrs_promote
     cc_bbrrs_promote --> cc_hybrid
     cc_pacing_audit --> cc_hybrid
-    linkStyle 27,30 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
+    linkStyle 29,32 stroke:#e69500,stroke-width:3px,stroke-dasharray:2 3
     classDef vsucc fill:#2e9e4f,stroke:#1b6b34,color:#fff
     classDef succ fill:#bfe8c8,stroke:#2e9e4f,color:#111
     classDef mixed fill:#ffd37a,stroke:#c98a00,color:#111
@@ -96,7 +99,7 @@ flowchart TB
     class cc_copa_lite,cc_copa_wire_signal,cc_bbr_default succ
     class cc_btlbw_recovery mixed
     class cc_adr68_fusion,cc_hybrid parked
-    class cc_quinn_bbr_collapse,cc_defect_copa_minrtt finding
+    class cc_quinn_bbr_collapse,cc_defect_copa_minrtt,cc_defect_bbrrs_app_limited finding
     class cc_bbrrs_r1 bad
     class cc_bbrrs_r2,cc_pacing_audit,cc_pacing_seam waiting
     class cc_s48d_session,cc_pacing_seam_reading,cc_bbrrs_promote,cc_copa_consumers blocked
@@ -134,6 +137,7 @@ flowchart TB
 | `cc-hybrid` | BBR/Copa hybrid build | research | no-cargo | parked | unrated |  |  | cc-adr68-fusion, cc-bbrrs-promote, meas-adversarial-cells-run, cc-user-adr68-direction |  |  |  | plan W2.4 |
 | `cc-aimd-v1` | AIMD congestion control (first CC) | mechanism | host-cargo | abandoned | superseded | 2026-03-12 | 2026-03-13 |  | cc-early-delay-cc |  |  | ADR-0009 |
 | `cc-btlbw-recovery` | BtlBw-anchored window recovery | mechanism | vm | done | mixed | 2026-07-04 | 2026-07-04 |  |  |  |  | commit fa433ac7; paper §12.6; commit 2fd9ab6f |
+| `cc-defect-bbrrs-app-limited` | Our BBR forgets the link rate when the sender idles | defect-verdict | host-cargo | next | unrated | 2026-11-27 |  |  |  |  |  | docs/derivations/reg-handoff-gate.md section 12 (branch sender-queue-law ff0cd203) |
 
 ### Details per node
 
@@ -165,6 +169,7 @@ flowchart TB
 | `cc-hybrid` | BBR/Copa hybrid build |  |  | Designing a controller that blends BBR's speed with Copa's low queues, with pass or fail targets fixed before anything is built. | The forward build of the cc-adr68-fusion design. Done when: a registration with falsifiable per-cell targets (ADR-0068 bars: shal8 >= 75 Mbit, jit0-jit25 >= 0.9x without the standing queue) is committed before any build. |  |  |  |  |
 | `cc-aimd-v1` | AIMD congestion control (first CC) | AIMD congestion control with FEC-aware loss response. Slow start, congestion avoidance, multiplicative decrease on congestion loss, gentle reduction on FEC-recovered loss. |  | The first congestion control backed off on loss like classic TCP and was replaced a day later by a delay-based one. | ADR-0009 closed the missing-CC gap with AIMD on 2026-03-12; replaced by BBR-style delay-based CC (ADR-0019) on 2026-03-13. End date is the replacement's start. |  |  |  |  |
 | `cc-btlbw-recovery` | BtlBw-anchored window recovery | Kept for sustained-throughput/multipath payoff. |  | After a backoff the congestion window was pulled back toward the bandwidth-delay product; the window recovered, but transfer completion time did not improve. | Split 2026-11-20 from cc-copa-lite, where it was folded as branch P-CC (own refuted verdict). Mixed (review 2026-11-20): the window reaches the bandwidth-delay product and was kept for sustained throughput, but completion did not move. |  |  |  |  |
+| `cc-defect-bbrrs-app-limited` | Our BBR forgets the link rate when the sender idles |  |  | When the application sends little, our BBR controller still trusts the low delivery rate it measures and shrinks its estimate of the link, so its window can shrink to about one video frame and a short loss run then stalls the path. | Found in plan 68s (bursty Realtime, row GBU r1, 0.8 s stall) by reg-handoff-gate section 12: bbr_rs honours an app-limited flag (bbr_rs.rs:370-373) but quinn-proto 0.11.14 supplies one connection-level bit at ACK time (connection/mod.rs:940), not per packet at send time as BBR specifies; on_sent records no app-limited state (bbr_rs.rs:292-313), so unflagged ACKs mid-burst shrink b-hat, and the first unflagged sample after 10 rounds replaces the max (:125). The Startup exit has a second clause on the same bit (:953-955). R4 (bbr_rs without the gate) shows the same falls. Blocks making bbr_rs the default with or without the gate. Fix proposed: per-packet marking in RsBandwidthEstimation with two red-first tests. |  |  |  |  |
 
 ### Folded items per node
 
