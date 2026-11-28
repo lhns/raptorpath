@@ -3455,7 +3455,7 @@ def extra_repeat(kind):
         sb = make67(root, "67", "rehearse")
         rd = os.path.join(sb["logs"], "repeat")
         os.makedirs(rd)
-        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": {"repeat-cut": "20", "repeat-s2-share": "39"}.get(kind, "3600"), "STUB_REPEAT_DIR": px(rd), "R67_T1_S": {"repeat-cut": "5", "repeat-s2-share": "10"}.get(kind, "1")}
+        env = {"R67_ROOT": px(os.path.join(root, "out")), "R67_SEATS": px(os.path.join(sb["root"], "seats")), "R67_N": "4", "R67_BUDGET_S": {"repeat-cut": "2400", "repeat-s2-share": "3900"}.get(kind, "3600"), "STUB_REPEAT_DIR": px(rd), "R67_T1_S": {"repeat-cut": "500", "repeat-s2-share": "1000"}.get(kind, "1")}      # seams in the hundreds of seconds: the real elapsed time of a loaded host (seconds to minutes) must not move the cuts
         if kind == "repeat-one-failure":
             env["STUB_REPEAT_FAIL"] = "3"
         if kind == "repeat-zero-tests":
@@ -3485,10 +3485,10 @@ def extra_repeat(kind):
                   rc == 5 and "ABORT-REPEAT seat=S2 (guard 2 does not launch" in rep and "failing_runs=4 failures=[ZERO-TESTS(holeclass_reachability)" in rep and "ZERO-TESTS(s06_no_copy)" not in rep and "ABORT-REPEAT seat=S1" not in rep, (rc, rep))
         elif kind == "repeat-s2-share":
             m_ = re.search(r"REPEAT-CUT seat=S2 reached=(\d+) of 4", rep)
-            check(f"{tag}: first run 10 s (seam) on a 39 s budget: S1's share is half (19 s: 1 run, REPEAT-CUT on record), S2's is the budget minus S1's real elapsed time (30-39 s while S1 took under 10 s: 3 runs; an equal split would give it 1), rc 0",
+            check(f"{tag}: first run 1000 s (seam) on a 3900 s budget: S1's share is half (1950 s: 1 run, REPEAT-CUT on record), S2's is the budget minus S1's real elapsed time (3000-3900 s while S1 took under 900 s: 3 runs; an equal split would give it 1), rc 0",
                   rc == 0 and "REPEAT-CUT seat=S1 reached=1 of 4" in rep and "REPEAT67 seat=S1 reached=1 of 4" in rep and m_ is not None and 2 <= int(m_.group(1)) <= 3 and "REPEAT67 seat=S2 reached=%s of 4" % m_.group(1) in rep and "ABORT-REPEAT" not in rep, (rc, rep))
         else:
-            check(f"{tag}: a 20 s budget with a 5 s first run: S1's share (10 s) fits two timed runs: REPEAT-CUT seat=S1 with the reached N is on record (for the second amendment), S1 reads 2 of 4 with zero failures, rc 0",
+            check(f"{tag}: a 2400 s budget with a 500 s first run: S1's share (1200 s) fits two timed runs: REPEAT-CUT seat=S1 with the reached N is on record (for the second amendment), S1 reads 2 of 4 with zero failures, rc 0",
                   rc == 0 and "REPEAT-CUT seat=S1 reached=2 of 4" in rep and "REPEAT67 seat=S1 reached=2 of 4 failing_runs=0" in rep and "ABORT-REPEAT" not in rep, (rc, rep))
         EXTRA67_DONE.add(kind)
     finally:
