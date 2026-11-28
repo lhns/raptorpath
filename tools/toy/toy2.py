@@ -348,6 +348,20 @@ def wait_limit_w(T, R, o, delta, x, t_ov):
     return (c / xb) * min(1.0, 2.0 / (1.0 + y))
 
 
+def wait_limit_w5(T, R, o, delta, x, t_ov):
+    """Revision 5 section 14.3 (build B''): w [s] = (c / xb) / max(1, y), the Kelly fraction 1 - s_b / t_ov of the bet re-placed at every instant; c, xb, y as wait_limit_w.
+    Equal to wait_limit_w bit for bit wherever y <= 1 (both factors are 1.0 there).  T = inf: c = inf, y = 0.0, w = inf; max(1, y) >= 1, so no division by zero."""
+    c = max(T - R, 0.0)
+    xb = max(1.0, x)
+    y = delta * t_ov / (c + xb * o)
+    return (c / xb) / max(1.0, y)
+
+
+def repair_net_spare(spare, n_shed, n_first):
+    """Revision 5 section 14.2: the clamp's spare net of the intake's sheds per first send over the rate law's window; spare - 0.0 = spare exactly when nothing is shed."""
+    return spare - n_shed / n_first
+
+
 def wait_limit_Kc(T, R, o):
     """The collapse threshold: K_c = (T - R)(T - R + o_hat); at K_c the effective margin T - R - K / (T - R + o_hat) is 0."""
     return (T - R) * (T - R + o)
@@ -518,6 +532,8 @@ class Cfg:
     cwnd_sim: float = 0.0          # revision 4 step 2: the clamp's and the gauge's cwnd in datagrams; 0 = the cell's store pause pause_B
     rate2: float = 0.0             # revision 4 step 2 (OV-end): the source rate after rate2_t seconds; 0 = constant rate (work-conserving source only)
     rate2_t: float = 0.0
+    clamp_net: bool = False        # revision 5 section 14.2 (build B''): with clamp, repair accrues min(r, max(spare - sigma, 0)), sigma = intake sheds / first sends over 8 srtt
+    net_gauge: bool = False        # revision 5 section 14.2, reads only: count where clamp_net would lower r_eff and by how much (out["rev4"]["net"]); the decision stays the shipped clamp's unless clamp_net
     resend_gauge: bool = False     # revision 4 section 13.9: classify every resend once (filled a hole / duplicate / lost / arrived after its hole was passed / other / still open) and keep per-0.5 s series of resends, duplicates and repair sends, in out["resend_outcome"]; reads only, no decision changes
     rb_A: float = 3.0              # stage 3e amendment 3, arm RB (repair r = "rb"): r is held at R_MAX from the outage start until rb_A after its end
     rb_unit: str = "s"             # "s": rb_A seconds after the outage end; "sym": rb_A first sends after it
@@ -654,9 +670,13 @@ class Sim:
         self.n1 = int(round(c.rate2_t * c.rate)) if c.rate2 else 0           # units handed over before the rate changes
         self.dt2 = 1.0 / c.rate2 if c.rate2 else self.dt
         self.B_sim = c.cwnd_sim or float(c.pause_B)
-        if c.wait_limit_form not in ("k_t2", "rev4b"):
+        if c.wait_limit_form not in ("k_t2", "rev4b", "rev5"):
             raise ValueError("wait_limit_form: %r" % (c.wait_limit_form,))
         self.cnt_on = c.rev4_gauge or c.clamp or c.wait_limit or c.send_gate                # the in_flight count and the D-hat rounds are kept
+        self.net_on = c.clamp_net or c.net_gauge                                                # revision 5 (14.2): shed and first-send times over the rate law's window
+        if c.clamp_net and not c.clamp:
+            raise ValueError("clamp_net needs clamp")
+        self.net_shed, self.net_first = deque(), deque()
         if c.n_total:
             self.dur = c.n_total / c.rate
             self.t_end = c.t_limit
@@ -1204,8 +1224,10 @@ class Sim:
         while self.u_next < self.units_total and intake_expired_fn(self.Te, t - self.ht(self.u_next)):
             self.intake_expired += 1
             self.u_next += 1
+            if self.net_on:
+                self.net_shed.append(t)
         if c.deq_expiry:                                         # 13.2: expire the head at the dequeue when a younger unit waits (after L1)
-            rev4b = c.wait_limit and c.wait_limit_form == "rev4b"
+            rev4b = c.wait_limit and c.wait_limit_form in ("rev4b", "rev5")
             te_dq = self.tau_now(t)[0] if (c.wait_limit and not rev4b) else self.Te      # revision 4: the wait limit tau (= T exactly at x <= 1, +inf at T = inf)
             w_dq = self.cap_now(t)[0] if rev4b else math.inf                              # build B' (13.3): the second threshold, always computed beside a + R >= T
             while (self.u_next + 1 < self.units_total
@@ -1215,6 +1237,8 @@ class Sim:
                     self.first_deq_exp = t
                 self.intake_expired_deq += 1
                 self.u_next += 1
+                if self.net_on:
+                    self.net_shed.append(t)
         if c.rev4_gauge and c.deq_expiry:
             self.rev4_tick(t)
         if c.n_total and self.u_next >= self.units_total:        # streaming mode ends on nxt >= dur (float edge: stage 1 sends one more)
@@ -1320,6 +1344,20 @@ class Sim:
                 fl = self.in_flight_now(t)
                 sp = (self.B_sim - fl) / fl if fl > 0 else math.inf
                 r_eff = min(self.r_cur, max(sp, 0.0))
+                if self.net_on:                      # revision 5 (14.2): spare net of the intake's sheds; own deques, so rate_hat's window is untouched
+                    wn = 8.0 * self.srtt_eff()
+                    self.net_first.append(t)
+                    while self.net_first and self.net_first[0] <= t - wn:
+                        self.net_first.popleft()
+                    while self.net_shed and self.net_shed[0] <= t - wn:
+                        self.net_shed.popleft()
+                    r_net = min(self.r_cur, max(repair_net_spare(sp, len(self.net_shed), len(self.net_first)), 0.0))
+                    ng = self.r4.setdefault("net", dict(n=0, bind=0, removed=0.0))
+                    ng["n"] += 1
+                    ng["bind"] += r_net < r_eff
+                    ng["removed"] += r_eff - r_net
+                    if c.clamp_net:
+                        r_eff = r_net
                 self.g["clamp_n"] += r_eff < self.r_cur
                 self.g["r_eff_over_spare"] = max(self.g["r_eff_over_spare"], r_eff - max(sp, 0.0))
                 self.owed += r_eff
@@ -1594,12 +1632,13 @@ class Sim:
         x, t_ov, R, o, raw, mu = self.ov_inputs(t)
         cp = max(self.Te - R, 0.0)
         y = self.cfg.delta * t_ov / (cp + max(1.0, x) * o)
-        return wait_limit_w(self.Te, R, o, self.cfg.delta, x, t_ov), cp, y, x, t_ov, R, o
+        law = wait_limit_w5 if self.cfg.wait_limit_form == "rev5" else wait_limit_w
+        return law(self.Te, R, o, self.cfg.delta, x, t_ov), cp, y, x, t_ov, R, o
 
     def rev4_tick(self, t):
         """At each dequeue: lambda_hat, mu_hat = D_hat, t_ov, K, tau and the counts the revision's step 1 reads.  No decision reads them."""
         c, r4 = self.cfg, self.r4
-        if c.wait_limit and c.wait_limit_form == "rev4b":
+        if c.wait_limit and c.wait_limit_form in ("rev4b", "rev5"):
             raw = self.rev4b_tick(t)
         else:
             tau, K, x, t_ov, R, o, den0, raw, mu = self.tau_now(t)
@@ -1664,7 +1703,8 @@ class Sim:
         g["was_ov"] = ov
         g["y_max"] = max(g["y_max"], y)
         if cp > 0.0:
-            wc = (1.0 / max(1.0, x)) * min(1.0, 2.0 / (1.0 + y))      # w / c+, written without dividing by an infinite c+
+            ramp = (1.0 / max(1.0, y)) if self.cfg.wait_limit_form == "rev5" else min(1.0, 2.0 / (1.0 + y))
+            wc = (1.0 / max(1.0, x)) * ramp                     # w / c+, written without dividing by an infinite c+
             g["w_over_c_min"] = wc if g["w_over_c_min"] is None else min(g["w_over_c_min"], wc)
         if self.ht(self.units_total - 1) >= t:
             g["last_age"], g["last_t"] = age, t             # the head's wait at the last dequeue at or before the last hand-over
@@ -1676,7 +1716,7 @@ class Sim:
         g = self.r4["b"]
         fin = lambda v: v if math.isfinite(v) else None                        # noqa: E731
         series = [(k * 0.5, b[0], fin(b[1] / b[0]), b[2] / b[0], b[3] / b[0], b[4] / b[0], fin(b[5] / b[0]), b[6]) for k, b in sorted(g["series"].items())]       # window start, n, mean w, mean head age, mean x, mean t_ov, mean c+, n with y <= 1
-        res = dict(wait_limit_form="rev4b", onset_bind=(g["onset_n"] / g["ov_n"]) if g["ov_n"] else None, onset_t=g["onset_t"], ov_t0=g["ov_t0"], onset_tov=g["onset_tov"], n_cap_lt_c=int(g["cap_lt_c"]), cap_series=series,
+        res = dict(wait_limit_form=self.cfg.wait_limit_form, onset_bind=(g["onset_n"] / g["ov_n"]) if g["ov_n"] else None, onset_t=g["onset_t"], ov_t0=g["ov_t0"], onset_tov=g["onset_tov"], n_cap_lt_c=int(g["cap_lt_c"]), cap_series=series,
                    tov_resets=int(g["resets"]), y_max=g["y_max"], w_min_over_c=g["w_over_c_min"], reserve_end=None, floor_bind=g["floor_n"] / n)
         la = g["last_age"]
         if la is not None:
@@ -1699,6 +1739,8 @@ class Sim:
                     spare_bind=(r4["spare_bind"] / r4["spare_n"]) if r4["spare_n"] else None, rounds=r4["rounds"], spare_bins=sorted((k, v[0], v[1]) for k, v in r4["spare_bins"].items()), tau_min=(r4["tau_min"] if r4["tau_min"] < math.inf else None))
         if "b" in r4:                                   # build B' only: its gauges are added, so every other row's block is unchanged
             out.update(self.summary_rev4b(n))
+        if "net" in r4:                                 # revision 5 (14.2) only: the net clamp's gauge
+            out["net"] = dict(r4["net"], clamp_net=self.cfg.clamp_net)
         return out
 
     def astar(self, now):

@@ -412,6 +412,7 @@ flowchart TB
 | Copa readers use shared path records | ⛔ blocked | Moving the parts that read the Copa controller onto the shared per-path measurements and replacing its per-setting table with one smooth rule. |
 | Our own BBR made the default | ⛔ blocked | Making our BBR controller the default, recorded as a new architecture decision. |
 | BBR/Copa hybrid build | ⏸ parked | Designing a controller that blends BBR's speed with Copa's low queues, with pass or fail targets fixed before anything is built. |
+| Our BBR forgets the link rate when the sender idles | ⚠ open | When the application sends little, our BBR controller still trusts the low delivery rate it measures and shrinks its estimate of the link, so its window can shrink to about one video frame and a short loss run then stalls the path. |
 | One control datagram per message | ✔ done · very-successful | Sending one control datagram per message became the default after a full test: single-path throughput rose about 13 % and receiver CPU per bit fell about 9 %. |
 | Packets sent in small bursts | ✔ done · very-successful | Sent packets in small bursts instead of one at a time, which raised throughput by about 40 percent on the fast two-path test and cut CPU everywhere. |
 | All control logic on one task | ✖ dead end | Tried moving all control logic onto one task; the sender then spun far more often and lost a third of its speed, so it was deleted. |
@@ -420,6 +421,7 @@ flowchart TB
 | Cheaper bookkeeping in our BBR | ⏳ waiting | Cutting the per-packet bookkeeping cost of our own BBR controller to at most twice that of the standard one. |
 | Deriving the send-burst size | ○ next | Working out how many packets the sender should send in one burst instead of using a hand-picked sixty-four. |
 | Benchmark tool ignores the config file | ⚠ open | The built-in benchmark client and server never read the config file, so the tail target, the repair overhead cap, certificate pinning and the retention dial ρ cannot be set for a benchmark run. |
+| Gate costs CPU through a timer | ○ next | The hand-off gate costs about 7 % more client CPU per gigabyte; about a third is reading each path state twice per packet, and most of the rest is a 1 ms timer that keeps firing even when the gate is open, on the server too. |
 | Repair-share bound counts every slot | ▶ in progress | The check on the measured repair share forgot that some repair slots are spent re-sending old data instead of new repair symbols. The fix adds them, and the model's definition is checked to mean the same thing. |
 | Collapse detector misfires on large limits | ⚠ open | The rule that tells a collapsed run from a healthy one wrongly flags healthy comparison runs with a large in-flight limit on the slower test link; the wide delay tail there is not yet explained. |
 | Standard test scenarios and pass criteria | ✔ done · successful | Fixed a set of standard test scenarios with falsifiable win conditions, and got the simulated gate suite to pass them. |
@@ -473,8 +475,11 @@ flowchart TB
 | Engine in-flight count reads low | ⚠ open | The engine's per-path in-flight count, read by the send gate, the repair clamp and placement, is about 60 times below what is actually outstanding, so those three never see the real load. |
 | Network library queue unmanaged | ⚠ open | Everything the sender hands over waits in one first-in first-out queue in the network library, with no priority and no deadline, so resends and control messages wait behind hundreds of new datagrams. |
 | Placement blind to the send queue | ⚠ open | Placement chooses a path by its network round trip and an in-flight count that reads near zero, so it cannot see data already waiting in the send queue and overloads the slow path. |
+| Hand-off latency read in coarse steps | ⚠ open | The sender measures how long the network thread takes to pick up waiting data, but it only ever reads one of three values, so the gate limit is up to about a fifth too high and jumps in steps. |
+| Gate limit capped by the acknowledgement rate | ⏸ parked | A proposed change to the hand-off gate: cap its limit by the rate at which the network actually acknowledges data, so the limit cannot jump to two or three times its normal value after the controller restores its window. |
 | Sender hand-off gate | ▶ in progress | Everything the sender hands to the network waits in one unmanaged first-in first-out queue in the network library, so with our own BBR controller the waiting data moved from the link into the sender instead of going away. A hand-off gate keeps only a few milliseconds staged per path, so data waits in the sender's own queue where the lifetime and delay price can act on it. |
 | Three application knobs (lifetime T, delay price, order hold H) | ▶ in progress | Replace the delivery share as a setting with three numbers the application states: how long data stays worth sending (lifetime, in seconds), how much each millisecond costs, and how long the receiver may hold data behind a gap. The share delivered becomes a reported result, never a promise. |
+| Three-knob Revision 5 slower at low-mid delay price | ⚠ open | Between a delay price of about 0.005 and 0.078 the three-knob design delivers later than a no-queue Realtime sender; no fix found yet that avoids a step or an unexplained constant. |
 | Burst estimate explodes after a long outage | ⚠ open | Open problem, found in the simulator, which uses the engine's shared burst estimator: after a long total outage at a high send rate the estimator's memory of good-after-bad transitions decays to nearly zero, so the first good packet makes the estimated burst length about a hundred million and the loss variance about 2 000. The repair rate then sits at its cap until the estimate settles (about 3 s at 1 000/s, 0.1 s at 10 000/s). Whether the engine reaches this state depends on how it feeds the estimator after an outage (one lump on the first ack). |
 | Repair rate sized for a wider window than each repair covers | ⚠ open | Open problem, found while planning the repair stage and confirmed by an independent read: the repair rate is sized as if each repair protects a whole window, but each repair only covers about half of it (3 units against a window floor of 16 at call rates), so the promised protection (99.7 %) is far above what the coding delivers (about 80 %). The window floor of 16 and the saturation knee also bind over the operating range; each needs a ledger verdict. |
 | The interactive simulator on the three-knob model | ▶ in progress | Adjust or rebuild the interactive simulator so it shows the proposed knobs (lifetime, delay price, order hold) and reports the delivered share as a result, on its own branch while the proposal is not accepted. |
@@ -517,6 +522,8 @@ flowchart TB
 - `perf-config-dropped`: Benchmark tool ignores the config file
 - `infra-dead-code-batch`: Remove 24 dead functions
 - `rec-shed-d-defects`: Give-up deadline D defects on main
+- `cc-defect-bbrrs-app-limited`: Our BBR forgets the link rate when the sender idles
+- `perf-handoff-gate-cpu`: Gate costs CPU through a timer
 
 **no-cargo**
 
@@ -537,6 +544,8 @@ flowchart TB
 - `model-defect-quinn-queue`: Network library queue unmanaged
 - `model-defect-placement-blind`: Placement blind to the send queue
 - `rate-defect-lowrate-cancel`: Low-rate repair cancelled by acks
+- `model-defect-tau-o-quantized`: Hand-off latency read in coarse steps
+- `model-defect-three-knobs-delta-band`: Three-knob Revision 5 slower at low-mid delay price
 - `model-defect-ge-after-outage`: Burst estimate explodes after a long outage
 - `model-defect-rate-vs-span`: Repair rate sized for a wider window than each repair covers
 
@@ -655,7 +664,7 @@ flowchart TB
 <!-- BEGIN GENERATED: timeline -->
 [The timeline](roadmap/timeline.md) shows every dated node as a bar from its start to its end.
 
-Generated on 2026-11-27.
+Generated on 2026-11-28.
 <!-- END GENERATED: timeline -->
 
 History before November 2026 is reconstructed from commits, status sections and ADRs, plus a few items from the session record (each says so in its notes); dates marked as placeholders in a node's notes are approximate. May and June 2026 have no commits, so no node starts or ends in them.
@@ -1243,10 +1252,10 @@ Each track has its own page with its tree, node table and per-node details.
 - [rate - rate law](roadmap/tracks/rate.md): 40 nodes (19 done, 5 in progress, 7 next, 5 blocked, 1 parked, 3 abandoned)
 - [store - store law](roadmap/tracks/store.md): 71 nodes (37 done, 4 in progress, 3 next, 5 blocked, 22 abandoned)
 - [place - placement](roadmap/tracks/place.md): 22 nodes (8 done, 3 in progress, 1 next, 1 blocked, 9 abandoned)
-- [cc - congestion control](roadmap/tracks/cc.md): 26 nodes (11 done, 5 in progress, 5 blocked, 2 parked, 3 abandoned)
-- [perf - performance](roadmap/tracks/perf.md): 32 nodes (22 done, 1 in progress, 2 next, 7 abandoned)
+- [cc - congestion control](roadmap/tracks/cc.md): 27 nodes (11 done, 5 in progress, 1 next, 5 blocked, 2 parked, 3 abandoned)
+- [perf - performance](roadmap/tracks/perf.md): 33 nodes (22 done, 1 in progress, 3 next, 7 abandoned)
 - [meas - measurement](roadmap/tracks/meas.md): 68 nodes (49 done, 6 in progress, 7 next, 5 blocked, 1 abandoned)
-- [model - model and paper](roadmap/tracks/model.md): 53 nodes (27 done, 14 in progress, 8 next, 3 blocked, 1 abandoned)
+- [model - model and paper](roadmap/tracks/model.md): 56 nodes (27 done, 14 in progress, 10 next, 3 blocked, 1 parked, 1 abandoned)
 - [obs - observability](roadmap/tracks/obs.md): 6 nodes (4 done, 1 in progress, 1 blocked)
 - [infra - repo and simplification](roadmap/tracks/infra.md): 30 nodes (21 done, 6 in progress, 1 next, 2 blocked)
 <!-- END GENERATED: tracks -->

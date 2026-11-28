@@ -19,6 +19,7 @@ Battery plans:        41d (stage G, LD_WITNESS67=g1|g2)  67a (stage A)  67r (sta
     plan67.py budget <67pre|67|67g|67x>      the registered worst-case seconds the session needs before LD_HARD
     plan67.py check <plan> <ledger>          rc 0 iff the battery finished and the ledger holds a row for every slot (and no other)
     plan67.py replace <plan> <ledger> <cell> <arm> <seed> <rep>   battery helper: prints the reason, rc 0 iff the slot's one row is a VOID-WITNESS (or another replaceable void) and the stage's cap is not used up
+    plan67.py s2-smoke-fail <stage> <smoke-check.txt>   rehearsal: rc 0 iff the stage's smoke failure is the S2 family's alone (g2; A / R1 with only S2 items): guard 2 VOID, the other smokes still run
     plan67.py stages <67pre|67|67g|67x>      the session's stage names in run order (LD_DROP_S2=1: the S2 stages and arms dropped; LD_DUMP67=1: the dump twins)
 
 Arms. A, R1, G: the seat names (B0, S1, S2). R2: the pacer seats and their test-seams twins (P1, P2, P1T, P2T). The pool block: S1P<pool> / S2P<pool>. The dump twins: S1D / S2D.
@@ -232,6 +233,11 @@ def replace_cap(plan_id):
 REPLACEABLE = ("VOID-WITNESS", "VOID-RHO", "CONTAMINATED", "VOID-COTENANT", "VOID-ONDISK", "WITNESS-FAIL", "VOID-SHORT", "NO_DATA")
 
 
+def replaceable(status, arm):
+    """REPLACEABLE for this arm: NO_DATA is replaceable on the reference arms only; a candidate arm's (S2 family) NO_DATA stays a crash (CANDIDATE-CRASH), as place38_parse's REPLACEABLE treats it."""
+    return status in REPLACEABLE and not (status == "NO_DATA" and seat_of(arm) in S2_SEATS)
+
+
 def slot_rows(rows):
     d = {}
     for r in rows:
@@ -246,7 +252,7 @@ def replace(plan_id, ledger, cell, arm, seed, rep):
     sl = slot_rows(rows)
     mine = sl.get((cell, arm, str(seed), str(rep)), [])
     done = sum(1 for v in sl.values() if len(v) > 1)
-    if len(mine) == 1 and mine[0]["status"] in REPLACEABLE and done < replace_cap(plan_id):
+    if len(mine) == 1 and replaceable(mine[0]["status"], arm) and done < replace_cap(plan_id):
         print(mine[0]["status"].lower())
         return 0
     return 1
@@ -297,6 +303,25 @@ def kept_acct(path):
     return 1 if bad else 0
 
 
+def s2_smoke_fail(stage, path):
+    """Rehearsal helper: rc 0 iff the stage's smoke-check.txt reads SMOKE-FAIL and the failure is the S2 family's alone: in g2 a CAND (S2) item and no BASE (S1) item, in A / R1 only S2 arm items (`S2: ...`, no S1 or B0 item).
+    The rehearsal then marks guard 2 VOID and runs the other smokes (as for R2); any other smoke failure stops it."""
+    if stage not in ("g2", "a", "r1"):
+        return 1
+    try:
+        lines = open(path, errors="replace").read().splitlines()
+    except OSError:
+        return 1
+    fail = [ln for ln in lines if ln.startswith("SMOKE-FAIL")]
+    if not fail:
+        return 1
+    if stage == "g2":      # guard 2's own stage, but an S1 (BASE) row's failure is guard 1's base: only a CAND (S2) failure alone voids guard 2
+        txt = " ".join(fail)
+        return 0 if "CAND" in txt and "BASE" not in txt else 1
+    arms = {x.split(":", 1)[0].strip() for ln in fail for x in ln[len("SMOKE-FAIL"):].split(";") if ":" in x}
+    return 0 if "S2" in arms and not (arms & {"S1", "B0"}) else 1
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -343,6 +368,8 @@ def main(argv):
         return 0
     if cmd == "kept-acct":
         return kept_acct(a[0])
+    if cmd == "s2-smoke-fail":
+        return s2_smoke_fail(a[0], a[1])
     if cmd == "stages":
         print(*stages(a[0]))
         return 0
