@@ -725,12 +725,14 @@ Fable's design (2026-11-27): the three changes since 68t are read apart, not as 
 
 ### 14.1 68u: the bbr_rs app-limited fix, off Bulk
 
-- **Seats:** BASE `bb7133f5` (the 68t build, no per-packet marking), CAND `hgate-fixw` `8d6490c1`. **Arms on both:** R4 (bbr_rs, gate off) and GATE (bbr_rs + gate). **Cells:** W1, W2, W4 as 68t (10 / 20 / 40 datagrams per 33 ms frame after the lead-in). n = 3, seed 42: 36 rows.
+- **Seats:** BASE `bb7133f5` (the 68t build, no per-packet marking), CAND launch tree `launch68u` `d4334177` (harness68 `b6b8b28e`'s tools with `hgate-fixw` `8d6490c1`'s engine: `git diff 8d6490c1 d4334177 -- raptorpath` and `git diff b6b8b28e d4334177 -- tools` are both empty). As an identity check, the rebuilt `bb7133f5` binary is compared with 68t's CAND sha. **Arms on both:** R4 (bbr_rs, gate off) and GATE (bbr_rs + gate). **Cells:** W1, W2, W4 as 68t (10 / 20 / 40 datagrams per 33 ms frame after the lead-in). n = 3, seed 42: 36 rows.
 - **Witness (VOID if it fails):** every CAND W row shows `sends_marked` > 0 on the active legs (`WITNESS-QAL`). BASE prints no `qal=`.
 - **Predictions (from §12.1's mechanism):**
   1. **b̂ after the lead-in.** BASE: `qbw` falls to about one frame's delivery rate within about 0.33 s (10 rounds of one frame). CAND: bubble samples are raise-only, so `qbw` holds near the lead-in's value. Prediction: CAND's W-phase median `qbw` is at least 3× BASE's on each cell and arm, and at least 0.5× the lead-in median.
   2. **R4 delay.** With b̂ held, the window no longer throttles a frame burst. R4's p99 and max delivered delay fall on every W cell (CAND < BASE, all three cells), and CAND-R4's p99 lands within 1.5× of BASE-GATE's.
-  3. **GATE delay.** The gate already bounds what is handed over, so GATE moves little: CAND-GATE's p99 within ±25 % of BASE-GATE's on each cell; max under 100 ms as in 68t.
+  3. **The gate on the fixed controller.** β = R·L/s with R = 1.25·cwnd/srtt, and cwnd scales with b̂. If prediction 1 holds, β rises about as much as b̂, so the gate closes far less on the W cells. Predicted: CAND-GATE's `beta_max` at least 3× BASE-GATE's, and its closed share of turns well below BASE-GATE's, on each cell. Then CAND-GATE's p99 delay lies within ±25 % of CAND-R4's.
+  - **Headline: GATE against R4 on the fixed controller (CAND).** 68t's "the gate gives the shortest bursty tail" (§13) was measured on the collapsed window. If CAND-R4 lands near CAND-GATE, that claim is corrected to "on the collapsed controller" in the report to the owner.
+  - **Gate Revision 5.** Its cap's 90 % bind on bursty turns (§13) was read on the same collapsed window. `ack_bind` is read again on CAND's W rows; the roadmap note says "parked pending 68u".
   4. **Goodput.** The flow is app-limited, so goodput is equal (±2 %) on every seat-arm.
 - **Falsifiers:** `WITNESS-QAL` fails → the fix does not execute here (VOID, back to the engine). Prediction 1 fails with the witness met → §12.1's diagnosis is wrong or incomplete (a defect finding). Prediction 2 fails with 1 met → b̂ was not what throttled R4.
 
@@ -742,7 +744,7 @@ Fable's design (2026-11-27): the three changes since 68t are read apart, not as 
   1. **F3.** Client CPU per GB, CAND against BASE, falls by 0 to 0.86 s/GB on K2 and K8 (at most about 3 %). That is likely inside the T twin's spread; it is reported beside the spread, not tested.
   2. **Unchanged:** goodput (±1 %) and the gate's decision fields (F3 is pinned to read the same inputs by a host test).
   3. **`qal=` on K2 / K8:** `sends_marked` about 0 (Bulk is never app-limited).
-- **Decision rule for the timer fix (registered now):** F2 (a deadline that follows the last publish, with τ̂_o timed from the last publish) is derived and built only if `owner_timer_idle / owner_timer_wakes` ≥ 0.5 on both K2 and K8 (CAND, row medians). Below that, F1 and F2 are dropped, and step 2 registers the Bulk CPU cost as measured. F1 stays the owner's call either way, because it moves τ̂_o's sample set.
+- **Decision rule for the timer fix (registered now, in CPU):** F2's saving is priced as S = (idle wakes per GB) × c_wake, where c_wake is the client ΔCPU per client timer wake on 68t's clean cells (§12.2's method, with its range). The need is E = CAND's client CPU per GB above BASE-of-68t, less the T twin's spread (what step 2 must recover to sit inside the A/A noise). F2 (a deadline that follows the last publish, with τ̂_o timed from the last publish, derivation first) is built only if S's lower end ≥ E on K2 or K8. Otherwise F1 and F2 are dropped, and step 2 registers the Bulk CPU cost as measured. F1 stays the owner's call either way, because it moves τ̂_o's sample set.
 
 ### 14.3 Order
 
