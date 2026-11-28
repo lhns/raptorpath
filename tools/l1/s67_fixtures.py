@@ -265,9 +265,9 @@ TUN_TEXT = "{key} is a perf/native-object mode; the tunnel always delivers in or
 def tun_lines(defect=None, reps=5, smoke=False):
     """The ledger tun67_battery.sh writes. defects: t-refusal-missing (an S1 refusal line absent), t-base-refuses (B0's run refuses with the guard text), b0-run-key-false (B0's run reads cfg=false for one key),
     s1-tun-nodata (an S1 transfer carries no data where B0's does), s1-cfg-true (S1's TUNCFG reads ooo:true), tun-no-cfg (every TUNCFG field `-`: the log level is too low),
-    t-bringup-fail / t-bringup-fail-s1 (tun_bulk.sh's TUN-BRINGUP-FAIL for B0 / S1 at realtime), t-refusal-and-void (t-refusal-missing and b0-run-key-false together),
-    t-refusal-and-bringup (t-refusal-missing and t-bringup-fail together)."""
-    parts = set((defect or "").split("+")) | ({"t-refusal-missing", "b0-run-key-false"} if defect == "t-refusal-and-void" else set()) | ({"t-refusal-missing", "t-bringup-fail"} if defect == "t-refusal-and-bringup" else set())
+    t-bringup-fail / t-bringup-fail-s1 (tun_bulk.sh's TUN-BRINGUP-FAIL for B0 / S1 at realtime), t-refusal-and-void (t-refusal-wrong and b0-run-key-false together),
+    t-refusal-and-bringup (t-refusal-wrong and t-bringup-fail together), t-refusal-wrong (an S1 `run` that does not refuse: the line is present, rc 0, no guard text; t-refusal-missing is the line ABSENT, no reading)."""
+    parts = set((defect or "").split("+")) | ({"t-refusal-wrong", "b0-run-key-false"} if defect == "t-refusal-and-void" else set()) | ({"t-refusal-wrong", "t-bringup-fail"} if defect == "t-refusal-and-bringup" else set())
     has = lambda d: d in parts or defect == d      # noqa: E731
     out = []
     for seat in ("B0", "S1"):
@@ -298,6 +298,8 @@ def tun_lines(defect=None, reps=5, smoke=False):
                     rc, cfg, err = 1, "-", "Error: " + guard.format(key=key)
                     if has("t-refusal-missing") and cmd == "run" and key == TUN_KEYS[2]:
                         continue
+                    if has("t-refusal-wrong") and cmd == "run" and key == TUN_KEYS[2]:
+                        rc, cfg, err = 0, "true", ""
                 else:
                     rc, cfg, err = (0, "true", "") if cmd == "check" else (124, "true", "")
                     if cmd == "run" and (has("b0-run-key-false") or defect == "t-refusal-and-void") and key == TUN_KEYS[1]:

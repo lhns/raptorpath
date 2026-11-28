@@ -173,10 +173,10 @@ Plan 67 (the rehearsal, session 1):
   rehearsal-r2-smoke-fail a twin smoke row has no [ACCT] line: ABORT-SMOKE of stage r2 makes R2 VOID (R2-VOID marker); the other smokes still run, AMENDMENT2.txt says `R2 VOID`, the session ends LD-ALL-REHEARSAL-R2-VOID (rc 7, not FAILED-ALL): guard 1 may launch
   dump-needed            the [SUCC] line lacks the close times: DUMP-TWINS-NEEDED, AMENDMENT2 says DUMP67=1, the rehearsal passes
   t-base-refuses         B0's `run` refuses with the guard's text: ABORT-SEAT in the T ledger, ABORT-SMOKE of stage t
-  s2-taper-nonzero       S2's guard-2 smoke row prints taper > 0 (S06-FAIL): ABORT-SMOKE, a finding is never a pass
+  s2-taper-nonzero       S2's smoke rows print taper > 0 (S06-FAIL in g2, A and R1): an S2-family smoke failure makes guard 2 VOID (G2-VOID markers, REHEARSAL-G2-VOID in AMENDMENT2.txt), g1 / t / r2 smokes still run, the session ends LD-ALL-REHEARSAL-G2-VOID (rc 7, not FAILED-ALL)
 Plan 67g (the Bulk guards; a launch on the rehearsal's artifacts):
   full                   G1 then G2 to LD-ALL-DONE; no build, no cargo test, TOOLS-TESTS-REUSED, GATE-67G1 / GATE-67G2 PASS
-  g1-fail                S1 is slower than B0: GATE-67G1 FAIL and G2 still runs (guard 2's base is S1)
+  g1-fail                S1 rows lack the gauge prints on every draw (replacements fail too): GATE-67G1 UNSCOREABLE (re-run, not FAIL) and G2 still runs (guard 2's base is S1)
   s1-no-gauge            an S1 row of G1 (past block 1) lacks the gauge prints: WITNESS-FAIL, replaced once
   s2-taper-nonzero       an S2 row of G2 (past block 1) prints taper > 0 with the mechanism preconditions holding (pslot > 0, [SPAN] median rr > 0): S06-FAIL, never replaced, GATE-67G2 FAIL, G1 unaffected
   g2-taper-replaced      an S2 row of G2 prints taper > 0 but no pslot= (a seat-witness failure, so not S06-FAIL): it is replaced once by a clean row, and GATE-67G2 still FAILs (G2-TAPER-NONZERO: a replacement never clears it)
@@ -201,7 +201,7 @@ Plan 67x (the stages off Bulk, the tunnel and the pool block):
   r1-b0-gauge            R1's B0 rows carry gauge prints: LIVE, not replaced, A1-R FAIL
   r2-blind               P1 taper = 0 and P2 pslot = 0 on every scored R2 row: R2-BLIND, R2-HOLD UNSCOREABLE (R2 VOID)
   twin-missing-field     P2T's [ACCT] line lacks oldest_unchanged_max: R2-HOLD UNSCOREABLE, never CLEAR
-  t-refusal-missing      an S1 command does not refuse: T FAIL
+  t-refusal-missing      an S1 command does not refuse (its refusal line is present and wrong): T FAIL
   t-refusal-and-void     an S1 refusal failure together with B0's key reading false: T FAIL (a finding before a void)
   t-bringup-fail         tun_bulk.sh's TUN-BRINGUP-FAIL for B0 at realtime: ABORT-BRINGUP-T seat=B0 hint=realtime, no T verdict, stage not ok
   truncated              the R1 battery returns timeout's rc 124 (a stub timeout): LD-BATTERY-TRUNCATED, TRUNCATED marker, A1-R / R1 TRUNCATED, stage not ok
